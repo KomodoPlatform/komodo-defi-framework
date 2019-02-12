@@ -173,6 +173,9 @@ fn help() {
         // Generated from https://github.com/KomodoPlatform/Documentation (PR to dev branch).
         // SHossain: "this would be the URL we would recommend and it will be maintained
         //            Please let @gcharang or me know if anything needs updating there".
+        // P.S.
+        // siddhartha-crypto and artemii235 worked on updating the docs here:
+        // https://github.com/KomodoPlatform/developer-docs/tree/mm/docs/basic-docs/atomic-swap-dex
         "See also the online documentation at https://docs.komodoplatform.com/barterDEX/barterDEX-API.html."
     )
 }
