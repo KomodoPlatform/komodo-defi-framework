@@ -20,6 +20,8 @@
 struct dugout_struct_t {
     lt::session* session;
     char const* err;
+
+    dugout_struct_t(): session (nullptr), err (nullptr) {}
 };
 typedef struct dugout_struct_t dugout_t;
 
@@ -32,7 +34,7 @@ extern "C" char const* delete_dugout (dugout_t* dugout) try {
 }
 
 extern "C" dugout_t dht_init (char const* listen_interfaces, bool read_only) {
-    dugout_t dugout = {};
+    dugout_t dugout;
 
     try {
         // cf. https://www.libtorrent.org/reference-Settings.html

@@ -5,3 +5,8 @@
 # Plus LLD is faster.
 [target.x86_64-pc-windows-msvc]
 linker = "lld-link"
+
+# Fails with
+# linker `lld-link` not found
+#[target.x86_64-unknown-linux-gnu]
+#linker = "lld-link"
