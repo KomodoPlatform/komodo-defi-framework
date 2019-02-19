@@ -7,6 +7,8 @@
 //              Windows: https://github.com/rust-lang-nursery/rustup.rs/issues/1003#issuecomment-289825927
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
+#![feature(non_ascii_idents)]
+
 extern crate bindgen;
 extern crate cc;
 extern crate duct;
@@ -23,6 +25,7 @@ extern crate regex;
 extern crate unwrap;
 extern crate winapi;
 
+use bzip2::read::BzDecoder;
 use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
@@ -34,6 +37,7 @@ use std::io::{Read, Write};
 use std::iter::empty;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tar::Archive;
 
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;
@@ -643,42 +647,84 @@ impl Target {
 /// Targeted at Unix and Mac (we're unlikely to have bzip2 on a typical Windows).  
 /// Tailored to work with Android `cross`-compilation.  
 fn build_boost_bz2() -> PathBuf {
-    // NB: We only need a small subset of boost and it's possible to manually build and install
-    // that subset, considerably reducing the build time.
-
     let target = Target::load();
-    let prefix = out_dir().join("boost");
+    let out_dir = out_dir();
+    let prefix = out_dir.join("boost");
     let boost_system = prefix.join("lib/libboost_system.a");
     if boost_system.exists() {
         return prefix;
     }
 
-    let boost = out_dir().join("boost_1_68_0");
+    let boost = out_dir.join("boost_1_68_0");
     epintln!("Boost at "[boost]);
     if boost.exists() {
         // Cache maintenance (in case we cache).
-        let _ = fs::remove_file(out_dir().join("boost_1_68_0.tar.bz2"));
-        let _ = fs::remove_dir_all(boost.join("doc")); // 80 MiB.
-        let _ = fs::remove_dir_all(boost.join("libs")); // 358 MiB, documentation and examples.
-        let _ = fs::remove_dir_all(boost.join("more"));
+        let _ = fs::remove_file(out_dir.join("boost_1_68_0.tar.bz2"));
     } else {
         // [Download and] unpack Boost.
-        if !out_dir().join("boost_1_68_0.tar.bz2").exists() {
+        if !out_dir.join("boost_1_68_0.tar.bz2").exists() {
             hget(
                 "https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.bz2",
-                out_dir().join("boost_1_68_0.tar.bz2.tmp"),
+                out_dir.join("boost_1_68_0.tar.bz2.tmp"),
             );
             unwrap!(fs::rename(
-                out_dir().join("boost_1_68_0.tar.bz2.tmp"),
-                out_dir().join("boost_1_68_0.tar.bz2")
+                out_dir.join("boost_1_68_0.tar.bz2.tmp"),
+                out_dir.join("boost_1_68_0.tar.bz2")
             ));
         }
 
-        unwrap!(ecmd!("tar", "-xjf", "boost_1_68_0.tar.bz2")
-            .dir(&out_dir())
-            .run());
+        // Boost is huge, a full installation will impact the build time
+        // and might hit the CI space limits.
+        // To avoid this we unpack only a small subset.
+
+        // Example using bcp to help with finding the subset:
+        // sh bootstrap.sh
+        // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY stage --with-date_time --with-system
+        // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY tools/bcp
+        // dist/bin/bcp --scan --list ../libtorrent-rasterbar-1.2.0/src/*.cpp
+
+        let f = unwrap!(fs::File::open(out_dir.join("boost_1_68_0.tar.bz2")));
+        let bz2 = BzDecoder::new(f);
+        let mut a = Archive::new(bz2);
+        for en in unwrap!(a.entries()) {
+            let mut en = unwrap!(en);
+            let path = unwrap!(en.path());
+            let pathˇ = unwrap!(path.to_str());
+            assert!(pathˇ.starts_with("boost_1_68_0/"));
+            let pathˇ = &pathˇ[13..];
+            let unpack = pathˇ == "bootstrap.sh"
+                || pathˇ == "boost-build.jam"
+                || pathˇ == "boostcpp.jam"
+                || pathˇ == "boost/assert.hpp"
+                || pathˇ.starts_with("boost/asio/")
+                || pathˇ == "boost/cerrno.hpp"
+                || pathˇ == "boost/config.hpp"
+                || pathˇ.starts_with("boost/config/")
+                || pathˇ.starts_with("boost/core/")
+                || pathˇ == "boost/cstdint.hpp"
+                || pathˇ == "boost/current_function.hpp"
+                || pathˇ == "boost/limits.hpp"
+                || pathˇ == "boost/noncopyable.hpp"
+                || pathˇ.starts_with("boost/predef/")
+                || pathˇ.starts_with("boost/system/")
+                || pathˇ.starts_with("boost/type_traits/")
+                || pathˇ.starts_with("boost/utility/")
+                || pathˇ == "boost/version.hpp"
+                || pathˇ.starts_with("boost/winapi/")
+                || pathˇ.starts_with("libs/config/")
+                || pathˇ.starts_with("libs/chrono/")
+                || pathˇ.starts_with("libs/date_time/")
+                || pathˇ.starts_with("libs/system/")
+                || pathˇ.starts_with("tools/build/")
+                || pathˇ == "Jamroot";
+            if !unpack {
+                continue;
+            }
+            unwrap!(en.unpack_in(&out_dir));
+        }
+
         assert!(boost.exists());
-        let _ = fs::remove_file(out_dir().join("boost_1_68_0.tar.bz2"));
+        let _ = fs::remove_file(out_dir.join("boost_1_68_0.tar.bz2"));
     }
 
     let b2 = boost.join("b2");
@@ -687,7 +733,7 @@ fn build_boost_bz2() -> PathBuf {
         assert!(b2.exists());
     }
 
-    let bin = out_dir().join("bin");
+    let bin = out_dir.join("bin");
     let bin = unwrap!(bin.to_str());
     let _ = fs::create_dir(&bin);
     if target.is_android_cross() && !Path::new("/tmp/bin/g++").exists() {
@@ -703,11 +749,6 @@ fn build_boost_bz2() -> PathBuf {
     unwrap!(ecmd!(
         "/bin/sh",
         "-c",
-        // NB: The `install` is unfortunately necessary,
-        // becase the "stage" build only connects to libtorrent if there is no Boost library installed in the system,
-        // which is often not the case.
-        // NB: Add "-d+2" to see the options passed by bjam to a C++ compiler.
-        // Matching them might be important in avoiding ABI incompatibility and linking issues.
         // TODO: remove date_time, no longer needed?
         "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
          define=BOOST_ERROR_CODE_HEADER_ONLY \
@@ -717,10 +758,11 @@ fn build_boost_bz2() -> PathBuf {
     .dir(&boost)
     .unchecked()
     .run());
+
     assert!(boost_system.exists());
     assert!(prefix.is_dir());
 
-    // TODO: Remove the build folder?
+    let _ = fs::remove_dir_all (boost);
 
     prefix
 }
