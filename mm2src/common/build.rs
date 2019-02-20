@@ -764,7 +764,7 @@ fn build_boost_bz2() -> PathBuf {
     assert!(boost_system.exists());
     assert!(prefix.is_dir());
 
-    let _ = fs::remove_dir_all (boost);
+    let _ = fs::remove_dir_all(boost);
 
     prefix
 }
@@ -947,7 +947,6 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
     assert!(a.exists());
 
     if target.is_android_cross() {
-        // TODO: Try using a full strip and not just the "--strip-debug" later (there seems to be a size difference: 16 MiB -> 7 MiB).
         unwrap!(ecmd!(
             "/android-ndk/bin/arm-linux-androideabi-strip",
             "--strip-debug",
@@ -955,6 +954,12 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
         )
         .dir(&rasterbar)
         .run());
+    } else {
+        // 85 MiB reduction in mm2 binary size.
+        // NB: We can't do a full strip (one without --strip-debug) as it leads to undefined symbol link errors.
+        unwrap!(ecmd!("strip", "--strip-debug", unwrap!(a.to_str()))
+            .dir(&rasterbar)
+            .run());
     }
 
     let include = rasterbar.join("include");
@@ -1228,7 +1233,9 @@ fn libtorrent() {
 }
 
 /// We often use a fresh version of CMake and it might be missing from the default PATH.
-fn cmake_path() -> String {fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))}
+fn cmake_path() -> String {
+    fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))
+}
 
 /// Build helper C code.
 ///
