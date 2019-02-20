@@ -662,10 +662,7 @@ fn build_boost_bz2() -> PathBuf {
 
     let boost = out_dir.join("boost_1_68_0");
     epintln!("Boost at "[boost]);
-    if boost.exists() {
-        // Cache maintenance (in case we cache).
-        let _ = fs::remove_file(out_dir.join("boost_1_68_0.tar.bz2"));
-    } else {
+    if !boost.exists() {
         // [Download and] unpack Boost.
         if !out_dir.join("boost_1_68_0.tar.bz2").exists() {
             hget(
@@ -701,19 +698,60 @@ fn build_boost_bz2() -> PathBuf {
                 || pathˇ == "boost-build.jam"
                 || pathˇ == "boostcpp.jam"
                 || pathˇ == "boost/assert.hpp"
+                || pathˇ == "boost/aligned_storage.hpp"
                 || pathˇ.starts_with("boost/asio/")
+                || pathˇ.starts_with("boost/blank")
+                || pathˇ == "boost/call_traits.hpp"
+                || pathˇ.starts_with("boost/callable_traits/")
                 || pathˇ == "boost/cerrno.hpp"
                 || pathˇ == "boost/config.hpp"
+                || pathˇ == "boost/concept_check.hpp"
+                || pathˇ == "boost/crc.hpp"
+                || pathˇ.starts_with("boost/container_hash/")
+                || pathˇ.starts_with("boost/concept/")
                 || pathˇ.starts_with("boost/config/")
                 || pathˇ.starts_with("boost/core/")
+                || pathˇ.starts_with("boost/chrono")
                 || pathˇ == "boost/cstdint.hpp"
                 || pathˇ == "boost/current_function.hpp"
+                || pathˇ == "boost/checked_delete.hpp"
+                || pathˇ.starts_with("boost/date_time/")
+                || pathˇ.starts_with("boost/detail/")
+                || pathˇ.starts_with("boost/exception/")
+                || pathˇ.starts_with("boost/fusion/")
+                || pathˇ.starts_with("boost/functional")
+                || pathˇ.starts_with("boost/iterator/")
+                || pathˇ.starts_with("boost/intrusive")
+                || pathˇ.starts_with("boost/integer")
                 || pathˇ == "boost/limits.hpp"
+                || pathˇ.starts_with("boost/mpl/")
+                || pathˇ.starts_with("boost/move")
+                || pathˇ == "boost/next_prior.hpp"
                 || pathˇ == "boost/noncopyable.hpp"
-                || pathˇ.starts_with("boost/predef/")
+                || pathˇ.starts_with("boost/none")
+                || pathˇ.starts_with("boost/numeric/")
+                || pathˇ == "boost/operators.hpp"
+                || pathˇ.starts_with("boost/optional")
+                || pathˇ.starts_with("boost/predef")
+                || pathˇ.starts_with("boost/preprocessor/")
+                || pathˇ.starts_with("boost/pool/")
+                || pathˇ == "boost/ref.hpp"
+                || pathˇ.starts_with("boost/range/")
+                || pathˇ.starts_with("boost/ratio")
                 || pathˇ.starts_with("boost/system/")
-                || pathˇ.starts_with("boost/type_traits/")
+                || pathˇ.starts_with("boost/smart_ptr/")
+                || pathˇ == "boost/static_assert.hpp"
+                || pathˇ == "boost/shared_ptr.hpp"
+                || pathˇ == "boost/shared_array.hpp"
+                || pathˇ.starts_with("boost/type_traits")
+                || pathˇ.starts_with("boost/type_index")
+                || pathˇ.starts_with("boost/tuple/")
+                || pathˇ.starts_with("boost/thread")
+                || pathˇ == "boost/throw_exception.hpp"
+                || pathˇ == "boost/type.hpp"
                 || pathˇ.starts_with("boost/utility/")
+                || pathˇ == "boost/utility.hpp"
+                || pathˇ.starts_with("boost/variant")
                 || pathˇ == "boost/version.hpp"
                 || pathˇ.starts_with("boost/winapi/")
                 || pathˇ.starts_with("libs/config/")
@@ -744,7 +782,7 @@ fn build_boost_bz2() -> PathBuf {
     if target.is_android_cross() && !Path::new("/tmp/bin/g++").exists() {
         unwrap!(ecmd!(
             "ln",
-            "-s",
+            "-sf",
             "/android-ndk/bin/arm-linux-androideabi-g++",
             fomat!((bin) "/g++")
         )
@@ -754,7 +792,6 @@ fn build_boost_bz2() -> PathBuf {
     unwrap!(ecmd!(
         "/bin/sh",
         "-c",
-        // TODO: remove date_time, no longer needed?
         "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
          define=BOOST_ERROR_CODE_HEADER_ONLY \
          install --with-date_time --with-system --prefix=../boost"
@@ -967,12 +1004,17 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
     let include = rasterbar.join("include");
     assert!(include.exists());
 
+    let li_from = rasterbar.join("LICENSE");
+    let li_to = if target.is_android_cross() {
+        "/target/debug/LICENSE.libtorrent-rasterbar".into()
+    } else {
+        root().join("target/debug/LICENSE.libtorrent-rasterbar")
+    };
     unwrap!(
-        fs::copy(
-            rasterbar.join("LICENSE"),
-            root().join("target/debug/LICENSE.libtorrent-rasterbar")
-        ),
-        "Can't copy the rasterbar license"
+        fs::copy(&li_from, &li_to),
+        "Can't copy the rasterbar license from {:?} to {:?}",
+        li_from,
+        li_to
     );
 
     (a, include)
@@ -1239,6 +1281,11 @@ fn cmake_path() -> String {
     fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))
 }
 
+/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
+fn manual_mm1_build(target: Target) {
+    panic!("TBD")
+}
+
 /// Build helper C code.
 ///
 /// I think "git clone ... && cargo build" should be enough to start hacking on the Rust code.
@@ -1262,6 +1309,12 @@ fn build_c_code(mm_version: &str) {
 
     // The MM1 library.
 
+    let target = Target::load();
+    if target.is_android_cross() {
+        manual_mm1_build(target);
+        return;
+    }
+
     let _ = fs::create_dir(root().join("build"));
     let _ = fs::create_dir_all(root().join("target/debug"));
 
@@ -1280,6 +1333,7 @@ fn build_c_code(mm_version: &str) {
     unwrap!(
         cmd("cmake", cmake_prep_args)
             .env("PATH", cmake_path())
+            .env("VERBOSE", "1")
             .dir(root().join("build"))
             .stdout_to_stderr() // NB: stderr is visible through "cargo build -vv".
             .run(),
