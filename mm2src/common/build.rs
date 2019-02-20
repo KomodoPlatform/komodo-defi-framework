@@ -620,6 +620,7 @@ fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
 #[derive(PartialEq, Eq, Debug)]
 enum Target {
     Unix,
+    Mac,
     /// https://github.com/rust-embedded/cross
     AndroidCross,
 }
@@ -627,6 +628,7 @@ impl Target {
     fn load() -> Target {
         match &unwrap!(var("TARGET"))[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
+            "x86_64-apple-darwin" => Target::Mac,
             "armv7-linux-androideabi" => {
                 if Path::new("/android-ndk").exists() {
                     Target::AndroidCross
@@ -1145,13 +1147,11 @@ fn libtorrent() {
             assert!(boost_system_mt.exists());
         }
 
-        build_libtorrent(None);
+        let (lt_a, lt_include) = build_libtorrent(None);
         println!("cargo:rustc-link-lib=static=torrent-rasterbar");
         println!(
             "cargo:rustc-link-search=native={}",
-            unwrap!(root()
-                .join("marketmaker_depends/libtorrent-rasterbar-1.2.0-rc/build")
-                .to_str())
+            unwrap!(unwrap!(lt_a.parent()).to_str())
         );
         println!("cargo:rustc-link-lib=c++");
         println!("cargo:rustc-link-lib=boost_system-mt");
@@ -1167,7 +1167,7 @@ fn libtorrent() {
                 .file("dht.cc")
                 .warnings(true)
                 .flag("-std=c++11")
-                .include(root().join("marketmaker_depends/libtorrent-rasterbar-1.2.0-rc/include"))
+                .include(lt_include)
                 .include(r"/usr/local/Cellar/boost/1.68.0/include/")
                 .compile("dht");
         }
@@ -1227,6 +1227,9 @@ fn libtorrent() {
     }
 }
 
+/// We often use a fresh version of CMake and it might be missing from the default PATH.
+fn cmake_path() -> String {fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))}
+
 /// Build helper C code.
 ///
 /// I think "git clone ... && cargo build" should be enough to start hacking on the Rust code.
@@ -1267,6 +1270,7 @@ fn build_c_code(mm_version: &str) {
     eprintln!("$ cmake{}", show_args(&cmake_prep_args));
     unwrap!(
         cmd("cmake", cmake_prep_args)
+            .env("PATH", cmake_path())
             .dir(root().join("build"))
             .stdout_to_stderr() // NB: stderr is visible through "cargo build -vv".
             .run(),
@@ -1287,6 +1291,7 @@ fn build_c_code(mm_version: &str) {
     eprintln!("$ cmake{}", show_args(&cmake_args));
     unwrap!(
         cmd("cmake", cmake_args)
+            .env("PATH", cmake_path())
             .dir(root().join("build"))
             .stdout_to_stderr() // NB: stderr is visible through "cargo build -vv".
             .run(),
