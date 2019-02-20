@@ -643,6 +643,9 @@ impl Target {
     fn is_android_cross(&self) -> bool {
         *self == Target::AndroidCross
     }
+    fn is_mac(&self) -> bool {
+        *self == Target::Mac
+    }
 }
 
 /// Downloads and builds from bz2 sources.  
@@ -952,14 +955,13 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
             "--strip-debug",
             unwrap!(a.to_str())
         )
-        .dir(&rasterbar)
         .run());
+    } else if target.is_mac() {
+        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).run());
     } else {
-        // 85 MiB reduction in mm2 binary size.
+        // 85 MiB reduction in mm2 binary size on Linux.
         // NB: We can't do a full strip (one without --strip-debug) as it leads to undefined symbol link errors.
-        unwrap!(ecmd!("strip", "--strip-debug", unwrap!(a.to_str()))
-            .dir(&rasterbar)
-            .run());
+        unwrap!(ecmd!("strip", "--strip-debug", unwrap!(a.to_str())).run());
     }
 
     let include = rasterbar.join("include");
