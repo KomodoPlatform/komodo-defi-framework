@@ -621,6 +621,7 @@ fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
 enum Target {
     Unix,
     Mac,
+    Windows,
     /// https://github.com/rust-embedded/cross
     AndroidCross,
 }
@@ -629,6 +630,7 @@ impl Target {
         match &unwrap!(var("TARGET"))[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
             "x86_64-apple-darwin" => Target::Mac,
+            "x86_64-pc-windows-msvc" => Target::Windows,
             "armv7-linux-androideabi" => {
                 if Path::new("/android-ndk").exists() {
                     Target::AndroidCross
@@ -1283,6 +1285,19 @@ fn cmake_path() -> String {
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
+    let nanomsg = out_dir().join("nanomsg");
+    if !nanomsg.exists() {
+        let nanomsg_tgz = out_dir().join("nanomsg.tgz");
+        if !nanomsg_tgz.exists() {
+            hget(
+                "https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz",
+                nanomsg_tgz.clone(),
+            );
+            assert!(nanomsg_tgz.exists());
+        }
+        unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(out_dir()).run());
+    }
+
     panic!("TBD")
 }
 
