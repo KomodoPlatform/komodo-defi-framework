@@ -1285,7 +1285,7 @@ fn cmake_path() -> String {
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
-    let nanomsg = out_dir().join("nanomsg");
+    let nanomsg = out_dir().join("nanomsg-1.1.5");
     if !nanomsg.exists() {
         let nanomsg_tgz = out_dir().join("nanomsg.tgz");
         if !nanomsg_tgz.exists() {
@@ -1296,6 +1296,21 @@ fn manual_mm1_build(target: Target) {
             assert!(nanomsg_tgz.exists());
         }
         unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(out_dir()).run());
+        assert!(nanomsg.exists());
+    }
+    epintln!("nanomsg at "[nanomsg]);
+
+    let libnanomsg_a = nanomsg.join("libnanomsg.a");
+    if !libnanomsg_a.exists() {
+        if target.is_android_cross() {
+            unwrap!(
+                ecmd!("make", "-f", "/project/mm2src/common/android/nanomsg.mk")
+                    .dir(&nanomsg)
+                    .run()
+            );
+        } else {
+            panic!("Target {:?}", target);
+        }
     }
 
     panic!("TBD")
