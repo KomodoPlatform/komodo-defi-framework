@@ -1313,6 +1313,44 @@ fn manual_mm1_build(target: Target) {
         }
     }
 
+    let libmm1_a = out_dir().join("libmm1.a");
+    if !libmm1_a.exists() {
+        let mm1_build = out_dir().join("mm1_build");
+        let _ = fs::create_dir(&mm1_build);
+        epintln!("mm1_build at "[mm1_build]);
+        if target.is_android_cross() {
+            unwrap!(ecmd!(
+                "/android-ndk/bin/clang",
+                "-O2",
+                "-g3",
+                "-I/project/crypto777",
+                "/project/iguana/exchanges/mm.c",
+                "/project/iguana/mini-gmp.c",
+                "/project/iguana/groestl.c",
+                "/project/iguana/segwit_addr.c",
+                "/project/iguana/keccak.c",
+                "-c"
+            )
+            .dir(&mm1_build)
+            .run());
+
+            unwrap!(ecmd!(
+                "/android-ndk/bin/arm-linux-androideabi-ar",
+                "-rcs",
+                unwrap!(libmm1_a.to_str()),
+                "groestl.o",
+                "keccak.o",
+                "mini-gmp.o",
+                "mm.o",
+                "segwit_addr.o"
+            )
+            .dir(&mm1_build)
+            .run());
+        } else {
+            panic!("Target {:?}", target);
+        }
+    }
+
     panic!("TBD")
 }
 

@@ -29,6 +29,11 @@
 #include <WinSock2.h>
 #endif
 
+#ifdef __ANDROID__
+# include <netinet/in.h>
+# include <sys/socket.h>
+#endif
+
 int32_t set_blocking_mode(int32_t sock,int32_t is_blocking) // from https://stackoverflow.com/questions/2149798/how-to-reset-a-socket-back-to-blocking-mode-after-i-set-it-to-nonblocking-mode?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 {
     int32_t ret;
