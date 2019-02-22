@@ -42,6 +42,24 @@ use tar::Archive;
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;
 
+/// Like the `duct` `cmd!` but also prints the command into the standard error stream.
+macro_rules! ecmd {
+    ( $program:expr ) => {{
+        eprintln!("$ {}", $program);
+        cmd($program, empty::<String>())
+            .stdout_to_stderr()
+    }};
+    ( $program:expr $(, $arg:expr )* ) => {{
+        let mut args: Vec<String> = Vec::new();
+        $(
+            args.push(Into::<String>::into($arg));
+        )*
+        eprintln!("$ {}{}", $program, show_args(&args));
+        cmd($program, args)
+            .stdout_to_stderr()
+    }};
+}
+
 fn bindgen<
     'a,
     TP: AsRef<Path>,
@@ -111,7 +129,21 @@ fn bindgen<
 }
 
 fn generate_bindings() {
-    let _ = fs::create_dir("c_headers");
+    let target = Target::load();
+    if target.is_android_cross() {
+        if !Path::new("/usr/lib/llvm-3.9/lib/libclang.so").exists() {
+            // clang is missing from japaric/armv7-linux-androideabi by default.
+            // cf. https://github.com/rust-embedded/cross/issues/174
+            // We should explain installing and committing clang into japaric/armv7-linux-androideabi when it does.
+            panic!(
+                "libclang-3.9-dev needs to be installed in order for the cross-compilation to work"
+            );
+        }
+    }
+
+    let c_headers = out_dir().join("c_headers");
+    let _ = fs::create_dir(&c_headers);
+    assert!(c_headers.is_dir());
 
     // NB: curve25519.h and cJSON.h are needed to parse LP_include.h.
     bindgen(
@@ -120,7 +152,7 @@ fn generate_bindings() {
             "../../includes/cJSON.h".into(),
             "../../iguana/exchanges/LP_include.h".into(),
         ],
-        "c_headers/LP_include.rs",
+        c_headers.join("LP_include.rs"),
         [
             // functions
             "cJSON_Parse",
@@ -326,7 +358,7 @@ fn generate_bindings() {
 
     bindgen(
         vec!["../../crypto777/OS_portable.h".into()],
-        "c_headers/OS_portable.rs",
+        c_headers.join("OS_portable.rs"),
         [
             // functions
             "OS_init",
@@ -340,7 +372,7 @@ fn generate_bindings() {
     );
     bindgen(
         vec!["../../crypto777/nanosrc/nn.h".into()],
-        "c_headers/nn.rs",
+        c_headers.join("nn.rs"),
         [
             "nn_bind",
             "nn_connect",
@@ -404,24 +436,6 @@ fn show_args<'a, I: IntoIterator<Item = &'a String>>(args: I) -> String {
         }
     }
     buf
-}
-
-/// Like the `duct` `cmd!` but also prints the command into the standard error stream.
-macro_rules! ecmd {
-    ( $program:expr ) => {{
-        eprintln!("$ {}", $program);
-        cmd($program, empty::<String>())
-            .stdout_to_stderr()
-    }};
-    ( $program:expr $(, $arg:expr )* ) => {{
-        let mut args: Vec<String> = Vec::new();
-        $(
-            args.push(Into::<String>::into($arg));
-        )*
-        eprintln!("$ {}{}", $program, show_args(&args));
-        cmd($program, args)
-            .stdout_to_stderr()
-    }};
 }
 
 /// See if we have the required libraries.
@@ -641,7 +655,8 @@ impl Target {
             t => panic!("Target not (yet) supported: {}", t),
         }
     }
-    /// True if building for ARM under https://github.com/rust-embedded/cross or a similar setup.
+    /// True if building for ARM under https://github.com/rust-embedded/cross
+    /// or a similar setup based on the "japaric/armv7-linux-androideabi" Docker image.
     fn is_android_cross(&self) -> bool {
         *self == Target::AndroidCross
     }
@@ -1286,22 +1301,23 @@ fn cmake_path() -> String {
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
     let nanomsg = out_dir().join("nanomsg-1.1.5");
-    if !nanomsg.exists() {
-        let nanomsg_tgz = out_dir().join("nanomsg.tgz");
-        if !nanomsg_tgz.exists() {
-            hget(
-                "https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz",
-                nanomsg_tgz.clone(),
-            );
-            assert!(nanomsg_tgz.exists());
-        }
-        unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(out_dir()).run());
-        assert!(nanomsg.exists());
-    }
     epintln!("nanomsg at "[nanomsg]);
 
     let libnanomsg_a = nanomsg.join("libnanomsg.a");
     if !libnanomsg_a.exists() {
+        if !nanomsg.exists() {
+            let nanomsg_tgz = out_dir().join("nanomsg.tgz");
+            if !nanomsg_tgz.exists() {
+                hget(
+                    "https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz",
+                    nanomsg_tgz.clone(),
+                );
+                assert!(nanomsg_tgz.exists());
+            }
+            unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(out_dir()).run());
+            assert!(nanomsg.exists());
+        }
+
         if target.is_android_cross() {
             unwrap!(
                 ecmd!("make", "-f", "/project/mm2src/common/android/nanomsg.mk")
@@ -1311,13 +1327,20 @@ fn manual_mm1_build(target: Target) {
         } else {
             panic!("Target {:?}", target);
         }
+        assert!(libnanomsg_a.exists());
     }
+    println!("cargo:rustc-link-lib=static=nanomsg");
+    println!(
+        "cargo:rustc-link-search=native={}",
+        unwrap!(unwrap!(libnanomsg_a.parent()).to_str())
+    );
+
+    let mm1_build = out_dir().join("mm1_build");
+    epintln!("mm1_build at "[mm1_build]);
 
     let libmm1_a = out_dir().join("libmm1.a");
     if !libmm1_a.exists() {
-        let mm1_build = out_dir().join("mm1_build");
         let _ = fs::create_dir(&mm1_build);
-        epintln!("mm1_build at "[mm1_build]);
         if target.is_android_cross() {
             unwrap!(ecmd!(
                 "/android-ndk/bin/clang",
@@ -1350,8 +1373,6 @@ fn manual_mm1_build(target: Target) {
             panic!("Target {:?}", target);
         }
     }
-
-    panic!("TBD")
 }
 
 /// Build helper C code.

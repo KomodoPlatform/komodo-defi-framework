@@ -248,7 +248,7 @@ fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
     let mut tmptype = 0;
     let mut kmdwif: [c_char; 64] = unsafe {zeroed()};
     if unsafe {LP_wifstr_valid (b"BTC\0".as_ptr(), wif_or_btc_z.as_ptr())} > 0 {
-        let rc = unsafe {bitcoin_wif2priv (b"BTC\0".as_ptr(), 0, &mut tmptype, &mut privkey, wif_or_btc_z.as_ptr() as *const i8)};
+        let rc = unsafe {bitcoin_wif2priv (b"BTC\0".as_ptr(), 0, &mut tmptype, &mut privkey, wif_or_btc_z.as_ptr() as *const c_char)};
         if rc < 0 {return ERR! ("!bitcoin_wif2priv")}
         let rc = unsafe {bitcoin_priv2wif (b"KMD\0".as_ptr(), 0, kmdwif.as_mut_ptr(), privkey, 188)};
         if rc < 0 {return ERR! ("!bitcoin_priv2wif")}

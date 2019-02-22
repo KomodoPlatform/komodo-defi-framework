@@ -46,7 +46,6 @@
 #include "../OSlibs/win/mingw.h"
 #include "../OSlibs/win/mman.h"
 #define PTW32_STATIC_LIB
-#include "../OSlibs/win/pthread.h"
 
 #ifndef NATIVE_WINDOWS
 #define EADDRINUSE WSAEADDRINUSE
@@ -58,7 +57,6 @@
 #include <poll.h>
 #include <netdb.h>
 #define HAVE_STRUCT_TIMESPEC
-#include <pthread.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -143,15 +141,6 @@ typedef struct queue
 	portable_mutex_t mutex;
     char name[64],initflag;
 } queue_t;
-
-struct rpcrequest_info
-{
-    struct rpcrequest_info *next,*prev;
-    pthread_t T;
-    int32_t sock;
-    uint32_t ipbits;
-    uint16_t port,pad;
-};
 
 struct OS_mappedptr
 {

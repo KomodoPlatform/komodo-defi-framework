@@ -34,6 +34,15 @@
 #define MM_VERSION "UNKNOWN"
 #endif
 
+struct rpcrequest_info
+{
+    struct rpcrequest_info *next,*prev;
+    pthread_t T;
+    int32_t sock;
+    uint32_t ipbits;
+    uint16_t port,pad;
+};
+
 long LP_cjson_allocated,LP_cjson_total,LP_cjson_count;
 
 struct LP_millistats

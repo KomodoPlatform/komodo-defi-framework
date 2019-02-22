@@ -27,7 +27,7 @@
 macro_rules! safecopy {
     ($to: expr, $format: expr, $($args: tt)+) => {{
         use ::std::io::Write;
-        let to: &mut [i8] = &mut $to[..];  // Check the type.
+        let to = &mut $to[..];
         let to: &mut [u8] = unsafe {::std::mem::transmute (to)};  // c_char to Rust.
         let mut wr = ::std::io::Cursor::new (to);
         write! (&mut wr, concat! ($format, "\0"), $($args)+)
@@ -94,14 +94,14 @@ use std::str;
 use tokio_core::reactor::Remote;
 
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod lp {include! ("c_headers/LP_include.rs");}
+pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
 pub use self::lp::{_bits256 as bits256};
 
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod os {include! ("c_headers/OS_portable.rs");}
+pub mod os {include! (concat! (env! ("OUT_DIR"), "/c_headers/OS_portable.rs"));}
 
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod nn {include! ("c_headers/nn.rs");}
+pub mod nn {include! (concat! (env! ("OUT_DIR"), "/c_headers/nn.rs"));}
 
 pub const MM_VERSION: &'static str = env! ("MM_VERSION");
 

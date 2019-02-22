@@ -107,7 +107,7 @@ extern "C" {
     fn as_listen_failed_alert (alert: *const Alert) -> *const c_char;
     fn as_dht_mutable_item_alert (alert: *const Alert,
         pkbuf: *mut u8, pkbuflen: i32,
-        saltbuf: *mut i8, saltbuflen: i32,
+        saltbuf: *mut c_char, saltbuflen: i32,
         buf: *mut u8, buflen: i32,
         seq: *mut i64, auth: *mut bool) -> i32;
     fn as_external_ip_alert (alert: *const Alert, ipbuf: *mut u8, ipbuflen: *mut i32) -> i32;
@@ -1035,7 +1035,7 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
             }
 
             let mut keybuf: [u8; 32] = unsafe {uninitialized()};
-            let mut saltbuf: [i8; 256] = unsafe {uninitialized()};
+            let mut saltbuf: [c_char; 256] = unsafe {uninitialized()};
             let mut seq: i64 = 0;
             let mut auth: bool = false;
             let rc = unsafe {as_dht_mutable_item_alert (alert,

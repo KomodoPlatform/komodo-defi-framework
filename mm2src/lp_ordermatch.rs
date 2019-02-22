@@ -25,7 +25,8 @@ use coins::utxo::compressed_pub_key_from_priv_raw;
 use futures::future::Future;
 use gstuff::now_ms;
 use hashbrown::hash_map::{Entry, HashMap};
-use libc::{self, c_void, c_char, strcpy, strlen, calloc, rand};
+use libc::{self, c_void, c_char, strcpy, strlen, calloc};
+use rand::{thread_rng, RngCore};
 use serde_json::{self as json, Value as Json};
 use std::collections::{VecDeque};
 use std::ffi::{CString, CStr};
@@ -1532,7 +1533,7 @@ pub unsafe fn lp_trade_command(
                                     == (::std::mem::size_of::<[u64; 1024]>() as u64)
                                     .wrapping_div(::std::mem::size_of::<u64>() as u64)
                                     {
-                                        i = (rand() as u64).wrapping_rem(
+                                        i = thread_rng().next_u64().wrapping_rem(
                                             (::std::mem::size_of::<[u64; 1024]>() as u64)
                                                 .wrapping_div(
                                                     ::std::mem::size_of::<u64>() as u64
@@ -1661,7 +1662,7 @@ pub unsafe fn lp_trade_command(
                                     == (::std::mem::size_of::<[u64; 1024]>() as u64)
                                     .wrapping_div(::std::mem::size_of::<u64>() as u64)
                                     {
-                                        i = (rand() as u64).wrapping_rem(
+                                        i = thread_rng().next_u64().wrapping_rem(
                                             (::std::mem::size_of::<[u64; 1024]>() as u64)
                                                 .wrapping_div(
                                                     ::std::mem::size_of::<u64>() as u64
@@ -1849,7 +1850,7 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
                 &mut min_utxo as *mut u64,
                 &mut max_utxo as *mut u64,
                 rel_ii,
-                (*rel_ii).smartaddr.as_ptr() as *mut i8,
+                (*rel_ii).smartaddr.as_ptr() as *mut c_char,
             );
             if max_utxo > 0 {
                 volume = volume.min(sat_to_f(max_utxo) - sat_to_f(dest_tx_fee) * 3.);
