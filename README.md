@@ -6,7 +6,7 @@ The current state can be considered as very early alpha.
 
 ## Rewrite goals
 
-[MM2 README](mm2src/README.md)
+[REWRITE](docs/REWRITE.md)
 
 ## Project structure
 
@@ -31,6 +31,10 @@ The current state can be considered as very early alpha.
 	```
 1. (Optional) Win: run `marketmaker_build_depends.cmd` to build dependencies.
 1. Run `cargo build` or `cargo build -vv` to get verbose build output.
+
+## Building for Android
+
+[ANDROID](docs/ANDROID.md)
 
 ## Help and troubleshooting
 
