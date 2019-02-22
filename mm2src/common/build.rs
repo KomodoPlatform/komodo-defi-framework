@@ -643,6 +643,8 @@ impl Target {
     fn load() -> Target {
         match &unwrap!(var("TARGET"))[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
+            // Used when compiling MM from under Raspberry Pi.
+            "armv7-unknown-linux-gnueabihf" => Target::Unix,
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
             "armv7-linux-androideabi" => {
