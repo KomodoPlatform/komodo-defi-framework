@@ -135,13 +135,6 @@ struct allocitem { uint32_t allocsize,type; } PACKED;
 struct queueitem { struct queueitem *next,*prev; uint32_t allocsize,type;  } PACKED;
 struct stritem { struct queueitem DL; void **retptrp; uint32_t expiration; char str[]; };
 
-typedef struct queue
-{
-	struct queueitem *list;
-	portable_mutex_t mutex;
-    char name[64],initflag;
-} queue_t;
-
 struct OS_mappedptr
 {
 	char fname[512];
@@ -149,16 +142,6 @@ struct OS_mappedptr
 	long allocsize,changedsize;
 	int32_t rwflag,dirty,actually_allocated;
     uint32_t closetime,opentime;
-};
-
-struct OS_memspace
-{
-    portable_mutex_t mutex; long used,totalsize; struct OS_mappedptr M; char name[64]; void *ptr;
-    int32_t alignflag,counter,maxheight,openfiles,lastcounter,threadsafe,allocated:1,mapped:1,external:1;
-#ifdef IGUANA_PEERALLOC
-    int32_t outofptrs,numptrs,availptrs;
-    void *ptrs[4096]; int32_t allocsizes[4096],maxsizes[4096];
-#endif
 };
 
 struct tai { uint64_t x; double millis; };
@@ -185,7 +168,6 @@ uint32_t OS_conv_utime(char *utime);
 
 #ifdef __PNACL
 int32_t OS_nonportable_syncmap(struct OS_mappedptr *mp,long len);
-void *OS_nonportable_tmpalloc(char *dirname,char *name,struct OS_memspace *mem,long origsize);
 
 #elif _WIN32
 char *OS_portable_path(char *str);
@@ -231,7 +213,6 @@ void *OS_filestr(long *allocsizep,char *fname);
 void OS_closemap(struct OS_mappedptr *mp);
 int32_t OS_openmap(struct OS_mappedptr *mp);
 void *OS_mappedptr(void **ptrp,struct OS_mappedptr *mp,unsigned long allocsize,int32_t rwflag,char *fname);
-void *OS_filealloc(struct OS_mappedptr *M,char *fname,struct OS_memspace *mem,long size);
 void *OS_nonportable_mapfile(char *fname,long *filesizep,int32_t enablewrite);
 int32_t OS_nonportable_removefile(char *fname);
 
@@ -260,19 +241,7 @@ void *myaligned_alloc(uint64_t allocsize);
 int32_t myaligned_free(void *ptr,long size);
 
 struct queueitem *queueitem(char *str);
-void queue_enqueue(char *name,queue_t *queue,struct queueitem *origitem);//,int32_t offsetflag);
-void *queue_dequeue(queue_t *queue);//,int32_t offsetflag);
-void *queue_delete(queue_t *queue,struct queueitem *copy,int32_t copysize,int32_t freeitem);
-void *queue_free(queue_t *queue);
-void *queue_clone(queue_t *clone,queue_t *queue,int32_t size);
-int32_t queue_size(queue_t *queue);
 char *mbstr(char *str,double n);
-
-void iguana_memreset(struct OS_memspace *mem);
-void iguana_mempurge(struct OS_memspace *mem);
-void *iguana_meminit(struct OS_memspace *mem,char *name,void *ptr,int64_t totalsize,int32_t threadsafe);
-void *iguana_memalloc(struct OS_memspace *mem,long size,int32_t clearflag);
-int64_t iguana_memfree(struct OS_memspace *mem,void *ptr,int32_t size);
 
 // generic functions
 bits256 iguana_merkle(char *symbol,bits256 *tree,int32_t txn_count);

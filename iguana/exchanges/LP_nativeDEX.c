@@ -34,6 +34,30 @@
 #define MM_VERSION "UNKNOWN"
 #endif
 
+#ifdef __unix__
+# include <pthread.h>
+#endif
+
+typedef struct queue
+{
+	struct queueitem *list;
+	pthread_mutex_t mutex;
+    char name[64],initflag;
+} queue_t;
+
+struct electrum_info
+{
+    queue_t sendQ,pendingQ;
+    pthread_mutex_t mutex,txmutex;
+    struct electrum_info *prev;
+    int32_t bufsize,sock,*heightp,numerrors;
+    struct iguana_info *coin;
+    uint32_t stratumid,lasttime,keepalive,pending,*heighttimep;
+    char ipaddr[64],symbol[66];
+    uint16_t port;
+    uint8_t buf[];
+};
+
 struct rpcrequest_info
 {
     struct rpcrequest_info *next,*prev;

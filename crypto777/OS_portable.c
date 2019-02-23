@@ -15,6 +15,23 @@
 
 #include "OS_portable.h"
 //#include <sys/stat.h>
+
+#ifdef __unix__
+# include <pthread.h>
+#endif
+
+struct OS_memspace
+{
+    portable_mutex_t mutex; long used,totalsize; struct OS_mappedptr M; char name[64]; void *ptr;
+    int32_t alignflag,counter,maxheight,openfiles,lastcounter,threadsafe,allocated:1,mapped:1,external:1;
+#ifdef IGUANA_PEERALLOC
+    int32_t outofptrs,numptrs,availptrs;
+    void *ptrs[4096]; int32_t allocsizes[4096],maxsizes[4096];
+#endif
+};
+
+void *OS_filealloc(struct OS_mappedptr *M,char *fname,struct OS_memspace *mem,long size);
+
 #ifndef MAP_FILE
 #define MAP_FILE        0
 #endif

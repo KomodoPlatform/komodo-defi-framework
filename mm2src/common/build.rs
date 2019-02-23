@@ -287,7 +287,6 @@ fn generate_bindings() {
             "cJSON",
             "iguana_info",
             "LP_utxoinfo",
-            "electrum_info",
             "LP_trade",
             "LP_swap_remember",
         ]
@@ -651,7 +650,10 @@ impl Target {
                 if Path::new("/android-ndk").exists() {
                     Target::AndroidCross
                 } else {
-                    panic! ("/android-ndk not found. Please use the `cross` to cross-compile for Android.")
+                    panic!(
+                        "/android-ndk not found. Please use the `cross` as described at \
+                         https://github.com/artemii235/SuperNET/blob/mm2-cross/docs/ANDROID.md"
+                    )
                 }
             }
             t => panic!("Target not (yet) supported: {}", t),

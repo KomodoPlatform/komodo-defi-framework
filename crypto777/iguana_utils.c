@@ -17,6 +17,24 @@
 
 #include "../iguana/iguana777.h"
 
+#ifdef __unix__
+# include <pthread.h>
+#endif
+
+typedef struct queue
+{
+	struct queueitem *list;
+	portable_mutex_t mutex;
+    char name[64],initflag;
+} queue_t;
+
+void queue_enqueue(char *name,queue_t *queue,struct queueitem *origitem);//,int32_t offsetflag);
+void *queue_dequeue(queue_t *queue);//,int32_t offsetflag);
+void *queue_delete(queue_t *queue,struct queueitem *copy,int32_t copysize,int32_t freeitem);
+void *queue_free(queue_t *queue);
+void *queue_clone(queue_t *clone,queue_t *queue,int32_t size);
+int32_t queue_size(queue_t *queue);
+
 int32_t smallprimes[168] =
 {
 	2,      3,      5,      7,     11,     13,     17,     19,     23,     29,

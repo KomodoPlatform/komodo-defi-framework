@@ -410,19 +410,6 @@ struct LP_pubkey_info
     uint8_t rmd160[20],sig[65],pubsecp[33],siglen;
 };
 
-struct electrum_info
-{
-    queue_t sendQ,pendingQ;
-    portable_mutex_t mutex,txmutex;
-    struct electrum_info *prev;
-    int32_t bufsize,sock,*heightp,numerrors;
-    struct iguana_info *coin;
-    uint32_t stratumid,lasttime,keepalive,pending,*heighttimep;
-    char ipaddr[64],symbol[66];
-    uint16_t port;
-    uint8_t buf[];
-};
-
 struct LP_trade
 {
     uint64_t aliceid,lastprocessed,negotiationdone,connectsent,firstprocessed,newtime;
@@ -480,8 +467,6 @@ struct iguana_info *LP_coinfind(char *symbol);
 uint16_t LP_rpcport(char *symbol);
 int32_t LP_crc32find(int32_t *duplicatep,int32_t ind,uint32_t crc32);
 char *LP_pricepings(char *base,char *rel,double price);
-int32_t LP_merkleproof(struct iguana_info *coin,char *coinaddr,struct electrum_info *ep,bits256 txid,int32_t height);
-cJSON *electrum_address_gethistory(char *symbol,struct electrum_info *ep,cJSON **retjsonp,char *addr,bits256 reftxid);
 cJSON *LP_myzdebits();
 int32_t LP_opreturn_decrypt(uint16_t *ind16p,uint8_t *decoded,uint8_t *encoded,int32_t encodedlen,char *passphrase);
 int32_t LP_opreturn_encrypt(uint8_t *dest,int32_t maxsize,uint8_t *data,int32_t datalen,char *passphrase,uint16_t ind16);

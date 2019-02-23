@@ -343,40 +343,6 @@ struct iguana_ramchain
     //struct iguana_Uextra *U2,*roU2; struct iguana_pkextra *P2,*roP2;
 };
 
-struct iguana_peer
-{
-    struct queueitem DL;
-    queue_t sendQ;
-    bits256 iphash,pubkey,persistent; uint32_t lastpersist; uint8_t netmagic[4];
-    struct iguana_msgaddress A;
-    char ipaddr[64],lastcommand[16],coinname[64],symbol[64];
-    uint64_t pingnonce,totalsent,totalrecv,ipbits; double pingtime,sendmillis,pingsum,getdatamillis;
-    uint32_t lastcontact,sendtime,ready,startsend,startrecv,pending,lastgotaddr,lastblockrecv,pendtime,lastflush,lastpoll,myipbits,persistent_peer,protover,numrecverrs;
-    int32_t supernet,basilisk,dead,addrind,usock,lastheight,relayflag,numpackets,numpings,ipv6,height,rank,pendhdrs,pendblocks,recvhdrs,lastlefti,validpub,othervalid,dirty[2],laggard,headerserror,lastsent,isrelay;
-    double recvblocks,recvtotal;
-    int64_t allocated,freed;
-    bits256 RThashes[IGUANA_MAXBUNDLESIZE]; int32_t numRThashes;
-    struct msgcounts msgcounts;
-    struct OS_memspace RAWMEM,TXDATA,HASHMEM;
-    struct iguana_ramchain ramchain;
-    //struct iguana_fileitem *filehash2; int32_t numfilehash2,maxfilehash2;
-    FILE *voutsfp,*vinsfp;
-    uint8_t *blockspace;//[IGUANA_MAXPACKETSIZE + 8192];
-#ifdef IGUANA_PEERALLOC
-    struct OS_memspace *SEROUT[128];
-#endif
-};
-
-struct iguana_peers
-{
-    bits256 lastrequest;
-    struct iguana_peer active[IGUANA_MAXPEERS+1],*ranked[IGUANA_MAXPEERS+1],*localaddr;
-    struct iguana_thread *peersloop,*recvloop; pthread_t *acceptloop;
-    double topmetrics[IGUANA_MAXPEERS+1],avemetric;
-    uint32_t numranked,mostreceived,shuttingdown,lastpeer,lastmetrics,numconnected;
-    int32_t numfiles;
-};
-
 struct iguana_bloom16 { uint8_t hash2bits[65536 / 8]; };
 struct iguana_bloominds { uint16_t inds[8]; };
 

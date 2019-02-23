@@ -163,7 +163,6 @@ int32_t iguana_numthreads(struct iguana_info *coin,int32_t mask);
 void iguana_terminator(void *arg);
 
 int32_t is_hexstr(char *str,int32_t n);
-void iguana_initQ(queue_t *Q,char *name);
 void iguana_emitQ(struct iguana_info *coin,struct iguana_bundle *bp);
 void iguana_txdataQ(struct iguana_info *coin,struct iguana_peer *addr,FILE *fp,long fpos,int32_t datalen);
 void iguana_helper(void *arg);
@@ -188,7 +187,6 @@ void iguana_ramchainmerge(struct iguana_info *coin);
 int32_t iguana_blockQ(char *argstr,struct iguana_info *coin,struct iguana_bundle *bp,int32_t bundlei,bits256 hash2,int32_t priority);
 void iguana_blockcopy(uint8_t zcash,uint8_t auxpow,struct iguana_info *coin,struct iguana_block *block,struct iguana_block *origblock);
 int32_t iguana_rpctest(struct iguana_info *coin);
-extern queue_t helperQ;
 extern const char *Hardcoded_coins[][3];
 void iguana_main(void *arg);
 void iguana_exit(struct supernet_info *myinfo,struct iguana_bundle *bp);
