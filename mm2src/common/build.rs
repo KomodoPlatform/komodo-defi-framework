@@ -1304,13 +1304,16 @@ fn cmake_path() -> String {
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
-    let nanomsg = out_dir().join("nanomsg-1.1.5");
+    let out_dir = out_dir();
+    let nanomsg = out_dir.join("nanomsg-1.1.5");
     epintln!("nanomsg at "[nanomsg]);
 
-    let libnanomsg_a = nanomsg.join("libnanomsg.a");
+    // TODO: Rebuild the libraries when the C source code is updated?
+
+    let libnanomsg_a = out_dir.join("libnanomsg.a");
     if !libnanomsg_a.exists() {
         if !nanomsg.exists() {
-            let nanomsg_tgz = out_dir().join("nanomsg.tgz");
+            let nanomsg_tgz = out_dir.join("nanomsg.tgz");
             if !nanomsg_tgz.exists() {
                 hget(
                     "https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz",
@@ -1318,7 +1321,7 @@ fn manual_mm1_build(target: Target) {
                 );
                 assert!(nanomsg_tgz.exists());
             }
-            unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(out_dir()).run());
+            unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(&out_dir).run());
             assert!(nanomsg.exists());
         }
 
@@ -1339,44 +1342,137 @@ fn manual_mm1_build(target: Target) {
         unwrap!(unwrap!(libnanomsg_a.parent()).to_str())
     );
 
-    let mm1_build = out_dir().join("mm1_build");
-    epintln!("mm1_build at "[mm1_build]);
+    let exchanges_build = out_dir.join("exchanges_build");
+    epintln!("exchanges_build at "[exchanges_build]);
 
-    let libmm1_a = out_dir().join("libmm1.a");
-    if !libmm1_a.exists() {
-        let _ = fs::create_dir(&mm1_build);
+    let libexchanges_a = out_dir.join("libexchanges.a");
+    if !libexchanges_a.exists() {
+        let _ = fs::create_dir(&exchanges_build);
         if target.is_android_cross() {
             unwrap!(ecmd!(
                 "/android-ndk/bin/clang",
                 "-O2",
                 "-g3",
+                "-c",
                 "-I/project/crypto777",
                 "/project/iguana/exchanges/mm.c",
                 "/project/iguana/mini-gmp.c",
                 "/project/iguana/groestl.c",
                 "/project/iguana/segwit_addr.c",
-                "/project/iguana/keccak.c",
-                "-c"
+                "/project/iguana/keccak.c"
             )
-            .dir(&mm1_build)
+            .dir(&exchanges_build)
             .run());
 
             unwrap!(ecmd!(
                 "/android-ndk/bin/arm-linux-androideabi-ar",
                 "-rcs",
-                unwrap!(libmm1_a.to_str()),
+                unwrap!(libexchanges_a.to_str()),
                 "groestl.o",
                 "keccak.o",
                 "mini-gmp.o",
                 "mm.o",
                 "segwit_addr.o"
             )
-            .dir(&mm1_build)
+            .dir(&exchanges_build)
             .run());
         } else {
             panic!("Target {:?}", target);
         }
     }
+    println!("cargo:rustc-link-lib=static=exchanges");
+    println!(
+        "cargo:rustc-link-search=native={}",
+        unwrap!(out_dir.to_str())
+    );
+
+    let secp256k1_build = out_dir.join("secp256k1_build");
+    epintln!("secp256k1_build at "[secp256k1_build]);
+
+    let libsecp256k1_a = out_dir.join("libsecp256k1.a");
+    if !libsecp256k1_a.exists() {
+        let _ = fs::create_dir(&secp256k1_build);
+        if target.is_android_cross() {
+            unwrap!(ecmd!(
+                "/android-ndk/bin/clang",
+                "-O2",
+                "-g3",
+                "-c",
+                "/project/iguana/secp256k1/src/secp256k1.c"
+            )
+            .dir(&secp256k1_build)
+            .run());
+
+            unwrap!(ecmd!(
+                "/android-ndk/bin/arm-linux-androideabi-ar",
+                "-rcs",
+                unwrap!(libsecp256k1_a.to_str()),
+                "secp256k1.o"
+            )
+            .dir(&secp256k1_build)
+            .run());
+        } else {
+            panic!("Target {:?}", target);
+        }
+    }
+    println!("cargo:rustc-link-lib=static=secp256k1");
+
+    let jpeg_build = out_dir.join("jpeg_build");
+    epintln!("jpeg_build at "[jpeg_build]);
+
+    let libjpeg_a = out_dir.join("libjpeg.a");
+    if !libjpeg_a.exists() {
+        let _ = fs::create_dir(&jpeg_build);
+        if target.is_android_cross() {
+            unwrap!(ecmd!(
+                "/bin/sh",
+                "-c",
+                "/android-ndk/bin/clang -O2 -g3 -c \
+                 /project/crypto777/jpeg/*.c /project/crypto777/jpeg/unix/jmemname.c"
+            )
+            .dir(&jpeg_build)
+            .run());
+
+            unwrap!(ecmd!(
+                "/bin/sh", "-c",
+                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libjpeg_a.to_str())) " *.o")
+            )
+            .dir(&jpeg_build)
+            .run());
+        } else {
+            panic!("Target {:?}", target);
+        }
+    }
+    println!("cargo:rustc-link-lib=static=jpeg");
+
+    let crypto777_build = out_dir.join("crypto777_build");
+    epintln!("crypto777_build at "[crypto777_build]);
+
+    let libcrypto777_a = out_dir.join("libcrypto777.a");
+    if !libcrypto777_a.exists() {
+        let _ = fs::create_dir(&crypto777_build);
+        if target.is_android_cross() {
+            unwrap!(ecmd!(
+                "/bin/sh",
+                "-c",
+                "/android-ndk/bin/clang -O2 -g3 -c \
+                 -DUSE_STATIC_NANOMSG=1 \
+                 /project/crypto777/*.c"
+            )
+            .dir(&crypto777_build)
+            .run());
+
+            unwrap!(ecmd!(
+                "/bin/sh", "-c",
+                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libcrypto777_a.to_str())) " *.o")
+            )
+            .dir(&crypto777_build)
+            .run());
+        } else {
+            panic!("Target {:?}", target);
+        }
+    }
+    println!("cargo:rustc-link-lib=static=crypto777");
 }
 
 /// Build helper C code.

@@ -18,7 +18,7 @@
 
 #ifndef FROM_JS
 #include "OS_portable.h"
-#define LIQUIDITY_PROVIDER 1
+//#define LIQUIDITY_PROVIDER 1
 
 /*#define malloc(n) LP_alloc(n)
 #define realloc(ptr,n) LP_realloc(ptr,n)
@@ -580,7 +580,7 @@ void curlhandle_free(void *curlhandle)
 }
 
 #else
-char *bitcoind_RPC(char **retstrp,char *debugstr,char *url,char *userpass,char *command,char *params)
+char *bitcoind_RPC(char **retstrp,char *debugstr,char *url,char *userpass,char *command,char *params,int32_t timeout)
 {
     return(clonestr("{\"error\":\"curl is disabled\"}"));
 }

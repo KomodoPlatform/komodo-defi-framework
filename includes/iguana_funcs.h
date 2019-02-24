@@ -158,7 +158,6 @@ int32_t is_zeroes(char *str);
 int64_t conv_floatstr(char *numstr);
 int32_t has_backslash(char *str);
 
-struct iguana_thread *iguana_launch(struct iguana_info *coin,char *name,iguana_func funcp,void *arg,uint8_t type);
 int32_t iguana_numthreads(struct iguana_info *coin,int32_t mask);
 void iguana_terminator(void *arg);
 

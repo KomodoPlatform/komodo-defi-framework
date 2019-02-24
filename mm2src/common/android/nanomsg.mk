@@ -12,6 +12,12 @@ SRC_FILES := src/utils/efd.c src/core/sock.c src/core/poll.c            \
     src/transports/tcp/btcp.c src/transports/ipc/aipc.c                 \
     src/transports/ipc/bipc.c src/transports/ipc/cipc.c                 \
     src/transports/ipc/ipc.c src/transports/ipc/sipc.c                  \
+    src/transports/ws/ws.c                                              \
+    src/transports/ws/aws.c src/transports/ws/bws.c                     \
+    src/transports/ws/cws.c src/transports/ws/sha1.c                    \
+    src/transports/ws/sws.c src/transports/ws/ws_handshake.c            \
+    src/transports/utils/base64.c                                       \
+    src/utils/strcasestr.c src/utils/strncasecmp.c                      \
     src/protocols/survey/xrespondent.c                                  \
     src/protocols/survey/surveyor.c src/protocols/survey/xsurveyor.c    \
     src/protocols/survey/respondent.c src/protocols/pair/pair.c         \
@@ -46,8 +52,8 @@ CFLAGS := \
 	-DNN_USE_LITERAL_IFADDR \
 	-DNN_USE_POLL
 
-link: build
-	/android-ndk/bin/arm-linux-androideabi-ar -rcs libnanomsg.a *.o
+../libnanomsg.a: msg.o
+	/android-ndk/bin/arm-linux-androideabi-ar -rcs ../libnanomsg.a *.o
 
-build:
+msg.o: src/*
 	/android-ndk/bin/clang -O2 -g0 $(CFLAGS) $(SRC_FILES) -c

@@ -319,7 +319,6 @@ char *hmac_rmd256_str(char *dest,char *key,int32_t key_size,char *message);
 char *hmac_rmd320_str(char *dest,char *key,int32_t key_size,char *message);
 char *hmac_tiger_str(char *dest,char *key,int32_t key_size,char *message);
 char *hmac_whirlpool_str(char *dest,char *key,int32_t key_size,char *message);
-int nn_base64_encode(const uint8_t *in,size_t in_len,char *out,size_t out_len);
 int nn_base64_decode(const char *in,size_t in_len,uint8_t *out,size_t out_len);
 void calc_rmd160_sha256(uint8_t rmd160[20],uint8_t *data,int32_t datalen);
 void sha256_sha256(char *hexstr,uint8_t *buf,uint8_t *msg,int32_t len);

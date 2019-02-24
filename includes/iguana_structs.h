@@ -22,17 +22,6 @@
 #define PACKEDSTRUCT __attribute__((packed))
 #endif
 
-struct iguana_thread
-{
-    struct queueitem DL;
-    pthread_t handle;
-    struct iguana_info *coin;
-    char name[16];
-    uint8_t type;
-    iguana_func funcp;
-    void *arg;
-};
-
 struct iguana_blockreq { struct queueitem DL; bits256 hash2,*blockhashes; struct iguana_bundle *bp; int32_t n,height,bundlei; };
 
 struct iguana_peermsgrequest { struct queueitem DL; struct iguana_peer *addr; bits256 hash2; int32_t type; };

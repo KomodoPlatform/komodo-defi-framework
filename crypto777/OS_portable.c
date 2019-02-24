@@ -32,6 +32,8 @@ struct OS_memspace
 
 void *OS_filealloc(struct OS_mappedptr *M,char *fname,struct OS_memspace *mem,long size);
 
+void *iguana_memalloc(struct OS_memspace *mem,long size,int32_t clearflag);
+
 #ifndef MAP_FILE
 #define MAP_FILE        0
 #endif

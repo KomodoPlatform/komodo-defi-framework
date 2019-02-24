@@ -57,6 +57,8 @@
 #include "../../pipeline.h"
 #include "../../bus.h"
 
+int _nn_base64_encode (const uint8_t *in, size_t in_len, char *out, size_t out_len);
+
 static const struct nn_ws_sp_map NN_WS_HANDSHAKE_SP_MAP[] = {
     { NN_PAIR,       NN_PAIR,       "pair.sp.nanomsg.org" },
     { NN_REQ,        NN_REP,        "req.sp.nanomsg.org" },

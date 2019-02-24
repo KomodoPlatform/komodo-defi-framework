@@ -416,7 +416,7 @@ uint16_t LP_coininit(struct iguana_info *coin,char *symbol,char *name,char *asse
         coin->zcash = LP_IS_BITCOINCASH;
         //printf("set coin.%s <- LP_IS_BITCOINCASH %d\n",symbol,coin->zcash);
     }
-    coin->curl_handle = curl_easy_init();
+    coin->curl_handle = 0; //curl_easy_init();
     portable_mutex_init(&coin->curl_mutex);
     coin->decimals = decimals;
     return(port);

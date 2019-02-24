@@ -1290,7 +1290,7 @@ int32_t LP_reserved_msg(int32_t priority,bits256 pubkey,char *msg)
 extern int32_t bitcoind_RPC_inittime;
 
 void LP_coin_curl_init(struct iguana_info* coin) {
-    coin->curl_handle = curl_easy_init();
+    coin->curl_handle = 0; // curl_easy_init();
     portable_mutex_init(&coin->curl_mutex);
 
     // From the former LP_coinadd:
