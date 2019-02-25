@@ -176,8 +176,8 @@ cJSON *LP_snapshot(struct iguana_info *coin,int32_t height)
             printf("maxsnapht.%d for %s\n",maxsnapht,coin->symbol);
         }
     }
-    portable_mutex_lock(&coin->txmutex);
-    portable_mutex_lock(&coin->addrmutex);
+    portable_mutex_lock(coin->_txmutex);
+    portable_mutex_lock(coin->_addrmutex);
     HASH_ITER(hh,coin->addresses,ap,atmp)
     {
         ap->balance = 0;
@@ -214,8 +214,8 @@ cJSON *LP_snapshot(struct iguana_info *coin,int32_t height)
         }
     }
     HASH_SORT(coin->addresses,sort_balance);
-    portable_mutex_unlock(&coin->addrmutex);
-    portable_mutex_unlock(&coin->txmutex);
+    portable_mutex_unlock(coin->_addrmutex);
+    portable_mutex_unlock(coin->_txmutex);
     printf("%s balance %.8f at height.%d\n",coin->symbol,dstr(balance),height);
     array = cJSON_CreateArray();
     n = 0;

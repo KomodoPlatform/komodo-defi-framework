@@ -273,9 +273,9 @@ struct LP_address *LP_addressfind(struct iguana_info *coin,char *coinaddr)
     struct LP_address *ap = 0;
     if ( coin != 0 )
     {
-        portable_mutex_lock(&coin->addrmutex);
+        portable_mutex_lock(coin->_addrmutex);
         ap = _LP_addressfind(coin,coinaddr);
-        portable_mutex_unlock(&coin->addrmutex);
+        portable_mutex_unlock(coin->_addrmutex);
     }
     return(ap);
 }
@@ -285,9 +285,9 @@ struct LP_address *LP_address(struct iguana_info *coin,char *coinaddr)
     struct LP_address *ap = 0;
     if ( coin != 0 )
     {
-        portable_mutex_lock(&coin->addrmutex);
+        portable_mutex_lock(coin->_addrmutex);
         ap = _LP_address(coin,coinaddr);
-        portable_mutex_unlock(&coin->addrmutex);
+        portable_mutex_unlock(coin->_addrmutex);
     }
     return(ap);
 }
@@ -361,7 +361,7 @@ int32_t LP_address_utxo_ptrs(struct iguana_info *coin,int32_t iambob,struct LP_a
     if ( strcmp(ap->coinaddr,coinaddr) != 0 )
         printf("UNEXPECTED coinaddr mismatch (%s) != (%s)\n",ap->coinaddr,coinaddr);
     //portable_mutex_lock(&LP_utxomutex);
-    portable_mutex_lock(&coin->addrmutex);
+    portable_mutex_lock(coin->_addrmutex);
     DL_FOREACH_SAFE(ap->utxos,up,tmp)
     {
         //char str[65]; printf("LP_address_utxo_ptrs %s n.%d %.8f %s v%d spendheight.%d allocated.%d\n",ap->coinaddr,n,dstr(up->U.value),bits256_str(str,up->U.txid),up->U.vout,up->spendheight,LP_allocated(up->U.txid,up->U.vout));
@@ -421,7 +421,7 @@ int32_t LP_address_utxo_ptrs(struct iguana_info *coin,int32_t iambob,struct LP_a
         }
     }
     //portable_mutex_unlock(&LP_utxomutex);
-    portable_mutex_unlock(&coin->addrmutex);
+    portable_mutex_unlock(coin->_addrmutex);
     //printf("return n.%d for %s %s\n",n,coin->symbol,coinaddr);
     return(n);
 }
@@ -527,9 +527,9 @@ int32_t LP_address_utxoadd(int32_t skipsearch,uint32_t timestamp,char *debug,str
             char str[65];
             if ( 0 && strcmp(coin->smartaddr,coinaddr) == 0 && strcmp("KMD",coin->symbol) == 0 )
                 printf("%s ADD UTXO >> %s %s %s/v%d ht.%d %.8f\n",debug,coin->symbol,coinaddr,bits256_str(str,txid),vout,height,dstr(value));
-            portable_mutex_lock(&coin->addrmutex);
+            portable_mutex_lock(coin->_addrmutex);
             DL_APPEND(ap->utxos,up);
-            portable_mutex_unlock(&coin->addrmutex);
+            portable_mutex_unlock(coin->_addrmutex);
         }
     } // else printf("cant get ap %s %s\n",coin->symbol,coinaddr);
     //printf("done %s add addr.%s ht.%d\n",coin->symbol,coinaddr,height);
@@ -785,9 +785,9 @@ int32_t LP_unspents_array(struct iguana_info *coin,char *coinaddr,cJSON *array)
 struct LP_transaction *LP_transactionfind(struct iguana_info *coin,bits256 txid)
 {
     struct LP_transaction *tx;
-    portable_mutex_lock(&coin->txmutex);
+    portable_mutex_lock(coin->_txmutex);
     HASH_FIND(hh,coin->transactions,txid.bytes,sizeof(txid),tx);
-    portable_mutex_unlock(&coin->txmutex);
+    portable_mutex_unlock(coin->_txmutex);
     return(tx);
 }
 
@@ -809,9 +809,9 @@ struct LP_transaction *LP_transactionadd(struct iguana_info *coin,bits256 txid,i
         tx->numvins = numvins;
         //tx->timestamp = timestamp;
         tx->txid = txid;
-        portable_mutex_lock(&coin->txmutex);
+        portable_mutex_lock(coin->_txmutex);
         HASH_ADD_KEYPTR(hh,coin->transactions,tx->txid.bytes,sizeof(tx->txid),tx);
-        portable_mutex_unlock(&coin->txmutex);
+        portable_mutex_unlock(coin->_txmutex);
     } //else printf("warning adding already existing txid %s\n",bits256_str(str,tx->txid));
     return(tx);
 }

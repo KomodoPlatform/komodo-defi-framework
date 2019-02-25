@@ -286,7 +286,9 @@ struct LP_transaction
 struct iguana_info
 {
     UT_hash_handle hh;
-    portable_mutex_t txmutex,addrmutex,addressutxo_mutex; struct LP_transaction *transactions; struct LP_address *addresses;
+    void *_txmutex, *_addrmutex, *_addressutxo_mutex;
+    struct LP_transaction *transactions;
+    struct LP_address *addresses;
     uint64_t txfee,do_autofill_merge;
     int32_t numutxos,notarized,longestchain,firstrefht,firstscanht,lastscanht,height,txversion; uint16_t busport,did_addrutxo_reset;
     uint32_t dPoWtime,lastautosplit,lastresetutxo,loadedcache,electrumlist,lastunspent,importedprivkey,lastpushtime,lastutxosync,addr_listunspent_requested,lastutxos,updaterate,counter,inactive,lastmempool,lastgetinfo,ratetime,heighttime,lastmonitor,obooktime;
@@ -298,7 +300,7 @@ struct iguana_info
     uint64_t maxamount,kmd_equiv,balanceA,balanceB,valuesumA,valuesumB,fillsatoshis;
     uint8_t pubkey33[33],zcash,decimals;
     int32_t privkeydepth,bobfillheight;
-    void *curl_handle; portable_mutex_t curl_mutex;
+    void *curl_handle; void* _curl_mutex;
     bits256 cachedtxid,notarizationtxid; uint8_t *cachedtxiddata; int32_t cachedtxidlen;
     bits256 cachedmerkle,notarizedhash; int32_t cachedmerkleheight;
 };
