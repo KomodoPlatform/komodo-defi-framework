@@ -228,7 +228,7 @@ struct PassphraseReq {
 }
 
 pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
-    let matching_userpass = super::auth (&req) .is_ok();
+    let matching_userpass = super::auth (&req, &ctx) .is_ok();
     let req: PassphraseReq = try_h! (json::from_value (req));
 
     let mut passhash: bits256 = unsafe {zeroed()};

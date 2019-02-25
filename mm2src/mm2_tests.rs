@@ -17,11 +17,14 @@ use std::time::Duration;
 
 /// Asks MM to enable the given currency in native mode.  
 /// Returns the RPC reply containing the corresponding wallet address.
-fn enable_native(mm: &MarketMakerIt, coin: &str) -> String {
+fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> String {
     let native = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "enable",
         "coin": coin,
+        "urls": urls,
+        // ETH Ropsten swap contract address
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
     })));
     assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
     native.1
@@ -31,18 +34,20 @@ fn enable_native(mm: &MarketMakerIt, coin: &str) -> String {
 /// Returns the RPC replies containing the corresponding wallet addresses.
 fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, String)> {
     let mut replies = Vec::new();
-    replies.push (("BEER", enable_native (mm, "BEER")));
-    replies.push (("PIZZA", enable_native (mm, "PIZZA")));
-    replies.push (("ETOMIC", enable_native(mm, "ETOMIC")));
-    replies.push (("ETH", enable_native (mm, "ETH")));
+    replies.push (("BEER", enable_native (mm, "BEER", vec![])));
+    replies.push (("PIZZA", enable_native (mm, "PIZZA", vec![])));
+    replies.push (("ETOMIC", enable_native(mm, "ETOMIC", vec![])));
+    replies.push (("ETH", enable_native (mm, "ETH", vec!["http://195.201.0.6:8545"])));
     replies
 }
 
-fn enable_coins_electrum(mm: &MarketMakerIt) -> Vec<(&'static str, String)> {
+fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> Vec<(&'static str, String)> {
     let mut replies = Vec::new();
     replies.push (("BEER", enable_electrum (mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"])));
     replies.push (("PIZZA", enable_electrum (mm, "PIZZA", vec!["electrum1.cipig.net:10024","electrum2.cipig.net:10024","electrum3.cipig.net:10024"])));
     replies.push (("ETOMIC", enable_electrum (mm, "ETOMIC", vec!["electrum1.cipig.net:10025","electrum2.cipig.net:10025","electrum3.cipig.net:10025"])));
+    replies.push (("ETH", enable_native (mm, "ETH", eth_urls.clone())));
+    replies.push (("JST", enable_native (mm, "JST", eth_urls)));
     replies
 }
 
@@ -259,7 +264,8 @@ fn alice_can_see_the_active_order_after_connection() {
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
         {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
         {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
-        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80}
+        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
+        {"coin":"JST","name":"jst","etomic":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}
     ]);
 
     // start bob and immediately place the order
@@ -281,7 +287,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     unwrap! (mm_bob.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", enable_coins_electrum (&mm_bob)});
+    log! ({"enable_coins (bob): {:?}", enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8545"])});
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
     let rc = unwrap! (mm_bob.rpc (json! ({
@@ -336,7 +342,7 @@ fn alice_can_see_the_active_order_after_connection() {
     unwrap! (mm_alice.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", enable_coins_electrum (&mm_alice)});
+    log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"])});
 
     // wait until Alice recognize Bob node by importing it's pubkey
     unwrap! (mm_alice.wait_for_log (33., &|log| log.contains ("set pubkey for")));
@@ -419,7 +425,8 @@ fn test_check_balance_on_order_post() {
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
         {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
         {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
-        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80}
+        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
+        {"coin":"JST","name":"jst","etomic":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}
     ]);
 
     // start bob and immediately place the order
@@ -432,9 +439,6 @@ fn test_check_balance_on_order_post() {
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
             "passphrase": "bob passphrase",
             "coins": coins,
-            "alice_contract":"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c",
-            "bob_contract":"0x105aFE60fDC8B5c021092b09E8a042135A4A976E",
-            "ethnode":"http://195.201.0.6:8545"
         }),
         "db4be27033b636c6644c356ded97b0ad08914fcb8a1e2a1efc915b833c2cbd19".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -443,7 +447,7 @@ fn test_check_balance_on_order_post() {
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable coins. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", enable_coins_electrum (&mm)});
+    log! ({"enable_coins (bob): {:?}", enable_coins_eth_electrum (&mm, vec!["http://195.201.0.6:8545"])});
     // issue sell request by setting base/rel price
     let rc = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -478,6 +482,125 @@ fn test_check_balance_on_order_post() {
     })));
     // Expect error as PIZZA balance is 0
     assert! (rc.0.is_server_error(), "!sell success but should be error: {}", rc.1);
+}
+
+#[test]
+fn test_rpc_password_from_json() {
+    let coins = json!([
+        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
+    ]);
+
+    // do not allow empty password
+    let mut err_mm1 = unwrap!(MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "",
+        }),
+        "password".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    unwrap! (err_mm1.wait_for_log (5., &|log| log.contains ("rpc_password must not be empty")));
+
+    // do not allow empty password
+    let mut err_mm2 = unwrap!(MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": {"key":"value"},
+        }),
+        "password".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    unwrap! (err_mm2.wait_for_log (5., &|log| log.contains ("rpc_password must be string")));
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "password",
+        }),
+        "password".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+    let electrum_invalid = unwrap! (mm.rpc (json! ({
+        "userpass": "password1",
+        "method": "electrum",
+        "coin": "BEER",
+        "urls": ["electrum1.cipig.net:10022"],
+    })));
+
+    // electrum call must fail if invalid password is provided
+    assert! (electrum_invalid.0.is_server_error(),"RPC «electrum» should have failed with server error, but got «{}», response «{}»", electrum_invalid.0, electrum_invalid.1);
+
+    let electrum = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "BEER",
+        "urls": ["electrum1.cipig.net:10022"],
+    })));
+
+    // electrum call must be successful with RPC password from config
+    assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with status «{}», response «{}»", electrum.0, electrum.1);
+
+    let electrum = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "PIZZA",
+        "urls": ["electrum1.cipig.net:10022"],
+    })));
+
+    // electrum call must be successful with RPC password from config
+    assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with status «{}», response «{}»", electrum.0, electrum.1);
+
+    let orderbook = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "BEER",
+        "rel": "PIZZA",
+    })));
+
+    // orderbook call must be successful with RPC password from config
+    assert_eq! (orderbook.0, StatusCode::OK, "RPC «orderbook» failed with status «{}», response «{}»", orderbook.0, orderbook.1);
+}
+
+#[test]
+fn test_rpc_password_from_json_no_userpass() {
+    let coins = json!([
+        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "coins": coins,
+        }),
+        "password".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+    let electrum = unwrap! (mm.rpc (json! ({
+        "method": "electrum",
+        "coin": "BEER",
+        "urls": ["electrum1.cipig.net:10022"],
+    })));
+
+    // electrum call must return 500 status code
+    assert! (electrum.0.is_server_error(), "RPC «electrum» should have failed with server error, but got «{}», response «{}»", electrum.0, electrum.1);
 }
 
 #[cfg(windows)]
@@ -530,21 +653,21 @@ fn komodo_conf_path (ac_name: Option<&'static str>) -> Result<PathBuf, String> {
     Ok (path.join (&confname[..]))
 }
 
-/// Trading test using coins in Electrum mode, it needs only ENV variables to be set, coins daemons are not required.
-fn trade_base_rel_electrum(base: &str, rel: &str) {
-    let (bob_file_passphrase, bob_file_userpass) = from_env_file (slurp (&".env.seed"));
-    let (alice_file_passphrase, alice_file_userpass) = from_env_file (slurp (&".env.client"));
+/// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
+/// Trades few pairs concurrently to speed up the process and also act like "load" test
+fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
+    let (bob_file_passphrase, _bob_file_userpass) = from_env_file (slurp (&".env.seed"));
+    let (alice_file_passphrase, _alice_file_userpass) = from_env_file (slurp (&".env.client"));
 
     let bob_passphrase = unwrap! (var ("BOB_PASSPHRASE") .ok().or (bob_file_passphrase), "No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
-    let bob_userpass = unwrap! (var ("BOB_USERPASS") .ok().or (bob_file_userpass), "No BOB_USERPASS or .env.seed/USERPASS");
     let alice_passphrase = unwrap! (var ("ALICE_PASSPHRASE") .ok().or (alice_file_passphrase), "No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
-    let alice_userpass = unwrap! (var ("ALICE_USERPASS") .ok().or (alice_file_userpass), "No ALICE_USERPASS or .env.client/USERPASS");
 
     let coins = json! ([
         {"coin":"BEER","asset":"BEER"},
         {"coin":"PIZZA","asset":"PIZZA"},
         {"coin":"ETOMIC","asset":"ETOMIC"},
-        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"}
+        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
+        {"coin":"JST","name":"jst","etomic":"0x2b294f029fde858b2c62184e8390591755521d8e"}
     ]);
 
     let mut mm_bob = unwrap! (MarketMakerIt::start (
@@ -557,8 +680,9 @@ fn trade_base_rel_electrum(base: &str, rel: &str) {
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
             "passphrase": bob_passphrase,
             "coins": coins,
+            "rpc_password": "password",
         }),
-        bob_userpass,
+        "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
     ));
 
@@ -570,8 +694,7 @@ fn trade_base_rel_electrum(base: &str, rel: &str) {
     // We want to give Bob a headstart in acquiring the port,
     // because Alice will then be able to directly reach it (thanks to "seednode").
     // Direct communication is not required in this test, but it's nice to have.
-    // The port differs for another netid, should be 43773 for 8999
-    unwrap! (mm_bob.wait_for_log (9., &|log| log.contains ("preferred port 43773 drill true")));
+    unwrap! (mm_bob.wait_for_log (9., &|log| log.contains ("preferred port")));
 
     let mut mm_alice = unwrap! (MarketMakerIt::start (
         json! ({
@@ -582,9 +705,10 @@ fn trade_base_rel_electrum(base: &str, rel: &str) {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": alice_passphrase,
             "coins": coins,
-            "seednode": fomat!((mm_bob.ip))
+            "seednode": fomat!((mm_bob.ip)),
+            "rpc_password": "password",
         }),
-        alice_userpass,
+        "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
     ));
 
@@ -595,52 +719,56 @@ fn trade_base_rel_electrum(base: &str, rel: &str) {
     unwrap! (mm_bob.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     unwrap! (mm_alice.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
 
-    // Enable coins on Bob side. Print the replies in case we need the "smartaddress".
-    log! ({"enable_coins (bob): {:?}", enable_coins_electrum (&mm_bob)});
-    // Enable coins on Alice side. Print the replies in case we need the "smartaddress".
-    log! ({"enable_coins (alice): {:?}", enable_coins_electrum (&mm_alice)});
+    // Enable coins on Bob side. Print the replies in case we need the address.
+    log! ({"enable_coins (bob): {:?}", enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8565"])});
+    // Enable coins on Alice side. Print the replies in case we need the address.
+    log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"])});
 
     unwrap! (mm_alice.wait_for_log (999., &|log| log.contains ("set pubkey for ")));
 
     // issue sell request on Bob side by setting base/rel price
-    log! ("Issue bob sell request");
-    let rc = unwrap! (mm_bob.rpc (json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": base,
-        "rel": rel,
-        "price": 0.9
-    })));
-    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
+    for (base, rel) in pairs.iter() {
+        log!("Issue bob " (base) "/" (rel) " sell request");
+            let rc = unwrap!(mm_bob.rpc (json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": 0.9
+        })));
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    // issue base/rel buy request from Alice side
-    thread::sleep (Duration::from_secs (2));
-    log! ("Issue alice buy request");
-    let rc = unwrap! (mm_alice.rpc (json! ({
-        "userpass": mm_alice.userpass,
-        "method": "buy",
-        "base": base,
-        "rel": rel,
-        "relvolume": 0.1,  // Should be close enough to the existing UTXOs.
-        "price": 1
-    })));
-    assert! (rc.0.is_success(), "!buy: {}", rc.1);
+        // issue base/rel buy request from Alice side
+        thread::sleep(Duration::from_secs(2));
+        log!("Issue alice " (base) "/" (rel) " buy request");
+            let rc = unwrap!(mm_alice.rpc (json! ({
+            "userpass": mm_alice.userpass,
+            "method": "buy",
+            "base": base,
+            "rel": rel,
+            "relvolume": 0.1,
+            "price": 1
+        })));
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
-    // ensure the swap started
-    unwrap! (mm_alice.wait_for_log (99., &|log| log.contains ("Entering the taker_swap_loop")));
-    unwrap! (mm_bob.wait_for_log (20., &|log| log.contains ("Entering the maker_swap_loop")));
+        // ensure the swap started
+        unwrap!(mm_alice.wait_for_log (99., &|log| log.contains (&format!("Entering the taker_swap_loop {}/{}", base, rel))));
+        unwrap!(mm_bob.wait_for_log (20., &|log| log.contains (&format!("Entering the maker_swap_loop {}/{}", base, rel))));
+    }
 
-    // wait for swap to complete on both sides
-    unwrap! (mm_alice.wait_for_log (600., &|log| log.contains ("Swap finished successfully")));
-    unwrap! (mm_bob.wait_for_log (600., &|log| log.contains ("Swap finished successfully")));
+    // wait for complete on both sides in separate loop allowing swaps to run concurrently
+    for (base, rel) in pairs.iter() {
+        unwrap!(mm_alice.wait_for_log (600., &|log| log.contains (&format!("{}/{} Swap finished successfully", base, rel))));
+        unwrap!(mm_bob.wait_for_log (600., &|log| log.contains (&format!("{}/{} Swap finished successfully", base, rel))));
+    }
 
     unwrap! (mm_bob.stop());
     unwrap! (mm_alice.stop());
 }
 
 #[test]
-fn trade_beer_pizza_electrum() {
-    trade_base_rel_electrum("BEER", "PIZZA");
+fn trade_test_electrum_and_eth_coins() {
+    trade_base_rel_electrum(vec![("BEER", "PIZZA"), ("ETH", "JST")]);
 }
 
 fn trade_base_rel_native(base: &str, rel: &str) {
@@ -744,7 +872,7 @@ fn trade_base_rel_native(base: &str, rel: &str) {
         "method": "buy",
         "base": base,
         "rel": rel,
-        "relvolume": 0.1,  // Should be close enough to the existing UTXOs.
+        "relvolume": 0.1,
         "price": 1
     })));
     assert! (rc.0.is_success(), "!buy: {}", rc.1);

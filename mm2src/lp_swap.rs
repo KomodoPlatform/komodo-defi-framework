@@ -456,7 +456,7 @@ pub fn maker_swap_loop(swap: &mut AtomicSwap) -> Result<(), (i32, String)> {
                 };
 
                 log!("Taker payment spend tx " (transaction.tx_hash()));
-                status.status(swap_tags, "Swap finished successfully.");
+                status.status(swap_tags, &format!("{}/{} Swap finished successfully.", swap.maker_coin.ticker(), swap.taker_coin.ticker()));
                 return Ok(());
             },
             AtomicSwapState::RefundMakerPayment => {
@@ -662,7 +662,7 @@ pub fn taker_swap_loop(swap: &mut AtomicSwap) -> Result<(), (i32, String)> {
                 };
 
                 log!("Maker payment spend tx " (transaction.tx_hash()));
-                status.status(swap_tags, "Swap finished successfully.");
+                status.status(swap_tags, &format!("{}/{} Swap finished successfully.", swap.maker_coin.ticker(), swap.taker_coin.ticker()));
                 return Ok(());
             },
             AtomicSwapState::RefundTakerPayment => {

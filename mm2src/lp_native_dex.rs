@@ -257,6 +257,7 @@ pub unsafe fn lp_command_process(
                 c_json.0,
                 b"127.0.0.1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 stats_json_only as u16,
+                0,
             )
         } else {
             null_mut()

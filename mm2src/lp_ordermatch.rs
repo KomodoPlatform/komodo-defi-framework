@@ -438,6 +438,7 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
                 let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
                 log!("Seller loop");
                 move || {
+                    log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
                     let mut maker_swap = AtomicSwap::new(
                         ctx,
                         alice,
@@ -450,7 +451,6 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
                         my_persistent_pub,
                         uuid,
                     ).unwrap();
-                    log!("Entering the maker_swap_loop");
                     match maker_swap_loop(&mut maker_swap) {
                         Ok(_) => (),
                         Err(e) => log!("Swap finished with error " [e])
@@ -769,6 +769,7 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
             let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes));
             let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
             move || {
+                log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
                 let mut taker_swap = AtomicSwap::new(
                     ctx,
                     lp::bits256::default(),
@@ -781,7 +782,6 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
                     my_persistent_pub,
                     uuid,
                 ).unwrap();
-                log!("Entering the taker_swap_loop");
                 match taker_swap_loop(&mut taker_swap) {
                     Ok(_) => (),
                     Err(e) => log!("Swap finished with error "[e])

@@ -18,24 +18,26 @@
 //
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
-use common::{CORE, lp, MutexGuardWrapper, slurp_url};
+use common::{lp, MutexGuardWrapper, slurp_url};
 use secp256k1::key::PublicKey;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{ Action, Transaction as UnsignedEthTransaction, UnverifiedTransaction};
 use ethereum_types::{Address, U256};
 use ethkey::{ KeyPair, Public, public_to_address, SECP256K1 };
 use futures::Future;
+use futures::future::{loop_fn, Loop};
+use futures_timer::Delay;
 use gstuff::now_ms;
 use hyper::StatusCode;
 use rand::Rng;
-use serde_json::{self as json};
+use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use web3::transports::{ Http };
 use web3::types::{BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId};
 use web3::{ self, Web3 };
 
@@ -43,7 +45,13 @@ use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, Transact
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTransaction;
 
+mod web3_transport;
+use self::web3_transport::Web3Transport;
+
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
+/// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
+/// Ropsten: https://ropsten.etherscan.io/address/0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94
+/// ETH mainnet: https://etherscan.io/address/0x8500AFc0bc5214728082163326C2FF0C73f4a871
 const SWAP_CONTRACT_ABI: &'static str = r#"[{"constant":false,"inputs":[{"name":"_id","type":"bytes32"},{"name":"_amount","type":"uint256"},{"name":"_secret","type":"bytes32"},{"name":"_tokenAddress","type":"address"},{"name":"_sender","type":"address"}],"name":"receiverSpend","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"bytes32"}],"name":"payments","outputs":[{"name":"paymentHash","type":"bytes20"},{"name":"lockTime","type":"uint64"},{"name":"state","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"bytes32"},{"name":"_receiver","type":"address"},{"name":"_secretHash","type":"bytes20"},{"name":"_lockTime","type":"uint64"}],"name":"ethPayment","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"bytes32"},{"name":"_amount","type":"uint256"},{"name":"_paymentHash","type":"bytes20"},{"name":"_tokenAddress","type":"address"},{"name":"_receiver","type":"address"}],"name":"senderRefund","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"bytes32"},{"name":"_amount","type":"uint256"},{"name":"_tokenAddress","type":"address"},{"name":"_receiver","type":"address"},{"name":"_secretHash","type":"bytes20"},{"name":"_lockTime","type":"uint64"}],"name":"erc20Payment","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"inputs":[],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"name":"id","type":"bytes32"}],"name":"PaymentSent","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"id","type":"bytes32"},{"indexed":false,"name":"secret","type":"bytes32"}],"name":"ReceiverSpent","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"id","type":"bytes32"}],"name":"SenderRefunded","type":"event"}]"#;
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-20.md
 const ERC20_ABI: &'static str = r#"[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_from","type":"address"},{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_subtractedValue","type":"uint256"}],"name":"decreaseApproval","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_addedValue","type":"uint256"}],"name":"increaseApproval","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"name":"owner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]"#;
@@ -76,7 +84,7 @@ pub struct EthCoinImpl {  // pImpl idiom.
     key_pair: KeyPair,
     my_address: Address,
     swap_contract_address: Address,
-    web3: Web3<Http>,
+    web3: Web3<Web3Transport>,
     decimals: u8,
     gas_station_url: Option<String>,
 }
@@ -337,7 +345,7 @@ impl MarketCoinOps for EthCoin {
 
         let func_name = match self.coin_type {
             EthCoinType::Eth => "ethPayment",
-            EthCoinType::Erc20(token_addr) => "erc20Payment",
+            EthCoinType::Erc20(_token_addr) => "erc20Payment",
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(func_name));
@@ -352,7 +360,7 @@ impl MarketCoinOps for EthCoin {
                 return ERR!("Waited too long until {} for transaction {:?} to be spent ", wait_until, tx);
             }
 
-            let events = try_s!(self.spend_events(4000000).wait());
+            let events = try_s!(self.spend_events(0).wait());
 
             let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
@@ -397,7 +405,7 @@ impl EthCoin {
     ) -> EthTxFut {
         let arc = self.clone();
         let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
-        let nonce_fut = self.web3.eth().parity_next_nonce(self.my_address.clone()).map_err(|e| ERRL!("{}", e));
+        let nonce_fut = self.web3.eth().transaction_count(self.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
         Box::new(nonce_fut.then(move |nonce| -> EthTxFut {
             let nonce = try_fus!(nonce);
             let gas_price_fut = if let Some(url) = &arc.gas_station_url {
@@ -419,9 +427,32 @@ impl EthCoin {
                 let signed = tx.sign(arc.key_pair.secret(), None);
                 let bytes = web3::types::Bytes(rlp::encode(&signed).to_vec());
                 let send_fut = arc.web3.eth().send_raw_transaction(bytes).map_err(|e| ERRL!("{}", e));
-                Box::new(send_fut.then(move |res| {
-                    drop(nonce_lock);
-                    res
+                Box::new(send_fut.and_then(move |res| {
+                    // Check every second till ETH nodes recognize that nonce is increased
+                    // Parity has reliable "nextNonce" method that always returns correct nonce for address
+                    // But we can't expect that all nodes will always be Parity.
+                    // Some of ETH forks based on Geth so they don't have Parity nodes at all.
+                    loop_fn((res, arc, nonce, nonce_lock), move |(res, arc, nonce, nonce_lock)| {
+                        let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
+                        delay_f.and_then(move |_res| {
+                            arc.web3.eth().transaction_count(arc.my_address, Some(BlockNumber::Pending)).then(move |new_nonce| {
+                                let new_nonce = match new_nonce {
+                                    Ok(n) => n,
+                                    Err(e) => {
+                                        log!("Error " [e] " getting " [arc.ticker()] " "[arc.my_address] " nonce");
+                                        // we can just keep looping in case of error hoping it will go away
+                                        return Ok(Loop::Continue((res, arc, nonce, nonce_lock)));
+                                    }
+                                };
+                                if new_nonce > nonce {
+                                    drop(nonce_lock);
+                                    Ok(Loop::Break(res))
+                                } else {
+                                    Ok(Loop::Continue((res, arc, nonce, nonce_lock)))
+                                }
+                            })
+                        })
+                    })
                 }).map(move |_res| signed))
             }))
         }))
@@ -613,6 +644,7 @@ impl EthCoin {
                 let call_fut = self.call_request(token_addr, None, Some(data.into()));
 
                 Box::new(call_fut.and_then(move |res| {
+                    log!([res]);
                     let decoded = try_s!(function.decode_output(&res.0));
 
                     match decoded[0] {
@@ -970,13 +1002,7 @@ impl GasStationData {
     }
 }
 
-/// This function is executed on separate event loop to avoid blocking shared core in `eth_coin_from_iguana_info`.
-/// Maybe we should consider refactoring functions like `eth_coin_from_iguana_info` to async versions as it's
-/// required to perform some async IO to get essential coin data.
-fn get_token_decimals(url: &str, token_addr: Address) -> Result<u8, String> {
-    let (_event_loop, transport) = try_s!(Http::new(url));
-    let web3 = Web3::new(transport);
-
+fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
     let function = try_s!(ERC20_CONTRACT.function("decimals"));
     let data = try_s!(function.encode_input(&[]));
     let request = CallRequest {
@@ -998,24 +1024,42 @@ fn get_token_decimals(url: &str, token_addr: Address) -> Result<u8, String> {
     Ok(decimals as u8)
 }
 
-pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info) -> Result<EthCoin, String> {
+fn addr_from_str(mut addr_str: &str) -> Result<Address, String> {
+    if addr_str.starts_with("0x") {
+        addr_str = &addr_str[2..];
+    }
+    Ok(try_s!(Address::from_str(addr_str)))
+}
+
+pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Result<EthCoin, String> {
     let info = unsafe { *info };
+    let ticker = try_s! (unsafe {CStr::from_ptr (info.symbol.as_ptr())} .to_str()) .into();
+
+    let urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
+    if urls.is_empty() {
+        return ERR!("Enable request for ETH coin must have at least 1 node URL");
+    }
+
+    let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
+    if swap_contract_address == Address::default() {
+        return ERR!("swap_contract_address can't be zero address");
+    }
 
     let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(unsafe { &lp::G.LP_privkey.bytes }));
     let my_address = key_pair.address();
 
-    let transport = try_s!(Http::with_remote_reactor("http://195.201.0.6:8545", &CORE, 1));
+    let transport = try_s!(Web3Transport::new(urls));
     let web3 = Web3::new(transport);
 
     let etomic = try_s!(unsafe { CStr::from_ptr(info.etomic.as_ptr()).to_str() } );
-    let token_addr = Address::from(etomic);
-    let (coin_type, decimals) = if token_addr == Address::default() {
+    let (coin_type, decimals) = if etomic == "0x0000000000000000000000000000000000000000" {
         (EthCoinType::Eth, 18)
     } else {
+        let token_addr = try_s!(addr_from_str(etomic));
         let decimals = if info.decimals > 0 {
             info.decimals
         } else {
-            try_s!(get_token_decimals("http://195.201.0.6:8545", token_addr))
+            try_s!(get_token_decimals(&web3, token_addr))
         };
         (EthCoinType::Erc20(token_addr), decimals)
     };
@@ -1024,10 +1068,10 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info) -> Result<EthCoin, 
         key_pair,
         my_address,
         coin_type,
-        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        swap_contract_address,
         decimals,
-        ticker: "ETH".into(),
-        gas_station_url: None,
+        ticker,
+        gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         web3,
     };
     Ok(EthCoin(Arc::new(coin)).into())
@@ -1039,16 +1083,44 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info) -> Result<EthCoin, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcrypto::dhash160;
 
     #[test]
     fn web3_from_core() {
-        let transport = Http::with_remote_reactor("http://195.201.0.6:8555", &CORE, 1).unwrap();
-
+        let transport = Web3Transport::new(vec![
+            "http://195.201.0.6:8545".into(),
+        ]).unwrap();
         let web3 = Web3::new(transport);
-        log!([web3.eth().block_number().wait().unwrap()]);
+        log!([web3.web3().client_version().wait().unwrap()]);
     }
 
+    #[test]
+    fn test_send_buyer_fee_eth() {
+        let transport = Web3Transport::new(vec![
+            "http://195.201.0.6:8545".into(),
+        ]).unwrap();
+        let web3 = Web3::new(transport);
+
+        let secret_hex = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
+        let key_pair: KeyPair = unwrap!(KeyPair::from_secret_slice(&secret_hex));
+
+        let coin = EthCoin(Arc::new(EthCoinImpl {
+            decimals: 18,
+            gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
+            web3,
+            coin_type: EthCoinType::Eth,
+            ticker: "ETH".into(),
+            my_address: key_pair.address().clone(),
+            key_pair,
+            swap_contract_address: Address::from("7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        }));
+
+        let pubkey = hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3").unwrap();
+        loop {
+            let res = coin.send_taker_fee(&pubkey, 1000).wait().unwrap();
+            log!([res.tx_hash()]);
+        }
+    }
+/*
     #[test]
     fn test_send_and_spend_eth_payment() {
         let transport = Http::with_remote_reactor("http://195.201.0.6:8545", &CORE, 1).unwrap();
@@ -1399,4 +1471,5 @@ mod tests {
     fn test_get_token_decimals() {
         log!([get_token_decimals("http://195.201.0.6:8545", Address::from("0xc0eb7aed740e1796992a08962c15661bdeb58003"))]);
     }
+*/
 }

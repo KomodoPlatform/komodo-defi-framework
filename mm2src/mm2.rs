@@ -107,6 +107,16 @@ fn lp_main (c_conf: CJSON, conf: Json) -> Result<(), String> {
     };
     unsafe {lp::unbuffered_output_support (c_log_path)};
 
+    if !conf["rpc_password"].is_null() {
+        if !conf["rpc_password"].is_string() {
+            return ERR!("rpc_password must be string");
+        }
+
+        if conf["rpc_password"].as_str() == Some("") {
+            return ERR!("rpc_password must not be empty");
+        }
+    }
+
     let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
     if conf["passphrase"].is_string() {
         let profitmargin = conf["profitmargin"].as_f64();
@@ -135,12 +145,6 @@ fn help() {
         "\n"
         "Some (but not all) of the JSON configuration parameters (* - required):\n"
         "\n"
-        "  alice_contract ..  0x prefixed Alice ETH contract address.\n"
-        "                     Default is 0x9bc5418ceded51db08467fc4b62f32c5d9ebda55 (Mainnet).\n"
-        "                     Set 0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c for Ropsten testnet\n"
-        "  bob_contract   ..  0x prefixed Bob ETH contract address.\n"
-        "                     Default is 0x2896Db79fAF20ABC8776fc27D15719cf59b8138B (Mainnet).\n"
-        "                     Set 0x105aFE60fDC8B5c021092b09E8a042135A4A976E for Ropsten testnet\n"
         "  canbind        ..  If > 1000 and < 65536, initializes the `LP_fixed_pairport`.\n"
         // We don't want to break the existing RPC API,
         // so the "refrel=coinmarketcap" designator will act as autoselect,
@@ -155,8 +159,6 @@ fn help() {
         "  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.\n"
         "                     If the field isn't present on the command line then we try loading it from the 'coins' file.\n"
         "  dbdir          ..  MM database path. 'DB' by default.\n"
-        "  ethnode        ..  HTTP url of ethereum node. Parity ONLY. Default is http://195.201.0.6:8555 (Mainnet).\n"
-        "                     Set http://195.201.0.6:8545 for Ropsten testnet.\n"
         "  log            ..  File path. Redirect (as of now only a part of) the log there.\n"
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
         "  netid          ..  Subnetwork. Affects ports and keys.\n"
@@ -166,6 +168,8 @@ fn help() {
         "  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.\n"
         "                     Default is currently 'http://localhost:3000'\n"
         "  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default\n"
+        "  rpc_password   ..  RPC password used to authorize non-public RPC calls.\n"
+        "                     MM generates password from passphrase if this field is not set.\n"
         "  rpcport        ..  If > 1000 overrides the 7783 default.\n"
         "  userhome       ..  System home directory of a user ('/root' by default).\n"
         "  wif            ..  `1` to add WIFs to the information we provide about a coin.\n"

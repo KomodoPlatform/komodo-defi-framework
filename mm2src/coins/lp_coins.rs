@@ -830,7 +830,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
         try_s! (utxo_coin_from_iguana_info (ii, utxo_mode)) .into()
     } else {
-        try_s! (eth_coin_from_iguana_info(ii)) .into()
+        try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };
 
     // TODO we should return the error here instead of using the default 0 value because coin

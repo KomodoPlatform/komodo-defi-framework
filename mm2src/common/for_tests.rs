@@ -98,6 +98,13 @@ pub struct MarketMakerIt {
     /// RPC API key.
     pub userpass: String
 }
+
+impl std::fmt::Debug for MarketMakerIt {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "MarketMakerIt {{ folder: {:?}, ip: {}, log_path: {:?}, userpass: {} }}", self.folder, self.ip, self.log_path, self.userpass)
+    }
+}
+
 impl MarketMakerIt {
     /// Create a new temporary directory and start a new MarketMaker process there.
     /// 
