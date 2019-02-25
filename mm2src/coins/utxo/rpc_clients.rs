@@ -24,7 +24,7 @@ use std::cmp::Ordering;
 use std::net::{ToSocketAddrs, SocketAddr, TcpStream as TcpStreamStd, Shutdown};
 use std::ops::Deref;
 use std::sync::{Mutex, Arc};
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
 use tokio::codec::{Encoder, Decoder};
 use tokio::net::TcpStream;
@@ -713,15 +713,14 @@ fn electrum_connect(
             let stream = try_loop!(stream, addr, rx, responses);
             try_loop!(stream.set_nodelay(true), addr, rx, responses);
             let stream_clone = try_loop!(stream.try_clone(), addr, rx, responses);
-
-            let last_chunk = Arc::new(AtomicUsize::new(now_ms() as usize / 1000));
+            let last_chunk = Arc::new(AtomicU64::new(now_ms()));
             let last_chunk2 = last_chunk.clone();
             let interval = Interval::new(Duration::from_secs(ELECTRUM_TIMEOUT)).map_err(|e| { log!([e]); () });
             CORE.spawn(move |_| {
                 interval.for_each(move |_| {
                     let last = last_chunk.load(AtomicOrdering::Relaxed);
-                    if now_ms() / 1000 - last as u64 > ELECTRUM_TIMEOUT {
-                        log!([addr] " Didn't receive any data since " (last) ". Shutting down the connection.");
+                    if now_ms() - last > ELECTRUM_TIMEOUT * 1000 {
+                        log!([addr] " Didn't receive any data since " (last / 1000) ". Shutting down the connection.");
                         if let Err(e) = stream_clone.shutdown(Shutdown::Both) {
                             log!([addr] " error shutting down the connection " [e]);
                         }
@@ -738,7 +737,7 @@ fn electrum_connect(
             CORE.spawn(|_| {
                 stream
                     .for_each(move |chunk| {
-                        last_chunk2.store(now_ms() as usize / 1000, AtomicOrdering::Relaxed);
+                        last_chunk2.store(now_ms(), AtomicOrdering::Relaxed);
                         electrum_process_chunk(&chunk, clone.clone());
                         futures::future::ok(())
                     })

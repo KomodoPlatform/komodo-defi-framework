@@ -19,6 +19,7 @@
 //
 
 #![feature(non_ascii_idents)]
+#![feature(integer_atomics)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
