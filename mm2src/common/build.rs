@@ -31,6 +31,7 @@ use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
+use std::cmp::max;
 use std::env::var;
 use std::fs;
 use std::io::{Read, Write};
@@ -49,15 +50,35 @@ macro_rules! ecmd {
         cmd($program, empty::<String>())
             .stdout_to_stderr()
     }};
-    ( $program:expr $(, $arg:expr )* ) => {{
+    ( @s $args: expr, $arg:expr ) => {$args.push(String::from($arg));};
+    ( @i $args: expr, $iterable:expr ) => {for v in $iterable {ecmd! (@s $args, v)}};
+    ( @a $args: expr, i $arg:expr ) => {ecmd! (@i $args, $arg);};
+    ( @a $args: expr, i $arg:expr, $( $tail:tt )* ) => {ecmd! (@i $args, $arg); ecmd! (@a $args, $($tail)*);};
+    ( @a $args: expr, $arg:expr ) => {ecmd! (@s $args, $arg);};
+    ( @a $args: expr, $arg:expr, $( $tail:tt )* ) => {ecmd! (@s $args, $arg); ecmd! (@a $args, $($tail)*);};
+    ( $program:expr, $( $args:tt )* ) => {{
         let mut args: Vec<String> = Vec::new();
-        $(
-            args.push(Into::<String>::into($arg));
-        )*
+        ecmd! (@a &mut args, $($args)*);
         eprintln!("$ {}{}", $program, show_args(&args));
         cmd($program, args)
             .stdout_to_stderr()
     }};
+}
+
+/// Returns `true` if the `target` is not as fresh as the `prerequisites`.
+fn make(target: &AsRef<Path>, prerequisites: &[PathBuf]) -> bool {
+    let target_lm = last_modified_sec(target).expect("!last_modified") as u64;
+    if target_lm == 0 {
+        return true;
+    }
+    let mut prerequisites_lm = 0;
+    for path in prerequisites {
+        prerequisites_lm = max(
+            prerequisites_lm,
+            last_modified_sec(&path).expect("!last_modified") as u64,
+        )
+    }
+    target_lm < prerequisites_lm
 }
 
 fn bindgen<
@@ -514,7 +535,11 @@ fn rabs(rrel: &str) -> PathBuf {
     root().join(rrel)
 }
 
-fn path2s(path: PathBuf) -> String {
+fn path2s<P>(path: P) -> String
+where
+    P: AsRef<Path>,
+{
+    let path: &Path = path.as_ref();
     unwrap!(path.to_str(), "Non-stringy path {:?}", path).into()
 }
 
@@ -1304,14 +1329,13 @@ fn cmake_path() -> String {
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
-    let out_dir = out_dir();
+    let (root, out_dir) = (root(), out_dir());
     let nanomsg = out_dir.join("nanomsg-1.1.5");
     epintln!("nanomsg at "[nanomsg]);
 
-    // TODO: Rebuild the libraries when the C source code is updated?
-
     let libnanomsg_a = out_dir.join("libnanomsg.a");
-    if !libnanomsg_a.exists() {
+    let nanomsg_mk = root.join("mm2src/common/android/nanomsg.mk");
+    if make(&libnanomsg_a, &vec![nanomsg_mk.clone()]) {
         if !nanomsg.exists() {
             let nanomsg_tgz = out_dir.join("nanomsg.tgz");
             if !nanomsg_tgz.exists() {
@@ -1326,11 +1350,9 @@ fn manual_mm1_build(target: Target) {
         }
 
         if target.is_android_cross() {
-            unwrap!(
-                ecmd!("make", "-f", "/project/mm2src/common/android/nanomsg.mk")
-                    .dir(&nanomsg)
-                    .run()
-            );
+            unwrap!(ecmd!("make", "-f", unwrap!(nanomsg_mk.to_str()))
+                .dir(&nanomsg)
+                .run());
         } else {
             panic!("Target {:?}", target);
         }
@@ -1339,14 +1361,21 @@ fn manual_mm1_build(target: Target) {
     println!("cargo:rustc-link-lib=static=nanomsg");
     println!(
         "cargo:rustc-link-search=native={}",
-        unwrap!(unwrap!(libnanomsg_a.parent()).to_str())
+        path2s(unwrap!(libnanomsg_a.parent()))
     );
 
     let exchanges_build = out_dir.join("exchanges_build");
     epintln!("exchanges_build at "[exchanges_build]);
 
     let libexchanges_a = out_dir.join("libexchanges.a");
-    if !libexchanges_a.exists() {
+    let libexchanges_src = [
+        rabs("iguana/exchanges/mm.c"),
+        rabs("iguana/mini-gmp.c"),
+        rabs("iguana/groestl.c"),
+        rabs("iguana/segwit_addr.c"),
+        rabs("iguana/keccak.c"),
+    ];
+    if make(&libexchanges_a, &libexchanges_src) {
         let _ = fs::create_dir(&exchanges_build);
         if target.is_android_cross() {
             unwrap!(ecmd!(
@@ -1354,12 +1383,8 @@ fn manual_mm1_build(target: Target) {
                 "-O2",
                 "-g3",
                 "-c",
-                "-I/project/crypto777",
-                "/project/iguana/exchanges/mm.c",
-                "/project/iguana/mini-gmp.c",
-                "/project/iguana/groestl.c",
-                "/project/iguana/segwit_addr.c",
-                "/project/iguana/keccak.c"
+                fomat!("-I"(path2s(rabs("crypto777")))),
+                i libexchanges_src.iter().map(path2s)
             )
             .dir(&exchanges_build)
             .run());
@@ -1367,7 +1392,7 @@ fn manual_mm1_build(target: Target) {
             unwrap!(ecmd!(
                 "/android-ndk/bin/arm-linux-androideabi-ar",
                 "-rcs",
-                unwrap!(libexchanges_a.to_str()),
+                path2s(libexchanges_a),
                 "groestl.o",
                 "keccak.o",
                 "mini-gmp.o",
@@ -1381,10 +1406,12 @@ fn manual_mm1_build(target: Target) {
         }
     }
     println!("cargo:rustc-link-lib=static=exchanges");
-    println!(
-        "cargo:rustc-link-search=native={}",
-        unwrap!(out_dir.to_str())
-    );
+    println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
+    for sp in &libexchanges_src {
+        println!("rerun-if-changed={}", path2s(sp));
+    }
+
+    // TODO: Rebuild the libraries when the C source code is updated.
 
     let secp256k1_build = out_dir.join("secp256k1_build");
     epintln!("secp256k1_build at "[secp256k1_build]);
