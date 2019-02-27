@@ -1412,6 +1412,7 @@ fn manual_mm1_build(target: Target) {
     }
 
     // TODO: Rebuild the libraries when the C source code is updated.
+    // TODO: Investigate rerun-if-changed=/project/iguana/exchanges/mm.c and why it doesn't work.
 
     let secp256k1_build = out_dir.join("secp256k1_build");
     epintln!("secp256k1_build at "[secp256k1_build]);

@@ -526,11 +526,11 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
                     let seed_bytes = unsafe {seed.bytes};
                     let saltʲ = salt.clone();
                     let shuttle = Arc::new (PutShuttle {
-                        put_handler: Box::new (move |have: &[u8]| -> Result<Vec<u8>, String> {
+                        put_handler: Box::new (move |_have: &[u8]| -> Result<Vec<u8>, String> {
                             let benload = try_s! (serde_bencode::ser::to_bytes (&chunk));
                             let _subject_salt = binprint (&saltʲ[0 .. saltʲ.len() - 1], b'.');
                             let _idx = saltʲ.last().unwrap();
-                            log! ("transmit] chunk " (_subject_salt) '.' (_idx) " stored, " (have.len()) " → " (benload.len()));
+                            //log! ("transmit] chunk " (_subject_salt) '.' (_idx) " stored, " (_have.len()) " → " (benload.len()));
                             with_ratelim (seed, |_lm, ops| *ops += 1.);
                             Ok (benload)
                         })
@@ -782,9 +782,9 @@ fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: Occu
 
         let mut chunk_salt = salt.clone();
         chunk_salt.push (idx);  // Identifies the chunk.
-        log! ("dht_get on" if chunk.payload.is_none() {" a missing"}  " chunk " (binprint (&salt, b'.')) '.' (idx)
-              " after " {"{:.1}", now - chunk.restarted}
-              if limops > 1. {" limops " (limops)});
+        //log! ("dht_get on" if chunk.payload.is_none() {" a missing"}  " chunk " (binprint (&salt, b'.')) '.' (idx)
+        //      " after " {"{:.1}", now - chunk.restarted}
+        //      if limops > 1. {" limops " (limops)});
         let seed_bytes = unsafe {seed.bytes};
         unsafe {dht_get (dugout,
             seed_bytes.as_ptr(), seed_bytes.len() as i32,
@@ -1197,8 +1197,9 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                             drop (file);  // Close before renaming, just in case.
                             match fs::rename (&tmp_path, &dht_state_path) {
                                 Err (err) => log! ("Warning, can't rename " [tmp_path] " to " [dht_state_path] ": " (err)),
-                                Ok (()) => log! ("DHT state saved to " [dht_state_path])
-        }   }   }   }   }   }
+                                Ok (()) => {
+                                    //log! ("DHT state saved to " [dht_state_path])
+        }   }   }   }   }   }  }
     }
 }
 
