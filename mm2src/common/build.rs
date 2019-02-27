@@ -9,26 +9,18 @@
 
 #![feature(non_ascii_idents)]
 
-extern crate bindgen;
-extern crate cc;
-extern crate duct;
 #[macro_use]
 extern crate fomat_macros;
-extern crate futures;
-extern crate futures_cpupool;
-extern crate gstuff;
-extern crate hyper;
-extern crate hyper_rustls;
-extern crate num_cpus;
-extern crate regex;
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate unwrap;
-extern crate winapi;
 
 use bzip2::read::BzDecoder;
 use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
+use glob::glob;
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use std::cmp::max;
@@ -1327,6 +1319,16 @@ fn cmake_path() -> String {
     fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))
 }
 
+lazy_static! {
+    static ref LIBEXCHANGES_SRC: Vec<PathBuf> = vec![
+        rabs("iguana/exchanges/mm.c"),
+        rabs("iguana/mini-gmp.c"),
+        rabs("iguana/groestl.c"),
+        rabs("iguana/segwit_addr.c"),
+        rabs("iguana/keccak.c"),
+    ];
+}
+
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
     let (root, out_dir) = (root(), out_dir());
@@ -1368,14 +1370,7 @@ fn manual_mm1_build(target: Target) {
     epintln!("exchanges_build at "[exchanges_build]);
 
     let libexchanges_a = out_dir.join("libexchanges.a");
-    let libexchanges_src = [
-        rabs("iguana/exchanges/mm.c"),
-        rabs("iguana/mini-gmp.c"),
-        rabs("iguana/groestl.c"),
-        rabs("iguana/segwit_addr.c"),
-        rabs("iguana/keccak.c"),
-    ];
-    if make(&libexchanges_a, &libexchanges_src) {
+    if make(&libexchanges_a, &LIBEXCHANGES_SRC[..]) {
         let _ = fs::create_dir(&exchanges_build);
         if target.is_android_cross() {
             unwrap!(ecmd!(
@@ -1384,7 +1379,7 @@ fn manual_mm1_build(target: Target) {
                 "-g3",
                 "-c",
                 fomat!("-I"(path2s(rabs("crypto777")))),
-                i libexchanges_src.iter().map(path2s)
+                i LIBEXCHANGES_SRC.iter().map(path2s)
             )
             .dir(&exchanges_build)
             .run());
@@ -1407,12 +1402,8 @@ fn manual_mm1_build(target: Target) {
     }
     println!("cargo:rustc-link-lib=static=exchanges");
     println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
-    for sp in &libexchanges_src {
-        println!("rerun-if-changed={}", path2s(sp));
-    }
 
     // TODO: Rebuild the libraries when the C source code is updated.
-    // TODO: Investigate rerun-if-changed=/project/iguana/exchanges/mm.c and why it doesn't work.
 
     let secp256k1_build = out_dir.join("secp256k1_build");
     epintln!("secp256k1_build at "[secp256k1_build]);
@@ -1652,23 +1643,26 @@ fn build_c_code(mm_version: &str) {
     }
 }
 
+fn rerun_if_changed(rel_glob: &str) {
+    let full_glob = root().join(rel_glob);
+    let full_glob = unwrap!(full_glob.to_str());
+    for path in unwrap!(glob(full_glob)) {
+        let path = unwrap!(path);
+        println!("cargo:rerun-if-changed={}", path2s(path));
+    }
+}
+
 fn main() {
     // NB: `rerun-if-changed` will ALWAYS invoke the build.rs if the target does not exists.
     // cf. https://github.com/rust-lang/cargo/issues/4514#issuecomment-330976605
     //     https://github.com/rust-lang/cargo/issues/4213#issuecomment-310697337
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
 
-    // Rebuild when we work with C files.
-    println!(
-        "rerun-if-changed={}",
-        path2s(rabs("iguana/exchanges/etomicswap"))
-    );
-    println!("rerun-if-changed={}", path2s(rabs("iguana/exchanges")));
-    println!("rerun-if-changed={}", path2s(rabs("iguana/secp256k1")));
-    println!("rerun-if-changed={}", path2s(rabs("crypto777")));
-    println!("rerun-if-changed={}", path2s(rabs("crypto777/jpeg")));
-    println!("rerun-if-changed={}", path2s(rabs("OSlibs/win")));
-    println!("rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));
+    rerun_if_changed("iguana/exchanges/*.c");
+    rerun_if_changed("iguana/secp256k1/src/*.c");
+    rerun_if_changed("crypto777/*.c");
+    rerun_if_changed("crypto777/jpeg/*.c");
+    println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));
 
     // NB: Using `rerun-if-env-changed` disables the default dependency heuristics.
     // cf. https://github.com/rust-lang/cargo/issues/4587
