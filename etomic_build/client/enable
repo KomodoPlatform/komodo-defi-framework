@@ -1,8 +1,7 @@
 #!/bin/bash
 source userpass
 curl --url "http://127.0.0.1:7783" --data "{\"queueid\":0,\"needjson\":1,\"method\":\"electrum\",\"coin\":\"ETOMIC\",\"urls\":[\"electrum1.cipig.net:10025\",\"electrum2.cipig.net:10025\",\"electrum3.cipig.net:10025\"],\"userpass\":\"$userpass\",\"cache_history\":1}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"ETH\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"NODEC\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"JST\"}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"ETH\",\"urls\":[\"http://195.201.0.6:8545\"],\"swap_contract_address\":\"0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94\"}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"JST\",\"urls\":[\"http://195.201.0.6:8545\"],\"swap_contract_address\":\"0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94\"}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"BEER\",\"urls\":[\"46.4.87.18:10022\"]}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"PIZZA\",\"urls\":[\"electrum1.cipig.net:10024\",\"electrum2.cipig.net:10024\",\"electrum3.cipig.net:10024\"]}"

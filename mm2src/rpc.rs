@@ -10,14 +10,19 @@
  * or distributed except according to the terms contained in the LICENSE file *
  *                                                                            *
  * Removal or modification of this copyright notice is prohibited.            *
- *                                                                            *
+ *                                                           let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind (&ctx, &ticker) {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    };                     *
  ******************************************************************************/
 //
 //  rpc.rs
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-use coins::{enable, electrum, my_balance};
+use coins::{enable, electrum, my_balance, send_raw_transaction, withdraw};
 use common::{free_c_ptr, lp, rpc_response, rpc_err_response, HyRes, CORE};
 use common::mm_ctx::MmArc;
 use futures::{self, Future};
@@ -212,9 +217,11 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
         "passphrase" => passphrase (ctx, req),
         "sell" => sell (ctx, req),
+        "send_raw_transaction" => send_raw_transaction (ctx, req),
         "setprice" => set_price (ctx, req),
         "stop" => stop (ctx),
         "version" => version(),
+        "withdraw" => withdraw(ctx, req),
         _ => return DispatcherRes::NoMatch (req)
     })
 }

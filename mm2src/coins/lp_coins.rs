@@ -35,7 +35,7 @@ use futures::{Future};
 use gstuff::now_ms;
 use hashbrown::hash_map::{HashMap, RawEntryMut};
 use libc::{c_char, c_void};
-use serde_json::{Value as Json};
+use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::ffi::{CString};
 use std::fmt::Debug;
@@ -152,7 +152,8 @@ pub trait MarketCoinOps {
 
     fn my_balance(&self) -> Box<Future<Item=f64, Error=String> + Send>;
 
-    fn send_raw_tx(&self, tx: TransactionEnum) -> TransactionFut;
+    /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
+    fn send_raw_tx(&self, tx: &str) -> Box<Future<Item=String, Error=String> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -163,7 +164,7 @@ pub trait MarketCoinOps {
 
     fn wait_for_tx_spend(&self, transaction: TransactionEnum, wait_until: u64) -> Result<TransactionEnum, String>;
 
-    fn tx_from_raw_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
     fn current_block(&self) -> Box<Future<Item=u64, Error=String> + Send>;
 }
@@ -181,6 +182,30 @@ pub trait IguanaInfo {
     }
 }
 
+#[derive(Deserialize)]
+struct WithdrawRequest {
+    coin: String,
+    to: String,
+    amount: f64,
+}
+
+#[derive(Serialize)]
+pub struct WithdrawResult {
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    tx_hex: String,
+    /// Coins will be sent from this address
+    from: String,
+    /// Coins will be sent to this address
+    to: String,
+    /// Amount to be sent
+    amount: f64,
+    /// Every coin can has specific fee details:
+    /// When you send UTXO tx you pay fee with the coin itself (e.g. 1 BTC and 0.0001 BTC fee).
+    /// But for ERC20 token transfer you pay fee with another coin: ETH, because it's ETH smart contract function call that requires gas to be burnt.
+    /// So it's just generic JSON for now, maybe we will change it to Rust generic later.
+    fee_details: Json
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
@@ -192,6 +217,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
     fn is_asset_chain(&self) -> bool;
 
     fn check_i_have_enough_to_trade(&self, amount: f64, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
+
+    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=WithdrawResult, Error=String> + Send>;
 }
 
 #[derive(Clone, Debug)]
@@ -947,4 +974,33 @@ pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
         "balance": balance,
         "address": coin.my_address(),
     }).to_string())))
+}
+
+pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind (&ctx, &ticker) {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    };
+    let withdraw_req: WithdrawRequest = try_h!(json::from_value(req));
+    Box::new(coin.withdraw(&withdraw_req.to, withdraw_req.amount).and_then(|res| {
+        let body = try_h!(json::to_string(&res));
+        rpc_response(200, body)
+    }))
+}
+
+pub fn send_raw_transaction (ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind (&ctx, &ticker) {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    };
+    let bytes_string = try_h! (req["tx_hex"].as_str().ok_or ("No 'tx_hex' field"));
+    Box::new(coin.send_raw_tx(&bytes_string).and_then(|res| {
+        rpc_response(200, json!({
+            "tx_hash": res
+        }).to_string())
+    }))
 }

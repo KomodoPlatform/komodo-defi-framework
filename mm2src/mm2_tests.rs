@@ -23,7 +23,7 @@ fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> String {
         "method": "enable",
         "coin": coin,
         "urls": urls,
-        // ETH Ropsten swap contract address
+        // Dev chain swap contract address
         "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
     })));
     assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
@@ -769,7 +769,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
 #[test]
 #[ignore]  // TODO: Re-enable once the PIZZA trades are fixed.
 fn trade_test_electrum_and_eth_coins() {
-    trade_base_rel_electrum(vec![("BEER", "PIZZA"), ("ETH", "JST")]);
+    trade_base_rel_electrum(vec![("ETH", "JST")]);
 }
 
 fn trade_base_rel_native(base: &str, rel: &str) {

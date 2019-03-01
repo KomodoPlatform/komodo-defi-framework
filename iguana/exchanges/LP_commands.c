@@ -505,18 +505,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
             {
                 return(LP_movecoinbases(coin));
             }
-            else if ( strcmp(method,"withdraw") == 0 )
-            {
-                if ( (ptr= LP_coinsearch(coin)) != 0 )
-                {
-                    if ( jobj(argjson,"outputs") == 0 && jstr(argjson,"opreturn") == 0 )
-                        return(clonestr("{\"error\":\"withdraw needs to have outputs\"}"));
-                    else if ( ptr->etomic[0] != 0 )
-                        return(clonestr("{\"error\":\"use eth_withdraw for ETH/ERC20\"}"));
-                    else return(LP_withdraw(ptr,argjson));
-                }
-                return(clonestr("{\"error\":\"cant find coind\"}"));
-            }
             else if ( strcmp(method,"setconfirms") == 0 )
             {
                 int32_t n;

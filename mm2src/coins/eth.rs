@@ -41,12 +41,13 @@ use std::time::Duration;
 use web3::types::{BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId};
 use web3::{ self, Web3 };
 
-use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction};
+use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, WithdrawResult};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTransaction;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
+use futures::future::Either;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -278,15 +279,21 @@ impl MarketCoinOps for EthCoin {
 
     fn my_balance(&self) -> Box<Future<Item=f64, Error=String> + Send> {
         let decimals = self.decimals;
-        Box::new(self.my_balance().and_then(move|result| {
-            let string = display_u256_with_decimal_point(result, decimals);
-            let number: f64 = try_s!(string.parse());
-            Ok(number)
+        Box::new(self.my_balance().and_then(move |result| {
+            Ok(try_s!(u256_to_f64(result, decimals)))
         }))
     }
 
-    fn send_raw_tx(&self, tx: TransactionEnum) -> TransactionFut {
-        unimplemented!();
+    fn send_raw_tx(&self, mut tx: &str) -> Box<Future<Item=String, Error=String> + Send> {
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = try_fus!(hex::decode(tx));
+        Box::new(
+            self.web3.eth().send_raw_transaction(bytes.into())
+                .map(|res| format!("{:#02x}", res))
+                .map_err(|e| ERRL!("{}", e))
+        )
     }
 
     fn wait_for_confirmations(
@@ -376,7 +383,7 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
-    fn tx_from_raw_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
         let tx: UnverifiedTransaction = try_s!(rlp::decode(bytes));
         let signed = try_s!(SignedEthTransaction::new(tx));
         Ok(TransactionEnum::from(signed))
@@ -387,10 +394,10 @@ impl MarketCoinOps for EthCoin {
     }
 }
 
-// We can use a shared nonce lock for all ETH coins.
-// It's highly likely that we won't experience any issues with it as we won't need to send "a lot" of transactions concurrently.
-// For ETH it makes even more sense because different ERC20 tokens can be based on same ETH blockchain.
-// So we would need to handle shared locks anyway.
+/// We can use a shared nonce lock for all ETH coins.
+/// It's highly likely that we won't experience any issues with it as we won't need to send "a lot" of transactions concurrently.
+/// For ETH it makes even more sense because different ERC20 tokens can be running on same ETH blockchain.
+/// So we would need to handle shared locks anyway.
 lazy_static! {static ref NONCE_LOCK: Mutex<()> = Mutex::new(());}
 
 type EthTxFut = Box<Future<Item=SignedEthTransaction, Error=String> + Send + 'static>;
@@ -431,7 +438,7 @@ impl EthCoin {
                     // Check every second till ETH nodes recognize that nonce is increased
                     // Parity has reliable "nextNonce" method that always returns correct nonce for address
                     // But we can't expect that all nodes will always be Parity.
-                    // Some of ETH forks based on Geth so they don't have Parity nodes at all.
+                    // Some of ETH forks use Geth only so they don't have Parity nodes at all.
                     loop_fn((res, arc, nonce, nonce_lock), move |(res, arc, nonce, nonce_lock)| {
                         let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
                         delay_f.and_then(move |_res| {
@@ -439,7 +446,7 @@ impl EthCoin {
                                 let new_nonce = match new_nonce {
                                     Ok(n) => n,
                                     Err(e) => {
-                                        log!("Error " [e] " getting " [arc.ticker()] " "[arc.my_address] " nonce");
+                                        log!("Error " [e] " getting " [arc.ticker()] " " [arc.my_address] " nonce");
                                         // we can just keep looping in case of error hoping it will go away
                                         return Ok(Loop::Continue((res, arc, nonce, nonce_lock)));
                                     }
@@ -644,7 +651,6 @@ impl EthCoin {
                 let call_fut = self.call_request(token_addr, None, Some(data.into()));
 
                 Box::new(call_fut.and_then(move |res| {
-                    log!([res]);
                     let decoded = try_s!(function.decode_output(&res.0));
 
                     match decoded[0] {
@@ -822,6 +828,32 @@ impl EthCoin {
 impl IguanaInfo for EthCoin {
     fn ticker<'a> (&'a self) -> &'a str {&self.ticker[..]}
 }
+
+#[derive(Serialize)]
+struct EthTxFeeDetails {
+    coin: String,
+    gas: u64,
+    /// ETH units per 1 gas
+    gas_price: f64,
+    total_fee: f64,
+}
+
+impl EthTxFeeDetails {
+    fn new(gas: U256, gas_price: U256, coin: &str) -> Result<EthTxFeeDetails, String> {
+        let total_fee = gas * gas_price;
+        // Fees are always paid in ETH, can use 18 decimals by default
+        let total_fee = try_s!(u256_to_f64(total_fee, 18));
+        let gas_price = try_s!(u256_to_f64(gas_price, 18));
+
+        Ok(EthTxFeeDetails {
+            coin: coin.to_owned(),
+            gas: gas.into(),
+            gas_price,
+            total_fee,
+        })
+    }
+}
+
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
@@ -861,6 +893,58 @@ impl MmCoin for EthCoin {
                     }
                 }
             }
+        }))
+    }
+
+    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=WithdrawResult, Error=String> + Send> {
+        let to_addr = try_fus!(addr_from_str(to));
+        let wei_amount = try_fus!(wei_from_f64(amount, self.decimals));
+        let (value, data, call_addr) = match self.coin_type {
+            EthCoinType::Eth => (wei_amount, vec![], to_addr),
+            EthCoinType::Erc20(token_addr) => {
+                let function = try_fus!(ERC20_CONTRACT.function("transfer"));
+                let data = try_fus!(function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)]));
+                (0.into(), data, token_addr)
+            }
+        };
+        let arc = self.clone();
+        let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
+        let nonce_fut = self.web3.eth().transaction_count(self.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
+        Box::new(nonce_fut.and_then(move |nonce| {
+            let gas_price_fut = if let Some(url) = &arc.gas_station_url {
+                Either::A(GasStationData::get_gas_price(&url.clone()))
+            } else {
+                Either::B(arc.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
+            };
+            gas_price_fut.and_then(move |gas_price| {
+                let estimate_gas_req = CallRequest {
+                    value: Some(value),
+                    data: Some(data.clone().into()),
+                    from: Some(arc.my_address),
+                    to: call_addr,
+                    gas: None,
+                    gas_price: Some(gas_price)
+                };
+
+                let estimate_gas_fut = arc.web3.eth().estimate_gas(estimate_gas_req, None).map_err(|e| ERRL!("{}", e));
+                estimate_gas_fut.and_then(move |gas| {
+                    let tx = UnsignedEthTransaction { nonce, value, action: Action::Call(call_addr), data, gas, gas_price };
+
+                    let signed = tx.sign(arc.key_pair.secret(), None);
+                    let bytes = rlp::encode(&signed);
+                    let amount_f64 = try_s!(u256_to_f64(wei_amount, arc.decimals));
+                    let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, "ETH"));
+                    let fee_details = try_s!(json::to_value(fee_details));
+                    drop(nonce_lock);
+                    Ok(WithdrawResult {
+                        to: format!("{:#02x}", to_addr),
+                        from: arc.my_address().into(),
+                        amount: amount_f64,
+                        tx_hex: hex::encode(bytes),
+                        fee_details,
+                    })
+                })
+            })
         }))
     }
 }
@@ -919,6 +1003,73 @@ fn display_u256_with_point() {
     let number = U256::from_dec_str("0").unwrap();
     let string = display_u256_with_decimal_point(number, 0);
     assert_eq!("0.", string);
+}
+
+fn u256_to_f64(number: U256, decimals: u8) -> Result<f64, String> {
+    let string = display_u256_with_decimal_point(number, decimals);
+    Ok(try_s!(string.parse()))
+}
+
+fn wei_from_f64(amount: f64, decimals: u8) -> Result<U256, String> {
+    let mut amount = amount.to_string();
+    let dot = amount.find(|c| c == '.');
+    let decimals = decimals as usize;
+    if let Some(index) = dot {
+        let mut fractional = amount.split_off(index);
+        // remove the dot from fractional part
+        fractional.remove(0);
+        if fractional.len() < decimals {
+            fractional.insert_str(fractional.len(), &"0".repeat(decimals - fractional.len()));
+        }
+        fractional.truncate(decimals);
+        amount.push_str(&fractional);
+    } else {
+        amount.insert_str(amount.len(), &"0".repeat(decimals));
+    }
+    Ok(try_s!(U256::from_dec_str(&amount).map_err(|e| ERRL!("{:?}", e))))
+}
+
+#[test]
+fn test_wei_from_f64() {
+    let amount = 0.000001;
+    let wei = wei_from_f64(amount, 18).unwrap();
+    let expected_wei: U256 = 1000000000000u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1.000001;
+    let wei = wei_from_f64(amount, 18).unwrap();
+    let expected_wei: U256 = 1000001000000000000u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1.;
+    let wei = wei_from_f64(amount, 18).unwrap();
+    let expected_wei: U256 = 1000000000000000000u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 0.000000000000000001;
+    let wei = wei_from_f64(amount, 18).unwrap();
+    let expected_wei: U256 = 1u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1234.;
+    let wei = wei_from_f64(amount, 9).unwrap();
+    let expected_wei: U256 = 1234000000000u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1234.;
+    let wei = wei_from_f64(amount, 0).unwrap();
+    let expected_wei: U256 = 1234u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1234.;
+    let wei = wei_from_f64(amount, 1).unwrap();
+    let expected_wei: U256 = 12340u64.into();
+    assert_eq!(expected_wei, wei);
+
+    let amount = 1234.12345;
+    let wei = wei_from_f64(amount, 1).unwrap();
+    let expected_wei: U256 = 12341u64.into();
+    assert_eq!(expected_wei, wei);
 }
 
 impl Transaction for SignedEthTransaction {

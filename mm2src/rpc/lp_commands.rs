@@ -137,7 +137,6 @@ pub fn help() -> HyRes {
         buy(base, rel, price, relvolume, timeout=10, duration=3600)
         sell(base, rel, price, basevolume, timeout=10, duration=3600)
         withdraw(coin, outputs[], broadcast=0)
-        eth_withdraw(coin, to, amount, gas, gas_price, broadcast=0)
         txblast(coin, utxotxid, utxovout, utxovalue, txfee, passphrase, outputs[], broadcast=0)
         sendrawtransaction(coin, signedtx)
         swapstatus(pending=0, fast=0)

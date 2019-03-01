@@ -375,9 +375,9 @@ pub fn maker_swap_loop(swap: &mut AtomicSwap) -> Result<(), (i32, String)> {
             },
             AtomicSwapState::WaitTakerFee { sending_f } => {
                 let payload = recv!(sending_f, "taker-fee", "for Taker fee", 600, -2003, {|_: &[u8]| Ok(())});
-                let taker_fee = match swap.taker_coin.tx_from_raw_bytes(&payload) {
+                let taker_fee = match swap.taker_coin.tx_enum_from_bytes(&payload) {
                     Ok(tx) => tx,
-                    Err(err) => err!(-2003, "!tx_from_raw_bytes: "(err)),
+                    Err(err) => err!(-2003, "!tx_enum_from_bytes: "(err)),
                 };
 
                 log!("Taker fee tx " (taker_fee.tx_hash()));
@@ -412,9 +412,9 @@ pub fn maker_swap_loop(swap: &mut AtomicSwap) -> Result<(), (i32, String)> {
             AtomicSwapState::WaitTakerPayment {sending_f} => {
                 let payload = recv!(sending_f, "taker-payment", "for Taker payment", swap.lock_duration / 3, -2006, {|_: &[u8]| Ok(())});
 
-                let taker_payment = match swap.taker_coin.tx_from_raw_bytes(&payload) {
+                let taker_payment = match swap.taker_coin.tx_enum_from_bytes(&payload) {
                     Ok(tx) => tx,
-                    Err(err) => err!(-2006, "!taker_coin.tx_from_raw_bytes: "(err))
+                    Err(err) => err!(-2006, "!taker_coin.tx_enum_from_bytes: "(err))
                 };
 
                 let validated = swap.taker_coin.validate_taker_payment(
@@ -573,7 +573,7 @@ pub fn taker_swap_loop(swap: &mut AtomicSwap) -> Result<(), (i32, String)> {
             },
             AtomicSwapState::WaitMakerPayment {sending_f} => {
                 let payload = recv!(sending_f, "maker-payment", "for Maker payment", 600, -1005, {|_: &[u8]| Ok(())});
-                let maker_payment = match swap.maker_coin.tx_from_raw_bytes(&payload) {
+                let maker_payment = match swap.maker_coin.tx_enum_from_bytes(&payload) {
                     Ok(p) => p,
                     Err(err) => err!(-1005, "Error parsing the 'maker-payment': "(err))
                 };
