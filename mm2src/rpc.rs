@@ -46,6 +46,7 @@ use hex;
 
 use crate::lp_network::lp_queue_command;
 use crate::lp_ordermatch::{buy, sell};
+use crate::lp_swap::{my_swap_status, stats_swap_status};
 use crate::CJSON;
 
 mod lp_commands;
@@ -76,6 +77,7 @@ const PUBLIC_METHODS: &[Option<&str>] = &[  // Sorted alphanumerically (on the f
     Some("pricearray"),
     Some("psock"),
     Some("statsdisp"),
+    Some("stats_swap_status"),
     Some("tradesarray"),
     Some("ticker"),
     None
@@ -220,6 +222,8 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "send_raw_transaction" => send_raw_transaction (ctx, req),
         "setprice" => set_price (ctx, req),
         "stop" => stop (ctx),
+        "my_swap_status" => my_swap_status(req),
+        "stats_swap_status" => stats_swap_status(req),
         "version" => version(),
         "withdraw" => withdraw(ctx, req),
         _ => return DispatcherRes::NoMatch (req)

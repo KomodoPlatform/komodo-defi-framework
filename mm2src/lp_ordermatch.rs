@@ -36,7 +36,7 @@ use std::time::Duration;
 use std::thread;
 
 use crate::lp_network::lp_queue_command;
-use crate::lp_swap::{taker_swap_loop, maker_swap_loop, AtomicSwap};
+use crate::lp_swap::{MakerSwap, run_maker_swap, TakerSwap, run_taker_swap};
 
 /// Temporary kludge, improving readability of the not-yet-fully-ported code. Should be removed eventually.
 macro_rules! c2s {($cs: expr) => {unwrap!(CStr::from_ptr($cs.as_ptr()).to_str())}}
@@ -431,30 +431,23 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
                 let maker_coin = unwrap! (unwrap! (lp_coinfind (ctx, maker_str)));
                 let ctx = ctx.clone();
                 let alice = (*qp).desthash;
-                let session = String::from(c2s!(pair_str));
                 let maker_amount = (*qp).R.srcamount as u64;
                 let taker_amount = (*qp).R.destamount as u64;
                 let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes));
                 let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
-                log!("Seller loop");
                 move || {
                     log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
-                    let mut maker_swap = AtomicSwap::new(
+                    let maker_swap = MakerSwap::new(
                         ctx,
                         alice,
-                        lp::bits256::default(),
-                        session,
                         maker_coin,
                         taker_coin,
                         maker_amount,
                         taker_amount,
                         my_persistent_pub,
                         uuid,
-                    ).unwrap();
-                    match maker_swap_loop(&mut maker_swap) {
-                        Ok(_) => (),
-                        Err(e) => log!("Swap finished with error " [e])
-                    };
+                    );
+                    run_maker_swap(maker_swap);
                 }
             });
             match loop_thread {
@@ -759,7 +752,6 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
         let alice_loop_thread = thread::Builder::new().name("taker_loop".into()).spawn({
             let ctx = ctx.clone();
             let maker = (*qp).srchash;
-            let session = String::from(unwrap!(CStr::from_ptr (pairstr) .to_str()));
             let taker_str = c2s!((*qp).R.dest);
             let taker_coin = unwrap! (unwrap! (lp_coinfind (&ctx, taker_str)));
             let maker_str = c2s!((*qp).R.src);
@@ -770,22 +762,17 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
             let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
             move || {
                 log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
-                let mut taker_swap = AtomicSwap::new(
+                let taker_swap = TakerSwap::new(
                     ctx,
-                    lp::bits256::default(),
                     maker,
-                    session,
                     maker_coin,
                     taker_coin,
                     maker_amount,
                     taker_amount,
                     my_persistent_pub,
                     uuid,
-                ).unwrap();
-                match taker_swap_loop(&mut taker_swap) {
-                    Ok(_) => (),
-                    Err(e) => log!("Swap finished with error "[e])
-                };
+                );
+                run_taker_swap(taker_swap);
             }
         });
         match alice_loop_thread {

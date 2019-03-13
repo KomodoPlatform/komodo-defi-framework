@@ -21,7 +21,7 @@
 use common::{lp, MutexGuardWrapper, slurp_url};
 use secp256k1::key::PublicKey;
 use ethabi::{Contract, Token};
-use ethcore_transaction::{ Action, Transaction as UnsignedEthTransaction, UnverifiedTransaction};
+use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, U256};
 use ethkey::{ KeyPair, Public, public_to_address, SECP256K1 };
 use futures::Future;
@@ -30,6 +30,7 @@ use futures_timer::Delay;
 use gstuff::now_ms;
 use hyper::StatusCode;
 use rand::Rng;
+use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::ffi::CStr;
@@ -41,9 +42,9 @@ use std::time::Duration;
 use web3::types::{BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId};
 use web3::{ self, Web3 };
 
-use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, WithdrawResult};
+use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, TransactionDetails};
 
-pub use ethcore_transaction::SignedTransaction as SignedEthTransaction;
+pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
@@ -140,52 +141,53 @@ impl SwapOps for EthCoin {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: TransactionEnum,
+        taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _taker_pub: &[u8],
         secret: &[u8],
     ) -> TransactionFut {
-        let tx = match taker_payment_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
-            _ => panic!(),
-        };
+        let tx: UnverifiedTransaction = try_fus!(rlp::decode(taker_payment_tx));
+        let signed = try_fus!(SignedEthTx::new(tx));
 
-        Box::new(self.spend_hash_time_locked_payment(tx, secret).map(TransactionEnum::from))
+        Box::new(self.spend_hash_time_locked_payment(signed, secret).map(TransactionEnum::from))
     }
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: TransactionEnum,
+        maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
         secret: &[u8],
     ) -> TransactionFut {
-        let tx = match maker_payment_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
-            _ => panic!(),
-        };
-
-        Box::new(self.spend_hash_time_locked_payment(tx, secret).map(TransactionEnum::from))
+        let tx: UnverifiedTransaction = try_fus!(rlp::decode(maker_payment_tx));
+        let signed = try_fus!(SignedEthTx::new(tx));
+        Box::new(self.spend_hash_time_locked_payment(signed, secret).map(TransactionEnum::from))
     }
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: TransactionEnum,
+        taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
     ) -> TransactionFut {
-        let tx = match taker_payment_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
-            _ => panic!(),
-        };
+        let tx: UnverifiedTransaction = try_fus!(rlp::decode(taker_payment_tx));
+        let signed = try_fus!(SignedEthTx::new(tx));
 
-        Box::new(self.refund_hash_time_locked_payment(tx).map(TransactionEnum::from))
+        Box::new(self.refund_hash_time_locked_payment(signed).map(TransactionEnum::from))
     }
 
     fn send_maker_refunds_payment(
         &self,
-        maker_payment_tx: TransactionEnum,
+        maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _taker_pub: &[u8],
+        _secret_hash: &[u8],
     ) -> TransactionFut {
-        let tx = match maker_payment_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
-            _ => panic!(),
-        };
+        let tx: UnverifiedTransaction = try_fus!(rlp::decode(maker_payment_tx));
+        let signed = try_fus!(SignedEthTx::new(tx));
 
-        Box::new(self.refund_hash_time_locked_payment(tx).map(TransactionEnum::from))
+        Box::new(self.refund_hash_time_locked_payment(signed).map(TransactionEnum::from))
     }
 
     fn validate_fee(
@@ -195,7 +197,7 @@ impl SwapOps for EthCoin {
         amount: u64
     ) -> Result<(), String> {
         let tx = match fee_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!(),
         };
 
@@ -291,7 +293,7 @@ impl MarketCoinOps for EthCoin {
         let bytes = try_fus!(hex::decode(tx));
         Box::new(
             self.web3.eth().send_raw_transaction(bytes.into())
-                .map(|res| format!("{:#02x}", res))
+                .map(|res| format!("{:02x}", res))
                 .map_err(|e| ERRL!("{}", e))
         )
     }
@@ -303,7 +305,7 @@ impl MarketCoinOps for EthCoin {
         wait_until: u64,
     ) -> Result<(), String> {
         let tx = match tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!(),
         };
 
@@ -323,7 +325,7 @@ impl MarketCoinOps for EthCoin {
             };
             if let Some(receipt) = web3_receipt {
                 if receipt.status != Some(1.into()) {
-                    return ERR!("Tx receipt {:?} status of {} tx {} is failed", receipt, self.ticker(), tx.tx_hash());
+                    return ERR!("Tx receipt {:?} status of {} tx {:?} is failed", receipt, self.ticker(), tx.tx_hash());
                 }
 
                 if let Some(confirmed_at) = receipt.block_number {
@@ -344,11 +346,9 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
-    fn wait_for_tx_spend(&self, tx: TransactionEnum, wait_until: u64) -> Result<TransactionEnum, String> {
-        let tx = match tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
-            _ => panic!(),
-        };
+    fn wait_for_tx_spend(&self, tx_bytes: &[u8], wait_until: u64) -> Result<TransactionEnum, String> {
+        let unverified: UnverifiedTransaction = try_s!(rlp::decode(tx_bytes));
+        let tx = try_s!(SignedEthTx::new(unverified));
 
         let func_name = match self.coin_type {
             EthCoinType::Eth => "ethPayment",
@@ -375,7 +375,7 @@ impl MarketCoinOps for EthCoin {
                 if let Some(tx_hash) = event.transaction_hash {
                     let transaction = try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).wait()).unwrap();
 
-                    return Ok(TransactionEnum::from(signed_tx_from_web3_tx(transaction)))
+                    return Ok(TransactionEnum::from(try_s!(signed_tx_from_web3_tx(transaction))))
                 }
             }
             thread::sleep(Duration::from_secs(15));
@@ -385,7 +385,7 @@ impl MarketCoinOps for EthCoin {
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
         let tx: UnverifiedTransaction = try_s!(rlp::decode(bytes));
-        let signed = try_s!(SignedEthTransaction::new(tx));
+        let signed = try_s!(SignedEthTx::new(tx));
         Ok(TransactionEnum::from(signed))
     }
 
@@ -400,7 +400,7 @@ impl MarketCoinOps for EthCoin {
 /// So we would need to handle shared locks anyway.
 lazy_static! {static ref NONCE_LOCK: Mutex<()> = Mutex::new(());}
 
-type EthTxFut = Box<Future<Item=SignedEthTransaction, Error=String> + Send + 'static>;
+type EthTxFut = Box<Future<Item=SignedEthTx, Error=String> + Send + 'static>;
 
 impl EthCoin {
     fn sign_and_send_transaction(
@@ -422,7 +422,7 @@ impl EthCoin {
             };
             Box::new(gas_price_fut.then(move |gas_price| -> EthTxFut {
                 let gas_price = try_fus!(gas_price);
-                let tx = UnsignedEthTransaction {
+                let tx = UnSignedEthTx {
                     nonce,
                     value,
                     action,
@@ -533,7 +533,7 @@ impl EthCoin {
 
     fn spend_hash_time_locked_payment(
         &self,
-        payment: SignedEthTransaction,
+        payment: SignedEthTx,
         secret: &[u8],
     ) -> EthTxFut {
         let spend_func = try_fus!(SWAP_CONTRACT.function("receiverSpend"));
@@ -588,7 +588,7 @@ impl EthCoin {
 
     fn refund_hash_time_locked_payment(
         &self,
-        payment: SignedEthTransaction,
+        payment: SignedEthTx,
     ) -> EthTxFut {
         let refund_func = try_fus!(SWAP_CONTRACT.function("senderRefund"));
         let clone = self.clone();
@@ -738,7 +738,7 @@ impl EthCoin {
         amount: u64,
     ) -> Result<(), String> {
         let tx = match payment_tx {
-            TransactionEnum::SignedEthTransaction(t) => t,
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!(),
         };
 
@@ -896,7 +896,7 @@ impl MmCoin for EthCoin {
         }))
     }
 
-    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=WithdrawResult, Error=String> + Send> {
+    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
         let to_addr = try_fus!(addr_from_str(to));
         let wei_amount = try_fus!(wei_from_f64(amount, self.decimals));
         let (value, data, call_addr) = match self.coin_type {
@@ -928,7 +928,7 @@ impl MmCoin for EthCoin {
 
                 let estimate_gas_fut = arc.web3.eth().estimate_gas(estimate_gas_req, None).map_err(|e| ERRL!("{}", e));
                 estimate_gas_fut.and_then(move |gas| {
-                    let tx = UnsignedEthTransaction { nonce, value, action: Action::Call(call_addr), data, gas, gas_price };
+                    let tx = UnSignedEthTx { nonce, value, action: Action::Call(call_addr), data, gas, gas_price };
 
                     let signed = tx.sign(arc.key_pair.secret(), None);
                     let bytes = rlp::encode(&signed);
@@ -936,16 +936,21 @@ impl MmCoin for EthCoin {
                     let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, "ETH"));
                     let fee_details = try_s!(json::to_value(fee_details));
                     drop(nonce_lock);
-                    Ok(WithdrawResult {
+                    Ok(TransactionDetails {
                         to: format!("{:#02x}", to_addr),
                         from: arc.my_address().into(),
                         amount: amount_f64,
-                        tx_hex: hex::encode(bytes),
+                        tx_hex: bytes.into(),
+                        tx_hash: signed.tx_hash(),
                         fee_details,
                     })
                 })
             })
         }))
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
     }
 }
 
@@ -1072,10 +1077,8 @@ fn test_wei_from_f64() {
     assert_eq!(expected_wei, wei);
 }
 
-impl Transaction for SignedEthTransaction {
-    fn to_raw_bytes(&self) -> Vec<u8> {
-        rlp::encode(self).to_vec()
-    }
+impl Transaction for SignedEthTx {
+    fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
 
     fn extract_secret(&self) -> Result<Vec<u8>, String> {
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
@@ -1086,33 +1089,47 @@ impl Transaction for SignedEthTransaction {
         }
     }
 
-    fn tx_hash(&self) -> String {
-        format!("{:#02x}", self.hash)
+    fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
+
+    fn amount(&self, decimals: u8) -> Result<f64, String> {
+        Ok(try_s!(display_u256_with_decimal_point(self.value, decimals).parse()))
+    }
+
+    fn from(&self) -> String { format!("{:#02x}", self.sender) }
+
+    fn to(&self) -> String {
+        match self.action {
+            Action::Create => "null".into(),
+            Action::Call(addr) => format!("{:#02x}", addr),
+        }
+    }
+
+    fn fee_details(&self) -> Result<Json, String> {
+        let fee = try_s!(EthTxFeeDetails::new(self.gas, self.gas_price, "ETH"));
+        Ok(try_s!(json::to_value(fee)))
     }
 }
 
-fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> SignedEthTransaction {
-    SignedEthTransaction {
-        transaction: UnverifiedTransaction {
-            r: 0.into(),
-            s: 0.into(),
-            v: 0,
-            hash: transaction.hash,
-            unsigned: UnsignedEthTransaction {
-                data: transaction.input.0,
-                gas_price: transaction.gas_price,
-                gas: transaction.gas,
-                value: transaction.value,
-                nonce: transaction.nonce,
-                action: match transaction.to {
-                    Some(addr) => Action::Call(addr),
-                    None => Action::Create,
-                }
+fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, String> {
+    let unverified = UnverifiedTransaction {
+        r: transaction.r,
+        s: transaction.s,
+        v: transaction.v.as_u64(),
+        hash: transaction.hash,
+        unsigned: UnSignedEthTx {
+            data: transaction.input.0,
+            gas_price: transaction.gas_price,
+            gas: transaction.gas,
+            value: transaction.value,
+            nonce: transaction.nonce,
+            action: match transaction.to {
+                Some(addr) => Action::Call(addr),
+                None => Action::Create,
             }
-        },
-        public: None,
-        sender: transaction.from,
-    }
+        }
+    };
+
+    Ok(try_s!(SignedEthTx::new(unverified)))
 }
 
 #[derive(Deserialize, Debug)]
@@ -1301,21 +1318,21 @@ mod tests {
             1000,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match payment.clone() {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match payment.clone() {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
         log!([eth]);
 
         let refund = coin.send_taker_spends_maker_payment(
-            TransactionEnum::SignedEthTransaction(eth),
+            TransactionEnum::SignedEthTx(eth),
             &[0],
             &secret_hex,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match refund {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match refund {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1356,21 +1373,21 @@ mod tests {
             1000,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match res {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match res {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
         log!([eth.hash()]);
 
         let refund = coin.send_taker_spends_maker_payment(
-            TransactionEnum::SignedEthTransaction(eth),
+            TransactionEnum::SignedEthTx(eth),
             &[0],
             &secret_hex,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match refund {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match refund {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1419,8 +1436,8 @@ mod tests {
         let pubkey = hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3").unwrap();
         let res = coin.send_taker_fee(&pubkey, 1000).wait().unwrap();
 
-        let eth: SignedEthTransaction = match res {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match res {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1449,8 +1466,8 @@ mod tests {
         let pubkey = hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3").unwrap();
         let res = coin.send_taker_fee(&pubkey, 1000).wait().unwrap();
 
-        let eth: SignedEthTransaction = match res {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match res {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1532,20 +1549,20 @@ mod tests {
             1000,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match res {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match res {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
         log!([eth.hash()]);
 
         let refund = coin.send_taker_refunds_payment(
-            TransactionEnum::SignedEthTransaction(eth),
+            TransactionEnum::SignedEthTx(eth),
             &[0],
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match refund {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match refund {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1581,8 +1598,8 @@ mod tests {
             1000,
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match payment.clone() {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match payment.clone() {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 
@@ -1595,8 +1612,8 @@ mod tests {
             &[0],
         ).wait().unwrap();
 
-        let eth: SignedEthTransaction = match refund {
-            TransactionEnum::SignedEthTransaction(t) => t,
+        let eth: SignedEthTx = match refund {
+            TransactionEnum::SignedEthTx(t) => t,
             _ => panic!()
         };
 

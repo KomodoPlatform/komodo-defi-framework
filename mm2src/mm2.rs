@@ -21,6 +21,7 @@
 
 #![feature(non_ascii_idents)]
 
+extern crate rpc as btc_rpc;
 #[macro_use] extern crate common;
 #[allow(unused_imports)]
 #[macro_use] extern crate duct;

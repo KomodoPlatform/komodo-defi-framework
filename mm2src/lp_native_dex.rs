@@ -28,7 +28,7 @@
 // locktime claiming on sporadic assetchains
 // there is an issue about waiting for notarization for a swap that never starts (expiration ok)
 
-use common::{coins_iter, lp, slurp_url, os, CJSON, MM_VERSION};
+use common::{coins_iter, lp, slurp_url, os, CJSON, MM_VERSION, global_dbdir};
 use common::log::TagParam;
 use common::mm_ctx::{MmCtx, MmArc};
 use common::nn::*;
@@ -1414,10 +1414,6 @@ fn test_crc32() {
     assert_eq! (unsafe {lp::calc_crc32 (0, b"123456789".as_ptr() as *mut c_void, 9)}, 0xcbf43926);
 }
 
-fn global_dbdir() -> &'static Path {
-    Path::new (unwrap! (unsafe {CStr::from_ptr (lp::GLOBAL_DBDIR.as_ptr())} .to_str()))
-}
-
 /// Invokes `OS_ensure_directory`,
 /// then prints an error and returns `false` if the directory is not writeable.
 fn ensure_writable (dir_path: &Path) -> bool {
@@ -1465,6 +1461,10 @@ fn fix_directories() -> bool {
     unsafe {os::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
     let dbdir = global_dbdir();
     if !ensure_writable (&dbdir.join ("SWAPS")) {return false}
+    if !ensure_writable (&dbdir.join ("SWAPS").join ("MY")) {return false}
+    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS")) {return false}
+    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS").join ("MAKER")) {return false}
+    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS").join ("TAKER")) {return false}
     if !ensure_writable (&dbdir.join ("GTC")) {return false}
     if !ensure_writable (&dbdir.join ("PRICES")) {return false}
     if !ensure_writable (&dbdir.join ("UNSPENTS")) {return false}

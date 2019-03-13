@@ -16,7 +16,7 @@ jobs:
       demands: agent.os -equals ${{ parameters.os }}
     steps:
       - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
-        clean: false # don't clean up to use previously built dependencies
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
       - powershell: |
           .\marketmaker_build_depends.cmd
         displayName: Build Windows deps
