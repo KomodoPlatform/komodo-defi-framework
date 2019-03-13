@@ -647,6 +647,7 @@ fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
     })
 }
 
+#[allow(non_camel_case_types)]
 #[derive(PartialEq, Eq, Debug)]
 enum Target {
     Unix,
@@ -654,6 +655,8 @@ enum Target {
     Windows,
     /// https://github.com/rust-embedded/cross
     AndroidCross,
+    /// https://github.com/TimNN/cargo-lipo
+    iOS,
 }
 impl Target {
     fn load() -> Target {
@@ -680,6 +683,9 @@ impl Target {
     /// or a similar setup based on the "japaric/armv7-linux-androideabi" Docker image.
     fn is_android_cross(&self) -> bool {
         *self == Target::AndroidCross
+    }
+    fn is_ios(&self) -> bool {
+        *self == Target::iOS
     }
     fn is_mac(&self) -> bool {
         *self == Target::Mac
@@ -1136,7 +1142,7 @@ fn libtorrent() {
             assert!(boost_system.exists());
         }
 
-        let rasterbar = mmd.join("libtorrent-rasterbar-1.2.0-rc");
+        let rasterbar = mmd.join("libtorrent-rasterbar-1.2.0");
         if rasterbar.exists() {
             // Cache maintenance.
             let _ = fs::remove_file(mmd.join("libtorrent-rasterbar-1.2.0.tar.gz"));
@@ -1145,7 +1151,7 @@ fn libtorrent() {
             // [Download and] unpack.
             if !mmd.join("libtorrent-rasterbar-1.2.0.tar.gz").exists() {
                 hget (
-                    "https://github.com/arvidn/libtorrent/releases/download/libtorrent-1_2_0_RC/libtorrent-rasterbar-1.2.0.tar.gz",
+                    "https://github.com/arvidn/libtorrent/releases/download/libtorrent_1_2_0/libtorrent-rasterbar-1.2.0.tar.gz",
                     mmd.join ("libtorrent-rasterbar-1.2.0.tar.gz.tmp")
                 );
                 unwrap!(fs::rename(
@@ -1179,8 +1185,10 @@ fn libtorrent() {
                     "PATH",
                     format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
                 )
-                .env("BOOST_BUILD_PATH", unwrap!(boost.to_str()))
-                .env("BOOST_ROOT", unwrap!(boost.to_str()))
+                .env("BOOST_BUILD_PATH", boost.join (r"tools\build"))
+                .env_remove("BOOST_ROOT")  // cf. https://stackoverflow.com/a/55141466/257568
+                // Doesn't work.  : (
+                .env("CPPFLAGS", fomat! ("-I"(unwrap!(boost.to_str()))))
                 .dir(&rasterbar)
                 .run()
             );
