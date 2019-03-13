@@ -21,10 +21,11 @@ use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
 use glob::glob;
-use gstuff::{last_modified_sec, now_float, slurp};
+use gstuff::{last_modified_sec, now_float, slurp, slurp_prog};
 use hyper_rustls::HttpsConnector;
 use std::cmp::max;
 use std::env::var;
+use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::iter::empty;
@@ -656,11 +657,12 @@ enum Target {
     /// https://github.com/rust-embedded/cross
     AndroidCross,
     /// https://github.com/TimNN/cargo-lipo
-    iOS,
+    iOS(String),
 }
 impl Target {
     fn load() -> Target {
-        match &unwrap!(var("TARGET"))[..] {
+        let targetᴱ = unwrap!(var("TARGET"));
+        match &targetᴱ[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
             // Used when compiling MM from under Raspberry Pi.
             "armv7-unknown-linux-gnueabihf" => Target::Unix,
@@ -676,6 +678,10 @@ impl Target {
                     )
                 }
             }
+            "aarch64-apple-ios" => Target::iOS(targetᴱ),
+            "x86_64-apple-ios" => Target::iOS(targetᴱ),
+            "armv7-apple-ios" => Target::iOS(targetᴱ),
+            "armv7s-apple-ios" => Target::iOS(targetᴱ),
             t => panic!("Target not (yet) supported: {}", t),
         }
     }
@@ -685,10 +691,45 @@ impl Target {
         *self == Target::AndroidCross
     }
     fn is_ios(&self) -> bool {
-        *self == Target::iOS
+        match self {
+            &Target::iOS(_) => true,
+            _ => false,
+        }
     }
     fn is_mac(&self) -> bool {
         *self == Target::Mac
+    }
+    /// The "-arch" parameter passed to Xcode clang++ when cross-building for iOS.
+    fn arch(&self) -> Option<&'static str> {
+        match self {
+            &Target::iOS(ref target) => match &target[..] {
+                "aarch64-apple-ios" => Some("arm64"),
+                "x86_64-apple-ios" => Some("x86_64"), // Or maybe "-arch i386 -arch x86_64"?
+                "armv7-apple-ios" => Some("armv7"),
+                "armv7s-apple-ios" => Some("armv7s"),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    /// The "<address-model>" option which is passed to "darwin.jam" via "user-config.jam".
+    fn address_model(&self) -> u8 {
+        match self {
+            &Target::iOS(ref target) => match &target[..] {
+                "armv7-apple-ios" => 32,
+                "armv7s-apple-ios" => 32, // Supports 64-bit mode, but not necessarily used by us.
+                _ => 64,
+            },
+            _ => 64,
+        }
+    }
+}
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Target::iOS(ref target) => f.write_str(&target[..]),
+            _ => wite!(f, [self]),
+        }
     }
 }
 
@@ -723,7 +764,7 @@ fn build_boost_bz2() -> PathBuf {
         // and might hit the CI space limits.
         // To avoid this we unpack only a small subset.
 
-        // Example using bcp to help with finding the subset:
+        // Example using bcp to help with finding a part of the subset:
         // sh bootstrap.sh
         // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY stage --with-date_time --with-system
         // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY tools/bcp
@@ -735,75 +776,82 @@ fn build_boost_bz2() -> PathBuf {
         for en in unwrap!(a.entries()) {
             let mut en = unwrap!(en);
             let path = unwrap!(en.path());
-            let pathˇ = unwrap!(path.to_str());
-            assert!(pathˇ.starts_with("boost_1_68_0/"));
-            let pathˇ = &pathˇ[13..];
-            let unpack = pathˇ == "bootstrap.sh"
-                || pathˇ == "boost-build.jam"
-                || pathˇ == "boostcpp.jam"
-                || pathˇ == "boost/assert.hpp"
-                || pathˇ == "boost/aligned_storage.hpp"
-                || pathˇ.starts_with("boost/asio/")
-                || pathˇ.starts_with("boost/blank")
-                || pathˇ == "boost/call_traits.hpp"
-                || pathˇ.starts_with("boost/callable_traits/")
-                || pathˇ == "boost/cerrno.hpp"
-                || pathˇ == "boost/config.hpp"
-                || pathˇ == "boost/concept_check.hpp"
-                || pathˇ == "boost/crc.hpp"
-                || pathˇ.starts_with("boost/container_hash/")
-                || pathˇ.starts_with("boost/concept/")
-                || pathˇ.starts_with("boost/config/")
-                || pathˇ.starts_with("boost/core/")
-                || pathˇ.starts_with("boost/chrono")
-                || pathˇ == "boost/cstdint.hpp"
-                || pathˇ == "boost/current_function.hpp"
-                || pathˇ == "boost/checked_delete.hpp"
-                || pathˇ.starts_with("boost/date_time/")
-                || pathˇ.starts_with("boost/detail/")
-                || pathˇ.starts_with("boost/exception/")
-                || pathˇ.starts_with("boost/fusion/")
-                || pathˇ.starts_with("boost/functional")
-                || pathˇ.starts_with("boost/iterator/")
-                || pathˇ.starts_with("boost/intrusive")
-                || pathˇ.starts_with("boost/integer")
-                || pathˇ == "boost/limits.hpp"
-                || pathˇ.starts_with("boost/mpl/")
-                || pathˇ.starts_with("boost/move")
-                || pathˇ == "boost/next_prior.hpp"
-                || pathˇ == "boost/noncopyable.hpp"
-                || pathˇ.starts_with("boost/none")
-                || pathˇ.starts_with("boost/numeric/")
-                || pathˇ == "boost/operators.hpp"
-                || pathˇ.starts_with("boost/optional")
-                || pathˇ.starts_with("boost/predef")
-                || pathˇ.starts_with("boost/preprocessor/")
-                || pathˇ.starts_with("boost/pool/")
-                || pathˇ == "boost/ref.hpp"
-                || pathˇ.starts_with("boost/range/")
-                || pathˇ.starts_with("boost/ratio")
-                || pathˇ.starts_with("boost/system/")
-                || pathˇ.starts_with("boost/smart_ptr/")
-                || pathˇ == "boost/static_assert.hpp"
-                || pathˇ == "boost/shared_ptr.hpp"
-                || pathˇ == "boost/shared_array.hpp"
-                || pathˇ.starts_with("boost/type_traits")
-                || pathˇ.starts_with("boost/type_index")
-                || pathˇ.starts_with("boost/tuple/")
-                || pathˇ.starts_with("boost/thread")
-                || pathˇ == "boost/throw_exception.hpp"
-                || pathˇ == "boost/type.hpp"
-                || pathˇ.starts_with("boost/utility/")
-                || pathˇ == "boost/utility.hpp"
-                || pathˇ.starts_with("boost/variant")
-                || pathˇ == "boost/version.hpp"
-                || pathˇ.starts_with("boost/winapi/")
-                || pathˇ.starts_with("libs/config/")
-                || pathˇ.starts_with("libs/chrono/")
-                || pathˇ.starts_with("libs/date_time/")
-                || pathˇ.starts_with("libs/system/")
-                || pathˇ.starts_with("tools/build/")
-                || pathˇ == "Jamroot";
+            let pathˢ = unwrap!(path.to_str());
+            assert!(pathˢ.starts_with("boost_1_68_0/"));
+            let pathˢ = &pathˢ[13..];
+            let unpack = pathˢ == "bootstrap.sh"
+                || pathˢ == "boost-build.jam"
+                || pathˢ == "boostcpp.jam"
+                || pathˢ == "boost/assert.hpp"
+                || pathˢ == "boost/aligned_storage.hpp"
+                || pathˢ == "boost/array.hpp"
+                || pathˢ.starts_with("boost/asio/")
+                || pathˢ.starts_with("boost/blank")
+                || pathˢ == "boost/call_traits.hpp"
+                || pathˢ.starts_with("boost/callable_traits/")
+                || pathˢ == "boost/cerrno.hpp"
+                || pathˢ == "boost/config.hpp"
+                || pathˢ == "boost/concept_check.hpp"
+                || pathˢ == "boost/crc.hpp"
+                || pathˢ.starts_with("boost/container")
+                || pathˢ.starts_with("boost/container_hash/")
+                || pathˢ.starts_with("boost/concept/")
+                || pathˢ.starts_with("boost/config/")
+                || pathˢ.starts_with("boost/core/")
+                || pathˢ.starts_with("boost/chrono")
+                || pathˢ == "boost/cstdint.hpp"
+                || pathˢ == "boost/current_function.hpp"
+                || pathˢ == "boost/checked_delete.hpp"
+                || pathˢ.starts_with("boost/date_time/")
+                || pathˢ.starts_with("boost/detail/")
+                || pathˢ.starts_with("boost/exception/")
+                || pathˢ.starts_with("boost/fusion/")
+                || pathˢ.starts_with("boost/functional")
+                || pathˢ.starts_with("boost/iterator/")
+                || pathˢ.starts_with("boost/intrusive")
+                || pathˢ.starts_with("boost/integer")
+                || pathˢ.starts_with("boost/io")
+                || pathˢ.starts_with("boost/lexical_cast")
+                || pathˢ == "boost/limits.hpp"
+                || pathˢ.starts_with("boost/mpl/")
+                || pathˢ.starts_with("boost/math")
+                || pathˢ.starts_with("boost/move")
+                || pathˢ == "boost/next_prior.hpp"
+                || pathˢ == "boost/noncopyable.hpp"
+                || pathˢ.starts_with("boost/none")
+                || pathˢ.starts_with("boost/numeric/")
+                || pathˢ == "boost/operators.hpp"
+                || pathˢ.starts_with("boost/optional")
+                || pathˢ.starts_with("boost/predef")
+                || pathˢ.starts_with("boost/preprocessor/")
+                || pathˢ.starts_with("boost/pool/")
+                || pathˢ == "boost/ref.hpp"
+                || pathˢ.starts_with("boost/range/")
+                || pathˢ.starts_with("boost/ratio")
+                || pathˢ.starts_with("boost/system/")
+                || pathˢ.starts_with("boost/smart_ptr/")
+                || pathˢ == "boost/static_assert.hpp"
+                || pathˢ == "boost/shared_ptr.hpp"
+                || pathˢ == "boost/shared_array.hpp"
+                || pathˢ == "boost/swap.hpp"
+                || pathˢ.starts_with("boost/type_traits")
+                || pathˢ.starts_with("boost/type_index")
+                || pathˢ.starts_with("boost/tuple/")
+                || pathˢ.starts_with("boost/thread")
+                || pathˢ.starts_with("boost/token")
+                || pathˢ == "boost/throw_exception.hpp"
+                || pathˢ == "boost/type.hpp"
+                || pathˢ.starts_with("boost/utility/")
+                || pathˢ == "boost/utility.hpp"
+                || pathˢ.starts_with("boost/variant")
+                || pathˢ == "boost/version.hpp"
+                || pathˢ.starts_with("boost/winapi/")
+                || pathˢ.starts_with("libs/config/")
+                || pathˢ.starts_with("libs/chrono/")
+                || pathˢ.starts_with("libs/date_time/")
+                || pathˢ.starts_with("libs/system/")
+                || pathˢ.starts_with("tools/build/")
+                || pathˢ == "Jamroot";
             if !unpack {
                 continue;
             }
@@ -820,30 +868,76 @@ fn build_boost_bz2() -> PathBuf {
         assert!(b2.exists());
     }
 
-    let bin = out_dir.join("bin");
-    let bin = unwrap!(bin.to_str());
-    let _ = fs::create_dir(&bin);
-    if target.is_android_cross() && !Path::new("/tmp/bin/g++").exists() {
+    if target.is_ios() {
+        let xcode = unwrap!(slurp_prog("xcode-select -print-path"));
+        let xcode = xcode.trim();
+        let cpp = fomat! ((xcode) "/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++");
+        assert!(Path::new(&cpp).is_file(), "No cpp '{}'", cpp);
+
+        let sdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk";
+        assert!(Path::new(&sdk).is_dir());
+
+        // NB: We're passing options for the "darwin" toolset defined in "tools/build/src/tools/darwin.jam":
+        //
+        //     rule init ( version ? : command * : options * : requirement * )
+        let user_config_jamˢ = fomat!(
+            "using darwin\n"
+            ": 12.1~iphone \n"  // `version`
+            ": "(cpp)" -target "(target)" --sysroot "(sdk)" -arch "(unwrap!(target.arch()))" -stdlib=libc++ \n"  // `command`
+            ": <striper> \n"  // `options`
+            ": <architecture>arm <target-os>iphone <address-model>"(target.address_model())" \n"  // `requirement`
+            ";\n"
+        );
+        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
+        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
+        unwrap!(user_config_jamᶠ.write_all(user_config_jamˢ.as_bytes()));
+        drop(user_config_jamᶠ);
+        epintln!("Created "[user_config_jamᵖ]":\n"(user_config_jamˢ));
+
         unwrap!(ecmd!(
-            "ln",
-            "-sf",
-            "/android-ndk/bin/arm-linux-androideabi-g++",
-            fomat!((bin) "/g++")
+            "/bin/sh",
+            "-c",
+            fomat!(
+                "./b2 release link=static cxxflags=-fPIC cxxstd=11 toolset=darwin "
+                "address-model=" (target.address_model()) " "
+                "target-os=iphone "
+                "architecture=arm "
+                "define=BOOST_ERROR_CODE_HEADER_ONLY "
+                "install --with-date_time --with-system --prefix=../boost "
+                "| grep --line-buffered -v 'common.copy ../boost/include/'"
+            )
         )
+        .dir(&boost)
+        .unchecked()
+        .run());
+    } else {
+        // TODO: Use the "tools/build/src/user-config.jam" instead of injecting the NDK g++ into the PATH.
+        let bin = out_dir.join("bin");
+        let bin = unwrap!(bin.to_str());
+        let _ = fs::create_dir(&bin);
+        let tmp_gpp = fomat!((bin) "/g++");
+        if target.is_android_cross() && !Path::new(&tmp_gpp).exists() {
+            unwrap!(ecmd!(
+                "ln",
+                "-sf",
+                "/android-ndk/bin/arm-linux-androideabi-g++",
+                tmp_gpp
+            )
+            .run());
+        }
+
+        unwrap!(ecmd!(
+            "/bin/sh",
+            "-c",
+            "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
+             define=BOOST_ERROR_CODE_HEADER_ONLY \
+             install --with-date_time --with-system --prefix=../boost"
+        )
+        .env("PATH", fomat!((bin) ":"(unwrap!(var("PATH")))))
+        .dir(&boost)
+        .unchecked()
         .run());
     }
-
-    unwrap!(ecmd!(
-        "/bin/sh",
-        "-c",
-        "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
-         define=BOOST_ERROR_CODE_HEADER_ONLY \
-         install --with-date_time --with-system --prefix=../boost"
-    )
-    .env("PATH", fomat!((bin) ":"(unwrap!(var("PATH")))))
-    .dir(&boost)
-    .unchecked()
-    .run());
 
     assert!(boost_system.exists());
     assert!(prefix.is_dir());
@@ -1037,7 +1131,7 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
             unwrap!(a.to_str())
         )
         .run());
-    } else if target.is_mac() {
+    } else if target.is_mac() || target.is_ios() {
         unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).run());
     } else {
         // 85 MiB reduction in mm2 binary size on Linux.
@@ -1065,8 +1159,9 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
 }
 
 fn libtorrent() {
-    // TODO: If we decide to keep linking with libtorrent then we should distribute the
-    //       https://github.com/arvidn/libtorrent/blob/master/LICENSE.
+    // NB: Distributions should have a copy of https://github.com/arvidn/libtorrent/blob/master/LICENSE.
+
+    let target = Target::load();
 
     if cfg!(windows) {
         // NB: The "marketmaker_depends" folder is cached in the AppVeyour build,
@@ -1176,22 +1271,24 @@ fn libtorrent() {
             r"bin\msvc-14.1\release\address-model-64\link-static\threading-multi\libtorrent.lib",
         );
         if !lt.exists() {
-            unwrap!(
-                ecmd! (
-                    "cmd", "/c",
-                    "b2 release toolset=msvc-14.1 address-model=64 link=static dht=on debug-symbols=off"
+            // cf. tools\build\src\tools\msvc.jam
+            unwrap!(ecmd!(
+                "cmd",
+                "/c",
+                fomat!(
+                    "b2 release "
+                    "include="(unwrap!(boost.to_str()))" "
+                    "toolset=msvc-14.1 address-model=64 link=static dht=on debug-symbols=off"
                 )
-                .env(
-                    "PATH",
-                    format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
-                )
-                .env("BOOST_BUILD_PATH", boost.join (r"tools\build"))
-                .env_remove("BOOST_ROOT")  // cf. https://stackoverflow.com/a/55141466/257568
-                // Doesn't work.  : (
-                .env("CPPFLAGS", fomat! ("-I"(unwrap!(boost.to_str()))))
-                .dir(&rasterbar)
-                .run()
-            );
+            )
+            .env(
+                "PATH",
+                format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
+            )
+            .env("BOOST_BUILD_PATH", boost.join(r"tools\build"))
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .run());
             assert!(lt.exists());
         }
 
@@ -1230,7 +1327,7 @@ fn libtorrent() {
         );
 
         println!("cargo:rustc-link-lib=iphlpapi"); // NotifyAddrChange.
-    } else if cfg!(target_os = "macos") {
+    } else if cfg!(target_os = "macos") && !target.is_ios() {
         // NB: Homebrew's version of libtorrent-rasterbar (1.1.10) is currently too old.
 
         let boost_system_mt = Path::new("/usr/local/lib/libboost_system-mt.a");
@@ -1270,7 +1367,6 @@ fn libtorrent() {
         println!("cargo:rustc-link-search=native={}", out_dir);
     } else {
         let boost = build_boost_bz2();
-
         let (lt_a, lt_include) = build_libtorrent(Some(&boost));
         println!("cargo:rustc-link-lib=static=torrent-rasterbar");
         println!(
@@ -1526,7 +1622,7 @@ fn build_c_code(mm_version: &str) {
     // The MM1 library.
 
     let target = Target::load();
-    if target.is_android_cross() {
+    if target.is_android_cross() || target.is_ios() {
         manual_mm1_build(target);
         return;
     }
