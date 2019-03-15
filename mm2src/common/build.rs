@@ -3,7 +3,7 @@
 
 // The script is experimentally formatted with `rustfmt`. Probably not going to use `rustfmt` for the rest of the project though.
 
-// Bindgen requirements: https://rust-lang-nursery.github.io/rust-bindgen/requirements.html
+// Bindgen requirements: https://rust-lang.github.io/rust-bindgen/requirements.html
 //              Windows: https://github.com/rust-lang-nursery/rustup.rs/issues/1003#issuecomment-289825927
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
@@ -480,12 +480,14 @@ fn windows_requirements() {
             .read()
             .unwrap_or(Default::default());
         if !clang_v.contains("clang version") {
-            panic!("\n\
-                windows_requirements]\n\
-                Per https://rust-lang.github.io/rust-bindgen/requirements.html\n\
-                please download and install a 'Windows (64-bit)' pre-build binary of LLVM\n\
-                from http://releases.llvm.org/download.html\n\
-                ");
+            panic!(
+                "\n\
+                 windows_requirements]\n\
+                 Per https://rust-lang.github.io/rust-bindgen/requirements.html\n\
+                 please download and install a 'Windows (64-bit)' pre-build binary of LLVM\n\
+                 from http://releases.llvm.org/download.html\n\
+                 "
+            );
         }
     }
 
@@ -885,6 +887,13 @@ fn build_boost_bz2() -> PathBuf {
     }
 
     if target.is_ios() {
+        if 1 == 1 {
+            return boost;
+        }
+        // Our hope is that the separate Boost compilation will be no longer necessary
+        // as libtorrent will be building and linking in the necessary parts of Boost on its own.
+        // But we should confirm that mm2 works on iOS before removing the Boost compilation here.
+
         let xcode = unwrap!(slurp_prog("xcode-select -print-path"));
         let xcode = xcode.trim();
         let cpp = fomat! ((xcode) "/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++");
@@ -1016,6 +1025,45 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
             "Can't unpack libtorrent-rasterbar-1.2.0.tar.gz"
         );
         assert!(rasterbar.exists());
+    }
+
+    if target.is_ios() {
+        // This is the latest version of the build. It doesn't compile Boost separately
+        // but rather allows the libtorrent to compile it
+        // "you probably want to just build libtorrent and have it build boost
+        //  (otherwise you'll end up building the boost dependencies twice)"
+        //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
+        // After field-testing on iOS we should probably refactor
+        // and merge the rest of the OS builds into this one.
+
+        let boost = unwrap!(boost);
+        let user_config_jamˢ = slurp(&root().join("mm2src/common/ios/user-config.jam"));
+        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
+        epintln!("build_libtorrent] Creating "[user_config_jamᵖ]"…");
+        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
+        unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
+        drop(user_config_jamᶠ);
+
+        let b2 = fomat!(
+            "b2 -j4 release link=static dht=on encryption=off crypto=built-in iconv=off toolset=darwin-iphone"
+        );
+        unwrap!(cmd!("/bin/sh", "-c", b2)
+            .env(
+                "PATH",
+                format!("{}:{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
+            )
+            .env("BOOST_BUILD_PATH", boost.join(r"tools/build"))
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .run());
+
+        let a = rasterbar.join("bin/darwin-iphone/release/encryption-off/iconv-off/link-static/threading-multi/libtorrent.a");
+        assert!(a.is_file());
+
+        let include = rasterbar.join("include");
+        assert!(include.is_dir());
+
+        return (a, include);
     }
 
     if !rasterbar.join("Makefile").exists() {
@@ -1402,8 +1450,12 @@ fn libtorrent() {
         let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
         let lib_path = Path::new(&out_dir).join("libdht.a");
         let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
-        let boost_inc = boost.join("include");
-        assert!(boost_inc.join("boost/version.hpp").exists());
+        let boost_inc = if boost.join("include/boost/version.hpp").exists() {
+            boost.join("include")
+        } else {
+            assert!(boost.join("boost/version.hpp").exists());
+            boost.clone()
+        };
         if lm_dht >= lm_lib - SLIDE {
             cc::Build::new()
                 .file("dht.cc")
