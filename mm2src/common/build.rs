@@ -473,6 +473,22 @@ fn windows_requirements() {
     };
     eprintln!("windows_requirements] System directory is {:?}.", system);
 
+    if !Path::new(r"c:\Program Files\LLVM\bin\libclang.dll").is_file() {
+        // If `clang -v` works then maybe libclang is installed at a different location.
+        let clang_v = cmd!("clang", "-v")
+            .stderr_to_stdout()
+            .read()
+            .unwrap_or(Default::default());
+        if !clang_v.contains("clang version") {
+            panic!("\n\
+                windows_requirements]\n\
+                Per https://rust-lang.github.io/rust-bindgen/requirements.html\n\
+                please download and install a 'Windows (64-bit)' pre-build binary of LLVM\n\
+                from http://releases.llvm.org/download.html\n\
+                ");
+        }
+    }
+
     // `msvcr100.dll` is required by `ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/dll/x64/pthreadVC2.dll`
     let msvcr100 = system.join("msvcr100.dll");
     if !msvcr100.exists() {
