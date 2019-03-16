@@ -1515,9 +1515,7 @@ lazy_static! {
     ];
 }
 
-/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
-fn manual_mm1_build(target: Target) {
-    let (root, out_dir) = (root(), out_dir());
+fn manual_nanomsg_build(root: &Path, out_dir: &Path, target: &Target) {
     let nanomsg = out_dir.join("nanomsg-1.1.5");
     epintln!("nanomsg at "[nanomsg]);
 
@@ -1551,6 +1549,12 @@ fn manual_mm1_build(target: Target) {
         "cargo:rustc-link-search=native={}",
         path2s(unwrap!(libnanomsg_a.parent()))
     );
+}
+
+/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
+fn manual_mm1_build(target: Target) {
+    let (root, out_dir) = (root(), out_dir());
+    manual_nanomsg_build(&root, &out_dir, &target);
 
     let exchanges_build = out_dir.join("exchanges_build");
     epintln!("exchanges_build at "[exchanges_build]);
