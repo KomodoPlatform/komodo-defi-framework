@@ -21,7 +21,7 @@ use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
 use glob::glob;
-use gstuff::{last_modified_sec, now_float, slurp, slurp_prog};
+use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use std::cmp::max;
 use std::env::var;
@@ -666,6 +666,16 @@ fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
     })
 }
 
+#[derive(Debug)]
+struct IosClangOps {
+    /// iPhone SDK (iPhoneOS for arm64, iPhoneSimulator for x86_64)
+    sysroot: &'static str,
+    /// "arm64", "x86_64".
+    arch: &'static str,
+    /// Identifies the corresponding clang options defined in "user-config.jam".
+    b2_toolset: &'static str,
+}
+
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Eq, Debug)]
 enum Target {
@@ -718,27 +728,24 @@ impl Target {
         *self == Target::Mac
     }
     /// The "-arch" parameter passed to Xcode clang++ when cross-building for iOS.
-    fn arch(&self) -> Option<&'static str> {
+    fn ios_clang_ops(&self) -> Option<IosClangOps> {
         match self {
             &Target::iOS(ref target) => match &target[..] {
-                "aarch64-apple-ios" => Some("arm64"),
-                "x86_64-apple-ios" => Some("x86_64"), // Or maybe "-arch i386 -arch x86_64"?
-                "armv7-apple-ios" => Some("armv7"),
-                "armv7s-apple-ios" => Some("armv7s"),
+                "aarch64-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "arm64",
+                    b2_toolset: "darwin-iphone"
+                }),
+                "x86_64-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
+                    arch: "x86_64",
+                    b2_toolset: "darwin-iphonesim"
+                }),
+                //"armv7-apple-ios" => "armv7", 32-bit
+                //"armv7s-apple-ios" => "armv7s", 32-bit
                 _ => None,
             },
             _ => None,
-        }
-    }
-    /// The "<address-model>" option which is passed to "darwin.jam" via "user-config.jam".
-    fn address_model(&self) -> u8 {
-        match self {
-            &Target::iOS(ref target) => match &target[..] {
-                "armv7-apple-ios" => 32,
-                "armv7s-apple-ios" => 32, // Supports 64-bit mode, but not necessarily used by us.
-                _ => 64,
-            },
-            _ => 64,
         }
     }
 }
@@ -894,23 +901,18 @@ fn build_boost_bz2() -> PathBuf {
         // as libtorrent will be building and linking in the necessary parts of Boost on its own.
         // But we should confirm that mm2 works on iOS before removing the Boost compilation here.
 
-        let xcode = unwrap!(slurp_prog("xcode-select -print-path"));
-        let xcode = xcode.trim();
-        let cpp = fomat! ((xcode) "/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++");
-        assert!(Path::new(&cpp).is_file(), "No cpp '{}'", cpp);
-
-        let sdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk";
-        assert!(Path::new(&sdk).is_dir());
-
+        let cops = unwrap!(target.ios_clang_ops());
+        assert!(Path::new(cops.sysroot).is_dir());
         // NB: We're passing options for the "darwin" toolset defined in "tools/build/src/tools/darwin.jam":
         //
         //     rule init ( version ? : command * : options * : requirement * )
         let user_config_jamˢ = fomat!(
             "using darwin\n"
             ": 12.1~iphone \n"  // `version`
-            ": "(cpp)" -target "(target)" --sysroot "(sdk)" -arch "(unwrap!(target.arch()))" -stdlib=libc++ \n"  // `command`
+            ": /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+            " -target "(target)" --sysroot "(cops.sysroot)" -arch "(cops.arch)" -stdlib=libc++ \n"  // `command`
             ": <striper> \n"  // `options`
-            ": <architecture>arm <target-os>iphone <address-model>"(target.address_model())" \n"  // `requirement`
+            ": <architecture>arm <target-os>iphone <address-model>64 \n"  // `requirement`
             ";\n"
         );
         let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
@@ -924,7 +926,7 @@ fn build_boost_bz2() -> PathBuf {
             "-c",
             fomat!(
                 "./b2 release link=static cxxflags=-fPIC cxxstd=11 toolset=darwin "
-                "address-model=" (target.address_model()) " "
+                "address-model=64 "
                 "target-os=iphone "
                 "architecture=arm "
                 "define=BOOST_ERROR_CODE_HEADER_ONLY "
@@ -1044,8 +1046,10 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
         unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
         drop(user_config_jamᶠ);
 
+        let cops = unwrap!(target.ios_clang_ops());
         let b2 = fomat!(
-            "b2 -j4 release link=static dht=on encryption=off crypto=built-in iconv=off toolset=darwin-iphone"
+            "b2 -j4 release link=static dht=on encryption=off crypto=built-in iconv=off"
+            " toolset="(cops.b2_toolset)
         );
         unwrap!(cmd!("/bin/sh", "-c", b2)
             .env(
