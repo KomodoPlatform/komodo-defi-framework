@@ -1461,8 +1461,19 @@ fn libtorrent() {
             boost.clone()
         };
         if lm_dht >= lm_lib - SLIDE {
-            cc::Build::new()
-                .file("dht.cc")
+            let mut cc = cc::Build::new();
+            if target.is_ios() {
+                let cops = unwrap!(target.ios_clang_ops());
+                cc.compiler("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++")
+                .flag(&fomat!("--sysroot "(cops.sysroot)))
+                .flag("-stdlib=libc++")
+                .flag("-miphoneos-version-min=12.1")
+                .flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1")
+                .flag(&fomat!("-arch "(cops.arch)));
+            } else {
+                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
+            }
+            cc.file("dht.cc")
                 .warnings(true)
                 // cf. .../out/libtorrent-rasterbar-1.2.0/config.report and Makefile/CXX
                 // Mismatch between the libtorrent and the dht.cc flags
@@ -1474,7 +1485,6 @@ fn libtorrent() {
                 .flag("-fvisibility=hidden")
                 .flag("-fvisibility-inlines-hidden")
                 .flag("-fPIC")
-                .flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1")
                 .flag("-DTORRENT_DISABLE_ENCRYPTION=1")
                 .flag("-DBOOST_ASIO_HAS_STD_CHRONO=1")
                 .flag("-DBOOST_EXCEPTION_DISABLE=1")

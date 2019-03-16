@@ -6,7 +6,6 @@ using darwin : iphone :
 -stdlib=libc++
 -miphoneos-version-min=12.1
 -DIPHONEOS_DEPLOYMENT_TARGET=12.1
--stdlib=libc++
 -arch arm64
 ;
 using darwin : iphonesim :
@@ -17,6 +16,5 @@ using darwin : iphonesim :
 -stdlib=libc++
 -miphoneos-version-min=12.1
 -DIPHONEOS_DEPLOYMENT_TARGET=12.1
--stdlib=libc++
 -arch x86_64
 ;
