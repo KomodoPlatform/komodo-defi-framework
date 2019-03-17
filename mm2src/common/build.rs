@@ -1465,11 +1465,11 @@ fn libtorrent() {
             if target.is_ios() {
                 let cops = unwrap!(target.ios_clang_ops());
                 cc.compiler("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++")
-                .flag(&fomat!("--sysroot "(cops.sysroot)))
+                .flag(&fomat!("--sysroot="(cops.sysroot)))
                 .flag("-stdlib=libc++")
                 .flag("-miphoneos-version-min=12.1")
                 .flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1")
-                .flag(&fomat!("-arch "(cops.arch)));
+                .flag("-arch").flag(cops.arch);
             } else {
                 cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
             }
@@ -1479,8 +1479,7 @@ fn libtorrent() {
                 // Mismatch between the libtorrent and the dht.cc flags
                 // might produce weird "undefined reference" link errors.
                 .flag("-std=c++11")
-                .flag("-g")
-                .flag("-O2")
+                .opt_level(2)
                 .flag("-ftemplate-depth=512")
                 .flag("-fvisibility=hidden")
                 .flag("-fvisibility-inlines-hidden")
@@ -1513,16 +1512,66 @@ lazy_static! {
         rabs("iguana/segwit_addr.c"),
         rabs("iguana/keccak.c"),
     ];
+    static ref LIBNANOMSG_SRC: Vec<&'static str> =
+        "utils/efd.c core/sock.c core/poll.c                         \
+         core/symbol.c core/ep.c core/pipe.c                         \
+         core/sockbase.c core/global.c devices/device.c              \
+         transports/inproc/ins.c transports/inproc/inproc.c          \
+         transports/inproc/cinproc.c transports/inproc/binproc.c     \
+         transports/inproc/sinproc.c transports/inproc/msgqueue.c    \
+         transports/utils/dns.c transports/utils/literal.c           \
+         transports/utils/streamhdr.c transports/utils/backoff.c     \
+         transports/utils/iface.c transports/utils/port.c            \
+         transports/tcp/tcp.c transports/tcp/stcp.c                  \
+         transports/tcp/ctcp.c transports/tcp/atcp.c                 \
+         transports/tcp/btcp.c transports/ipc/aipc.c                 \
+         transports/ipc/bipc.c transports/ipc/cipc.c                 \
+         transports/ipc/ipc.c transports/ipc/sipc.c                  \
+         transports/ws/ws.c                                          \
+         transports/ws/aws.c transports/ws/bws.c                     \
+         transports/ws/cws.c transports/ws/sha1.c                    \
+         transports/ws/sws.c transports/ws/ws_handshake.c            \
+         transports/utils/base64.c                                   \
+         utils/strcasestr.c utils/strncasecmp.c                      \
+         protocols/survey/xrespondent.c                              \
+         protocols/survey/surveyor.c protocols/survey/xsurveyor.c    \
+         protocols/survey/respondent.c protocols/pair/pair.c         \
+         protocols/pair/xpair.c protocols/utils/dist.c               \
+         protocols/utils/priolist.c protocols/utils/fq.c             \
+         protocols/utils/excl.c protocols/utils/lb.c                 \
+         protocols/bus/xbus.c protocols/bus/bus.c                    \
+         protocols/pipeline/xpull.c protocols/pipeline/push.c        \
+         protocols/pipeline/pull.c protocols/pipeline/xpush.c        \
+         protocols/reqrep/rep.c protocols/reqrep/req.c               \
+         protocols/reqrep/xrep.c protocols/reqrep/task.c             \
+         protocols/reqrep/xreq.c protocols/pubsub/sub.c              \
+         protocols/pubsub/xpub.c protocols/pubsub/xsub.c             \
+         protocols/pubsub/trie.c protocols/pubsub/pub.c              \
+         aio/worker.c aio/fsm.c aio/ctx.c aio/usock.c                \
+         aio/poller.c aio/pool.c aio/timerset.c                      \
+         aio/timer.c utils/err.c utils/thread.c                      \
+         utils/closefd.c utils/atomic.c utils/list.c                 \
+         utils/stopwatch.c utils/random.c utils/wire.c               \
+         utils/mutex.c utils/msg.c utils/clock.c                     \
+         utils/queue.c utils/chunk.c                                 \
+         utils/hash.c utils/alloc.c                                  \
+         utils/sleep.c utils/chunkref.c utils/sem.c                  \
+         utils/condvar.c utils/once.c"
+            .split_ascii_whitespace()
+            .collect();
 }
 
-fn manual_nanomsg_build(root: &Path, out_dir: &Path, target: &Target) {
-    let nanomsg = out_dir.join("nanomsg-1.1.5");
+fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
+    let nanomsg = if target.is_ios() {
+        out_dir.join("nanomsg.ios")
+    } else {
+        out_dir.join("nanomsg-1.1.5")
+    };
     epintln!("nanomsg at "[nanomsg]);
 
     let libnanomsg_a = out_dir.join("libnanomsg.a");
-    let nanomsg_mk = root.join("mm2src/common/android/nanomsg.mk");
-    if make(&libnanomsg_a, &vec![nanomsg_mk.clone()]) {
-        if !nanomsg.exists() {
+    if !libnanomsg_a.exists() {
+        if !nanomsg.exists() && !target.is_ios() {
             let nanomsg_tgz = out_dir.join("nanomsg.tgz");
             if !nanomsg_tgz.exists() {
                 hget(
@@ -1533,15 +1582,61 @@ fn manual_nanomsg_build(root: &Path, out_dir: &Path, target: &Target) {
             }
             unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(&out_dir).run());
             assert!(nanomsg.exists());
+        } else if !nanomsg.exists() && target.is_ios() {
+            unwrap!(ecmd!(
+                "git",
+                "clone",
+                "--depth=1",
+                "https://github.com/reqshark/nanomsg.ios.git"
+            )
+            .dir(&out_dir)
+            .run());
+            assert!(nanomsg.exists());
         }
 
+        let mut cc = cc::Build::new();
         if target.is_android_cross() {
-            unwrap!(ecmd!("make", "-f", unwrap!(nanomsg_mk.to_str()))
-                .dir(&nanomsg)
-                .run());
+            cc.compiler("/android-ndk/bin/clang");
+            cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
+        } else if target.is_ios() {
+            let cops = unwrap!(target.ios_clang_ops());
+            cc.compiler("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang");
+            cc.flag(&fomat!("--sysroot="(cops.sysroot)));
+            cc.flag("-stdlib=libc++");
+            cc.flag("-miphoneos-version-min=12.1");
+            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1");
+            cc.flag("-arch").flag(cops.arch);
+            cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
         } else {
             panic!("Target {:?}", target);
         }
+        cc.debug(false);
+        cc.opt_level(2);
+        cc.flag("-fPIC");
+        if !target.is_ios() {
+            cc.flag("-DNN_HAVE_SEMAPHORE");
+            cc.flag("-DNN_HAVE_POLL");
+            cc.flag("-DNN_HAVE_MSG_CONTROL");
+            cc.flag("-DNN_HAVE_EVENTFD");
+            cc.flag("-DNN_USE_EVENTFD");
+            cc.flag("-DNN_USE_LITERAL_IFADDR");
+            cc.flag("-DNN_USE_PO");
+        }
+        for src_path in LIBNANOMSG_SRC.iter() {
+            cc.file(if target.is_ios() {
+                if src_path.ends_with("/strcasestr.c")
+                    || src_path.ends_with("/strncasecmp.c")
+                    || src_path.ends_with("/condvar.c")
+                    || src_path.ends_with("/once.c")
+                {
+                    continue;
+                }
+                nanomsg.join(src_path)
+            } else {
+                nanomsg.join("src").join(src_path)
+            });
+        }
+        cc.compile("nanomsg");
         assert!(libnanomsg_a.exists());
     }
     println!("cargo:rustc-link-lib=static=nanomsg");
