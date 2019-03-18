@@ -1680,30 +1680,12 @@ fn manual_mm1_build(target: Target) {
     epintln!("secp256k1_build at "[secp256k1_build]);
 
     let libsecp256k1_a = out_dir.join("libsecp256k1.a");
-    if !libsecp256k1_a.exists() {
-        let _ = fs::create_dir(&secp256k1_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/android-ndk/bin/clang",
-                "-O2",
-                "-g3",
-                "-c",
-                "/project/iguana/secp256k1/src/secp256k1.c"
-            )
-            .dir(&secp256k1_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/android-ndk/bin/arm-linux-androideabi-ar",
-                "-rcs",
-                unwrap!(libsecp256k1_a.to_str()),
-                "secp256k1.o"
-            )
-            .dir(&secp256k1_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
-        }
+    let secp256k1_src = [root.join("iguana/secp256k1/src/secp256k1.c")];
+    if make(&libsecp256k1_a, &secp256k1_src[..]) {
+        let mut cc = target.cc(false);
+        cc.file(&secp256k1_src[0]);
+        cc.compile("secp256k1");
+        assert!(libsecp256k1_a.exists());
     }
     println!("cargo:rustc-link-lib=static=secp256k1");
 
