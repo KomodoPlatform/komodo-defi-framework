@@ -1689,31 +1689,18 @@ fn manual_mm1_build(target: Target) {
     }
     println!("cargo:rustc-link-lib=static=secp256k1");
 
-    let jpeg_build = out_dir.join("jpeg_build");
-    epintln!("jpeg_build at "[jpeg_build]);
-
     let libjpeg_a = out_dir.join("libjpeg.a");
-    if !libjpeg_a.exists() {
-        let _ = fs::create_dir(&jpeg_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/bin/sh",
-                "-c",
-                "/android-ndk/bin/clang -O2 -g3 -c \
-                 /project/crypto777/jpeg/*.c /project/crypto777/jpeg/unix/jmemname.c"
-            )
-            .dir(&jpeg_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/bin/sh", "-c",
-                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libjpeg_a.to_str())) " *.o")
-            )
-            .dir(&jpeg_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+    let mut libjpeg_src: Vec<PathBuf> = unwrap!(glob("crypto777/jpeg/*.c"))
+        .map(|p| unwrap!(p))
+        .collect();
+    libjpeg_src.push(root.join("crypto777/jpeg/unix/jmemname.c"));
+    if make(&libjpeg_a, &libjpeg_src[..]) {
+        let mut cc = target.cc(false);
+        for p in &libjpeg_src {
+            cc.file(p);
         }
+        cc.compile("jpeg");
+        assert!(libjpeg_a.exists());
     }
     println!("cargo:rustc-link-lib=static=jpeg");
 
