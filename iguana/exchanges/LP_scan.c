@@ -344,8 +344,12 @@ char *LP_dividends(struct iguana_info *coin,int32_t height,cJSON *argjson)
                                         sprintf(buf,"%s %s %.8f %s",prefix,field,dstr(val),suffix);
                                         if ( execflag != 0 )
                                         {
-                                            if ( system(buf) != 0 )
-                                                printf("error system.(%s)\n",buf);
+                                            #ifdef TARGET_OS_IPHONE
+                                                printf("error system.(%s).system not supported on iOS\n",buf);
+                                            #else
+                                                if ( system(buf) != 0 )
+                                                    printf("error system.(%s)\n",buf);
+                                            #endif
                                         }
                                         else printf("%s\n",buf);
                                         emit += val;

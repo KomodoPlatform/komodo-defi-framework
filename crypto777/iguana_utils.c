@@ -39,8 +39,8 @@ typedef struct queue
     char name[64],initflag;
 } queue_t;
 
-void queue_enqueue(char *name,queue_t *queue,struct queueitem *origitem);//,int32_t offsetflag);
-void *queue_dequeue(queue_t *queue);//,int32_t offsetflag);
+void queue_enqueue(char *name,queue_t *queue,struct queueitem *origitem);
+void *queue_dequeue(queue_t *queue);
 void *queue_delete(queue_t *queue,struct queueitem *copy,int32_t copysize,int32_t freeitem);
 void *queue_free(queue_t *queue);
 void *queue_clone(queue_t *clone,queue_t *queue,int32_t size);

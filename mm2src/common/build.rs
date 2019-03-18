@@ -748,6 +748,32 @@ impl Target {
             _ => None,
         }
     }
+    fn cc(&self, plus_plus: bool) -> cc::Build {
+        let mut cc = cc::Build::new();
+        if self.is_android_cross() {
+            cc.compile(if plus_plus {
+                // TODO: use clang++ if it is there in the NDK,
+                // in order for `cc::Build` to match the compiler (GCC is a link to Clang in the NDK).
+                "/android-ndk/bin/arm-linux-androideabi-g++"
+            } else {
+                "/android-ndk/bin/clang"
+            });
+            cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
+        } else if self.is_ios() {
+            let cops = unwrap!(self.ios_clang_ops());
+            cc.compiler(if plus_plus {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+            } else {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+            });
+            cc.flag(&fomat!("--sysroot="(cops.sysroot)));
+            cc.flag("-stdlib=libc++");
+            cc.flag("-miphoneos-version-min=12.1");
+            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1");
+            cc.flag("-arch").flag(cops.arch);
+        }
+        cc
+    }
 }
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1461,15 +1487,8 @@ fn libtorrent() {
             boost.clone()
         };
         if lm_dht >= lm_lib - SLIDE {
-            let mut cc = cc::Build::new();
+            let mut cc = target.cc(true);
             if target.is_ios() {
-                let cops = unwrap!(target.ios_clang_ops());
-                cc.compiler("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++")
-                .flag(&fomat!("--sysroot="(cops.sysroot)))
-                .flag("-stdlib=libc++")
-                .flag("-miphoneos-version-min=12.1")
-                .flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1")
-                .flag("-arch").flag(cops.arch);
             } else {
                 cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
             }
@@ -1594,26 +1613,13 @@ fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
             assert!(nanomsg.exists());
         }
 
-        let mut cc = cc::Build::new();
-        if target.is_android_cross() {
-            cc.compiler("/android-ndk/bin/clang");
-            cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
-        } else if target.is_ios() {
-            let cops = unwrap!(target.ios_clang_ops());
-            cc.compiler("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang");
-            cc.flag(&fomat!("--sysroot="(cops.sysroot)));
-            cc.flag("-stdlib=libc++");
-            cc.flag("-miphoneos-version-min=12.1");
-            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1");
-            cc.flag("-arch").flag(cops.arch);
-            cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
-        } else {
-            panic!("Target {:?}", target);
-        }
+        let mut cc = target.cc(false);
         cc.debug(false);
         cc.opt_level(2);
         cc.flag("-fPIC");
-        if !target.is_ios() {
+        if target.is_ios() {
+            cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
+        } else {
             cc.flag("-DNN_HAVE_SEMAPHORE");
             cc.flag("-DNN_HAVE_POLL");
             cc.flag("-DNN_HAVE_MSG_CONTROL");
@@ -1657,33 +1663,13 @@ fn manual_mm1_build(target: Target) {
     let libexchanges_a = out_dir.join("libexchanges.a");
     if make(&libexchanges_a, &LIBEXCHANGES_SRC[..]) {
         let _ = fs::create_dir(&exchanges_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/android-ndk/bin/clang",
-                "-O2",
-                "-g3",
-                "-c",
-                fomat!("-I"(path2s(rabs("crypto777")))),
-                i LIBEXCHANGES_SRC.iter().map(path2s)
-            )
-            .dir(&exchanges_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/android-ndk/bin/arm-linux-androideabi-ar",
-                "-rcs",
-                path2s(libexchanges_a),
-                "groestl.o",
-                "keccak.o",
-                "mini-gmp.o",
-                "mm.o",
-                "segwit_addr.o"
-            )
-            .dir(&exchanges_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+        let mut cc = target.cc(false);
+        for p in LIBEXCHANGES_SRC.iter() {
+            cc.file(p);
         }
+        cc.include(rabs("crypto777"));
+        cc.compile("exchanges");
+        assert!(libexchanges_a.exists());
     }
     println!("cargo:rustc-link-lib=static=exchanges");
     println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
