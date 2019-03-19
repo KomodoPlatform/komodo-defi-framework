@@ -1065,7 +1065,7 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
         assert!(rasterbar.exists());
     }
 
-    if target.is_ios() {
+    if let Target::iOS(ref targetᴱ) = target {
         // This is the latest version of the build. It doesn't compile Boost separately
         // but rather allows the libtorrent to compile it
         // "you probably want to just build libtorrent and have it build boost
@@ -1097,8 +1097,15 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
             .dir(&rasterbar)
             .run());
 
-        let a = rasterbar.join("bin/darwin-iphone/release/encryption-off/iconv-off/link-static/threading-multi/libtorrent.a");
+        let a_rel = fomat!(
+        "bin/darwin-iphone"
+        if targetᴱ == "x86_64-apple-ios" {"sim"}
+        "/release/encryption-off/iconv-off/link-static/threading-multi/libtorrent.a"
+        );
+        let a = rasterbar.join(a_rel);
         assert!(a.is_file());
+
+        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).stdout_to_stderr().run());
 
         let include = rasterbar.join("include");
         assert!(include.is_dir());
@@ -1472,19 +1479,24 @@ fn libtorrent() {
     } else {
         let boost = build_boost_bz2();
         let (lt_a, lt_include) = build_libtorrent(Some(&boost));
-        println!("cargo:rustc-link-lib=static=torrent-rasterbar");
+        println!("cargo:rustc-link-lib=static={}", {
+            let name = unwrap!(unwrap!(lt_a.file_stem()).to_str());
+            &name[3..]
+        });
         println!(
             "cargo:rustc-link-search=native={}",
             unwrap!(unwrap!(lt_a.parent()).to_str())
         );
 
-        // NB: We should prefer linking boost in AFTER libtorrent,
-        // cf. "Linking boost_system last fixed the issue for me" in https://stackoverflow.com/a/30877725/257568.
-        println!("cargo:rustc-link-lib=static=boost_system");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(boost.join("lib").to_str())
-        );
+        if !target.is_ios() {
+            // NB: We should prefer linking boost in AFTER libtorrent,
+            // cf. "Linking boost_system last fixed the issue for me" in https://stackoverflow.com/a/30877725/257568.
+            println!("cargo:rustc-link-lib=static=boost_system");
+            println!(
+                "cargo:rustc-link-search=native={}",
+                unwrap!(boost.join("lib").to_str())
+            );
+        }
 
         let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
         let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
