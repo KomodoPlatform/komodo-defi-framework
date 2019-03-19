@@ -1105,7 +1105,9 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
         let a = rasterbar.join(a_rel);
         assert!(a.is_file());
 
-        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).stdout_to_stderr().run());
+        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str()))
+            .stdout_to_stderr()
+            .run());
 
         let include = rasterbar.join("include");
         assert!(include.is_dir());
@@ -1553,9 +1555,9 @@ lazy_static! {
         rabs("iguana/segwit_addr.c"),
         rabs("iguana/keccak.c"),
     ];
-    static ref LIBNANOMSG_SRC: Vec<&'static str> =
-    "utils/glock.c core/epbase.c transports/tcpmux/tcpmux.c transports/tcpmux/ctcpmux.c transports/tcpmux/stcpmux.c transports/tcpmux/btcpmux.c transports/tcpmux/atcpmux.c \
-         utils/efd.c core/sock.c core/poll.c                         \
+    /// A list of nanomsg-1.1.5 source files known to cross-compile for Android (formerly android/nanomsg.mk).
+    static ref LIBNANOMSG_115_ANDROID_SRC: Vec<&'static str> =
+        "utils/efd.c core/sock.c core/poll.c                         \
          core/symbol.c core/ep.c core/pipe.c                         \
          core/sockbase.c core/global.c devices/device.c              \
          transports/inproc/ins.c transports/inproc/inproc.c          \
@@ -1625,6 +1627,8 @@ fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
             unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(&out_dir).run());
             assert!(nanomsg.exists());
         } else if !nanomsg.exists() && target.is_ios() {
+            // NB: This is a port listed at https://nanomsg.org/documentation.html
+            // and a cursory search has confirmed that this is what people use on iOS.
             unwrap!(ecmd!(
                 "git",
                 "clone",
@@ -1651,7 +1655,7 @@ fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
             cc.flag("-DNN_USE_LITERAL_IFADDR");
             cc.flag("-DNN_USE_PO");
         }
-        for src_path in LIBNANOMSG_SRC.iter() {
+        for src_path in LIBNANOMSG_115_ANDROID_SRC.iter() {
             cc.file(if target.is_ios() {
                 if src_path.ends_with("/strcasestr.c")
                     || src_path.ends_with("/strncasecmp.c")
@@ -1664,6 +1668,15 @@ fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
             } else {
                 nanomsg.join("src").join(src_path)
             });
+        }
+        if target.is_ios() {
+            cc.file(nanomsg.join("utils/glock.c"));
+            cc.file(nanomsg.join("core/epbase.c"));
+            cc.file(nanomsg.join("transports/tcpmux/tcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/ctcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/stcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/btcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/atcpmux.c"));
         }
         cc.compile("nanomsg");
         assert!(libnanomsg_a.exists());
