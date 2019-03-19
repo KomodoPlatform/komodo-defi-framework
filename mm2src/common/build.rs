@@ -20,7 +20,7 @@ use bzip2::read::BzDecoder;
 use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
-use glob::glob;
+use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use std::cmp::max;
@@ -1669,7 +1669,7 @@ fn manual_mm1_build(target: Target) {
         }
         cc.include(rabs("crypto777"));
         cc.compile("exchanges");
-        assert!(libexchanges_a.exists());
+        assert!(libexchanges_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=exchanges");
     println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
@@ -1685,12 +1685,12 @@ fn manual_mm1_build(target: Target) {
         let mut cc = target.cc(false);
         cc.file(&secp256k1_src[0]);
         cc.compile("secp256k1");
-        assert!(libsecp256k1_a.exists());
+        assert!(libsecp256k1_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=secp256k1");
 
     let libjpeg_a = out_dir.join("libjpeg.a");
-    let mut libjpeg_src: Vec<PathBuf> = unwrap!(glob("crypto777/jpeg/*.c"))
+    let mut libjpeg_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/jpeg/*.c"))
         .map(|p| unwrap!(p))
         .collect();
     libjpeg_src.push(root.join("crypto777/jpeg/unix/jmemname.c"));
@@ -1700,36 +1700,20 @@ fn manual_mm1_build(target: Target) {
             cc.file(p);
         }
         cc.compile("jpeg");
-        assert!(libjpeg_a.exists());
+        assert!(libjpeg_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=jpeg");
 
-    let crypto777_build = out_dir.join("crypto777_build");
-    epintln!("crypto777_build at "[crypto777_build]);
-
     let libcrypto777_a = out_dir.join("libcrypto777.a");
-    if !libcrypto777_a.exists() {
-        let _ = fs::create_dir(&crypto777_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/bin/sh",
-                "-c",
-                "/android-ndk/bin/clang -O2 -g3 -c \
-                 -DUSE_STATIC_NANOMSG=1 \
-                 /project/crypto777/*.c"
-            )
-            .dir(&crypto777_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/bin/sh", "-c",
-                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libcrypto777_a.to_str())) " *.o")
-            )
-            .dir(&crypto777_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+    let libcrypto777_src: Vec<PathBuf> =
+        unwrap!(globʳ("crypto777/*.c")).map(|p| unwrap!(p)).collect();
+    if make(&libcrypto777_a, &libcrypto777_src[..]) {
+        let mut cc = target.cc(false);
+        for p in &libcrypto777_src {
+            cc.file(p);
         }
+        cc.compile("crypto777");
+        assert!(libcrypto777_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=crypto777");
 }
@@ -1883,10 +1867,15 @@ fn build_c_code(mm_version: &str) {
     }
 }
 
-fn rerun_if_changed(rel_glob: &str) {
-    let full_glob = root().join(rel_glob);
+/// Find shell-matching paths with the pattern relative to the `root`.
+fn globʳ(root_glob: &str) -> Result<Paths, PatternError> {
+    let full_glob = root().join(root_glob);
     let full_glob = unwrap!(full_glob.to_str());
-    for path in unwrap!(glob(full_glob)) {
+    glob(full_glob)
+}
+
+fn rerun_if_changed(root_glob: &str) {
+    for path in unwrap!(globʳ(root_glob)) {
         let path = unwrap!(path);
         println!("cargo:rerun-if-changed={}", path2s(path));
     }

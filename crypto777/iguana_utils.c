@@ -17,7 +17,11 @@
 
 #include "../iguana/iguana777.h"
 
-#ifdef __unix__
+#ifdef __APPLE__
+# include "TargetConditionals.h"
+#endif
+
+#if defined(__unix__) || defined(TARGET_OS_IPHONE)
 # include <pthread.h>
 #endif
 
