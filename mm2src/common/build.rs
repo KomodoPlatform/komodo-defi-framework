@@ -1554,7 +1554,8 @@ lazy_static! {
         rabs("iguana/keccak.c"),
     ];
     static ref LIBNANOMSG_SRC: Vec<&'static str> =
-        "utils/efd.c core/sock.c core/poll.c                         \
+    "utils/glock.c core/epbase.c transports/tcpmux/tcpmux.c transports/tcpmux/ctcpmux.c transports/tcpmux/stcpmux.c transports/tcpmux/btcpmux.c transports/tcpmux/atcpmux.c \
+         utils/efd.c core/sock.c core/poll.c                         \
          core/symbol.c core/ep.c core/pipe.c                         \
          core/sockbase.c core/global.c devices/device.c              \
          transports/inproc/ins.c transports/inproc/inproc.c          \
