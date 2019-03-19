@@ -130,6 +130,16 @@ fn bindgen<
                 builder = builder.whitelist_function(name);
                 builder = builder.whitelist_var(name)
             }
+            let target = Target::load();
+            if let Target::iOS(ref targetᴱ) = target {
+                if targetᴱ == "aarch64-apple-ios" {
+                    // https://github.com/rust-lang/rust-bindgen/issues/1211
+                    builder = builder.clang_arg("--target=arm64-apple-ios");
+                }
+                let cops = unwrap!(target.ios_clang_ops());
+                builder = builder.clang_arg(fomat!("--sysroot="(cops.sysroot)));
+                builder = builder.clang_arg("-arch").clang_arg(cops.arch);
+            }
             match builder.generate() {
                 Ok(bindings) => bindings,
                 Err(()) => panic!("Error generating the bindings for {:?}", to),
@@ -1705,8 +1715,9 @@ fn manual_mm1_build(target: Target) {
     println!("cargo:rustc-link-lib=static=jpeg");
 
     let libcrypto777_a = out_dir.join("libcrypto777.a");
-    let libcrypto777_src: Vec<PathBuf> =
-        unwrap!(globʳ("crypto777/*.c")).map(|p| unwrap!(p)).collect();
+    let libcrypto777_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/*.c"))
+        .map(|p| unwrap!(p))
+        .collect();
     if make(&libcrypto777_a, &libcrypto777_src[..]) {
         let mut cc = target.cc(false);
         for p in &libcrypto777_src {

@@ -17,8 +17,7 @@
 #ifndef dcnet_curve25519_h
 #define dcnet_curve25519_h
 #include <stdint.h>
-#include <memory.h>
-#include <string.h>
+#include <stddef.h>
 
 union _bits128 { uint8_t bytes[16]; uint16_t ushorts[8]; uint32_t uints[4]; uint64_t ulongs[2]; uint64_t txid; };
 typedef union _bits128 bits128;
