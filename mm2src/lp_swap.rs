@@ -476,10 +476,18 @@ impl MakerSwap {
     }
 
     fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(dstr(self.maker_amount as i64), true).wait() {
+        let amount_f64 = dstr(self.maker_amount as i64, self.maker_coin.decimals());
+        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(amount_f64, true).wait() {
             return Ok((
                 Some(MakerSwapCommand::Finish),
                 vec![MakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e))],
+            ));
+        };
+
+        if let Err(e) = self.taker_coin.can_i_spend_other_payment().wait() {
+            return Ok((
+                Some(MakerSwapCommand::Finish),
+                vec![MakerSwapEvent::StartFailed(ERRL!("!can_i_spend_other_payment {}", e))],
             ));
         };
 
@@ -981,12 +989,20 @@ impl TakerSwap {
     }
 
     fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(dstr(self.taker_amount as i64), true).wait() {
+        let amount_f64 = dstr(self.taker_amount as i64, self.taker_coin.decimals());
+        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(amount_f64, true).wait() {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::StartFailed(ERRL!("{}", e))],
             ))
         }
+
+        if let Err(e) = self.maker_coin.can_i_spend_other_payment().wait() {
+            return Ok((
+                Some(TakerSwapCommand::Finish),
+                vec![TakerSwapEvent::StartFailed(ERRL!("!can_i_spend_other_payment {}", e))],
+            ));
+        };
 
         let lock_duration = lp_atomic_locktime(self.maker_coin.ticker(), self.taker_coin.ticker());
         let (maker_payment_confirmations, taker_payment_confirmations) = payment_confirmations(&self.maker_coin, &self.taker_coin);
@@ -1273,6 +1289,11 @@ pub fn my_swap_status(req: Json) -> HyRes {
     let uuid = try_h!(req["params"]["uuid"].as_str().ok_or("uuid parameter is not set or is not string"));
     let path = my_swap_file_path(uuid);
     let content = slurp(&path);
+    if content.is_empty() {
+        return rpc_response(404, json!({
+            "error": "swap data is not found"
+        }).to_string());
+    }
     let status: SavedSwap = try_h!(json::from_slice(&content));
 
     rpc_response(200, json!({
@@ -1298,6 +1319,12 @@ pub fn stats_swap_status(req: Json) -> HyRes {
     } else {
         Some(try_h!(json::from_slice(&taker_content)))
     };
+
+    if maker_status.is_none() && taker_status.is_none() {
+        return rpc_response(404, json!({
+            "error": "swap data is not found"
+        }).to_string());
+    }
 
     rpc_response(200, json!({
         "result": {

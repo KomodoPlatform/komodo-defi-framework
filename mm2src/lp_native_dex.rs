@@ -1416,7 +1416,7 @@ fn test_crc32() {
 
 /// Invokes `OS_ensure_directory`,
 /// then prints an error and returns `false` if the directory is not writeable.
-fn ensure_writable (dir_path: &Path) -> bool {
+fn ensure_dir_is_writable(dir_path: &Path) -> bool {
     let c_dir_path = unwrap! (dir_path.to_str());
     let c_dir_path = unwrap! (CString::new (c_dir_path));
     unsafe {os::OS_ensure_directory (c_dir_path.as_ptr() as *mut c_char)};
@@ -1457,18 +1457,34 @@ fn ensure_writable (dir_path: &Path) -> bool {
     true
 }
 
-fn fix_directories() -> bool {
+fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
+    if let Err(_) = fs::File::open(file_path) {
+        // try to create file if opening fails
+        if let Err(e) = fs::OpenOptions::new().write(true).create_new(true).open(file_path) {
+            return ERR!("{} when trying to create the file {}", e, file_path.display())
+        }
+    } else {
+        // try to open file in write append mode
+        if let Err(e) = fs::OpenOptions::new().write(true).append(true).open(file_path) {
+            return ERR!("{} when trying to open the file {} in write mode", e, file_path.display())
+        }
+    }
+    Ok(())
+}
+
+fn fix_directories() -> Result<(), String> {
     unsafe {os::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
     let dbdir = global_dbdir();
-    if !ensure_writable (&dbdir.join ("SWAPS")) {return false}
-    if !ensure_writable (&dbdir.join ("SWAPS").join ("MY")) {return false}
-    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS")) {return false}
-    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS").join ("MAKER")) {return false}
-    if !ensure_writable (&dbdir.join ("SWAPS").join ("STATS").join ("TAKER")) {return false}
-    if !ensure_writable (&dbdir.join ("GTC")) {return false}
-    if !ensure_writable (&dbdir.join ("PRICES")) {return false}
-    if !ensure_writable (&dbdir.join ("UNSPENTS")) {return false}
-    true
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS")) {return ERR!("SWAPS db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("MY")) {return ERR!("SWAPS/MY db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS")) {return ERR!("SWAPS/STATS db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("MAKER")) {return ERR!("SWAPS/STATS/MAKER db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("TAKER")) {return ERR!("SWAPS/STATS/TAKER db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("GTC")) {return ERR!("GTC db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("PRICES")) {return ERR!("PRICES db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("UNSPENTS")) {return ERR!("UNSPENTS db dir is not writeable")}
+    try_s!(ensure_file_is_writable(&dbdir.join ("GTC").join ("orders")));
+    Ok(())
 }
 
 /// Resets the context (most of which resides currently in `lp::G` but eventually would move into `MmCtx`).
@@ -1613,9 +1629,7 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
             try_s! (write! (&mut cur, "\0"))
         }
     }
-    if !fix_directories() {
-        return ERR! ("Some of the required directories are not accessible.")
-    }
+    try_s!(fix_directories());
     unsafe {lp::LP_mutex_init()};
 
     let ctx = MmCtx::new (conf);

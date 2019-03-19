@@ -26,6 +26,7 @@ fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> String {
         "urls": urls,
         // Dev chain swap contract address
         "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "mm2": 1,
     })));
     assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
     native.1
@@ -425,6 +426,41 @@ fn test_my_balance() {
     assert_eq!(my_address, "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
 }
 
+fn check_set_price_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": base,
+        "rel": rel,
+        "price": 0.9
+    })));
+    assert! (rc.0.is_server_error(), "!setprice success but should be error: {}", rc.1);
+}
+
+fn check_buy_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "buy",
+        "base": base,
+        "rel": rel,
+        "relvolume": 0.1,
+        "price": 0.9
+    })));
+    assert! (rc.0.is_server_error(), "!buy success but should be error: {}", rc.1);
+}
+
+fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": base,
+        "rel": rel,
+        "basevolume": 0.1,
+        "price": 0.9
+    })));
+    assert! (rc.0.is_server_error(), "!buy success but should be error: {}", rc.1);
+}
+
 #[test]
 fn test_check_balance_on_order_post() {
     let coins = json!([
@@ -432,7 +468,7 @@ fn test_check_balance_on_order_post() {
         {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
         {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
-        {"coin":"JST","name":"jst","etomic":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}
+        {"coin":"JST","name":"jst","etomic":"0x2b294f029fde858b2c62184e8390591755521d8e"}
     ]);
 
     // start bob and immediately place the order
@@ -453,41 +489,29 @@ fn test_check_balance_on_order_post() {
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable coins. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", enable_coins_eth_electrum (&mm, vec!["http://195.201.0.6:8545"])});
+    log! ({"enable_coins (bob): {:?}", enable_coins_eth_electrum (&mm, vec!["http://195.201.0.6:8565"])});
     // issue sell request by setting base/rel price
-    let rc = unwrap! (mm.rpc (json! ({
-        "userpass": mm.userpass,
-        "method": "setprice",
-        "base": "PIZZA",
-        "rel": "BEER",
-        "price": 0.9
-    })));
-    // Expect error as PIZZA balance is 0
-    assert! (rc.0.is_server_error(), "!setprice success but should be error: {}", rc.1);
 
-    // issue buy request
-    let rc = unwrap! (mm.rpc (json! ({
-        "userpass": mm.userpass,
-        "method": "buy",
-        "base": "BEER",
-        "rel": "PIZZA",
-        "relvolume": 0.1,
-        "price": 0.9
-    })));
     // Expect error as PIZZA balance is 0
-    assert! (rc.0.is_server_error(), "!buy success but should be error: {}", rc.1);
+    check_set_price_fails(&mm, "PIZZA", "BEER");
+    // Address has enough BEER, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ETH taker payment.
+    check_set_price_fails(&mm, "BEER", "ETH");
+    // Address has enough BEER, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ERC20 taker payment.
+    check_set_price_fails(&mm, "BEER", "JST");
 
-    // issue sell request
-    let rc = unwrap! (mm.rpc (json! ({
-        "userpass": mm.userpass,
-        "method": "sell",
-        "base": "PIZZA",
-        "rel": "BEER",
-        "basevolume": 0.1,
-        "price": 0.9
-    })));
     // Expect error as PIZZA balance is 0
-    assert! (rc.0.is_server_error(), "!sell success but should be error: {}", rc.1);
+    check_buy_fails(&mm, "BEER", "PIZZA");
+    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
+    check_buy_fails(&mm, "ETH", "BEER");
+    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
+    check_buy_fails(&mm, "JST", "BEER");
+
+    // Expect error as PIZZA balance is 0
+    check_sell_fails(&mm, "BEER", "PIZZA");
+    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
+    check_sell_fails(&mm, "ETH", "BEER");
+    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
+    check_sell_fails(&mm, "JST", "BEER");
 }
 
 #[test]
@@ -544,6 +568,7 @@ fn test_rpc_password_from_json() {
         "method": "electrum",
         "coin": "BEER",
         "urls": ["electrum1.cipig.net:10022"],
+        "mm2": 1,
     })));
 
     // electrum call must fail if invalid password is provided
@@ -554,6 +579,7 @@ fn test_rpc_password_from_json() {
         "method": "electrum",
         "coin": "BEER",
         "urls": ["electrum1.cipig.net:10022"],
+        "mm2": 1,
     })));
 
     // electrum call must be successful with RPC password from config
@@ -564,6 +590,7 @@ fn test_rpc_password_from_json() {
         "method": "electrum",
         "coin": "PIZZA",
         "urls": ["electrum1.cipig.net:10022"],
+        "mm2": 1,
     })));
 
     // electrum call must be successful with RPC password from config
@@ -664,6 +691,8 @@ fn check_my_swap_status(
     mm: &MarketMakerIt,
     uuid: &str,
     expected_events: &Vec<&str>,
+    maker_amount: u64,
+    taker_amount: u64,
 ) {
     let response = unwrap!(mm.rpc (json! ({
             "userpass": mm.userpass,
@@ -675,6 +704,8 @@ fn check_my_swap_status(
     assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
     let status_response: Json = unwrap!(json::from_str(&response.1));
     let events_array = unwrap!(status_response["result"]["events"].as_array());
+    assert_eq!(events_array[0]["event"]["data"]["maker_amount"].as_u64(), Some(maker_amount));
+    assert_eq!(events_array[0]["event"]["data"]["taker_amount"].as_u64(), Some(taker_amount));
     let actual_events = events_array.iter().map(|item| unwrap!(item["event"]["type"].as_str()));
     let actual_events: Vec<&str> = actual_events.collect();
     assert_eq!(expected_events, &actual_events);
@@ -787,7 +818,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             "method": "setprice",
             "base": base,
             "rel": rel,
-            "price": 0.9
+            "price": 1
         })));
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
@@ -800,7 +831,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             "base": base,
             "rel": rel,
             "relvolume": 0.1,
-            "price": 1
+            "price": 2
         })));
         assert!(rc.0.is_success(), "!buy: {}", rc.1);
         let buy_json: Json = unwrap!(serde_json::from_str(&rc.1));
@@ -821,12 +852,16 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             &mm_alice,
             &uuid,
             &taker_events,
+            10000000,
+            10000000,
         );
 
         check_my_swap_status(
             &mm_bob,
             &uuid,
             &maker_events,
+            10000000,
+            10000000,
         );
     }
     // give nodes 10 seconds to broadcast their swaps data
@@ -1132,4 +1167,47 @@ fn test_withdraw_and_send() {
     withdraw_and_send(&mm_alice, "PIZZA", "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW", &enable_res);
     withdraw_and_send(&mm_alice, "ETH", "0xbab36286672fbdc7b250804bf6d14be0df69fa29", &enable_res);
     withdraw_and_send(&mm_alice, "JST", "0xbab36286672fbdc7b250804bf6d14be0df69fa29", &enable_res);
+    unwrap!(mm_alice.stop());
+}
+
+/// Ensure that swap status return the 404 status code if swap is not found
+#[test]
+fn test_swap_status() {
+    let coins = json! ([{"coin":"BEER","asset":"BEER"},]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 8100,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "some passphrase",
+            "coins": coins,
+            "rpc_password": "password",
+        }),
+        "password".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
+    ));
+
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+
+    let my_swap = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "my_swap_status",
+        "params": {
+            "uuid":"random",
+        }
+    })));
+
+    assert_eq! (my_swap.0, StatusCode::NOT_FOUND, "!not found status code: {}", my_swap.1);
+
+    let stats_swap = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "stats_swap_status",
+        "params": {
+            "uuid":"random",
+        }
+    })));
+
+    assert_eq! (stats_swap.0, StatusCode::NOT_FOUND, "!not found status code: {}", stats_swap.1);
 }

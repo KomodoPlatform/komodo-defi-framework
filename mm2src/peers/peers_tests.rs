@@ -101,7 +101,7 @@ pub fn test_peers_direct_send() {
     // NB: The sleep here is larger than expected because the actual pings start to fly only after the DHT initialization kicks in.
     unwrap! (wait_for_log (&bob.log, 22., &|_| bob_pctx.direct_pings.load (Ordering::Relaxed) > 0));
     // Bob's reply.
-    unwrap! (wait_for_log (&alice.log, 2., &|_| alice_pctx.direct_pings.load (Ordering::Relaxed) > 0));
+    unwrap! (wait_for_log (&alice.log, 22., &|_| alice_pctx.direct_pings.load (Ordering::Relaxed) > 0));
 
     // Confirm that Bob now has the address.
     let bob_addr = SocketAddr::new (Ipv4Addr::new (127, 0, 0, 1) .into(), 2122);

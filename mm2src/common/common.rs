@@ -73,6 +73,7 @@ use hyper::header::{ HeaderValue, CONTENT_TYPE };
 use hyper::rt::Stream;
 use hyper_rustls::HttpsConnector;
 use libc::{c_char, c_void, malloc, free};
+use secp256k1::*;
 use serde_json::{self as json, Value as Json};
 use std::env::args;
 use std::fmt;
@@ -96,7 +97,6 @@ use tokio_core::reactor::Remote;
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
 pub use self::lp::{_bits256 as bits256};
-use crate::for_c::log_stacktrace;
 
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod os {include! (concat! (env! ("OUT_DIR"), "/c_headers/OS_portable.rs"));}
@@ -201,7 +201,7 @@ pub fn coins_iter (cb: &mut dyn FnMut (*mut lp::iguana_info) -> Result<(), Strin
 }
 
 pub const SATOSHIDEN: i64 = 100000000;
-pub fn dstr (x: i64) -> f64 {x as f64 / SATOSHIDEN as f64}
+pub fn dstr (x: i64, decimals: u8) -> f64 {x as f64 / 10.0_f64.powf(decimals as f64)}
 
 /// Apparently helps to workaround `double` fluctuations occuring on *certain* systems.
 /// cf. https://stackoverflow.com/questions/19804472/double-randomly-adds-0-000000000000001.

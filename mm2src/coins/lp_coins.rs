@@ -252,6 +252,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     fn check_i_have_enough_to_trade(&self, amount: f64, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
 
+    fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send>;
+
     fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
@@ -687,6 +689,10 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
             &fomat! ("Warning, coin " (ticker) " is used without a corresponding configuration."));
     }
 
+    if coins_en["mm2"].is_null() && req["mm2"].is_null() {
+        return ERR!("mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported");
+    }
+
     let c_ticker = try_s! (CString::new (ticker));
     let rpcport = match coins_en["rpcport"].as_u64() {
         Some (port) if port > 0 && port < u16::max_value() as u64 => port as u16,
@@ -928,7 +934,8 @@ pub fn enable (ctx: MmArc, req: Json) -> HyRes {
         rpc_response(200, json!({
             "result": "success",
             "address": coin.my_address(),
-            "balance": balance
+            "balance": balance,
+            "coin": coin.ticker(),
         }).to_string())
     ))
 }
@@ -941,7 +948,8 @@ pub fn electrum (ctx: MmArc, req: Json) -> HyRes {
         rpc_response(200, json!({
             "result": "success",
             "address": coin.my_address(),
-            "balance": balance
+            "balance": balance,
+            "coin": coin.ticker(),
         }).to_string())
     ))
 }
@@ -992,7 +1000,7 @@ pub fn lp_initcoins (ctx: &MmArc) -> Result<(), String> {
     let default_coins = ["BTC", "KMD"];
 
     for &ticker in default_coins.iter() {
-        try_s! (lp_coininit (ctx, ticker, &json!({})));
+        try_s! (lp_coininit (ctx, ticker, &json!({"mm2":1})));
     }
 
     Ok(())

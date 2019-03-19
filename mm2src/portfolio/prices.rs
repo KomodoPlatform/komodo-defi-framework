@@ -21,7 +21,7 @@
 use common::{dstr, free_c_ptr, lp, rpc_response, rpc_err_response, slurp_req, HyRes, str_to_malloc, SATOSHIDEN, SMALLVAL};
 use common::mm_ctx::{MmArc, MmWeak};
 use common::log::TagParam;
-use coins::lp_coinfind;
+use coins::{lp_coinfind, MmCoinEnum};
 use futures::{self, Future, Async, Poll};
 use futures::task::{self};
 use gstuff::{now_ms, now_float};
@@ -124,7 +124,7 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
         None => return rpc_err_response(500, &format!("Base coin {} is not found", req.base)),
     };
 
-    let _rel_coin = match try_h!(lp_coinfind(&ctx, &req.rel)) {
+    let rel_coin: MmCoinEnum = match try_h!(lp_coinfind(&ctx, &req.rel)) {
         Some(coin) => coin,
         None => return rpc_err_response(500, &format!("Rel coin {} is not found", req.rel)),
     };
@@ -132,18 +132,20 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
     let mut changed: i32 = 0;
     let base = try_h!(CString::new(req.base.as_str()));
     let rel = try_h!(CString::new(req.rel.as_str()));
-    Box::new(base_coin.check_i_have_enough_to_trade(MIN_TRADE, true).and_then(move |_| {
-        let price_set_res = unsafe { lp::LP_mypriceset(1, &mut changed, base.as_ptr() as *mut c_char, rel.as_ptr() as *mut c_char, req.price) };
-        if price_set_res < 0 {
-            return rpc_err_response(500, "could not set price");
-        }
-        if req.broadcast == 1 {
-            let portfolio_ctx = try_h!(PortfolioContext::from_ctx(&ctx));
-            let mut my_prices = try_h!(portfolio_ctx.my_prices.lock());
-            my_prices.insert((req.base, req.rel), req.price);
-        }
-        rpc_response(200, json!({"result":"success"}).to_string())
-    }))
+    Box::new(base_coin.check_i_have_enough_to_trade(MIN_TRADE, true).and_then(move |_|
+        rel_coin.can_i_spend_other_payment().and_then(move |_| {
+            let price_set_res = unsafe { lp::LP_mypriceset(1, &mut changed, base.as_ptr() as *mut c_char, rel.as_ptr() as *mut c_char, req.price) };
+            if price_set_res < 0 {
+                return rpc_err_response(500, "could not set price");
+            }
+            if req.broadcast == 1 {
+                let portfolio_ctx = try_h!(PortfolioContext::from_ctx(&ctx));
+                let mut my_prices = try_h!(portfolio_ctx.my_prices.lock());
+                my_prices.insert((req.base, req.rel), req.price);
+            }
+            rpc_response(200, json!({"result":"success"}).to_string())
+        }))
+    )
 }
 
 pub fn broadcast_my_prices(ctx: &MmArc) -> Result<(), String> {
@@ -1688,11 +1690,11 @@ pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
                 holdings_res.push (FundvalueHoldingRes {
                     coin: en.coin.clone(),
                     balance: en.balance,
-                    KMD: Some (dstr (kmd_value)),
+                    KMD: Some (dstr (kmd_value, 8)),
                     ..Default::default()
                 });
                 fundvalue += kmd_value;
-                if en.coin == "KMD" {kmd_holdings += dstr (kmd_value)}
+                if en.coin == "KMD" {kmd_holdings += dstr (kmd_value, 8)}
                 continue
             }
         }
@@ -1843,7 +1845,7 @@ pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
                     //jaddnum(retjson,"NAV_USD",(usdprice * numKMD)/divisor);
                 }
             } else if let Some (divisor) = req.divisor {
-                let num_kmd = dstr (fundvalue);
+                let num_kmd = dstr (fundvalue, 8);
                 asset_nav_kmd = Some (num_kmd / divisor);
                 asset_nav_btc = Some ((btcprice * num_kmd) / divisor);
                 //jaddnum(retjson,"assetNAV_USD",(usdprice * numKMD)/divisor);
@@ -1855,7 +1857,7 @@ pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
             KMDholdings: kmd_holdings,
             btc2kmd,
             btcsum,
-            fundvalue: dstr (fundvalue),
+            fundvalue: dstr (fundvalue, 8),
             holdings: holdings_res,
             missing,
             result: "success".into(),
