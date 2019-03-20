@@ -778,8 +778,8 @@ impl Target {
             });
             cc.flag(&fomat!("--sysroot="(cops.sysroot)));
             cc.flag("-stdlib=libc++");
-            cc.flag("-miphoneos-version-min=12.1");
-            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=12.1");
+            cc.flag("-miphoneos-version-min=11.0");
+            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
             cc.flag("-arch").flag(cops.arch);
         }
         cc
@@ -944,7 +944,7 @@ fn build_boost_bz2() -> PathBuf {
         //     rule init ( version ? : command * : options * : requirement * )
         let user_config_jamˢ = fomat!(
             "using darwin\n"
-            ": 12.1~iphone \n"  // `version`
+            ": 11.0~iphone \n"  // `version`
             ": /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
             " -target "(target)" --sysroot "(cops.sysroot)" -arch "(cops.arch)" -stdlib=libc++ \n"  // `command`
             ": <striper> \n"  // `options`
