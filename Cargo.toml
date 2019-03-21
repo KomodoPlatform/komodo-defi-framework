@@ -6,6 +6,10 @@ edition = "2018"
 # Waiting for https://doc.rust-lang.org/beta/cargo/reference/unstable.html#default-run to become stable.
 #default-run = "mm2"
 
+[[bin]]
+name = "mm2"
+path = "mm2src/mm2.rs"
+
 [lib]
 name = "mm2"
 path = "mm2src/mm2.rs"
