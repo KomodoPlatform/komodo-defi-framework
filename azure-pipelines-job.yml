@@ -16,7 +16,7 @@ jobs:
       demands: agent.os -equals ${{ parameters.os }}
     steps:
       - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
-        clean: false # don't clean up to use previously built dependencies
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
       - powershell: |
           .\marketmaker_build_depends.cmd
         displayName: Build Windows deps
@@ -30,7 +30,7 @@ jobs:
       # Cargo uses CPU threads count by default running only 2 concurrent tests on Linux.
       # Explicit --test-threads=8 makes the process faster
       - bash: |
-          cargo test -- --test-threads=8
+          cargo test --all -- --test-threads=8
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:

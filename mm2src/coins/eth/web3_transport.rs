@@ -53,7 +53,7 @@ impl Transport for Web3Transport {
         (id, request)
     }
 
-    fn send(&self, id: RequestId, request: Call) -> Self::Out {
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         let mut futures = vec![];
         for uri in self.uris.iter() {
             let request = to_string(&request);

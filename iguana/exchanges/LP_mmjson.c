@@ -571,7 +571,7 @@ int32_t MMJSON_encode(uint8_t *linebuf,char *line)
 {
     uint32_t timestamp; uint64_t l; char *decodestr,*s,*v=0; cJSON *lineobj,*array,*ptr; int32_t k=0,m,i,asize,ind,z,allocv_flag;
     timestamp = 0;
-    if ( (lineobj= cJSON_Parse(line)) != 0 )
+    if ( (lineobj= cJSON_Parse(line)) != 0 && strcmp(jstr(lineobj, "method2"), "swapstatus") != 0)
     {
         if ( line[strlen(line)-1] == '\n' )
             line[strlen(line)-1] = 0;

@@ -458,36 +458,6 @@ int32_t LP_autoref_clear(char *base,char *rel)
     return(-1);
 }
 
-void LP_autoprices_update(char *method,char *base,double basevol,char *rel,double relvol)
-{
-    int32_t i; double price,newprice;
-    if ( basevol > 0. && relvol > 0. )
-    {
-        price = relvol/basevol;
-        for (i=0; i<num_LP_autorefs; i++)
-        {
-            if ( strcmp(LP_autorefs[i].rel,rel) == 0 && strcmp(base,LP_autorefs[i].base) == 0 )
-            {
-                newprice = (LP_autorefs[i].lastask * 0.9) + (0.1 * price);
-                if ( LP_autorefs[i].lastask > 0 )
-                {
-                    //printf("%s: autoprice ask update %s/%s %.8f vs myprice %.8f/%.8f -> %.8f\n",method,base,rel,price,LP_autorefs[i].lastbid,LP_autorefs[i].lastask,newprice);
-                    LP_autorefs[i].lastask = newprice;
-                } // else printf("%s: autoprice ask skip update %s/%s %.8f vs myprice %.8f/%.8f -> %.8f\n",method,base,rel,price,LP_autorefs[i].lastbid,LP_autorefs[i].lastask,newprice);
-            }
-            else if ( strcmp(LP_autorefs[i].rel,base) == 0 && strcmp(rel,LP_autorefs[i].base) == 0 )
-            {
-                newprice = (LP_autorefs[i].lastbid * 0.9) + (0.1 * price);
-                if ( LP_autorefs[i].lastbid > 0 )
-                {
-                    //printf("%s: autoprice bid update %s/%s %.8f vs myprice %.8f/%.8f -> %.8f\n",method,base,rel,price,LP_autorefs[i].lastbid,LP_autorefs[i].lastask,newprice);
-                    LP_autorefs[i].lastbid = newprice;
-                } // else printf("%s: autoprice bid skip update %s/%s %.8f vs myprice %.8f/%.8f -> %.8f\n",method,base,rel,price,LP_autorefs[i].lastbid,LP_autorefs[i].lastask,newprice);
-            }
-        }
-    }
-}
-
 int32_t LP_portfolio_trade(void *ctx,uint32_t *requestidp,uint32_t *quoteidp,struct iguana_info *buy,struct iguana_info *sell,double relvolume,int32_t setbaserel,char *gui)
 {
     char *retstr2; uint64_t txfee,desttxfee; double bid,ask,maxprice; bits256 zero; uint32_t requestid,quoteid,iter,i; cJSON *retjson2; struct LP_utxoinfo A; struct LP_address_utxo *utxos[1000]; int32_t max=(int32_t)(sizeof(utxos)/sizeof(*utxos));

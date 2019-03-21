@@ -20,7 +20,7 @@
 //
 use common::{lp, nn, free_c_ptr, c_char_to_string, sat_to_f, SATOSHIS, SMALLVAL, CJSON, dstr, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
-use coins::lp_coinfind;
+use coins::{lp_coinfind, MmCoinEnum};
 use coins::utxo::compressed_pub_key_from_priv_raw;
 use futures::future::Future;
 use gstuff::now_ms;
@@ -36,7 +36,7 @@ use std::time::Duration;
 use std::thread;
 
 use crate::lp_network::lp_queue_command;
-use crate::lp_swap::{taker_swap_loop, maker_swap_loop, AtomicSwap};
+use crate::lp_swap::{MakerSwap, run_maker_swap, TakerSwap, run_taker_swap};
 
 /// Temporary kludge, improving readability of the not-yet-fully-ported code. Should be removed eventually.
 macro_rules! c2s {($cs: expr) => {unwrap!(CStr::from_ptr($cs.as_ptr()).to_str())}}
@@ -390,22 +390,17 @@ void LP_abutxo_set(struct LP_utxoinfo *autxo,struct LP_utxoinfo *butxo,struct LP
     }
 }
 */
-unsafe fn lp_base_satoshis(
+fn lp_base_satoshis(
     relvolume: f64,
     price: f64,
-    txfee: u64,
     desttxfee: u64,
 ) -> u64 {
     //printf("basesatoshis %.8f (rel %.8f / price %.8f)\n",dstr(SATOSHIDEN * ((relvolume) / price) + 2*txfee),relvolume,price);
-    if relvolume > desttxfee as f64 / 100000000i64 as u64 as f64
-        && price > 1e-15f64
-        {
-            return (100000000i64 as u64 as f64 * (relvolume / price)
-                + (2u64).wrapping_mul(txfee) as f64)
-                as u64;
-        } else {
-        return 0 as u64;
-    };
+    if relvolume > desttxfee as f64 / 100000000.0 && price > 1e-15f64 {
+        (100000000.0 * (relvolume / price)) as u64
+    } else {
+        0
+    }
 }
 
 unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char, qp: *mut lp::LP_quoteinfo) -> i32 {
@@ -417,7 +412,7 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
     (*qp).quotetime = (now_ms() / 1000) as u32;
 
     if lp::G.LP_mypub25519 == (*qp).srchash {
-        lp::LP_requestinit(&mut (*qp).R, (*qp).srchash, (*qp).desthash, base, (*qp).satoshis - (*qp).txfee, rel, (*qp).destsatoshis - (*qp).desttxfee, (*qp).timestamp, (*qp).quotetime, dex_selector, (*qp).fill as i32, (*qp).gtc as i32);
+        lp::LP_requestinit(&mut (*qp).R, (*qp).srchash, (*qp).desthash, base, (*qp).satoshis, rel, (*qp).destsatoshis, (*qp).timestamp, (*qp).quotetime, dex_selector, (*qp).fill as i32, (*qp).gtc as i32);
         pair = lp::LP_nanobind(ctx.btc_ctx() as *mut c_void, pair_str.as_mut_ptr());
         log! ("LP_nanobind produced sock " (pair) ", pair_str " (c2s!(pair_str))
               " (canbind " [ctx.conf["canbind"]] " LP_fixed_pairport " (lp::LP_fixed_pairport) ")"
@@ -431,30 +426,23 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
                 let maker_coin = unwrap! (unwrap! (lp_coinfind (ctx, maker_str)));
                 let ctx = ctx.clone();
                 let alice = (*qp).desthash;
-                let session = String::from(c2s!(pair_str));
                 let maker_amount = (*qp).R.srcamount as u64;
                 let taker_amount = (*qp).R.destamount as u64;
                 let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes));
                 let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
-                log!("Seller loop");
                 move || {
                     log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
-                    let mut maker_swap = AtomicSwap::new(
+                    let maker_swap = MakerSwap::new(
                         ctx,
                         alice,
-                        lp::bits256::default(),
-                        session,
                         maker_coin,
                         taker_coin,
                         maker_amount,
                         taker_amount,
                         my_persistent_pub,
                         uuid,
-                    ).unwrap();
-                    match maker_swap_loop(&mut maker_swap) {
-                        Ok(_) => (),
-                        Err(e) => log!("Swap finished with error " [e])
-                    };
+                    );
+                    run_maker_swap(maker_swap);
                 }
             });
             match loop_thread {
@@ -711,7 +699,7 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
     printf("CONNECTED mpnet.%d fill.%d gtc.%d numpending.%d tradeid.%u requestid.%u quoteid.%u pairstr.%s\n\x00".as_ptr() as *const c_char,
            (*qp).mpnet, (*qp).fill, (*qp).gtc, lp::G.LP_pendingswaps, (*qp).tradeid, (*qp).R.requestid, (*qp).R.quoteid, pairstr);
     let dex_selector = 0;
-    lp::LP_requestinit(&mut (*qp).R, (*qp).srchash, (*qp).desthash, (*qp).srccoin.as_mut_ptr(), (*qp).satoshis - (*qp).txfee, (*qp).destcoin.as_mut_ptr(), (*qp).destsatoshis - (*qp).desttxfee, (*qp).timestamp, (*qp).quotetime, dex_selector, (*qp).fill as i32, (*qp).gtc as i32);
+    lp::LP_requestinit(&mut (*qp).R, (*qp).srchash, (*qp).desthash, (*qp).srccoin.as_mut_ptr(), (*qp).satoshis, (*qp).destcoin.as_mut_ptr(), (*qp).destsatoshis, (*qp).timestamp, (*qp).quotetime, dex_selector, (*qp).fill as i32, (*qp).gtc as i32);
 //printf("calculated requestid.%u quoteid.%u\n",qp->R.requestid,qp->R.quoteid);
     let mut changed = 0;
     if lp::LP_Alicequery.srccoin[0] != 0 && lp::LP_Alicequery.destcoin[0] != 0 {
@@ -759,7 +747,6 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
         let alice_loop_thread = thread::Builder::new().name("taker_loop".into()).spawn({
             let ctx = ctx.clone();
             let maker = (*qp).srchash;
-            let session = String::from(unwrap!(CStr::from_ptr (pairstr) .to_str()));
             let taker_str = c2s!((*qp).R.dest);
             let taker_coin = unwrap! (unwrap! (lp_coinfind (&ctx, taker_str)));
             let maker_str = c2s!((*qp).R.src);
@@ -770,22 +757,17 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
             let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
             move || {
                 log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
-                let mut taker_swap = AtomicSwap::new(
+                let taker_swap = TakerSwap::new(
                     ctx,
-                    lp::bits256::default(),
                     maker,
-                    session,
                     maker_coin,
                     taker_coin,
                     maker_amount,
                     taker_amount,
                     my_persistent_pub,
                     uuid,
-                ).unwrap();
-                match taker_swap_loop(&mut taker_swap) {
-                    Ok(_) => (),
-                    Err(e) => log!("Swap finished with error "[e])
-                };
+                );
+                run_taker_swap(taker_swap);
             }
         });
         match alice_loop_thread {
@@ -961,13 +943,8 @@ double LP_trades_pricevalidate(struct LP_quoteinfo *qp,struct iguana_info *coin,
 }
 */
 unsafe fn lp_trades_gotrequest(ctx: &MmArc, qp: *mut lp::LP_quoteinfo, newqp: *mut lp::LP_quoteinfo) -> *mut lp::LP_quoteinfo {
-    let price;
     let p;
-    let mut counter = 0i32;
     let qprice;
-    let bestprice;
-    let range: f64;
-    let r: u32;
     *newqp = *qp;
     let qp = newqp;
     let mut str: [c_char; 65] = [0; 65];
@@ -982,27 +959,17 @@ unsafe fn lp_trades_gotrequest(ctx: &MmArc, qp: *mut lp::LP_quoteinfo, newqp: *m
         log!({"myprice {} bid {} ask {}", my_price, bid, ask});
         return null_mut();
     }
+    log!({"dest sat {} sat {} tx_fee {}", (*qp).destsatoshis, (*qp).satoshis, (*qp).txfee});
     unwrap!(safecopy!((*qp).coinaddr, "{}", coin.my_address()));
     if (*qp).srchash.nonz() == false || (*qp).srchash == lp::G.LP_mypub25519 {
-        qprice = (*qp).destsatoshis as f64 / ((*qp).satoshis - (*qp).txfee) as f64;
+        qprice = (*qp).destsatoshis as f64 / (*qp).satoshis as f64;
         strcpy((*qp).gui.as_mut_ptr(), lp::G.gui.as_ptr());
         (*qp).srchash = lp::G.LP_mypub25519;
     } else {
         return null_mut();
     }
 
-    if qprice >= my_price {
-        r = (lp::LP_rand() % 90) + 10;
-        range = qprice - my_price;
-        price = my_price + ((r as f64 * range) / 100.);
-        bestprice = lp_bob_competition(ctx, &mut counter, (*qp).aliceid, price, 0);
-        log!({"{} >>>>>>> myprice {} qprice {} r.{} range {} -> {}, bestprice {} counter.{}",
-            (*qp).aliceid, my_price, qprice, r, range, price, bestprice, counter});
-        if counter > 3 && price > bestprice + SMALLVAL {
-            log!("skip if late or bad price");
-            return null_mut();
-        }
-    } else {
+    if qprice < my_price {
         printf(b"%s/%s ignore as qprice %.8f vs myprice %.8f\n\x00".as_ptr() as *const c_char, (*qp).srccoin.as_ptr(), (*qp).destcoin.as_ptr(), qprice, my_price);
         return null_mut();
     }
@@ -1011,11 +978,11 @@ unsafe fn lp_trades_gotrequest(ctx: &MmArc, qp: *mut lp::LP_quoteinfo, newqp: *m
         printf(b"request from blacklisted %s, ignore\n\x00".as_ptr() as *const c_char, lp::bits256_str(str.as_mut_ptr(), (*qp).desthash));
         return null_mut();
     }
-    if price >= my_price {
+    if qprice >= my_price {
         unwrap!(safecopy!((*qp).gui, "{}", c2s!(lp::G.gui)));
         unwrap!(safecopy!((*qp).coinaddr, "{}", coin.my_address()));
         (*qp).srchash = lp::G.LP_mypub25519;
-        (*qp).satoshis = lp::LP_basesatoshis(dstr((*qp).destsatoshis as i64), price, (*qp).txfee, (*qp).desttxfee);
+        (*qp).satoshis = lp_base_satoshis(dstr((*qp).destsatoshis as i64, 8), my_price, (*qp).desttxfee);
         (*qp).quotetime = (now_ms() / 1000) as u32;
         /*
         if (*qp).fill != 0 {
@@ -1030,14 +997,14 @@ unsafe fn lp_trades_gotrequest(ctx: &MmArc, qp: *mut lp::LP_quoteinfo, newqp: *m
     if (*qp).satoshis <= (*qp).txfee {
         return null_mut();
     }
-    p = (*qp).destsatoshis as f64 / ((*qp).satoshis - (*qp).txfee) as f64;
+    p = (*qp).destsatoshis as f64 / (*qp).satoshis as f64;
     if lp::LP_trades_pricevalidate(qp, coin.iguana_info(), p) < 0. {
         if (*qp).fill != 0 {
             return null_mut();
         }
     }
 
-    printf(b"%s/%s qprice %.8f myprice %.8f price %.8f [%.8f]\n\x00".as_ptr() as *const c_char, (*qp).srccoin.as_ptr(), (*qp).destcoin.as_ptr(), qprice, my_price, price, p);
+    printf(b"%s/%s qprice %.8f myprice %.8f [%.8f]\n\x00".as_ptr() as *const c_char, (*qp).srccoin.as_ptr(), (*qp).destcoin.as_ptr(), qprice, my_price, p);
     let reqjson = lp::LP_quotejson(qp);
     if (*qp).quotetime == 0 {
         (*qp).quotetime = (now_ms() / 1000) as u32;
@@ -1750,18 +1717,26 @@ pub fn buy(ctx: MmArc, json: Json) -> HyRes {
     let input : AutoBuyInput = try_h!(json::from_value(json.clone()));
     let rel_coin = try_h!(lp_coinfind(&ctx, &input.rel));
     let rel_coin = match rel_coin {Some(c) => c, None => return rpc_err_response(500, "Rel coin is not found or inactive")};
-    Box::new(rel_coin.check_i_have_enough_to_trade(input.rel_volume, false).and_then(move |_| {
-        rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
-    }))
+    let base_coin = try_h!(lp_coinfind(&ctx, &input.base));
+    let base_coin: MmCoinEnum = match base_coin {Some(c) => c, None => return rpc_err_response(500, "Base coin is not found or inactive")};
+    Box::new(rel_coin.check_i_have_enough_to_trade(input.rel_volume, false).and_then(move |_|
+        base_coin.can_i_spend_other_payment().and_then(move |_|
+            rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+        )
+    ))
 }
 
 pub fn sell(ctx: MmArc, json: Json) -> HyRes {
     let input : AutoBuyInput = try_h!(json::from_value(json.clone()));
     let base_coin = try_h!(lp_coinfind(&ctx, &input.base));
     let base_coin = match base_coin {Some(c) => c, None => return rpc_err_response(500, "Base coin is not found or inactive")};
-    Box::new(base_coin.check_i_have_enough_to_trade(input.base_volume, false).and_then(move |_| {
-        rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
-    }))
+    let rel_coin = try_h!(lp_coinfind(&ctx, &input.rel));
+    let rel_coin = match rel_coin {Some(c) => c, None => return rpc_err_response(500, "Rel coin is not found or inactive")};
+    Box::new(rel_coin.check_i_have_enough_to_trade(input.base_volume, false).and_then(move |_|
+        base_coin.can_i_spend_other_payment().and_then(move |_|
+            rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+        )
+    ))
 }
 
 pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
@@ -1769,11 +1744,9 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
         return ERR!("Price is too low, minimum is {}", SMALLVAL);
     }
 
-    let mut fomo = 0;
-    let (base, rel, mut volume, mut price) = match Some(input.method.as_ref()) {
+    let (base, volume, price) = match Some(input.method.as_ref()) {
         Some("buy") => {
             let volume = if input.fomo > 0. {
-                fomo = 1;
                 input.fomo
             } else {
                 input.rel_volume
@@ -1781,11 +1754,10 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
             if volume <= 0. {
                 return ERR!("Volume must be greater than 0");
             }
-            (try_s!(lp_coinfind(&ctx, &input.base)), try_s!(lp_coinfind(&ctx, &input.rel)), volume, input.price)
+            (try_s!(lp_coinfind(&ctx, &input.base)), volume, input.price)
         },
         Some("sell") => {
             let volume = if input.dump > 0. {
-                fomo = 1;
                 input.dump
             } else {
                 input.base_volume
@@ -1793,28 +1765,16 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
             if volume <= 0. {
                 return ERR!("Volume must be greater than 0");
             }
-            (try_s!(lp_coinfind(&ctx, &input.rel)), try_s!(lp_coinfind(&ctx, &input.base)), volume, 1. / input.price)
+            (try_s!(lp_coinfind(&ctx, &input.rel)), volume, 1. / input.price)
         },
         _ => return ERR!("Auto buy must be called only from buy/sell RPC methods")
     };
     let base = match base {Some(c) => c, None => return ERR!("Base coin is not found or inactive")};
-    let rel = match rel {Some(c) => c, None => return ERR!("Rel coin is not found or inactive")};
     let base_ii = base.iguana_info();
-    let rel_ii = rel.iguana_info();
 
-    let mut timeout = input.timeout.unwrap_or(unsafe { lp::LP_AUTOTRADE_TIMEOUT });
+    let timeout = input.timeout.unwrap_or(unsafe { lp::LP_AUTOTRADE_TIMEOUT });
 
     unsafe {
-        if (*base_ii).electrum != null_mut() && (*rel_ii).electrum != null_mut() {
-            if timeout < 2 * lp::LP_AUTOTRADE_TIMEOUT {
-                timeout = 2 * lp::LP_AUTOTRADE_TIMEOUT;
-            }
-        } else if (*base_ii).electrum != null_mut() || (*rel_ii).electrum != null_mut() {
-            if timeout < (1.5 * lp::LP_AUTOTRADE_TIMEOUT as f32) as u32 {
-                timeout = (1.5 * lp::LP_AUTOTRADE_TIMEOUT as f32) as u32;
-            }
-        }
-
         if now_ms() / 1000 < lp::Alice_expiration as u64 {
             return ERR!("Only 1 pending request at a time, wait {}",
                             lp::Alice_expiration as u64 - now_ms() / 1000);
@@ -1833,39 +1793,10 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
             base_str.as_ptr() as *mut c_char,
             rel_str.as_ptr() as *mut c_char,
         );
-        if tx_fee != 0 && tx_fee < 10000 {
-            tx_fee = 10000;
-        }
         if dest_tx_fee != 0 && dest_tx_fee < 10000 {
             dest_tx_fee = 10000;
         }
 
-        if fomo > 0 {
-            let mut median : u64 = 0;
-            let mut min_utxo : u64 = 0;
-            let mut max_utxo : u64 = 0;
-            lp::LP_address_minmax(
-                0,
-                &mut median as *mut u64,
-                &mut min_utxo as *mut u64,
-                &mut max_utxo as *mut u64,
-                rel_ii,
-                (*rel_ii).smartaddr.as_ptr() as *mut c_char,
-            );
-            if max_utxo > 0 {
-                volume = volume.min(sat_to_f(max_utxo) - sat_to_f(dest_tx_fee) * 3.);
-                price = lp::LP_fomoprice(
-                    base_str.as_ptr() as *mut c_char,
-                    rel_str.as_ptr() as *mut c_char,
-                    &mut volume as *mut f64
-                );
-                if price == 0. {
-                    return ERR!("no orderbook entry found to handle request");
-                }
-            } else {
-                return ERR!("No utxo available for fomo buy/sell");
-            }
-        }
         if price <= 0. {
             return ERR!("Resulting price is <= 0");
         }
@@ -1879,13 +1810,7 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
             return ERR!("No price info found for rel coin {}", input.rel);
         }
 
-        if input.rel == "BTC" {
-            price *= 1.01;
-        } else {
-            price *= 1.001;
-        }
-
-        let dest_satoshis = (SATOSHIS as f64 * volume) as u64 + 2 * dest_tx_fee;
+        let dest_satoshis = (SATOSHIS as f64 * volume) as u64;
         let mut b = lp::LP_utxoinfo::default();
         let fill_flag = input.fill.unwrap_or(0);
 
@@ -1893,7 +1818,7 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
             return ERR!("cant find a deposit that is close enough in size. make another deposit that is just a bit larger than what you want to trade");
         }
 
-        let best_satoshis = (1.001 * lp_base_satoshis(sat_to_f(dest_satoshis), price, tx_fee, dest_tx_fee) as f64) as u64;
+        let best_satoshis = lp_base_satoshis(sat_to_f(dest_satoshis), price, dest_tx_fee);
         strcpy(b.coin.as_ptr() as *mut c_char, base_str.as_ptr());
         let mut q = lp::LP_quoteinfo::default();
         if lp::LP_quoteinfoinit(

@@ -21,6 +21,7 @@
 
 #![feature(non_ascii_idents)]
 
+extern crate rpc as btc_rpc;
 #[macro_use] extern crate common;
 #[allow(unused_imports)]
 #[macro_use] extern crate duct;
@@ -52,8 +53,6 @@ use std::process::exit;
 use std::ptr::{null};
 use std::str::from_utf8_unchecked;
 use std::slice::from_raw_parts;
-use std::thread::sleep;
-use std::time::Duration;
 use std::str;
 
 pub mod crash_reports;
@@ -216,12 +215,6 @@ fn main() {
 
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
-
-    if first_arg == Some ("nxt") {
-        unsafe {lp::LP_NXT_redeems()};
-        sleep (Duration::from_secs (3));
-        return
-    }
 
     if let Some (conf) = first_arg {
         if let Err (err) = run_lp_main (conf) {

@@ -207,7 +207,6 @@ fn generate_bindings() {
             "unbuffered_output_support",
             "calc_crc32",
             "LP_userpass",
-            "LP_coin_curl_init",
             "LP_mutex_init",
             "LP_tradebots_timeslice",
             "stats_JSON",
@@ -216,7 +215,6 @@ fn generate_bindings() {
             "LP_portfolio",
             "LP_coinadd_",
             "LP_priceinfoadd",
-            "LP_unspents_load",
             "LP_dPoW_request",
             "LP_conflicts_find",
             "LP_coinjson",
@@ -228,7 +226,6 @@ fn generate_bindings() {
             "LP_CMCbtcprice",
             "LP_fundvalue",
             "LP_coinsearch",
-            "LP_autoprice",
             "LP_instantdex_deposit",
             "LP_mypriceset",
             "LP_pricepings",
@@ -299,10 +296,9 @@ fn generate_bindings() {
             "LP_reservation_check",
             "LP_nanobind",
             "LP_instantdex_txids",
-            "LP_calc_waittimeout",
-            "LP_numconfirms",
             "LP_pendswap_add",
             "LP_price_sig",
+            "LP_coin_curl_init",
         ]
         .iter(),
         // types
@@ -317,9 +313,6 @@ fn generate_bindings() {
         .iter(),
         [
             // defines
-            "LP_eth_node_url",
-            "LP_alice_contract",
-            "LP_bob_contract",
             "bitcoind_RPC_inittime",
             "GLOBAL_DBDIR",
             "DOCKERFLAG",
@@ -368,13 +361,7 @@ fn generate_bindings() {
             "LP_CONNECTED",
             "LP_Alicereserved",
             "dstr",
-            "LP_swap_critical",
-            "LP_swap_endcritical",
             "INSTANTDEX_PUBKEY",
-            "BASILISK_BOBDEPOSIT",
-            "BASILISK_ALICEPAYMENT",
-            "BASILISK_BOBREFUND",
-            "BASILISK_BOBSPEND",
         ]
         .iter(),
     );

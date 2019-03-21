@@ -30,6 +30,7 @@ use std::ptr::null_mut;
 use std::time::Duration;
 
 use crate::lp_native_dex::lp_command_process;
+use crate::lp_swap::save_stats_swap_status;
 use crate::rpc::{dispatcher, DispatcherRes};
 
 /*
@@ -545,7 +546,16 @@ pub unsafe fn lp_command_q_loop(ctx: MmArc) {
                 );
             }
         } else {
-            let json = unwrap!(json::from_str(&cmd.msg));
+            let json: Json = unwrap!(json::from_str(&cmd.msg));
+            let method = json["method"].as_str();
+            if let Some(m) = method {
+                if m == "swapstatus" {
+                    let handler = save_stats_swap_status(json["data"].clone());
+                    rpc_reply_to_peer (handler, cmd);
+                    continue;
+                }
+            }
+
             let json = match dispatcher (json, None, ctx.clone()) {
                 DispatcherRes::Match (handler) => {
                     rpc_reply_to_peer (handler, cmd);

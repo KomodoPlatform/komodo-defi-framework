@@ -1,8 +1,8 @@
 #!/bin/bash
 source userpass
-#curl --url "http://127.0.0.1:7783" --data "{\"queueid\":0,\"needjson\":1,\"method\":\"electrum\",\"coin\":\"ETOMIC\",\"urls\":[\"electrum1.cipig.net:10025\",\"electrum2.cipig.net:10025\",\"electrum3.cipig.net:10025\"],\"userpass\":\"$userpass\",\"cache_history\":1}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"ETH\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"NODEC\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"JST\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"BEER\"}"
-curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"PIZZA\"}"
+curl --url "http://127.0.0.1:7783" --data "{\"method\":\"electrum\",\"coin\":\"ETOMIC\",\"urls\":[\"electrum1.cipig.net:10025\",\"electrum2.cipig.net:10025\",\"electrum3.cipig.net:10025\"],\"userpass\":\"$userpass\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"ETH\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"NODEC\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"JST\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"BEER\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"PIZZA\",\"mm2\":1}"

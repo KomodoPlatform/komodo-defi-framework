@@ -173,10 +173,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
             }
             return(jprint(retjson,1));
         }
-        else if ( strcmp(method,"verus") == 0 )
-        {
-            return(verusblocks());
-        }
         else if ( strcmp(method,"instantdex_claim") == 0 )
         {
             if ( (ptr= LP_coinsearch("KMD")) != 0 )
@@ -189,25 +185,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
         {
             return(LP_jpg(jstr(argjson,"srcfile"),jstr(argjson,"destfile"),jint(argjson,"power2"),jstr(argjson,"password"),jstr(argjson,"data"),jint(argjson,"required"),juint(argjson,"ind")));
         }
-        /*else if ( strcmp(method,"sendmessage") == 0 )
-        {
-            if ( jobj(argjson,"method2") == 0 )
-            {
-                LP_broadcast_message(LP_mypubsock,base!=0?base:coin,rel,jbits256(argjson,"pubkey"),jprint(argjson,0));
-            }
-            return(clonestr("{\"result\":\"success\"}"));
-        }
-        else if ( strcmp(method,"getmessages") == 0 )
-        {
-            if ( (retjson= LP_getmessages(jint(argjson,"firsti"),jint(argjson,"num"))) != 0 )
-                return(jprint(retjson,1));
-            else return(clonestr("{\"error\":\"null messages\"}"));
-        }
-        else if ( strcmp(method,"deletemessages") == 0 )
-        {
-            LP_deletemessages(jint(argjson,"firsti"),jint(argjson,"num"));
-            return(clonestr("{\"result\":\"success\"}"));
-        }*/
         else if ( strcmp(method,"cancel") == 0 )
         {
             return(LP_cancel_order(jstr(argjson,"uuid")));
@@ -317,17 +294,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
             if ( (requestid= juint(argjson,"requestid")) != 0 && (quoteid= juint(argjson,"quoteid")) != 0 )
                 return(LP_kickstart(requestid,quoteid));
             else return(clonestr("{\"error\":\"kickstart needs requestid and quoteid\"}"));
-        }
-        else if ( strcmp(method,"swapstatus") == 0 )
-        {
-            uint32_t requestid,quoteid;
-            if ( (requestid= juint(argjson,"requestid")) != 0 && (quoteid= juint(argjson,"quoteid")) != 0 )
-                return(basilisk_swapentry(jint(argjson,"fast"),requestid,quoteid,1));
-            else if ( coin[0] != 0 )
-                return(basilisk_swapentries(1,coin,0,jint(argjson,"limit")));
-            else if ( base[0] != 0 && rel[0] != 0 )
-                return(basilisk_swapentries(1,base,rel,jint(argjson,"limit")));
-            else return(basilisk_swaplist(jint(argjson,"fast"),0,0,1,jint(argjson,"pending")));
         }
         else if ( strcmp(method,"dynamictrust") == 0 )
         {

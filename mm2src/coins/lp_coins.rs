@@ -35,6 +35,7 @@ use futures::{Future};
 use gstuff::now_ms;
 use hashbrown::hash_map::{HashMap, RawEntryMut};
 use libc::{c_char, c_void};
+use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::ffi::{CString};
@@ -47,32 +48,52 @@ use std::sync::{Arc, Mutex};
 #[doc(hidden)]
 pub mod coins_tests;
 pub mod eth;
-use self::eth::{eth_coin_from_iguana_info, EthCoin, SignedEthTransaction};
+use self::eth::{eth_coin_from_iguana_info, EthCoin, SignedEthTx};
 pub mod utxo;
-use self::utxo::{utxo_coin_from_iguana_info, ExtendedUtxoTx, UtxoCoin, UtxoInitMode};
+use self::utxo::{utxo_coin_from_iguana_info, UtxoTx, UtxoCoin, UtxoInitMode};
 
 pub trait Transaction: Debug + 'static {
-    fn to_raw_bytes(&self) -> Vec<u8>;
+    /// Raw transaction bytes of the transaction
+    fn tx_hex(&self) -> Vec<u8>;
     fn extract_secret(&self) -> Result<Vec<u8>, String>;
-    /// String representation of tx hash for displaying purpose
-    fn tx_hash(&self) -> String;
+    /// Serializable representation of tx hash for displaying purpose
+    fn tx_hash(&self) -> BytesJson;
+    /// Transaction amount
+    fn amount(&self, decimals: u8) -> Result<f64, String>;
+    /// From address
+    fn from(&self) -> String;
+    /// To address
+    fn to(&self) -> String;
+    /// Fee details
+    fn fee_details(&self) -> Result<Json, String>;
+    /// Serializable transaction details for displaying purposes
+    fn transaction_details(&self, decimals: u8) -> Result<TransactionDetails, String> {
+        Ok(TransactionDetails {
+            tx_hash: self.tx_hash(),
+            amount: try_s!(self.amount(decimals)),
+            fee_details: try_s!(self.fee_details()),
+            from: self.from(),
+            to: self.to(),
+            tx_hex: self.tx_hex().into(),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum TransactionEnum {
-    ExtendedUtxoTx (ExtendedUtxoTx),
-    SignedEthTransaction (SignedEthTransaction)
+    UtxoTx (UtxoTx),
+    SignedEthTx (SignedEthTx)
 }
-ifrom! (TransactionEnum, ExtendedUtxoTx);
-ifrom! (TransactionEnum, SignedEthTransaction);
+ifrom! (TransactionEnum, UtxoTx);
+ifrom! (TransactionEnum, SignedEthTx);
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for TransactionEnum {
     type Target = Transaction;
     fn deref (&self) -> &dyn Transaction {
         match self {
-            &TransactionEnum::ExtendedUtxoTx (ref t) => t,
-            &TransactionEnum::SignedEthTransaction (ref t) => t,
+            &TransactionEnum::UtxoTx (ref t) => t,
+            &TransactionEnum::SignedEthTx (ref t) => t,
 }   }   }
 
 pub type TransactionFut = Box<dyn Future<Item=TransactionEnum, Error=String>>;
@@ -99,24 +120,34 @@ pub trait SwapOps {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: TransactionEnum,
+        taker_payment_tx: &[u8],
+        time_lock: u32,
+        taker_pub: &[u8],
         secret: &[u8],
     ) -> TransactionFut;
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: TransactionEnum,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
         secret: &[u8],
     ) -> TransactionFut;
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: TransactionEnum,
+        taker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
     ) -> TransactionFut;
 
     fn send_maker_refunds_payment(
         &self,
-        maker_payment_tx: TransactionEnum,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        taker_pub: &[u8],
+        secret_hash: &[u8],
     ) -> TransactionFut;
 
     fn validate_fee(
@@ -162,7 +193,7 @@ pub trait MarketCoinOps {
         wait_until: u64,
     ) -> Result<(), String>;
 
-    fn wait_for_tx_spend(&self, transaction: TransactionEnum, wait_until: u64) -> Result<TransactionEnum, String>;
+    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64) -> Result<TransactionEnum, String>;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
@@ -189,10 +220,13 @@ struct WithdrawRequest {
     amount: f64,
 }
 
-#[derive(Serialize)]
-pub struct WithdrawResult {
+/// Transaction details
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TransactionDetails {
     /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
-    tx_hex: String,
+    pub tx_hex: BytesJson,
+    /// Transaction hash in hexadecimal format
+    tx_hash: BytesJson,
     /// Coins will be sent from this address
     from: String,
     /// Coins will be sent to this address
@@ -218,7 +252,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     fn check_i_have_enough_to_trade(&self, amount: f64, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
 
-    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=WithdrawResult, Error=String> + Send>;
+    fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send>;
+
+    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send>;
+
+    /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
+    fn decimals(&self) -> u8;
 }
 
 #[derive(Clone, Debug)]
@@ -650,6 +689,10 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
             &fomat! ("Warning, coin " (ticker) " is used without a corresponding configuration."));
     }
 
+    if coins_en["mm2"].is_null() && req["mm2"].is_null() {
+        return ERR!("mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported");
+    }
+
     let c_ticker = try_s! (CString::new (ticker));
     let rpcport = match coins_en["rpcport"].as_u64() {
         Some (port) if port > 0 && port < u16::max_value() as u64 => port as u16,
@@ -692,6 +735,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     if rpcport != 0 {try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpcport))}
     unsafe {lp::LP_coin_curl_init (&mut *ii)};
     ii.decimals = coins_en["decimals"].as_u64().unwrap_or (0) as u8;
+    ii.overwintered = coins_en["overwintered"].as_u64().unwrap_or (0) as u8;
 
     let asset = coins_en["asset"].as_str();
     let isassetchain = if let Some (asset) = asset {
@@ -861,17 +905,13 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };
 
-    // TODO we should return the error here instead of using the default 0 value because coin
-    //      is not usable for sure in case of error on getting the block count.
-    //      We can't put try_s! here due to default BTC and KMD initialization which we should get rid of.
-    let block_count = coin.current_block().wait().unwrap_or(0);
+    let block_count = try_s!(coin.current_block().wait());
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
     log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=method] ", " [=block_count]);
     if block_count == 0 {
         ii.inactive = (now_ms() / 1000) as u32
     } else {
         ii.inactive = 0;
-        unsafe {lp::LP_unspents_load (ii.symbol.as_mut_ptr(), ii.smartaddr.as_mut_ptr())};
         // AG: I wonder why the special treatment.
         //     We invoke `LP_importaddress` during the SWAP, so maybe we can remove the "KMD"-only invocation here.
         if ticker == "KMD" {
@@ -891,7 +931,8 @@ pub fn enable (ctx: MmArc, req: Json) -> HyRes {
         rpc_response(200, json!({
             "result": "success",
             "address": coin.my_address(),
-            "balance": balance
+            "balance": balance,
+            "coin": coin.ticker(),
         }).to_string())
     ))
 }
@@ -904,7 +945,8 @@ pub fn electrum (ctx: MmArc, req: Json) -> HyRes {
         rpc_response(200, json!({
             "result": "success",
             "address": coin.my_address(),
-            "balance": balance
+            "balance": balance,
+            "coin": coin.ticker(),
         }).to_string())
     ))
 }
@@ -955,7 +997,7 @@ pub fn lp_initcoins (ctx: &MmArc) -> Result<(), String> {
     let default_coins = ["BTC", "KMD"];
 
     for &ticker in default_coins.iter() {
-        try_s! (lp_coininit (ctx, ticker, &json!({})));
+        try_s! (lp_coininit (ctx, ticker, &json!({"mm2":1})));
     }
 
     Ok(())

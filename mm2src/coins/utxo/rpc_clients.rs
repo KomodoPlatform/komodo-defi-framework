@@ -1,6 +1,6 @@
 use bytes::{BytesMut};
 use chain::{OutPoint, Transaction as UtxoTransaction};
-use common::{CORE, slurp_req, StringError, SATOSHIDEN};
+use common::{CORE, slurp_req, StringError};
 use common::custom_futures::{join_all_sequential, select_ok_sequential, SendAll};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
 use futures::{Async, Future, Poll, Sink, Stream};
@@ -92,10 +92,10 @@ pub trait UtxoRpcClientOps: Debug + 'static {
         }
     }
 
-    fn display_balance(&self, address: Address) -> RpcRes<f64>;
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<f64>;
 
     /// returns fee estimation per KByte in satoshis
-    fn estimate_fee_sat(&self) -> RpcRes<u64>;
+    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64>;
 }
 
 #[derive(Clone, Deserialize, Debug, PartialEq)]
@@ -271,14 +271,14 @@ impl UtxoRpcClientOps for NativeClient {
         }
     }
 
-    fn display_balance(&self, address: Address) -> RpcRes<f64> {
+    fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<f64> {
         Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).map(|unspents|
             unspents.iter().fold(0., |sum, unspent| sum + unspent.amount)
         ))
     }
 
-    fn estimate_fee_sat(&self) -> RpcRes<u64> {
-        Box::new(self.estimate_fee().map(|fee| (fee * SATOSHIDEN as f64) as u64))
+    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64> {
+        Box::new(self.estimate_fee().map(move |fee| (fee * 10.0_f64.powf(decimals as f64)) as u64))
     }
 
     /// https://bitcoin.org/en/developer-reference#sendrawtransaction
@@ -334,13 +334,20 @@ struct ElectrumUnspent {
     value: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ElectrumNonce {
+    Number(u64),
+    Hash(H256Json),
+}
+
 /// The block header compatible with Electrum 1.2
 #[derive(Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV12 {
     bits: u64,
     block_height: u64,
     merkle_root: H256Json,
-    nonce: H256Json,
+    nonce: ElectrumNonce,
     prev_block_hash: H256Json,
     timestamp: u64,
     version: u64,
@@ -554,18 +561,18 @@ impl UtxoRpcClientOps for ElectrumClient {
         }
     }
 
-    fn display_balance(&self, address: Address) -> RpcRes<f64> {
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<f64> {
         let hash = electrum_script_hash(&Builder::build_p2pkh(&address.hash));
         let hash_str = hex::encode(hash);
-        Box::new(self.scripthash_get_balance(&hash_str).map(|result| {
-            (result.confirmed as f64 + result.unconfirmed as f64) / 100000000.0
+        Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
+            (result.confirmed as f64 + result.unconfirmed as f64) / 10.0_f64.powf(decimals as f64)
         }))
     }
 
-    fn estimate_fee_sat(&self) -> RpcRes<u64> {
-        Box::new(self.estimate_fee().map(|fee|
+    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64> {
+        Box::new(self.estimate_fee().map(move |fee|
             if fee > 0.00001 {
-                (fee * SATOSHIDEN as f64) as u64
+                (fee * 10.0_f64.powf(decimals as f64)) as u64
             } else {
                 1000
             }
@@ -599,7 +606,7 @@ impl ElectrumClientImpl {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
     /// It can return duplicates sometimes: https://github.com/artemii235/SuperNET/issues/269
-    /// We should remove them to build valid transactions further
+    /// We should remove them to build valid transactions
     fn scripthash_list_unspent(&self, hash: &str) -> RpcRes<Vec<ElectrumUnspent>> {
         Box::new(rpc_func!(self, "blockchain.scripthash.listunspent", hash).and_then(move |unspents: Vec<ElectrumUnspent>| {
             let mut map: HashMap<(H256Json, u32), bool> = HashMap::new();
@@ -626,7 +633,6 @@ impl ElectrumClientImpl {
         rpc_func!(self, "blockchain.scripthash.get_balance", hash)
     }
 
-    /*
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
     pub fn blockchain_headers_subscribe(&self) -> RpcRes<ElectrumBlockHeader> {
         Box::new(
@@ -645,7 +651,7 @@ impl ElectrumClientImpl {
             })
         )
     }
-    */
+
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-broadcast
     fn blockchain_transaction_broadcast(&self, tx: BytesJson) -> RpcRes<H256Json> {
         rpc_func!(self, "blockchain.transaction.broadcast", tx)

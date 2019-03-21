@@ -73,6 +73,7 @@ use hyper::header::{ HeaderValue, CONTENT_TYPE };
 use hyper::rt::Stream;
 use hyper_rustls::HttpsConnector;
 use libc::{c_char, c_void, malloc, free};
+use secp256k1::*;
 use serde_json::{self as json, Value as Json};
 use std::env::args;
 use std::fmt;
@@ -81,7 +82,7 @@ use std::ffi::{CStr, CString};
 use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::abort;
 use std::ptr::{null_mut, read_volatile};
@@ -200,7 +201,7 @@ pub fn coins_iter (cb: &mut dyn FnMut (*mut lp::iguana_info) -> Result<(), Strin
 }
 
 pub const SATOSHIDEN: i64 = 100000000;
-pub fn dstr (x: i64) -> f64 {x as f64 / SATOSHIDEN as f64}
+pub fn dstr (x: i64, decimals: u8) -> f64 {x as f64 / 10.0_f64.powf(decimals as f64)}
 
 /// Apparently helps to workaround `double` fluctuations occuring on *certain* systems.
 /// cf. https://stackoverflow.com/questions/19804472/double-randomly-adds-0-000000000000001.
@@ -794,4 +795,12 @@ impl From<std::io::Error> for StringError {
     fn from(e: std::io::Error) -> StringError {
         StringError(ERRL!("{}", e))
     }
+}
+
+pub fn global_dbdir() -> &'static Path {
+    Path::new (unwrap! (unsafe {CStr::from_ptr (lp::GLOBAL_DBDIR.as_ptr())} .to_str()))
+}
+
+pub fn swap_db_dir() -> PathBuf {
+    global_dbdir().join ("SWAPS")
 }

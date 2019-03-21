@@ -48,6 +48,7 @@ keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = "0.2"
 nix = "0.12"
+rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 peers = { path = "mm2src/peers" }
 portfolio = { path = "mm2src/portfolio" }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
@@ -65,3 +66,8 @@ winapi = "0.3"
 # ring 0.12 fails to build on Windows, this patch replaces it with ring 0.13.
 [patch."https://github.com/paritytech/parity-common"]
 parity-crypto = { git = "https://github.com/ArtemGr/parity-common" }
+
+[workspace]
+members = [
+  "mm2src/coins"
+]

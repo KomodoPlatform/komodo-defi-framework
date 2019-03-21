@@ -291,6 +291,7 @@ pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Stri
         "method": "electrum",
         "coin": coin,
         "urls": urls,
+        "mm2": 1,
     })));
     assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with status «{}»", electrum.0);
     electrum.1
