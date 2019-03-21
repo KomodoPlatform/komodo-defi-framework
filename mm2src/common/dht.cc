@@ -43,6 +43,12 @@ extern "C" dugout_t dht_init (char const* listen_interfaces, bool read_only) {
         sett.set_int (lt::settings_pack::alert_mask, 0x7fffffff);
         sett.set_str (lt::settings_pack::listen_interfaces, listen_interfaces);
 
+        // cf. https://stackoverflow.com/a/31093221/257568
+        sett.set_bool (lt::settings_pack::prefer_rc4, true);
+        sett.set_int (lt::settings_pack::out_enc_policy, lt::settings_pack::pe_forced);
+        sett.set_int (lt::settings_pack::in_enc_policy, lt::settings_pack::pe_forced);
+        sett.set_int (lt::settings_pack::allowed_enc_level, lt::settings_pack::pe_rc4);
+
         sett.set_str (lt::settings_pack::dht_bootstrap_nodes,
             // https://stackoverflow.com/a/32797766/257568
             "router.utorrent.com:6881"

@@ -1,6 +1,0 @@
-include crypto777.sources
-
-all: 
-	$(TOOL_DIR)/$(MINGW)-gcc -w -D __MINGW -c $(CRYPTO777_SRCS) -I/usr/share/mingw-w64/include -I /usr/share/mingw-w64/include/sys -I/home/user/SuperNET/includes/openssl 
-	$(TOOL_DIR)/$(MINGW)-ar rcu ../agents/win64/libcrypto777.a *.o
-	rm *.o

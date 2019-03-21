@@ -1,2 +1,0 @@
-mkdir -p ../agents/win64
-make -f mingw64

@@ -1,8 +1,0 @@
-
-CC="$(xcrun --sdk iphoneos --find clang) -isysroot $(xcrun --sdk iphoneos --show-sdk-path) -arch armv7 -arch arm64 -arch armv7s -ONLY_ACTIVE_ARCH=YES"
-AR="$(xcrun --sdk iphoneos --find ar)"
-
-echo Compiling ..
-
-$CC -Wno-deprecated -I ../OSlibs/ios/include/ -c  -O2 *.c jpeg/*.c jpeg/unix/*.c -I/usr/local/opt/ 
-rm -f ../agents/libcrypto777.a; $AR -rcs ../agents/libcrypto777.a *.o 

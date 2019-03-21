@@ -742,6 +742,7 @@ impl Target {
         match self {
             &Target::iOS(ref target) => match &target[..] {
                 "aarch64-apple-ios" => Some(IosClangOps {
+                    // cf. `xcrun --sdk iphoneos --show-sdk-path`
                     sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
                     arch: "arm64",
                     b2_toolset: "darwin-iphone"
@@ -771,6 +772,7 @@ impl Target {
             cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
         } else if self.is_ios() {
             let cops = unwrap!(self.ios_clang_ops());
+            // cf. `xcode-select -print-path`
             cc.compiler(if plus_plus {
                 "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
             } else {
@@ -778,7 +780,7 @@ impl Target {
             });
             cc.flag(&fomat!("--sysroot="(cops.sysroot)));
             cc.flag("-stdlib=libc++");
-            cc.flag("-miphoneos-version-min=11.0");
+            cc.flag("-miphoneos-version-min=11.0"); // 64-bit.
             cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
             cc.flag("-arch").flag(cops.arch);
         }
@@ -1381,7 +1383,7 @@ fn libtorrent() {
         }
 
         let lt = rasterbar.join(
-            r"bin\msvc-14.1\release\address-model-64\link-static\threading-multi\libtorrent.lib",
+            r"bin\msvc-14.1\release\address-model-64\iconv-off\link-static\threading-multi\libtorrent.lib",              
         );
         if !lt.exists() {
             // cf. tools\build\src\tools\msvc.jam
@@ -1391,7 +1393,10 @@ fn libtorrent() {
                 fomat!(
                     "b2 release "
                     "include="(unwrap!(boost.to_str()))" "
-                    "toolset=msvc-14.1 address-model=64 link=static dht=on debug-symbols=off"
+                    "toolset=msvc-14.1 address-model=64 link=static dht=on"
+                    " iconv=off"
+                    " encryption=on crypto=built-in"
+                    " debug-symbols=off"
                 )
             )
             .env(
@@ -1527,7 +1532,6 @@ fn libtorrent() {
                 .flag("-fvisibility=hidden")
                 .flag("-fvisibility-inlines-hidden")
                 .flag("-fPIC")
-                .flag("-DTORRENT_DISABLE_ENCRYPTION=1")
                 .flag("-DBOOST_ASIO_HAS_STD_CHRONO=1")
                 .flag("-DBOOST_EXCEPTION_DISABLE=1")
                 .flag("-DBOOST_ASIO_ENABLE_CANCELIO=1")

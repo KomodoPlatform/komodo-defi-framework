@@ -1,2 +1,0 @@
-mkdir -p ../agents/win32
-make -f mingw32
