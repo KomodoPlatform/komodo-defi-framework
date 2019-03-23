@@ -73,7 +73,6 @@ use hyper::header::{ HeaderValue, CONTENT_TYPE };
 use hyper::rt::Stream;
 use hyper_rustls::HttpsConnector;
 use libc::{c_char, c_void, malloc, free};
-use secp256k1::*;
 use serde_json::{self as json, Value as Json};
 use std::env::args;
 use std::fmt;
@@ -113,8 +112,6 @@ pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
 
 /// Created by `void *bitcoin_ctx()`.
 pub enum BitcoinCtx {}
-
-pub struct BtcCtxBox(*mut BitcoinCtx);
 
 extern "C" {
     pub fn bitcoin_ctx() -> *mut BitcoinCtx;

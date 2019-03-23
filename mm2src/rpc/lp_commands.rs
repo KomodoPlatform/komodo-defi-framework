@@ -31,7 +31,7 @@ use std::mem::zeroed;
 use std::ptr::null_mut;
 use std::time::Duration;
 
-use crate::lp_native_dex::lp_passphrase_init;
+use crate::mm2::lp_native_dex::lp_passphrase_init;
 
 /*
 char *LP_numutxos()

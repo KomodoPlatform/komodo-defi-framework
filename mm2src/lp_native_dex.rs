@@ -55,9 +55,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::lp_network::{lp_command_q_loop, lp_queue_command};
-use crate::lp_ordermatch::{lp_trade_command, lp_trades_loop};
-use crate::rpc::{self, SINGLE_THREADED_C_LOCK};
+use crate::mm2::lp_network::{lp_command_q_loop, lp_queue_command};
+use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
+use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
 
 /*
 #include <stdio.h>
