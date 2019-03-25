@@ -280,8 +280,8 @@ extern "C" void dht_put (dugout_t* dugout,
             uint8_t* benload; int32_t benlen;
             callback (arg, arg2, (uint8_t*) have.data(), (int32_t) have.size(), &benload, &benlen, &seq);
 
-            en = lt::bdecode (benload, benload + benlen);
-            lt::span<char> benspan ((char*) benload, (std::size_t) benlen);
+            lt::span<char> benspan ((char*) benload, (lt::span<char>::difference_type) benlen);
+            en = lt::bdecode (benspan);
 
             lt::dht::signature sign;
             sign = lt::dht::sign_mutable_item (benspan, salt, lt::dht::sequence_number (seq), pk, sk);
@@ -329,7 +329,8 @@ extern "C" void lt_send_udp (dugout_t* dugout, char const* ip, uint16_t port, ui
     }
     lt::udp::endpoint ep (addr, port);
 
-    lt::entry en = lt::bdecode (benload, benload + benlen);
+    lt::span<char> benspan ((char*) benload, (lt::span<char>::difference_type) benlen);
+    lt::entry en = lt::bdecode (benspan);
 
     void* userdata = nullptr;
     dugout->session->dht_direct_request (ep, en, userdata);

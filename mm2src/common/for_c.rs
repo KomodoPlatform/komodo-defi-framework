@@ -1,5 +1,5 @@
 use hashbrown::HashMap;
-use libc::c_char;
+use libc::{c_char, c_void};
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::net::IpAddr;
@@ -92,4 +92,20 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
     };
 
     ip.is_loopback() as u8
+}
+
+/// Trying to workaround the "Undefined _je_malloc_usable_size" error occuring for iOS/iPhone.  
+/// Recent versions of the Rust language should not be using the je_malloc by default
+/// so hopefully we'll see no conflicts over that name.
+#[no_mangle]
+pub extern fn je_malloc_usable_size (_ptr: *mut c_void) -> usize {
+    0
+}
+
+// https://github.com/DaGenix/rust-crypto/pull/384
+// rust-crypto is no longer maintained, we're waiting for it to leave the dependency graph,
+// https://github.com/DaGenix/rust-crypto/issues/383#issuecomment-305345044
+#[no_mangle]
+pub extern fn rust_crypto_util_fixed_time_eq_asm (lhsp: *const u8, rhsp: *const u8, count: libc::size_t) -> u32 {
+    if unsafe {libc::memcmp (lhsp as *const c_void, rhsp as *const c_void, count)} == 0 {0} else {1}
 }

@@ -4,8 +4,8 @@ using darwin : iphone :
 -fPIC
 -std=c++11
 -stdlib=libc++
--miphoneos-version-min=12.1
--DIPHONEOS_DEPLOYMENT_TARGET=12.1
+-miphoneos-version-min=11.0
+-DIPHONEOS_DEPLOYMENT_TARGET=11.0
 -arch arm64
 ;
 using darwin : iphonesim :
@@ -14,7 +14,8 @@ using darwin : iphonesim :
 -fPIC
 -std=c++11
 -stdlib=libc++
--miphoneos-version-min=12.1
--DIPHONEOS_DEPLOYMENT_TARGET=12.1
+-mios-simulator-version-min=11.0
+-miphoneos-version-min=11.0
+-DIPHONEOS_DEPLOYMENT_TARGET=11.0
 -arch x86_64
 ;

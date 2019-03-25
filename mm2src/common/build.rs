@@ -768,6 +768,7 @@ impl Target {
             cc.flag(&fomat!("--sysroot="(cops.sysroot)));
             cc.flag("-stdlib=libc++");
             cc.flag("-miphoneos-version-min=11.0"); // 64-bit.
+            cc.flag("-mios-simulator-version-min=11.0");
             cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
             cc.flag("-arch").flag(cops.arch);
         }
@@ -1032,26 +1033,30 @@ fn with_file(path: &AsRef<Path>, visitor: &Fn(&mut String)) -> bool {
 ///             If absent then we'll be trying to link against the system version of Boost (not recommended).
 fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
     let target = Target::load();
+    let out_dir = out_dir();
 
-    let tgz = out_dir().join("libtorrent-rasterbar-1.2.0.tar.gz");
-    if !tgz.exists() {
-        hget (
-            "https://github.com/arvidn/libtorrent/releases/download/libtorrent_1_2_0/libtorrent-rasterbar-1.2.0.tar.gz",
-            tgz.clone()
-        );
-        assert!(tgz.exists());
-    }
+    // Released tgz version fails to link for iOS due to https://github.com/arvidn/libtorrent/pull/3629,
+    // should get a fresh Git version instead.
 
-    let rasterbar = out_dir().join("libtorrent-rasterbar-1.2.0");
+    let rasterbar = out_dir.join("libtorrent-rasterbar-1.2.0");
     epintln!("libtorrent at "[rasterbar]);
     if !rasterbar.exists() {
         unwrap!(
-            ecmd!("tar", "-xzf", "libtorrent-rasterbar-1.2.0.tar.gz")
-                .dir(&out_dir())
-                .run(),
-            "Can't unpack libtorrent-rasterbar-1.2.0.tar.gz"
+            ecmd!(
+                "git",
+                "clone",
+                "--depth=1",
+                "https://github.com/arvidn/libtorrent.git",
+                "-b",
+                "RC_1_2"
+            )
+            .dir(&out_dir)
+            .run(),
+            "Error git-cloning libtorrent"
         );
-        assert!(rasterbar.exists());
+        let libtorrent = out_dir.join("libtorrent");
+        assert!(libtorrent.is_dir());
+        unwrap!(fs::rename(libtorrent, &rasterbar));
     }
 
     if let Target::iOS(ref targetᴱ) = target {
@@ -1073,9 +1078,13 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
 
         let cops = unwrap!(target.ios_clang_ops());
         let b2 = fomat!(
-            "b2 -j4 release link=static dht=on encryption=off crypto=built-in iconv=off"
+            "b2 -j4 -d+2 release"
+            " link=static deprecated-functions=off debug-symbols=off"
+            " dht=on encryption=on crypto=built-in iconv=off i2p=off"
+            " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
             " toolset="(cops.b2_toolset)
         );
+        epintln!("build_libtorrent] $ "(b2));
         unwrap!(cmd!("/bin/sh", "-c", b2)
             .env(
                 "PATH",
@@ -1089,14 +1098,10 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
         let a_rel = fomat!(
         "bin/darwin-iphone"
         if targetᴱ == "x86_64-apple-ios" {"sim"}
-        "/release/encryption-off/iconv-off/link-static/threading-multi/libtorrent.a"
+        "/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a"
         );
         let a = rasterbar.join(a_rel);
         assert!(a.is_file());
-
-        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str()))
-            .stdout_to_stderr()
-            .run());
 
         let include = rasterbar.join("include");
         assert!(include.is_dir());
@@ -1505,23 +1510,40 @@ fn libtorrent() {
         if lm_dht >= lm_lib - SLIDE {
             let mut cc = target.cc(true);
             if target.is_ios() {
+                // Defines spied in libtorrent (with "b2 -d+2").
+                cc.flag("-fexceptions");
+                cc.flag("-DBOOST_ALL_NO_LIB");
+                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO");
+                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO");
+                cc.flag("-DBOOST_MULTI_INDEX_DISABLE_SERIALIZATION");
+                cc.flag("-DBOOST_NO_DEPRECATED");
+                cc.flag("-DBOOST_SYSTEM_NO_DEPRECATED");
+                cc.flag("-DNDEBUG");
+                cc.flag("-DTORRENT_BUILDING_LIBRARY");
+                cc.flag("-DTORRENT_NO_DEPRECATE");
+                cc.flag("-DTORRENT_USE_I2P=0");
+                cc.flag("-DTORRENT_USE_ICONV=0");
+                cc.flag("-D_FILE_OFFSET_BITS=64");
+                cc.flag("-D_WIN32_WINNT=0x0600");
+                // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
+                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
             } else {
                 cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
+                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO=1");
+                cc.flag("-DBOOST_EXCEPTION_DISABLE=1");
+                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO=1");
             }
             cc.file("dht.cc")
                 .warnings(true)
-                // cf. .../out/libtorrent-rasterbar-1.2.0/config.report and Makefile/CXX
                 // Mismatch between the libtorrent and the dht.cc flags
                 // might produce weird "undefined reference" link errors.
+                // Building libtorrent with "-d+2" passed to "b2" should show the actual defines.
                 .flag("-std=c++11")
                 .opt_level(2)
                 .flag("-ftemplate-depth=512")
                 .flag("-fvisibility=hidden")
                 .flag("-fvisibility-inlines-hidden")
-                .flag("-fPIC")
-                .flag("-DBOOST_ASIO_HAS_STD_CHRONO=1")
-                .flag("-DBOOST_EXCEPTION_DISABLE=1")
-                .flag("-DBOOST_ASIO_ENABLE_CANCELIO=1")
+                .pic(true)
                 .include(lt_include)
                 .include(boost_inc)
                 .compile("dht");
