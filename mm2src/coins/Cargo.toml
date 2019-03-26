@@ -18,7 +18,7 @@ common = { path = "../common" }
 ethabi = { git = "https://github.com/artemii235/ethabi" }
 eth-secp256k1 = { git = "https://github.com/paritytech/rust-secp256k1" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
-ethereum-types = "~0.4"
+ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
@@ -35,7 +35,7 @@ lazy_static = "1.3"
 libc = "0.2"
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = "0.6"
-rlp = { git = "https://github.com/paritytech/parity-common" }
+rlp = { git = "https://github.com/artemii235/parity-common" }
 rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 script = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 serde = "1.0"
