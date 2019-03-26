@@ -101,11 +101,3 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
 pub extern fn je_malloc_usable_size (_ptr: *mut c_void) -> usize {
     0
 }
-
-// https://github.com/DaGenix/rust-crypto/pull/384
-// rust-crypto is no longer maintained, we're waiting for it to leave the dependency graph,
-// https://github.com/DaGenix/rust-crypto/issues/383#issuecomment-305345044
-#[no_mangle]
-pub extern fn rust_crypto_util_fixed_time_eq_asm (lhsp: *const u8, rhsp: *const u8, count: libc::size_t) -> u32 {
-    if unsafe {libc::memcmp (lhsp as *const c_void, rhsp as *const c_void, count)} == 0 {0} else {1}
-}
