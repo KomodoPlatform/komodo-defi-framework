@@ -93,11 +93,3 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
 
     ip.is_loopback() as u8
 }
-
-/// Trying to workaround the "Undefined _je_malloc_usable_size" error occuring for iOS/iPhone.  
-/// Recent versions of the Rust language should not be using the je_malloc by default
-/// so hopefully we'll see no conflicts over that name.
-#[no_mangle]
-pub extern fn je_malloc_usable_size (_ptr: *mut c_void) -> usize {
-    0
-}
