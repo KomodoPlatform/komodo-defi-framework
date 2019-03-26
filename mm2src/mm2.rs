@@ -312,7 +312,7 @@ fn vanity (substring: &str) {
 }
 
 /// Parses the `first_argument` as JSON and starts LP_main.
-fn run_lp_main (conf: &str) -> Result<(), String> {
+pub fn run_lp_main (conf: &str) -> Result<(), String> {
     let c_conf = match CJSON::from_str (conf) {
         Ok (json) => json,
         Err (err) => return ERR! ("couldnt parse.({}).{}", conf, err)

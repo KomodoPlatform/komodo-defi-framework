@@ -1,5 +1,5 @@
 use hashbrown::HashMap;
-use libc::{c_char, c_void};
+use libc::c_char;
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::net::IpAddr;
