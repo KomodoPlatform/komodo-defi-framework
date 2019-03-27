@@ -739,49 +739,6 @@ cJSON *LP_balances(char *coinaddr)
     return(array);
 }
 
-int32_t LP_unspents_array(struct iguana_info *coin,char *coinaddr,cJSON *array)
-{
-    int32_t i,n,v,errs,height,count=0; uint64_t value,val; cJSON *item,*txobj; bits256 txid;
-    if ( (n= cJSON_GetArraySize(array)) <= 0 )
-        return(0);
-    //printf("%s %s LP_unspents.(%s)\n",coin->symbol,coinaddr,jprint(array,0));
-    for (i=0; i<n; i++)
-    {
-        errs = 0;
-        item = jitem(array,i);
-        txid = jbits256(item,"tx_hash");
-        v = jint(item,"tx_pos");
-        height = jint(item,"height");
-        val = j64bits(item,"value");
-        if ( coin->electrum == 0 && (txobj= LP_gettxout(coin->symbol,coinaddr,txid,v)) != 0 )
-        {
-            value = LP_value_extract(txobj,0,txid);
-            if ( value != 0 && value != val )
-            {
-                char str[65]; printf("REJECT %s %s/v%d value.%llu vs %llu (%s)\n",coin->symbol,bits256_str(str,txid),v,(long long)value,(long long)val,jprint(txobj,0));
-                errs++;
-            }
-            //ht = LP_txheight(coin,txid);
-            //if ( coin->height != 0 )
-            //    ht = LP_getheight(coin) - jint(txobj,"confirmations") + 1;
-            //else ht = 0;
-            /*if  ( ht != 0 && ht < height-2 )
-             {
-             printf("REJECT %s %s/v%d ht.%d vs %d confs.%d (%s)\n",symbol,bits256_str(str,txid),v,ht,height,jint(txobj,"confirmations"),jprint(item,0));
-             errs++;
-             }*/
-            free_json(txobj);
-        }
-        if ( errs == 0 )
-        {
-            //printf("from LP_unspents_array\n");
-            LP_address_utxoadd(0,(uint32_t)time(NULL),"LP_unspents_array",coin,coinaddr,txid,v,val,height,-1);
-            count++;
-        }
-    }
-    return(count);
-}
-
 struct LP_transaction *LP_transactionfind(struct iguana_info *coin,bits256 txid)
 {
     struct LP_transaction *tx;
@@ -932,55 +889,6 @@ int32_t LP_txheight(struct iguana_info *coin,bits256 txid)
     return(height);
 }
 
-int32_t LP_numconfirms(char *symbol,char *coinaddr,bits256 txid,int32_t vout,int32_t mempool)
-{
-    struct iguana_info *coin; bits256 zero; int32_t ht,notarized,numconfirms = 100;
-    cJSON *txobj;
-    if ( (coin= LP_coinfind(symbol)) == 0 || coin->inactive != 0 )
-        return(-1);
-    if ( coin->electrum == 0 )
-    {
-        numconfirms = -1;
-        if ( (txobj= LP_gettxout(symbol,coinaddr,txid,vout)) != 0 )
-        {
-            numconfirms = jint(txobj,"confirmations");
-            free_json(txobj);
-        }
-        else if ( mempool != 0 && LP_mempoolscan(symbol,txid) >= 0 )
-            numconfirms = 0;
-        else if ( (txobj= LP_gettx("LP_numconfirms",symbol,txid,1)) != 0 )
-        {
-            numconfirms = jint(txobj,"confirmations");
-            free_json(txobj);
-        }
-    }
-    else
-    {
-        memset(zero.bytes,0,sizeof(zero));
-        LP_listunspent_issue(symbol,coinaddr,1,txid,zero);
-        if ( (ht= LP_txheight(coin,txid)) > 0 && ht <= coin->height )
-            numconfirms = (LP_getheight(&notarized,coin) - ht + 1);
-        else if ( mempool != 0 )
-        {
-            if ( LP_waitmempool(symbol,coinaddr,txid,vout,30) >= 0 )
-                numconfirms = 0;
-        }
-    }
-    /*if ( numconfirms == BASILISK_DEFAULT_MAXCONFIRMS )
-    {
-        if ( coin->isassetchain != 0 || strcmp(coin->symbol,"KMD") == 0 )
-        {
-            numconfirms--;
-            if ( coin->notarized >= coin->height-numconfirms )
-            {
-                printf("%s notarized.%d current ht.%d - numconfirms.%d -> txheight.%d\n",coin->symbol,coin->notarized,coin->height,numconfirms,coin->height - numconfirms);
-                numconfirms = BASILISK_DEFAULT_MAXCONFIRMS;
-            }
-        }
-    }*/
-    return(numconfirms);
-}
-
 uint64_t LP_txinterestvalue(uint64_t *interestp,char *destaddr,struct iguana_info *coin,bits256 txid,int32_t vout)
 {
     uint64_t interest,value = 0; cJSON *txobj;
@@ -1122,59 +1030,6 @@ int32_t LP_inventory_prevent(int32_t iambob,char *symbol,bits256 txid,int32_t vo
     }*/
     if ( (up= LP_address_utxofind(coin,coin->smartaddr,txid,vout)) != 0 && up->spendheight > 0 )
         return(1);
-    return(0);
-}
-
-cJSON *LP_dustcombine_item(struct LP_address_utxo *up)
-{
-    cJSON *item = cJSON_CreateObject();
-    jaddbits256(item,"txid",up->U.txid);
-    jaddnum(item,"vout",up->U.vout);
-    return(item);
-}
-
-uint64_t LP_dustcombine(struct LP_address_utxo *ups[2],int32_t dustcombine,struct iguana_info *coin)
-{
-    struct LP_address *ap=0; struct LP_address_utxo *up,*tmp,*min0,*min1; cJSON *txobj;
-    if ( coin == 0 || coin->electrum != 0 || dustcombine <= 0 || dustcombine > 2 )
-        return(0);
-    min1 = min0 = 0;
-    ups[0] = ups[1] = 0;
-    if ( (ap= _LP_addressfind(coin,coin->smartaddr)) != 0 )
-    {
-        DL_FOREACH_SAFE(ap->utxos,up,tmp)
-        {
-            if ( up->spendheight <= 0 && up->U.height > 0 && up->U.value != 0 )
-            {
-                if ( (txobj= LP_gettxout(coin->symbol,coin->smartaddr,up->U.txid,up->U.vout)) == 0 )
-                    up->spendheight = 1;
-                else
-                {
-                    free_json(txobj);
-                    if ( LP_inventory_prevent(1,coin->symbol,up->U.txid,up->U.vout) == 0 )
-                    {
-                        if ( min1 == 0 || up->U.value < min1->U.value )
-                        {
-                            if ( min0 == 0 || up->U.value < min0->U.value )
-                            {
-                                min1 = min0;
-                                min0 = up;
-                            } else min1 = up;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if ( min0 != 0 )
-    {
-        ups[0] = min0;
-        if ( dustcombine == 2 && min1 != 0 )
-        {
-            ups[1] = min1;
-            return(min0->U.value + min1->U.value);
-        } else return(min0->U.value);
-    }
     return(0);
 }
 

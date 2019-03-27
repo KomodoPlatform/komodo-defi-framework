@@ -113,63 +113,6 @@ uint32_t LP_atomic_locktime(char *base,char *rel)
     else return(INSTANTDEX_LOCKTIME);
 }
 
-void basilisk_rawtx_purge(struct basilisk_rawtx *rawtx)
-{
-    if ( rawtx->vins != 0 )
-        free_json(rawtx->vins), rawtx->vins = 0;
-    //if ( rawtx->txbytes != 0 )
-    //    free(rawtx->txbytes), rawtx->txbytes = 0;
-}
-
-/*
-void basilisk_swap_finished(struct basilisk_swap *swap)
-{
-*/
-    /*int32_t i;
-    if ( swap->utxo != 0 && swap->sentflag == 0 )
-    {
-        LP_availableset(swap->utxo);
-        swap->utxo = 0;
-        //LP_butxo_swapfields_set(swap->utxo);
-    }
-    swap->I.finished = (uint32_t)time(NULL);*/
-/*
-    if ( swap->I.finished == 0 )
-    {
-        if ( swap->I.iambob != 0 )
-        {
-            LP_availableset(swap->bobdeposit.utxotxid,swap->bobdeposit.utxovout);
-            LP_availableset(swap->bobpayment.utxotxid,swap->bobpayment.utxovout);
-        }
-        else
-        {
-            LP_availableset(swap->alicepayment.utxotxid,swap->alicepayment.utxovout);
-            LP_availableset(swap->myfee.utxotxid,swap->myfee.utxovout);
-        }
-    }
-    // save to permanent storage
-    basilisk_rawtx_purge(&swap->bobdeposit);
-    basilisk_rawtx_purge(&swap->bobpayment);
-    basilisk_rawtx_purge(&swap->alicepayment);
-    basilisk_rawtx_purge(&swap->myfee);
-    basilisk_rawtx_purge(&swap->otherfee);
-    basilisk_rawtx_purge(&swap->aliceclaim);
-    basilisk_rawtx_purge(&swap->alicespend);
-    basilisk_rawtx_purge(&swap->bobreclaim);
-    basilisk_rawtx_purge(&swap->bobspend);
-    basilisk_rawtx_purge(&swap->bobrefund);
-    basilisk_rawtx_purge(&swap->alicereclaim);
-*/
-    /*for (i=0; i<swap->nummessages; i++)
-        if ( swap->messages[i].data != 0 )
-            free(swap->messages[i].data), swap->messages[i].data = 0;
-    free(swap->messages), swap->messages = 0;
-    swap->nummessages = 0;*/
-/*
-    if ( swap->N.pair >= 0 )
-        nn_close(swap->N.pair), swap->N.pair = -1;
-}
-*/
 uint32_t basilisk_quoteid(struct basilisk_request *rp)
 {
     struct basilisk_request R;
@@ -185,14 +128,6 @@ uint32_t basilisk_requestid(struct basilisk_request *rp)
     R.requestid = R.quoteid = R.quotetime = R.DEXselector = 0;
     R.destamount = R.unused = 0;
     memset(R.desthash.bytes,0,sizeof(R.desthash.bytes));
-    if ( 0 )
-    {
-        int32_t i;
-        for (i=0; i<sizeof(R); i++)
-            printf("%02x",((uint8_t *)&R)[i]);
-        printf(" <- crc.%u\n",calc_crc32(0,(void *)&R,sizeof(R)));
-        char str[65],str2[65]; printf("B REQUESTID: t.%u r.%u q.%u %s %.8f %s -> %s %.8f %s crc.%u q%u\n",R.timestamp,R.requestid,R.quoteid,R.src,dstr(R.srcamount),bits256_str(str,R.srchash),R.dest,dstr(R.destamount),bits256_str(str2,R.desthash),calc_crc32(0,(void *)&R,sizeof(R)),basilisk_quoteid(&R));
-    }
     return(calc_crc32(0,(void *)&R,sizeof(R)));
 }
 
@@ -216,65 +151,4 @@ void LP_swapsfp_update(uint32_t requestid,uint32_t quoteid)
         fflush(swapsfp);
     }
     portable_mutex_unlock(&LP_listmutex);
-}
-
-uint32_t LP_swapwait(uint32_t expiration,uint32_t requestid,uint32_t quoteid,int32_t duration,int32_t sleeptime)
-{
-    char *retstr; uint32_t finished = 0; cJSON *retjson=0;
-    if ( sleeptime != 0 )
-    {
-        printf("wait %d:%d for SWAP.(r%u/q%u) to complete\n",duration,sleeptime,requestid,quoteid);
-        sleep(sleeptime/3);
-    }
-    while ( expiration == 0 || time(NULL) < expiration )
-    {
-        if ( (retstr= basilisk_swapentry(0,requestid,quoteid,1)) != 0 )
-        {
-            if ( (retjson= cJSON_Parse(retstr)) != 0 )
-            {
-                if ( jstr(retjson,"status") != 0 && strcmp(jstr(retjson,"status"),"finished") == 0 )
-                {
-                    finished = (uint32_t)time(NULL);
-                    free(retstr), retstr = 0;
-                    break;
-                }
-                else if ( expiration != 0 && time(NULL) > expiration )
-                    printf("NOT FINISHED.(%s)\n",jprint(retjson,0));
-                free_json(retjson), retjson = 0;
-            }
-            free(retstr);
-        }
-        if ( sleeptime != 0 )
-            sleep(sleeptime);
-        if ( duration < 0 )
-            break;
-    }
-    if ( retjson != 0 )
-    {
-        free_json(retjson);
-        if ( (retstr= basilisk_swapentry(0,requestid,quoteid,1)) != 0 )
-        {
-            printf("\n>>>>>>>>>>>>>>>>>>>>>>>>>\nSWAP completed! %u-%u %s\n",requestid,quoteid,retstr);
-            free(retstr);
-        }
-        return(finished);
-    }
-    else
-    {
-        if ( expiration != 0 && time(NULL) > expiration )
-            printf("\nSWAP did not complete! %u-%u %s\n",requestid,quoteid,jprint(retjson,0));
-        if ( duration > 0 )
-            LP_pendswap_add(expiration,requestid,quoteid);
-        return(0);
-    }
-}
-
-int32_t LP_calc_waittimeout(char *symbol)
-{
-    int32_t waittimeout = TX_WAIT_TIMEOUT;
-    if ( strcmp(symbol,"BTC") == 0 )
-        waittimeout *= 8;
-    else if ( LP_is_slowcoin(symbol) != 0 )
-        waittimeout *= 4;
-    return(waittimeout);
 }

@@ -1762,27 +1762,6 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
     unsafe {lp::G.waiting = 1}
     try_s! (unsafe {safecopy! (lp::LP_myipaddr, "{}", myipaddr)});
 
-    if let Some (ethnode) = ctx.conf["ethnode"].as_str() {
-        try_s! (unsafe {safecopy! (lp::LP_eth_node_url, "{}", ethnode)})
-    } else {
-        // use default mainnet Parity node address
-        try_s! (unsafe {safecopy! (lp::LP_eth_node_url, "{}", "http://195.201.0.6:8555")})
-    }
-
-    if let Some (alice_contract) = ctx.conf["alice_contract"].as_str() {
-        try_s! (unsafe {safecopy! (lp::LP_alice_contract, "{}", alice_contract)})
-    } else {
-        // use default mainnet Alice contract address
-        try_s! (unsafe {safecopy! (lp::LP_alice_contract, "{}", "0x9bc5418ceded51db08467fc4b62f32c5d9ebda55")})
-    }
-
-    if let Some (bob_contract) = ctx.conf["bob_contract"].as_str() {
-        try_s! (unsafe {safecopy! (lp::LP_bob_contract, "{}", bob_contract)})
-    } else {
-        // use default mainnet Bob contract address
-        try_s! (unsafe {safecopy! (lp::LP_bob_contract, "{}", "0x2896Db79fAF20ABC8776fc27D15719cf59b8138B")})
-    }
-
     unsafe {try_s! (lp_passphrase_init (&ctx,
         ctx.conf["passphrase"].as_str(), ctx.conf["gui"].as_str(), ctx.conf["seednode"].as_str()))};
 /*

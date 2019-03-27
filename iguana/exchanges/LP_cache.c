@@ -130,35 +130,6 @@ int32_t LP_cacheitem(struct iguana_info *coin,FILE *fp)
     return(-1);
 }
 
-void LP_cacheptrs_init(struct iguana_info *coin)
-{
-    char fname[1024]; FILE *fp; int32_t count,tflag=0; long n,fsize=0,len = 0;
-    sprintf(fname,"%s/UNSPENTS/%s.SPV",GLOBAL_DBDIR,coin->symbol), OS_portable_path(fname);
-    fp = fopen(fname,"rb");
-    count = 0;
-    if ( fp != 0 )
-    {
-        fseek(fp,0,SEEK_END);
-        fsize = ftell(fp);
-        rewind(fp);
-        while ( len < fsize )
-        {
-            if ( (n= LP_cacheitem(coin,fp)) < 0 )
-            {
-                printf("cacheitem error at %s offset.%ld when fsize.%ld\n",coin->symbol,len,fsize);
-                tflag = 1;
-                break;
-            }
-            count++;
-            len += n;
-        }
-        printf("loaded %s %d entries total len.%ld\n",fname,count,len);
-        fclose(fp);
-    } //else printf("couldnt find.(%s)\n",fname);
-    if ( tflag != 0 )
-        OS_truncate(fname,len);
-}
-
 bits256 validate_merkle(int32_t pos,bits256 txid,cJSON *proofarray,int32_t proofsize)
 {
     int32_t i; uint8_t serialized[sizeof(bits256) * 2]; bits256 hash,proof;

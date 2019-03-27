@@ -2345,22 +2345,3 @@ int32_t basilisk_swapuserdata(uint8_t *userdata,bits256 privkey,int32_t ifpath,b
     userdata[len++] = 0x51 * ifpath; // ifpath == 1 -> if path, 0 -> else path
     return(len);
 }
-
-void LP_swap_coinaddr(struct iguana_info *coin,char *coinaddr,uint64_t *valuep,uint8_t *data,int32_t datalen,int32_t v)
-{
-    cJSON *txobj,*vouts,*vout; uint8_t extraspace[32768]; bits256 signedtxid; struct iguana_msgtx msgtx; int32_t n,suppress_pubkeys = 0;
-    if ( valuep != 0 )
-        *valuep = 0;
-    if ( (txobj= bitcoin_data2json(coin->symbol,coin->taddr,coin->pubtype,coin->p2shtype,coin->isPoS,coin->longestchain,&signedtxid,&msgtx,extraspace,sizeof(extraspace),data,datalen,0,suppress_pubkeys,coin->zcash)) != 0 )
-    {
-        //char str[65]; printf("got txid.%s (%s)\n",bits256_str(str,signedtxid),jprint(txobj,0));
-        if ( (vouts= jarray(&n,txobj,"vout")) != 0 && n > 0 )
-        {
-            vout = jitem(vouts,v);
-            if ( valuep != 0 )
-                *valuep = LP_value_extract(vout,1,signedtxid);
-            LP_destaddr(coinaddr,vout);
-        }
-        free_json(txobj);
-    }
-}

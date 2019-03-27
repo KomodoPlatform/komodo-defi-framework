@@ -499,17 +499,6 @@ pub fn stop (ctx: MmArc) -> HyRes {
                 return(LP_kickstart(requestid,quoteid));
             else return(clonestr("{\"error\":\"kickstart needs requestid and quoteid\"}"));
         }
-        else if ( strcmp(method,"swapstatus") == 0 )
-        {
-            uint32_t requestid,quoteid;
-            if ( (requestid= juint(argjson,"requestid")) != 0 && (quoteid= juint(argjson,"quoteid")) != 0 )
-                return(basilisk_swapentry(jint(argjson,"fast"),requestid,quoteid,1));
-            else if ( coin[0] != 0 )
-                return(basilisk_swapentries(1,coin,0,jint(argjson,"limit")));
-            else if ( base[0] != 0 && rel[0] != 0 )
-                return(basilisk_swapentries(1,base,rel,jint(argjson,"limit")));
-            else return(basilisk_swaplist(jint(argjson,"fast"),0,0,1,jint(argjson,"pending")));
-        }
         else if ( strcmp(method,"dynamictrust") == 0 )
         {
             struct LP_address *ap; char *coinaddr;

@@ -58,10 +58,6 @@ tokio-core = "0.1"
 unwrap = "1.2"
 winapi = "0.3"
 
-# ring 0.12 fails to build on Windows, this patch replaces it with ring 0.13.
-[patch."https://github.com/paritytech/parity-common"]
-parity-crypto = { git = "https://github.com/ArtemGr/parity-common" }
-
 [workspace]
 members = [
   "mm2src/coins"

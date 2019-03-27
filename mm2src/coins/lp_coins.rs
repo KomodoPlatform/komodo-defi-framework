@@ -735,6 +735,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     if rpcport != 0 {try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpcport))}
     unsafe {lp::LP_coin_curl_init (&mut *ii)};
     ii.decimals = coins_en["decimals"].as_u64().unwrap_or (0) as u8;
+    ii.overwintered = coins_en["overwintered"].as_u64().unwrap_or (0) as u8;
 
     let asset = coins_en["asset"].as_str();
     let isassetchain = if let Some (asset) = asset {
@@ -904,17 +905,13 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };
 
-    // TODO we should return the error here instead of using the default 0 value because coin
-    //      is not usable for sure in case of error on getting the block count.
-    //      We can't put try_s! here due to default BTC and KMD initialization which we should get rid of.
-    let block_count = coin.current_block().wait().unwrap_or(0);
+    let block_count = try_s!(coin.current_block().wait());
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
     log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=method] ", " [=block_count]);
     if block_count == 0 {
         ii.inactive = (now_ms() / 1000) as u32
     } else {
         ii.inactive = 0;
-        unsafe {lp::LP_unspents_load (ii.symbol.as_mut_ptr(), ii.smartaddr.as_mut_ptr())};
         // AG: I wonder why the special treatment.
         //     We invoke `LP_importaddress` during the SWAP, so maybe we can remove the "KMD"-only invocation here.
         if ticker == "KMD" {

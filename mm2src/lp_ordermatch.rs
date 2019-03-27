@@ -21,7 +21,7 @@
 use common::{lp, nn, free_c_ptr, c_char_to_string, sat_to_f, SATOSHIS, SMALLVAL, CJSON, dstr, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use coins::{lp_coinfind, MmCoinEnum};
-use coins::utxo::compressed_pub_key_from_priv_raw;
+use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
 use futures::future::Future;
 use gstuff::now_ms;
 use hashbrown::hash_map::{Entry, HashMap};
@@ -428,7 +428,7 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char,
                 let alice = (*qp).desthash;
                 let maker_amount = (*qp).R.srcamount as u64;
                 let taker_amount = (*qp).R.destamount as u64;
-                let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes));
+                let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256));
                 let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
                 move || {
                     log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
@@ -753,7 +753,7 @@ unsafe fn lp_connected_alice(ctx_ffi_handle: u32, qp: *mut lp::LP_quoteinfo, pai
             let maker_coin = unwrap! (unwrap! (lp_coinfind (&ctx, maker_str)));
             let maker_amount = (*qp).R.srcamount as u64;
             let taker_amount = (*qp).R.destamount as u64;
-            let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes));
+            let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256));
             let uuid = CStr::from_ptr ((*qp).uuidstr.as_ptr()) .to_string_lossy().into_owned();
             move || {
                 log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));

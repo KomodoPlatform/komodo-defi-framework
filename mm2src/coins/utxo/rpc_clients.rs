@@ -80,9 +80,11 @@ pub trait UtxoRpcClientOps: Debug + 'static {
             }
 
             match self.get_transaction(tx.hash().reversed().into()).wait() {
-                Ok(tx) => {
-                    if tx.confirmations >= confirmations {
+                Ok(t) => {
+                    if t.confirmations >= confirmations {
                         return Ok(());
+                    } else {
+                        log!({"Waiting for tx {:?} confirmations, now {}, required {}", tx.hash().reversed(), t.confirmations, confirmations});
                     }
                 },
                 Err(e) => log!("Error " [e] " getting the transaction " [tx.hash().reversed()] ", retrying in 10 seconds"),
@@ -103,7 +105,7 @@ pub struct NativeUnspent {
     pub txid: H256Json,
     pub vout: u32,
     pub address: String,
-    pub account: String,
+    pub account: Option<String>,
     #[serde(rename = "scriptPubKey")]
     pub script_pub_key: BytesJson,
     pub amount: f64,
@@ -306,6 +308,7 @@ impl NativeClient {
     pub fn output_amount(&self, txid: H256Json, index: usize) -> RpcRes<u64> {
         let fut = self.get_raw_transaction(txid);
         Box::new(fut.and_then(move |transaction| {
+            log!({"Before transaction {:?} deserialize", transaction});
             let tx: UtxoTransaction = try_s!(deserialize(transaction.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
             Ok(tx.outputs[index].value)
         }))
@@ -334,13 +337,20 @@ struct ElectrumUnspent {
     value: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ElectrumNonce {
+    Number(u64),
+    Hash(H256Json),
+}
+
 /// The block header compatible with Electrum 1.2
 #[derive(Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV12 {
     bits: u64,
     block_height: u64,
     merkle_root: H256Json,
-    nonce: H256Json,
+    nonce: ElectrumNonce,
     prev_block_hash: H256Json,
     timestamp: u64,
     version: u64,
@@ -626,7 +636,6 @@ impl ElectrumClientImpl {
         rpc_func!(self, "blockchain.scripthash.get_balance", hash)
     }
 
-    /*
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
     pub fn blockchain_headers_subscribe(&self) -> RpcRes<ElectrumBlockHeader> {
         Box::new(
@@ -645,7 +654,7 @@ impl ElectrumClientImpl {
             })
         )
     }
-    */
+
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-broadcast
     fn blockchain_transaction_broadcast(&self, tx: BytesJson) -> RpcRes<H256Json> {
         rpc_func!(self, "blockchain.transaction.broadcast", tx)

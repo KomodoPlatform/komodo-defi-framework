@@ -99,6 +99,7 @@ fn lp_atomic_locktime(base: &str, rel: &str) -> u64 {
 }
 
 fn payment_confirmations(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> (u32, u32) {
+    /*
     let mut maker_confirmations = SWAP_DEFAULT_NUM_CONFIRMS;
     let mut taker_confirmations = SWAP_DEFAULT_NUM_CONFIRMS;
     if maker_coin.ticker() == "BTC" {
@@ -110,20 +111,13 @@ fn payment_confirmations(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> (u
     }
 
     if maker_coin.is_asset_chain() {
-        if maker_coin.ticker() == "ETOMIC" {
-            maker_confirmations = 1;
-        } else {
-            maker_confirmations = SWAP_DEFAULT_MAX_CONFIRMS / 2;
-        }
+        maker_confirmations = 1;
     }
 
     if taker_coin.is_asset_chain() {
-        if taker_coin.ticker() == "ETOMIC" {
-            taker_confirmations = 1;
-        } else {
-            taker_confirmations = SWAP_DEFAULT_MAX_CONFIRMS / 2;
-        }
+        taker_confirmations = 1;
     }
+    */
 
     // TODO recognize why the BAY case is special, ask JL777
     /*
@@ -133,8 +127,7 @@ fn payment_confirmations(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> (u
         swap->I.aliceconfirms *= !swap->I.aliceistrusted;
     }
     */
-
-    (maker_confirmations, taker_confirmations)
+    (1, 1)
 }
 
 // NB: Using a macro instead of a function in order to preserve the line numbers in the log.

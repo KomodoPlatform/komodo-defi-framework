@@ -161,58 +161,6 @@ void _LP_sendqueueadd(uint32_t crc32,int32_t sock,uint8_t *msg,int32_t msglen,in
     //printf("Q.%p: peerind.%d msglen.%d sock.%d\n",ptr,peerind,msglen,sock);
 }
 
-uint32_t _LP_magic_check(bits256 hash,bits256 magic)
-{
-    bits256 pubkey,shared;
-    pubkey = curve25519(magic,curve25519_basepoint9());
-    shared = curve25519(hash,pubkey);
-    return(shared.uints[1] & ((1 << LP_MAGICBITS)-1));
-}
-
-bits256 LP_calc_magic(uint8_t *msg,int32_t len)
-{
-    static uint32_t maxn,counter,nsum; static double sum;
-    bits256 magic,hash; int32_t n = 0; double millis;
-    vcalc_sha256(0,hash.bytes,msg,len);
-    millis = OS_milliseconds();
-    while ( 1 )
-    {
-        magic = rand256(1);
-        if ( _LP_magic_check(hash,magic) == LP_BARTERDEX_VERSION )
-            break;
-        n++;
-    }
-    sum += (OS_milliseconds() - millis);
-    nsum += n;
-    counter++;
-    if ( n > maxn || (LP_rand() % 10000) == 0 )
-    {
-        if ( n > maxn )
-        {
-            printf("LP_calc_magic maxn.%d <- %d   | ",maxn,n);
-            maxn = n;
-        }
-        printf("millis %.3f ave %.3f, aveiters %.1f\n",OS_milliseconds() - millis,sum/counter,(double)nsum/counter);
-    }
-    return(magic);
-}
-
-int32_t LP_magic_check(uint8_t *msg,int32_t recvlen,char *remoteaddr)
-{
-    bits256 magic,hash; uint32_t val;
-    recvlen -= sizeof(bits256);
-    if ( recvlen > 0 )
-    {
-        vcalc_sha256(0,hash.bytes,msg,recvlen);
-        memcpy(magic.bytes,&msg[recvlen],sizeof(magic));
-        val = _LP_magic_check(hash,magic);
-        if ( val != LP_BARTERDEX_VERSION )
-            printf("magicval = %x from %s\n",val,remoteaddr);
-        return(val == LP_BARTERDEX_VERSION);
-    }
-    return(-1);
-}
-
 int32_t LP_crc32find(int32_t *duplicatep,int32_t ind,uint32_t crc32)
 {
     static uint32_t crcs[16384]; static unsigned long dup,total;
@@ -398,25 +346,6 @@ void LP_broadcast_message(int32_t pubsock,char *base,char *rel,bits256 destpub25
         free(msgstr);
 }
     
-void mynn_close(int32_t sock)
-{
-    struct nn_pollfd pfd; int32_t n; void *buf;
-    if ( sock >= 0 )
-    {
-        while ( (n= nn_recv(sock,&buf,NN_MSG,0)) > 0 )
-            printf("got n.%d bytes from nn_close(%d)\n",n,sock);
-        pfd.fd = sock;
-        pfd.events = POLLOUT;
-        while ( nn_poll(&pfd,1,100) > 0 )
-        {
-            printf("cant send to nn_close(%d)\n",sock);
-            sleep(1);
-        }
-        if ( IAMLP != 0 )
-            nn_close(sock);
-    }
-}
-    
 void LP_psockloop(void *_ptr)
 {
     static struct nn_pollfd *pfds;
@@ -541,39 +470,6 @@ void LP_psockloop(void *_ptr)
             }
             if ( sendsock < 0 )
                 usleep(10000);
-            if ( 0 && IAMLP != 0 && sendsock < 0 )
-            {
-                usleep(30000);
-                for (i=nonz=0; i<Numpsocks; i++)
-                {
-                    ptr = &PSOCKS[i];
-                    if ( ptr->cmdchannel == 0 && now > ptr->lasttime+PSOCK_KEEPALIVE )
-                    {
-                        printf("PSOCKS[%d] of %d (%u %u) lag.%d IDLETIMEOUT\n",i,Numpsocks,ptr->publicport,ptr->sendport,now - ptr->lasttime);
-                        if ( ptr->sendsock != ptr->publicsock && ptr->sendsock >= 0 )
-                            nn_close(ptr->sendsock), ptr->sendsock = -1;
-                        if ( ptr->publicsock >= 0 )
-                            nn_close(ptr->publicsock), ptr->publicsock = -1;
-                        nonz++;
-                    }
-                }
-                if ( nonz > 0 )
-                {
-                    n = Numpsocks;
-                    for (i=0; i<n; i++)
-                    {
-                        ptr = &PSOCKS[i];
-                        if ( ptr->sendsock < 0 && ptr->publicsock < 0 )
-                        {
-                            for (j=i; j<n-1; j++)
-                                PSOCKS[j] = PSOCKS[j+1];
-                            n--;
-                        }
-                    }
-                    printf("PSOCKS purge nonz.%d n.%d vs Numpsocks.%d\n",nonz,n,Numpsocks);
-                    Numpsocks = n;
-                }
-            }
             portable_mutex_unlock(&LP_psockmutex);
         } else usleep(100000);
     }
@@ -596,25 +492,6 @@ void LP_psockadd(int32_t ispaired,int32_t publicsock,uint16_t recvport,int32_t s
     safecopy(ptr->publicaddr,publicaddr,sizeof(ptr->publicaddr));
     ptr->lasttime = (uint32_t)time(NULL);
     portable_mutex_unlock(&LP_psockmutex);
-}
-    
-int32_t LP_psockmark(char *publicaddr)
-{
-    int32_t i,retval = -1; struct psock *ptr;
-    portable_mutex_lock(&LP_psockmutex);
-    for (i=0; i<Numpsocks; i++)
-    {
-        ptr = &PSOCKS[i];
-        if ( strcmp(publicaddr,ptr->publicaddr) == 0 )
-        {
-            printf("mark PSOCKS[%d] %s for deletion\n",i,publicaddr);
-            ptr->lasttime = 0;
-            retval = i;
-            break;
-        }
-    }
-    portable_mutex_unlock(&LP_psockmutex);
-    return(retval);
 }
     
 char *_LP_psock_create(int32_t *pullsockp,int32_t *pubsockp,char *ipaddr,uint16_t publicport,uint16_t subport,int32_t ispaired,int32_t cmdchannel,bits256 pubkey)
