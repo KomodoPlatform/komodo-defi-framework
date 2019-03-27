@@ -16,16 +16,18 @@ mod mm2;
 
 use crate::common::log::LOG_OUTPUT;
 use crate::common::lp;
+use gstuff::any_to_str;
 use libc::c_char;
 use std::fs;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr};
 use std::io::Cursor;
 use std::mem::transmute;
 use std::path::Path;
+use std::panic::catch_unwind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-static MM2_RUNNING: AtomicBool = AtomicBool::new (false);
+static LP_MAIN_RUNNING: AtomicBool = AtomicBool::new (false);
 
 #[derive(Debug)]
 enum MainErr {
@@ -37,8 +39,6 @@ enum MainErr {
     WrDirTooLong,
     WrDirNotDir,
     NoOutputLock,
-    NilInErr,
-    NotImplemented,
     CantThread
 }
 
@@ -46,17 +46,18 @@ enum MainErr {
 #[no_mangle]
 pub extern fn mm2_main (
   conf: *const c_char, wr_dir: *const c_char, log_cb: extern fn (line: *const c_char)) -> i8 {
+    macro_rules! log {
+        ($($args: tt)+) => {{
+            let msg = fomat! ("mm2_lib:" ((line!())) "] " $($args)+ '\0');
+            log_cb (msg.as_ptr() as *const c_char);
+        }}
+    }
     macro_rules! eret {
-        (@b $rc: expr, $($args: tt)+) => {{
-            let emsg = fomat! ("mm2_lib:" ((line!())) "] " $($args)+ '\0');
-            log_cb (emsg.as_ptr() as *const c_char);
-            return $rc as i8
-        }};
-        ($rc: expr, $($args: tt)+) => {eret! (@b $rc, [$rc] ": " $($args)+)};
-        ($rc: expr) => {eret! (@b $rc, [$rc])};
+        ($rc: expr, $($args: tt)+) => {{log! ("error " ($rc as i8) ", " [$rc] ": " $($args)+); return $rc as i8}};
+        ($rc: expr) => {{log! ("error " ($rc as i8) ", " [$rc]); return $rc as i8}};
     }
 
-    if MM2_RUNNING.load (Ordering::Relaxed) {eret! (MainErr::AlreadyRuns)}
+    if LP_MAIN_RUNNING.load (Ordering::Relaxed) {eret! (MainErr::AlreadyRuns)}
 
     if conf.is_null() {eret! (MainErr::ConfIsNull)}
     let conf = unsafe {CStr::from_ptr (conf)};
@@ -84,19 +85,23 @@ pub extern fn mm2_main (
     }
 
     let rc = thread::Builder::new().name ("lp_main".into()) .spawn (move || {
+        if LP_MAIN_RUNNING.compare_and_swap (false, true, Ordering::Relaxed) {
+            log! ("lp_main already started!");
+            return
+        }
+        match catch_unwind (move || mm2::run_lp_main (conf)) {
+            Ok (Ok (_)) => log! ("run_lp_main finished"),
+            Ok (Err (err)) => log! ("run_lp_main error: " (err)),
+            Err (err) => log! ("run_lp_main panic: " [any_to_str (&*err)])
+        };
+        LP_MAIN_RUNNING.store (false, Ordering::Relaxed)
     });
-    if let Err (_) = rc {eret! (MainErr::CantThread)}
-
-    if let Err (err) = mm2::run_lp_main (conf) {
-        let line = fomat! ("run_lp_main error: " (err));
-        let line = match CString::new (line) {Ok (cs) => cs, Err (_) => eret! (MainErr::NilInErr)};
-        log_cb (line.as_ptr());
-    }
-    eret! (MainErr::NotImplemented)  // Singleton thread not implemented yet.
+    if let Err (e) = rc {eret! (MainErr::CantThread, (e))}
+    MainErr::Ok as i8
 }
 
 /// Checks if the MM2 singleton thread is currently running (1) or not (0).
 #[no_mangle]
 pub extern fn mm2_main_status() -> i8 {
-    if MM2_RUNNING.load (Ordering::Relaxed) {1} else {0}
+    if LP_MAIN_RUNNING.load (Ordering::Relaxed) {1} else {0}
 }
