@@ -1725,19 +1725,6 @@ fn manual_mm1_build(target: Target) {
 
     // TODO: Rebuild the libraries when the C source code is updated.
 
-    let secp256k1_build = out_dir.join("secp256k1_build");
-    epintln!("secp256k1_build at "[secp256k1_build]);
-
-    let libsecp256k1_a = out_dir.join("libsecp256k1.a");
-    let secp256k1_src = [root.join("iguana/secp256k1/src/secp256k1.c")];
-    if make(&libsecp256k1_a, &secp256k1_src[..]) {
-        let mut cc = target.cc(false);
-        cc.file(&secp256k1_src[0]);
-        cc.compile("secp256k1");
-        assert!(libsecp256k1_a.is_file());
-    }
-    println!("cargo:rustc-link-lib=static=secp256k1");
-
     let libjpeg_a = out_dir.join("libjpeg.a");
     let mut libjpeg_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/jpeg/*.c"))
         .map(|p| unwrap!(p))
@@ -1849,7 +1836,6 @@ fn build_c_code(mm_version: &str) {
 
     println!("cargo:rustc-link-lib=static=libcrypto777");
     println!("cargo:rustc-link-lib=static=libjpeg");
-    //Already linked from etomicrs->ethkey->eth-secp256k1//println!("cargo:rustc-link-lib=static=libsecp256k1");
 
     if cfg!(windows) {
         println!("cargo:rustc-link-search=native={}", path2s(rabs("x64")));
@@ -1938,7 +1924,6 @@ fn main() {
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
 
     rerun_if_changed("iguana/exchanges/*.c");
-    rerun_if_changed("iguana/secp256k1/src/*.c");
     rerun_if_changed("crypto777/*.c");
     rerun_if_changed("crypto777/jpeg/*.c");
     println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));

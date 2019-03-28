@@ -80,9 +80,11 @@ pub trait UtxoRpcClientOps: Debug + 'static {
             }
 
             match self.get_transaction(tx.hash().reversed().into()).wait() {
-                Ok(tx) => {
-                    if tx.confirmations >= confirmations {
+                Ok(t) => {
+                    if t.confirmations >= confirmations {
                         return Ok(());
+                    } else {
+                        log!({"Waiting for tx {:?} confirmations, now {}, required {}", tx.hash().reversed(), t.confirmations, confirmations});
                     }
                 },
                 Err(e) => log!("Error " [e] " getting the transaction " [tx.hash().reversed()] ", retrying in 10 seconds"),

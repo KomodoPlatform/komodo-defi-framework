@@ -150,7 +150,7 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
 
 pub fn broadcast_my_prices(ctx: &MmArc) -> Result<(), String> {
     let portfolio_ctx = try_s!(PortfolioContext::from_ctx(ctx));
-    let my_prices = try_s!(portfolio_ctx.my_prices.lock());
+    let my_prices = try_s!(portfolio_ctx.my_prices.lock()).clone();
 
     for ((base, rel), price) in my_prices.iter() {
         let ping = match PricePingRequest::new(ctx, base, rel, *price) {

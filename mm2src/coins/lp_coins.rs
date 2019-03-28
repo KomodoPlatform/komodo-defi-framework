@@ -159,7 +159,7 @@ pub trait SwapOps {
 
     fn validate_maker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
@@ -168,7 +168,7 @@ pub trait SwapOps {
 
     fn validate_taker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
@@ -188,7 +188,7 @@ pub trait MarketCoinOps {
 
     fn wait_for_confirmations(
         &self,
-        tx: TransactionEnum,
+        tx: &[u8],
         confirmations: u32,
         wait_until: u64,
     ) -> Result<(), String>;

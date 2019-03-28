@@ -93,6 +93,10 @@ use std::time::Duration;
 use std::str;
 use tokio_core::reactor::Remote;
 
+// Make sure we're linking the eth-secp256k1 in for it is used in the MM1 C code.
+use secp256k1::Secp256k1;
+pub extern fn _we_are_using_secp256k1() -> Secp256k1 {Secp256k1::new()}
+
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
 pub use self::lp::{_bits256 as bits256};

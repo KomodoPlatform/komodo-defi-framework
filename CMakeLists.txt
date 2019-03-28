@@ -30,6 +30,5 @@ find_library(
 )
 include_directories("${CMAKE_SOURCE_DIR}")
 add_subdirectory(iguana/exchanges)
-add_subdirectory(iguana/secp256k1)
 add_subdirectory(crypto777)
 add_subdirectory(crypto777/jpeg)
