@@ -405,18 +405,14 @@ impl UtxoCoin {
 
     fn validate_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         first_pub0: &Public,
         second_pub0: &Public,
         priv_bn_hash: &[u8],
         amount: u64,
     ) -> Result<(), String> {
-        let tx = match payment_tx {
-            TransactionEnum::UtxoTx(tx) => tx,
-            _ => panic!(),
-        };
-
+        let tx: UtxoTx = try_s!(deserialize(payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let amount = adjust_sat_by_decimals(amount, self.decimals);
 
         let mut attempts = 0;
@@ -792,7 +788,7 @@ impl SwapOps for UtxoCoin {
 
     fn validate_maker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
@@ -810,7 +806,7 @@ impl SwapOps for UtxoCoin {
 
     fn validate_taker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
@@ -843,11 +839,11 @@ impl MarketCoinOps for UtxoCoin {
 
     fn wait_for_confirmations(
         &self,
-        tx: TransactionEnum,
+        tx: &[u8],
         confirmations: u32,
         wait_until: u64,
     ) -> Result<(), String> {
-        let tx = match tx {TransactionEnum::UtxoTx(e) => e, _ => panic!()};
+        let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
         self.rpc_client.wait_for_confirmations(
             &tx,
             confirmations as u32,

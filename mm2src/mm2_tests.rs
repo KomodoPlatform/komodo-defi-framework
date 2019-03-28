@@ -690,7 +690,8 @@ fn komodo_conf_path (ac_name: Option<&'static str>) -> Result<PathBuf, String> {
 fn check_my_swap_status(
     mm: &MarketMakerIt,
     uuid: &str,
-    expected_events: &Vec<&str>,
+    expected_success_events: &Vec<&str>,
+    expected_error_events: &Vec<&str>,
     maker_amount: u64,
     taker_amount: u64,
 ) {
@@ -703,12 +704,17 @@ fn check_my_swap_status(
         })));
     assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
     let status_response: Json = unwrap!(json::from_str(&response.1));
+    let success_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["success_events"].clone()));
+    assert_eq!(expected_success_events, &success_events);
+    let error_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["error_events"].clone()));
+    assert_eq!(expected_error_events, &error_events);
+
     let events_array = unwrap!(status_response["result"]["events"].as_array());
     assert_eq!(events_array[0]["event"]["data"]["maker_amount"].as_u64(), Some(maker_amount));
     assert_eq!(events_array[0]["event"]["data"]["taker_amount"].as_u64(), Some(taker_amount));
     let actual_events = events_array.iter().map(|item| unwrap!(item["event"]["type"].as_str()));
     let actual_events: Vec<&str> = actual_events.collect();
-    assert_eq!(expected_events, &actual_events);
+    assert_eq!(expected_success_events, &actual_events);
 }
 
 fn check_stats_swap_status(
@@ -842,8 +848,22 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         unwrap!(mm_bob.wait_for_log (20., &|log| log.contains (&format!("Entering the maker_swap_loop {}/{}", base, rel))));
     }
 
-    let maker_events = vec!["Started", "Negotiated", "TakerFeeValidated", "MakerPaymentSent", "TakerPaymentValidatedAndConfirmed", "TakerPaymentSpent", "Finished"];
-    let taker_events = vec!["Started", "Negotiated", "TakerFeeSent", "MakerPaymentValidatedAndConfirmed", "TakerPaymentSent", "TakerPaymentSpent", "MakerPaymentSpent", "Finished"];
+    let maker_success_events = vec!["Started", "Negotiated", "TakerFeeValidated", "MakerPaymentSent",
+                                    "TakerPaymentReceived", "TakerPaymentWaitConfirmStarted",
+                                    "TakerPaymentValidatedAndConfirmed", "TakerPaymentSpent", "Finished"];
+
+    let maker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeValidateFailed",
+                                  "MakerPaymentTransactionFailed", "MakerPaymentDataSendFailed",
+                                  "TakerPaymentValidateFailed", "TakerPaymentSpendFailed", "MakerPaymentRefunded",
+                                  "MakerPaymentRefundFailed"];
+
+    let taker_success_events = vec!["Started", "Negotiated", "TakerFeeSent", "MakerPaymentReceived",
+                                    "MakerPaymentWaitConfirmStarted", "MakerPaymentValidatedAndConfirmed",
+                                    "TakerPaymentSent", "TakerPaymentSpent", "MakerPaymentSpent", "Finished"];
+
+    let taker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeSendFailed", "MakerPaymentValidateFailed",
+                                  "TakerPaymentTransactionFailed", "TakerPaymentDataSendFailed", "TakerPaymentWaitForSpendFailed",
+                                  "MakerPaymentSpendFailed", "TakerPaymentRefunded", "TakerPaymentRefundFailed"];
 
     for uuid in uuids.iter() {
         unwrap!(mm_bob.wait_for_log (600., &|log| log.contains (&format!("[swap uuid={}] Finished", uuid))));
@@ -851,7 +871,8 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         check_my_swap_status(
             &mm_alice,
             &uuid,
-            &taker_events,
+            &taker_success_events,
+            &taker_error_events,
             10000000,
             10000000,
         );
@@ -859,7 +880,8 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         check_my_swap_status(
             &mm_bob,
             &uuid,
-            &maker_events,
+            &maker_success_events,
+            &maker_error_events,
             10000000,
             10000000,
         );
@@ -870,15 +892,15 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         check_stats_swap_status(
             &mm_alice,
             &uuid,
-            &maker_events,
-            &taker_events,
+            &maker_success_events,
+            &taker_success_events,
         );
 
         check_stats_swap_status(
             &mm_bob,
             &uuid,
-            &maker_events,
-            &taker_events,
+            &maker_success_events,
+            &taker_success_events,
         );
     }
     unwrap! (mm_bob.stop());

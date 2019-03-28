@@ -241,7 +241,7 @@ impl SwapOps for EthCoin {
 
     fn validate_maker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -258,7 +258,7 @@ impl SwapOps for EthCoin {
 
     fn validate_taker_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -300,14 +300,12 @@ impl MarketCoinOps for EthCoin {
 
     fn wait_for_confirmations(
         &self,
-        tx: TransactionEnum,
+        tx: &[u8],
         confirmations: u32,
         wait_until: u64,
     ) -> Result<(), String> {
-        let tx = match tx {
-            TransactionEnum::SignedEthTx(t) => t,
-            _ => panic!(),
-        };
+        let unsigned: UnverifiedTransaction = try_s!(rlp::decode(tx));
+        let tx = try_s!(SignedEthTx::new(unsigned));
 
         let required_confirms = U256::from(confirmations);
         loop {
@@ -731,16 +729,14 @@ impl EthCoin {
 
     fn validate_payment(
         &self,
-        payment_tx: TransactionEnum,
+        payment_tx: &[u8],
         time_lock: u32,
         sender_pub: &[u8],
         secret_hash: &[u8],
         amount: u64,
     ) -> Result<(), String> {
-        let tx = match payment_tx {
-            TransactionEnum::SignedEthTx(t) => t,
-            _ => panic!(),
-        };
+        let unsigned: UnverifiedTransaction = try_s!(rlp::decode(payment_tx));
+        let tx = try_s!(SignedEthTx::new(unsigned));
 
         let expected_value = u256_denominate_from_satoshis(amount, self.decimals);
         let tx_from_rpc = try_s!(self.web3.eth().transaction(TransactionId::Hash(tx.hash)).wait());
