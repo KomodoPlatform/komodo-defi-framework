@@ -35,8 +35,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
 
-use crate::lp_network::lp_queue_command;
-use crate::lp_swap::{MakerSwap, run_maker_swap, TakerSwap, run_taker_swap};
+use crate::mm2::lp_network::lp_queue_command;
+use crate::mm2::lp_swap::{MakerSwap, run_maker_swap, TakerSwap, run_taker_swap};
 
 /// Temporary kludge, improving readability of the not-yet-fully-ported code. Should be removed eventually.
 macro_rules! c2s {($cs: expr) => {unwrap!(CStr::from_ptr($cs.as_ptr()).to_str())}}

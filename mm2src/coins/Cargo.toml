@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 base64 = "0.10.0"
+dirs = "1"
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 byteorder = "1.2.2"
 bytes = "0.4"

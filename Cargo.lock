@@ -309,6 +309,7 @@ dependencies = [
  "bytes 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "chain 0.1.0 (git+https://github.com/artemii235/parity-bitcoin.git)",
  "common 0.1.0",
+ "dirs 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "eth-secp256k1 0.5.7 (git+https://github.com/paritytech/rust-secp256k1)",
  "ethabi 6.1.0 (git+https://github.com/artemii235/ethabi)",
  "ethcore-transaction 0.1.0 (git+https://github.com/artemii235/parity-ethereum.git)",

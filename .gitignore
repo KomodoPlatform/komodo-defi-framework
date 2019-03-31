@@ -154,8 +154,6 @@ iguana/confs/c6faccf6b625bbb826f47b77c3274e985db7b0a47d435f32bea2f7f3724cdd17.ol
 
 iguana/marketmaker
 
-iguana/secp256k1.o-501dfbfe
-
 iguana/confs/cc577d22ca76351d495f147b470103392b5f2ab0948e45608623a7d9728e2c6f
 
 iguana/confs/cc577d22ca76351d495f147b470103392b5f2ab0948e45608623a7d9728e2c6f.old
@@ -286,3 +284,7 @@ iguana/exchanges/manychains
 # Private IDE configuration
 /mm2src/peers/.vscode/tasks.json
 /.vscode/tasks.json
+
+# IDE artefacts
+/.vscode/ipch
+/mm2src/*/.vscode/ipch

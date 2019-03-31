@@ -106,8 +106,8 @@ fn test_crash_handling() {
           assert! (stderr.contains ("Signal caught!"));
         }
 
-        assert! (stderr.contains ("] mm2::crash_reports::access_violation"));
-        assert! (stderr.contains ("] mm2::crash_reports::call_access_violation"));
+        assert! (stderr.contains ("] mm2::mm2::crash_reports::access_violation"));
+        assert! (stderr.contains ("] mm2::mm2::crash_reports::call_access_violation"));
     } else {
         log! ("test_crash_handling] Hi from the child.");
         init_crash_reports();

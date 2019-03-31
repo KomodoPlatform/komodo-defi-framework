@@ -55,7 +55,7 @@
 //  marketmaker
 //
 use bitcrypto::dhash160;
-use btc_rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{MmCoinEnum, TransactionDetails};
 use common::{bits256, dstr, HyRes, rpc_response, Timeout, swap_db_dir, str_to_malloc, lp};
 use common::log::{TagParam};

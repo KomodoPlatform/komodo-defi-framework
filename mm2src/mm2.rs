@@ -19,20 +19,6 @@
 //  Copyright © 2017-2018 SuperNET. All rights reserved.
 //
 
-#![feature(non_ascii_idents)]
-
-extern crate rpc as btc_rpc;
-#[macro_use] extern crate common;
-#[allow(unused_imports)]
-#[macro_use] extern crate duct;
-#[macro_use] extern crate fomat_macros;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate serde_json;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate serialization_derive;
-#[macro_use] extern crate unwrap;
-
 use common::{bitcoin_priv2wif, lp, os, BitcoinCtx, CJSON, MM_VERSION};
 use common::lp::{_bits256 as bits256};
 use common::mm_ctx::MmCtx;
@@ -55,6 +41,7 @@ use std::str::from_utf8_unchecked;
 use std::slice::from_raw_parts;
 use std::str;
 
+#[path = "crash_reports.rs"]
 pub mod crash_reports;
 use self::crash_reports::init_crash_reports;
 
@@ -183,7 +170,7 @@ fn help() {
     )
 }
 
-fn main() {
+pub fn mm2_main() {
     init_crash_reports();
     unsafe {os::OS_init()};
     log!({"BarterDEX MarketMaker {}", MM_VERSION});

@@ -108,120 +108,18 @@ uint16_t LP_userpassfp(char *symbol,char *username,char *password,FILE *fp)
     return(port);
 }
 
-void LP_statefname(char *fname,char *symbol,char *assetname,char *str,char *name,char *confpath)
-{
-    if ( confpath != 0 && confpath[0] != 0 )
-    {
-		#if defined(NATIVE_WINDOWS)
-		// need to do something with "confpath":"`${process.env.HOME}`/.muecore/mue.conf" under Windows
-		char *ht = "`${process.env.USERHOME}`", *ht_start, *p_ht;
-		char ht_symbol[2];
-		
-		ht_start = strstr(confpath, ht);
-
-		if (ht_start) {
-			ht_start = ht_start + strlen(ht);
-			sprintf(fname, "%s\\", LP_getdatadir());
-			p_ht = ht_start;
-			if (p_ht[0] == '/' && p_ht[1] == '.') {
-				p_ht += 2;
-				//printf("%s\n", p_ht);
-				while (p_ht[0] != '\0') {
-					if (p_ht[0] == '/') strcat(fname, "\\"); else
-					{
-						ht_symbol[0] = p_ht[0]; ht_symbol[1] = '\0';
-						strcat(fname, ht_symbol);
-					}
-					p_ht++;
-				}
-				//printf("%s\n", fname);
-			}
-		} else strcpy(fname, confpath);
-		#else
-		strcpy(fname,confpath);
-		#endif	
-        return;
-    }
-    sprintf(fname,"%s",LP_getdatadir());
-#ifdef _WIN32
-    strcat(fname,"\\");
-#else
-    strcat(fname,"/");
-#endif
-    if ( strcmp(symbol,"BTC") == 0 )
-    {
-#if defined(__APPLE__) || defined(NATIVE_WINDOWS)
-        strcat(fname,"Bitcoin");
-#else
-        strcat(fname,".bitcoin");
-#endif
-    }
-    else if ( name != 0 )
-    {
-        char name2[64];
-#if defined(__APPLE__) || defined(NATIVE_WINDOWS)
-        int32_t len;
-        strcpy(name2,name);
-        name2[0] = toupper(name2[0]);
-        len = (int32_t)strlen(name2);
-        if ( strcmp(&name2[len-4],"coin") == 0 )
-            name2[len - 4] = 'C';
-#else
-        name2[0] = '.';
-        strcpy(name2+1,name);
-#endif
-       strcat(fname,name2);
-    }
-    else
-    {
-#if defined(__APPLE__) || defined(NATIVE_WINDOWS)
-        strcat(fname,"Komodo");
-#else
-        strcat(fname,".komodo");
-#endif
-        if ( strcmp(symbol,"KMD") != 0 )
-        {
-#ifdef _WIN32
-            strcat(fname,"\\");
-#else
-            strcat(fname,"/");
-#endif
-            strcat(fname,assetname);
-        }
-    }
-#ifdef _WIN32
-    strcat(fname,"\\");
-#else
-    strcat(fname,"/");
-#endif
-    strcat(fname,str);
-}
-
 uint16_t LP_userpass(char *userpass,char *symbol,char *assetname,char *confroot,char *name,char *confpath,uint16_t origport)
 {
-    FILE *fp; char fname[512],username[512],password[512],confname[512]; uint16_t port = 0;
+    FILE *fp; char username[512],password[512]; uint16_t port = 0;
     userpass[0] = 0;
-    sprintf(confname,"%s.conf",confroot);
-    if ( 0 )
-        printf("%s (%s) %s confname.(%s) confroot.(%s)\n",symbol,assetname,name,confname,confroot);
-#if defined(__APPLE__) || defined(NATIVE_WINDOWS)
-    int32_t len;
-    confname[0] = toupper(confname[0]);
-    len = (int32_t)strlen(confname);
-    if ( strcmp(&confname[len-4],"coin") == 0 )
-        confname[len - 4] = 'C';
-#endif
-    LP_statefname(fname,symbol,assetname,confname,name,confpath);
-    if ( (fp= fopen(fname,"rb")) != 0 )
+    if ( (fp= fopen(confpath,"rb")) != 0 )
     {
         if ( (port= LP_userpassfp(symbol,username,password,fp)) == 0 )
             port = origport;
         sprintf(userpass,"%s:%s",username,password);
         fclose(fp);
-        if ( 0 )
-            printf("LP_statefname.(%s) <- %s %s %s (%s) (%s)\n",fname,name,symbol,assetname,userpass,confpath);
         return(port);
-    } else printf("cant open.(%s)\n",fname);
+    } else printf("cant open.(%s)\n",confpath);
     return(origport);
 }
 

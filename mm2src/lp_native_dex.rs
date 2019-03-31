@@ -55,9 +55,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::lp_network::{lp_command_q_loop, lp_queue_command};
-use crate::lp_ordermatch::{lp_trade_command, lp_trades_loop};
-use crate::rpc::{self, SINGLE_THREADED_C_LOCK};
+use crate::mm2::lp_network::{lp_command_q_loop, lp_queue_command};
+use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
+use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
 
 /*
 #include <stdio.h>
@@ -243,6 +243,9 @@ pub unsafe fn lp_command_process(
     if !json["result"].is_null() || !json["error"].is_null() {
         null_mut()
     } else {
+        if std::env::var("LOG_COMMANDS").is_ok() {
+            log!("Got command: " [json]);
+        }
         let _lock = SINGLE_THREADED_C_LOCK.lock();
         let mut trade_command = -1;
         if stats_json_only == 0 {
@@ -978,8 +981,10 @@ const P2P_SEED_NODES: [&'static str; 5] = [
 ];
 
 /// Default seed nodes for netid 9999 that is used for MM2 testing
-const P2P_SEED_NODES_9999: [&'static str; 1] = [
+const P2P_SEED_NODES_9999: [&'static str; 3] = [
     "195.201.116.176",
+    "46.4.87.18",
+    "46.4.78.11",
 ];
 
 /// Setup the peer-to-peer network.

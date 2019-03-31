@@ -29,9 +29,9 @@ use std::fmt;
 use std::ptr::null_mut;
 use std::time::Duration;
 
-use crate::lp_native_dex::lp_command_process;
-use crate::lp_swap::save_stats_swap_status;
-use crate::rpc::{dispatcher, DispatcherRes};
+use crate::mm2::lp_native_dex::lp_command_process;
+use crate::mm2::lp_swap::save_stats_swap_status;
+use crate::mm2::rpc::{dispatcher, DispatcherRes};
 
 /*
 struct psock

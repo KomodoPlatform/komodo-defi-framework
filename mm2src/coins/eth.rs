@@ -29,7 +29,8 @@ use futures::future::{loop_fn, Loop};
 use futures_timer::Delay;
 use gstuff::now_ms;
 use hyper::StatusCode;
-use rand::Rng;
+use rand::{Rng, thread_rng};
+use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
@@ -1210,10 +1211,12 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
     let info = unsafe { *info };
     let ticker = try_s! (unsafe {CStr::from_ptr (info.symbol.as_ptr())} .to_str()) .into();
 
-    let urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
+    let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
         return ERR!("Enable request for ETH coin must have at least 1 node URL");
     }
+    let mut rng = thread_rng();
+    urls.as_mut_slice().shuffle(&mut rng);
 
     let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
     if swap_contract_address == Address::default() {

@@ -1562,7 +1562,6 @@ fn build_c_code(mm_version: &str) {
 
     println!("cargo:rustc-link-lib=static=libcrypto777");
     println!("cargo:rustc-link-lib=static=libjpeg");
-    //Already linked from etomicrs->ethkey->eth-secp256k1//println!("cargo:rustc-link-lib=static=libsecp256k1");
 
     if cfg!(windows) {
         println!("cargo:rustc-link-search=native={}", path2s(rabs("x64")));
@@ -1646,7 +1645,6 @@ fn main() {
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
 
     rerun_if_changed("iguana/exchanges/*.c");
-    rerun_if_changed("iguana/secp256k1/src/*.c");
     rerun_if_changed("crypto777/*.c");
     rerun_if_changed("crypto777/jpeg/*.c");
     println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));

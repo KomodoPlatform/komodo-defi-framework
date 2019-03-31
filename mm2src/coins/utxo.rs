@@ -32,6 +32,8 @@ use keys::{KeyPair, Private, Public, Address, Secret};
 use keys::bytes::Bytes;
 use keys::generator::{Random, Generator};
 use primitives::hash::{H256, H264, H512};
+use rand::{thread_rng};
+use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
 use script::{Opcode, Builder, Script, TransactionInputSigner, UnsignedTransactionInput, SignatureVersion};
 use serde_json::{self as json, Value as Json};
@@ -1015,7 +1017,9 @@ pub fn utxo_coin_from_iguana_info(info: *mut lp::iguana_info, mode: UtxoInitMode
                 auth: format!("Basic {}", base64_encode(auth_str, URL_SAFE)),
             })
         },
-        UtxoInitMode::Electrum(urls) => {
+        UtxoInitMode::Electrum(mut urls) => {
+            let mut rng = thread_rng();
+            urls.as_mut_slice().shuffle(&mut rng);
             let mut client = ElectrumClientImpl::new();
             for url in urls.iter() {
                 try_s!(client.add_server(url));

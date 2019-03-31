@@ -1201,8 +1201,12 @@ pub fn prices_loop (ctx: MmArc) {
                 continue
             }
         }
-
+        /*
         // TODO: `LP_portfolio` should return a `Json` (or a serializable structure) and not a string.
+        // TODO: `LP_portfolio` calls LP_balance which produces a lot of calls to coin RPC to get it's balance.
+        //        It results in `thousands` of TIME_WAIT connections which might in result block the MM2 at all:
+        //        https://github.com/artemii235/SuperNET/issues/355#issuecomment-478266733
+        //        We might want to bring this code back when we're ready to refactor. Portfolio is not supported currently anyway.
         let portfolio_cs = unsafe {lp::LP_portfolio()};
         if portfolio_cs == null_mut() {continue}
 
@@ -1267,5 +1271,6 @@ pub fn prices_loop (ctx: MmArc) {
                 }
             }
         }
+        */
     }
 }

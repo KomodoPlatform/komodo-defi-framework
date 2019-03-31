@@ -44,10 +44,10 @@ use std::sync::Mutex;
 use tokio_core::net::TcpListener;
 use hex;
 
-use crate::lp_network::lp_queue_command;
-use crate::lp_ordermatch::{buy, sell};
-use crate::lp_swap::{my_swap_status, stats_swap_status};
-use crate::CJSON;
+use crate::mm2::lp_network::lp_queue_command;
+use crate::mm2::lp_ordermatch::{buy, sell};
+use crate::mm2::lp_swap::{my_swap_status, stats_swap_status};
+use crate::mm2::CJSON;
 
 mod lp_commands;
 use self::lp_commands::*;

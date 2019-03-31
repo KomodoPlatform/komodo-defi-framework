@@ -8,7 +8,12 @@ edition = "2018"
 
 [[bin]]
 name = "mm2"
-path = "mm2src/mm2.rs"
+path = "mm2src/mm2_bin.rs"
+
+[lib]
+name = "mm2"
+path = "mm2src/mm2_lib.rs"
+crate-type = ["staticlib"]
 
 [profile.dev]
 # Enable light optimizations. We want a debuggable version but not a completely dumb one.

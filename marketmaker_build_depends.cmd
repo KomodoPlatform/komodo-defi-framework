@@ -5,34 +5,15 @@ rem 1. Requires installed CMake for Windows (!)
 rem 2. Currently build only 64-bit release versions of .lib and .dll
 rem 3. Libraries available: pthreads, nanomsg, curl
 
-@REM Check for Visual Studio
-call set "VSPATH="
-if defined VS140COMNTOOLS ( if not defined VSPATH (
- call set "VSPATH=%%VS140COMNTOOLS%%"
-) )
-
-@REM check if we already have the tools in the environment
-if exist "%VCINSTALLDIR%" (
- goto compile
-)
-
-if not defined VSPATH (
- echo You need Microsoft Visual Studio 15 installed
- pause
- exit
+if exist "c:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+ call "c:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 )
 
 @REM set up the environment, https://www.appveyor.com/docs/lang/cpp/#visual-studio-2017
 if exist "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat" (
  call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat"
- goto compile
 )
 
-echo Unable to set up the environment
-pause
-exit
-
-:compile
 rem MSBuild /help
 echo.
 echo Decker will automatically download and build all needed *.dll and *.lib for you ;)
