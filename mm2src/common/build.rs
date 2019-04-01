@@ -1392,37 +1392,6 @@ fn manual_mm1_build(target: Target) {
 
     // TODO: Rebuild the libraries when the C source code is updated.
 
-    let secp256k1_build = out_dir.join("secp256k1_build");
-    epintln!("secp256k1_build at "[secp256k1_build]);
-
-    let libsecp256k1_a = out_dir.join("libsecp256k1.a");
-    if !libsecp256k1_a.exists() {
-        let _ = fs::create_dir(&secp256k1_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/android-ndk/bin/clang",
-                "-O2",
-                "-g3",
-                "-c",
-                "/project/iguana/secp256k1/src/secp256k1.c"
-            )
-            .dir(&secp256k1_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/android-ndk/bin/arm-linux-androideabi-ar",
-                "-rcs",
-                unwrap!(libsecp256k1_a.to_str()),
-                "secp256k1.o"
-            )
-            .dir(&secp256k1_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
-        }
-    }
-    println!("cargo:rustc-link-lib=static=secp256k1");
-
     let jpeg_build = out_dir.join("jpeg_build");
     epintln!("jpeg_build at "[jpeg_build]);
 
