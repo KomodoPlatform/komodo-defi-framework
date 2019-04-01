@@ -582,9 +582,17 @@ struct iguana_info *LP_coinadd(struct iguana_info *cdata)
 fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
     // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
     // "USERHOME/" prefix should be replaced with the user's home folder.
+
+    macro_rules! home {() => {
+        // On Android the user home directory is not available.
+        // cf. https://discordapp.com/channels/@me/542973365846016001/562227773867819027
+        // Let's try using the current directory (.) instead.
+        home_dir().unwrap_or (".".into())
+    }}
+
     let confpathˢ = coins_en["confpath"].as_str().unwrap_or ("") .trim();
     if confpathˢ.is_empty() {
-        let home = try_s! (home_dir().ok_or ("Can not detect the user home directory"));
+        let home = home!();
         if let Some (assetˢ) = coins_en["asset"].as_str() {
             return Ok (home.join (".komodo") .join (&assetˢ) .join (fomat! ((assetˢ) ".conf")))
         } else if let Some (nameˢ) = coins_en["name"].as_str() {
@@ -598,7 +606,7 @@ fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
         else {(confpathˢ, false)};
 
     if rel_to_home {
-        let home = try_s! (home_dir().ok_or ("Can not detect the user home directory"));
+        let home = home!();
         Ok (home.join (confpathˢ))
     } else {
         Ok (confpathˢ.into())
