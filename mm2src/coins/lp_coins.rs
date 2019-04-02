@@ -645,11 +645,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     }
 
     let c_ticker = try_s! (CString::new (ticker));
-    let rpcport = match coins_en["rpcport"].as_u64() {
-        Some (port) if port > 0 && port < u16::max_value() as u64 => port as u16,
-        // NB: 0 for anything that's not "BTC" or "KMD".
-        _ => unsafe {lp::LP_rpcport (c_ticker.as_ptr() as *mut c_char)}
-    };
 
     let _estimatedrate = coins_en["estimatedrate"].as_f64().unwrap_or (20.);
 
@@ -683,7 +678,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     ii.inactive = inactive as u32;
     ii.ctx = unsafe {bitcoin_ctx() as *mut c_void};
     ii.noimportprivkey_flag = match ticker {"XVG" | "CLOAK" | "PPC" | "BCC" | "ORB" => 1, _ => 0};
-    if rpcport != 0 {try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpcport))}
     unsafe {lp::LP_coin_curl_init (&mut *ii)};
     ii.decimals = coins_en["decimals"].as_u64().unwrap_or (0) as u8;
     ii.overwintered = coins_en["overwintered"].as_u64().unwrap_or (0) as u8;
@@ -711,11 +705,20 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     let ii = Box::leak (ii);
     common::for_c::LP_coinadd (ii);
 
-    let rpcport = unsafe {
+    let rpc_port = unsafe {
+        let rpcportₒ = match coins_en["rpcport"].as_u64() {
+            Some (port) if port > 0 && port < u16::max_value() as u64 => port as u16,
+            // NB: 0 for anything that's not "BTC" or "KMD".
+            _ => lp::LP_rpcport (c_ticker.as_ptr() as *mut c_char)
+        };
+
         let confpathᵖ = try_s! (confpath (coins_en));
         let confpathˢ = try_s! (confpathᵖ.to_str().ok_or ("Malformed confpath"));
         let confpathᶜ = try_s! (CString::new (confpathˢ));
 
+        // Returns the port obtained from the wallet configuration.
+        // Wallet configuration ports are more likely to work,
+        // cf. https://github.com/artemii235/SuperNET/issues/359
         lp::LP_userpass (
             ii.userpass.as_mut_ptr(),            // userpass
             c_ticker.as_ptr() as *mut c_char,    // symbol
@@ -723,10 +726,14 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
             null_mut(),                          // confroot
             null_mut(),                          // name
             confpathᶜ.as_ptr() as *mut c_char,   // confpath
-            rpcport                              // origport
+            rpcportₒ                             // origport
         )
     };
-    if rpcport == 0 {log! ("Warning, coin " (ticker) " doesn't have the 'rpcport' configured")}
+    if rpc_port == 0 {
+        log! ("Warning, coin " (ticker) " doesn't have the 'rpcport' configured")
+    } else {
+        try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpc_port))
+    }
 
     // TODO: Move the private key into `MmCtx`. Initialize it before `lp_coininit`.
     let passphrase = try_s! (ctx.conf["passphrase"].as_str().ok_or ("!passphrase"));
@@ -824,10 +831,8 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         return ERR! ("lp_coininit ({}): unknown method {:?}", ticker, method);
     };
 
-    // TODO: Should pick the correct coin implementation somehow.
-    //       Consider changing the config format to set the coin type `explicitly`.
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
-        try_s! (utxo_coin_from_iguana_info (ii, utxo_mode)) .into()
+        try_s! (utxo_coin_from_iguana_info (ii, utxo_mode, rpc_port)) .into()
     } else {
         try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };

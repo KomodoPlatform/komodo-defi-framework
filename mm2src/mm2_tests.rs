@@ -931,9 +931,9 @@ fn trade_base_rel_native(base: &str, rel: &str) {
     let alice_userpass = unwrap! (var ("ALICE_USERPASS") .ok().or (alice_file_userpass), "No ALICE_USERPASS or .env.client/USERPASS");
 
     let coins = json! ([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"confpath":unwrap!(beer_cfp.to_str())},
-        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"confpath":unwrap!(pizza_cfp.to_str())},
-        {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"confpath":unwrap!(etomic_cfp.to_str())},
+        {"coin":"BEER","asset":"BEER","confpath":unwrap!(beer_cfp.to_str())},
+        {"coin":"PIZZA","asset":"PIZZA","confpath":unwrap!(pizza_cfp.to_str())},
+        {"coin":"ETOMIC","asset":"ETOMIC","confpath":unwrap!(etomic_cfp.to_str())},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80}
     ]);
 

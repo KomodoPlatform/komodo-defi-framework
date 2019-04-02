@@ -550,11 +550,18 @@ type SlurpFut = Box<Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=String> 
 
 /// Executes a Hyper request, returning the response status, headers and body.
 pub fn slurp_req (request: Request<Body>) -> SlurpFut {
+    let uri = fomat! ((request.uri()));
     let request_f = HYPER.request (request);
     let response_f = request_f.then (move |res| -> SlurpFut {
         // Can fail with:
         // "an IO error occurred: An existing connection was forcibly closed by the remote host. (os error 10054)" (on Windows)
-        let res = try_fus! (res);
+        // "an error occurred trying to connect: No connection could be made because the target machine actively refused it. (os error 10061)"
+        // "an error occurred trying to connect: Connection refused (os error 111)"
+        let res = match res {
+            Ok (r) => r,
+            Err (err) => return Box::new (futures::future::err (
+                ERRL! ("Error accessing '{}': {}", uri, err)))
+        };
         let status = res.status();
         let headers = res.headers().clone();
         let body_f = res.into_body().concat2();
