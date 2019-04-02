@@ -43,6 +43,12 @@ extern "C" dugout_t dht_init (char const* listen_interfaces, bool read_only) {
         sett.set_int (lt::settings_pack::alert_mask, 0x7fffffff);
         sett.set_str (lt::settings_pack::listen_interfaces, listen_interfaces);
 
+        // cf. https://stackoverflow.com/a/31093221/257568, https://github.com/arvidn/libtorrent/issues/1489
+        sett.set_bool (lt::settings_pack::prefer_rc4, true);
+        sett.set_int (lt::settings_pack::out_enc_policy, lt::settings_pack::pe_forced);
+        sett.set_int (lt::settings_pack::in_enc_policy, lt::settings_pack::pe_forced);
+        sett.set_int (lt::settings_pack::allowed_enc_level, lt::settings_pack::pe_rc4);
+
         sett.set_str (lt::settings_pack::dht_bootstrap_nodes,
             // https://stackoverflow.com/a/32797766/257568
             "router.utorrent.com:6881"
@@ -274,8 +280,8 @@ extern "C" void dht_put (dugout_t* dugout,
             uint8_t* benload; int32_t benlen;
             callback (arg, arg2, (uint8_t*) have.data(), (int32_t) have.size(), &benload, &benlen, &seq);
 
-            en = lt::bdecode (benload, benload + benlen);
-            lt::span<char> benspan ((char*) benload, (std::size_t) benlen);
+            lt::span<char> benspan ((char*) benload, (lt::span<char>::difference_type) benlen);
+            en = lt::bdecode (benspan);
 
             lt::dht::signature sign;
             sign = lt::dht::sign_mutable_item (benspan, salt, lt::dht::sequence_number (seq), pk, sk);
@@ -323,7 +329,8 @@ extern "C" void lt_send_udp (dugout_t* dugout, char const* ip, uint16_t port, ui
     }
     lt::udp::endpoint ep (addr, port);
 
-    lt::entry en = lt::bdecode (benload, benload + benlen);
+    lt::span<char> benspan ((char*) benload, (lt::span<char>::difference_type) benlen);
+    lt::entry en = lt::bdecode (benspan);
 
     void* userdata = nullptr;
     dugout->session->dht_direct_request (ep, en, userdata);

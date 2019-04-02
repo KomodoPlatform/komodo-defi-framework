@@ -3,7 +3,7 @@
 
 // The script is experimentally formatted with `rustfmt`. Probably not going to use `rustfmt` for the rest of the project though.
 
-// Bindgen requirements: https://rust-lang-nursery.github.io/rust-bindgen/requirements.html
+// Bindgen requirements: https://rust-lang.github.io/rust-bindgen/requirements.html
 //              Windows: https://github.com/rust-lang-nursery/rustup.rs/issues/1003#issuecomment-289825927
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
@@ -20,11 +20,12 @@ use bzip2::read::BzDecoder;
 use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
-use glob::glob;
+use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use std::cmp::max;
 use std::env::var;
+use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::iter::empty;
@@ -128,6 +129,16 @@ fn bindgen<
             for name in defines {
                 builder = builder.whitelist_function(name);
                 builder = builder.whitelist_var(name)
+            }
+            let target = Target::load();
+            if let Target::iOS(ref targetᴱ) = target {
+                if targetᴱ == "aarch64-apple-ios" {
+                    // https://github.com/rust-lang/rust-bindgen/issues/1211
+                    builder = builder.clang_arg("--target=arm64-apple-ios");
+                }
+                let cops = unwrap!(target.ios_clang_ops());
+                builder = builder.clang_arg(fomat!("--sysroot="(cops.sysroot)));
+                builder = builder.clang_arg("-arch").clang_arg(cops.arch);
             }
             match builder.generate() {
                 Ok(bindings) => bindings,
@@ -459,6 +470,24 @@ fn windows_requirements() {
     };
     eprintln!("windows_requirements] System directory is {:?}.", system);
 
+    if !Path::new(r"c:\Program Files\LLVM\bin\libclang.dll").is_file() {
+        // If `clang -v` works then maybe libclang is installed at a different location.
+        let clang_v = cmd!("clang", "-v")
+            .stderr_to_stdout()
+            .read()
+            .unwrap_or(Default::default());
+        if !clang_v.contains("clang version") {
+            panic!(
+                "\n\
+                 windows_requirements]\n\
+                 Per https://rust-lang.github.io/rust-bindgen/requirements.html\n\
+                 please download and install a 'Windows (64-bit)' pre-build binary of LLVM\n\
+                 from http://releases.llvm.org/download.html\n\
+                 "
+            );
+        }
+    }
+
     // `msvcr100.dll` is required by `ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/dll/x64/pthreadVC2.dll`
     let msvcr100 = system.join("msvcr100.dll");
     if !msvcr100.exists() {
@@ -634,6 +663,17 @@ fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
     })
 }
 
+#[derive(Debug)]
+struct IosClangOps {
+    /// iPhone SDK (iPhoneOS for arm64, iPhoneSimulator for x86_64)
+    sysroot: &'static str,
+    /// "arm64", "x86_64".
+    arch: &'static str,
+    /// Identifies the corresponding clang options defined in "user-config.jam".
+    b2_toolset: &'static str,
+}
+
+#[allow(non_camel_case_types)]
 #[derive(PartialEq, Eq, Debug)]
 enum Target {
     Unix,
@@ -641,10 +681,13 @@ enum Target {
     Windows,
     /// https://github.com/rust-embedded/cross
     AndroidCross,
+    /// https://github.com/TimNN/cargo-lipo
+    iOS(String),
 }
 impl Target {
     fn load() -> Target {
-        match &unwrap!(var("TARGET"))[..] {
+        let targetᴱ = unwrap!(var("TARGET"));
+        match &targetᴱ[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
             // Used when compiling MM from under Raspberry Pi.
             "armv7-unknown-linux-gnueabihf" => Target::Unix,
@@ -660,6 +703,10 @@ impl Target {
                     )
                 }
             }
+            "aarch64-apple-ios" => Target::iOS(targetᴱ),
+            "x86_64-apple-ios" => Target::iOS(targetᴱ),
+            "armv7-apple-ios" => Target::iOS(targetᴱ),
+            "armv7s-apple-ios" => Target::iOS(targetᴱ),
             t => panic!("Target not (yet) supported: {}", t),
         }
     }
@@ -668,8 +715,72 @@ impl Target {
     fn is_android_cross(&self) -> bool {
         *self == Target::AndroidCross
     }
+    fn is_ios(&self) -> bool {
+        match self {
+            &Target::iOS(_) => true,
+            _ => false,
+        }
+    }
     fn is_mac(&self) -> bool {
         *self == Target::Mac
+    }
+    /// The "-arch" parameter passed to Xcode clang++ when cross-building for iOS.
+    fn ios_clang_ops(&self) -> Option<IosClangOps> {
+        match self {
+            &Target::iOS(ref target) => match &target[..] {
+                "aarch64-apple-ios" => Some(IosClangOps {
+                    // cf. `xcrun --sdk iphoneos --show-sdk-path`
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "arm64",
+                    b2_toolset: "darwin-iphone"
+                }),
+                "x86_64-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
+                    arch: "x86_64",
+                    b2_toolset: "darwin-iphonesim"
+                }),
+                //"armv7-apple-ios" => "armv7", 32-bit
+                //"armv7s-apple-ios" => "armv7s", 32-bit
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn cc(&self, plus_plus: bool) -> cc::Build {
+        let mut cc = cc::Build::new();
+        if self.is_android_cross() {
+            cc.compile(if plus_plus {
+                // TODO: use clang++ if it is there in the NDK,
+                // in order for `cc::Build` to match the compiler (GCC is a link to Clang in the NDK).
+                "/android-ndk/bin/arm-linux-androideabi-g++"
+            } else {
+                "/android-ndk/bin/clang"
+            });
+            cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
+        } else if self.is_ios() {
+            let cops = unwrap!(self.ios_clang_ops());
+            // cf. `xcode-select -print-path`
+            cc.compiler(if plus_plus {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+            } else {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+            });
+            cc.flag(&fomat!("--sysroot="(cops.sysroot)));
+            cc.flag("-stdlib=libc++");
+            cc.flag("-miphoneos-version-min=11.0"); // 64-bit.
+            cc.flag("-mios-simulator-version-min=11.0");
+            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
+            cc.flag("-arch").flag(cops.arch);
+        }
+        cc
+    }
+}
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Target::iOS(ref target) => f.write_str(&target[..]),
+            _ => wite!(f, [self]),
+        }
     }
 }
 
@@ -704,7 +815,7 @@ fn build_boost_bz2() -> PathBuf {
         // and might hit the CI space limits.
         // To avoid this we unpack only a small subset.
 
-        // Example using bcp to help with finding the subset:
+        // Example using bcp to help with finding a part of the subset:
         // sh bootstrap.sh
         // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY stage --with-date_time --with-system
         // ./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 define=BOOST_ERROR_CODE_HEADER_ONLY tools/bcp
@@ -716,75 +827,82 @@ fn build_boost_bz2() -> PathBuf {
         for en in unwrap!(a.entries()) {
             let mut en = unwrap!(en);
             let path = unwrap!(en.path());
-            let pathˇ = unwrap!(path.to_str());
-            assert!(pathˇ.starts_with("boost_1_68_0/"));
-            let pathˇ = &pathˇ[13..];
-            let unpack = pathˇ == "bootstrap.sh"
-                || pathˇ == "boost-build.jam"
-                || pathˇ == "boostcpp.jam"
-                || pathˇ == "boost/assert.hpp"
-                || pathˇ == "boost/aligned_storage.hpp"
-                || pathˇ.starts_with("boost/asio/")
-                || pathˇ.starts_with("boost/blank")
-                || pathˇ == "boost/call_traits.hpp"
-                || pathˇ.starts_with("boost/callable_traits/")
-                || pathˇ == "boost/cerrno.hpp"
-                || pathˇ == "boost/config.hpp"
-                || pathˇ == "boost/concept_check.hpp"
-                || pathˇ == "boost/crc.hpp"
-                || pathˇ.starts_with("boost/container_hash/")
-                || pathˇ.starts_with("boost/concept/")
-                || pathˇ.starts_with("boost/config/")
-                || pathˇ.starts_with("boost/core/")
-                || pathˇ.starts_with("boost/chrono")
-                || pathˇ == "boost/cstdint.hpp"
-                || pathˇ == "boost/current_function.hpp"
-                || pathˇ == "boost/checked_delete.hpp"
-                || pathˇ.starts_with("boost/date_time/")
-                || pathˇ.starts_with("boost/detail/")
-                || pathˇ.starts_with("boost/exception/")
-                || pathˇ.starts_with("boost/fusion/")
-                || pathˇ.starts_with("boost/functional")
-                || pathˇ.starts_with("boost/iterator/")
-                || pathˇ.starts_with("boost/intrusive")
-                || pathˇ.starts_with("boost/integer")
-                || pathˇ == "boost/limits.hpp"
-                || pathˇ.starts_with("boost/mpl/")
-                || pathˇ.starts_with("boost/move")
-                || pathˇ == "boost/next_prior.hpp"
-                || pathˇ == "boost/noncopyable.hpp"
-                || pathˇ.starts_with("boost/none")
-                || pathˇ.starts_with("boost/numeric/")
-                || pathˇ == "boost/operators.hpp"
-                || pathˇ.starts_with("boost/optional")
-                || pathˇ.starts_with("boost/predef")
-                || pathˇ.starts_with("boost/preprocessor/")
-                || pathˇ.starts_with("boost/pool/")
-                || pathˇ == "boost/ref.hpp"
-                || pathˇ.starts_with("boost/range/")
-                || pathˇ.starts_with("boost/ratio")
-                || pathˇ.starts_with("boost/system/")
-                || pathˇ.starts_with("boost/smart_ptr/")
-                || pathˇ == "boost/static_assert.hpp"
-                || pathˇ == "boost/shared_ptr.hpp"
-                || pathˇ == "boost/shared_array.hpp"
-                || pathˇ.starts_with("boost/type_traits")
-                || pathˇ.starts_with("boost/type_index")
-                || pathˇ.starts_with("boost/tuple/")
-                || pathˇ.starts_with("boost/thread")
-                || pathˇ == "boost/throw_exception.hpp"
-                || pathˇ == "boost/type.hpp"
-                || pathˇ.starts_with("boost/utility/")
-                || pathˇ == "boost/utility.hpp"
-                || pathˇ.starts_with("boost/variant")
-                || pathˇ == "boost/version.hpp"
-                || pathˇ.starts_with("boost/winapi/")
-                || pathˇ.starts_with("libs/config/")
-                || pathˇ.starts_with("libs/chrono/")
-                || pathˇ.starts_with("libs/date_time/")
-                || pathˇ.starts_with("libs/system/")
-                || pathˇ.starts_with("tools/build/")
-                || pathˇ == "Jamroot";
+            let pathˢ = unwrap!(path.to_str());
+            assert!(pathˢ.starts_with("boost_1_68_0/"));
+            let pathˢ = &pathˢ[13..];
+            let unpack = pathˢ == "bootstrap.sh"
+                || pathˢ == "boost-build.jam"
+                || pathˢ == "boostcpp.jam"
+                || pathˢ == "boost/assert.hpp"
+                || pathˢ == "boost/aligned_storage.hpp"
+                || pathˢ == "boost/array.hpp"
+                || pathˢ.starts_with("boost/asio/")
+                || pathˢ.starts_with("boost/blank")
+                || pathˢ == "boost/call_traits.hpp"
+                || pathˢ.starts_with("boost/callable_traits/")
+                || pathˢ == "boost/cerrno.hpp"
+                || pathˢ == "boost/config.hpp"
+                || pathˢ == "boost/concept_check.hpp"
+                || pathˢ == "boost/crc.hpp"
+                || pathˢ.starts_with("boost/container")
+                || pathˢ.starts_with("boost/container_hash/")
+                || pathˢ.starts_with("boost/concept/")
+                || pathˢ.starts_with("boost/config/")
+                || pathˢ.starts_with("boost/core/")
+                || pathˢ.starts_with("boost/chrono")
+                || pathˢ == "boost/cstdint.hpp"
+                || pathˢ == "boost/current_function.hpp"
+                || pathˢ == "boost/checked_delete.hpp"
+                || pathˢ.starts_with("boost/date_time/")
+                || pathˢ.starts_with("boost/detail/")
+                || pathˢ.starts_with("boost/exception/")
+                || pathˢ.starts_with("boost/fusion/")
+                || pathˢ.starts_with("boost/functional")
+                || pathˢ.starts_with("boost/iterator/")
+                || pathˢ.starts_with("boost/intrusive")
+                || pathˢ.starts_with("boost/integer")
+                || pathˢ.starts_with("boost/io")
+                || pathˢ.starts_with("boost/lexical_cast")
+                || pathˢ == "boost/limits.hpp"
+                || pathˢ.starts_with("boost/mpl/")
+                || pathˢ.starts_with("boost/math")
+                || pathˢ.starts_with("boost/move")
+                || pathˢ == "boost/next_prior.hpp"
+                || pathˢ == "boost/noncopyable.hpp"
+                || pathˢ.starts_with("boost/none")
+                || pathˢ.starts_with("boost/numeric/")
+                || pathˢ == "boost/operators.hpp"
+                || pathˢ.starts_with("boost/optional")
+                || pathˢ.starts_with("boost/predef")
+                || pathˢ.starts_with("boost/preprocessor/")
+                || pathˢ.starts_with("boost/pool/")
+                || pathˢ == "boost/ref.hpp"
+                || pathˢ.starts_with("boost/range/")
+                || pathˢ.starts_with("boost/ratio")
+                || pathˢ.starts_with("boost/system/")
+                || pathˢ.starts_with("boost/smart_ptr/")
+                || pathˢ == "boost/static_assert.hpp"
+                || pathˢ == "boost/shared_ptr.hpp"
+                || pathˢ == "boost/shared_array.hpp"
+                || pathˢ == "boost/swap.hpp"
+                || pathˢ.starts_with("boost/type_traits")
+                || pathˢ.starts_with("boost/type_index")
+                || pathˢ.starts_with("boost/tuple/")
+                || pathˢ.starts_with("boost/thread")
+                || pathˢ.starts_with("boost/token")
+                || pathˢ == "boost/throw_exception.hpp"
+                || pathˢ == "boost/type.hpp"
+                || pathˢ.starts_with("boost/utility/")
+                || pathˢ == "boost/utility.hpp"
+                || pathˢ.starts_with("boost/variant")
+                || pathˢ == "boost/version.hpp"
+                || pathˢ.starts_with("boost/winapi/")
+                || pathˢ.starts_with("libs/config/")
+                || pathˢ.starts_with("libs/chrono/")
+                || pathˢ.starts_with("libs/date_time/")
+                || pathˢ.starts_with("libs/system/")
+                || pathˢ.starts_with("tools/build/")
+                || pathˢ == "Jamroot";
             if !unpack {
                 continue;
             }
@@ -801,30 +919,78 @@ fn build_boost_bz2() -> PathBuf {
         assert!(b2.exists());
     }
 
-    let bin = out_dir.join("bin");
-    let bin = unwrap!(bin.to_str());
-    let _ = fs::create_dir(&bin);
-    if target.is_android_cross() && !Path::new("/tmp/bin/g++").exists() {
+    if target.is_ios() {
+        if 1 == 1 {
+            return boost;
+        }
+        // Our hope is that the separate Boost compilation will be no longer necessary
+        // as libtorrent will be building and linking in the necessary parts of Boost on its own.
+        // But we should confirm that mm2 works on iOS before removing the Boost compilation here.
+
+        let cops = unwrap!(target.ios_clang_ops());
+        assert!(Path::new(cops.sysroot).is_dir());
+        // NB: We're passing options for the "darwin" toolset defined in "tools/build/src/tools/darwin.jam":
+        //
+        //     rule init ( version ? : command * : options * : requirement * )
+        let user_config_jamˢ = fomat!(
+            "using darwin\n"
+            ": 11.0~iphone \n"  // `version`
+            ": /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+            " -target "(target)" --sysroot "(cops.sysroot)" -arch "(cops.arch)" -stdlib=libc++ \n"  // `command`
+            ": <striper> \n"  // `options`
+            ": <architecture>arm <target-os>iphone <address-model>64 \n"  // `requirement`
+            ";\n"
+        );
+        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
+        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
+        unwrap!(user_config_jamᶠ.write_all(user_config_jamˢ.as_bytes()));
+        drop(user_config_jamᶠ);
+        epintln!("Created "[user_config_jamᵖ]":\n"(user_config_jamˢ));
+
         unwrap!(ecmd!(
-            "ln",
-            "-sf",
-            "/android-ndk/bin/arm-linux-androideabi-g++",
-            fomat!((bin) "/g++")
+            "/bin/sh",
+            "-c",
+            fomat!(
+                "./b2 release link=static cxxflags=-fPIC cxxstd=11 toolset=darwin "
+                "address-model=64 "
+                "target-os=iphone "
+                "architecture=arm "
+                "define=BOOST_ERROR_CODE_HEADER_ONLY "
+                "install --with-date_time --with-system --prefix=../boost "
+                "| grep --line-buffered -v 'common.copy ../boost/include/'"
+            )
         )
+        .dir(&boost)
+        .unchecked()
+        .run());
+    } else {
+        // TODO: Use the "tools/build/src/user-config.jam" instead of injecting the NDK g++ into the PATH.
+        let bin = out_dir.join("bin");
+        let bin = unwrap!(bin.to_str());
+        let _ = fs::create_dir(&bin);
+        let tmp_gpp = fomat!((bin) "/g++");
+        if target.is_android_cross() && !Path::new(&tmp_gpp).exists() {
+            unwrap!(ecmd!(
+                "ln",
+                "-sf",
+                "/android-ndk/bin/arm-linux-androideabi-g++",
+                tmp_gpp
+            )
+            .run());
+        }
+
+        unwrap!(ecmd!(
+            "/bin/sh",
+            "-c",
+            "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
+             define=BOOST_ERROR_CODE_HEADER_ONLY \
+             install --with-date_time --with-system --prefix=../boost"
+        )
+        .env("PATH", fomat!((bin) ":"(unwrap!(var("PATH")))))
+        .dir(&boost)
+        .unchecked()
         .run());
     }
-
-    unwrap!(ecmd!(
-        "/bin/sh",
-        "-c",
-        "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
-         define=BOOST_ERROR_CODE_HEADER_ONLY \
-         install --with-date_time --with-system --prefix=../boost"
-    )
-    .env("PATH", fomat!((bin) ":"(unwrap!(var("PATH")))))
-    .dir(&boost)
-    .unchecked()
-    .run());
 
     assert!(boost_system.exists());
     assert!(prefix.is_dir());
@@ -867,26 +1033,80 @@ fn with_file(path: &AsRef<Path>, visitor: &Fn(&mut String)) -> bool {
 ///             If absent then we'll be trying to link against the system version of Boost (not recommended).
 fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
     let target = Target::load();
+    let out_dir = out_dir();
 
-    let tgz = out_dir().join("libtorrent-rasterbar-1.2.0.tar.gz");
-    if !tgz.exists() {
-        hget (
-            "https://github.com/arvidn/libtorrent/releases/download/libtorrent_1_2_0/libtorrent-rasterbar-1.2.0.tar.gz",
-            tgz.clone()
-        );
-        assert!(tgz.exists());
-    }
+    // Released tgz version fails to link for iOS due to https://github.com/arvidn/libtorrent/pull/3629,
+    // should get a fresh Git version instead.
 
-    let rasterbar = out_dir().join("libtorrent-rasterbar-1.2.0");
+    let rasterbar = out_dir.join("libtorrent-rasterbar-1.2.0");
     epintln!("libtorrent at "[rasterbar]);
     if !rasterbar.exists() {
         unwrap!(
-            ecmd!("tar", "-xzf", "libtorrent-rasterbar-1.2.0.tar.gz")
-                .dir(&out_dir())
-                .run(),
-            "Can't unpack libtorrent-rasterbar-1.2.0.tar.gz"
+            ecmd!(
+                "git",
+                "clone",
+                "--depth=1",
+                "https://github.com/arvidn/libtorrent.git",
+                "-b",
+                "RC_1_2"
+            )
+            .dir(&out_dir)
+            .run(),
+            "Error git-cloning libtorrent"
         );
-        assert!(rasterbar.exists());
+        let libtorrent = out_dir.join("libtorrent");
+        assert!(libtorrent.is_dir());
+        unwrap!(fs::rename(libtorrent, &rasterbar));
+    }
+
+    if let Target::iOS(ref targetᴱ) = target {
+        // This is the latest version of the build. It doesn't compile Boost separately
+        // but rather allows the libtorrent to compile it
+        // "you probably want to just build libtorrent and have it build boost
+        //  (otherwise you'll end up building the boost dependencies twice)"
+        //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
+        // After field-testing on iOS we should probably refactor
+        // and merge the rest of the OS builds into this one.
+
+        let boost = unwrap!(boost);
+        let user_config_jamˢ = slurp(&root().join("mm2src/common/ios/user-config.jam"));
+        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
+        epintln!("build_libtorrent] Creating "[user_config_jamᵖ]"…");
+        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
+        unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
+        drop(user_config_jamᶠ);
+
+        let cops = unwrap!(target.ios_clang_ops());
+        let b2 = fomat!(
+            "b2 -j4 -d+2 release"
+            " link=static deprecated-functions=off debug-symbols=off"
+            " dht=on encryption=on crypto=built-in iconv=off i2p=off"
+            " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
+            " toolset="(cops.b2_toolset)
+        );
+        epintln!("build_libtorrent] $ "(b2));
+        unwrap!(cmd!("/bin/sh", "-c", b2)
+            .env(
+                "PATH",
+                format!("{}:{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
+            )
+            .env("BOOST_BUILD_PATH", boost.join(r"tools/build"))
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .run());
+
+        let a_rel = fomat!(
+        "bin/darwin-iphone"
+        if targetᴱ == "x86_64-apple-ios" {"sim"}
+        "/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a"
+        );
+        let a = rasterbar.join(a_rel);
+        assert!(a.is_file());
+
+        let include = rasterbar.join("include");
+        assert!(include.is_dir());
+
+        return (a, include);
     }
 
     if !rasterbar.join("Makefile").exists() {
@@ -1018,7 +1238,7 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
             unwrap!(a.to_str())
         )
         .run());
-    } else if target.is_mac() {
+    } else if target.is_mac() || target.is_ios() {
         unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).run());
     } else {
         // 85 MiB reduction in mm2 binary size on Linux.
@@ -1046,8 +1266,9 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
 }
 
 fn libtorrent() {
-    // TODO: If we decide to keep linking with libtorrent then we should distribute the
-    //       https://github.com/arvidn/libtorrent/blob/master/LICENSE.
+    // NB: Distributions should have a copy of https://github.com/arvidn/libtorrent/blob/master/LICENSE.
+
+    let target = Target::load();
 
     if cfg!(windows) {
         // NB: The "marketmaker_depends" folder is cached in the AppVeyour build,
@@ -1123,7 +1344,7 @@ fn libtorrent() {
             assert!(boost_system.exists());
         }
 
-        let rasterbar = mmd.join("libtorrent-rasterbar-1.2.0-rc");
+        let rasterbar = mmd.join("libtorrent-rasterbar-1.2.0");
         if rasterbar.exists() {
             // Cache maintenance.
             let _ = fs::remove_file(mmd.join("libtorrent-rasterbar-1.2.0.tar.gz"));
@@ -1132,7 +1353,7 @@ fn libtorrent() {
             // [Download and] unpack.
             if !mmd.join("libtorrent-rasterbar-1.2.0.tar.gz").exists() {
                 hget (
-                    "https://github.com/arvidn/libtorrent/releases/download/libtorrent-1_2_0_RC/libtorrent-rasterbar-1.2.0.tar.gz",
+                    "https://github.com/arvidn/libtorrent/releases/download/libtorrent_1_2_0/libtorrent-rasterbar-1.2.0.tar.gz",
                     mmd.join ("libtorrent-rasterbar-1.2.0.tar.gz.tmp")
                 );
                 unwrap!(fs::rename(
@@ -1154,23 +1375,30 @@ fn libtorrent() {
         }
 
         let lt = rasterbar.join(
-            r"bin\msvc-14.1\release\address-model-64\link-static\threading-multi\libtorrent.lib",
+            r"bin\msvc-14.1\release\address-model-64\iconv-off\link-static\threading-multi\libtorrent.lib",              
         );
         if !lt.exists() {
-            unwrap!(
-                ecmd! (
-                    "cmd", "/c",
-                    "b2 release toolset=msvc-14.1 address-model=64 link=static dht=on debug-symbols=off"
+            // cf. tools\build\src\tools\msvc.jam
+            unwrap!(ecmd!(
+                "cmd",
+                "/c",
+                fomat!(
+                    "b2 release "
+                    "include="(unwrap!(boost.to_str()))" "
+                    "toolset=msvc-14.1 address-model=64 link=static dht=on"
+                    " iconv=off"
+                    " encryption=on crypto=built-in"
+                    " debug-symbols=off"
                 )
-                .env(
-                    "PATH",
-                    format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
-                )
-                .env("BOOST_BUILD_PATH", unwrap!(boost.to_str()))
-                .env("BOOST_ROOT", unwrap!(boost.to_str()))
-                .dir(&rasterbar)
-                .run()
-            );
+            )
+            .env(
+                "PATH",
+                format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
+            )
+            .env("BOOST_BUILD_PATH", boost.join(r"tools\build"))
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .run());
             assert!(lt.exists());
         }
 
@@ -1209,7 +1437,7 @@ fn libtorrent() {
         );
 
         println!("cargo:rustc-link-lib=iphlpapi"); // NotifyAddrChange.
-    } else if cfg!(target_os = "macos") {
+    } else if cfg!(target_os = "macos") && !target.is_ios() {
         // NB: Homebrew's version of libtorrent-rasterbar (1.1.10) is currently too old.
 
         let boost_system_mt = Path::new("/usr/local/lib/libboost_system-mt.a");
@@ -1249,47 +1477,73 @@ fn libtorrent() {
         println!("cargo:rustc-link-search=native={}", out_dir);
     } else {
         let boost = build_boost_bz2();
-
         let (lt_a, lt_include) = build_libtorrent(Some(&boost));
-        println!("cargo:rustc-link-lib=static=torrent-rasterbar");
+        println!("cargo:rustc-link-lib=static={}", {
+            let name = unwrap!(unwrap!(lt_a.file_stem()).to_str());
+            &name[3..]
+        });
         println!(
             "cargo:rustc-link-search=native={}",
             unwrap!(unwrap!(lt_a.parent()).to_str())
         );
 
-        // NB: We should prefer linking boost in AFTER libtorrent,
-        // cf. "Linking boost_system last fixed the issue for me" in https://stackoverflow.com/a/30877725/257568.
-        println!("cargo:rustc-link-lib=static=boost_system");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(boost.join("lib").to_str())
-        );
+        if !target.is_ios() {
+            // NB: We should prefer linking boost in AFTER libtorrent,
+            // cf. "Linking boost_system last fixed the issue for me" in https://stackoverflow.com/a/30877725/257568.
+            println!("cargo:rustc-link-lib=static=boost_system");
+            println!(
+                "cargo:rustc-link-search=native={}",
+                unwrap!(boost.join("lib").to_str())
+            );
+        }
 
         let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
         let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
         let lib_path = Path::new(&out_dir).join("libdht.a");
         let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
-        let boost_inc = boost.join("include");
-        assert!(boost_inc.join("boost/version.hpp").exists());
+        let boost_inc = if boost.join("include/boost/version.hpp").exists() {
+            boost.join("include")
+        } else {
+            assert!(boost.join("boost/version.hpp").exists());
+            boost.clone()
+        };
         if lm_dht >= lm_lib - SLIDE {
-            cc::Build::new()
-                .file("dht.cc")
+            let mut cc = target.cc(true);
+            if target.is_ios() {
+                // Defines spied in libtorrent (with "b2 -d+2").
+                cc.flag("-fexceptions");
+                cc.flag("-DBOOST_ALL_NO_LIB");
+                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO");
+                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO");
+                cc.flag("-DBOOST_MULTI_INDEX_DISABLE_SERIALIZATION");
+                cc.flag("-DBOOST_NO_DEPRECATED");
+                cc.flag("-DBOOST_SYSTEM_NO_DEPRECATED");
+                cc.flag("-DNDEBUG");
+                cc.flag("-DTORRENT_BUILDING_LIBRARY");
+                cc.flag("-DTORRENT_NO_DEPRECATE");
+                cc.flag("-DTORRENT_USE_I2P=0");
+                cc.flag("-DTORRENT_USE_ICONV=0");
+                cc.flag("-D_FILE_OFFSET_BITS=64");
+                cc.flag("-D_WIN32_WINNT=0x0600");
+                // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
+                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
+            } else {
+                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
+                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO=1");
+                cc.flag("-DBOOST_EXCEPTION_DISABLE=1");
+                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO=1");
+            }
+            cc.file("dht.cc")
                 .warnings(true)
-                // cf. .../out/libtorrent-rasterbar-1.2.0/config.report and Makefile/CXX
                 // Mismatch between the libtorrent and the dht.cc flags
                 // might produce weird "undefined reference" link errors.
+                // Building libtorrent with "-d+2" passed to "b2" should show the actual defines.
                 .flag("-std=c++11")
-                .flag("-g")
-                .flag("-O2")
+                .opt_level(2)
                 .flag("-ftemplate-depth=512")
                 .flag("-fvisibility=hidden")
                 .flag("-fvisibility-inlines-hidden")
-                .flag("-fPIC")
-                .flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1")
-                .flag("-DTORRENT_DISABLE_ENCRYPTION=1")
-                .flag("-DBOOST_ASIO_HAS_STD_CHRONO=1")
-                .flag("-DBOOST_EXCEPTION_DISABLE=1")
-                .flag("-DBOOST_ASIO_ENABLE_CANCELIO=1")
+                .pic(true)
                 .include(lt_include)
                 .include(boost_inc)
                 .compile("dht");
@@ -1314,18 +1568,67 @@ lazy_static! {
         rabs("iguana/segwit_addr.c"),
         rabs("iguana/keccak.c"),
     ];
+    /// A list of nanomsg-1.1.5 source files known to cross-compile for Android (formerly android/nanomsg.mk).
+    static ref LIBNANOMSG_115_ANDROID_SRC: Vec<&'static str> =
+        "utils/efd.c core/sock.c core/poll.c                         \
+         core/symbol.c core/ep.c core/pipe.c                         \
+         core/sockbase.c core/global.c devices/device.c              \
+         transports/inproc/ins.c transports/inproc/inproc.c          \
+         transports/inproc/cinproc.c transports/inproc/binproc.c     \
+         transports/inproc/sinproc.c transports/inproc/msgqueue.c    \
+         transports/utils/dns.c transports/utils/literal.c           \
+         transports/utils/streamhdr.c transports/utils/backoff.c     \
+         transports/utils/iface.c transports/utils/port.c            \
+         transports/tcp/tcp.c transports/tcp/stcp.c                  \
+         transports/tcp/ctcp.c transports/tcp/atcp.c                 \
+         transports/tcp/btcp.c transports/ipc/aipc.c                 \
+         transports/ipc/bipc.c transports/ipc/cipc.c                 \
+         transports/ipc/ipc.c transports/ipc/sipc.c                  \
+         transports/ws/ws.c                                          \
+         transports/ws/aws.c transports/ws/bws.c                     \
+         transports/ws/cws.c transports/ws/sha1.c                    \
+         transports/ws/sws.c transports/ws/ws_handshake.c            \
+         transports/utils/base64.c                                   \
+         utils/strcasestr.c utils/strncasecmp.c                      \
+         protocols/survey/xrespondent.c                              \
+         protocols/survey/surveyor.c protocols/survey/xsurveyor.c    \
+         protocols/survey/respondent.c protocols/pair/pair.c         \
+         protocols/pair/xpair.c protocols/utils/dist.c               \
+         protocols/utils/priolist.c protocols/utils/fq.c             \
+         protocols/utils/excl.c protocols/utils/lb.c                 \
+         protocols/bus/xbus.c protocols/bus/bus.c                    \
+         protocols/pipeline/xpull.c protocols/pipeline/push.c        \
+         protocols/pipeline/pull.c protocols/pipeline/xpush.c        \
+         protocols/reqrep/rep.c protocols/reqrep/req.c               \
+         protocols/reqrep/xrep.c protocols/reqrep/task.c             \
+         protocols/reqrep/xreq.c protocols/pubsub/sub.c              \
+         protocols/pubsub/xpub.c protocols/pubsub/xsub.c             \
+         protocols/pubsub/trie.c protocols/pubsub/pub.c              \
+         aio/worker.c aio/fsm.c aio/ctx.c aio/usock.c                \
+         aio/poller.c aio/pool.c aio/timerset.c                      \
+         aio/timer.c utils/err.c utils/thread.c                      \
+         utils/closefd.c utils/atomic.c utils/list.c                 \
+         utils/stopwatch.c utils/random.c utils/wire.c               \
+         utils/mutex.c utils/msg.c utils/clock.c                     \
+         utils/queue.c utils/chunk.c                                 \
+         utils/hash.c utils/alloc.c                                  \
+         utils/sleep.c utils/chunkref.c utils/sem.c                  \
+         utils/condvar.c utils/once.c"
+            .split_ascii_whitespace()
+            .collect();
 }
 
-/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
-fn manual_mm1_build(target: Target) {
-    let (root, out_dir) = (root(), out_dir());
-    let nanomsg = out_dir.join("nanomsg-1.1.5");
+fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
+    let nanomsg = if target.is_ios() {
+        out_dir.join("nanomsg.ios")
+    } else {
+        out_dir.join("nanomsg-1.1.5")
+    };
     epintln!("nanomsg at "[nanomsg]);
 
     let libnanomsg_a = out_dir.join("libnanomsg.a");
-    let nanomsg_mk = root.join("mm2src/common/android/nanomsg.mk");
-    if make(&libnanomsg_a, &vec![nanomsg_mk.clone()]) {
-        if !nanomsg.exists() {
+    if !libnanomsg_a.exists() {
+        if !nanomsg.exists() && !target.is_ios() {
             let nanomsg_tgz = out_dir.join("nanomsg.tgz");
             if !nanomsg_tgz.exists() {
                 hget(
@@ -1336,15 +1639,59 @@ fn manual_mm1_build(target: Target) {
             }
             unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(&out_dir).run());
             assert!(nanomsg.exists());
+        } else if !nanomsg.exists() && target.is_ios() {
+            // NB: This is a port listed at https://nanomsg.org/documentation.html
+            // and a cursory search has confirmed that this is what people use on iOS.
+            unwrap!(ecmd!(
+                "git",
+                "clone",
+                "--depth=1",
+                "https://github.com/reqshark/nanomsg.ios.git"
+            )
+            .dir(&out_dir)
+            .run());
+            assert!(nanomsg.exists());
         }
 
-        if target.is_android_cross() {
-            unwrap!(ecmd!("make", "-f", unwrap!(nanomsg_mk.to_str()))
-                .dir(&nanomsg)
-                .run());
+        let mut cc = target.cc(false);
+        cc.debug(false);
+        cc.opt_level(2);
+        cc.flag("-fPIC");
+        if target.is_ios() {
+            cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
         } else {
-            panic!("Target {:?}", target);
+            cc.flag("-DNN_HAVE_SEMAPHORE");
+            cc.flag("-DNN_HAVE_POLL");
+            cc.flag("-DNN_HAVE_MSG_CONTROL");
+            cc.flag("-DNN_HAVE_EVENTFD");
+            cc.flag("-DNN_USE_EVENTFD");
+            cc.flag("-DNN_USE_LITERAL_IFADDR");
+            cc.flag("-DNN_USE_PO");
         }
+        for src_path in LIBNANOMSG_115_ANDROID_SRC.iter() {
+            cc.file(if target.is_ios() {
+                if src_path.ends_with("/strcasestr.c")
+                    || src_path.ends_with("/strncasecmp.c")
+                    || src_path.ends_with("/condvar.c")
+                    || src_path.ends_with("/once.c")
+                {
+                    continue;
+                }
+                nanomsg.join(src_path)
+            } else {
+                nanomsg.join("src").join(src_path)
+            });
+        }
+        if target.is_ios() {
+            cc.file(nanomsg.join("utils/glock.c"));
+            cc.file(nanomsg.join("core/epbase.c"));
+            cc.file(nanomsg.join("transports/tcpmux/tcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/ctcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/stcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/btcpmux.c"));
+            cc.file(nanomsg.join("transports/tcpmux/atcpmux.c"));
+        }
+        cc.compile("nanomsg");
         assert!(libnanomsg_a.exists());
     }
     println!("cargo:rustc-link-lib=static=nanomsg");
@@ -1352,6 +1699,12 @@ fn manual_mm1_build(target: Target) {
         "cargo:rustc-link-search=native={}",
         path2s(unwrap!(libnanomsg_a.parent()))
     );
+}
+
+/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
+fn manual_mm1_build(target: Target) {
+    let (root, out_dir) = (root(), out_dir());
+    manual_nanomsg_build(&root, &out_dir, &target);
 
     let exchanges_build = out_dir.join("exchanges_build");
     epintln!("exchanges_build at "[exchanges_build]);
@@ -1359,93 +1712,45 @@ fn manual_mm1_build(target: Target) {
     let libexchanges_a = out_dir.join("libexchanges.a");
     if make(&libexchanges_a, &LIBEXCHANGES_SRC[..]) {
         let _ = fs::create_dir(&exchanges_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/android-ndk/bin/clang",
-                "-O2",
-                "-g3",
-                "-c",
-                fomat!("-I"(path2s(rabs("crypto777")))),
-                i LIBEXCHANGES_SRC.iter().map(path2s)
-            )
-            .dir(&exchanges_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/android-ndk/bin/arm-linux-androideabi-ar",
-                "-rcs",
-                path2s(libexchanges_a),
-                "groestl.o",
-                "keccak.o",
-                "mini-gmp.o",
-                "mm.o",
-                "segwit_addr.o"
-            )
-            .dir(&exchanges_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+        let mut cc = target.cc(false);
+        for p in LIBEXCHANGES_SRC.iter() {
+            cc.file(p);
         }
+        cc.include(rabs("crypto777"));
+        cc.compile("exchanges");
+        assert!(libexchanges_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=exchanges");
     println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
 
     // TODO: Rebuild the libraries when the C source code is updated.
 
-    let jpeg_build = out_dir.join("jpeg_build");
-    epintln!("jpeg_build at "[jpeg_build]);
-
     let libjpeg_a = out_dir.join("libjpeg.a");
-    if !libjpeg_a.exists() {
-        let _ = fs::create_dir(&jpeg_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/bin/sh",
-                "-c",
-                "/android-ndk/bin/clang -O2 -g3 -c \
-                 /project/crypto777/jpeg/*.c /project/crypto777/jpeg/unix/jmemname.c"
-            )
-            .dir(&jpeg_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/bin/sh", "-c",
-                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libjpeg_a.to_str())) " *.o")
-            )
-            .dir(&jpeg_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+    let mut libjpeg_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/jpeg/*.c"))
+        .map(|p| unwrap!(p))
+        .collect();
+    libjpeg_src.push(root.join("crypto777/jpeg/unix/jmemname.c"));
+    if make(&libjpeg_a, &libjpeg_src[..]) {
+        let mut cc = target.cc(false);
+        for p in &libjpeg_src {
+            cc.file(p);
         }
+        cc.compile("jpeg");
+        assert!(libjpeg_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=jpeg");
 
-    let crypto777_build = out_dir.join("crypto777_build");
-    epintln!("crypto777_build at "[crypto777_build]);
-
     let libcrypto777_a = out_dir.join("libcrypto777.a");
-    if !libcrypto777_a.exists() {
-        let _ = fs::create_dir(&crypto777_build);
-        if target.is_android_cross() {
-            unwrap!(ecmd!(
-                "/bin/sh",
-                "-c",
-                "/android-ndk/bin/clang -O2 -g3 -c \
-                 -DUSE_STATIC_NANOMSG=1 \
-                 /project/crypto777/*.c"
-            )
-            .dir(&crypto777_build)
-            .run());
-
-            unwrap!(ecmd!(
-                "/bin/sh", "-c",
-                fomat! ("/android-ndk/bin/arm-linux-androideabi-ar -rcs " (unwrap!(libcrypto777_a.to_str())) " *.o")
-            )
-            .dir(&crypto777_build)
-            .run());
-        } else {
-            panic!("Target {:?}", target);
+    let libcrypto777_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/*.c"))
+        .map(|p| unwrap!(p))
+        .collect();
+    if make(&libcrypto777_a, &libcrypto777_src[..]) {
+        let mut cc = target.cc(false);
+        for p in &libcrypto777_src {
+            cc.file(p);
         }
+        cc.compile("crypto777");
+        assert!(libcrypto777_a.is_file());
     }
     println!("cargo:rustc-link-lib=static=crypto777");
 }
@@ -1474,7 +1779,7 @@ fn build_c_code(mm_version: &str) {
     // The MM1 library.
 
     let target = Target::load();
-    if target.is_android_cross() {
+    if target.is_android_cross() || target.is_ios() {
         manual_mm1_build(target);
         return;
     }
@@ -1598,10 +1903,15 @@ fn build_c_code(mm_version: &str) {
     }
 }
 
-fn rerun_if_changed(rel_glob: &str) {
-    let full_glob = root().join(rel_glob);
+/// Find shell-matching paths with the pattern relative to the `root`.
+fn globʳ(root_glob: &str) -> Result<Paths, PatternError> {
+    let full_glob = root().join(root_glob);
     let full_glob = unwrap!(full_glob.to_str());
-    for path in unwrap!(glob(full_glob)) {
+    glob(full_glob)
+}
+
+fn rerun_if_changed(root_glob: &str) {
+    for path in unwrap!(globʳ(root_glob)) {
         let path = unwrap!(path);
         println!("cargo:rerun-if-changed={}", path2s(path));
     }

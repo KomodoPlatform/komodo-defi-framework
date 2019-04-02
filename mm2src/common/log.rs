@@ -38,6 +38,9 @@ lazy_static! {
         } else {false}
     };
     static ref PRINTF_LOCK: Mutex<()> = Mutex::new(());
+    /// If this C callback is present then all the logging output should happen through it
+    /// (and leaving stdout untouched).
+    pub static ref LOG_OUTPUT: Mutex<Option<extern fn (line: *const c_char)>> = Mutex::new (None);
 }
 
 #[cfg(windows)]
@@ -89,6 +92,14 @@ thread_local! {
 #[doc(hidden)]
 pub fn chunk2log (mut chunk: String) {
     extern {fn printf(_: *const c_char, ...) -> c_int;}
+
+    if let Ok (log_output) = LOG_OUTPUT.lock() {
+        if let Some (log_cb) = *log_output {
+            chunk.push ('\0');
+            log_cb (chunk.as_ptr() as *const c_char);
+            return
+        }
+    }
 
     // NB: Using gravity even in the non-capturing tests in order to give the tests access to the gravity tail.
     let rc = GRAVITY.try_with (|gravity| {

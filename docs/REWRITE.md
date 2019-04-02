@@ -66,6 +66,8 @@ without a risk of loosing money that is.
 Even without the sensitive information a state snapshot might provide the developer with enough data to quickly triage and/or fix the failure, therefore improving the roundtrip time before a failure and a fix.
 Plus users will more easily share their problems when it's quick, automatic and doesn't pose a monetary risk.
 
+TODO: Dig the [Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html) and see if it highlights the hidden sides of such a design.
+
 The feasibility of this approach is yet to be evaluated, but we can move gradually towards it
 by separating the code into the stateful and stateless layers while working on the basic Rust port.
 

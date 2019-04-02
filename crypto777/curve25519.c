@@ -15,6 +15,7 @@
 // derived from curve25519_donna
 
 #include "../includes/curve25519.h"
+#include <string.h>
 
 //#undef force_inline
 //#define force_inline  __attribute__((always_inline))

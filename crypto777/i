@@ -1,1 +1,0 @@
-cd ../iguana; ./m_unix; cd ../crypto777; ar rcu ../../bitcoinclassic/src/libiguana.a *.o ../iguana/*.o

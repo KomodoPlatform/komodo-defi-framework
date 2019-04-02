@@ -16,7 +16,11 @@
 #include "OS_portable.h"
 //#include <sys/stat.h>
 
-#ifdef __unix__
+#ifdef __APPLE__
+# include "TargetConditionals.h"
+#endif
+
+#if defined(__unix__) || defined(TARGET_OS_IPHONE)
 # include <pthread.h>
 #endif
 
@@ -157,8 +161,12 @@ int32_t OS_portable_rmdir(char *dirname,int32_t diralso)
     if ( diralso != 0 )
     {
         sprintf(cmdstr,"rm -rf %s",tmp);
-        if ( system(cmdstr) != 0 )
-            printf("error deleting dir.(%s)\n",cmdstr);
+        #ifdef TARGET_OS_IPHONE
+            printf("error deleting dir.(%s).system is not supported on iOS\n",cmdstr);
+        #else
+            if ( system(cmdstr) != 0 )
+                printf("error deleting dir.(%s)\n",cmdstr);
+        #endif
         //sprintf(cmdstr,"rmdir %s",tmp);
         //if ( system(cmdstr) != 0 )
         //    printf("error deleting dir.(%s)\n",cmdstr);
@@ -171,8 +179,12 @@ int32_t OS_portable_rmdir(char *dirname,int32_t diralso)
             //    sprintf(cmdstr,"rm %s/%c*",tmp,i<10?'0'+i:'a'-10+i);
             //else sprintf(cmdstr,"rm %s/*",tmp);
             sprintf(cmdstr,"rm -rf %s",tmp);
-            if ( system(cmdstr) != 0 )
-                printf("error deleting dir.(%s)\n",cmdstr);
+            #ifdef TARGET_OS_IPHONE
+                printf("error deleting dir.(%s).system is not supported on iOS\n",cmdstr);
+            #else
+                if ( system(cmdstr) != 0 )
+                    printf("error deleting dir.(%s)\n",cmdstr);
+            #endif
         }
     }
     return(0);

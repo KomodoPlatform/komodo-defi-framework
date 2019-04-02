@@ -1,4 +1,0 @@
-git pull
-rm *.o
-emcc -c -s USE_PTHREADS=1 -O3 *.c jpeg/*.c jpeg/unix/*.c 
-rm -f ../agents/libcrypto777.a; emar rcu ../agents/libcrypto777.a *.o 

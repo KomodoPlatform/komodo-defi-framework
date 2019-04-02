@@ -34,8 +34,12 @@
 #define MM_VERSION "UNKNOWN"
 #endif
 
-#ifdef __unix__
+#ifndef NATIVE_WINDOWS
 # include <pthread.h>
+#endif
+
+#ifdef __APPLE__
+# include "TargetConditionals.h"
 #endif
 
 typedef struct queue
@@ -44,6 +48,8 @@ typedef struct queue
 	pthread_mutex_t mutex;
     char name[64],initflag;
 } queue_t;
+
+void queue_enqueue(char *name,queue_t *queue,struct queueitem *origitem);
 
 struct electrum_info
 {
@@ -182,6 +188,8 @@ char *blocktrail_listtransactions(char *symbol,char *coinaddr,int32_t num,int32_
 {
     return(0);
 }
+
+int32_t LP_merkleproof(struct iguana_info *coin,char *coinaddr,struct electrum_info *ep,bits256 txid,int32_t height);
 
 #include "LP_mmjson.c"
 #include "LP_socket.c"

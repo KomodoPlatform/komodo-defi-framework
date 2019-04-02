@@ -24,7 +24,11 @@
 #include <sys/select.h>
 #endif
 
-#ifdef __unix__
+#ifdef __APPLE__
+# include "TargetConditionals.h"
+#endif
+
+#if defined(__unix__) || defined(TARGET_OS_IPHONE)
 # include <pthread.h>
 #endif
 
@@ -598,18 +602,6 @@ void OS_remove_directory(char *dirname)
     {
         OS_removefile(buf,0);
         fclose(fp);
-    }
-    //printf("skip rmdir.(%s)\n",dirname);
-    return;
-    sprintf(buf,"rmdir %s",dirname);
-    if ( system(buf) != 0 )
-    {
-        //printf("error doing (%s)\n",buf);
-        sprintf(buf,"rm -rf %s",dirname);
-        if ( system(buf) != 0 )
-        {
-            //printf("error doing (%s)\n",buf);
-        }
     }
 }
 

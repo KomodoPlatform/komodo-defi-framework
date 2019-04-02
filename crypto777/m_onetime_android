@@ -1,7 +1,0 @@
-git pull
-cd crypto777
-./$1
-cd ..
-cd iguana
-./m_android
-../agents/iguana

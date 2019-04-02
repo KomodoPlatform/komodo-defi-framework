@@ -282,7 +282,8 @@ iguana/exchanges/manychains
 /mm2src/*/target
 
 # Private IDE configuration
-/mm2src/peers/.vscode/tasks.json
+/mm2src/*/.vscode/tasks.json
+/mm2src/*/.vscode/c_cpp_properties.json
 /.vscode/tasks.json
 
 # IDE artefacts
