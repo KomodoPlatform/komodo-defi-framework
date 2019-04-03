@@ -629,7 +629,7 @@ fn hget(url: &str, to: PathBuf) {
 }
 
 /// Loads the `path`, runs `update` on it and saves back the result if it differs.
-fn in_place(path: &AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>) {
+fn _in_place(path: &AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>) {
     let path: &Path = path.as_ref();
     if !path.is_file() {
         return;
@@ -649,19 +649,6 @@ fn in_place(path: &AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>) {
         }
         unwrap!(fs::rename(tmp, path))
     }
-}
-
-/// Disable specific optional dependencies in CMakeLists.txt.
-fn cmake_opt_out(path: &AsRef<Path>, dependencies: &[&str]) {
-    in_place(path, &mut |mut clists| {
-        for dep in dependencies {
-            let exp = unwrap!(regex::bytes::Regex::new(
-                &fomat! (r"(?xm) ^ [\t ]*? find_public_dependency\(" (regex::escape (dep)) r"\) $")
-            ));
-            clists = exp.replace_all(&clists, b"# $0" as &[u8]).into();
-        }
-        clists
-    })
 }
 
 #[derive(Debug)]
@@ -1072,6 +1059,47 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         unwrap!(fs::rename(libtorrent, &rasterbar));
     }
 
+    let include = rasterbar.join("include");
+    assert!(include.is_dir());
+
+    fn find_libtorrent_a(rasterbar: &Path, target: &Target) -> Option<PathBuf> {
+        // The library path is different for every platform and toolset version.
+        // The alternative to *finding* the library is adding " install --prefix=../lti"
+        // to the BJam build, but that would waste space and time.
+        let mut search_from = rasterbar.join("bin");
+        if let Target::iOS(ref targetᴱ) = target {
+            search_from =
+                search_from.join(fomat!("darwin-iphone" if targetᴱ == "x86_64-apple-ios" {"sim"}))
+        }
+        let search_for = if cfg!(windows) {
+            "libtorrent.lib"
+        } else {
+            "libtorrent.a"
+        };
+        let mut lib_paths: Vec<_> = unwrap!(glob(unwrap!(search_from
+            .join("**")
+            .join(search_for)
+            .to_str())))
+        .collect();
+        if lib_paths.is_empty() {
+            None
+        } else if lib_paths.len() > 1 {
+            panic!(
+                "Multiple versions of {} found in {:?}",
+                search_for, search_from
+            )
+        } else {
+            let a = unwrap!(lib_paths.remove(0));
+            assert!(a.is_file());
+            assert!(a.starts_with(&rasterbar));
+            Some(a)
+        }
+    }
+
+    if let Some(existing_a) = find_libtorrent_a(&rasterbar, &target) {
+        return (existing_a, include);
+    }
+
     // This version of the build doesn't compile Boost separately
     // but rather allows the libtorrent to compile it
     // "you probably want to just build libtorrent and have it build boost
@@ -1136,27 +1164,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
             .run());
     }
 
-    let a_rel = if let Target::iOS(ref targetᴱ) = target {
-        fomat!(
-        "bin/darwin-iphone"
-        if targetᴱ == "x86_64-apple-ios" {"sim"}
-        "/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a"
-        )
-    } else if target.is_android_cross() {
-        "bin/gcc-4.9./release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a".into()
-    } else if target.is_mac() {
-        "bin/darwin-4.2.1/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a".into()
-    } else if cfg!(windows) {
-        r"bin\msvc-14.1\release\address-model-64\deprecated-functions-off\i2p-off\iconv-off\link-static\threading-multi\libtorrent.lib".into()
-    } else {
-        panic!("TBD, path to libtorrent.a")
-    };
-    let a = rasterbar.join(a_rel);
-    assert!(a.is_file());
-
-    let include = rasterbar.join("include");
-    assert!(include.is_dir());
-
+    let a = unwrap!(find_libtorrent_a(&rasterbar, &target));
     (a, include)
 }
 
@@ -1244,12 +1252,13 @@ fn libtorrent() {
     println!("cargo:rustc-link-lib=static=dht");
     println!("cargo:rustc-link-search=native={}", out_dir);
 
-    if target.is_ios() || target.is_android_cross() {
-        println!("cargo:rustc-link-lib=stdc++");
-    } else if target.is_mac() {
+    if target.is_mac() {
         println!("cargo:rustc-link-lib=c++");
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=framework=SystemConfiguration");
+    } else if cfg!(windows) {
+    } else {
+        println!("cargo:rustc-link-lib=stdc++");
     }
 }
 
