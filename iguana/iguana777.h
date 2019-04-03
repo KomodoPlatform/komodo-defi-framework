@@ -67,27 +67,12 @@
 #define BTC2_DEFAULT_PORT 8222
 #define BTC2_DIFF_WINDOW 60
 
-/*#ifdef __APPLE__
-#define ISNOTARYNODE 1
-#include "nn.h"
-#include "bus.h"
-#else*/
-//#ifdef __APPLE__
-#if defined(__APPLE__) || defined(WIN32) || defined(USE_STATIC_NANOMSG)
 #include "../crypto777/nanosrc/nn.h"
 #include "../crypto777/nanosrc/bus.h"
 #include "../crypto777/nanosrc/pubsub.h"
 #include "../crypto777/nanosrc/pipeline.h"
 #include "../crypto777/nanosrc/reqrep.h"
 #include "../crypto777/nanosrc/tcp.h"
-#else
-#include "/usr/local/include/nanomsg/nn.h"
-#include "/usr/local/include/nanomsg/bus.h"
-#include "/usr/local/include/nanomsg/pubsub.h"
-#include "/usr/local/include/nanomsg/pipeline.h"
-#include "/usr/local/include/nanomsg/reqrep.h"
-#include "/usr/local/include/nanomsg/tcp.h"
-#endif
 
 struct supernet_info;
 struct exchange_info;

@@ -23,13 +23,14 @@ use futures_cpupool::CpuPool;
 use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
+use libflate::gzip::Decoder;
 use std::cmp::max;
 use std::env::var;
-use std::fmt;
+use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::io::{Read, Write};
 use std::iter::empty;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tar::Archive;
 
@@ -749,10 +750,9 @@ impl Target {
     fn cc(&self, plus_plus: bool) -> cc::Build {
         let mut cc = cc::Build::new();
         if self.is_android_cross() {
-            cc.compile(if plus_plus {
-                // TODO: use clang++ if it is there in the NDK,
-                // in order for `cc::Build` to match the compiler (GCC is a link to Clang in the NDK).
-                "/android-ndk/bin/arm-linux-androideabi-g++"
+            cc.compiler(if plus_plus {
+                // NB: GCC is a link to Clang in the NDK.
+                "/android-ndk/bin/clang++"
             } else {
                 "/android-ndk/bin/clang"
             });
@@ -784,11 +784,7 @@ impl fmt::Display for Target {
     }
 }
 
-/// Downloads and builds from bz2 sources.  
-/// Targeted at Unix and Mac (we're unlikely to have bzip2 on a typical Windows).  
-/// Tailored to work with Android `cross`-compilation.  
-fn build_boost_bz2() -> PathBuf {
-    let target = Target::load();
+fn fetch_boost(target: &Target) -> PathBuf {
     let out_dir = out_dir();
     let prefix = out_dir.join("boost");
     let boost_system = prefix.join("lib/libboost_system.a");
@@ -800,15 +796,15 @@ fn build_boost_bz2() -> PathBuf {
     epintln!("Boost at "[boost]);
     if !boost.exists() {
         // [Download and] unpack Boost.
-        if !out_dir.join("boost_1_68_0.tar.bz2").exists() {
+        let tbz = out_dir.join("boost_1_68_0.tar.bz2");
+        if !tbz.exists() {
+            let tmp = tbz.with_extension("bz2-tmp");
+            let _ = fs::remove_file(&tmp);
             hget(
                 "https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.bz2",
-                out_dir.join("boost_1_68_0.tar.bz2.tmp"),
+                tmp.clone(),
             );
-            unwrap!(fs::rename(
-                out_dir.join("boost_1_68_0.tar.bz2.tmp"),
-                out_dir.join("boost_1_68_0.tar.bz2")
-            ));
+            unwrap!(fs::rename(tmp, tbz));
         }
 
         // Boost is huge, a full installation will impact the build time
@@ -831,6 +827,7 @@ fn build_boost_bz2() -> PathBuf {
             assert!(pathˢ.starts_with("boost_1_68_0/"));
             let pathˢ = &pathˢ[13..];
             let unpack = pathˢ == "bootstrap.sh"
+                || pathˢ == "bootstrap.bat"
                 || pathˢ == "boost-build.jam"
                 || pathˢ == "boostcpp.jam"
                 || pathˢ == "boost/assert.hpp"
@@ -838,6 +835,7 @@ fn build_boost_bz2() -> PathBuf {
                 || pathˢ == "boost/array.hpp"
                 || pathˢ.starts_with("boost/asio/")
                 || pathˢ.starts_with("boost/blank")
+                || pathˢ.starts_with("boost/bind")
                 || pathˢ == "boost/call_traits.hpp"
                 || pathˢ.starts_with("boost/callable_traits/")
                 || pathˢ == "boost/cerrno.hpp"
@@ -857,7 +855,9 @@ fn build_boost_bz2() -> PathBuf {
                 || pathˢ.starts_with("boost/detail/")
                 || pathˢ.starts_with("boost/exception/")
                 || pathˢ.starts_with("boost/fusion/")
+                || pathˢ.starts_with("boost/function")
                 || pathˢ.starts_with("boost/functional")
+                || pathˢ == "boost/get_pointer.hpp"
                 || pathˢ.starts_with("boost/iterator/")
                 || pathˢ.starts_with("boost/intrusive")
                 || pathˢ.starts_with("boost/integer")
@@ -867,6 +867,8 @@ fn build_boost_bz2() -> PathBuf {
                 || pathˢ.starts_with("boost/mpl/")
                 || pathˢ.starts_with("boost/math")
                 || pathˢ.starts_with("boost/move")
+                || pathˢ.starts_with("boost/multiprecision")
+                || pathˢ == "boost/mem_fn.hpp"
                 || pathˢ == "boost/next_prior.hpp"
                 || pathˢ == "boost/noncopyable.hpp"
                 || pathˢ.starts_with("boost/none")
@@ -881,12 +883,14 @@ fn build_boost_bz2() -> PathBuf {
                 || pathˢ.starts_with("boost/ratio")
                 || pathˢ.starts_with("boost/system/")
                 || pathˢ.starts_with("boost/smart_ptr/")
+                || pathˢ == "boost/scope_exit.hpp"
                 || pathˢ == "boost/static_assert.hpp"
                 || pathˢ == "boost/shared_ptr.hpp"
                 || pathˢ == "boost/shared_array.hpp"
                 || pathˢ == "boost/swap.hpp"
                 || pathˢ.starts_with("boost/type_traits")
                 || pathˢ.starts_with("boost/type_index")
+                || pathˢ.starts_with("boost/typeof")
                 || pathˢ.starts_with("boost/tuple/")
                 || pathˢ.starts_with("boost/thread")
                 || pathˢ.starts_with("boost/token")
@@ -910,94 +914,18 @@ fn build_boost_bz2() -> PathBuf {
         }
 
         assert!(boost.exists());
-        let _ = fs::remove_file(out_dir.join("boost_1_68_0.tar.bz2"));
     }
 
-    let b2 = boost.join("b2");
+    let b2 = boost.join(if cfg!(windows) { "b2.exe" } else { "b2" });
     if !b2.exists() {
-        unwrap!(ecmd!("/bin/sh", "bootstrap.sh").dir(&boost).run());
+        if cfg!(windows) {
+            unwrap!(ecmd!("cmd", "/c", "bootstrap.bat").dir(&boost).run());
+        } else {
+            unwrap!(ecmd!("/bin/sh", "bootstrap.sh").dir(&boost).run());
+        }
         assert!(b2.exists());
     }
-
-    if target.is_ios() {
-        if 1 == 1 {
-            return boost;
-        }
-        // Our hope is that the separate Boost compilation will be no longer necessary
-        // as libtorrent will be building and linking in the necessary parts of Boost on its own.
-        // But we should confirm that mm2 works on iOS before removing the Boost compilation here.
-
-        let cops = unwrap!(target.ios_clang_ops());
-        assert!(Path::new(cops.sysroot).is_dir());
-        // NB: We're passing options for the "darwin" toolset defined in "tools/build/src/tools/darwin.jam":
-        //
-        //     rule init ( version ? : command * : options * : requirement * )
-        let user_config_jamˢ = fomat!(
-            "using darwin\n"
-            ": 11.0~iphone \n"  // `version`
-            ": /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
-            " -target "(target)" --sysroot "(cops.sysroot)" -arch "(cops.arch)" -stdlib=libc++ \n"  // `command`
-            ": <striper> \n"  // `options`
-            ": <architecture>arm <target-os>iphone <address-model>64 \n"  // `requirement`
-            ";\n"
-        );
-        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
-        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
-        unwrap!(user_config_jamᶠ.write_all(user_config_jamˢ.as_bytes()));
-        drop(user_config_jamᶠ);
-        epintln!("Created "[user_config_jamᵖ]":\n"(user_config_jamˢ));
-
-        unwrap!(ecmd!(
-            "/bin/sh",
-            "-c",
-            fomat!(
-                "./b2 release link=static cxxflags=-fPIC cxxstd=11 toolset=darwin "
-                "address-model=64 "
-                "target-os=iphone "
-                "architecture=arm "
-                "define=BOOST_ERROR_CODE_HEADER_ONLY "
-                "install --with-date_time --with-system --prefix=../boost "
-                "| grep --line-buffered -v 'common.copy ../boost/include/'"
-            )
-        )
-        .dir(&boost)
-        .unchecked()
-        .run());
-    } else {
-        // TODO: Use the "tools/build/src/user-config.jam" instead of injecting the NDK g++ into the PATH.
-        let bin = out_dir.join("bin");
-        let bin = unwrap!(bin.to_str());
-        let _ = fs::create_dir(&bin);
-        let tmp_gpp = fomat!((bin) "/g++");
-        if target.is_android_cross() && !Path::new(&tmp_gpp).exists() {
-            unwrap!(ecmd!(
-                "ln",
-                "-sf",
-                "/android-ndk/bin/arm-linux-androideabi-g++",
-                tmp_gpp
-            )
-            .run());
-        }
-
-        unwrap!(ecmd!(
-            "/bin/sh",
-            "-c",
-            "./b2 release address-model=64 link=static cxxflags=-fPIC cxxstd=11 \
-             define=BOOST_ERROR_CODE_HEADER_ONLY \
-             install --with-date_time --with-system --prefix=../boost"
-        )
-        .env("PATH", fomat!((bin) ":"(unwrap!(var("PATH")))))
-        .dir(&boost)
-        .unchecked()
-        .run());
-    }
-
-    assert!(boost_system.exists());
-    assert!(prefix.is_dir());
-
-    let _ = fs::remove_dir_all(boost);
-
-    prefix
+    boost
 }
 
 /// In-place modification of file contents. Like "sed -i" (or "perl -i") but with a Rust code instead of a sed pattern.  
@@ -1025,137 +953,10 @@ fn with_file(path: &AsRef<Path>, visitor: &Fn(&mut String)) -> bool {
     true
 }
 
-/// Downloads and builds libtorrent.  
-/// Only for UNIX and macOS as of now (Windows needs a different approach to Boost).  
-/// Tailored to work with Android `cross`-compilation.
-///
-/// * `boost` - Used when there is a STAGE build of Boost under that path.
-///             If absent then we'll be trying to link against the system version of Boost (not recommended).
-fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
-    let target = Target::load();
-    let out_dir = out_dir();
-
-    // Released tgz version fails to link for iOS due to https://github.com/arvidn/libtorrent/pull/3629,
-    // should get a fresh Git version instead.
-
-    let rasterbar = out_dir.join("libtorrent-rasterbar-1.2.0");
-    epintln!("libtorrent at "[rasterbar]);
-    if !rasterbar.exists() {
-        unwrap!(
-            ecmd!(
-                "git",
-                "clone",
-                "--depth=1",
-                "https://github.com/arvidn/libtorrent.git",
-                "-b",
-                "RC_1_2"
-            )
-            .dir(&out_dir)
-            .run(),
-            "Error git-cloning libtorrent"
-        );
-        let libtorrent = out_dir.join("libtorrent");
-        assert!(libtorrent.is_dir());
-        unwrap!(fs::rename(libtorrent, &rasterbar));
-    }
-
-    if let Target::iOS(ref targetᴱ) = target {
-        // This is the latest version of the build. It doesn't compile Boost separately
-        // but rather allows the libtorrent to compile it
-        // "you probably want to just build libtorrent and have it build boost
-        //  (otherwise you'll end up building the boost dependencies twice)"
-        //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
-        // After field-testing on iOS we should probably refactor
-        // and merge the rest of the OS builds into this one.
-
-        let boost = unwrap!(boost);
-        let user_config_jamˢ = slurp(&root().join("mm2src/common/ios/user-config.jam"));
-        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
-        epintln!("build_libtorrent] Creating "[user_config_jamᵖ]"…");
-        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
-        unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
-        drop(user_config_jamᶠ);
-
-        let cops = unwrap!(target.ios_clang_ops());
-        let b2 = fomat!(
-            "b2 -j4 -d+2 release"
-            " link=static deprecated-functions=off debug-symbols=off"
-            " dht=on encryption=on crypto=built-in iconv=off i2p=off"
-            " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
-            " toolset="(cops.b2_toolset)
-        );
-        epintln!("build_libtorrent] $ "(b2));
-        unwrap!(cmd!("/bin/sh", "-c", b2)
-            .env(
-                "PATH",
-                format!("{}:{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
-            )
-            .env("BOOST_BUILD_PATH", boost.join(r"tools/build"))
-            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
-            .dir(&rasterbar)
-            .run());
-
-        let a_rel = fomat!(
-        "bin/darwin-iphone"
-        if targetᴱ == "x86_64-apple-ios" {"sim"}
-        "/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a"
-        );
-        let a = rasterbar.join(a_rel);
-        assert!(a.is_file());
-
-        let include = rasterbar.join("include");
-        assert!(include.is_dir());
-
-        return (a, include);
-    }
-
-    if !rasterbar.join("Makefile").exists() {
-        let with_boost = if let Some(boost) = boost {
-            fomat!("--with-boost="(unwrap!(boost.to_str())))
-        } else {
-            fomat!("--with-boost")
-        };
-
-        let e = if target.is_android_cross() {
-            ecmd!(
-                "/bin/sh",
-                "configure",
-                "--host=armv7-linux-androideabi",
-                "--with-openssl=/openssl",
-                "--without-libiconv",
-                "--disable-encryption",
-                "--disable-shared",
-                "--enable-static",
-                "--with-pic",
-                with_boost
-            )
-            .env("CXX", "/android-ndk/bin/clang++")
-            .env("CC", "/android-ndk/bin/clang")
-            .env("CXXPP", "/android-ndk/bin/arm-linux-androideabi-cpp")
-        } else {
-            ecmd!(
-                "/bin/sh",
-                "configure",
-                "--without-openssl",
-                "--without-libiconv",
-                "--disable-encryption",
-                "--disable-shared",
-                "--enable-static",
-                "--with-pic",
-                with_boost
-            )
-        };
-
-        let e = e.env("CPPFLAGS", "-DBOOST_ERROR_CODE_HEADER_ONLY=1");
-
-        unwrap!(e.dir(&rasterbar).run());
-        assert!(rasterbar.join("Makefile").exists());
-    }
-
+/// Patch libtorrent to work with the older version of clang we have in the `cross`.
+fn patch_libtorrent(rasterbar: &Path) {
     let patched_flag = rasterbar.join("patched.flag");
     if !patched_flag.exists() {
-        // Patch libtorrent to work with the older version of clang we have in the `cross`.
-
         assert!(with_file(
             &rasterbar.join("include/libtorrent/config.hpp"),
             &|hh| if !hh.contains("boost/exception/to_string.hpp") {
@@ -1225,42 +1026,130 @@ fn build_libtorrent(boost: Option<&Path>) -> (PathBuf, PathBuf) {
 
         unwrap!(fs::File::create(patched_flag));
     }
+}
 
-    unwrap!(ecmd!("make", "-j2").dir(&rasterbar).run());
+/// Downloads and builds libtorrent.  
+fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
+    let out_dir = out_dir();
+    // NB: On Windows the path length is limited
+    // and we should use a short folder name for a better chance of fitting it.
+    let rasterbar = out_dir.join("lt");
+    epintln!("libtorrent at "[rasterbar]);
 
-    let a = rasterbar.join("src/.libs/libtorrent-rasterbar.a");
-    assert!(a.exists());
-
-    if target.is_android_cross() {
-        unwrap!(ecmd!(
-            "/android-ndk/bin/arm-linux-androideabi-strip",
-            "--strip-debug",
-            unwrap!(a.to_str())
-        )
-        .run());
-    } else if target.is_mac() || target.is_ios() {
-        unwrap!(ecmd!("strip", "-S", unwrap!(a.to_str())).run());
-    } else {
-        // 85 MiB reduction in mm2 binary size on Linux.
-        // NB: We can't do a full strip (one without --strip-debug) as it leads to undefined symbol link errors.
-        unwrap!(ecmd!("strip", "--strip-debug", unwrap!(a.to_str())).run());
+    if !rasterbar.exists() {
+        let tgz = out_dir.join("lt.tgz");
+        if !tgz.exists() {
+            // Released tgz version fails to link for iOS due to https://github.com/arvidn/libtorrent/pull/3629,
+            // should get a fresh Git version instead. Except we don't have "git" when building for Android,
+            // so we're using the [tarball API](https://stackoverflow.com/a/8378458/257568) instead.
+            hget(
+                "https://codeload.github.com/arvidn/libtorrent/legacy.tar.gz/RC_1_2",
+                tgz.clone(),
+            );
+            assert!(tgz.exists());
+        }
+        let mut f = unwrap!(fs::File::open(&tgz));
+        let gz = unwrap!(Decoder::new(&mut f));
+        let mut a = Archive::new(gz);
+        let libtorrent = out_dir.join("ltt");
+        for en in unwrap!(a.entries()) {
+            let mut en = unwrap!(en);
+            let pathⁱ = unwrap!(en.path());
+            let pathⱼ = pathⁱ
+                .components()
+                .skip(1)
+                .map(|c| {
+                    if let Component::Normal(c) = c {
+                        c
+                    } else {
+                        panic!("Bad path: {:?}, {:?}", pathⁱ, c)
+                    }
+                })
+                .fold(PathBuf::new(), |p, c| p.join(c));
+            unwrap!(en.unpack(libtorrent.join(pathⱼ)));
+        }
+        assert!(libtorrent.is_dir());
+        unwrap!(fs::rename(libtorrent, &rasterbar));
     }
 
-    let include = rasterbar.join("include");
-    assert!(include.exists());
+    // This version of the build doesn't compile Boost separately
+    // but rather allows the libtorrent to compile it
+    // "you probably want to just build libtorrent and have it build boost
+    //  (otherwise you'll end up building the boost dependencies twice)"
+    //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
-    let li_from = rasterbar.join("LICENSE");
-    let li_to = if target.is_android_cross() {
-        "/target/debug/LICENSE.libtorrent-rasterbar".into()
-    } else {
-        root().join("target/debug/LICENSE.libtorrent-rasterbar")
-    };
-    unwrap!(
-        fs::copy(&li_from, &li_to),
-        "Can't copy the rasterbar license from {:?} to {:?}",
-        li_from,
-        li_to
+    let boostˢ = unwrap!(boost.to_str());
+    let mut b2 = fomat!(
+        "b2 -j4 -d+2 release"
+        " link=static deprecated-functions=off debug-symbols=off"
+        " dht=on encryption=on crypto=built-in iconv=off i2p=off"
+        " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
+        " include="(boostˢ)
     );
+
+    fn jam(boost: &Path, from: &str) {
+        let user_config_jamˢ = slurp(&root().join(from));
+        let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
+        epintln!("build_libtorrent] Creating "[user_config_jamᵖ]"…");
+        let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
+        unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
+    }
+    if target.is_ios() {
+        // NB: The "darwin" toolset is defined in "tools/build/src/tools/darwin.jam":
+        jam(boost, "mm2src/common/ios/user-config.jam");
+        let cops = unwrap!(target.ios_clang_ops());
+        unwrap!(wite!(&mut b2, " toolset="(cops.b2_toolset)));
+    } else if target.is_android_cross() {
+        jam(boost, "mm2src/common/android/user-config.jam");
+        unwrap!(wite!(&mut b2, " toolset=gcc"));
+        patch_libtorrent(&rasterbar);
+    } else if cfg!(windows) {
+        unwrap!(wite!(&mut b2, " toolset=msvc-14.1 address-model=64"));
+    }
+
+    let boost_build_path = boost.join("tools").join("build");
+    let boost_build_pathˢ = unwrap!(boost_build_path.to_str());
+    let export = if cfg!(windows) { "SET" } else { "export" };
+    epintln!("build_libtorrent]\n"
+      "  $ "(export)" PATH="(boostˢ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
+      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathˢ) "\n"
+      "  $ "(b2));
+    if cfg!(windows) {
+        unwrap!(cmd!("cmd", "/c", b2)
+            .env("PATH", format!("{};{}", boostˢ, unwrap!(var("PATH"))))
+            .env("BOOST_BUILD_PATH", boost_build_path)
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .stdout_to_stderr()
+            .run());
+    } else {
+        unwrap!(cmd!("/bin/sh", "-c", b2)
+            .env("PATH", format!("{}:{}", boostˢ, unwrap!(var("PATH"))))
+            .env("BOOST_BUILD_PATH", boost_build_path)
+            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
+            .dir(&rasterbar)
+            .stdout_to_stderr()
+            .run());
+    }
+
+    let a_rel = if let Target::iOS(ref targetᴱ) = target {
+        fomat!(
+        "bin/darwin-iphone"
+        if targetᴱ == "x86_64-apple-ios" {"sim"}
+        "/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a"
+        )
+    } else if target.is_android_cross() {
+        "bin/gcc-4.9./release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a".into()
+    } else if cfg!(windows) {
+        r"bin\msvc-14.1\release\address-model-64\deprecated-functions-off\i2p-off\iconv-off\link-static\threading-multi\libtorrent.lib".into()
+    } else {
+        panic!("TBD, path to libtorrent.a")
+    };
+    let a = rasterbar.join(a_rel);
+    assert!(a.is_file());
+
+    let include = rasterbar.join("include");
+    assert!(include.is_dir());
 
     (a, include)
 }
@@ -1269,288 +1158,87 @@ fn libtorrent() {
     // NB: Distributions should have a copy of https://github.com/arvidn/libtorrent/blob/master/LICENSE.
 
     let target = Target::load();
+    let boost = fetch_boost(&target);
+    let (lt_a, lt_include) = build_libtorrent(&boost, &target);
+    println!("cargo:rustc-link-lib=static={}", {
+        let name = unwrap!(unwrap!(lt_a.file_stem()).to_str());
+        if cfg!(windows) {
+            name
+        } else {
+            &name[3..]
+        }
+    });
+    println!(
+        "cargo:rustc-link-search=native={}",
+        unwrap!(unwrap!(lt_a.parent()).to_str())
+    );
 
     if cfg!(windows) {
-        // NB: The "marketmaker_depends" folder is cached in the AppVeyour build,
-        // allowing us to build Boost only once.
-        // NB: The Windows build is different from `fn build_libtorrent` in that we're
-        // 1) Using the cached marketmaker_depends.
-        //    (It's only cached after a successful build, cf. https://www.appveyor.com/docs/build-cache/#saving-cache-for-failed-build).
-        // 2) Using ".bat" files and "cmd /c" shims.
-        // 3) Using "b2" and pointing it at the Boost sources,
-        // as recommended at https://github.com/arvidn/libtorrent/blob/master/docs/building.rst#building-with-bbv2,
-        // in hopes of avoiding the otherwise troubling Boost linking concerns.
-        //
-        // We can try building the Windows libtorrent with CMake.
-        // Though as of now having both build systems tested gives as a leeway in case one of them breaks.
-        let mmd = root().join("marketmaker_depends");
-        let _ = fs::create_dir(&mmd);
-
-        let boost = mmd.join("boost_1_68_0");
-        if boost.exists() {
-            // Cache maintenance.
-            let _ = fs::remove_file(mmd.join("boost_1_68_0.zip"));
-            let _ = fs::remove_dir_all(boost.join("doc")); // 80 MiB.
-            let _ = fs::remove_dir_all(boost.join("libs")); // 358 MiB, documentation and examples.
-            let _ = fs::remove_dir_all(boost.join("more"));
-        } else {
-            // [Download and] unpack Boost.
-            if !mmd.join("boost_1_68_0.zip").exists() {
-                hget(
-                    "https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.zip",
-                    mmd.join("boost_1_68_0.zip.tmp"),
-                );
-                unwrap!(fs::rename(
-                    mmd.join("boost_1_68_0.zip.tmp"),
-                    mmd.join("boost_1_68_0.zip")
-                ));
-            }
-
-            // TODO: Unzip without requiring the user to install unzip.
-            unwrap!(
-                ecmd!("unzip", "boost_1_68_0.zip").dir(&mmd).run(),
-                "Can't unzip Boost. Missing http://gnuwin32.sourceforge.net/packages/unzip.htm ?"
-            );
-            assert!(boost.exists());
-            let _ = fs::remove_file(mmd.join("boost_1_68_0.zip"));
-        }
-
-        let b2 = boost.join("b2.exe");
-        if !b2.exists() {
-            unwrap!(ecmd!("cmd", "/c", "bootstrap.bat").dir(&boost).run());
-            assert!(b2.exists());
-        }
-
-        let boost_system = boost.join("stage/lib/libboost_system-vc141-mt-x64-1_68.lib");
-        if !boost_system.exists() {
-            unwrap!(ecmd!(
-                // For some weird reason this particular executable won't start without the "cmd /c"
-                // even though some other executables (copied into the same folder) are working NP.
-                "cmd",
-                "/c",
-                "b2.exe",
-                "release",
-                "toolset=msvc-14.1",
-                "address-model=64",
-                // Not quite static? cf. https://stackoverflow.com/a/14368257/257568
-                "link=static",
-                "stage",
-                "--with-date_time",
-                "--with-system"
-            )
-            .dir(&boost)
-            .unchecked()
-            .run());
-            assert!(boost_system.exists());
-        }
-
-        let rasterbar = mmd.join("libtorrent-rasterbar-1.2.0");
-        if rasterbar.exists() {
-            // Cache maintenance.
-            let _ = fs::remove_file(mmd.join("libtorrent-rasterbar-1.2.0.tar.gz"));
-            let _ = fs::remove_dir_all(rasterbar.join("docs"));
-        } else {
-            // [Download and] unpack.
-            if !mmd.join("libtorrent-rasterbar-1.2.0.tar.gz").exists() {
-                hget (
-                    "https://github.com/arvidn/libtorrent/releases/download/libtorrent_1_2_0/libtorrent-rasterbar-1.2.0.tar.gz",
-                    mmd.join ("libtorrent-rasterbar-1.2.0.tar.gz.tmp")
-                );
-                unwrap!(fs::rename(
-                    mmd.join("libtorrent-rasterbar-1.2.0.tar.gz.tmp"),
-                    mmd.join("libtorrent-rasterbar-1.2.0.tar.gz")
-                ));
-            }
-
-            unwrap!(ecmd!("tar", "-xzf", "libtorrent-rasterbar-1.2.0.tar.gz")
-                .dir(&mmd)
-                .run());
-            assert!(rasterbar.exists());
-            let _ = fs::remove_file(mmd.join("libtorrent-rasterbar-1.2.0.tar.gz"));
-
-            cmake_opt_out(
-                &rasterbar.join("CMakeLists.txt"),
-                &["Iconv", "OpenSSL", "LibGcrypt"],
-            );
-        }
-
-        let lt = rasterbar.join(
-            r"bin\msvc-14.1\release\address-model-64\iconv-off\link-static\threading-multi\libtorrent.lib",              
-        );
-        if !lt.exists() {
-            // cf. tools\build\src\tools\msvc.jam
-            unwrap!(ecmd!(
-                "cmd",
-                "/c",
-                fomat!(
-                    "b2 release "
-                    "include="(unwrap!(boost.to_str()))" "
-                    "toolset=msvc-14.1 address-model=64 link=static dht=on"
-                    " iconv=off"
-                    " encryption=on crypto=built-in"
-                    " debug-symbols=off"
-                )
-            )
-            .env(
-                "PATH",
-                format!("{};{}", unwrap!(boost.to_str()), unwrap!(var("PATH")))
-            )
-            .env("BOOST_BUILD_PATH", boost.join(r"tools\build"))
-            .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
-            .dir(&rasterbar)
-            .run());
-            assert!(lt.exists());
-        }
-
-        let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
-        let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
-        let lib_path = Path::new(&out_dir).join("libdht.a");
-        let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
-        if lm_dht >= lm_lib - SLIDE {
-            cc::Build::new()
-                .file("dht.cc")
-                .warnings(true)
-                .include(rasterbar.join("include"))
-                .include(boost)
-                // https://docs.microsoft.com/en-us/cpp/porting/modifying-winver-and-win32-winnt?view=vs-2017
-                .define("_WIN32_WINNT", "0x0600")
-                // cf. https://stackoverflow.com/questions/4573536/ehsc-vc-eha-synchronous-vs-asynchronous-exception-handling
-                .flag("/EHsc")
-                // https://stackoverflow.com/questions/7582394/strdup-or-strdup
-                .flag("-D_CRT_NONSTDC_NO_DEPRECATE")
-                .compile("dht");
-        }
-        println!("cargo:rustc-link-lib=static=dht");
-        println!("cargo:rustc-link-search=native={}", out_dir);
-
-        println!("cargo:rustc-link-lib=static=libtorrent");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(unwrap!(lt.parent()).to_str())
-        );
-
-        println!("cargo:rustc-link-lib=static=libboost_system-vc141-mt-x64-1_68");
-        println!("cargo:rustc-link-lib=static=libboost_date_time-vc141-mt-x64-1_68");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(unwrap!(boost_system.parent()).to_str())
-        );
-
         println!("cargo:rustc-link-lib=iphlpapi"); // NotifyAddrChange.
-    } else if cfg!(target_os = "macos") && !target.is_ios() {
-        // NB: Homebrew's version of libtorrent-rasterbar (1.1.10) is currently too old.
+    }
 
-        let boost_system_mt = Path::new("/usr/local/lib/libboost_system-mt.a");
-        if !boost_system_mt.exists() {
-            unwrap!(
-                ecmd!("brew", "install", "boost").run(),
-                "Can't brew install boost"
-            );
-            assert!(boost_system_mt.exists());
+    epintln!("Building dht.cc …");
+    let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
+    let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
+    let lib_path = Path::new(&out_dir).join("libdht.a");
+    let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
+    if lm_dht >= lm_lib - SLIDE {
+        let mut cc = target.cc(true);
+
+        // Mismatch between the libtorrent and the dht.cc flags
+        // might produce weird "undefined reference" link errors.
+        // Building libtorrent with "-d+2" passed to "b2" should show the actual defines.
+
+        cc.flag("-DBOOST_ALL_NO_LIB");
+        cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO");
+        cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO");
+        cc.flag("-DBOOST_MULTI_INDEX_DISABLE_SERIALIZATION");
+        cc.flag("-DBOOST_NO_DEPRECATED");
+        cc.flag("-DBOOST_SYSTEM_NO_DEPRECATED");
+        cc.flag("-DNDEBUG");
+        cc.flag("-DTORRENT_BUILDING_LIBRARY");
+        cc.flag("-DTORRENT_NO_DEPRECATE");
+        cc.flag("-DTORRENT_USE_I2P=0");
+        cc.flag("-DTORRENT_USE_ICONV=0");
+        if target.is_ios() || target.is_android_cross() {
+            cc.flag("-fexceptions");
+            cc.flag("-D_FILE_OFFSET_BITS=64");
+            cc.flag("-D_WIN32_WINNT=0x0600");
+            cc.flag("-std=c++11");
+            cc.flag("-ftemplate-depth=512");
+            cc.flag("-finline-functions");
+            cc.flag("-fvisibility=hidden");
+            cc.flag("-fvisibility-inlines-hidden");
+        } else if cfg!(windows) {
+            cc.flag("-DWIN32");
+            cc.flag("-DWIN32_LEAN_AND_MEAN");
+            // https://stackoverflow.com/questions/7582394/strdup-or-strdup
+            cc.flag("-D_CRT_SECURE_NO_DEPRECATE");
+            cc.flag("-D_FILE_OFFSET_BITS=64");
+            cc.flag("-D_SCL_SECURE_NO_DEPRECATE");
+            cc.flag("-D_WIN32");
+            // https://docs.microsoft.com/en-us/cpp/porting/modifying-winver-and-win32-winnt?view=vs-2017
+            cc.flag("-D_WIN32_WINNT=0x0600");
+            cc.flag("-D__USE_W32_SOCKETS");
+            // cf. https://stackoverflow.com/questions/4573536/ehsc-vc-eha-synchronous-vs-asynchronous-exception-handling
+            cc.flag("/EHsc");
         }
 
-        let (lt_a, lt_include) = build_libtorrent(None);
-        println!("cargo:rustc-link-lib=static=torrent-rasterbar");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(unwrap!(lt_a.parent()).to_str())
-        );
-        println!("cargo:rustc-link-lib=c++");
-        println!("cargo:rustc-link-lib=boost_system-mt");
-        println!("cargo:rustc-link-lib=framework=CoreFoundation");
-        println!("cargo:rustc-link-lib=framework=SystemConfiguration");
+        // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
+        cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
 
-        let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
-        let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
-        let lib_path = Path::new(&out_dir).join("libdht.a");
-        let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
-        if lm_dht >= lm_lib - SLIDE {
-            cc::Build::new()
-                .file("dht.cc")
-                .warnings(true)
-                .flag("-std=c++11")
-                .include(lt_include)
-                .include(r"/usr/local/Cellar/boost/1.68.0/include/")
-                .compile("dht");
-        }
-        println!("cargo:rustc-link-lib=static=dht");
-        println!("cargo:rustc-link-search=native={}", out_dir);
-    } else {
-        let boost = build_boost_bz2();
-        let (lt_a, lt_include) = build_libtorrent(Some(&boost));
-        println!("cargo:rustc-link-lib=static={}", {
-            let name = unwrap!(unwrap!(lt_a.file_stem()).to_str());
-            &name[3..]
-        });
-        println!(
-            "cargo:rustc-link-search=native={}",
-            unwrap!(unwrap!(lt_a.parent()).to_str())
-        );
+        cc.file("dht.cc")
+            .warnings(true)
+            .opt_level(2)
+            .pic(true)
+            .include(lt_include)
+            .include(boost)
+            .compile("dht");
+    }
+    println!("cargo:rustc-link-lib=static=dht");
+    println!("cargo:rustc-link-search=native={}", out_dir);
 
-        if !target.is_ios() {
-            // NB: We should prefer linking boost in AFTER libtorrent,
-            // cf. "Linking boost_system last fixed the issue for me" in https://stackoverflow.com/a/30877725/257568.
-            println!("cargo:rustc-link-lib=static=boost_system");
-            println!(
-                "cargo:rustc-link-search=native={}",
-                unwrap!(boost.join("lib").to_str())
-            );
-        }
-
-        let lm_dht = unwrap!(last_modified_sec(&"dht.cc"), "Can't stat dht.cc");
-        let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
-        let lib_path = Path::new(&out_dir).join("libdht.a");
-        let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
-        let boost_inc = if boost.join("include/boost/version.hpp").exists() {
-            boost.join("include")
-        } else {
-            assert!(boost.join("boost/version.hpp").exists());
-            boost.clone()
-        };
-        if lm_dht >= lm_lib - SLIDE {
-            let mut cc = target.cc(true);
-            if target.is_ios() {
-                // Defines spied in libtorrent (with "b2 -d+2").
-                cc.flag("-fexceptions");
-                cc.flag("-DBOOST_ALL_NO_LIB");
-                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO");
-                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO");
-                cc.flag("-DBOOST_MULTI_INDEX_DISABLE_SERIALIZATION");
-                cc.flag("-DBOOST_NO_DEPRECATED");
-                cc.flag("-DBOOST_SYSTEM_NO_DEPRECATED");
-                cc.flag("-DNDEBUG");
-                cc.flag("-DTORRENT_BUILDING_LIBRARY");
-                cc.flag("-DTORRENT_NO_DEPRECATE");
-                cc.flag("-DTORRENT_USE_I2P=0");
-                cc.flag("-DTORRENT_USE_ICONV=0");
-                cc.flag("-D_FILE_OFFSET_BITS=64");
-                cc.flag("-D_WIN32_WINNT=0x0600");
-                // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
-                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
-            } else {
-                cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
-                cc.flag("-DBOOST_ASIO_HAS_STD_CHRONO=1");
-                cc.flag("-DBOOST_EXCEPTION_DISABLE=1");
-                cc.flag("-DBOOST_ASIO_ENABLE_CANCELIO=1");
-            }
-            cc.file("dht.cc")
-                .warnings(true)
-                // Mismatch between the libtorrent and the dht.cc flags
-                // might produce weird "undefined reference" link errors.
-                // Building libtorrent with "-d+2" passed to "b2" should show the actual defines.
-                .flag("-std=c++11")
-                .opt_level(2)
-                .flag("-ftemplate-depth=512")
-                .flag("-fvisibility=hidden")
-                .flag("-fvisibility-inlines-hidden")
-                .pic(true)
-                .include(lt_include)
-                .include(boost_inc)
-                .compile("dht");
-        }
-        println!("cargo:rustc-link-lib=static=dht");
-        println!("cargo:rustc-link-search=native={}", out_dir);
-
+    if target.is_ios() || target.is_android_cross() {
         println!("cargo:rustc-link-lib=stdc++");
     }
 }
@@ -1660,13 +1348,13 @@ fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
         if target.is_ios() {
             cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
         } else {
-            cc.flag("-DNN_HAVE_SEMAPHORE");
-            cc.flag("-DNN_HAVE_POLL");
-            cc.flag("-DNN_HAVE_MSG_CONTROL");
-            cc.flag("-DNN_HAVE_EVENTFD");
-            cc.flag("-DNN_USE_EVENTFD");
-            cc.flag("-DNN_USE_LITERAL_IFADDR");
-            cc.flag("-DNN_USE_PO");
+            cc.define("NN_HAVE_SEMAPHORE", None);
+            cc.define("NN_HAVE_POLL", None);
+            cc.define("NN_HAVE_MSG_CONTROL", None);
+            cc.define("NN_HAVE_EVENTFD", None);
+            cc.define("NN_USE_EVENTFD", None);
+            cc.define("NN_USE_LITERAL_IFADDR", None);
+            cc.define("NN_USE_POLL", None);
         }
         for src_path in LIBNANOMSG_115_ANDROID_SRC.iter() {
             cc.file(if target.is_ios() {
