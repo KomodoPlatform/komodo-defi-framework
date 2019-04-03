@@ -1,7 +1,5 @@
 using gcc : : /android-ndk/bin/arm-linux-androideabi-g++ :
 <archiver>/android-ndk/bin/arm-linux-androideabi-ar
-<cxxflags>-std=c++11
-<compileflags>-fPIC
 <compileflags>-fexceptions
 <compileflags>-march=armv7-a
 ;

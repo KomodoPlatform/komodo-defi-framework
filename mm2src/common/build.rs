@@ -1079,11 +1079,15 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
     let boostˢ = unwrap!(boost.to_str());
+    // NB: The common compiler flags go to the "cxxflags=" here
+    // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(
         "b2 -j4 -d+2 release"
         " link=static deprecated-functions=off debug-symbols=off"
         " dht=on encryption=on crypto=built-in iconv=off i2p=off"
         " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
+        " cxxflags=-std=c++11"
+        " cxxflags=-fPIC"
         " include="(boostˢ)
     );
 
@@ -1140,6 +1144,8 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         )
     } else if target.is_android_cross() {
         "bin/gcc-4.9./release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a".into()
+    } else if target.is_mac() {
+        "bin/darwin-4.2.1/release/deprecated-functions-off/i2p-off/iconv-off/link-static/threading-multi/libtorrent.a".into()
     } else if cfg!(windows) {
         r"bin\msvc-14.1\release\address-model-64\deprecated-functions-off\i2p-off\iconv-off\link-static\threading-multi\libtorrent.lib".into()
     } else {
@@ -1200,16 +1206,7 @@ fn libtorrent() {
         cc.flag("-DTORRENT_NO_DEPRECATE");
         cc.flag("-DTORRENT_USE_I2P=0");
         cc.flag("-DTORRENT_USE_ICONV=0");
-        if target.is_ios() || target.is_android_cross() {
-            cc.flag("-fexceptions");
-            cc.flag("-D_FILE_OFFSET_BITS=64");
-            cc.flag("-D_WIN32_WINNT=0x0600");
-            cc.flag("-std=c++11");
-            cc.flag("-ftemplate-depth=512");
-            cc.flag("-finline-functions");
-            cc.flag("-fvisibility=hidden");
-            cc.flag("-fvisibility-inlines-hidden");
-        } else if cfg!(windows) {
+        if cfg!(windows) {
             cc.flag("-DWIN32");
             cc.flag("-DWIN32_LEAN_AND_MEAN");
             // https://stackoverflow.com/questions/7582394/strdup-or-strdup
@@ -1222,6 +1219,15 @@ fn libtorrent() {
             cc.flag("-D__USE_W32_SOCKETS");
             // cf. https://stackoverflow.com/questions/4573536/ehsc-vc-eha-synchronous-vs-asynchronous-exception-handling
             cc.flag("/EHsc");
+        } else {
+            cc.flag("-fexceptions");
+            cc.flag("-D_FILE_OFFSET_BITS=64");
+            cc.flag("-D_WIN32_WINNT=0x0600");
+            cc.flag("-std=c++11");
+            cc.flag("-ftemplate-depth=512");
+            cc.flag("-finline-functions");
+            cc.flag("-fvisibility=hidden");
+            cc.flag("-fvisibility-inlines-hidden");
         }
 
         // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
@@ -1240,6 +1246,10 @@ fn libtorrent() {
 
     if target.is_ios() || target.is_android_cross() {
         println!("cargo:rustc-link-lib=stdc++");
+    } else if target.is_mac() {
+        println!("cargo:rustc-link-lib=c++");
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=SystemConfiguration");
     }
 }
 
