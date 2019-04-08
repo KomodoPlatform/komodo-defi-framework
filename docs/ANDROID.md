@@ -8,8 +8,8 @@ We need a free access to the Docker (`docker run hello-world` should work).
 
 We need the Nightly revision of Rust, such as
 
-    rustup install nightly-2018-12-24
-    rustup default nightly-2018-12-24
+    rustup install nightly-2019-03-10
+    rustup default nightly-2019-03-10
 
 ### Install cross
 
@@ -40,6 +40,7 @@ we use a second terminal to commit the changes back into the image
 
     git clone --depth=1 https://github.com/artemii235/SuperNET.git -b mm2-cross
     cd SuperNET
+    git log --pretty=format:'%h' -n 1 > MM_VERSION
 
 ### Setup the NDK_HOME variable
 
@@ -48,7 +49,7 @@ but we need to point some of the dependencies to that location
 by setting the NDK_HOME variable and letting it into the `cross` build.
 
     export NDK_HOME=/android-ndk
-    printf '[build.env]\npassthrough = [\n "NDK_HOME"\n]\n' > Cross.toml
+    printf '[build.env]\npassthrough = [\n "NDK_HOME",\n "RUST_BACKTRACE"\n]\n' > Cross.toml
 
 ### Build
 
