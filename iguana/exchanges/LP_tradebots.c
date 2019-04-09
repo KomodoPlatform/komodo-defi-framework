@@ -315,7 +315,7 @@ double LP_orderbook_maxrel(char *base,char *rel,double maxprice)
     return(maxrel);
 }
 
-void LP_tradebot_timeslice(void *ctx,struct LP_tradebot *bot)
+void LP_tradebot_timeslice(struct LP_tradebot *bot, uint32_t ctx_h)
 {
     double remaining,maxrel; struct LP_tradebot_trade *tp; int32_t i,maxiters = 10; uint32_t tradeid; bits256 destpubkey; char *retstr,*liststr; cJSON *retjson,*retjson2,*pending;
     memset(destpubkey.bytes,0,sizeof(destpubkey));
@@ -338,7 +338,7 @@ void LP_tradebot_timeslice(void *ctx,struct LP_tradebot *bot)
                     {
                         if ( remaining < 0.001 )
                             break;
-                        if ( (retstr= LP_autobuy(ctx,0,LP_myipaddr,LP_mypubsock,bot->base,bot->rel,bot->maxprice,remaining/i,0,0,G.gui,0,destpubkey,tradeid,0,0,0)) != 0 )
+                        if ( (retstr= LP_autobuy(0,bot->base,bot->rel,bot->maxprice,remaining/i,0,0,G.gui,0,destpubkey,tradeid,0,0,ctx_h)) != 0 )
                         {
                             if ( (retjson2= cJSON_Parse(retstr)) != 0 )
                             {
@@ -419,30 +419,6 @@ void LP_tradebot_finished(uint32_t tradeid,uint32_t requestid,uint32_t quoteid)
     }
 }
 
-void LP_tradebots_timeslice(void *ctx)
-{
-    static uint32_t lastnumfinished = 0;
-    struct iguana_info *relcoin; bits256 zero; struct LP_tradebot *bot,*tmp;
-    DL_FOREACH_SAFE(LP_tradebots,bot,tmp)
-    {
-        memset(zero.bytes,0,sizeof(zero));
-        if ( (relcoin= LP_coinfind(bot->rel)) != 0 )
-            LP_listunspent_issue(bot->rel,relcoin->smartaddr,1,zero,zero);
-        if ( bot->relsum >= 0.99*bot->totalrelvolume-SMALLVAL || bot->basesum >= 0.99*bot->totalbasevolume-SMALLVAL )
-            bot->dead = (uint32_t)time(NULL);
-        else if ( (bot->pendrelsum+bot->relsum) >= 0.99*bot->totalrelvolume-SMALLVAL || (bot->basesum+bot->pendbasesum) >= 0.99*bot->totalbasevolume-SMALLVAL )
-            bot->pause = (uint32_t)time(NULL);
-        else if ( bot->userpause == 0 )
-            bot->pause = 0;
-        if ( bot->numpending == 0 && time(NULL) > bot->lasttime+TRADEBOTS_GAPTIME )
-        {
-            LP_tradebot_timeslice(ctx,bot);
-            bot->lasttime = (uint32_t)time(NULL);
-        }
-    }
-    lastnumfinished = LP_numfinished;
-}
-
 char *LP_tradebot_list(void *ctx,int32_t pubsock,cJSON *argjson)
 {
     struct LP_tradebot *bot,*tmp; cJSON *array = cJSON_CreateArray();
@@ -461,125 +437,6 @@ char *LP_tradebot_statuslist(void *ctx,int32_t pubsock,cJSON *argjson)
         jaddi(array,LP_tradebot_json(bot));
     }
     return(jprint(array,1));
-}
-
-char *LP_tradebot_buy(int32_t dispdir,char *base,char *rel,double maxprice,double relvolume)
-{
-    struct LP_tradebot *bot; char *retstr; double shortfall; cJSON *retjson; uint64_t sum,txfee,txfees,balance=0,abalance=0; struct iguana_info *basecoin,*relcoin;
-    basecoin = LP_coinfind(base);
-    relcoin = LP_coinfind(rel);
-    if ( basecoin == 0 || relcoin == 0 || basecoin->inactive != 0 || relcoin->inactive != 0 )
-        return(clonestr("{\"error\":\"one or more coins inactive\"}"));
-    /*if ( (array= LP_inventory(rel)) != 0 )
-    {
-        if ( (n= cJSON_GetArraySize(array)) > 0 && is_cJSON_Array(array) != 0 )
-        {
-            for (i=0; i<n; i++)
-            {
-                item = jitem(array,i);
-                abalance += j64bits(item,"satoshis");
-            }
-        }
-        free_json(array);
-    }*/
-    if ( (retstr= LP_orderbook(base,rel,0)) != 0 )
-        free(retstr);
-    txfee = LP_txfeecalc(relcoin,0,0);
-    txfees = 10 * txfee;
-    if ( relcoin->electrum != 0 )
-        balance = LP_unspents_load(relcoin->symbol,relcoin->smartaddr);
-    else balance = LP_RTsmartbalance(relcoin);
-    sum = (SATOSHIDEN*relvolume+2*dstr(txfees)) + 3 * ((SATOSHIDEN*relvolume+2*dstr(txfees))/777);
-    printf("%s inventory balance %.8f, relvolume %.8f + txfees %.8f, utxobal %.8f sum %.8f\n",rel,dstr(abalance),relvolume,dstr(txfees),dstr(balance),dstr(sum));
-    //if ( (abalance < SATOSHIDEN*relvolume + txfees) || ((balance-abalance) < (uint64_t)(SATOSHIDEN*relvolume)/777 + txfees) )
-    if ( balance < sum+2*txfee )
-    {
-        retjson = cJSON_CreateObject();
-        jaddstr(retjson,"error","not enough funds");
-        jaddstr(retjson,"coin",rel);
-        jaddnum(retjson,"abalance",dstr(abalance));
-        jaddnum(retjson,"balance",dstr(balance));
-        jaddnum(retjson,"relvolume",relvolume);
-        jaddnum(retjson,"txfees",dstr(txfees));
-        shortfall = (relvolume + dstr(txfees)) - dstr(balance);
-        jaddnum(retjson,"shortfall",shortfall);
-        /*if ( balance > sum+2*txfee )
-        {
-            char *withdrawstr; cJSON *outputjson,*withdrawjson,*outputs,*item;
-            outputjson = cJSON_CreateObject();
-            outputs = cJSON_CreateArray();
-            item = cJSON_CreateObject();
-            jaddnum(item,relcoin->smartaddr,relvolume+2*dstr(txfees));
-            jaddi(outputs,item);
-            item = cJSON_CreateObject();
-            jaddnum(item,relcoin->smartaddr,(relvolume+2*dstr(txfees))/777);
-            jaddi(outputs,item);
-            item = cJSON_CreateObject();
-            jaddnum(item,relcoin->smartaddr,(relvolume+2*dstr(txfees))/777);
-            jaddi(outputs,item);
-            item = cJSON_CreateObject();
-            jaddnum(item,relcoin->smartaddr,(relvolume+2*dstr(txfees))/777);
-            jaddi(outputs,item);
-            jadd(outputjson,"outputs",outputs);
-            if ( (withdrawstr= LP_withdraw(relcoin,outputjson)) != 0 )
-            {
-                if ( (withdrawjson= cJSON_Parse(withdrawstr)) != 0 )
-                    jadd(retjson,"withdraw",withdrawjson);
-                free(withdrawstr);
-            }
-            free_json(outputjson);
-        }*/
-        return(jprint(retjson,1));
-    }
-    printf("disp.%d tradebot_buy(%s / %s) maxprice %.8f relvolume %.8f\n",dispdir,base,rel,maxprice,relvolume);
-    if ( (bot= calloc(1,sizeof(*bot))) != 0 )
-    {
-        safecopy(bot->base,base,sizeof(bot->base));
-        safecopy(bot->rel,rel,sizeof(bot->rel));
-        bot->dispdir = dispdir;
-        bot->maxprice = maxprice;
-        bot->totalrelvolume = relvolume;
-        LP_pricevol_invert(&bot->totalbasevolume,maxprice,relvolume);
-        bot->started = (uint32_t)time(NULL);
-        if ( dispdir > 0 )
-            sprintf(bot->name,"buy_%s_%s.%d",base,rel,bot->started);
-        else sprintf(bot->name,"sell_%s_%s.%d",rel,base,bot->started);
-        bot->id = calc_crc32(0,(uint8_t *)bot,sizeof(*bot));
-        LP_tradebotadd(bot);
-        return(jprint(LP_tradebot_json(bot),1));
-    }
-    return(0);
-}
-
-char *LP_tradebot_limitbuy(void *ctx,int32_t pubsock,cJSON *argjson)
-{
-    double relvolume,maxprice; char *base,*rel;
-    base = jstr(argjson,"base");
-    rel = jstr(argjson,"rel");
-    maxprice = jdouble(argjson,"maxprice");
-    relvolume = jdouble(argjson,"relvolume");
-    printf("limit buy %s/%s %.8f %.8f\n",base,rel,maxprice,relvolume);
-    if ( LP_priceinfofind(base) != 0 && LP_priceinfofind(rel) != 0 && maxprice > SMALLVAL && maxprice < SATOSHIDEN && relvolume > 0.0001 && relvolume < SATOSHIDEN )
-        return(LP_tradebot_buy(1,base,rel,maxprice,relvolume));
-    return(clonestr("{\"error\":\"invalid parameter\"}"));
-}
-
-char *LP_tradebot_limitsell(void *ctx,int32_t pubsock,cJSON *argjson)
-{
-    double relvolume,maxprice,price,basevolume,p,v; char *base,*rel;
-    base = jstr(argjson,"base");
-    rel = jstr(argjson,"rel");
-    price = jdouble(argjson,"minprice");
-    basevolume = jdouble(argjson,"basevolume");
-    if ( LP_priceinfofind(base) != 0 && LP_priceinfofind(rel) != 0 && price > SMALLVAL && price < SATOSHIDEN && basevolume > 0.0001 && basevolume < SATOSHIDEN )
-    {
-        maxprice = price;
-        relvolume = (price * basevolume);
-        p = LP_pricevol_invert(&v,maxprice,relvolume);
-        printf("minprice %.8f basevolume %.8f -> (%.8f %.8f) -> (%.8f %.8f)\n",price,basevolume,maxprice,relvolume,1./p,v);
-        return(LP_tradebot_buy(-1,rel,base,p,v));
-    }
-    return(clonestr("{\"error\":\"invalid parameter\"}"));
 }
 
 char *LP_tradebot_settings(void *ctx,int32_t pubsock,cJSON *argjson,uint32_t botid)
@@ -670,10 +527,6 @@ char *LP_istradebots_command(void *ctx,int32_t pubsock,char *method,cJSON *argjs
         return(LP_tradebot_list(ctx,pubsock,argjson));
     else if ( strcmp(method,"bot_statuslist") == 0 )
         return(LP_tradebot_statuslist(ctx,pubsock,argjson));
-    else if ( strcmp(method,"bot_buy") == 0 )
-        return(LP_tradebot_limitbuy(ctx,pubsock,argjson));
-    else if ( strcmp(method,"bot_sell") == 0 )
-        return(LP_tradebot_limitsell(ctx,pubsock,argjson));
     if ( (botid= juint(argjson,"botid")) == 0 )
         return(clonestr("{\"error\":\"no botid specified\"}"));
     else

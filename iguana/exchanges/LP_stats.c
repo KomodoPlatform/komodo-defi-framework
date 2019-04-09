@@ -66,13 +66,6 @@ char *LP_dPoW_recv(cJSON *argjson)
         notarizedhash = jbits256(argjson,"notarizedhash");
         notarizationtxid = jbits256(argjson,"notarizationtxid");
         //printf("dPoW %s\n",jprint(argjson,0));
-        if ( notarized > coin->notarized && LP_notarization_validate(symbol,notarized,notarizedhash,notarizationtxid) == 0 )
-        {
-            coin->notarized = notarized;
-            coin->notarizedhash = notarizedhash;
-            coin->notarizationtxid = notarizationtxid;
-            printf("VALIDATED dPoW %s\n",jprint(argjson,0));
-        }
     }
     return(clonestr("{\"result\":\"success\"}"));
 }
@@ -303,61 +296,6 @@ int32_t LP_swapstats_update(struct LP_swapstats *sp,struct LP_quoteinfo *qp,cJSO
     return(0);
 }
 
-int32_t LP_finished_lastheight(struct LP_swapstats *sp)
-{
-    int32_t height = 1; struct iguana_info *bob,*alice; //char str[65];
-    if ( (bob= LP_coinfind(sp->Q.srccoin)) != 0 && (alice= LP_coinfind(sp->Q.destcoin)) != 0 )
-    {
-        if ( strcmp(bob->symbol,"BTC") == 0 )
-            sp->bobneeds_dPoW = 0;
-        if ( strcmp(alice->symbol,"BTC") == 0 )
-            sp->aliceneeds_dPoW = 0;
-        if ( sp->bobneeds_dPoW != 0 )
-        {
-            if ( bits256_nonz(sp->bobdeposit) != 0 && sp->bobdeposit_ht == 0 )
-            {
-                if ( (sp->bobdeposit_ht= LP_txheight(bob,sp->bobdeposit)) > sp->bobneeds_dPoW )
-                    sp->bobneeds_dPoW = sp->bobdeposit_ht;
-                //printf("%s bobdeposit.%d height.%d\n",bits256_str(str,sp->bobdeposit),ht,sp->bobneeds_dPoW);
-            }
-            if ( bits256_nonz(sp->bobpayment) != 0 && sp->bobpayment_ht == 0 )
-            {
-                if ( (sp->bobpayment_ht= LP_txheight(bob,sp->bobpayment)) > sp->bobneeds_dPoW )
-                    sp->bobneeds_dPoW = sp->bobpayment_ht;
-                //printf("%s bobpayment.%d height.%d\n",bits256_str(str,sp->bobpayment),ht,sp->bobneeds_dPoW);
-            }
-            if ( bits256_nonz(sp->paymentspent) != 0 && sp->paymentspent_ht == 0 )
-            {
-                if ( (sp->paymentspent_ht= LP_txheight(bob,sp->paymentspent)) > sp->bobneeds_dPoW )
-                    sp->bobneeds_dPoW = sp->paymentspent_ht;
-                //printf("%s paymentspent.%d height.%d\n",bits256_str(str,sp->paymentspent),ht,sp->bobneeds_dPoW);
-            }
-            if ( bits256_nonz(sp->depositspent) != 0 && sp->depositspent_ht == 0 )
-            {
-                if ( (sp->depositspent_ht= LP_txheight(bob,sp->depositspent)) > sp->bobneeds_dPoW )
-                    sp->bobneeds_dPoW = sp->depositspent_ht;
-                //printf("%s depositspent.%d height.%d\n",bits256_str(str,sp->depositspent),ht,sp->bobneeds_dPoW);
-            }
-        }
-        if ( sp->aliceneeds_dPoW != 0 )
-        {
-            if ( bits256_nonz(sp->alicepayment) != 0 && sp->alicepayment_ht == 0 )
-            {
-                if ( (sp->alicepayment_ht= LP_txheight(alice,sp->alicepayment)) > sp->aliceneeds_dPoW )
-                    sp->aliceneeds_dPoW = sp->alicepayment_ht;
-                //printf("%s alicepayment.%d height.%d\n",bits256_str(str,sp->alicepayment),ht,sp->aliceneeds_dPoW);
-            }
-            if ( bits256_nonz(sp->Apaymentspent) != 0 && sp->Apaymentspent_ht == 0 )
-            {
-                if ( (sp->Apaymentspent_ht= LP_txheight(alice,sp->Apaymentspent)) > sp->aliceneeds_dPoW )
-                    sp->aliceneeds_dPoW = sp->Apaymentspent_ht;
-                //printf("%s Apaymentspent.%d height.%d\n",bits256_str(str,sp->Apaymentspent),ht,sp->aliceneeds_dPoW);
-            }
-        }
-    }
-    return(height);
-}
-
 int32_t LP_swap_finished(struct LP_swapstats *sp,int32_t dPoWflag)
 {
     struct iguana_info *bob,*alice;
@@ -377,12 +315,6 @@ int32_t LP_swap_finished(struct LP_swapstats *sp,int32_t dPoWflag)
     }
     if ( dPoWflag != 0 )
     {
-        if ( sp->finished != 0 )
-        {
-            LP_finished_lastheight(sp);
-            if ( 0 && IAMLP == 0 )
-                printf("bob needs %d @ %d, alice needs %d @ %d\n",sp->bobneeds_dPoW,bob->notarized,sp->aliceneeds_dPoW,alice->notarized);
-        }
         if ( (sp->bobneeds_dPoW == 0 || (sp->bobneeds_dPoW > 1 && bob->notarized >= sp->bobneeds_dPoW)) && (sp->aliceneeds_dPoW == 0 || (sp->aliceneeds_dPoW > 1 && alice->notarized >= sp->aliceneeds_dPoW)) )
         {
             sp->dPoWfinished = (uint32_t)time(NULL);
@@ -772,10 +704,6 @@ cJSON *LP_statslog_disp(uint32_t starttime,uint32_t endtime,char *refgui,bits256
     {
         LP_stats_dispiter(array,sp,starttime,endtime,refbase,refrel,refgui,refpubkey);
         LP_swapscount++;
-    }
-    HASH_ITER(hh,LP_pubkeyinfos,pubp,ptmp)
-    {
-        pubp->dynamictrust = LP_dynamictrust(0,pubp->pubkey,0);
     }
     //printf("RT.%d completed.%d\n",LP_RTcount,LP_swapscount);
     jadd(retjson,"swaps",array);

@@ -18,7 +18,7 @@
 //  marketmaker
 //
 
-use common::{dstr, free_c_ptr, lp, rpc_response, rpc_err_response, slurp_req, HyRes, str_to_malloc, SATOSHIDEN, SMALLVAL};
+use common::{dstr, free_c_ptr, lp, rpc_response, rpc_err_response, slurp_req, HyRes, SATOSHIDEN, SMALLVAL, CJSON};
 use common::mm_ctx::{MmArc, MmWeak};
 use common::log::TagParam;
 use coins::{lp_coinfind, MmCoinEnum};
@@ -98,11 +98,14 @@ impl PricePingRequest {
     }
 }
 
-fn lp_send_price_ping(req: &PricePingRequest) -> Result<(), String> {
+fn lp_send_price_ping(req: &PricePingRequest, ctx: &MmArc) -> Result<(), String> {
     let req_string = try_s!(json::to_string(req));
-    let req_c_string = str_to_malloc(&req_string);
-    let zero = lp::bits256::default();
-    unsafe { lp::LP_reserved_msg(0, zero, req_c_string); }
+    // TODO this is required to process the set price message on our own node, it's the easiest way now
+    //      there might be a better way of doing this so we should consider refactoring
+    let c_json = try_s!(CJSON::from_str(&req_string));
+    let post_price_res = unsafe { lp::LP_postprice_recv(c_json.0) };
+    free_c_ptr(post_price_res as *mut c_void);
+    ctx.broadcast_p2p_msg(&req_string);
     Ok(())
 }
 
@@ -161,7 +164,7 @@ pub fn broadcast_my_prices(ctx: &MmArc) -> Result<(), String> {
             },
         };
 
-        if let Err(e) = lp_send_price_ping(&ping) {
+        if let Err(e) = lp_send_price_ping(&ping, ctx) {
             ctx.log.log("", &[&"broadcast_my_prices", &base.as_str(), &rel.as_str()], &format! ("ping request send failed {}", e));
             continue;
         }

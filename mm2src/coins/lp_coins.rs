@@ -844,11 +844,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         ii.inactive = (now_ms() / 1000) as u32
     } else {
         ii.inactive = 0;
-        // AG: I wonder why the special treatment.
-        //     We invoke `LP_importaddress` during the SWAP, so maybe we can remove the "KMD"-only invocation here.
-        if ticker == "KMD" {
-            unsafe {lp::LP_importaddress (b"KMD\0".as_ptr() as *mut c_char, lp::BOTS_BONDADDRESS.as_ptr() as *mut c_char)};
-        }
     }
 
     ve.insert (ticker.into(), coin.clone());

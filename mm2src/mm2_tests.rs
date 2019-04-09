@@ -1,5 +1,5 @@
 use common::identity;
-use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt, RaiiDump, RaiiKill};
+use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
 use dirs;
 use gstuff::{now_float, slurp};
 use hyper::StatusCode;
@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::env::{self, var};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
-use std::str::{from_utf8_unchecked};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
@@ -123,7 +122,7 @@ fn test_rpc() {
     // TODO (workaround libtorrent hanging in delete) // unwrap! (mm.wait_for_log (9., &|log| log.contains ("LogState] Bye!")));
 }
 
-use super::{btc2kmd, events, lp_main, CJSON};
+use super::{btc2kmd, lp_main, CJSON};
 
 /// Integration (?) test for the "btc2kmd" command line invocation.
 /// The argument is the WIF example from https://en.bitcoin.it/wiki/Wallet_import_format.
@@ -186,64 +185,6 @@ fn local_start_impl (folder: PathBuf, log_path: PathBuf, mut conf: Json) {
 
 fn local_start() -> LocalStart {local_start_impl}
 
-/// Integration test for the "mm2 events" mode.
-/// Starts MM in background and verifies that "mm2 events" produces a non-empty feed of events.
-#[test]
-fn test_events() {
-    let executable = unwrap! (env::args().next());
-    let executable = unwrap! (Path::new (&executable) .canonicalize());
-    match var ("_MM2_TEST_EVENTS_MODE") {
-        Ok (ref mode) if mode == "MM_EVENTS" => {
-            log! ("test_events] Starting the `mm2 events`...");
-            unwrap! (events (&["_test".into(), "events".into()]));
-        },
-        _ => {
-            let conf = json! ({"gui": "nogui", "passphrase": "123", "coins": "BTC,KMD"});
-            log! ("Starting the MarketMaker, similar to\n  gdb --args target/debug/mm2 '" (unwrap! (json::to_string (&conf))) "'\n  run");
-            let mut mm = unwrap! (MarketMakerIt::start (
-                conf,
-                "5bfaeae675f043461416861c3558146bf7623526891d890dc96bc5e0e5dbc337".into(),
-                match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "1" => Some (local_start()), _ => None}));
-            let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
-
-            let expected_bind = format! (">>>>>>>>> DEX stats {}:7783", mm.ip);
-            unwrap! (mm.wait_for_log (22., &|log| log.contains (&expected_bind)));
-
-            log! ("Asking for a websocket endpoint with a stream of events…");
-            let (status, body, _headers) = unwrap! (mm.rpc (json! ({"userpass": mm.userpass, "method": "getendpoint"})));
-            log! ({"test_events] getendpoint response: {:?}, {}", status, body});
-            assert_eq! (status, StatusCode::OK);
-            //let expected_endpoint = format! ("\"endpoint\":\"ws://{}:5555\"", mm.ip);
-            assert! (body.contains ("\"endpoint\":\"ws://127.0.0.1:5555\""), "{}", body);
-
-            log! ("Starting 'mm2 events', " [executable] "…");
-            let mm_events_output = mm.folder.join ("mm2_events.log");
-            let mut mm_events = RaiiKill::from_handle (unwrap! (cmd! (executable, "test_events", "--nocapture")
-                .dir (env::temp_dir())
-                .env ("_MM2_TEST_EVENTS_MODE", "MM_EVENTS")
-                .env ("MM2_UNBUFFERED_OUTPUT", "1")
-                .stderr_to_stdout().stdout (&mm_events_output) .start()));
-
-            log! ("Waiting for 'mm2 events' to print some interesting data, " [mm_events_output] "…");
-            let mm_events_output = RaiiDump {log_path: mm_events_output};
-            let start = now_float();
-            loop {
-                if let Some (ref mut pc) = mm.pc {if !pc.running() {panic! ("MM process terminated prematurely.")}}
-                if !mm_events.running() {panic! ("`mm2 events` terminated prematurely.")}
-                let log = slurp (&mm_events_output.log_path);
-                let log = unsafe {from_utf8_unchecked (&log)};
-                if log.contains ("\"base\":\"KMD\"") && log.contains ("\"price64\":\"") {break}  // Gotcha!
-                if now_float() - start > 123. {panic! ("Timeout expired waiting for data on event stream")}
-                sleep (Duration::from_secs (1));
-            }
-
-            log! ("Stopping MMs…");
-            unwrap! (mm.stop());
-            sleep (Duration::from_millis (100));
-        }
-    }
-}
-
 /// Invokes the RPC "notify" method, adding a node to the peer-to-peer ring.
 #[test]
 fn test_notify() {
@@ -286,6 +227,7 @@ fn alice_can_see_the_active_order_after_connection() {
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
             "passphrase": "bob passphrase",
             "coins": coins,
+            "i_am_seed": true,
         }),
         "db4be27033b636c6644c356ded97b0ad08914fcb8a1e2a1efc915b833c2cbd19".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -334,7 +276,7 @@ fn alice_can_see_the_active_order_after_connection() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednode": fomat!((mm_bob.ip)),
+            "seednodes": [fomat!((mm_bob.ip))],
             "alice_contract":"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c",
             "bob_contract":"0x105aFE60fDC8B5c021092b09E8a042135A4A976E",
             "ethnode":"http://195.201.0.6:8545"
@@ -352,7 +294,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"])});
 
     // wait until Alice recognize Bob node by importing it's pubkey
-    unwrap! (mm_alice.wait_for_log (33., &|log| log.contains ("set pubkey for")));
+    // unwrap! (mm_alice.wait_for_log (33., &|log| log.contains ("set pubkey for")));
 
     for _ in 0..2 {
         // Alice should be able to see the order no later than 10 seconds after recognizing the bob
@@ -398,9 +340,7 @@ fn test_my_balance() {
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "passphrase": "bob passphrase",
             "coins": coins,
-            "alice_contract":"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c",
-            "bob_contract":"0x105aFE60fDC8B5c021092b09E8a042135A4A976E",
-            "ethnode":"http://195.201.0.6:8545"
+            "i_am_seed": true,
         }),
         "db4be27033b636c6644c356ded97b0ad08914fcb8a1e2a1efc915b833c2cbd19".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -482,6 +422,7 @@ fn test_check_balance_on_order_post() {
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
             "passphrase": "bob passphrase",
             "coins": coins,
+            "i_am_seed": true,
         }),
         "db4be27033b636c6644c356ded97b0ad08914fcb8a1e2a1efc915b833c2cbd19".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -530,6 +471,7 @@ fn test_rpc_password_from_json() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "",
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -544,6 +486,7 @@ fn test_rpc_password_from_json() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": {"key":"value"},
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -557,6 +500,7 @@ fn test_rpc_password_from_json() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "password",
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -620,6 +564,7 @@ fn test_rpc_password_from_json_no_userpass() {
             "netid": 9998,
             "passphrase": "bob passphrase",
             "coins": coins,
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -770,6 +715,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             "passphrase": bob_passphrase,
             "coins": coins,
             "rpc_password": "password",
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
@@ -794,7 +740,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": alice_passphrase,
             "coins": coins,
-            "seednode": fomat!((mm_bob.ip)),
+            "seednodes": [fomat!((mm_bob.ip))],
             "rpc_password": "password",
         }),
         "password".into(),
@@ -813,7 +759,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
     // Enable coins on Alice side. Print the replies in case we need the address.
     log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"])});
 
-    unwrap! (mm_alice.wait_for_log (999., &|log| log.contains ("set pubkey for ")));
+    // unwrap! (mm_alice.wait_for_log (999., &|log| log.contains ("set pubkey for ")));
 
     let mut uuids = vec![];
 
@@ -911,7 +857,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
 #[test]
 #[ignore]  // TODO: Re-enable once the PIZZA trades are fixed.
 fn trade_test_electrum_and_eth_coins() {
-    trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]);
+    trade_base_rel_electrum(vec![("ETH", "JST")]);
 }
 
 fn trade_base_rel_native(base: &str, rel: &str) {
@@ -1173,6 +1119,7 @@ fn test_withdraw_and_send() {
             "passphrase": alice_passphrase,
             "coins": coins,
             "rpc_password": "password",
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
@@ -1207,6 +1154,7 @@ fn test_swap_status() {
             "passphrase": "some passphrase",
             "coins": coins,
             "rpc_password": "password",
+            "i_am_seed": true,
         }),
         "password".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}

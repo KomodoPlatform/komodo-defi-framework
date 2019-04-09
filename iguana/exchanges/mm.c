@@ -31,17 +31,13 @@
 
 uint32_t DOCKERFLAG;
 uint32_t LP_ORDERBOOK_DURATION = 180;
-uint32_t LP_AUTOTRADE_TIMEOUT = 120;
+uint32_t LP_AUTOTRADE_TIMEOUT = 30;
 uint32_t LP_RESERVETIME = 90;
 #include "stats.c"
-
-#include "../../crypto777/nanosrc/nn.h"
-#include "../../crypto777/nanosrc/ws.h"
 
 #ifndef NN_WS_MSG_TYPE
 #define NN_WS_MSG_TYPE 1
 #endif
-
 
 #include "LP_nativeDEX.c"
 

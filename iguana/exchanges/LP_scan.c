@@ -19,64 +19,6 @@
 //
 
 
-int32_t LP_blockinit(struct iguana_info *coin,int32_t height)
-{
-    int32_t i,iter,numtx,checkht=-1; cJSON *blockobj,*txs,*txobj; bits256 txid; struct LP_transaction *tx;
-    portable_mutex_lock(&LP_blockinit_mutex);
-    if ( (blockobj= LP_blockjson(&checkht,coin->symbol,0,height)) != 0 && (checkht == 0 || checkht == height) )
-    {
-        if ( (txs= jarray(&numtx,blockobj,"tx")) != 0 )
-        {
-            //printf("LP_blockinit %s ht.%d numtx.%d\n",coin->symbol,height,numtx);
-            for (iter=0; iter<2; iter++)
-            {
-                txobj = 0;
-                for (i=0; i<numtx; i++)
-                {
-                    txid = jbits256i(txs,i);
-                    if ( (tx= LP_transactionfind(coin,txid)) != 0 )
-                    {
-                        if ( tx->height == 0 )
-                            tx->height = height;
-                        else if ( tx->height != height )
-                        {
-                            printf("LP_blockinit: tx->height %d != %d\n",tx->height,height);
-                            tx->height = height;
-                        }
-                        if ( iter == 1 )
-                            txobj = LP_transactioninit(coin,txid,iter,0);
-                    } else txobj = LP_transactioninit(coin,txid,iter,0);
-                    if ( txobj != 0 )
-                        free_json(txobj), txobj = 0;
-                }
-            }
-        }
-        free_json(blockobj);
-    }
-    portable_mutex_unlock(&LP_blockinit_mutex);
-    if ( checkht == 0 || checkht == height )
-        return(0);
-    printf("%s blockinit error checkht.%d vs height.%d\n",ASSETCHAINS_SYMBOL,checkht,height);
-    return(-1);
-}
-
-int32_t LP_scanblockchain(struct iguana_info *coin,int32_t startheight,int32_t endheight)
-{
-    int32_t ht,n = 0;
-    for (ht=startheight; ht<=endheight; ht++)
-    {
-        if ( LP_blockinit(coin,ht) < 0 )
-        {
-            printf("error loading block.%d of (%d, %d)\n",ht,startheight,endheight);
-            return(ht-1);
-        }
-        n++;
-        if ( (n % 1000) == 0 )
-            printf("%.1f%% ",100. * (double)n/(endheight-startheight+1));
-    }
-    return(endheight);
-}
-
 char *banned_txids[] =
 {
     "78cb4e21245c26b015b888b14c4f5096e18137d2741a6de9734d62b07014dfca", //233559
@@ -149,33 +91,6 @@ cJSON *LP_snapshot(struct iguana_info *coin,int32_t height)
         strcpy(lastcoin,coin->symbol);
     }
     retjson = cJSON_CreateObject();
-    if ( skipflag == 0 && startht < endht )
-    {
-        if ( (ht= LP_scanblockchain(coin,startht,endht)) < endht )
-        {
-            if ( ht > maxsnapht )
-            {
-                maxsnapht = ht;
-                printf("maxsnapht.%d for %s\n",maxsnapht,coin->symbol);
-            }
-            sleep(10);
-            if ( (ht= LP_scanblockchain(coin,maxsnapht+1,endht)) < endht )
-            {
-                if ( ht > maxsnapht )
-                {
-                    maxsnapht = ht;
-                    printf("maxsnapht.%d for %s\n",maxsnapht,coin->symbol);
-                }
-                jaddstr(retjson,"error","blockchain scan error");
-                return(retjson);
-            }
-        }
-        if ( ht > maxsnapht )
-        {
-            maxsnapht = ht;
-            printf("maxsnapht.%d for %s\n",maxsnapht,coin->symbol);
-        }
-    }
     portable_mutex_lock(coin->_txmutex);
     portable_mutex_lock(coin->_addrmutex);
     HASH_ITER(hh,coin->addresses,ap,atmp)
@@ -397,24 +312,4 @@ char *LP_dividends(struct iguana_info *coin,int32_t height,cJSON *argjson)
         return(jprint(retjson,1));
     }
     return(clonestr("{\"error\":\"symbol not found\"}"));
-}
-
-int32_t LP_spendsearch(char *coinaddr,bits256 *spendtxidp,int32_t *indp,char *symbol,bits256 searchtxid,int32_t searchvout)
-{
-    struct LP_transaction *tx; struct iguana_info *coin;
-    *indp = -1;
-    if ( (coin= LP_coinfind(symbol)) == 0 || coin->inactive != 0 )
-        return(-1);
-    memset(spendtxidp,0,sizeof(*spendtxidp));
-    if ( (tx= LP_transactionfind(coin,searchtxid)) != 0 )
-    {
-        if ( searchvout < tx->numvouts && tx->outpoints[searchvout].spendvini >= 0 )
-        {
-            *spendtxidp = tx->outpoints[searchvout].spendtxid;
-            *indp = tx->outpoints[searchvout].spendvini;
-            LP_swap_getcoinaddr(symbol,coinaddr,*spendtxidp,*indp);
-            return(tx->outpoints[searchvout].spendheight);
-        }
-    }
-    return(-1);
 }

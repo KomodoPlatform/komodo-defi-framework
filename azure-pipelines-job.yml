@@ -17,6 +17,14 @@ jobs:
     steps:
       - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
         clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
+      - bash: |
+          if [ $CLEANUP = "true" ]
+          then
+            git clean -ffdx
+          fi
+        displayName: Clean Up
+        failOnStderr: false
+        continueOnError: true
       - powershell: |
           .\marketmaker_build_depends.cmd
         displayName: Build Windows deps
@@ -39,7 +47,7 @@ jobs:
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
       - bash: |
-          cp -r target/debug/mm2 upload/mm2-$(COMMIT_HASH)-$(Agent.OS)
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS) target/debug/mm2
         displayName: 'Prepare upload Linux/MacOS'
         condition: ne( variables['Agent.OS'], 'Windows_NT' )
       - powershell: |

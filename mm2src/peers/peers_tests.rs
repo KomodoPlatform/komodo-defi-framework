@@ -9,7 +9,25 @@ use std::mem::zeroed;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::Ordering;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn ulimit_n() -> Option<u32> {
+    let mut lim: libc::rlimit = unsafe {zeroed()};
+    let rc = unsafe {libc::getrlimit (libc::RLIMIT_NOFILE, &mut lim)};
+    if rc == 0 {
+        Some (lim.rlim_cur as u32)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn ulimit_n() -> Option<u32> {None}
+
 fn peer (conf: Json, port: u16) -> MmArc {
+    if let Some (n) = ulimit_n() {
+      assert! (n > 2000, "`ulimit -n` is too low: {}", n)
+    }
+
     let ctx = MmCtx::new (conf);
     unwrap! (ctx.log.thread_gravity_on());
     let mut rng = rand::thread_rng();
@@ -33,7 +51,7 @@ pub fn test_peers_dht() {
     let alice = peer (json! ({"dht": "on"}), 2111);
     let bob = peer (json! ({"dht": "on"}), 2112);
 
-    unwrap! (wait_for_log (&alice.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
+    unwrap! (wait_for_log (&alice.log, 99., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
     unwrap! (wait_for_log (&bob.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
 
     let tested_lengths: &[usize] = &[

@@ -62,6 +62,7 @@ pub mod lp_privkey;
 pub mod mm_ctx;
 pub mod ser;
 
+use crossbeam::{channel};
 use futures::{future, Async, Future, Poll};
 use futures::sync::oneshot::{self, Receiver};
 use futures::task::Task;
@@ -103,9 +104,6 @@ pub use self::lp::{_bits256 as bits256};
 
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod os {include! (concat! (env! ("OUT_DIR"), "/c_headers/OS_portable.rs"));}
-
-#[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod nn {include! (concat! (env! ("OUT_DIR"), "/c_headers/nn.rs"));}
 
 pub const MM_VERSION: &'static str = env! ("MM_VERSION");
 
@@ -811,4 +809,47 @@ pub fn global_dbdir() -> &'static Path {
 
 pub fn swap_db_dir() -> PathBuf {
     global_dbdir().join ("SWAPS")
+}
+
+#[derive(Debug)]
+pub struct QueuedCommand {
+    pub response_sock: i32,
+    pub stats_json_only: i32,
+    pub queue_id: u32,
+    pub msg: String,
+    // retstrp: *mut *mut c_char,
+}
+
+lazy_static! {
+    // TODO: Move to `MmCtx`.
+    pub static ref COMMAND_QUEUE: (channel::Sender<QueuedCommand>, channel::Receiver<QueuedCommand>) = channel::unbounded();
+}
+
+/// Register an RPC command that came internally or from the peer-to-peer bus.
+#[no_mangle]
+pub extern "C" fn lp_queue_command_for_c (retstrp: *mut *mut c_char, buf: *mut c_char, response_sock: i32,
+                                          stats_json_only: i32, queue_id: u32) -> () {
+    if retstrp != null_mut() {
+        unsafe { *retstrp = null_mut() }
+    }
+
+    if buf == null_mut() {panic! ("!buf")}
+    let msg = String::from (unwrap! (unsafe {CStr::from_ptr (buf)} .to_str()));
+    let cmd = QueuedCommand {
+        msg,
+        queue_id,
+        response_sock,
+        stats_json_only
+    };
+    unwrap! ((*COMMAND_QUEUE).0.send (cmd))
+}
+
+pub fn lp_queue_command (msg: String) -> () {
+    let cmd = QueuedCommand {
+        msg,
+        queue_id: 0,
+        response_sock: -1,
+        stats_json_only: 0,
+    };
+    unwrap! ((*COMMAND_QUEUE).0.send (cmd))
 }

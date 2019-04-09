@@ -1,4 +1,5 @@
 #![feature(non_ascii_idents)]
+#![feature(drain_filter)]
 
 #[macro_use] extern crate common;
 #[allow(unused_imports)]

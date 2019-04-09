@@ -28,10 +28,9 @@
 // locktime claiming on sporadic assetchains
 // there is an issue about waiting for notarization for a swap that never starts (expiration ok)
 
-use common::{coins_iter, lp, slurp_url, os, CJSON, MM_VERSION, global_dbdir};
+use common::{coins_iter, lp, lp_queue_command_for_c, slurp_url, os, CJSON, MM_VERSION, global_dbdir};
 use common::log::TagParam;
 use common::mm_ctx::{MmCtx, MmArc};
-use common::nn::*;
 use crc::crc32;
 use futures::{Future};
 use gstuff::now_ms;
@@ -40,13 +39,13 @@ use libc::{self, c_char, c_void};
 use peers;
 use portfolio::prices_loop;
 use rand::random;
-use serde_json::{Value as Json};
+use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::fs;
 use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Write};
-use std::mem::{size_of, transmute, zeroed};
-use std::net::{IpAddr, Ipv4Addr};
+use std::mem::{transmute, zeroed};
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::Path;
 use std::ptr::null_mut;
 use std::str;
@@ -55,7 +54,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use crate::mm2::lp_network::{lp_command_q_loop, lp_queue_command};
+use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
 use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
 
@@ -254,13 +253,13 @@ pub unsafe fn lp_command_process(
         if trade_command <= 0 {
             lp::stats_JSON(
                 ctx.btc_ctx() as *mut c_void,
-                0,
                 my_ip.as_ptr() as *mut c_char,
                 pub_sock,
                 c_json.0,
                 b"127.0.0.1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 stats_json_only as u16,
                 0,
+                1,
             )
         } else {
             null_mut()
@@ -990,11 +989,10 @@ const P2P_SEED_NODES_9999: [&'static str; 3] = [
 /// Setup the peer-to-peer network.
 #[allow(unused_variables)]  // delme
 pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_peerinfo, myipaddr: &IpAddr, myport: u16,
-                            netid: u16, seednode: Option<&str>) -> Result<(), String> {
+                            netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
     // Pick our ports.
     let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
     lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid);
-
     // Add ourselves into the list of known peers.
     try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519, pubport + 1, lp::G.LP_sessionid));
     let myipaddr_c = try_s! (CString::new (fomat! ((myipaddr))));
@@ -1008,14 +1006,16 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     /// NB: We want the peers to be equal, freely functioning as either a Bob or an Alice, and I wonder how the p2p LP flags are affected by that.
     type IsLp = bool;
 
-    let seeds: Vec<(IP, IsLp)> = if let Some (seednode) = seednode {
-        // A custom `seednode` is often used in automatic or manual tests
-        // in order to directly give the Taker the address of the Maker.
-        // We don't want to unnecessarily spam the friendlist of a public seed node,
-        // but for a custom `seednode` we invoke the `investigate_peer`,
-        // facilitating direct `peers` communication between the two.
-        try_s! (peers::investigate_peer (ctx, seednode, pubport + 1));
-        vec! [(seednode.into(), true)]
+    let seeds: Vec<(IP, IsLp)> = if let Some (seednodes) = seednodes {
+        for seednode in seednodes.iter() {
+            // A custom `seednode` is often used in automatic or manual tests
+            // in order to directly give the Taker the address of the Maker.
+            // We don't want to unnecessarily spam the friendlist of a public seed node,
+            // but for a custom `seednode` we invoke the `investigate_peer`,
+            // facilitating direct `peers` communication between the two.
+            try_s!(peers::investigate_peer (ctx, &seednode, pubport + 1));
+        }
+        seednodes.into_iter().map(|ip| (Cow::Owned (ip), true)).collect()
     } else if netid > 0 && netid < 9 {
         vec! [(format! ("5.9.253.{}", 195 + netid) .into(), true)]
     } else if netid == 0 { // Default production netid is 0.
@@ -1027,6 +1027,18 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     } else { // If we're using a non-default netid then we should skip adding the hardcoded seed nodes.
         Vec::new()
     };
+
+    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    if !i_am_seed {
+        if seeds.len() == 0 {
+            return ERR!("At least 1 IP must be provided");
+        }
+        let seed_ips = seeds.iter().map(|(ip, _)| fomat!((ip) ":" (pubport))).collect();
+        try_s!(thread::Builder::new().name ("client_p2p_loop".into()) .spawn ({
+            let ctx = ctx.clone();
+            move || client_p2p_loop(ctx, seed_ips)
+        }));
+    }
 
     for (seed_ip, is_lp) in seeds {
         let ip = try_s! (CString::new (&seed_ip[..]));
@@ -1502,7 +1514,7 @@ fn fix_directories() -> Result<(), String> {
 /// AG: If possible, I think we should avoid calling this function on a working MM, using it for initialization only,
 ///     in order to avoid the possibility of invalid state.
 #[allow(unused_unsafe)]
-pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Option<&str>, seednode: Option<&str>) -> Result<(), String> {
+pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Option<&str>, seednodes: Option<Vec<String>>) -> Result<(), String> {
     let passphrase = match passphrase {
         None | Some ("") => return ERR! ("jeezy says we cant use the nullstring as passphrase and I agree"),
         Some (s) => s.to_string()
@@ -1512,14 +1524,6 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     // Prepare and check some of the `lp_initpeers` parameters.
     let netid = lp::G.netid;
     let myipaddr: IpAddr = try_s! (try_s! (CStr::from_ptr (lp::LP_myipaddr.as_ptr()) .to_str()) .parse());
-    let seednode: Option<Cow<str>> = match seednode {
-        Some (s) => Some (s.into()),  // Use a new `seednode`.
-        None => match try_s! (CStr::from_ptr (lp::G.seednode.as_ptr()) .to_str()) {
-            "" => None,  // No `seednode` specified or known.
-            s => Some (s.to_string().into())  // Reuse the existing `seednode`.
-        }
-    };
-    let seednode = seednode.as_ref().map (|s| &s[..]);
 
     let gui: Cow<str> = match gui {
         Some (g) => g.into(),
@@ -1546,8 +1550,6 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     lp::G = zeroed();
     lp::G.initializing = 1;
     lp::G.netid = netid;
-    try_s! (safecopy! (lp::G.seednode, "{}", if let Some (ref s) = seednode {s} else {""}));
-
     lp::vcalc_sha256 (null_mut(), lp::G.LP_passhash.bytes.as_mut_ptr(), passphrase.as_ptr() as *mut u8, passphrase.len() as i32);
     let passphrase_c = try_s! (CString::new (&passphrase[..]));
     lp::LP_privkey_updates (ctx.btc_ctx() as *mut c_void, lp::LP_mypubsock, passphrase_c.as_ptr() as *mut c_char);
@@ -1558,8 +1560,7 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     lp::G.LP_sessionid = (now_ms() / 1000) as u32;
     try_s! (safecopy! (lp::G.gui, "{}", gui));
 
-    lp::LP_closepeers();
-    try_s! (lp_initpeers (ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednode));
+    try_s! (lp_initpeers (ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes));
 
     lp::LP_tradebot_pauseall();
     lp::LP_portfolio_reset();
@@ -1575,17 +1576,18 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
 /// Temporarily binds on the given IP and port to check if they're available.  
 /// Returns `false` if the `ip` does not belong to a connected interface or if it is already taken.
 fn test_bind (ip: IpAddr, port: u16) -> bool {
-    let bindaddr = fomat! ("tcp://" (ip) ':' (port));
-    let sock = unsafe {nn_socket (AF_SP as i32, NN_PUB as i32)};
-    let bindaddr_c = unwrap! (CString::new (&bindaddr[..]));
-    let bind_rc = unsafe {nn_bind (sock, bindaddr_c.as_ptr())};
-    unsafe {nn_close (sock)};  // 'Tis just an experiment, real bindings happen elsewhere.
-    bind_rc >= 0
+    let bindaddr = fomat! ((ip) ':' (port));
+    match TcpListener::bind(&bindaddr) {
+        Ok(_) => true,
+        Err(e) => {
+            log!("Error " (e) " binding to " (bindaddr));
+            false
+        }
+    }
 }
 
 pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> Result<(), String> {
     unsafe {lp::G.initializing = 1}  // Tells some of the spawned threads to wait till the `lp_passphrase_init` is done.
-    unsafe {lp::bitcoind_RPC_inittime = 1}
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
     if lp::LP_MAXPRICEINFOS > 255 {
         return ERR! ("LP_MAXPRICEINFOS {} wont fit in a u8, need to increase the width of the baseind and relind for struct LP_pubkey_quote", lp::LP_MAXPRICEINFOS)
@@ -1736,39 +1738,25 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
     unsafe {lp::G.netid = ctx.conf["netid"].as_u64().unwrap_or (0) as u16}
     unsafe {lp::LP_mypubsock = -1}
 
-    if true {
-        // NB: `myipaddr` should be a bindable IP, not some NAT-outer IP.
-        let bindaddr = fomat! ("tcp://" (myipaddr) ':' (mypubport));
-        unsafe {lp::LP_mypubsock = nn_socket (AF_SP as i32, NN_PUB as i32)}
-        if unsafe {lp::LP_mypubsock} >= 0 {
-            let bindaddr_c = try_s! (CString::new (&bindaddr[..]));
-            let bind_rc = unsafe {nn_bind (lp::LP_mypubsock, bindaddr_c.as_ptr())};
-            if bind_rc >= 0 {
-                let mut timeout: i32 = 100;
-                unsafe {nn_setsockopt (lp::LP_mypubsock, NN_SOL_SOCKET as i32, NN_SNDTIMEO as i32, &mut timeout as *mut i32 as *mut c_void, size_of::<i32>())};
-            } else {
-                log! ({"error binding to ({}).{}", bindaddr, unsafe {lp::LP_mypubsock}});
-                if unsafe {lp::LP_mypubsock} >= 0 {
-                    unsafe {nn_close (lp::LP_mypubsock); lp::LP_mypubsock = -1}
-                }
-            }
-        } else {
-            log! ({"error getting pubsock {}", unsafe {lp::LP_mypubsock}});
-        }
-        log! ({"lp_init] Listening on {} (LP_mypubsock {})", bindaddr, unsafe {lp::LP_mypubsock}});
-        let mut mypullport = mypullport;
-        let mut pushaddr: [c_char; 256] = unsafe {zeroed()};
-        let myipaddr_c = try_s! (CString::new (fomat! ((myipaddr))));
-        unsafe {lp::LP_mypullsock = lp::LP_initpublicaddr (
-            ctx.btc_ctx() as *mut c_void, &mut mypullport, pushaddr.as_mut_ptr(), myipaddr_c.as_ptr() as *mut c_char, mypullport, 0)};
-    }
+    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    let seednode_thread = if i_am_seed {
+        let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
+        try_s!(listener.set_nonblocking(true));
+        Some(try_s!(thread::Builder::new().name ("seednode_loop".into()) .spawn ({
+            let ctx = ctx.clone();
+            move || seednode_loop(ctx, listener)
+        })))
+    } else {
+        None
+    };
     try_s! (coins::lp_initcoins (&ctx));
     unsafe {lp::RPC_port = try_s! (ctx.rpc_ip_port()) .port()}
     unsafe {lp::G.waiting = 1}
     try_s! (unsafe {safecopy! (lp::LP_myipaddr, "{}", myipaddr)});
 
+    let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
     unsafe {try_s! (lp_passphrase_init (&ctx,
-        ctx.conf["passphrase"].as_str(), ctx.conf["gui"].as_str(), ctx.conf["seednode"].as_str()))};
+        ctx.conf["passphrase"].as_str(), ctx.conf["gui"].as_str(), seednodes))};
 /*
 #ifndef FROM_JS
     if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_psockloop,(void *)myipaddr) != 0 )
@@ -1897,13 +1885,16 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
     // to C functions defined here in the mm2 binary crate. Such functions should be shared dynamically
     // in order not to interfere with the linking of the etomicrs test binary.
     unsafe {lp::SPAWN_RPC = Some (rpc::spawn_rpc)};
-    unsafe {lp::LP_QUEUE_COMMAND = Some (lp_queue_command)};
+    unsafe {lp::LP_QUEUE_COMMAND = Some (lp_queue_command_for_c)};
 
     let myipaddr = unsafe {lp::LP_myipaddr.as_ptr() as *mut c_char};
     unsafe {lp::LPinit (myipaddr, mypullport, mypubport, passphrase.as_ptr() as *mut c_char, c_conf.0, ctx_id)};
     unwrap! (prices.join());
     unwrap! (trades.join());
     unwrap! (command_queue.join());
+    if let Some(seednode) = seednode_thread {
+        unwrap! (seednode.join());
+    }
     Ok(())
 }
 /*

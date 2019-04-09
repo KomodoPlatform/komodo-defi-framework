@@ -291,15 +291,6 @@ char *LP_pricepings(char *base,char *rel,double price)
         jaddstr(reqjson,"pubsecp",pubsecpstr);
         if ( (kmd= LP_coinfind("KMD")) != 0 && (ap= LP_address(kmd,kmd->smartaddr)) != 0 && ap->instantdex_credits != 0 )
             jaddnum(reqjson,"credits",dstr(ap->instantdex_credits));
-        if ( (numutxos= LP_address_minmax(1,&median,&minsize,&maxsize,basecoin,basecoin->smartaddr)) != 0 )
-        {
-            //printf("send %s numutxos.%d median %.8f min %.8f max %.8f\n",base,numutxos,dstr(median),dstr(minsize),dstr(maxsize));
-            jaddstr(reqjson,"utxocoin",base);
-            jaddnum(reqjson,"n",numutxos);
-            jaddnum(reqjson,"bal",dstr(median) * numutxos);
-            jaddnum(reqjson,"min",dstr(minsize));
-            jaddnum(reqjson,"max",dstr(maxsize));
-        }
         char *sig = LP_price_sig(timestamp,G.LP_privkey,G.LP_pubsecp,G.LP_mypub25519,base,rel,price64);
         if (sig != NULL) {
             jaddstr(reqjson, "sig", sig);
@@ -418,7 +409,7 @@ int32_t LP_pubkey_sigcheck(struct LP_pubkey_info *pubp,cJSON *item)
     return(retval);
 }
 
-void LP_notify_pubkeys(void *ctx,int32_t pubsock)
+void LP_notify_pubkeys(uint32_t ctx_h)
 {
     bits256 zero; uint32_t timestamp; char LPipaddr[64],secpstr[67]; cJSON *reqjson = cJSON_CreateObject();
     memset(zero.bytes,0,sizeof(zero));
@@ -441,7 +432,7 @@ void LP_notify_pubkeys(void *ctx,int32_t pubsock)
         } else printf("no LPipaddr\n");
     }
     jaddnum(reqjson,"session",G.LP_sessionid);
-    LP_reserved_msg(1,zero,jprint(reqjson,1));
+    broadcast_p2p_msg_for_c(zero,jprint(reqjson,1), ctx_h);
 }
 
 char *LP_uitem_recv(cJSON *argjson)
@@ -453,17 +444,10 @@ printf("LP_uitem_recv deprecated\n");
     height = jint(argjson,"ht");
     value = j64bits(argjson,"value");
     coinaddr = jstr(argjson,"coinaddr");
-    if ( (symbol= jstr(argjson,"coin")) != 0 && coinaddr != 0 && (coin= LP_coinfind(symbol)) != 0 )
-    {
-        //char str[65]; printf("uitem %s %s %s/v%d %.8f ht.%d\n",symbol,coinaddr,bits256_str(str,txid),vout,dstr(value),height);
-        if ( strcmp(coin->smartaddr,coinaddr) != 0 )
-            LP_address_utxoadd(0,(uint32_t)time(NULL),"LP_uitem_recv",coin,coinaddr,txid,vout,value,height,-1);
-        //else printf("ignore external uitem %s %s\n",symbol,coin->smartaddr);
-    }
     return(clonestr("{\"result\":\"success\"}"));
 }
 
-void LP_query(char *method,struct LP_quoteinfo *qp)
+void LP_query(char *method,struct LP_quoteinfo *qp, uint32_t ctx_h)
 {
     cJSON *reqjson; bits256 zero; char *msg; struct iguana_info *coin; int32_t flag = 0;
     reqjson = LP_quotejson(qp);
@@ -473,26 +457,14 @@ void LP_query(char *method,struct LP_quoteinfo *qp)
     jaddstr(reqjson,"method",method);
     if ( jobj(reqjson,"timestamp") == 0 )
         jaddnum(reqjson,"timestamp",time(NULL));
-    if ( strcmp(method,"connect") == 0 )
-    {
-        if ( (coin= LP_coinfind("KMD")) != 0 )
-            jadd(reqjson,"proof",LP_instantdex_txids(0,coin->smartaddr));
-    }
     msg = jprint(reqjson,1);
-    {
         //printf("QUERY.(%s)\n",msg);
-        if ( IPC_ENDPOINT >= 0 )
-            LP_QUEUE_COMMAND(0,msg,IPC_ENDPOINT,-1,0);
-        memset(&zero,0,sizeof(zero));
-        LP_reserved_msg(1,zero,clonestr(msg));
-        //if ( bits256_nonz(qp->srchash) != 0 )
-        {
-            sleep(1);
-            LP_reserved_msg(1,qp->srchash,clonestr(msg));
-        }
-    }
+    if ( IPC_ENDPOINT >= 0 )
+        LP_QUEUE_COMMAND(0,msg,IPC_ENDPOINT,-1,0);
+    memset(&zero,0,sizeof(zero));
+    // broadcast_p2p_msg(zero,clonestr(msg));
+    broadcast_p2p_msg_for_c(qp->srchash,clonestr(msg), ctx_h);
     if ( strcmp(method,"connect") == 0 && qp->mpnet != 0 && qp->gtc == 0 )
         LP_mpnet_send(0,msg,1,qp->coinaddr);
     free(msg);
 }
-

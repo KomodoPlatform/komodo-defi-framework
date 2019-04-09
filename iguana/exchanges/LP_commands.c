@@ -32,9 +32,9 @@ char *LP_numutxos()
     return(jprint(retjson,1));
 }
 
-char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON *argjson,char *remoteaddr,uint16_t port,int32_t authenticated) // from rpc port
+char *stats_JSON(void *ctx,char *myipaddr,int32_t pubsock,cJSON *argjson,char *remoteaddr,uint16_t port,int32_t authenticated, uint8_t loopback_only) // from rpc port
 {
-    char *method,*userpass,*base,*rel,*coin,*passphrase,*retstr = 0; int32_t changed,flag = 0; cJSON *retjson,*reqjson = 0; struct iguana_info *ptr;
+    char *method,*userpass,*base,*rel,*coin,*retstr = 0; int32_t flag = 0; cJSON *retjson,*reqjson = 0; struct iguana_info *ptr;
     method = jstr(argjson,"method");
     if ( method != 0 && (strcmp(method,"addr_unspents") == 0 || strcmp(method,"uitem") == 0 || strcmp(method,"postutxos") == 0) )
         return(0);
@@ -106,7 +106,7 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
     if ( (coin= jstr(argjson,"coin")) == 0 )
         coin = "";
 
-    if ( G.USERPASS[0] != 0 && is_loopback_ip(remoteaddr) == 1 && port != 0 && strcmp(method,"psock") != 0 ) // protected localhost
+    if ( G.USERPASS[0] != 0 && (loopback_only == 0 || is_loopback_ip(remoteaddr) == 1) && port != 0 && strcmp(method,"psock") != 0 ) // protected localhost
     {
         if ( G.USERPASS_COUNTER == 0 )
         {
@@ -119,69 +119,7 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
         if ( jobj(argjson,"userpass") != 0 )
             jdelete(argjson,"userpass");
         LP_cmdcount++;
-        if ( strcmp(method,"instantdex_deposit") == 0 )
-        {
-            if ( (ptr= LP_coinsearch("KMD")) != 0 )
-            {
-                if ( jint(argjson,"weeks") <= 0 ) {
-                    return(clonestr("{\"error\":\"instantdex_deposit weeks param must be greater than zero\"}"));
-                }
-                if ( jdouble(argjson,"amount") < 10. ) {
-                    return(clonestr("{\"error\":\"instantdex_deposit amount param must be equal or greater than 10\"}"));
-                }
-
-                return(LP_instantdex_deposit(ptr,juint(argjson,"weeks"),jdouble(argjson,"amount"),jobj(argjson,"broadcast") != 0 ? jint(argjson,"broadcast") : 1));
-            }
-            return(clonestr("{\"error\":\"cant find KMD\"}"));
-        }
-        else if ( strcmp(method,"getendpoint") == 0 )
-        {
-            int32_t err,mode; uint16_t wsport = 5555; char endpoint[64],bindpoint[64];
-            if ( juint(argjson,"port") != 0 )
-                wsport = juint(argjson,"port");
-            retjson = cJSON_CreateObject();
-            if ( IPC_ENDPOINT >= 0 )
-            {
-                jaddstr(retjson,"error","IPC endpoint already exists");
-                jaddnum(retjson,"socket",IPC_ENDPOINT);
-            }
-            else
-            {
-                if ( (IPC_ENDPOINT= nn_socket(AF_SP,NN_PAIR)) >= 0 )
-                {
-                    sprintf(bindpoint,"ws://*:%u",wsport);
-                    sprintf(endpoint,"ws://127.0.0.1:%u",wsport);
-                    if ( (err= nn_bind(IPC_ENDPOINT,bindpoint)) >= 0 )
-                    {
-                        jaddstr(retjson,"result","success");
-                        jaddstr(retjson,"endpoint",endpoint);
-                        jaddnum(retjson,"socket",IPC_ENDPOINT);
-                        mode = NN_WS_MSG_TYPE_TEXT;
-                        err = nn_setsockopt(IPC_ENDPOINT,NN_SOL_SOCKET,NN_WS_MSG_TYPE,&mode,sizeof(mode));
-                        jaddnum(retjson,"sockopt",err);
-                    }
-                    else
-                    {
-                        jaddstr(retjson,"error",(char *)nn_strerror(nn_errno()));
-                        jaddstr(retjson,"bind",bindpoint);
-                        jaddnum(retjson,"err",err);
-                        jaddnum(retjson,"socket",IPC_ENDPOINT);
-                        nn_close(IPC_ENDPOINT);
-                        IPC_ENDPOINT = -1;
-                    }
-                } else jaddstr(retjson,"error","couldnt get NN_PAIR socket");
-            }
-            return(jprint(retjson,1));
-        }
-        else if ( strcmp(method,"instantdex_claim") == 0 )
-        {
-            if ( (ptr= LP_coinsearch("KMD")) != 0 )
-            {
-                return(LP_instantdex_claim(ptr));
-            }
-            return(clonestr("{\"error\":\"cant find KMD\"}"));
-        }
-        else if ( strcmp(method,"jpg") == 0 )
+        if ( strcmp(method,"jpg") == 0 )
         {
             return(LP_jpg(jstr(argjson,"srcfile"),jstr(argjson,"destfile"),jint(argjson,"power2"),jstr(argjson,"password"),jstr(argjson,"data"),jint(argjson,"required"),juint(argjson,"ind")));
         }
@@ -222,10 +160,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
                 jaddnum(retjson,"bestheight",ptr->height);
                 return(jprint(retjson,1));
             } else return(clonestr("{\"error\":\"cant find coin\"}"));
-        }
-        else if ( strcmp(method,"portfolio") == 0 )
-        {
-            return(LP_portfolio());
         }
         else if ( strcmp(method,"calcaddress") == 0 )
         {
@@ -390,28 +324,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
                     return(jprint(array,1));
                 } else return(clonestr("{\"error\":\"couldnt find coin\"}"));
             }
-            else if ( strcmp(method,"listunspent") == 0 )
-            {
-                if ( (ptr= LP_coinsearch(coin)) != 0 )
-                {
-                    char *coinaddr; bits256 zero;
-                    memset(zero.bytes,0,sizeof(zero));
-                    if ( (coinaddr= jstr(argjson,"address")) != 0 )
-                    {
-                        if ( coinaddr[0] != 0 )
-                        {
-                            LP_address(ptr,coinaddr);
-                            if ( strcmp(coinaddr,ptr->smartaddr) == 0 && bits256_nonz(G.LP_privkey) != 0 )
-                            {
-                                LP_listunspent_issue(coin,coinaddr,2,zero,zero);
-                                //LP_privkey_init(-1,ptr,G.LP_privkey,G.LP_mypub25519);
-                            }
-                            return(jprint(LP_listunspent(coin,coinaddr,zero,zero),1));
-                        }
-                    }
-                    return(clonestr("{\"error\":\"no address specified\"}"));
-                } else return(clonestr("{\"error\":\"cant find coind\"}"));
-            }
             else if ( strcmp(method,"balance") == 0 )
             {
                 if ( (ptr= LP_coinsearch(coin)) != 0 )
@@ -431,46 +343,11 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
                     return(jprint(retjson,1));
                 } else return(clonestr("{\"error\":\"cant find coind\"}"));
             }
-            else if ( strcmp(method,"sendrawtransaction") == 0 )
-            {
-                return(LP_sendrawtransaction(coin,jstr(argjson,"signedtx"),jint(argjson,"needjson")));
-            }
             else if ( strcmp(method,"convaddress") == 0 )
             {
                 return(LP_convaddress(coin,jstr(argjson,"address"),jstr(argjson,"destcoin")));
             }
-            else if ( strcmp(method,"timelock") == 0 )
-            {
-                return(LP_timelock(coin,juint(argjson,"duration"),jstr(argjson,"destaddr"),jdouble(argjson,"amount")*SATOSHIDEN));
-            }
-            else if ( strcmp(method,"opreturndecrypt") == 0 )
-            {
-                return(LP_opreturndecrypt(ctx,coin,jbits256(argjson,"txid"),jstr(argjson,"passphrase")));
-            }
-            else if ( strcmp(method,"unlockedspend") == 0 )
-            {
-                return(LP_unlockedspend(ctx,coin,jbits256(argjson,"txid")));
-            }
             // cJSON *LP_listtransactions(char *symbol,char *coinaddr,int32_t count,int32_t skip)
-            else if ( strcmp(method,"listtransactions") == 0 )
-            {
-                if ( (ptr= LP_coinfind(coin)) != 0 )
-                    return(jprint(LP_listtransactions(coin,jstr(argjson,"address"),juint(argjson,"count"),juint(argjson,"skip")),1));
-            }
-            else if ( strcmp(method,"getrawtransaction") == 0 )
-            {
-                return(jprint(LP_gettx("stats_JSON",coin,jbits256(argjson,"txid"),0),1));
-            }
-            else if ( strcmp(method,"txblast") == 0 )
-            {
-                if ( (ptr= LP_coinsearch(coin)) != 0 )
-                    return(LP_txblast(ptr,argjson));
-                else return(clonestr("{\"error\":\"cant find coind\"}"));
-            }
-            else if ( strcmp(method,"movecoinbases") == 0 )
-            {
-                return(LP_movecoinbases(coin));
-            }
             else if ( strcmp(method,"setconfirms") == 0 )
             {
                 int32_t n;
@@ -511,13 +388,9 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
                 jaddstr(retjson,"error",LP_DONTCHANGE_ERRMSG1);
                 return(jprint(retjson,1));
             }
-            else if ( strcmp(method,"goal") == 0 )
-                return(LP_portfolio_goal(coin,jdouble(argjson,"val")));
             else if ( strcmp(method,"getcoin") == 0 )
                 return(LP_getcoin(coin));
         }
-        else if ( strcmp(method,"goal") == 0 )
-            return(LP_portfolio_goal("*",100.));
         else if ( strcmp(method,"lastnonce") == 0 )
         {
             cJSON *retjson = cJSON_CreateObject();
@@ -623,19 +496,6 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
     {
         LP_tradecommand_log(argjson);
         //printf("%-4d tradestatus | aliceid.%llu RT.%d %d\n",(uint32_t)time(NULL) % 3600,(long long)j64bits(argjson,"aliceid"),LP_RTcount,LP_swapscount);
-        retstr = clonestr("{\"result\":\"success\"}");
-    }
-    else if ( strcmp(method,"wantnotify") == 0 )
-    {
-        bits256 pub; static uint32_t lastnotify;
-        pub = jbits256(argjson,"pub");
-        //char str[65]; printf("got wantnotify.(%s) vs %s\n",jprint(argjson,0),bits256_str(str,G.LP_mypub25519));
-        if ( bits256_cmp(pub,G.LP_mypub25519) == 0 && time(NULL) > lastnotify+60 )
-        {
-            lastnotify = (uint32_t)time(NULL);
-            //printf("wantnotify for me!\n");
-            LP_notify_pubkeys(ctx,LP_mypubsock);
-        }
         retstr = clonestr("{\"result\":\"success\"}");
     }
     else if ( strcmp(method,"addr_unspents") == 0 )

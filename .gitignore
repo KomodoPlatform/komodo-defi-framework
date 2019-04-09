@@ -2,8 +2,6 @@
 agents/iguana.exe
 Debug/*
 
-iguana/nanomsglib
-iguana/nanomsgsrc
 OSlibs/linux
 OSlibs/osx
 

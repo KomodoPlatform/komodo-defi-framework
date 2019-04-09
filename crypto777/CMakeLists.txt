@@ -1,8 +1,6 @@
 file(GLOB sources "*.c")
 file(GLOB headers "*.h")
 add_library(libcrypto777 STATIC ${sources} ${headers})
-target_compile_definitions(libcrypto777 PRIVATE USE_STATIC_NANOMSG)
-target_link_libraries(libcrypto777 PUBLIC curl ${NANOMSG_LIBRARY})
 if(WIN32)
 add_definitions(-DNATIVE_WINDOWS)
 add_definitions(-DIGUANA_LOG2PACKETSIZE=20)

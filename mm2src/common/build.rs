@@ -202,14 +202,12 @@ fn generate_bindings() {
             "LPinit",
             "LP_addpeer",
             "LP_peer_recv",
-            "LP_initpublicaddr",
             "LP_ports",
             "LP_rpcport",
             "unbuffered_output_support",
             "calc_crc32",
             "LP_userpass",
             "LP_mutex_init",
-            "LP_tradebots_timeslice",
             "stats_JSON",
             "LP_priceinfofind",
             "prices_loop",
@@ -246,7 +244,6 @@ fn generate_bindings() {
             "LP_mpnet_send",
             "LP_recent_swaps",
             "LP_address",
-            "LP_address_utxo_ptrs",
             "LP_command_process",
             "LP_balances",
             "LP_KMDvalue",
@@ -275,7 +272,6 @@ fn generate_bindings() {
             "LP_failedmsg",
             "LP_quote_validate",
             "LP_availableset",
-            "LP_closepeers",
             "LP_tradebot_pauseall",
             "LP_portfolio_reset",
             "LP_priceinfos_clear",
@@ -283,10 +279,7 @@ fn generate_bindings() {
             "LP_privkey_updates",
             "LP_privkey_init",
             "LP_privkey",
-            "LP_importaddress",
-            "LP_otheraddress",
             "LP_swapsfp_update",
-            "LP_reserved_msg",
             "LP_unavailableset",
             "LP_trades_pricevalidate",
             "LP_allocated",
@@ -295,11 +288,11 @@ fn generate_bindings() {
             "LP_RTmetrics_blacklisted",
             "LP_getheight",
             "LP_reservation_check",
-            "LP_nanobind",
             "LP_instantdex_txids",
             "LP_pendswap_add",
             "LP_price_sig",
             "LP_coin_curl_init",
+            "LP_postprice_recv",
         ]
         .iter(),
         // types
@@ -380,33 +373,6 @@ fn generate_bindings() {
         .iter(),
         empty(), // types
         empty(), // defines
-    );
-    bindgen(
-        vec!["../../crypto777/nanosrc/nn.h".into()],
-        c_headers.join("nn.rs"),
-        [
-            "nn_bind",
-            "nn_connect",
-            "nn_close",
-            "nn_errno",
-            "nn_freemsg",
-            "nn_recv",
-            "nn_setsockopt",
-            "nn_send",
-            "nn_socket",
-            "nn_strerror",
-        ]
-        .iter(),
-        empty(),
-        [
-            "AF_SP",
-            "NN_PAIR",
-            "NN_PUB",
-            "NN_SOL_SOCKET",
-            "NN_SNDTIMEO",
-            "NN_MSG",
-        ]
-        .iter(),
     );
 }
 
@@ -766,7 +732,7 @@ impl fmt::Display for Target {
     }
 }
 
-fn fetch_boost(target: &Target) -> PathBuf {
+fn fetch_boost(_target: &Target) -> PathBuf {
     let out_dir = out_dir();
     let prefix = out_dir.join("boost");
     let boost_system = prefix.join("lib/libboost_system.a");
@@ -1270,143 +1236,11 @@ lazy_static! {
         rabs("iguana/segwit_addr.c"),
         rabs("iguana/keccak.c"),
     ];
-    /// A list of nanomsg-1.1.5 source files known to cross-compile for Android (formerly android/nanomsg.mk).
-    static ref LIBNANOMSG_115_ANDROID_SRC: Vec<&'static str> =
-        "utils/efd.c core/sock.c core/poll.c                         \
-         core/symbol.c core/ep.c core/pipe.c                         \
-         core/sockbase.c core/global.c devices/device.c              \
-         transports/inproc/ins.c transports/inproc/inproc.c          \
-         transports/inproc/cinproc.c transports/inproc/binproc.c     \
-         transports/inproc/sinproc.c transports/inproc/msgqueue.c    \
-         transports/utils/dns.c transports/utils/literal.c           \
-         transports/utils/streamhdr.c transports/utils/backoff.c     \
-         transports/utils/iface.c transports/utils/port.c            \
-         transports/tcp/tcp.c transports/tcp/stcp.c                  \
-         transports/tcp/ctcp.c transports/tcp/atcp.c                 \
-         transports/tcp/btcp.c transports/ipc/aipc.c                 \
-         transports/ipc/bipc.c transports/ipc/cipc.c                 \
-         transports/ipc/ipc.c transports/ipc/sipc.c                  \
-         transports/ws/ws.c                                          \
-         transports/ws/aws.c transports/ws/bws.c                     \
-         transports/ws/cws.c transports/ws/sha1.c                    \
-         transports/ws/sws.c transports/ws/ws_handshake.c            \
-         transports/utils/base64.c                                   \
-         utils/strcasestr.c utils/strncasecmp.c                      \
-         protocols/survey/xrespondent.c                              \
-         protocols/survey/surveyor.c protocols/survey/xsurveyor.c    \
-         protocols/survey/respondent.c protocols/pair/pair.c         \
-         protocols/pair/xpair.c protocols/utils/dist.c               \
-         protocols/utils/priolist.c protocols/utils/fq.c             \
-         protocols/utils/excl.c protocols/utils/lb.c                 \
-         protocols/bus/xbus.c protocols/bus/bus.c                    \
-         protocols/pipeline/xpull.c protocols/pipeline/push.c        \
-         protocols/pipeline/pull.c protocols/pipeline/xpush.c        \
-         protocols/reqrep/rep.c protocols/reqrep/req.c               \
-         protocols/reqrep/xrep.c protocols/reqrep/task.c             \
-         protocols/reqrep/xreq.c protocols/pubsub/sub.c              \
-         protocols/pubsub/xpub.c protocols/pubsub/xsub.c             \
-         protocols/pubsub/trie.c protocols/pubsub/pub.c              \
-         aio/worker.c aio/fsm.c aio/ctx.c aio/usock.c                \
-         aio/poller.c aio/pool.c aio/timerset.c                      \
-         aio/timer.c utils/err.c utils/thread.c                      \
-         utils/closefd.c utils/atomic.c utils/list.c                 \
-         utils/stopwatch.c utils/random.c utils/wire.c               \
-         utils/mutex.c utils/msg.c utils/clock.c                     \
-         utils/queue.c utils/chunk.c                                 \
-         utils/hash.c utils/alloc.c                                  \
-         utils/sleep.c utils/chunkref.c utils/sem.c                  \
-         utils/condvar.c utils/once.c"
-            .split_ascii_whitespace()
-            .collect();
-}
-
-fn manual_nanomsg_build(_root: &Path, out_dir: &Path, target: &Target) {
-    let nanomsg = if target.is_ios() {
-        out_dir.join("nanomsg.ios")
-    } else {
-        out_dir.join("nanomsg-1.1.5")
-    };
-    epintln!("nanomsg at "[nanomsg]);
-
-    let libnanomsg_a = out_dir.join("libnanomsg.a");
-    if !libnanomsg_a.exists() {
-        if !nanomsg.exists() && !target.is_ios() {
-            let nanomsg_tgz = out_dir.join("nanomsg.tgz");
-            if !nanomsg_tgz.exists() {
-                hget(
-                    "https://github.com/nanomsg/nanomsg/archive/1.1.5.tar.gz",
-                    nanomsg_tgz.clone(),
-                );
-                assert!(nanomsg_tgz.exists());
-            }
-            unwrap!(ecmd!("tar", "-xzf", "nanomsg.tgz").dir(&out_dir).run());
-            assert!(nanomsg.exists());
-        } else if !nanomsg.exists() && target.is_ios() {
-            // NB: This is a port listed at https://nanomsg.org/documentation.html
-            // and a cursory search has confirmed that this is what people use on iOS.
-            unwrap!(ecmd!(
-                "git",
-                "clone",
-                "--depth=1",
-                "https://github.com/reqshark/nanomsg.ios.git"
-            )
-            .dir(&out_dir)
-            .run());
-            assert!(nanomsg.exists());
-        }
-
-        let mut cc = target.cc(false);
-        cc.debug(false);
-        cc.opt_level(2);
-        cc.flag("-fPIC");
-        if target.is_ios() {
-            cc.include(nanomsg.join("utils")); // for `#include "attr.h"` to work
-        } else {
-            cc.define("NN_HAVE_SEMAPHORE", None);
-            cc.define("NN_HAVE_POLL", None);
-            cc.define("NN_HAVE_MSG_CONTROL", None);
-            cc.define("NN_HAVE_EVENTFD", None);
-            cc.define("NN_USE_EVENTFD", None);
-            cc.define("NN_USE_LITERAL_IFADDR", None);
-            cc.define("NN_USE_POLL", None);
-        }
-        for src_path in LIBNANOMSG_115_ANDROID_SRC.iter() {
-            cc.file(if target.is_ios() {
-                if src_path.ends_with("/strcasestr.c")
-                    || src_path.ends_with("/strncasecmp.c")
-                    || src_path.ends_with("/condvar.c")
-                    || src_path.ends_with("/once.c")
-                {
-                    continue;
-                }
-                nanomsg.join(src_path)
-            } else {
-                nanomsg.join("src").join(src_path)
-            });
-        }
-        if target.is_ios() {
-            cc.file(nanomsg.join("utils/glock.c"));
-            cc.file(nanomsg.join("core/epbase.c"));
-            cc.file(nanomsg.join("transports/tcpmux/tcpmux.c"));
-            cc.file(nanomsg.join("transports/tcpmux/ctcpmux.c"));
-            cc.file(nanomsg.join("transports/tcpmux/stcpmux.c"));
-            cc.file(nanomsg.join("transports/tcpmux/btcpmux.c"));
-            cc.file(nanomsg.join("transports/tcpmux/atcpmux.c"));
-        }
-        cc.compile("nanomsg");
-        assert!(libnanomsg_a.exists());
-    }
-    println!("cargo:rustc-link-lib=static=nanomsg");
-    println!(
-        "cargo:rustc-link-search=native={}",
-        path2s(unwrap!(libnanomsg_a.parent()))
-    );
 }
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
 fn manual_mm1_build(target: Target) {
     let (root, out_dir) = (root(), out_dir());
-    manual_nanomsg_build(&root, &out_dir, &target);
 
     let exchanges_build = out_dir.join("exchanges_build");
     epintln!("exchanges_build at "[exchanges_build]);
@@ -1496,7 +1330,6 @@ fn build_c_code(mm_version: &str) {
         cmake_prep_args.push("-G".into());
         cmake_prep_args.push("Visual Studio 15 2017 Win64".into());
     }
-    cmake_prep_args.push("-DETOMIC=ON".into());
     cmake_prep_args.push(format!("-DMM_VERSION={}", mm_version));
     cmake_prep_args.push("-DCMAKE_BUILD_TYPE=Debug".into());
     cmake_prep_args.push("..".into());
@@ -1569,22 +1402,12 @@ fn build_c_code(mm_version: &str) {
             "cargo:rustc-link-search=native={}",
             path2s(rabs("build/crypto777/jpeg"))
         );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path2s(rabs("build/nanomsg-build"))
-        );
     }
 
-    println!(
-        "cargo:rustc-link-lib={}",
-        if cfg!(windows) { "libcurl" } else { "curl" }
-    );
     if cfg!(windows) {
         // https://sourceware.org/pthreads-win32/
         // ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/
         println!("cargo:rustc-link-lib=pthreadVC2");
-        println!("cargo:rustc-link-lib=static=nanomsg");
-        println!("cargo:rustc-link-lib=mswsock"); // For nanomsg.
         unwrap!(
             fs::copy(
                 root().join("x64/pthreadVC2.dll"),
@@ -1592,16 +1415,8 @@ fn build_c_code(mm_version: &str) {
             ),
             "Can't copy pthreadVC2.dll"
         );
-        unwrap!(
-            fs::copy(
-                root().join("x64/libcurl.dll"),
-                root().join("target/debug/libcurl.dll")
-            ),
-            "Can't copy libcurl.dll"
-        );
     } else {
         println!("cargo:rustc-link-lib=crypto");
-        println!("cargo:rustc-link-lib=static=nanomsg");
     }
 }
 
@@ -1636,7 +1451,6 @@ fn main() {
     // We should avoid using it for now.
 
     // Rebuild when we change certain features.
-    //println!("rerun-if-env-changed=CARGO_FEATURE_ETOMIC");
     //println!("rerun-if-env-changed=CARGO_FEATURE_NOP");
 
     windows_requirements();

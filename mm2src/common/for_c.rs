@@ -1,12 +1,13 @@
 use hashbrown::HashMap;
-use libc::c_char;
+use libc::{c_char, c_void};
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::net::IpAddr;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 
-use super::lp;
+use super::{lp, free_c_ptr};
+use super::mm_ctx::MmArc;
 
 // Example of a function forward:
 //lazy_static! {pub static ref PEERS_SEND_COMPAT: Mutex<Option<fn (u32, i32, *const u8, i32) -> i32>> = Mutex::new (None);}
@@ -75,6 +76,11 @@ pub extern fn LP_get_coin_pointers (coins_buf: *mut *mut lp::iguana_info, coins_
 
 #[no_mangle]
 pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
+    if ip.is_null() {
+        log!("received null ip");
+        return 0;
+    }
+
     let ip_str = match unsafe { CStr::from_ptr(ip).to_str() } {
         Ok(s) => s,
         Err(e) => {
@@ -92,4 +98,24 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
     };
 
     ip.is_loopback() as u8
+}
+
+#[no_mangle]
+pub extern fn broadcast_p2p_msg_for_c (pubkey: lp::bits256, msg: *mut c_char, ctx_h: u32) {
+    let ctx: MmArc = unwrap! (MmArc::from_ffi_handle (ctx_h), "No context");
+
+    if msg.is_null() {
+        log!("received null msg");
+        return;
+    }
+
+    let msg_str = match unsafe { CStr::from_ptr(msg).to_str() } {
+        Ok(s) => s,
+        Err(e) => {
+            log!("Error creating CStr " [e]);
+            return;
+        }
+    };
+    ctx.broadcast_p2p_msg(msg_str);
+    free_c_ptr(msg as *mut c_void);
 }

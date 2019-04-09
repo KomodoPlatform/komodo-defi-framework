@@ -57,7 +57,7 @@
 use bitcrypto::dhash160;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{MmCoinEnum, TransactionDetails};
-use common::{bits256, dstr, HyRes, rpc_response, Timeout, swap_db_dir, str_to_malloc, lp};
+use common::{bits256, dstr, HyRes, rpc_response, Timeout, swap_db_dir};
 use common::log::{TagParam};
 use common::mm_ctx::MmArc;
 use crc::crc32;
@@ -266,7 +266,7 @@ fn save_my_taker_swap_event(uuid: &str, event: TakerSavedEvent) -> Result<(), St
     }
 }
 
-fn save_stats_swap(swap: SavedSwap) -> Result<(), String> {
+fn save_stats_swap(swap: &SavedSwap) -> Result<(), String> {
     let (path, content) = match &swap {
         SavedSwap::Maker(maker_swap) => (stats_maker_swap_file_path(&maker_swap.uuid), try_s!(json::to_vec(&maker_swap))),
         SavedSwap::Taker(taker_swap) => (stats_taker_swap_file_path(&taker_swap.uuid), try_s!(json::to_vec(&taker_swap))),
@@ -798,7 +798,7 @@ pub fn run_maker_swap(mut swap: MakerSwap) {
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                unwrap!(broadcast_my_swap_status(&swap.uuid));
+                unwrap!(broadcast_my_swap_status(&swap.uuid, &swap.ctx));
                 break;
             },
         }
@@ -831,7 +831,7 @@ pub fn run_taker_swap(mut swap: TakerSwap) {
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                unwrap!(broadcast_my_swap_status(&swap.uuid));
+                unwrap!(broadcast_my_swap_status(&swap.uuid, &swap.ctx));
                 break;
             },
         }
@@ -1387,24 +1387,23 @@ pub fn stats_swap_status(req: Json) -> HyRes {
 }
 
 /// Broadcasts `my` swap status to P2P network
-fn broadcast_my_swap_status(uuid: &str) -> Result<(), String> {
+fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
     let path = my_swap_file_path(uuid);
     let content = slurp(&path);
     let status: SavedSwap = try_s!(json::from_slice(&content));
+    try_s!(save_stats_swap(&status));
     let status_string = json!({
         "method": "swapstatus",
         "data": status,
     }).to_string();
-    let status_c_string = str_to_malloc(&status_string);
-    let zero = lp::bits256::default();
-    unsafe { lp::LP_reserved_msg(0, zero, status_c_string); }
+    ctx.broadcast_p2p_msg(&status_string);
     Ok(())
 }
 
 /// Saves the swap status notification received from P2P network to local DB.
 pub fn save_stats_swap_status(data: Json) -> HyRes {
     let swap: SavedSwap = try_h!(json::from_value(data));
-    try_h!(save_stats_swap(swap));
+    try_h!(save_stats_swap(&swap));
     rpc_response(200, json!({
         "result": "success"
     }).to_string())

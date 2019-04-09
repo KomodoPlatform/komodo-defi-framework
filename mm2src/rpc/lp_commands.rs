@@ -118,82 +118,19 @@ char *stats_JSON(void *ctx,int32_t fastflag,char *myipaddr,int32_t pubsock,cJSON
 */
 pub fn help() -> HyRes {
     rpc_response(200, "
-        available localhost RPC commands:
-        setprice(base, rel, price, broadcast=1)
-        autoprice(base, rel, fixed, minprice, maxprice, margin, refbase, refrel, factor, offset)*
-        goal(coin=*, val=<autocalc>)
-        myprice(base, rel)
-        enable(coin)
-        disable(coin)
-        notarizations(coin)
-        statsdisp(starttime=0, endtime=0, gui=\"\", pubkey=\"\", base=\"\", rel=\"\")
-        ticker(base=\"\", rel=\"\")
-        tradesarray(base, rel, starttime=<now>-timescale*1024, endtime=<now>, timescale=60) -> [timestamp, high, low, open, close, relvolume, basevolume, aveprice, numtrades]
-        pricearray(base, rel, starttime=0, endtime=0, timescale=60) -> [timestamp, avebid, aveask, highbid, lowask]
-        getrawtransaction(coin, txid)
-        inventory(coin, reset=0, [passphrase=])
-        lastnonce()
-        cancel(uuid)
         buy(base, rel, price, relvolume, timeout=10, duration=3600)
-        sell(base, rel, price, basevolume, timeout=10, duration=3600)
-        withdraw(coin, outputs[], broadcast=0)
-        txblast(coin, utxotxid, utxovout, utxovalue, txfee, passphrase, outputs[], broadcast=0)
-        sendrawtransaction(coin, signedtx)
-        swapstatus(pending=0, fast=0)
-        swapstatus(coin, limit=10)
-        swapstatus(base, rel, limit=10)
-        swapstatus(requestid, quoteid, pending=0, fast=0)
-        recentswaps(limit=3)
-        kickstart(requestid, quoteid)
-        notarizations(coin)
-        public API:
-        getcoins()
-        getcoin(coin)
-        portfolio()
-        getpeers()
-        passphrase(passphrase, gui, netid=0, seednode=\"\")
-        listunspent(coin, address)
-        setconfirms(coin, numconfirms, maxconfirms=6)
-        trust(pubkey, trust) # positive to trust, 0 for normal, negative to blacklist
+        electrum(coin, urls)
+        enable(coin, urls, swap_contract_address)
+        myprice(base, rel)
         my_balance(coin)
-        balance(coin, address)
-        balances(address)
-        fundvalue(address=\"\", holdings=[], divisor=0)
+        my_swap_status(params/uuid)
         orderbook(base, rel, duration=3600)
-        getprices()
-        inuse()
-        movecoinbases(coin)
-        getmyprice(base, rel)
-        getprice(base, rel)
-        secretaddresses(prefix='secretaddress', passphrase, num=10, pubtype=60, taddr=0)
-        gen64addrs(passphrase, taddr=0, pubtype=60)
-        electrum(coin, ipaddr, port)
-        snapshot(coin, height)
-        snapshot_balance(coin, height, addresses[])
-        dividends(coin, height, <args>)
+        sell(base, rel, price, basevolume, timeout=10, duration=3600)
+        send_raw_transaction(coin, tx_hex)
+        setprice(base, rel, price, broadcast=1)
         stop()
-        bot_list()
-        bot_statuslist()
-        bot_buy(base, rel, maxprice, relvolume) -> botid
-        bot_sell(base, rel, minprice, basevolume) -> botid
-        bot_settings(botid, newprice, newvolume)
-        bot_status(botid)
-        bot_stop(botid)
-        bot_pause(botid)
-        calcaddress(passphrase, coin=KMD)
-        convaddress(coin, address, destcoin)
-        instantdex_deposit(weeks, amount, broadcast=1)
-        instantdex_claim()
-        timelock(coin, duration, destaddr=(tradeaddr), amount)
-        unlockedspend(coin, txid)
-        opreturndecrypt(coin, txid, passphrase)
-        getendpoint(port=5555)
-        getfee(coin)
-        mpnet(onoff)
-        sleep(seconds=60)
-        listtransactions(coin, address, count=10, skip=0)
-        jpg(srcfile, destfile, power2=7, password, data=\"\", required, ind=0)
         version
+        withdraw(coin, amount, to)
     ")
 }
 
@@ -223,7 +160,7 @@ struct PassphraseReq {
     userpass: Option<String>,
     /// Defaults to "cli" (in `lp_passphrase_init`).
     gui: Option<String>,
-    seednode: Option<String>
+    seednodes: Option<Vec<String>>
 }
 
 pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
@@ -240,8 +177,9 @@ pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
 
     unsafe {lp::G.USERPASS_COUNTER = 1}
 
+
     unsafe {try_h! (lp_passphrase_init (&ctx,
-        Some (&req.passphrase), req.gui.as_ref().map (|s| &s[..]), req.seednode.as_ref().map (|s| &s[..])))};
+        Some (&req.passphrase), req.gui.as_ref().map (|s| &s[..]), req.seednodes))};
 
     let mut coins = Vec::new();
     try_h! (unsafe {coins_iter (&mut |coin| {

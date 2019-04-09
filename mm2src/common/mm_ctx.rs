@@ -1,3 +1,4 @@
+use crossbeam::{channel, Sender, Receiver};
 use hashbrown::hash_map::{Entry, HashMap};
 use libc::{c_void};
 use rand::random;
@@ -59,6 +60,10 @@ pub struct MmCtx {
     pub coins_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
     /// The context belonging to the `prices` mod: `PricesContext`.
     pub prices_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    /// Seednode P2P message bus channel
+    pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    /// Standard node P2P message bus channel
+    pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
 }
 impl MmCtx {
     pub fn new (conf: Json) -> MmArc {
@@ -76,6 +81,8 @@ impl MmCtx {
             peers_ctx: Mutex::new (None),
             coins_ctx: Mutex::new (None),
             prices_ctx: Mutex::new (None),
+            seednode_p2p_channel: channel::unbounded(),
+            client_p2p_channel: channel::unbounded(),
         }))
     }
 
@@ -127,6 +134,16 @@ impl MmCtx {
             }
         } else {
             stop_listeners.push (cb)
+        }
+    }
+
+    /// Sends the P2P message to a processing thread
+    pub fn broadcast_p2p_msg(&self, msg: &str) {
+        let i_am_seed = self.conf["i_am_seed"].as_bool().unwrap_or(false);
+        if i_am_seed {
+            unwrap!(self.seednode_p2p_channel.0.send(msg.to_owned().into_bytes()));
+        } else {
+            unwrap!(self.client_p2p_channel.0.send(msg.to_owned().into_bytes()));
         }
     }
 }

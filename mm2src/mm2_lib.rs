@@ -1,4 +1,5 @@
 #![feature(non_ascii_idents)]
+#![feature(drain_filter)]
 
 #[macro_use] extern crate common;
 #[allow(unused_imports)]
@@ -90,7 +91,7 @@ pub extern fn mm2_main (
             log! ("lp_main already started!");
             return
         }
-        match catch_unwind (move || mm2::run_lp_main (&conf)) {
+        match catch_unwind (move || mm2::run_lp_main (Some (&conf))) {
             Ok (Ok (_)) => log! ("run_lp_main finished"),
             Ok (Err (err)) => log! ("run_lp_main error: " (err)),
             Err (err) => log! ("run_lp_main panic: " [any_to_str (&*err)])
