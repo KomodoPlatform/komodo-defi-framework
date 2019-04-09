@@ -14,6 +14,9 @@ path = "mm2src/mm2_bin.rs"
 name = "mm2"
 path = "mm2src/mm2_lib.rs"
 crate-type = ["staticlib"]
+test = false
+doctest = false
+bench = false
 
 [profile.dev]
 # Enable light optimizations. We want a debuggable version but not a completely dumb one.
