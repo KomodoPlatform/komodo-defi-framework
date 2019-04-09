@@ -1591,7 +1591,7 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
         return ERR! ("LP_MAXPRICEINFOS {} wont fit in a u8, need to increase the width of the baseind and relind for struct LP_pubkey_quote", lp::LP_MAXPRICEINFOS)
     }
     unsafe {lp::LP_showwif = if conf["wif"] == 1 {1} else {0}};
-    log! ({"showwif.{} version: {} {}", unsafe {lp::LP_showwif}, MM_VERSION, crc32::checksum_ieee (MM_VERSION.as_bytes())});
+    log! ({"showwif.{} version: {}", unsafe {lp::LP_showwif}, MM_VERSION});
     if conf["gui"] == 1 {
         // Replace "cli\0" with "gui\0".
         let lp_gui: &mut [c_char] = unsafe {&mut lp::LP_gui[..]};

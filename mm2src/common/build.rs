@@ -410,20 +410,15 @@ fn generate_bindings() {
     );
 }
 
-/// The build script will usually help us by putting the MarketMaker version
-/// into the "MM_VERSION" environment or the "MM_VERSION" file.
-/// If neither is there then we're probably in a non-released, local development branch
-/// (we're using the "UNKNOWN" version designator then).
+/// The build script will usually help us by putting the MarketMaker version into the "MM_VERSION" file
+/// (environment variable isn't as useful because we can't `rerun-if-changed` on it).
+/// We're using the "UNKNOWN" version designator if the file isn't there or is empty.
+/// For the nightly builds the version contains the short commit hash.
 /// This function ensures that we have the "MM_VERSION" variable during the build.
 fn mm_version() -> String {
-    if let Some(have) = option_env!("MM_VERSION") {
-        // The variable is already there.
-        return have.into();
-    }
-
     // Try to load the variable from the file.
     let mut buf;
-    let version = if let Ok(mut file) = fs::File::open("../../MM_VERSION") {
+    let version = if let Ok(mut file) = fs::File::open(root().join("MM_VERSION")) {
         buf = String::new();
         unwrap!(file.read_to_string(&mut buf), "Can't read from MM_VERSION");
         buf.trim()
@@ -1634,6 +1629,7 @@ fn main() {
     rerun_if_changed("crypto777/*.c");
     rerun_if_changed("crypto777/jpeg/*.c");
     println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));
+    println!("cargo:rerun-if-changed={}", path2s(rabs("MM_VERSION")));
 
     // NB: Using `rerun-if-env-changed` disables the default dependency heuristics.
     // cf. https://github.com/rust-lang/cargo/issues/4587
