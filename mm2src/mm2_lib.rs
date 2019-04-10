@@ -36,9 +36,6 @@ enum MainErr {
     AlreadyRuns,
     ConfIsNull,
     ConfNotUtf8,
-    WrDirNotUtf8,
-    WrDirTooLong,
-    WrDirNotDir,
     NoOutputLock,
     CantThread
 }
@@ -46,7 +43,7 @@ enum MainErr {
 /// Starts the MM2 in a detached singleton thread.
 #[no_mangle]
 pub extern fn mm2_main (
-  conf: *const c_char, wr_dir: *const c_char, log_cb: extern fn (line: *const c_char)) -> i8 {
+  conf: *const c_char, log_cb: extern fn (line: *const c_char)) -> i8 {
     macro_rules! log {
         ($($args: tt)+) => {{
             let msg = fomat! ("mm2_lib:" ((line!())) "] " $($args)+ '\0');
@@ -64,22 +61,6 @@ pub extern fn mm2_main (
     let conf = unsafe {CStr::from_ptr (conf)};
     let conf = match conf.to_str() {Ok (s) => s, Err (e) => eret! (MainErr::ConfNotUtf8, (e))};
     let conf = conf.to_owned();
-
-    if !wr_dir.is_null() {
-        // Use `wr_dir` as the default location for "DB".
-        let wr_dir = unsafe {CStr::from_ptr (wr_dir)};
-        let wr_dir = match wr_dir.to_str() {Ok (s) => s, Err (e) => eret! (MainErr::WrDirNotUtf8, (e))};
-        let _ = fs::create_dir (wr_dir);
-        if !Path::new (wr_dir) .is_dir() {eret! (MainErr::WrDirNotDir)}
-        let global: &mut [c_char] = unsafe {&mut lp::GLOBAL_DBDIR[..]};
-        let global: &mut [u8] = unsafe {transmute (global)};
-        let mut cur = Cursor::new (global);
-        use std::io::Write;
-        if write! (&mut cur, "{}\0", wr_dir) .is_err() {
-            unsafe {lp::GLOBAL_DBDIR[0] = 0}
-            eret! (MainErr::WrDirTooLong)
-        }
-    }
 
     {
         let mut log_output = match LOG_OUTPUT.lock() {Ok (l) => l, Err (e) => eret! (MainErr::NoOutputLock, (e))};
