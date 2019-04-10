@@ -124,7 +124,7 @@ pub unsafe fn lp_command_q_loop(ctx: MmArc) {
         let method = json["method"].as_str();
         if let Some(m) = method {
             if m == "swapstatus" {
-                let handler = save_stats_swap_status(json["data"].clone());
+                let handler = save_stats_swap_status(&ctx, json["data"].clone());
                 rpc_reply_to_peer(handler, cmd);
                 continue;
             }

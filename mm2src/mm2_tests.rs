@@ -1,7 +1,7 @@
 use common::identity;
 use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
 use dirs;
-use gstuff::{now_float, slurp};
+use gstuff::{slurp};
 use hyper::StatusCode;
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use libc::c_char;
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::env::{self, var};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
-use std::thread::{self, sleep};
+use std::thread;
 use std::time::Duration;
 
 /// Asks MM to enable the given currency in native mode.  
@@ -687,6 +687,20 @@ fn check_stats_swap_status(
     assert_eq!(taker_expected_events, &taker_actual_events);
 }
 
+fn check_recent_swaps(
+    mm: &MarketMakerIt,
+    expected_len: usize,
+) {
+    let response = unwrap!(mm.rpc (json! ({
+            "method": "my_recent_swaps",
+            "userpass": mm.userpass,
+        })));
+    assert!(response.0.is_success(), "!status of my_recent_swaps {}", response.1);
+    let swaps_response: Json = unwrap!(json::from_str(&response.1));
+    let swaps: &Vec<Json> = unwrap!(swaps_response["result"].as_array());
+    assert_eq!(expected_len, swaps.len());
+}
+
 /// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
 fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
@@ -833,8 +847,8 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             10000000,
         );
     }
-    // give nodes 10 seconds to broadcast their swaps data
-    thread::sleep(Duration::from_secs(10));
+    // give nodes 3 seconds to broadcast their swaps data
+    thread::sleep(Duration::from_secs(3));
     for uuid in uuids.iter() {
         check_stats_swap_status(
             &mm_alice,
@@ -850,6 +864,9 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
             &taker_success_events,
         );
     }
+
+    check_recent_swaps(&mm_alice, uuids.len());
+    check_recent_swaps(&mm_bob, uuids.len());
     unwrap! (mm_bob.stop());
     unwrap! (mm_alice.stop());
 }
@@ -857,7 +874,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
 #[test]
 #[ignore]  // TODO: Re-enable once the PIZZA trades are fixed.
 fn trade_test_electrum_and_eth_coins() {
-    trade_base_rel_electrum(vec![("ETH", "JST")]);
+    trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]);
 }
 
 fn trade_base_rel_native(base: &str, rel: &str) {

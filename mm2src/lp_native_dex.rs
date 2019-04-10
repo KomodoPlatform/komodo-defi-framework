@@ -28,7 +28,7 @@
 // locktime claiming on sporadic assetchains
 // there is an issue about waiting for notarization for a swap that never starts (expiration ok)
 
-use common::{coins_iter, lp, lp_queue_command_for_c, slurp_url, os, CJSON, MM_VERSION, global_dbdir};
+use common::{coins_iter, lp, lp_queue_command_for_c, slurp_url, os, CJSON, MM_VERSION};
 use common::log::TagParam;
 use common::mm_ctx::{MmCtx, MmArc};
 use crc::crc32;
@@ -1489,9 +1489,9 @@ fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn fix_directories() -> Result<(), String> {
+fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     unsafe {os::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
-    let dbdir = global_dbdir();
+    let dbdir = ctx.dbdir();
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS")) {return ERR!("SWAPS db dir is not writeable")}
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("MY")) {return ERR!("SWAPS/MY db dir is not writeable")}
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS")) {return ERR!("SWAPS/STATS db dir is not writeable")}
@@ -1636,10 +1636,10 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
             try_s! (write! (&mut cur, "\0"))
         }
     }
-    try_s!(fix_directories());
     unsafe {lp::LP_mutex_init()};
 
     let ctx = MmCtx::new (conf);
+    try_s!(fix_directories(&ctx));
 
     fn simple_ip_extractor (ip: &str) -> Result<IpAddr, String> {
         let ip = ip.trim();

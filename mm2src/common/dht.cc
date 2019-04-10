@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>  // getenv
 #include <functional>
 #include <iostream>
 #include <sstream>
@@ -49,13 +50,18 @@ extern "C" dugout_t dht_init (char const* listen_interfaces, bool read_only) {
         sett.set_int (lt::settings_pack::in_enc_policy, lt::settings_pack::pe_forced);
         sett.set_int (lt::settings_pack::allowed_enc_level, lt::settings_pack::pe_rc4);
 
-        sett.set_str (lt::settings_pack::dht_bootstrap_nodes,
-            // https://stackoverflow.com/a/32797766/257568
-            "router.utorrent.com:6881"
-            ",router.bittorrent.com:6881"
-            ",dht.transmissionbt.com:6881"
-            ",router.bitcomet.com:6881"
-            ",dht.aelitis.com:6881");
+        char* MM_DHT_NODES = std::getenv ("MM_DHT_NODES");
+        if (MM_DHT_NODES != nullptr && *MM_DHT_NODES != 0) {
+            sett.set_str (lt::settings_pack::dht_bootstrap_nodes, MM_DHT_NODES);
+        } else {
+            sett.set_str (lt::settings_pack::dht_bootstrap_nodes,
+                // https://stackoverflow.com/a/32797766/257568
+                "router.utorrent.com:6881"
+                ",router.bittorrent.com:6881"
+                ",dht.transmissionbt.com:6881"
+                ",router.bitcomet.com:6881"
+                ",dht.aelitis.com:6881");
+        }
 
         lt::session* session = dugout.session = new lt::session (sett);
 

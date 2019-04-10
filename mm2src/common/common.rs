@@ -803,14 +803,6 @@ impl From<std::io::Error> for StringError {
     }
 }
 
-pub fn global_dbdir() -> &'static Path {
-    Path::new (unwrap! (unsafe {CStr::from_ptr (lp::GLOBAL_DBDIR.as_ptr())} .to_str()))
-}
-
-pub fn swap_db_dir() -> PathBuf {
-    global_dbdir().join ("SWAPS")
-}
-
 #[derive(Debug)]
 pub struct QueuedCommand {
     pub response_sock: i32,

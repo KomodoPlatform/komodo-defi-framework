@@ -45,7 +45,7 @@ use tokio_core::net::TcpListener;
 use hex;
 
 use crate::mm2::lp_ordermatch::{buy, sell};
-use crate::mm2::lp_swap::{my_swap_status, stats_swap_status};
+use crate::mm2::lp_swap::{my_swap_status, stats_swap_status, my_recent_swaps};
 use crate::mm2::CJSON;
 
 #[path = "rpc/lp_commands.rs"]
@@ -211,7 +211,6 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
         "enable" => Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) })),
         "electrum" => Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) })),
-        "eth_gas_price" => eth_gas_price(),
         "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
         "inventory" => inventory (ctx, req),
@@ -223,8 +222,9 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "send_raw_transaction" => send_raw_transaction (ctx, req),
         "setprice" => set_price (ctx, req),
         "stop" => stop (ctx),
-        "my_swap_status" => my_swap_status(req),
-        "stats_swap_status" => stats_swap_status(req),
+        "my_recent_swaps" => my_recent_swaps(ctx, req),
+        "my_swap_status" => my_swap_status(ctx, req),
+        "stats_swap_status" => stats_swap_status(ctx, req),
         "version" => version(),
         "withdraw" => withdraw(ctx, req),
         _ => return DispatcherRes::NoMatch (req)

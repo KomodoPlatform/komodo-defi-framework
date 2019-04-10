@@ -25,6 +25,11 @@ jobs:
         displayName: Clean Up
         failOnStderr: false
         continueOnError: true
+      # https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch#set-a-job-scoped-variable-from-a-script
+      - bash: |
+          export TAG="$(git rev-parse --short HEAD)"
+          echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
+        displayName: Setup ENV
       - powershell: |
           .\marketmaker_build_depends.cmd
         displayName: Build Windows deps
@@ -48,10 +53,12 @@ jobs:
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
       - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS) target/debug/mm2
+          zip upload/mm2-latest-$(Agent.OS) target/debug/mm2
         displayName: 'Prepare upload Linux/MacOS'
         condition: ne( variables['Agent.OS'], 'Windows_NT' )
       - powershell: |
-          7z a .\upload\mm2-win-$(COMMIT_HASH).zip .\target\debug\mm2.exe .\target\debug\*.dll .\target\debug\LICENSE* "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS).zip .\target\debug\mm2.exe .\target\debug\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+          7z a .\upload\mm2-latest-$(Agent.OS).zip .\target\debug\mm2.exe .\target\debug\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare upload Windows'
         condition: eq( variables['Agent.OS'], 'Windows_NT' )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
@@ -61,4 +68,5 @@ jobs:
           sourceFolder: 'upload' # Optional
           contents: "**"
           targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
+          overwrite: true
         displayName: 'Upload nightly'

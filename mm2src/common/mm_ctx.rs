@@ -6,6 +6,7 @@ use serde_json::{Value as Json};
 use std::any::Any;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
+use std::path::Path;
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -103,6 +104,23 @@ impl MmCtx {
         Ok (SocketAddr::new (ip, port as u16))
     }
 
+    /// MM database path.  
+    /// Defaults to a relative "DB".
+    /// 
+    /// Can be changed via the "dbdir" configuration field, for example:
+    /// 
+    ///     "dbdir": "c:/Users/mm2user/.mm2-db"
+    /// 
+    /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
+    pub fn dbdir (&self) -> &Path {
+        if let Some (dbdir) = self.conf["dbdir"].as_str() {
+            let dbdir = dbdir.trim();
+            if !dbdir.is_empty() {
+                return Path::new (dbdir)
+            }
+        }
+        return Path::new ("DB")
+    }
 
     pub fn stop (&self) {
         if self.stop.compare_and_swap (false, true, Ordering::Relaxed) == false {

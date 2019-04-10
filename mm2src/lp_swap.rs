@@ -57,7 +57,7 @@
 use bitcrypto::dhash160;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{MmCoinEnum, TransactionDetails};
-use common::{bits256, dstr, HyRes, rpc_response, Timeout, swap_db_dir};
+use common::{bits256, dstr, rpc_response, HyRes, Timeout};
 use common::log::{TagParam};
 use common::mm_ctx::MmArc;
 use crc::crc32;
@@ -68,11 +68,12 @@ use peers::SendHandler;
 use primitives::hash::{H160, H264};
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize};
-use std::fs::File;
+use std::ffi::OsStr;
+use std::fs::{File, DirEntry};
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// Includes the grace time we add to the "normal" timeouts
 /// in order to give different and/or heavy communication channels a chance.
@@ -186,23 +187,24 @@ fn test_serde_swap_negotiation_data() {
     assert_eq!(data, deserialized);
 }
 
-fn my_swap_file_path(uuid: &str) -> PathBuf {
-    let path = swap_db_dir();
-    path.join("MY").join(format!("{}.json", uuid))
+fn my_swaps_dir(ctx: &MmArc) -> PathBuf {
+    ctx.dbdir().join("SWAPS").join("MY")
 }
 
-fn stats_maker_swap_file_path(uuid: &str) -> PathBuf {
-    let path = swap_db_dir();
-    path.join("STATS").join("MAKER").join(format!("{}.json", uuid))
+fn my_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
+    my_swaps_dir(ctx).join(format!("{}.json", uuid))
 }
 
-fn stats_taker_swap_file_path(uuid: &str) -> PathBuf {
-    let path = swap_db_dir();
-    path.join("STATS").join("TAKER").join(format!("{}.json", uuid))
+fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
+    ctx.dbdir().join("SWAPS").join("STATS").join("MAKER").join(format!("{}.json", uuid))
 }
 
-fn save_my_maker_swap_event(uuid: &str, event: MakerSavedEvent) -> Result<(), String> {
-    let path = my_swap_file_path(uuid);
+fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
+    ctx.dbdir().join("SWAPS").join("STATS").join("TAKER").join(format!("{}.json", uuid))
+}
+
+fn save_my_maker_swap_event(ctx: &MmArc, uuid: &str, event: MakerSavedEvent) -> Result<(), String> {
+    let path = my_swap_file_path(ctx, uuid);
     let content = slurp(&path);
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Maker(MakerSavedSwap {
@@ -233,8 +235,8 @@ fn save_my_maker_swap_event(uuid: &str, event: MakerSavedEvent) -> Result<(), St
     }
 }
 
-fn save_my_taker_swap_event(uuid: &str, event: TakerSavedEvent) -> Result<(), String> {
-    let path = my_swap_file_path(uuid);
+fn save_my_taker_swap_event(ctx: &MmArc, uuid: &str, event: TakerSavedEvent) -> Result<(), String> {
+    let path = my_swap_file_path(ctx, uuid);
     let content = slurp(&path);
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Taker(TakerSavedSwap {
@@ -266,10 +268,10 @@ fn save_my_taker_swap_event(uuid: &str, event: TakerSavedEvent) -> Result<(), St
     }
 }
 
-fn save_stats_swap(swap: &SavedSwap) -> Result<(), String> {
+fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     let (path, content) = match &swap {
-        SavedSwap::Maker(maker_swap) => (stats_maker_swap_file_path(&maker_swap.uuid), try_s!(json::to_vec(&maker_swap))),
-        SavedSwap::Taker(taker_swap) => (stats_taker_swap_file_path(&taker_swap.uuid), try_s!(json::to_vec(&taker_swap))),
+        SavedSwap::Maker(maker_swap) => (stats_maker_swap_file_path(ctx, &maker_swap.uuid), try_s!(json::to_vec(&maker_swap))),
+        SavedSwap::Taker(taker_swap) => (stats_taker_swap_file_path(ctx, &taker_swap.uuid), try_s!(json::to_vec(&taker_swap))),
     };
     let mut file = try_s!(File::create(path));
     try_s!(file.write_all(&content));
@@ -791,7 +793,7 @@ pub fn run_maker_swap(mut swap: MakerSwap) {
                 timestamp: now_ms(),
                 event: event.clone(),
             };
-            unwrap!(save_my_maker_swap_event(&swap.uuid, to_save));
+            unwrap!(save_my_maker_swap_event(&ctx, &swap.uuid, to_save));
             status.status(swap_tags, &event.status_str());
             unwrap!(swap.apply_event(event));
         }
@@ -824,7 +826,7 @@ pub fn run_taker_swap(mut swap: TakerSwap) {
                 timestamp: now_ms(),
                 event: event.clone(),
             };
-            unwrap!(save_my_taker_swap_event(&swap.uuid, to_save));
+            unwrap!(save_my_taker_swap_event(&ctx, &swap.uuid, to_save));
             status.status(swap_tags, &event.status_str());
             unwrap!(swap.apply_event(event));
         }
@@ -1337,9 +1339,9 @@ impl TakerSwap {
 }
 
 /// Returns the status of swap performed on `my` node
-pub fn my_swap_status(req: Json) -> HyRes {
+pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
     let uuid = try_h!(req["params"]["uuid"].as_str().ok_or("uuid parameter is not set or is not string"));
-    let path = my_swap_file_path(uuid);
+    let path = my_swap_file_path(&ctx, uuid);
     let content = slurp(&path);
     if content.is_empty() {
         return rpc_response(404, json!({
@@ -1354,10 +1356,10 @@ pub fn my_swap_status(req: Json) -> HyRes {
 }
 
 /// Returns the status of requested swap, typically performed by other nodes and saved by `save_stats_swap_status`
-pub fn stats_swap_status(req: Json) -> HyRes {
+pub fn stats_swap_status(ctx: MmArc, req: Json) -> HyRes {
     let uuid = try_h!(req["params"]["uuid"].as_str().ok_or("uuid parameter is not set or is not string"));
-    let maker_path = stats_maker_swap_file_path(uuid);
-    let taker_path = stats_taker_swap_file_path(uuid);
+    let maker_path = stats_maker_swap_file_path(&ctx, uuid);
+    let taker_path = stats_taker_swap_file_path(&ctx, uuid);
     let maker_content = slurp(&maker_path);
     let taker_content = slurp(&taker_path);
     let maker_status: Option<MakerSavedSwap> = if maker_content.is_empty() {
@@ -1388,10 +1390,10 @@ pub fn stats_swap_status(req: Json) -> HyRes {
 
 /// Broadcasts `my` swap status to P2P network
 fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
-    let path = my_swap_file_path(uuid);
+    let path = my_swap_file_path(ctx, uuid);
     let content = slurp(&path);
     let status: SavedSwap = try_s!(json::from_slice(&content));
-    try_s!(save_stats_swap(&status));
+    try_s!(save_stats_swap(ctx, &status));
     let status_string = json!({
         "method": "swapstatus",
         "data": status,
@@ -1401,10 +1403,65 @@ fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
 }
 
 /// Saves the swap status notification received from P2P network to local DB.
-pub fn save_stats_swap_status(data: Json) -> HyRes {
+pub fn save_stats_swap_status(ctx: &MmArc, data: Json) -> HyRes {
     let swap: SavedSwap = try_h!(json::from_value(data));
-    try_h!(save_stats_swap(&swap));
+    try_h!(save_stats_swap(ctx, &swap));
     rpc_response(200, json!({
         "result": "success"
+    }).to_string())
+}
+
+/// Returns the data of recent swaps of `my` node. Returns no more than `limit` records (default: 10).
+/// Skips the first `skip` records (default: 0).
+pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
+    let limit = req["limit"].as_u64().unwrap_or(10);
+    let skip = req["skip"].as_u64().unwrap_or(0);
+    let mut entries: Vec<(SystemTime, DirEntry)> = try_h!(my_swaps_dir(&ctx).read_dir()).filter_map(|dir_entry| {
+        let entry = match dir_entry {
+            Ok(ent) => ent,
+            Err(e) => {
+                log!("Error " (e) " reading from dir " (my_swaps_dir(&ctx).display()));
+                return None;
+            }
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(e) => {
+                log!("Error " (e) " getting file " (entry.path().display()) " meta");
+                return None;
+            }
+        };
+
+        let m_time = match metadata.modified() {
+            Ok(time) => time,
+            Err(e) => {
+                log!("Error " (e) " getting file " (entry.path().display()) " m_time");
+                return None;
+            }
+        };
+
+        if entry.path().extension() == Some(OsStr::new("json")) {
+            Some((m_time, entry))
+        } else {
+            None
+        }
+    }).collect();
+    // sort by m_time in descending order
+    entries.sort_by(|(a, _), (b, _)| b.cmp(&a));
+
+    // iterate over file entries trying to parse the file contents and add to result vector
+    let result: Vec<Json> = entries.iter().skip(skip as usize).take(limit as usize).map(|(_, entry)|
+        json::from_slice(&slurp(&entry.path())).map_err(|e| {
+            log!("Error " (e) " parsing JSON from " (entry.path().display()));
+            e
+        }).unwrap_or(Json::Null)
+    ).collect();
+
+    rpc_response(200, json!({
+        "result": result,
+        "skip": skip,
+        "limit": limit,
+        "total": entries.len(),
     }).to_string())
 }

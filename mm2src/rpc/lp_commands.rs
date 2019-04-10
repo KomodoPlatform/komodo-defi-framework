@@ -456,25 +456,6 @@ pub fn stop (ctx: MmArc) -> HyRes {
         }
         else if ( strcmp(method,"inuse") == 0 )
             return(jprint(LP_inuse_json(),1));
-*/
-#[derive(Serialize)]
-pub struct GasPriceResult {
-    gas_price: u64
-}
-
-pub fn eth_gas_price() -> HyRes {
-    unimplemented!();
-    /*
-    let gas_price = get_gas_price_from_station(0);
-    if gas_price > 0 {
-        let result = try_h!(json::to_string(&GasPriceResult { gas_price }));
-        rpc_response(200, result)
-    } else {
-        rpc_err_response(500, "Could not get gas price from station")
-    }
-    */
-}
-/*
         else if ( (retstr= LP_istradebots_command(ctx,pubsock,method,argjson)) != 0 )
             return(retstr);
         if ( base[0] != 0 && rel[0] != 0 )

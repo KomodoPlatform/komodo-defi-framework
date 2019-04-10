@@ -38,7 +38,7 @@ use serde_bencode::ser::to_bytes as bencode;
 use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
 use std::cmp::Ordering;
-use std::env::temp_dir;
+use std::env::{temp_dir, var};
 use std::fs;
 use std::ffi::{CStr, CString};
 use std::fmt::Write as FmtWrite;
@@ -55,8 +55,13 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
 
-/// Any unprocessed libtorrent alers are logged if this knob is set to "true".
-const LOG_UNHANDLED_ALERTS: Option<&'static str> = option_env! ("LOG_UNHANDLED_ALERTS");
+lazy_static! {
+    /// Any unprocessed libtorrent alers are logged if this knob is set to "true".
+    static ref LOG_UNHANDLED_ALERTS: bool = match var ("LOG_UNHANDLED_ALERTS") {
+        Ok (ev) => ev == "true",
+        Err (_) => false
+    };
+}
 
 // NB: C++ structures and functions are defined in "dht.cc".
 
@@ -79,11 +84,7 @@ impl dugout_t {
 }
 impl Drop for dugout_t {
     fn drop (&mut self) {
-        // libtorrent might hang there, particularly when we're trying to delete it while it is still booting up.
-        // TODO: Try to track when we began initializing libtorrent and wait a predefined minimum time from that.
-        log! ("delete_dugout...");
         let err = unsafe {delete_dugout (self)};
-        log! ("delete_dugout finished!");
         if !err.is_null() {
             let what = unwrap! (unsafe {CStr::from_ptr (err)} .to_str());
             log! ("delete_dugout error: " (what));
@@ -756,7 +757,7 @@ fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: Occu
     let now = now_float();
     if let Some (number_of_chunks) = gets.get().number_of_chunks {
         // We'll never reassemble the right value while having extra chunks.
-        gets.get_mut().chunks.resize_default (number_of_chunks as usize)
+        gets.get_mut().chunks.resize_with (number_of_chunks as usize, Default::default)
     }
 
     // Go over the chunks and see if it's time to maybe retry fetching some of them.
@@ -923,7 +924,7 @@ fn incoming_ping (cbctx: &mut CbCtx, pkt: &[u8], ip: &[u8], port: u16) -> Result
         if chunk_idx == 1 {gets.number_of_chunks = Some (payload.remove (0))}
         let number_of_chunks = gets.number_of_chunks.unwrap_or (0);
         if chunk_idx > number_of_chunks {return ERR! ("ping chunk out of bounds")}
-        gets.chunks.resize_default (number_of_chunks as usize);
+        gets.chunks.resize_with (number_of_chunks as usize, Default::default);
         let mut en = &mut gets.chunks[chunk_idx as usize - 1];
         en.direct = now_float();
         en.payload = Some (payload);
@@ -961,31 +962,14 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
         return
     }
 
-    let dht_state_path = loop {
-        // Trying to save into the user's home directory first in order to reuse the DHT state across different MM instances.
-        if let Some (home) = dirs::home_dir() {
-            let mm2 = home.join (".mm2");
-            let _ = fs::create_dir (&mm2);
-            if mm2.is_dir() {
-                break mm2.join ("lt-dht")
-            }
-        }
-        if let Some (db) = ctx.conf["dbdir"].as_str() {
-            let db = Path::new (db);
-            if db.is_dir() {
-                break db.join ("lt-dht")
-            }
-        }
-        break Path::new ("DB/lt-dht") .to_owned()
-    };
-
-    let dht_state = slurp (&dht_state_path);
+    let dht_stateᵖ = ctx.dbdir().join ("lt-dht");
+    let dht_state = slurp (&dht_stateᵖ);
     if !dht_state.is_empty() {
         // Note: Successful state reuse is reflected with a "DHT node: bootstrapping with 371 nodes" alert.
         // Whereas without the state it's "DHT node: bootstrapping with 0 nodes".
         unsafe {dht_load_state (&mut dugout, dht_state.as_ptr(), dht_state.len() as i32)};
         // TODO: User-friendly log message (`LogState::log`).
-        if let Some (err) = dugout.take_err() {log! ("dht_load_state (" [dht_state_path] ") error: " (err))}
+        if let Some (err) = dugout.take_err() {log! ("dht_load_state (" [dht_stateᵖ] ") error: " (err))}
     }
 
     let pctx = unwrap! (PeersContext::from_ctx (&ctx));
@@ -1027,8 +1011,8 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
             let rc = unsafe {as_external_ip_alert (alert, ipbuf.as_mut_ptr(), &mut ipbuflen)};
             if rc == 1 {
                 let eip = unsafe {from_raw_parts (ipbuf.as_ptr(), ipbuflen as usize)};
-                // NB: Still investigating this alert. Sometimes it wouldn't happen at all.
-                //     Also getting this alert might indicate that the DHT is now restarting under a new public key.
+                // This alert would sometimes inform us about a *changed* external IP
+                // (and can not be used to detect the initial external IP).
                 log! ("external_ip_alert: " (unsafe {from_utf8_unchecked (eip)}));
             } else if rc < 0 {
                 log! ("as_external_ip_alert error: " (rc));
@@ -1112,7 +1096,7 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                 return
             }
 
-            if LOG_UNHANDLED_ALERTS == Some ("true") {
+            if *LOG_UNHANDLED_ALERTS {
                 // TODO: Use `buf`.
                 let cs = unsafe {alert_message (alert)};
                 if let Ok (alert_message) = unsafe {CStr::from_ptr (cs)} .to_str() {
@@ -1195,8 +1179,8 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                         Err (err) => log! ("Error writing to " [tmp_path] ": " (err)),
                         Ok (()) => {
                             drop (file);  // Close before renaming, just in case.
-                            match fs::rename (&tmp_path, &dht_state_path) {
-                                Err (err) => log! ("Warning, can't rename " [tmp_path] " to " [dht_state_path] ": " (err)),
+                            match fs::rename (&tmp_path, &dht_stateᵖ) {
+                                Err (err) => log! ("Warning, can't rename " [tmp_path] " to " [dht_stateᵖ] ": " (err)),
                                 Ok (()) => {
                                     //log! ("DHT state saved to " [dht_state_path])
         }   }   }   }   }   }  }
