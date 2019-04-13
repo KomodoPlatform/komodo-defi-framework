@@ -383,12 +383,28 @@ fn generate_bindings() {
 /// This function ensures that we have the "MM_VERSION" variable during the build.
 fn mm_version() -> String {
     // Try to load the variable from the file.
+    let mm_versionᵖ = root().join("MM_VERSION");
     let mut buf;
-    let version = if let Ok(mut file) = fs::File::open(root().join("MM_VERSION")) {
+    let version = if let Ok(mut mm_versionᶠ) = fs::File::open(&mm_versionᵖ) {
         buf = String::new();
-        unwrap!(file.read_to_string(&mut buf), "Can't read from MM_VERSION");
+        unwrap!(
+            mm_versionᶠ.read_to_string(&mut buf),
+            "Can't read from MM_VERSION"
+        );
         buf.trim()
     } else {
+        // If the MM_VERSION file is absent then we should create it
+        // in order for the Cargo dependency management to see it,
+        // because Cargo will keep rebuilding the `common` crate otherwise.
+        //
+        // We should probably fetch the actual git version here,
+        // with something like `git log '--pretty=format:%h' -n 1` for the nightlies,
+        // and a release tag when building from some kind of a stable branch,
+        // though we should keep the ability for the tooling to provide the MM_VERSION
+        // externally, because moving the entire ".git" around is not always practical.
+        if let Ok(mut mm_versionᶠ) = fs::File::create(&mm_versionᵖ) {
+            unwrap!(mm_versionᶠ.write_all(&b"UNKNOWN"[..]));
+        }
         "UNKNOWN"
     };
     println!("cargo:rustc-env=MM_VERSION={}", version);

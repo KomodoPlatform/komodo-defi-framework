@@ -1,9 +1,5 @@
 @echo off
-rem [ Decker] Automatically download and build depends script for marketmaker.
-rem
-rem 1. Requires installed CMake for Windows (!)
-rem 2. Currently build only 64-bit release versions of .lib and .dll
-rem 3. Libraries available: pthreads, curl
+rem Download and build the Windows marketmaker dependencies.
 
 if exist "c:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
  call "c:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"

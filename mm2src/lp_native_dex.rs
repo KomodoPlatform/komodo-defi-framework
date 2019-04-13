@@ -13,28 +13,19 @@
  *                                                                            *
  ******************************************************************************/
 //
-//  LP_nativeDEX.rs
+//  lp_native_dex.rs
 //  marketmaker
 //
-// portfolio to set prices from historical
-// portfolio value based on ask?
-// else claim path
-//
-// WONTFIX:
-// dPoW security -> 4: KMD notarized, 5: BTC notarized, after next notary elections
-// bigendian architectures need to use little endian for sighash calcs
-// improve critical section detection when parallel trades
-// use electrum in case of addr change in swap
-// locktime claiming on sporadic assetchains
-// there is an issue about waiting for notarization for a swap that never starts (expiration ok)
 
 use common::{coins_iter, lp, lp_queue_command_for_c, slurp_url, os, CJSON, MM_VERSION};
 use common::log::TagParam;
 use common::mm_ctx::{MmCtx, MmArc};
-use crc::crc32;
 use futures::{Future};
+use futures::stream::Stream;
 use gstuff::now_ms;
 use hex;
+use hyper::{Request, Body, StatusCode};
+use hyper::service::Service;
 use libc::{self, c_char, c_void};
 use peers;
 use portfolio::prices_loop;
@@ -45,7 +36,7 @@ use std::fs;
 use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Write};
 use std::mem::{transmute, zeroed};
-use std::net::{IpAddr, Ipv4Addr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::Path;
 use std::ptr::null_mut;
 use std::str;
@@ -53,10 +44,12 @@ use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
+use tokio_core::{net as tnet};
 
+use crate::common::{rpc_response, HyRes, CORE};
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
-use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
+use crate::mm2::rpc::{self, HTTP, SINGLE_THREADED_C_LOCK};
 
 /*
 #include <stdio.h>
@@ -1426,6 +1419,7 @@ const BITCOIND_RPC_INITIALIZING: AtomicBool = AtomicBool::new (false);
 // See if the CRC32 we have in Rust matches the C version.
 #[test]
 fn test_crc32() {
+    use crc::crc32;
     use libc::c_void;
     assert_eq! (crc32::checksum_ieee (b"123456789"), 0xcbf43926);
     assert_eq! (unsafe {lp::calc_crc32 (0, b"123456789".as_ptr() as *mut c_void, 9)}, 0xcbf43926);
@@ -1574,15 +1568,43 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
 }
 
 /// Temporarily binds on the given IP and port to check if they're available.  
-/// Returns `false` if the `ip` does not belong to a connected interface or if it is already taken.
+/// Returns `false` if the address did not work
+/// (like when the `ip` does not belong to a connected interface or is already taken).
 fn test_bind (ip: IpAddr, port: u16) -> bool {
-    let bindaddr = fomat! ((ip) ':' (port));
-    match TcpListener::bind(&bindaddr) {
-        Ok(_) => true,
-        Err(e) => {
-            log!("Error " (e) " binding to " (bindaddr));
-            false
+    let bindaddr = SocketAddr::new (ip, port);
+    let listener = match tnet::TcpListener::bind2 (&bindaddr) {Ok (tl) => tl, Err (_) => return false};
+
+    // The bind just always works on certain operating systems.
+    // To actually check the address we should try communicating on it.
+    // Reusing a likeness of `rpc::spawn_rpc` HTTP server for that.
+
+    struct RpcService;
+    impl Service for RpcService {
+        type ReqBody = Body; type ResBody = Body; type Error = String; type Future = HyRes;
+        fn call (&mut self, _request: Request<Body>) -> HyRes {
+            rpc_response (200, "k")
         }
+    }
+    let server = listener.incoming().for_each (move |(socket, _my_sock)| {
+        CORE.spawn (move |_| HTTP
+                .serve_connection (socket, RpcService)
+                .map(|_| ())
+                .map_err (|err| log! ({"test_bind] HTTP error: {}", err})));
+        Ok(())
+    }) .map_err (|err| log! ({"test_bind] accept error: {}", err}));
+
+    // Finish the server `Future` when `shutdown_rx` fires.
+    let (shutdown_tx, shutdown_rx) = futures::sync::oneshot::channel::<()>();
+    let server = server.select2 (shutdown_rx) .then (|_| Ok(()));
+    CORE.spawn (move |_| server);
+
+    let url = fomat! ("http://" if ip.is_unspecified() {"127.0.0.1"} else {(ip)} ":" (port));
+    let rc = slurp_url (&url) .wait();
+    let _ = shutdown_tx.send(());
+    if let Ok ((StatusCode::OK, _h, body)) = rc {
+        body == b"k"
+    } else {
+        false
     }
 }
 
