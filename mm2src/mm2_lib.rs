@@ -16,14 +16,9 @@
 mod mm2;
 
 use crate::common::log::LOG_OUTPUT;
-use crate::common::lp;
 use gstuff::any_to_str;
 use libc::c_char;
-use std::fs;
 use std::ffi::{CStr};
-use std::io::Cursor;
-use std::mem::transmute;
-use std::path::Path;
 use std::panic::catch_unwind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -87,4 +82,34 @@ pub extern fn mm2_main (
 #[no_mangle]
 pub extern fn mm2_main_status() -> i8 {
     if LP_MAIN_RUNNING.load (Ordering::Relaxed) {1} else {0}
+}
+
+/// Run a few hand-picked tests.  
+/// 
+/// The tests are wrapped into a library method in order to run them in such embedded environments
+/// where running "cargo test" is not an easy option.
+/// 
+/// MM2 is mostly used as a library in environments where we can't simpy run it as a separate process
+/// and we can't spawn multiple MM2 instances in the same process YET
+/// therefore our usual process-spawning tests can not be used here.
+/// 
+/// Returns the `torch` (as in Olympic flame torch) if the tests have passed. Panics otherwise.
+#[no_mangle]
+pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> i32 {
+    if let Ok (mut log_output) = LOG_OUTPUT.lock() {
+        *log_output = Some (log_cb);
+    } else {
+        panic! ("Can't lock LOG_OUTPUT")
+    }
+
+    log! ("test_status...");
+    common::log::tests::test_status();
+
+    log! ("test_peers_dht...");
+    peers::peers_tests::test_peers_dht();
+
+    log! ("test_peers_direct_send...");
+    peers::peers_tests::test_peers_direct_send();
+
+    torch
 }

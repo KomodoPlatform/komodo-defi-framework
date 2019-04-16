@@ -274,6 +274,7 @@ iguana/exchanges/manychains
 
 # Rust artefacts
 /MM_VERSION
+/MM_VERSION.tmp
 /target
 /iguana/exchanges/etomicswap/target
 
