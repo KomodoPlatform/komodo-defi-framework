@@ -72,7 +72,7 @@ lazy_static! {
     static ref ERC20_CONTRACT: Contract = unwrap!(Contract::load(ERC20_ABI.as_bytes()));
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
@@ -942,15 +942,24 @@ impl MmCoin for EthCoin {
                     let signed = tx.sign(arc.key_pair.secret(), None);
                     let bytes = rlp::encode(&signed);
                     let amount_f64 = try_s!(u256_to_f64(wei_amount, arc.decimals));
+                    let mut spent_by_me = amount_f64;
+                    let mut received_by_me = 0.;
+                    if to_addr == arc.my_address {
+                        received_by_me = amount_f64;
+                    }
                     let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, "ETH"));
+                    if arc.coin_type == EthCoinType::Eth {
+                        spent_by_me += fee_details.total_fee;
+                    }
                     let fee_details = try_s!(json::to_value(fee_details));
                     drop(nonce_lock);
                     Ok(TransactionDetails {
                         to: vec![format!("{:#02x}", to_addr)],
                         from: vec![arc.my_address().into()],
                         total_amount: amount_f64,
-                        spent_by_me: 0.,
-                        received_by_me: 0.,
+                        spent_by_me,
+                        received_by_me,
+                        my_balance_change: received_by_me - spent_by_me,
                         tx_hex: bytes.into(),
                         tx_hash: signed.tx_hash(),
                         block_height: 0,
@@ -1003,6 +1012,7 @@ impl MmCoin for EthCoin {
                     tx_hash: tx.hash.0.to_vec().into(),
                     received_by_me,
                     spent_by_me,
+                    my_balance_change: received_by_me - spent_by_me,
                     total_amount,
                     fee_details: Json::Null,
                 })
@@ -1017,6 +1027,7 @@ impl MmCoin for EthCoin {
                     tx_hash: tx.hash.0.to_vec().into(),
                     received_by_me,
                     spent_by_me,
+                    my_balance_change: received_by_me - spent_by_me,
                     total_amount,
                     fee_details: Json::Null,
                 })

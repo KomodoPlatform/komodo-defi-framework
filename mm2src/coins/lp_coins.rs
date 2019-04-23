@@ -225,10 +225,12 @@ pub struct TransactionDetails {
     to: Vec<String>,
     /// Total tx amount
     total_amount: f64,
-    /// The amount spent from "our" address
+    /// The amount spent from "my" address
     spent_by_me: f64,
-    /// The amount received by "our" address
+    /// The amount received by "my" address
     received_by_me: f64,
+    /// Resulting "my" balance change
+    my_balance_change: f64,
     /// Block height
     block_height: u64,
     /// Every coin can has specific fee details:
