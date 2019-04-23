@@ -27,7 +27,7 @@ use std::sync::{Mutex, Arc};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
 use tokio::codec::{Encoder, Decoder};
-use tokio::net::TcpStream;
+use tokio_tcp::TcpStream;
 
 #[derive(Debug)]
 pub enum UtxoRpcClientEnum {
@@ -61,7 +61,9 @@ pub trait UtxoRpcClientOps: Debug + 'static {
 
     fn send_raw_transaction(&self, tx: BytesJson) -> RpcRes<H256Json>;
 
-    fn get_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction>;
+    fn get_transaction_bytes(&self, txid: H256Json) -> RpcRes<BytesJson>;
+
+    fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction>;
 
     fn get_block_count(&self) -> RpcRes<u64>;
 
@@ -79,7 +81,7 @@ pub trait UtxoRpcClientOps: Debug + 'static {
                 return ERR!("Waited too long until {} for transaction {:?} to be confirmed {} times", wait_until, tx, confirmations);
             }
 
-            match self.get_transaction(tx.hash().reversed().into()).wait() {
+            match self.get_verbose_transaction(tx.hash().reversed().into()).wait() {
                 Ok(t) => {
                     if t.confirmations >= confirmations {
                         return Ok(());
@@ -131,19 +133,44 @@ pub struct ValidateAddressRes {
     pub account: Option<String>,
 }
 
+#[derive(Clone, Deserialize, Debug)]
+pub struct ListTransactionsItem {
+    pub account: String,
+    #[serde(default)]
+    pub address: String,
+    pub category: String,
+    pub amount: f64,
+    pub vout: u64,
+    #[serde(default)]
+    pub fee: f64,
+    #[serde(default)]
+    pub confirmations: u64,
+    #[serde(default)]
+    pub blockhash: H256Json,
+    #[serde(default)]
+    pub blockindex: u64,
+    #[serde(default)]
+    pub txid: H256Json,
+    pub timereceived: u64,
+}
+
 /// RPC client for UTXO based coins
 /// https://bitcoin.org/en/developer-reference#rpc-quick-reference - Bitcoin RPC API reference
 /// Other coins have additional methods or miss some of these
 /// This description will be updated with more info
 #[derive(Clone, Debug)]
-pub struct NativeClient {
+pub struct NativeClientImpl {
     /// The uri to send requests to
     pub uri: String,
     /// Value of Authorization header, e.g. "Basic base64(user:password)"
     pub auth: String,
 }
 
-impl JsonRpcClient for NativeClient {
+#[derive(Debug)]
+pub struct NativeClient(pub Arc<NativeClientImpl>);
+impl Deref for NativeClient {type Target = NativeClientImpl; fn deref (&self) -> &NativeClientImpl {&*self.0}}
+
+impl JsonRpcClient for NativeClientImpl {
     fn version(&self) -> &'static str { "1.0" }
 
     fn next_id(&self) -> String { "0".into() }
@@ -175,7 +202,7 @@ impl JsonRpcClient for NativeClient {
 
 impl UtxoRpcClientOps for NativeClient {
     fn list_unspent_ordered(&self, address: &Address) -> RpcRes<Vec<UnspentInfo>> {
-        let clone = self.clone();
+        let clone = self.0.clone();
         Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).and_then(move |unspents| {
             let mut futures = vec![];
             for unspent in unspents.iter() {
@@ -215,8 +242,12 @@ impl UtxoRpcClientOps for NativeClient {
         self.send_raw_transaction(BytesJson::from(serialize(tx)))
     }
 
-    fn get_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
-        self.get_raw_transaction(txid)
+    fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
+        self.get_raw_transaction_verbose(txid)
+    }
+
+    fn get_transaction_bytes(&self, txid: H256Json) -> RpcRes<BytesJson> {
+        self.get_raw_transaction_bytes(txid)
     }
 
     /// https://bitcoin.org/en/developer-reference#getblockcount
@@ -240,7 +271,7 @@ impl UtxoRpcClientOps for NativeClient {
             }
 
             if current_height == 0 {
-                let tx: RpcTransaction = try_s!(self.get_transaction(tx.hash().reversed().into()).wait());
+                let tx: RpcTransaction = try_s!(self.get_verbose_transaction(tx.hash().reversed().into()).wait());
 
                 if tx.confirmations >= 1 {
                     current_height = tx.height;
@@ -253,7 +284,7 @@ impl UtxoRpcClientOps for NativeClient {
                 while current_height <= coin_height {
                     let block = try_s!(self.get_block(current_height.to_string()).wait());
                     for tx_hash in block.tx.iter() {
-                        let transaction = match self.get_transaction(tx_hash.clone()).wait() {
+                        let transaction = match self.get_verbose_transaction(tx_hash.clone()).wait() {
                             Ok(tx) => tx,
                             Err(_e) => continue
                         };
@@ -289,7 +320,7 @@ impl UtxoRpcClientOps for NativeClient {
     }
 }
 
-impl NativeClient {
+impl NativeClientImpl {
     /// https://bitcoin.org/en/developer-reference#listunspent
     pub fn list_unspent(&self, min_conf: u64, max_conf: u64, addresses: Vec<String>) -> RpcRes<Vec<NativeUnspent>> {
         rpc_func!(self, "listunspent", min_conf, max_conf, addresses)
@@ -306,18 +337,24 @@ impl NativeClient {
     }
 
     pub fn output_amount(&self, txid: H256Json, index: usize) -> RpcRes<u64> {
-        let fut = self.get_raw_transaction(txid);
-        Box::new(fut.and_then(move |transaction| {
-            log!({"Before transaction {:?} deserialize", transaction});
-            let tx: UtxoTransaction = try_s!(deserialize(transaction.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+        let fut = self.get_raw_transaction_bytes(txid);
+        Box::new(fut.and_then(move |bytes| {
+            let tx: UtxoTransaction = try_s!(deserialize(bytes.as_slice()).map_err(|e| ERRL!("Error {:?} trying to deserialize the transaction {:?}", e, bytes)));
             Ok(tx.outputs[index].value)
         }))
     }
 
     /// https://bitcoin.org/en/developer-reference#getrawtransaction
     /// Always returns verbose transaction
-    fn get_raw_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
+    fn get_raw_transaction_verbose(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
         let verbose = 1;
+        rpc_func!(self, "getrawtransaction", txid, verbose)
+    }
+
+    /// https://bitcoin.org/en/developer-reference#getrawtransaction
+    /// Always returns transaction bytes
+    fn get_raw_transaction_bytes(&self, txid: H256Json) -> RpcRes<BytesJson> {
+        let verbose = 0;
         rpc_func!(self, "getrawtransaction", txid, verbose)
     }
 
@@ -326,6 +363,13 @@ impl NativeClient {
     fn estimate_fee(&self) -> RpcRes<f64> {
         let n_blocks = 1;
         rpc_func!(self, "estimate_fee", n_blocks)
+    }
+
+    /// https://bitcoin.org/en/developer-reference#listtransactions
+    pub fn list_transactions(&self, count: u64, from: u64) -> RpcRes<Vec<ListTransactionsItem>> {
+        let account = "*";
+        let watch_only = true;
+        rpc_func!(self, "listtransactions", account, count, from, watch_only)
     }
 }
 
@@ -380,10 +424,10 @@ impl ElectrumBlockHeader {
 }
 
 #[derive(Debug, Deserialize)]
-struct ElectrumTxHistoryItem {
-    height: i64,
-    tx_hash: H256Json,
-    fee: Option<i64>,
+pub struct ElectrumTxHistoryItem {
+    pub height: i64,
+    pub tx_hash: H256Json,
+    pub fee: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -510,8 +554,15 @@ impl UtxoRpcClientOps for ElectrumClient {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get
     /// returns verbose transaction by default
-    fn get_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
+    fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
         let verbose = true;
+        rpc_func!(self, "blockchain.transaction.get", txid, verbose)
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get
+    /// returns transaction bytes by default
+    fn get_transaction_bytes(&self, txid: H256Json) -> RpcRes<BytesJson> {
+        let verbose = false;
         rpc_func!(self, "blockchain.transaction.get", txid, verbose)
     }
 
@@ -551,7 +602,7 @@ impl UtxoRpcClientOps for ElectrumClient {
             }
 
             for item in history.iter() {
-                let tx: RpcTransaction = try_s!(self.get_transaction(item.tx_hash.clone()).wait());
+                let tx: RpcTransaction = try_s!(self.get_verbose_transaction(item.tx_hash.clone()).wait());
                 for input in tx.vin.iter() {
                     if input.txid == transaction.hash().reversed().into() && input.vout == vout as u32 {
                         let tx: UtxoTransaction = try_s!(deserialize(tx.hex.as_slice()).map_err(|e| format!("{:?}", e)));
@@ -627,7 +678,7 @@ impl ElectrumClientImpl {
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
-    fn scripthash_get_history(&self, hash: &str) -> RpcRes<Vec<ElectrumTxHistoryItem>> {
+    pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<Vec<ElectrumTxHistoryItem>> {
         rpc_func!(self, "blockchain.scripthash.get_history", hash)
     }
 
@@ -778,6 +829,7 @@ fn electrum_connect(
             });
 
             let (sink, stream) = Bytes.framed(stream).split();
+            // this forwards the messages from rx to sink (write) part of tcp stream
             let send_all = SendAll::new(sink, rx);
             let clone = responses.clone();
             CORE.spawn(|_| {
@@ -1070,7 +1122,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_wait_for_tx_spend_native() {
-        let client = NativeClient {
+        let client = NativeClientImpl {
             uri: "http://127.0.0.1:8923".to_owned(),
             auth: fomat!("Basic " (base64_encode("user1031481471:pass4421be10fa22e70fca76c4917556f1613cdd1fa83e7c9d04abfd98c3367c6252ba", URL_SAFE))),
         };
@@ -1085,7 +1137,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_list_unspent_ordered_native() {
-        let client = NativeClient {
+        let client = NativeClientImpl {
             uri: "http://127.0.0.1:11608".to_owned(),
             auth: fomat!("Basic " (base64_encode("user693461146:passef3e4fbcee47f264b6bd071def8171800241cedd56705c27905f36dd1df2737f99", URL_SAFE))),
         };

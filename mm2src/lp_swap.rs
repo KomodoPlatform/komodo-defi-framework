@@ -605,11 +605,12 @@ impl MakerSwap {
             ))
         };
 
-        log!({"Taker fee tx {:02x}", taker_fee.tx_hash()});
+        let hash = taker_fee.tx_hash();
+        log!({"Taker fee tx {:02x}", hash});
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
         let fee_amount = self.taker_amount / 777;
-        let fee_details = unwrap!(taker_fee.transaction_details(self.taker_coin.decimals()));
+        let fee_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
         match self.taker_coin.validate_fee(taker_fee, &fee_addr_pub_key, fee_amount as u64) {
             Ok(_) => (),
             Err(err) => return Ok((
@@ -638,8 +639,9 @@ impl MakerSwap {
                 vec![MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", err))],
             ))
         };
-        let tx_details = unwrap!(transaction.transaction_details(self.maker_coin.decimals()));
-        log!({"Maker payment tx {:02x}", transaction.tx_hash()});
+        let hash = transaction.tx_hash();
+        log!({"Maker payment tx {:02x}", hash});
+        let tx_details = unwrap!(self.maker_coin.tx_details_by_hash(&hash));
         let sending_f = match send_! (&self.ctx, self.taker, fomat!(("maker-payment") '@' (self.uuid)), transaction.tx_hex()) {
             Ok(f) => f,
             Err(e) => return Ok((
@@ -672,8 +674,9 @@ impl MakerSwap {
             )),
         };
 
-        log!({"Taker payment tx {:02x}", taker_payment.tx_hash()});
-        let tx_details = unwrap!(taker_payment.transaction_details(self.taker_coin.decimals()));
+        let hash = taker_payment.tx_hash();
+        log!({"Taker payment tx {:02x}", hash});
+        let tx_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
 
         Ok((
             Some(MakerSwapCommand::ValidateTakerPayment),
@@ -735,9 +738,10 @@ impl MakerSwap {
             ))
         };
 
-        let tx_details = unwrap!(transaction.transaction_details(self.taker_coin.decimals()));
+        let hash = transaction.tx_hash();
+        log!({"Taker payment spend tx {:02x}", hash});
 
-        log!({"Taker payment spend tx {:02x}", transaction.tx_hash()});
+        let tx_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
         Ok((
             Some(MakerSwapCommand::Finish),
             vec![MakerSwapEvent::TakerPaymentSpent(tx_details)]
@@ -749,7 +753,7 @@ impl MakerSwap {
             std::thread::sleep(Duration::from_secs(10));
         }
 
-        let spend_fut = self.taker_coin.send_maker_refunds_payment(
+        let spend_fut = self.maker_coin.send_maker_refunds_payment(
             &unwrap!(self.maker_payment.clone()).tx_hex,
             self.data.maker_payment_lock as u32,
             &*self.other_persistent_pub,
@@ -759,17 +763,17 @@ impl MakerSwap {
         let transaction = match spend_fut.wait() {
             Ok(t) => t,
             Err(err) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![MakerSwapEvent::TakerPaymentSpendFailed(ERRL!("!taker_coin.send_maker_spends_taker_payment: {}", err))]
+                Some(MakerSwapCommand::Finish),
+                vec![MakerSwapEvent::MakerPaymentRefundFailed(ERRL!("!maker_coin.send_maker_refunds_payment: {}", err))]
             ))
         };
+        let hash = transaction.tx_hash();
+        log!({"Maker payment refund tx {:02x}", hash});
 
-        let tx_details = unwrap!(transaction.transaction_details(self.taker_coin.decimals()));
-
-        log!({"Maker payment refund tx {:02x}", transaction.tx_hash()});
+        let tx_details = unwrap!(self.maker_coin.tx_details_by_hash(&hash));
         Ok((
             Some(MakerSwapCommand::Finish),
-            vec![MakerSwapEvent::TakerPaymentSpent(tx_details)],
+            vec![MakerSwapEvent::MakerPaymentRefunded(tx_details)],
         ))
     }
 }
@@ -1154,7 +1158,8 @@ impl TakerSwap {
             )),
         };
 
-        log!({"Taker fee tx hash {:02x}", transaction.tx_hash()});
+        let hash = transaction.tx_hash();
+        log!({"Taker fee tx hash {:02x}", hash});
         let sending_f = match send_! (&self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), transaction.tx_hex()) {
             Ok(f) => f,
             Err (err) => return Ok((
@@ -1164,7 +1169,7 @@ impl TakerSwap {
         };
         Ok((
             Some(TakerSwapCommand::WaitForMakerPayment(sending_f)),
-            vec![TakerSwapEvent::TakerFeeSent(transaction.transaction_details(self.taker_coin.decimals()).unwrap())],
+            vec![TakerSwapEvent::TakerFeeSent(self.taker_coin.tx_details_by_hash(&hash).unwrap())],
         ))
     }
 
@@ -1183,8 +1188,10 @@ impl TakerSwap {
                 vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("Error parsing the 'maker-payment': {}", e))]
             )),
         };
-        log!({"Got maker payment {:02x}", maker_payment.tx_hash()});
-        let tx_details = maker_payment.transaction_details(self.maker_coin.decimals()).unwrap();
+
+        let hash = maker_payment.tx_hash();
+        log!({"Got maker payment {:02x}", hash});
+        let tx_details = self.maker_coin.tx_details_by_hash(&hash).unwrap();
 
         Ok((
             Some(TakerSwapCommand::ValidateMakerPayment),
@@ -1242,8 +1249,9 @@ impl TakerSwap {
             ))
         };
 
-        log!({"Taker payment tx hash {:02x}", transaction.tx_hash()});
-        let tx_details = transaction.transaction_details(self.taker_coin.decimals()).unwrap();
+        let hash = transaction.tx_hash();
+        log!({"Taker payment tx hash {:02x}", hash});
+        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
 
         let sending_f = match send_! (&self.ctx, self.maker, fomat!(("taker-payment") '@' (self.uuid)), transaction.tx_hex()) {
             Ok(f) => f,
@@ -1268,8 +1276,9 @@ impl TakerSwap {
             ))
         };
         drop(sending_f);
-        log!({"Taker payment spend tx {:02x}", tx.tx_hash()});
-        let tx_details = tx.transaction_details(self.taker_coin.decimals()).unwrap();
+        let hash = tx.tx_hash();
+        log!({"Taker payment spend tx {:02x}", hash});
+        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
         let secret = match tx.extract_secret() {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(e) => return Ok((
@@ -1300,8 +1309,9 @@ impl TakerSwap {
             )),
         };
 
-        log!({"Maker payment spend tx {:02x}", transaction.tx_hash()});
-        let tx_details = transaction.transaction_details(self.maker_coin.decimals()).unwrap();
+        let hash = transaction.tx_hash();
+        log!({"Maker payment spend tx {:02x}", hash});
+        let tx_details = self.maker_coin.tx_details_by_hash(&hash).unwrap();
         Ok((
             Some(TakerSwapCommand::Finish),
             vec![TakerSwapEvent::MakerPaymentSpent(tx_details)],
@@ -1329,8 +1339,10 @@ impl TakerSwap {
                 vec![TakerSwapEvent::TakerPaymentRefundFailed(ERRL!("{}", err))]
             )),
         };
-        log!({"Taker refund tx hash {:02x}", transaction.tx_hash()});
-        let tx_details = transaction.transaction_details(self.taker_coin.decimals()).unwrap();
+
+        let hash = transaction.tx_hash();
+        log!({"Taker refund tx hash {:02x}", hash});
+        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
         Ok((
             Some(TakerSwapCommand::Finish),
             vec![TakerSwapEvent::TakerPaymentRefunded(tx_details)],
@@ -1415,7 +1427,7 @@ pub fn save_stats_swap_status(ctx: &MmArc, data: Json) -> HyRes {
 /// Skips the first `skip` records (default: 0).
 pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     let limit = req["limit"].as_u64().unwrap_or(10);
-    let skip = req["skip"].as_u64().unwrap_or(0);
+    let from_uuid = req["from_uuid"].as_str();
     let mut entries: Vec<(SystemTime, DirEntry)> = try_h!(my_swaps_dir(&ctx).read_dir()).filter_map(|dir_entry| {
         let entry = match dir_entry {
             Ok(ent) => ent,
@@ -1450,8 +1462,13 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     // sort by m_time in descending order
     entries.sort_by(|(a, _), (b, _)| b.cmp(&a));
 
+    let skip = match from_uuid {
+        Some(uuid) => try_h!(entries.iter().position(|(_, entry)| entry.path() == my_swap_file_path(&ctx, uuid)).ok_or(format!("from_uuid {} swap is not found", uuid))) + 1,
+        None => 0,
+    };
+
     // iterate over file entries trying to parse the file contents and add to result vector
-    let result: Vec<Json> = entries.iter().skip(skip as usize).take(limit as usize).map(|(_, entry)|
+    let swaps: Vec<Json> = entries.iter().skip(skip).take(limit as usize).map(|(_, entry)|
         json::from_slice(&slurp(&entry.path())).map_err(|e| {
             log!("Error " (e) " parsing JSON from " (entry.path().display()));
             e
@@ -1459,9 +1476,12 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     ).collect();
 
     rpc_response(200, json!({
-        "result": result,
-        "skip": skip,
-        "limit": limit,
-        "total": entries.len(),
+        "result": {
+            "swaps": swaps,
+            "from_uuid": from_uuid,
+            "skipped": skip,
+            "limit": limit,
+            "total": entries.len(),
+        },
     }).to_string())
 }

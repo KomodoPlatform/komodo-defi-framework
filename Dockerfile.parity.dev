@@ -8,4 +8,4 @@ COPY parity.dev.chain.json /home/parity/.local/share/io.parity.ethereum/chain.js
 USER root
 RUN chmod -R 777 /home/parity/.local/share/io.parity.ethereum
 USER parity
-ENTRYPOINT /bin/parity --jsonrpc-apis safe --chain=/home/parity/.local/share/io.parity.ethereum/chain.json --jsonrpc-hosts=all --jsonrpc-interface=all --jsonrpc-cors=all
+ENTRYPOINT /bin/parity --jsonrpc-apis safe --chain=/home/parity/.local/share/io.parity.ethereum/chain.json --jsonrpc-hosts=all --jsonrpc-interface=all --jsonrpc-cors=all --tracing=on

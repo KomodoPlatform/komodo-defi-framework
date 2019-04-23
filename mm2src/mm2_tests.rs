@@ -697,7 +697,7 @@ fn check_recent_swaps(
         })));
     assert!(response.0.is_success(), "!status of my_recent_swaps {}", response.1);
     let swaps_response: Json = unwrap!(json::from_str(&response.1));
-    let swaps: &Vec<Json> = unwrap!(swaps_response["result"].as_array());
+    let swaps: &Vec<Json> = unwrap!(swaps_response["result"]["swaps"].as_array());
     assert_eq!(expected_len, swaps.len());
 }
 
@@ -1098,9 +1098,9 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &Hash
 
     assert! (withdraw.0.is_success(), "!{} withdraw: {}", coin, withdraw.1);
     let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
-    assert_eq!(Some(to), withdraw_json["to"].as_str());
-    assert_eq!(Some(0.001), withdraw_json["amount"].as_f64());
-    assert_eq!(addr, withdraw_json["from"]);
+    assert_eq!(Some(&vec![Json::from(to)]), withdraw_json["to"].as_array());
+    assert_eq!(Some(0.001), withdraw_json["total_amount"].as_f64());
+    assert_eq!(Some(&vec![addr]), withdraw_json["from"].as_array());
 
     let send = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,

@@ -33,7 +33,7 @@ use common::{bitcoin_ctx, bits256, lp, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use dirs::home_dir;
 use futures::{Future};
-use gstuff::now_ms;
+use gstuff::{now_ms, slurp};
 use hashbrown::hash_map::{HashMap, RawEntryMut};
 use libc::{c_char, c_void};
 use rpc::v1::types::{Bytes as BytesJson};
@@ -46,6 +46,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 #[doc(hidden)]
 pub mod coins_tests;
@@ -62,23 +63,12 @@ pub trait Transaction: Debug + 'static {
     fn tx_hash(&self) -> BytesJson;
     /// Transaction amount
     fn amount(&self, decimals: u8) -> Result<f64, String>;
-    /// From address
-    fn from(&self) -> String;
-    /// To address
-    fn to(&self) -> String;
+    /// From addresses
+    fn from(&self) -> Vec<String>;
+    /// To addresses
+    fn to(&self) -> Vec<String>;
     /// Fee details
     fn fee_details(&self) -> Result<Json, String>;
-    /// Serializable transaction details for displaying purposes
-    fn transaction_details(&self, decimals: u8) -> Result<TransactionDetails, String> {
-        Ok(TransactionDetails {
-            tx_hash: self.tx_hash(),
-            amount: try_s!(self.amount(decimals)),
-            fee_details: try_s!(self.fee_details()),
-            from: self.from(),
-            to: self.to(),
-            tx_hex: self.tx_hex().into(),
-        })
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -229,17 +219,25 @@ pub struct TransactionDetails {
     pub tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: BytesJson,
-    /// Coins will be sent from this address
-    from: String,
-    /// Coins will be sent to this address
-    to: String,
-    /// Amount to be sent
-    amount: f64,
+    /// Coins are sent from these addresses
+    from: Vec<String>,
+    /// Coins are sent to these addresses
+    to: Vec<String>,
+    /// Total tx amount
+    total_amount: f64,
+    /// The amount spent from "our" address
+    spent_by_me: f64,
+    /// The amount received by "our" address
+    received_by_me: f64,
+    /// Block height
+    block_height: u64,
     /// Every coin can has specific fee details:
     /// When you send UTXO tx you pay fee with the coin itself (e.g. 1 BTC and 0.0001 BTC fee).
     /// But for ERC20 token transfer you pay fee with another coin: ETH, because it's ETH smart contract function call that requires gas to be burnt.
     /// So it's just generic JSON for now, maybe we will change it to Rust generic later.
-    fee_details: Json
+    fee_details: Json,
+    /// The coin transaction belongs to
+    coin: String,
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
@@ -260,6 +258,17 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
+
+    /// Loop collecting coin transaction history and saving it to local DB
+    fn process_history_loop(&self, ctx: MmArc);
+
+    /// Path to tx history file
+    fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
+        ctx.dbdir().join("TRANSACTIONS").join(format!("{}_{}.json", self.ticker(), self.my_address()))
+    }
+
+    /// Gets tx details by hash requesting the coin RPC if required
+    fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String>;
 }
 
 #[derive(Clone, Debug)]
@@ -846,6 +855,15 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         ii.inactive = 0;
     }
 
+    let history = req["tx_history"].as_bool().unwrap_or(false);
+    if history {
+        try_s!(thread::Builder::new().name(format!("tx_history_{}", ticker)).spawn({
+            let coin = coin.clone();
+            let ctx = ctx.clone();
+            move || coin.process_history_loop(ctx)
+        }));
+    }
+
     ve.insert (ticker.into(), coin.clone());
     Ok (coin)
 }
@@ -972,4 +990,56 @@ pub fn send_raw_transaction (ctx: MmArc, req: Json) -> HyRes {
             "tx_hash": res
         }).to_string())
     }))
+}
+
+/// Returns the transaction history of selected coin. Returns no more than `limit` records (default: 10).
+/// Skips the first `skip` records (default: 0).
+/// Transactions are sorted by number of confirmations in ascending order.
+pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind (&ctx, &ticker) {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    };
+    let limit = req["limit"].as_u64().unwrap_or(10);
+    let from_tx_hash: Option<BytesJson> = try_h!(json::from_value(req["from_tx_hash"].clone()));
+    let file_path = coin.tx_history_path(&ctx);
+    let content = slurp(&file_path);
+    if content.is_empty() {
+        rpc_response(200, json!({
+            "result": [],
+        }).to_string())
+    } else {
+        let history: Vec<TransactionDetails> = try_h!(json::from_slice(&content));
+        let total_records = history.len();
+        Box::new(coin.current_block().and_then(move |block_number| {
+            let skip = match &from_tx_hash {
+                Some(hash) => {
+                    try_h!(history.iter().position(|item| item.tx_hash == *hash).ok_or(format!("from_tx_hash {:02x} is not found", hash))) + 1
+                },
+                None => 0,
+            };
+            let history = history.into_iter().skip(skip).take(limit as usize);
+            let history: Vec<Json> = history.map(|item| {
+                let tx_block = item.block_height;
+                let mut json = unwrap!(json::to_value(item));
+                json["confirmations"] = if tx_block == 0 {
+                    Json::from(0)
+                } else {
+                    Json::from(block_number - tx_block + 1)
+                };
+                json
+            }).collect();
+            rpc_response(200, json!({
+                "result": {
+                    "transactions": history,
+                    "limit": limit,
+                    "skipped":skip,
+                    "from_tx_hash": from_tx_hash,
+                    "total": total_records,
+                }
+            }).to_string())
+        }))
+    }
 }

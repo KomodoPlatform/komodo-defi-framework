@@ -76,6 +76,9 @@ impl PricePingRequest {
         let sig = unsafe {
             let sig_c = lp::LP_price_sig(timestamp as u32, lp::G.LP_privkey, lp::G.LP_pubsecp.as_mut_ptr(), lp::G.LP_mypub25519,
                              base_c.as_ptr() as *mut c_char, rel_c.as_ptr() as *mut c_char, price64);
+            if sig_c.is_null() {
+                return ERR!("Price request signature is null");
+            }
             let sig_str = try_s!(CStr::from_ptr(sig_c).to_str()).into();
             free_c_ptr(sig_c as *mut c_void);
             sig_str

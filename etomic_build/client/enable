@@ -1,9 +1,9 @@
 #!/bin/bash
 source userpass
-curl --url "http://127.0.0.1:7783" --data "{\"queueid\":0,\"needjson\":1,\"method\":\"electrum\",\"coin\":\"ETOMIC\",\"urls\":[\"electrum1.cipig.net:10025\",\"electrum2.cipig.net:10025\",\"electrum3.cipig.net:10025\"],\"userpass\":\"$userpass\",\"mm2\":1}"
-curl --url "http://127.0.0.1:7783" --data "{\"queueid\":0,\"needjson\":1,\"method\":\"electrum\",\"coin\":\"DASH\",\"urls\":[\"electrum1.cipig.net:10061\",\"electrum2.cipig.net:10061\",\"electrum3.cipig.net:10061\"],\"userpass\":\"$userpass\",\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"method\":\"electrum\",\"coin\":\"RICK\",\"urls\":[\"116.203.40.22:10004\"],\"userpass\":\"$userpass\",\"mm2\":1,\"tx_history\":true}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"ETH\",\"urls\":[\"http://195.201.0.6:8545\"],\"swap_contract_address\":\"0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94\",\"mm2\":1}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"JST\",\"urls\":[\"http://195.201.0.6:8545\"],\"swap_contract_address\":\"0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94\",\"mm2\":1}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"DEC8\",\"urls\":[\"http://195.201.0.6:8545\"],\"swap_contract_address\":\"0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94\",\"mm2\":1}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"BEER\",\"urls\":[\"electrum1.cipig.net:10022\",\"electrum2.cipig.net:10022\",\"electrum3.cipig.net:10022\"],\"mm2\":1}"
 curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"PIZZA\",\"urls\":[\"electrum1.cipig.net:10024\",\"electrum2.cipig.net:10024\",\"electrum3.cipig.net:10024\"],\"mm2\":1}"
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"ETOMIC\",\"urls\":[\"electrum1.cipig.net:10025\",\"electrum2.cipig.net:10025\",\"electrum3.cipig.net:10025\"],\"mm2\":1}"

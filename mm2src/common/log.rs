@@ -187,6 +187,11 @@ impl<'a> TagParam<'a> for &'a str {
     fn val (&self) -> Option<String> {None}
 }
 
+impl<'a> TagParam<'a> for String {
+    fn key (&self) -> String {self.clone()}
+    fn val (&self) -> Option<String> {None}
+}
+
 impl<'a> TagParam<'a> for (&'a str, &'a str) {
     fn key (&self) -> String {String::from (self.0)}
     fn val (&self) -> Option<String> {Some (String::from (self.1))}

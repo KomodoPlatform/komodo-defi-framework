@@ -82,7 +82,7 @@ use std::ffi::{CStr, CString};
 use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::abort;
 use std::ptr::{null_mut, read_volatile};

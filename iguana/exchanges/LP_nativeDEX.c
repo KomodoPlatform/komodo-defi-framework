@@ -346,73 +346,6 @@ char *LP_process_message(void *ctx,char *typestr,char *myipaddr,int32_t pubsock,
     return(retstr);
 }
 
-int32_t LP_sock_check(char *typestr,void *ctx,char *myipaddr,int32_t pubsock,int32_t sock,char *remoteaddr,int32_t maxdepth)
-{
-    return(1);
-}
-
-int32_t LP_nanomsg_recvs(void *ctx)
-{
-    int32_t n=0,nonz = 0; char *origipaddr; struct LP_peerinfo *peer,*tmp;
-    if ( (origipaddr= LP_myipaddr) == 0 )
-        origipaddr = "127.0.0.1";
-    portable_mutex_lock(&LP_nanorecvsmutex);
-    HASH_ITER(hh,LP_peerinfos,peer,tmp)
-    {
-        if ( n++ > 0 && peer->errors >= LP_MAXPEER_ERRORS )
-        {
-            if ( (LP_rand() % 10000) == 0 )
-                peer->errors--;
-            else
-            {
-                //printf("skip %s\n",peer->ipaddr);
-                continue;
-            }
-        }
-        nonz += LP_sock_check("SUB",ctx,origipaddr,LP_mypubsock,peer->subsock,peer->ipaddr,1);
-    }
-    /*HASH_ITER(hh,LP_coins,coin,ctmp) // firstrefht,firstscanht,lastscanht
-     {
-     if ( coin->inactive != 0 )
-     continue;
-     if ( coin->bussock >= 0 )
-     nonz += LP_sock_check(coin->symbol,ctx,origipaddr,-1,coin->bussock,LP_profitratio - 1.);
-     }*/
-    if ( LP_mypullsock >= 0 )
-    {
-        nonz += LP_sock_check("PULL",ctx,origipaddr,-1,LP_mypullsock,"127.0.0.1",1);
-    }
-    portable_mutex_unlock(&LP_nanorecvsmutex);
-    return(nonz);
-}
-
-void command_rpcloop(void *ctx)
-{
-    int32_t nonz = 0;
-    strcpy(command_rpcloop_stats.name,"command_rpcloop");
-    command_rpcloop_stats.threshold = 2500.;
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        LP_millistats_update(&command_rpcloop_stats);
-        nonz = LP_nanomsg_recvs(ctx);
-        //if ( LP_mybussock >= 0 )
-        //    nonz += LP_sock_check("BUS",ctx,origipaddr,-1,LP_mybussock);
-        if ( nonz == 0 )
-        {
-            if ( IAMLP != 0 )
-                usleep(10000);
-            else usleep(50000);
-        }
-        else if ( IAMLP == 0 )
-            usleep(1000);
-    }
-}
-
 void LP_coinsloop(void *_coins)
 {
     static int32_t didfilescreate;
@@ -791,133 +724,6 @@ void gc_loop(void *ctx)
     }
 }
 
-void queue_loop(void *ctx)
-{
-    struct LP_queue *ptr,*tmp; cJSON *json; uint8_t linebuf[32768]; int32_t k,sentbytes,nonz,flag,duplicate,n=0;
-    strcpy(queue_loop_stats.name,"queue_loop");
-    queue_loop_stats.threshold = 1000.;
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        //LP_millistats_update(&queue_loop_stats);
-        n = nonz = flag = 0;
-        DL_FOREACH_SAFE(LP_Q,ptr,tmp)
-        {
-            n++;
-            flag = 0;
-            if ( ptr->sock >= 0 )
-            {
-                //printf("sock.%d len.%d notready.%d\n",ptr->sock,ptr->msglen,ptr->notready);
-                if ( ptr->notready == 0 || (LP_rand() % ptr->notready) == 0 )
-                {
-                    if ( LP_sockcheck(ptr->sock) > 0 )
-                    {
-                        printf("msg %s sock %d\n",(char *)ptr->msg, ptr->sock);
-                        //bits256 magic;
-                        //magic = LP_calc_magic(ptr->msg,(int32_t)(ptr->msglen - sizeof(bits256)));
-                        //memcpy(&ptr->msg[ptr->msglen - sizeof(bits256)],&magic,sizeof(magic));
-                        if ( (json= cJSON_Parse((char *)ptr->msg)) != 0 )
-                        {
-                            if ( ptr->msglen < sizeof(linebuf) )
-                            {
-                                if ( (k= MMJSON_encode(linebuf,(char *)ptr->msg)) > 0 )
-                                {
-                                }
-                                //printf("k.%d flag.%d SEND.(%s) sock.%d\n",k,flag,(char *)ptr->msg,ptr->sock);
-                            }
-                            free_json(json);
-                        }
-                        if ( flag == 0 )
-                        {
-                           // printf("non-encoded len.%d SEND.(%s) sock.%d\n",ptr->msglen,(char *)ptr->msg,ptr->sock);
-                        }
-                        if ( ptr->peerind > 0 )
-                            ptr->starttime = (uint32_t)time(NULL);
-                    }
-                    else
-                    {
-                        if ( ptr->notready++ > 100 )
-                        {
-                            flag = 1;
-                            //printf("queue_loop sock.%d len.%d notready.%d, skip\n",ptr->sock,ptr->msglen,ptr->notready);
-                            ptr->sock = -1;
-                        }
-                    }
-                }
-            }
-            if ( flag != 0 )
-            {
-                nonz++;
-                portable_mutex_lock(&LP_networkmutex);
-                DL_DELETE(LP_Q,ptr);
-                portable_mutex_unlock(&LP_networkmutex);
-                free(ptr);
-                ptr = 0;
-                break;
-            }
-        }
-        if ( nonz == 0 )
-        {
-            if ( IAMLP == 0 )
-                usleep(50000);
-            else usleep(10000);
-        }
-    }
-}
-
-void LP_reserved_msgs(void *ignore)
-{
-    bits256 zero; int32_t flag,nonz;
-    memset(zero.bytes,0,sizeof(zero));
-    strcpy(LP_reserved_msgs_stats.name,"LP_reserved_msgs");
-    LP_reserved_msgs_stats.threshold = 1000.;
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        nonz = 0;
-        LP_millistats_update(&LP_reserved_msgs_stats);
-        if ( num_Reserved_msgs[1] > 0 )
-        {
-            nonz++;
-            portable_mutex_lock(&LP_reservedmutex);
-            if ( num_Reserved_msgs[1] > 0 )
-            {
-                num_Reserved_msgs[1]--;
-                //printf("PRIORITY BROADCAST.(%s)\n",Reserved_msgs[1][num_Reserved_msgs[1]]);
-                LP_broadcast_message(LP_mypubsock,"","",zero,Reserved_msgs[1][num_Reserved_msgs[1]]);
-                Reserved_msgs[1][num_Reserved_msgs[1]] = 0;
-            }
-            portable_mutex_unlock(&LP_reservedmutex);
-        }
-        else if ( num_Reserved_msgs[0] > 0 )
-        {
-            nonz++;
-            flag = 0;
-            if ( flag == 1 )
-            {
-                portable_mutex_lock(&LP_reservedmutex);
-                num_Reserved_msgs[0]--;
-                //printf("BROADCAST.(%s)\n",Reserved_msgs[0][num_Reserved_msgs[0]]);
-                LP_broadcast_message(LP_mypubsock,"","",zero,Reserved_msgs[0][num_Reserved_msgs[0]]);
-                Reserved_msgs[0][num_Reserved_msgs[0]] = 0;
-                portable_mutex_unlock(&LP_reservedmutex);
-            }
-        }
-        if ( ignore == 0 )
-            break;
-        if ( nonz == 0 )
-            usleep(5000);
-    }
-}
-
 int32_t LP_reserved_msg(int32_t priority,bits256 pubkey,char *msg)
 {
     struct LP_pubkey_info *pubp; uint32_t timestamp; char *method; cJSON *argjson; int32_t skip,sentbytes,n = 0;
@@ -1010,22 +816,7 @@ void LPinit(char* myipaddr,uint16_t mypullport,uint16_t mypubport,char *passphra
     long filesize; int32_t valid,timeout; struct LP_peerinfo *mypeer=0; char pushaddr[128],subaddr[128],bindaddr[128],*coins_str=0; cJSON *coinsjson=0; void* ctx;
 
 #ifndef FROM_JS
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_reserved_msgs,(void *)myipaddr) != 0 )
-    {
-        printf("error launching LP_reserved_msgs for (%s)\n",myipaddr);
-        exit(-1);
-    }
     if ((ctx = r_btc_ctx(mm_ctx_id)) == 0) return;
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)command_rpcloop,ctx) != 0 )
-    {
-        printf("error launching command_rpcloop for ctx.%p\n",ctx);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)queue_loop,ctx) != 0 )
-    {
-        printf("error launching queue_loop for ctx.%p\n",ctx);
-        exit(-1);
-    }
     if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)gc_loop,ctx) != 0 )
     {
         printf("error launching gc_loop for port.%p\n",ctx);
@@ -1087,6 +878,7 @@ void LPinit(char* myipaddr,uint16_t mypullport,uint16_t mypubport,char *passphra
             uint16_t myport2 = RPC_port-1;
             printf("start remote port\n");
         }
+        sleep(1);
     }
 #endif
     printf("marketmaker exiting in 5 seconds\n");
