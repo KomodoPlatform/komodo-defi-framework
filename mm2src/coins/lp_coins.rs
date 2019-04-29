@@ -1040,7 +1040,13 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
     let content = slurp(&file_path);
     if content.is_empty() {
         rpc_response(200, json!({
-            "result": [],
+            "result": {
+                "transactions": [],
+                "limit": limit,
+                "skipped": 0,
+                "from_id": from_id,
+                "total": 0,
+            }
         }).to_string())
     } else {
         let history: Vec<TransactionDetails> = try_h!(json::from_slice(&content));
@@ -1067,7 +1073,7 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
                 "result": {
                     "transactions": history,
                     "limit": limit,
-                    "skipped":skip,
+                    "skipped": skip,
                     "from_id": from_id,
                     "total": total_records,
                 }
