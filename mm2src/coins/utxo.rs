@@ -28,7 +28,7 @@ use chain::constants::{SEQUENCE_FINAL};
 use common::{dstr, lp, MutexGuardWrapper};
 use common::mm_ctx::MmArc;
 use futures::{Future};
-use gstuff::{now_ms, slurp};
+use gstuff::{now_ms};
 use hashbrown::hash_map::{HashMap, Entry};
 use keys::{KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
@@ -995,6 +995,8 @@ impl MmCoin for UtxoCoin {
                     fee_details: try_s!(json::to_value(fee_details)),
                     block_height: 0,
                     coin: arc.ticker.clone(),
+                    internal_id: vec![].into(),
+                    timestamp: now_ms() / 1000,
                 })
             })
         }))
@@ -1005,23 +1007,8 @@ impl MmCoin for UtxoCoin {
     }
 
     fn process_history_loop(&self, ctx: MmArc) {
-        let content = slurp(&self.tx_history_path(&ctx));
-        let history: Vec<TransactionDetails> = if content.is_empty() {
-            vec![]
-        } else {
-            match json::from_slice(&content) {
-                Ok(c) => c,
-                Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on history deserialization, resetting the cache", e));
-                    unwrap!(std::fs::remove_file(&self.tx_history_path(&ctx)));
-                    vec![]
-                }
-            }
-        };
-        let mut history_map = HashMap::new();
-        for tx in history.into_iter() {
-            history_map.insert(H256Json::from(tx.tx_hash.as_slice()), tx);
-        }
+        let history = self.load_history_from_file(&ctx);
+        let mut history_map: HashMap<H256Json, TransactionDetails> = history.into_iter().map(|tx| (H256Json::from(tx.tx_hash.as_slice()), tx)).collect();
         loop {
             let tx_ids: Vec<H256Json> = match &self.rpc_client {
                 UtxoRpcClientEnum::Native(client) => {
@@ -1095,9 +1082,7 @@ impl MmCoin for UtxoCoin {
                     } else {
                         b.block_height.cmp(&a.block_height)
                     });
-                    let tmp_file = format!("{}.tmp", self.tx_history_path(&ctx).display());
-                    unwrap!(std::fs::write(&tmp_file, &unwrap!(json::to_vec(&to_write))));
-                    unwrap!(std::fs::rename(tmp_file, self.tx_history_path(&ctx)));
+                    self.save_history_to_file(&unwrap!(json::to_vec(&to_write)), &ctx);
                 }
             }
             thread::sleep(Duration::from_secs(30));
@@ -1164,6 +1149,8 @@ impl MmCoin for UtxoCoin {
             }),
             block_height: verbose_tx.height,
             coin: self.ticker.clone(),
+            internal_id: tx.hash().reversed().to_vec().into(),
+            timestamp: verbose_tx.time.into(),
         })
     }
 }
@@ -1437,12 +1424,5 @@ mod tests {
         let expected_addr: Vec<Address> = vec!["bZoEPR7DjTqSDiQTeRFNDJuQPTRY2335LD".into()];
         let actual_addr = unwrap!(coin.addresses_from_script(&script));
         assert_eq!(expected_addr, actual_addr);
-    }
-
-    #[test]
-    fn test_tx_details_from_hash() {
-        let coin = utxo_coin_for_test();
-        let details = coin.tx_details_by_hash("c659d1618d1b851ad066ca1a916ab3c66ac2839079dd6056c204ec55c8bb9eb1".into()).unwrap();
-        log!([details]);
     }
 }

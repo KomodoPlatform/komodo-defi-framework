@@ -138,3 +138,70 @@ pub fn test_peers_direct_send() {
     destruction_check (alice);
     destruction_check (bob);
 }
+
+pub fn test_http_fallback() {
+/*
+    let f = start_http_fallback_server();
+
+    let alice = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
+    let bob = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
+    //With libtorrent DHT disabled the peers will hit the timeout that activates the HTTP fallback.
+
+        println! ("Sending {} bytes …", message.len());
+        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", message.clone());
+
+        let receiving_f = super::recv (&bob, b"test_dht", Box::new ({
+            let message = message.clone();
+            move |payload| payload == &message[..]
+        }));
+        let received = unwrap! (receiving_f.wait());
+        assert_eq! (received, message);
+
+    destruction_check (alice);
+    destruction_check (bob);
+
+    drop (f);  // Stops the HTTP server by dropping the Future.
+*/
+}
+
+// Check the primitives used to communicate with the HTTP fallback server.  
+// These are useful in implementing NAT traversal in situations
+// where a truly distributed no-single-point-of failure operation is not necessary,
+// like when we're using the fallback server to drive a tested mm2 instance.
+pub fn test_http_fallback_kv() {
+/*
+    let f = start_http_fallback_server();
+
+    crdt = add b"value1"
+    let s = super::http_store (addr, "key", crdt);
+    test s.wait() == [b"value1"]
+
+    crdt = add b"value2"
+    let s = super::http_store (addr, "key", crdt);
+    test s.wait() == [b"value1", b"value2"]
+
+    crdt = remove b"value1"
+    let s = super::http_store (addr, "key", crdt);
+    test s.wait() == [b"value2"]
+
+    let g = super::http_fetch (addr, "key");
+    test g.wait() == [b"value2"]
+
+    // Server-side conversion of CRDT into a normal value
+    // in order to provide a simple cURL-compatible interface.
+    // (Should maybe test it with cURL?)
+    let g = super::http_get (addr, "key");
+    test g.wait() == b"value"
+
+    // Server-side conversion of a set operation into a CRDT modification
+    // in order to provide a simple cURL-compatible interface.
+    // (Should maybe test it with cURL?)
+    let s = super::http_set (addr, "key", b"value");
+    test s.wait()
+
+    let g = super::http_fetch (addr, "key");
+    test g.wait() == [b"value2", b"value"]
+
+    drop (f);  // Stops the HTTP server by dropping the Future.
+*/
+}

@@ -72,6 +72,7 @@ use hyper::{Body, Client, Request, Response, StatusCode, HeaderMap};
 use hyper::client::HttpConnector;
 use hyper::header::{ HeaderValue, CONTENT_TYPE };
 use hyper::rt::Stream;
+use hyper::server::conn::Http;
 use hyper_rustls::HttpsConnector;
 use libc::{c_char, c_void, malloc, free};
 use serde_json::{self as json, Value as Json};
@@ -423,6 +424,8 @@ fn start_core_thread() -> Remote {
 lazy_static! {
     /// Shared asynchronous reactor.
     pub static ref CORE: Remote = start_core_thread();
+    /// Shared HTTP server.
+    pub static ref HTTP: Http = Http::new();
 }
 
 /// With a shared reactor drives the future `f` to completion.

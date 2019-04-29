@@ -17,26 +17,20 @@
 //  marketmaker
 //
 
-use common::{coins_iter, lp, lp_queue_command_for_c, slurp_url, os, CJSON, MM_VERSION};
-use common::log::TagParam;
-use common::mm_ctx::{MmCtx, MmArc};
 use futures::{Future};
-use futures::stream::Stream;
+use futures::sync::oneshot::Sender;
 use gstuff::now_ms;
 use hex;
-use hyper::{Request, Body, StatusCode};
-use hyper::service::Service;
+use hyper::StatusCode;
 use libc::{self, c_char, c_void};
-use peers;
-use portfolio::prices_loop;
-use rand::random;
+use rand::{random, thread_rng, Rng};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::fs;
 use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Write};
 use std::mem::{transmute, zeroed};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::Path;
 use std::ptr::null_mut;
 use std::str;
@@ -44,12 +38,18 @@ use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
-use tokio_core::{net as tnet};
 
-use crate::common::{rpc_response, HyRes, CORE};
+use peers::http_fallback::new_http_fallback;
+use portfolio::prices_loop;
+
+use crate::common::{
+    coins_iter, lp, lp_queue_command_for_c, os, slurp_url,
+    CORE, CJSON, MM_VERSION};
+use crate::common::log::TagParam;
+use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
-use crate::mm2::rpc::{self, HTTP, SINGLE_THREADED_C_LOCK};
+use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
 
 /*
 #include <stdio.h>
@@ -1568,31 +1568,46 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     Ok(())
 }
 
-/// Temporarily binds on the given IP and port to check if they're available.  
-/// Returns `false` if the address did not work
+
+/// Temporarily binds on the given IP to check if it's available.  
+/// 
+/// Returns an error if the address did not work
 /// (like when the `ip` does not belong to a connected interface or is already taken).
-fn test_bind (ip: IpAddr, port: u16) -> bool {
-    let bindaddr = SocketAddr::new (ip, port);
-    let listener = match tnet::TcpListener::bind2 (&bindaddr) {Ok (tl) => tl, Err (_) => return false};
-
-    // The bind just always works on certain operating systems.
+/// 
+/// If the IP has passed the communication check then a shutdown Sender is returned.
+/// Dropping or using that Sender will stop the HTTP fallback server.
+/// 
+/// Also the port of the HTTP fallback server is returned.
+fn test_bind (ip: IpAddr, seed: bool) -> Result<(Sender<()>, u16), String> {
+    // NB: The `bind` just always works on certain operating systems.
     // To actually check the address we should try communicating on it.
-    // Reusing a likeness of `rpc::spawn_rpc` HTTP server for that.
+    // Reusing the HTTP fallback server for that.
 
-    struct RpcService;
-    impl Service for RpcService {
-        type ReqBody = Body; type ResBody = Body; type Error = String; type Future = HyRes;
-        fn call (&mut self, _request: Request<Body>) -> HyRes {
-            rpc_response (200, "k")
+    let (server, port) = if seed {
+        // NB: We might need special permissions to bind on 80.
+        // HTTP fallback should work on that port though
+        // in order to function with those providers which only allow the usual traffic.
+        let port = 80;
+        (try_s! (new_http_fallback (ip, port)), port)
+    } else {
+        // Try a few random ports.
+        let mut attempts_left = 9;
+        let mut rng = thread_rng();
+        loop {
+            if attempts_left < 1 {return ERR! ("Out of attempts")}
+            attempts_left -= 1;
+            // TODO: Avoid `mypubport`.
+            let port = rng.gen_range (1111, 65535);
+            log! ("test_bind] Trying to listen on " (ip) ':' (port));
+            match new_http_fallback (ip, port) {
+                Ok (s) => break (s, port),
+                Err (err) => {
+                    if attempts_left == 0 {return ERR! ("{}", err)}
+                    continue
+                }
+            }
         }
-    }
-    let server = listener.incoming().for_each (move |(socket, _my_sock)| {
-        CORE.spawn (move |_| HTTP
-                .serve_connection (socket, RpcService)
-                .map(|_| ())
-                .map_err (|err| log! ({"test_bind] HTTP error: {}", err})));
-        Ok(())
-    }) .map_err (|err| log! ({"test_bind] accept error: {}", err}));
+    };
 
     // Finish the server `Future` when `shutdown_rx` fires.
     let (shutdown_tx, shutdown_rx) = futures::sync::oneshot::channel::<()>();
@@ -1600,13 +1615,12 @@ fn test_bind (ip: IpAddr, port: u16) -> bool {
     CORE.spawn (move |_| server);
 
     let url = fomat! ("http://" if ip.is_unspecified() {"127.0.0.1"} else {(ip)} ":" (port));
+    log! ("test_bind] Checking " (url));
     let rc = slurp_url (&url) .wait();
-    let _ = shutdown_tx.send(());
-    if let Ok ((StatusCode::OK, _h, body)) = rc {
-        body == b"k"
-    } else {
-        false
-    }
+    let (status, _h, body) = try_s! (rc);
+    if status != StatusCode::OK {return ERR! ("Status not OK")}
+    if body != b"k" {return ERR! ("body not k")}
+    Ok ((shutdown_tx, port))
 }
 
 pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> Result<(), String> {
@@ -1668,6 +1682,11 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
         let ip = ip.trim();
         Ok (match ip.parse() {Ok (ip) => ip, Err (err) => return ERR! ("Error parsing IP address '{}': {}", ip, err)})
     }
+
+    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+
+    let mut http_fallback_shutdown = None;
+    let mut http_fallback_port = None;
 
     let myipaddr: IpAddr = if Path::new ("myipaddr") .exists() {
         match fs::File::open ("myipaddr") {
@@ -1732,26 +1751,34 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
             // If we're not behind a NAT then the bind will likely suceed.
             // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
             let tags: &[&TagParam] = &[&"myipaddr"];
-            if test_bind (ip, mypubport) {
-                ctx.log.log ("🙂", tags, &fomat! (
-                    "We've detected an external IP " (ip) " and we can bind on it (port " (mypubport) "), so probably a dedicated IP."));
-                break ip
+            match test_bind (ip, i_am_seed) {
+                Ok ((hf_shutdown, hf_port)) => {
+                    ctx.log.log ("🙂", tags, &fomat! (
+                        "We've detected an external IP " (ip) " and we can bind on it (port " (mypubport) ")"
+                        ", so probably a dedicated IP."));
+                    if i_am_seed {
+                        http_fallback_shutdown = Some (hf_shutdown);
+                        http_fallback_port = Some (hf_port);
+                    }
+                    break ip
+                },
+                Err (err) => log! ("IP " (ip) " doesn't check: " (err))
             }
             let all_interfaces = Ipv4Addr::new (0, 0, 0, 0) .into();
-            if test_bind (all_interfaces, mypubport) {
+            if test_bind (all_interfaces, false) .is_ok() {
                 ctx.log.log ("😅", tags, &fomat! (
-                    "We couldn't bind on the external IP " (ip) " (port " (mypubport) "), so NAT is likely to be present. We'll be okay though."));
+                    "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
                 break all_interfaces
             }
             let locahost = Ipv4Addr::new (127, 0, 0, 1) .into();
-            if test_bind (locahost, mypubport) {
+            if test_bind (locahost, false) .is_ok() {
                 ctx.log.log ("🤫", tags, &fomat! (
-                    "We couldn't bind on " (ip) " or 0.0.0.0 (port " (mypubport) "), is another MM2 instance running?"
+                    "We couldn't bind on " (ip) " or 0.0.0.0, is another MM2 instance running?"
                     " Looks like we can bind on 127.0.0.1 as a workaround, but this is a temporary workaround so please don't tell anyone."));
                 break locahost
             }
             ctx.log.log ("🤒", tags, &fomat! (
-                "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1 (port " (mypubport) ")."));
+                "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."));
             break all_interfaces  // Seems like a better default than 127.0.0.1, might still work for other ports.
         }
     };
@@ -1761,8 +1788,8 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
     unsafe {lp::G.netid = ctx.conf["netid"].as_u64().unwrap_or (0) as u16}
     unsafe {lp::LP_mypubsock = -1}
 
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let seednode_thread = if i_am_seed {
+        log! ("i_am_seed at " (myipaddr) ":" (mypubport));
         let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
         try_s!(listener.set_nonblocking(true));
         Some(try_s!(thread::Builder::new().name ("seednode_loop".into()) .spawn ({

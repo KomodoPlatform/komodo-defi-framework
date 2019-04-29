@@ -43,7 +43,7 @@ jobs:
       # Cargo uses CPU threads count by default running only 2 concurrent tests on Linux.
       # Explicit --test-threads=8 makes the process faster
       - bash: |
-          cargo test --all --bin mm2 -- --test-threads=8
+          cargo test --all -- --test-threads=8
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:

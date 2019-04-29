@@ -681,7 +681,7 @@ impl MakerSwap {
             Ok(tx) => tx,
             Err(err) => return Ok((
                 Some(MakerSwapCommand::RefundMakerPayment),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("!taker_coin.tx_enum_from_bytes: {}", err).into())]
+                vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_enum_from_bytes: {}", err).into())]
             )),
         };
 
@@ -710,7 +710,7 @@ impl MakerSwap {
         if let Err(e) = validated {
             return Ok((
                 Some(MakerSwapCommand::RefundMakerPayment),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into())]
+                vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into())]
             ))
         }
 
@@ -723,7 +723,7 @@ impl MakerSwap {
         if let Err(err) = wait {
             return Ok((
                 Some(MakerSwapCommand::RefundMakerPayment),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("!taker_coin.wait_for_confirmations: {}", err).into())]
+                vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.wait_for_confirmations: {}", err).into())]
             ))
         }
 

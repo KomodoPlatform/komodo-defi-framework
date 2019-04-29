@@ -10,12 +10,6 @@
  * or distributed except according to the terms contained in the LICENSE file *
  *                                                                            *
  * Removal or modification of this copyright notice is prohibited.            *
- *                                                           let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
-    };                     *
  ******************************************************************************/
 //
 //  rpc.rs
@@ -23,14 +17,13 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 use coins::{enable, electrum, my_balance, send_raw_transaction, withdraw, my_tx_history};
-use common::{free_c_ptr, lp, rpc_response, rpc_err_response, HyRes, CORE, lp_queue_command_for_c};
+use common::{free_c_ptr, lp, lp_queue_command_for_c, rpc_response, rpc_err_response, HyRes, CORE, HTTP};
 use common::mm_ctx::MmArc;
 use futures::{self, Future};
 use futures_cpupool::CpuPool;
 use gstuff;
 use hyper::{Request, Body, Method};
 use hyper::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
-use hyper::server::conn::Http;
 use hyper::rt::{Stream};
 use hyper::service::Service;
 use libc::{c_char, c_void};
@@ -56,8 +49,6 @@ use self::lp_commands::*;
 mod lp_signatures;
 
 lazy_static! {
-    /// Shared HTTP server.
-    pub static ref HTTP: Http = Http::new();
     /// Shared CPU pool to run intensive/sleeping requests on separate thread
     pub static ref CPUPOOL: CpuPool = CpuPool::new(8);
 }

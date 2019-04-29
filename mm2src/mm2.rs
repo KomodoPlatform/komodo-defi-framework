@@ -163,7 +163,7 @@ fn help() {
         "  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.\n"
         "                     Defaults to `true`, set `false` to disable. `Use with caution`.\n"
         "  rpcport        ..  If > 1000 overrides the 7783 default.\n"
-        "  i_am_seed      ..  Notify MM that it should run in seednode mode (acting as message relayer/broadcaster for others).\n"
+        "  i_am_seed      ..  Activate the seed node mode (acting as a relay for mm2 clients).\n"
         "                     Defaults to `false`.\n"
         "  seednodes      ..  Seednode IPs that node will use. At least 1 seed IP be set if the node is not seed itself.\n"
         "  userhome       ..  System home directory of a user ('/root' by default).\n"
