@@ -26,6 +26,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
 use common::{dstr, lp, MutexGuardWrapper};
+use common::custom_futures::join_all_sequential;
 use common::mm_ctx::MmArc;
 use futures::{Future};
 use gstuff::{now_ms};
@@ -306,11 +307,11 @@ fn p2sh_spending_tx(
     key_pair: &KeyPair,
     version: i32,
     overwintered: bool,
-    lock_time: u32,
     sequence: u32,
     version_group_id: u32,
     zcash: bool,
 ) -> Result<UtxoTx, String> {
+    let lock_time = (now_ms() / 1000) as u32;
     let unsigned = TransactionInputSigner {
         lock_time,
         version,
@@ -416,7 +417,7 @@ lazy_static! {static ref UTXO_LOCK: Mutex<()> = Mutex::new(());}
 macro_rules! true_or_err {
     ($cond: expr, $msg: expr $(, $args:ident)*) => {
         if !$cond {
-            return ERR!($msg $(, $args)*);
+            return Box::new(futures::future::err(ERRL!($msg $(, $args)*)));
         }
     };
 }
@@ -430,7 +431,6 @@ impl UtxoCoin {
             arc.generate_transaction(
                 unspents,
                 outputs,
-                0,
             ).and_then(move |(unsigned, _)| -> TransactionFut {
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
                 let signed = try_fus!(sign_tx(unsigned, &arc.key_pair, prev_script));
@@ -502,11 +502,11 @@ impl UtxoCoin {
         &self,
         utxos: Vec<UnspentInfo>,
         mut outputs: Vec<TransactionOutput>,
-        lock_time: u32,
     ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+        let lock_time = (now_ms() / 1000) as u32;
         let change_script_pubkey = Builder::build_p2pkh(&self.my_address.hash).to_bytes();
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |mut tx_fee| {
+        Box::new(self.get_tx_fee().and_then(move |mut tx_fee| -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
             true_or_err!(!utxos.is_empty(), "Couldn't generate tx from empty utxos set");
             true_or_err!(!outputs.is_empty(), "Couldn't generate tx from empty outputs set");
 
@@ -543,7 +543,7 @@ impl UtxoCoin {
                 outputs.push({
                     TransactionOutput {
                         value: change,
-                        script_pubkey: change_script_pubkey
+                        script_pubkey: change_script_pubkey.clone()
                     }
                 });
                 received_by_me += change;
@@ -571,7 +571,54 @@ impl UtxoCoin {
                 received_by_me,
                 spent_by_me: value_to_spend,
             };
-            Ok((tx, data))
+            arc.calc_interest_if_required(tx, data, change_script_pubkey)
+        }))
+    }
+
+    /// Calculates interest if the coin is KMD
+    /// Adds the value to existing output to my_script_pub or creates additional interest output
+    /// returns transaction and data as is if the coin is not KMD
+    fn calc_interest_if_required(
+        &self,
+        mut unsigned: TransactionInputSigner,
+        mut data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+        if self.ticker != "KMD" {
+            return Box::new(futures::future::ok((unsigned, data)));
+        }
+        unsigned.lock_time = (now_ms() / 1000) as u32 - 777;
+        let prev_tx_futures: Vec<_> = unsigned.inputs
+            .iter()
+            .map(|input| self.rpc_client.get_verbose_transaction(input.previous_output.hash.reversed().into()))
+            .collect();
+
+        Box::new(join_all_sequential(prev_tx_futures).map(move |prev_transactions| {
+            let mut interest = 0;
+            let inputs_and_tx = unsigned.inputs.iter().zip(prev_transactions.iter());
+            inputs_and_tx.for_each(|(input, tx)| {
+                interest += kmd_interest(tx.height, input.amount, tx.locktime as u64, unsigned.lock_time as u64);
+            });
+            if interest > 0 {
+                data.received_by_me += interest;
+                let mut output_to_me = unsigned.outputs.iter_mut().find(|out| out.script_pubkey == my_script_pub);
+                // add calculated interest to existing output to my address
+                // or create the new one if it's not found
+                match output_to_me {
+                    Some(ref mut output) => output.value += interest,
+                    None => {
+                        let interest_output = TransactionOutput {
+                            script_pubkey: my_script_pub,
+                            value: interest,
+                        };
+                        unsigned.outputs.push(interest_output);
+                    }
+                };
+            } else {
+                // if interest is zero attempt to set the lowest possible lock_time to claim it later
+                unsigned.lock_time = (now_ms() / 1000) as u32 - 3000;
+            }
+            (unsigned, data)
         }))
     }
 }
@@ -679,7 +726,6 @@ impl SwapOps for UtxoCoin {
                 &arc.key_pair,
                 arc.tx_version,
                 arc.overwintered,
-                (now_ms() / 1000) as u32,
                 SEQUENCE_FINAL,
                 arc.version_group_id,
                 arc.zcash,
@@ -719,7 +765,6 @@ impl SwapOps for UtxoCoin {
                 &arc.key_pair,
                 arc.tx_version,
                 arc.overwintered,
-                (now_ms() / 1000) as u32,
                 SEQUENCE_FINAL,
                 arc.version_group_id,
                 arc.zcash,
@@ -758,7 +803,6 @@ impl SwapOps for UtxoCoin {
                 &arc.key_pair,
                 arc.tx_version,
                 arc.overwintered,
-                (now_ms() / 1000) as u32,
                 SEQUENCE_FINAL - 1,
                 arc.version_group_id,
                 arc.zcash,
@@ -800,7 +844,6 @@ impl SwapOps for UtxoCoin {
                 &arc.key_pair,
                 arc.tx_version,
                 arc.overwintered,
-                (now_ms() / 1000) as u32,
                 SEQUENCE_FINAL - 1,
                 arc.version_group_id,
                 arc.zcash,
@@ -975,7 +1018,6 @@ impl MmCoin for UtxoCoin {
             arc.generate_transaction(
                 unspents,
                 outputs,
-                0,
             ).and_then(move |(unsigned, data)| {
                 drop(utxo_lock);
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
@@ -1318,6 +1360,31 @@ pub fn utxo_coin_from_iguana_info(
     Ok(UtxoCoin(Arc::new(coin)).into())
 }
 
+/// Function calculating KMD interest
+/// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729215/What+is+the+5+Komodo+Stake+Reward
+/// https://github.com/KomodoPlatform/komodo/blob/master/src/komodo_interest.h
+fn kmd_interest(height: u64, value: u64, lock_time: u64, current_time: u64) -> u64 {
+    const KOMODO_ENDOFERA: u64 = 7777777;
+    const LOCKTIME_THRESHOLD: u64 = 500000000;
+    // interest will stop accrue after block 7777777
+    if height >= KOMODO_ENDOFERA { return 0 };
+    // interest doesn't accrue for lock_time < 500000000
+    if lock_time < LOCKTIME_THRESHOLD { return 0; }
+    // current time must be greater than tx lock_time
+    if current_time < lock_time { return 0; }
+
+    let mut minutes = (current_time - lock_time) / 60;
+    // at least 1 hour should pass
+    if minutes < 60 { return 0; }
+    // interest stop accruing after 1 year before block 1000000
+    if minutes > 365 * 24 * 60 { minutes = 365 * 24 * 60 };
+    // interest stop accruing after 1 month past 1000000 block
+    if height >= 1000000 && minutes > 31 * 24 * 60 { minutes = 31 * 24 * 60; }
+    // next 2 lines ported as is from Komodo codebase
+    minutes -= 59;
+    (value / 10512000) * minutes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1386,7 +1453,7 @@ mod tests {
             value: 999,
         }];
 
-        let generated = coin.generate_transaction(unspents, outputs, 0).wait();
+        let generated = coin.generate_transaction(unspents, outputs).wait();
         // must not allow to use output with value < tx_fee
         unwrap_err!(generated);
 
@@ -1400,7 +1467,7 @@ mod tests {
             value: 98001,
         }];
 
-        let generated = unwrap!(coin.generate_transaction(unspents, outputs, 0).wait());
+        let generated = unwrap!(coin.generate_transaction(unspents, outputs).wait());
         // the change that is less than tx_fee must be included to miner fee according to JL777
         // so no extra outputs should appear in generated transaction
         assert_eq!(generated.0.outputs.len(), 1);
@@ -1424,5 +1491,15 @@ mod tests {
         let expected_addr: Vec<Address> = vec!["bZoEPR7DjTqSDiQTeRFNDJuQPTRY2335LD".into()];
         let actual_addr = unwrap!(coin.addresses_from_script(&script));
         assert_eq!(expected_addr, actual_addr);
+    }
+
+    #[test]
+    fn test_kmd_interest() {
+        let value = 64605500822;
+        let lock_time = 1556623906;
+        let current_time = 1556623906 + 3600 + 300;
+        let expected = 36870;
+        let actual = kmd_interest(1000001, value, lock_time, current_time);
+        assert_eq!(expected, actual);
     }
 }
