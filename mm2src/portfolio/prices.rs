@@ -125,6 +125,10 @@ struct SetPriceReq {
 
 pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
     let req: SetPriceReq = try_h!(json::from_value(req));
+    if req.base == req.rel {
+        return rpc_err_response(500, "Base and rel must be different coins");
+    }
+
     let base_coin = match try_h!(lp_coinfind(&ctx, &req.base)) {
         Some(coin) => coin,
         None => return rpc_err_response(500, &format!("Base coin {} is not found", req.base)),

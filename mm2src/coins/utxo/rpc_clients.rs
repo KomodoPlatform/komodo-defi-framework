@@ -466,7 +466,7 @@ pub fn spawn_electrum(
         Some(a) => a,
         None => return ERR!("Socket addr from addr {} is None.", addr_str),
     };
-    Ok(try_s!(electrum_connect(addr, arc)))
+    electrum_connect(addr, arc).map_err(|e| ERRL!("{} error {}", addr_str, e))
 }
 
 #[derive(Debug)]

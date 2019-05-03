@@ -1204,3 +1204,61 @@ fn test_swap_status() {
 
     assert_eq! (stats_swap.0, StatusCode::NOT_FOUND, "!not found status code: {}", stats_swap.1);
 }
+
+/// Ensure that setprice/buy/sell calls deny base == rel
+/// https://github.com/artemii235/SuperNET/issues/363
+#[test]
+fn test_order_errors_when_base_equal_rel() {
+    let coins = json!([
+        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+    enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
+
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "BEER",
+        "rel": "BEER",
+        "price": 0.9
+    })));
+    assert! (rc.0.is_server_error(), "setprice should have failed, but got {:?}", rc);
+
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "buy",
+        "base": "BEER",
+        "rel": "BEER",
+        "price": 0.9,
+        "relvolume": 0.1,
+    })));
+    assert! (rc.0.is_server_error(), "buy should have failed, but got {:?}", rc);
+
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": "BEER",
+        "rel": "BEER",
+        "price": 0.9,
+        "basevolume": 0.1,
+    })));
+    assert! (rc.0.is_server_error(), "sell should have failed, but got {:?}", rc);
+}
