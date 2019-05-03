@@ -956,11 +956,22 @@ struct AutopriceReq {
 }
 
 /// Handles the "autoprice" RPC call.
-pub fn lp_autoprice (_ctx: MmArc, req: Json) -> HyRes {
+pub fn lp_autoprice (ctx: MmArc, req: Json) -> HyRes {
     use self::lp::LP_priceinfo;
     use std::ffi::CString;
 
     let req: AutopriceReq = try_h! (json::from_value (req));
+    let coin = match lp_coinfind (&ctx, "KMD") {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use autoprice")),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( KMD ): " (err)))
+    };
+
+    let coin = match lp_coinfind (&ctx, "BTC") {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use autoprice")),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( BTC ): " (err)))
+    };
 
     let c_base = try_h! (CString::new (&req.base[..]));
     let c_base = c_base.as_ptr() as *mut c_char;

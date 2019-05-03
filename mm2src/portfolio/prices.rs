@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex};
 use super::{default_pricing_provider, register_interest_in_coin_prices, PortfolioContext, InterestingCoins};
 use url;
 
-const MIN_TRADE: f64 = 0.0001;
+const MIN_TRADE: f64 = 0.001;
 
 #[derive(Serialize)]
 struct PricePingRequest {
@@ -1653,6 +1653,18 @@ pub struct FundvalueRes {
 /// 
 /// * `immediate` - Don't wait for the external pricing resources, returning a "no price source" error for any prices that aren't already available.
 pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
+    let coin = match lp_coinfind (&ctx, "KMD") {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use fundvalue")),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( KMD ): " (err)))
+    };
+
+    let coin = match lp_coinfind (&ctx, "BTC") {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use fundvalue")),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( BTC ): " (err)))
+    };
+
     let req: FundvalueReq = try_h! (json::from_value (req));
 
     // Combine the explicitly specified `holdings` and the coins that `LP_balances` finds in the `address`.

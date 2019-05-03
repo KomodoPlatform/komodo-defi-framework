@@ -564,7 +564,7 @@ char *unstringify(char *str);
 int32_t LP_privkey_init(int32_t mypubsock,struct iguana_info *coin,bits256 myprivkey,bits256 mypub);
 void vcalc_sha256(char hashstr[(256 >> 3) * 2 + 1],uint8_t hash[256 >> 3],uint8_t *src,int32_t len);
 cJSON *LP_coinjson(struct iguana_info *coin,int32_t showwif);
-bits256 LP_privkeycalc(void *ctx,uint8_t *pubkey33,bits256 *pubkeyp,struct iguana_info *coin,char *passphrase,char *wifstr);
+bits256 LP_privkeycalc(bits256 *pubkeyp,char *passphrase);
 void LP_privkey_updates(void *ctx,int32_t pubsock,char *passphrase);
 bits256 bitcoin_pubkey33(void *ctx,uint8_t *data,bits256 privkey);
 void LP_priceinfos_clear();

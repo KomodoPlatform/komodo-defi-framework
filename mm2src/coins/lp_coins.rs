@@ -29,7 +29,7 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate unwrap;
 
-use common::{bitcoin_ctx, bits256, lp, rpc_response, rpc_err_response, HyRes};
+use common::{bitcoin_ctx, lp, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use dirs::home_dir;
 use futures::{Future};
@@ -776,24 +776,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpc_port))
     }
 
-    // TODO: Move the private key into `MmCtx`. Initialize it before `lp_coininit`.
-    let passphrase = try_s! (ctx.conf["passphrase"].as_str().ok_or ("!passphrase"));
-    let c_passphrase = try_s! (CString::new (&passphrase[..]));
-    unsafe {
-        let mut pubkey33: [u8; 33] = zeroed();
-        let mut pubkey: bits256 = zeroed();
-        let pk = lp::LP_privkeycalc (
-            ctx.btc_ctx() as *mut c_void,          // void *ctx
-            pubkey33.as_mut_ptr(),                 // uint8_t *pubkey33
-            &mut pubkey,                           // bits256 *pubkeyp
-            ii,                                    // struct iguana_info *coin
-            c_passphrase.as_ptr() as *mut c_char,  // char *passphrase
-            b"\0".as_ptr() as *mut c_char          // char *wifstr
-        );
-        if !pk.nonz() {return ERR! ("!LP_privkeycalc")}
-        if !lp::G.LP_privkey.nonz() {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
-    }
-
     let c_ticker = try_s! (CString::new (ticker));
     let c_ticker = c_ticker.as_ptr() as *mut c_char;
 
@@ -830,24 +812,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
             }
             break urls
         }
-
-        // Default servers for coins that are enabled by default.
-        // cf. https://github.com/artemii235/SuperNET/issues/281#issuecomment-460268221
-        if ticker == "KMD" {
-            break vec! [
-                "electrum1.cipig.net:10001".into(),
-                "electrum2.cipig.net:10001".into(),
-                "electrum3.cipig.net:10001".into()
-            ]
-        }
-        if ticker == "BTC" {
-            break vec! [
-                "electrum1.cipig.net:10000".into(),
-                "electrum2.cipig.net:10000".into(),
-                "electrum3.cipig.net:10000".into()
-            ]
-        }
-
         break Vec::new()
     };
 
@@ -971,12 +935,6 @@ pub fn lp_initcoins (ctx: &MmArc) -> Result<(), String> {
     //     But we currently need to initialize at least one coin here, in `fn lp_initcoins`,
     //     in order to set the global key pair with `LP_privkeycalc`.
     //     We also need the "KMD" initialized [and enabled] since it is currently used in `LP_pricepings` [etc].
-    let default_coins = ["BTC", "KMD"];
-
-    for &ticker in default_coins.iter() {
-        try_s! (lp_coininit (ctx, ticker, &json!({"mm2":1,"tx_history":true})));
-    }
-
     Ok(())
 }
 

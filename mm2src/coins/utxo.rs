@@ -103,6 +103,14 @@ enum TxFee {
 }
 
 #[derive(Debug)]
+enum ActualTxFee {
+    /// fixed tx fee not depending on transaction size
+    Fixed(u64),
+    /// fee amount per Kbyte received from coin RPC
+    Dynamic(u64),
+}
+
+#[derive(Debug)]
 pub struct UtxoCoinImpl {  // pImpl idiom.
     ticker: String,
     /// https://en.bitcoin.it/wiki/List_of_address_prefixes
@@ -164,10 +172,10 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
 }
 
 impl UtxoCoinImpl {
-    fn get_tx_fee(&self) -> Box<Future<Item=u64, Error=String> + Send> {
+    fn get_tx_fee(&self) -> Box<Future<Item=ActualTxFee, Error=String> + Send> {
         match self.tx_fee {
-            TxFee::Fixed(fee) => Box::new(futures::future::ok(fee)),
-            TxFee::Dynamic => self.rpc_client.estimate_fee_sat(self.decimals),
+            TxFee::Fixed(fee) => Box::new(futures::future::ok(ActualTxFee::Fixed(fee))),
+            TxFee::Dynamic => Box::new(self.rpc_client.estimate_fee_sat(self.decimals).map(|fee| ActualTxFee::Dynamic(fee))),
         }
     }
 
@@ -503,27 +511,34 @@ impl UtxoCoin {
         utxos: Vec<UnspentInfo>,
         mut outputs: Vec<TransactionOutput>,
     ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+        const DUST: u64 = 100;
         let lock_time = (now_ms() / 1000) as u32;
         let change_script_pubkey = Builder::build_p2pkh(&self.my_address.hash).to_bytes();
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |mut tx_fee| -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+        Box::new(self.get_tx_fee().and_then(move |coin_tx_fee| -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
             true_or_err!(!utxos.is_empty(), "Couldn't generate tx from empty utxos set");
             true_or_err!(!outputs.is_empty(), "Couldn't generate tx from empty outputs set");
+            let mut tx_fee = match &coin_tx_fee {
+                ActualTxFee::Fixed(f) => *f,
+                ActualTxFee::Dynamic(f) => (f * 20) / 1024, // every tx has version, locktime and maybe other fields depending on coin, using 20 bytes as default value for this
+            };
 
             let mut target_value = 0;
             let mut received_by_me = 0;
             for output in outputs.iter() {
                 let value = output.value;
-                true_or_err!(value >= tx_fee, "Output value {} is less than tx_fee {}", value, tx_fee);
+                true_or_err!(value >= DUST, "Output value {} is less than dust amount {}", value, DUST);
                 target_value += value;
                 if output.script_pubkey == change_script_pubkey {
                     received_by_me += value;
                 }
+                if let ActualTxFee::Dynamic(ref fee_per_kb) = coin_tx_fee {
+                    // output size: 8 byte (value) + 1 byte (script_pubkey length) + script_pubkey length
+                    tx_fee += (fee_per_kb * (8 + 1 + output.script_pubkey.len() as u64)) / 1024;
+                }
             }
 
             true_or_err!(target_value > 0, "Total target value calculated from outputs {:?} is zero", outputs);
-            target_value += tx_fee;
-
             let mut value_to_spend = 0;
             let mut inputs = vec![];
             for utxo in utxos.iter() {
@@ -533,13 +548,18 @@ impl UtxoCoin {
                     sequence: SEQUENCE_FINAL,
                     amount: utxo.value,
                 });
-                if value_to_spend >= target_value { break; }
+                if let ActualTxFee::Dynamic(ref fee_per_kb) = coin_tx_fee {
+                    // final input size: 1 byte (signature length) + 72 bytes (signature + sighash with length)
+                    // + 34 bytes (pubkey with length) + 32 bytes (prev_out hash) + 4 bytes (prev_out index)
+                    tx_fee += (fee_per_kb * (1 + 72 + 34 + 32 + 4)) / 1024;
+                }
+                if value_to_spend >= target_value + tx_fee { break; }
             }
-
+            target_value += tx_fee;
             true_or_err!(value_to_spend >= target_value, "Not sufficient balance. Couldn't collect enough value from utxos {:?} to create tx with outputs {:?}", utxos, outputs);
 
             let change = value_to_spend - target_value;
-            if change >= tx_fee {
+            if change >= DUST {
                 outputs.push({
                     TransactionOutput {
                         value: change,
@@ -713,7 +733,13 @@ impl SwapOps for UtxoCoin {
             payment_script(time_lock, &*dhash160(secret), &try_fus!(Public::from_slice(taker_pub)), self.key_pair.public())
         );
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |fee| -> TransactionFut {
+        Box::new(self.get_tx_fee().and_then(move |coin_fee| -> TransactionFut {
+            let fee = match coin_fee {
+                ActualTxFee::Fixed(fee) => fee,
+                // atomic swap payment spend transaction is ~300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+            };
+
             let output = TransactionOutput {
                 value: prev_tx.outputs[0].value - fee,
                 script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes()
@@ -752,7 +778,13 @@ impl SwapOps for UtxoCoin {
             payment_script(time_lock, &*dhash160(secret), &try_fus!(Public::from_slice(maker_pub)), self.key_pair.public())
         );
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |fee| -> TransactionFut {
+        Box::new(self.get_tx_fee().and_then(move |coin_fee| -> TransactionFut {
+            let fee = match coin_fee {
+                ActualTxFee::Fixed(fee) => fee,
+                // atomic swap payment spend transaction is ~300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+            };
+
             let output = TransactionOutput {
                 value: prev_tx.outputs[0].value - fee,
                 script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes()
@@ -790,7 +822,13 @@ impl SwapOps for UtxoCoin {
             payment_script(time_lock, secret_hash, self.key_pair.public(), &try_fus!(Public::from_slice(maker_pub)))
         );
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |fee| -> TransactionFut {
+        Box::new(self.get_tx_fee().and_then(move |coin_fee| -> TransactionFut {
+            let fee = match coin_fee {
+                ActualTxFee::Fixed(fee) => fee,
+                // atomic swap payment spend transaction is ~300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+            };
+
             let output = TransactionOutput {
                 value: prev_tx.outputs[0].value - fee,
                 script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes()
@@ -831,7 +869,13 @@ impl SwapOps for UtxoCoin {
             &try_fus!(Public::from_slice(taker_pub)),
         ));
         let arc = self.clone();
-        Box::new(self.get_tx_fee().and_then(move |fee| -> TransactionFut {
+        Box::new(self.get_tx_fee().and_then(move |coin_fee| -> TransactionFut {
+            let fee = match coin_fee {
+                ActualTxFee::Fixed(fee) => fee,
+                // atomic swap payment spend transaction is ~300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+            };
+
             let output = TransactionOutput {
                 value: prev_tx.outputs[0].value - fee,
                 script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes()
@@ -979,10 +1023,18 @@ impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
     fn check_i_have_enough_to_trade(&self, amount: f64, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
+        const DUST_F64: f64 = 0.000001;
+        if amount / 777.0 < DUST_F64 {
+            return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, 0.000777)));
+        }
         let fee_fut = self.get_tx_fee();
         let arc = self.clone();
         Box::new(
-            fee_fut.and_then(move |fee| {
+            fee_fut.and_then(move |coin_fee| {
+                let fee = match coin_fee {
+                    ActualTxFee::Fixed(f) => f,
+                    ActualTxFee::Dynamic(f) => f,
+                };
                 let fee_f64 = dstr(fee as i64, arc.decimals);
                 arc.my_balance().and_then(move |balance| {
                     let required = if maker {
@@ -1057,7 +1109,7 @@ impl MmCoin for UtxoCoin {
                     let mut from = 0;
                     let mut all_transactions = vec![];
                     loop {
-                        let transactions = match client.list_transactions(1000, from).wait() {
+                        let transactions = match client.list_transactions(100, from).wait() {
                             Ok(value) => value,
                             Err(e) => {
                                 ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on list transactions, retrying", e));
@@ -1068,7 +1120,7 @@ impl MmCoin for UtxoCoin {
                         if transactions.is_empty() {
                             break;
                         }
-                        from += 1000;
+                        from += 100;
                         all_transactions.extend(transactions);
                     }
                     all_transactions.into_iter().filter_map(|item| {
@@ -1450,11 +1502,11 @@ mod tests {
 
         let outputs = vec![TransactionOutput {
             script_pubkey: vec![].into(),
-            value: 999,
+            value: 99,
         }];
 
         let generated = coin.generate_transaction(unspents, outputs).wait();
-        // must not allow to use output with value < tx_fee
+        // must not allow to use output with value < dust
         unwrap_err!(generated);
 
         let unspents = vec![UnspentInfo {
@@ -1464,15 +1516,15 @@ mod tests {
 
         let outputs = vec![TransactionOutput {
             script_pubkey: vec![].into(),
-            value: 98001,
+            value: 98901,
         }];
 
         let generated = unwrap!(coin.generate_transaction(unspents, outputs).wait());
-        // the change that is less than tx_fee must be included to miner fee according to JL777
+        // the change that is less than dust must be included to miner fee
         // so no extra outputs should appear in generated transaction
         assert_eq!(generated.0.outputs.len(), 1);
 
-        assert_eq!(generated.1.fee_amount, 1999);
+        assert_eq!(generated.1.fee_amount, 1099);
         assert_eq!(generated.1.received_by_me, 0);
         assert_eq!(generated.1.spent_by_me, 100000);
     }

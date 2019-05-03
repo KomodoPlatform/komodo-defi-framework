@@ -17,6 +17,23 @@ pub fn test_autoprice_coingecko (local_start: LocalStart) {
     let (passphrase, mut mm, _dump_log, _dump_dashboard) = mm_spat (local_start, &identity);
     unwrap! (mm.wait_for_log (19., &mut |log| log.contains (">>>>>>>>> DEX stats ")));
 
+    enable_electrum (&mm, "KMD", vec!["electrum1.cipig.net:10001"]);
+    enable_electrum (&mm, "BTC", vec!["electrum1.cipig.net:10000"]);
+
+    let autoprice = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "autoprice",
+        "base": "PIZZA",
+        "rel": "BEER",
+        "margin": 0.5,
+        // We're basing the price of our order on the price of DASH, triggering the extra price fetch in `lp_autoprice_iter`.
+        // According to the examples in https://docs.komodoplatform.com/barterDEX/barterDEX-API.html the "refbase"
+        // might be a lowercased coin name or it's ticker symbol (dash/DASH, litecoin/LTC, komodo/KMD).
+        "refbase": "dash",
+        "refrel": "coinmarketcap"
+    })));
+    assert! (autoprice.0.is_server_error(), "autoprice should finish with error if BTC and KMD are not enabled, bot got: {:?}", autoprice);
+
     enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
     enable_electrum (&mm, "PIZZA", vec!["electrum1.cipig.net:10024"]);
 
@@ -94,6 +111,22 @@ pub fn test_autoprice_coinmarketcap (local_start: LocalStart) {
     enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
     enable_electrum (&mm, "PIZZA", vec!["electrum1.cipig.net:10024"]);
 
+    let autoprice = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "autoprice",
+        "base": "PIZZA",
+        "rel": "BEER",
+        "margin": 0.5,
+        // We're basing the price of our order on the price of DASH, triggering the extra price fetch in `lp_autoprice_iter`.
+        // According to the examples in https://docs.komodoplatform.com/barterDEX/barterDEX-API.html the "refbase"
+        // might be a lowercased coin name or it's ticker symbol (dash/DASH, litecoin/LTC, komodo/KMD).
+        "refbase": "dash",
+        "refrel": "coinmarketcap"
+    })));
+    assert! (autoprice.0.is_server_error(), "autoprice should finish with error if BTC and KMD are not enabled, bot got: {:?}", autoprice);
+
+    enable_electrum (&mm, "KMD", vec!["electrum1.cipig.net:10001"]);
+    enable_electrum (&mm, "BTC", vec!["electrum1.cipig.net:10000"]);
     let address = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "calcaddress",
@@ -140,6 +173,24 @@ pub fn test_autoprice_coinmarketcap (local_start: LocalStart) {
 pub fn test_fundvalue (local_start: LocalStart) {
     let (_, mut mm, _dump_log, _dump_dashboard) = mm_spat (local_start, &identity);
     unwrap! (mm.wait_for_log (19., &|log| log.contains (">>>>>>>>> DEX stats ")));
+
+    let fundvalue = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "fundvalue",
+        "address": "RFf5mf3AoixXzmNLAmgs2L5eWGveSo6X7q",  // We have some BEER and PIZZA here.
+        "holdings": [
+            // Triggers the `LP_KMDvalue` code path and touches the `KMDholdings`.
+            {"coin": "KMD", "balance": 123},
+            // Triggers the `LP_CMCbtcprice` code path.
+            {"coin": "litecoin", "balance": 123},
+            // No such coin, should trigger the "no price source" part in the response.
+            {"coin": "- bogus coin -", "balance": 123}
+        ]
+    })));
+    assert! (fundvalue.0.is_server_error(), "Fundvalue must return error when BTC and KMD are not enabled, but got {:?}", fundvalue);
+
+    enable_electrum (&mm, "KMD", vec!["electrum1.cipig.net:10001"]);
+    enable_electrum (&mm, "BTC", vec!["electrum1.cipig.net:10000"]);
 
     let fundvalue = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,

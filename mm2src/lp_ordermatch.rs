@@ -1739,10 +1739,6 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
         let mut b = lp::LP_utxoinfo::default();
         let fill_flag = input.fill.unwrap_or(0);
 
-        if dest_satoshis < dest_tx_fee * 10 {
-            return ERR!("cant find a deposit that is close enough in size. make another deposit that is just a bit larger than what you want to trade");
-        }
-
         let best_satoshis = lp_base_satoshis(sat_to_f(dest_satoshis), price, dest_tx_fee);
         strcpy(b.coin.as_ptr() as *mut c_char, base_str.as_ptr());
         let mut q = lp::LP_quoteinfo::default();

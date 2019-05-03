@@ -232,96 +232,42 @@ char *LP_convaddress(char *symbol,char *address,char *dest)
     return(jprint(retjson,1));
 }
 
-bits256 LP_privkeycalc(void *ctx,uint8_t *pubkey33,bits256 *pubkeyp,struct iguana_info *coin,char *passphrase,char *wifstr)
-{
+bits256 LP_privkeycalc(bits256 *pubkeyp,char *passphrase) {
     //static uint32_t counter;
-    bits256 privkey,userpub,zero,userpass,checkkey,tmpkey; char str[65],str2[65],tmpstr[128]; cJSON *retjson; uint8_t tmptype,sig[128]; int32_t notarized,siglen; uint64_t nxtaddr;
+    bits256 privkey, userpub, userpass, checkkey, tmpkey;
+    uint64_t nxtaddr;
     uint8_t rmd160[20];
-    if ( (wifstr == 0 || wifstr[0] == 0) && LP_wifstr_valid(coin->symbol,passphrase) > 0 )
-    {
-        wifstr = passphrase;
-        passphrase = 0;
-    }
-    if ( passphrase != 0 && passphrase[0] != 0 )
-    {
-        if ( strlen(passphrase) == 66 && passphrase[0] == '0' && passphrase[1] == 'x' && is_hexstr(passphrase+2,0) == 64 )
-        {
-            decode_hex(privkey.bytes,32,passphrase+2);
+    if (passphrase != 0 && passphrase[0] != 0) {
+        if (strlen(passphrase) == 66 && passphrase[0] == '0' && passphrase[1] == 'x' &&
+            is_hexstr(passphrase + 2, 0) == 64) {
+            decode_hex(privkey.bytes, 32, passphrase + 2);
             //printf("ETH style privkey.(%s)\n",passphrase);
-        }
-        else
-        {
-            calc_NXTaddr(G.LP_NXTaddr,userpub.bytes,(uint8_t *)passphrase,(int32_t)strlen(passphrase));
-            conv_NXTpassword(privkey.bytes,pubkeyp->bytes,(uint8_t *)passphrase,(int32_t)strlen(passphrase));
+        } else {
+            calc_NXTaddr(G.LP_NXTaddr, userpub.bytes, (uint8_t *) passphrase, (int32_t) strlen(passphrase));
+            conv_NXTpassword(privkey.bytes, pubkeyp->bytes, (uint8_t *) passphrase, (int32_t) strlen(passphrase));
             privkey.bytes[0] &= 248, privkey.bytes[31] &= 127, privkey.bytes[31] |= 64;
         }
-        bitcoin_priv2wif(coin->symbol,coin->wiftaddr,tmpstr,privkey,coin->wiftype);
-        bitcoin_wif2priv(coin->symbol,coin->wiftaddr,&tmptype,&checkkey,tmpstr);
-        if ( bits256_cmp(privkey,checkkey) != 0 )
-        {
-            char str[65],str2[65]; printf("mismatched privkeys from wif conversion: %s -> %s -> %s\n",bits256_str(str,privkey),tmpstr,bits256_str(str2,checkkey));
-            exit(1);
-        }
-    }
-    else
-    {
-        bitcoin_wif2priv(coin->symbol,coin->wiftaddr,&tmptype,&privkey,wifstr);
-        bitcoin_priv2wif(coin->symbol,coin->wiftaddr,tmpstr,privkey,tmptype);
-        if ( strcmp(tmpstr,wifstr) != 0 )
-        {
-            bitcoin_wif2priv(coin->symbol,coin->wiftaddr,&tmptype,&tmpkey,tmpstr);
-            if ( bits256_cmp(tmpkey,privkey) != 0 )
-            {
-                char str[65]; printf("%s error reproducing the wifstr, likely edge case like non-supported uncompressed pubkey privkey.%s\n",coin->symbol,bits256_str(str,privkey));
-                exit(1);
-            }
-        }
+    } else {
         tmpkey = privkey;
-        nxtaddr = conv_NXTpassword(tmpkey.bytes,pubkeyp->bytes,0,0);
-        RS_encode(G.LP_NXTaddr,nxtaddr);
+        nxtaddr = conv_NXTpassword(tmpkey.bytes, pubkeyp->bytes, 0, 0);
+        RS_encode(G.LP_NXTaddr, nxtaddr);
     }
-    bitcoin_priv2pub(ctx,coin->symbol,coin->pubkey33,coin->smartaddr,privkey,coin->taddr,coin->pubtype);
-    OS_randombytes(tmpkey.bytes,sizeof(tmpkey));
-    siglen = 0;
-    if ( bits256_nonz(privkey) == 0 || (siglen= bitcoin_sign(ctx,coin->symbol,sig,tmpkey,privkey,0)) <= 0 )
-    {
-        printf("illegal privkey %s\n",bits256_str(str,privkey));
-        exit(0);
-    }
-    if ( bits256_nonz(privkey) != 0 && bitcoin_verify(ctx,sig,siglen,tmpkey,coin->pubkey33,33) != 0 )
-    {
-        printf("signature.[%d] for %s by %s didnt verify\n",siglen,bits256_str(str,tmpkey),bits256_str(str2,privkey));
-        exit(0);
-    }
-    if ( coin->counter == 0 )
-    {
-        coin->counter++;
-        memcpy(G.LP_pubsecp,coin->pubkey33,33);
-        bitcoin_priv2wif(coin->symbol,coin->wiftaddr,tmpstr,privkey,coin->wiftype);
-        bitcoin_addr2rmd160(coin->symbol,coin->taddr,&tmptype,rmd160,coin->smartaddr);
-        LP_privkeyadd(privkey,rmd160);
-        G.LP_privkey = privkey;
-        if ( G.counter++ == 0 )
-        {
-            bitcoin_priv2wif(coin->symbol,coin->wiftaddr,G.USERPASS_WIFSTR,privkey,188);
-            bitcoin_wif2priv(coin->symbol,coin->wiftaddr,&tmptype,&checkkey,G.USERPASS_WIFSTR);
-            if ( bits256_cmp(checkkey,privkey) != 0 )
-            {
-                char str[65],str2[65];
-                printf("FATAL ERROR converting USERPASS_WIFSTR %s -> %s != %s\n",G.USERPASS_WIFSTR,bits256_str(str,checkkey),bits256_str(str2,privkey));
-                exit(-1);
-            }
-            conv_NXTpassword(userpass.bytes,pubkeyp->bytes,(uint8_t *)G.USERPASS_WIFSTR,(int32_t)strlen(G.USERPASS_WIFSTR));
-            userpub = curve25519(userpass,curve25519_basepoint9());
-            printf("userpass.(%s)\n",bits256_str(G.USERPASS,userpub));
-        }
-    }
-    vcalc_sha256(0,checkkey.bytes,privkey.bytes,sizeof(privkey));
+    checkkey = privkey;
+    OS_randombytes(tmpkey.bytes, sizeof(tmpkey));
+    LP_privkeyadd(privkey, rmd160);
+    G.LP_privkey = privkey;
+    bitcoin_priv2wif("KMD",0,G.USERPASS_WIFSTR,privkey,188);
+    conv_NXTpassword(userpass.bytes, pubkeyp->bytes, (uint8_t *) G.USERPASS_WIFSTR,
+                     (int32_t) strlen(G.USERPASS_WIFSTR));
+    userpub = curve25519(userpass,curve25519_basepoint9());
+    bits256_str(G.USERPASS,userpub);
+    printf("userpass.(userpass is deprecated, set the rpc_password in MM2 JSON config instead: https://github.com/artemii235/developer-docs/blob/mm/docs/basic-docs/atomic-swap-dex/dex-walkthrough.md#initiate-marketmaker-20)\n");
+    vcalc_sha256(0, checkkey.bytes, privkey.bytes, sizeof(privkey));
     checkkey.bytes[0] &= 248, checkkey.bytes[31] &= 127, checkkey.bytes[31] |= 64;
-    G.LP_mypub25519 = *pubkeyp = curve25519(checkkey,curve25519_basepoint9());
+    G.LP_mypub25519 = *pubkeyp = curve25519(checkkey, curve25519_basepoint9());
     G.LP_mypriv25519 = checkkey;
     LP_pubkeyadd(G.LP_mypub25519);
-    return(privkey);
+    return (privkey);
 }
 
 void LP_privkey_updates(void *ctx,int32_t pubsock,char *passphrase)
@@ -341,18 +287,10 @@ void LP_privkey_updates(void *ctx,int32_t pubsock,char *passphrase)
             memset(coin->smartaddr,0,sizeof(coin->smartaddr));
             if ( bits256_nonz(privkey) == 0 || coin->smartaddr[0] == 0 )
             {
-                privkey = LP_privkeycalc(ctx,pubkey33,&pubkey,coin,passphrase,"");
+                privkey = LP_privkeycalc(&pubkey,passphrase);
             }
         }
         //printf("i.%d of %d\n",i,LP_numcoins);
-        else if ( IAMLP == 0 || coin->inactive == 0 )
-        {
-            //printf("from updates %s\n",coin->symbol);
-            if ( 0 && LP_privkey_init(pubsock,coin,G.LP_privkey,G.LP_mypub25519) == 0 && (LP_rand() % 10) == 0 )
-            {
-                //LP_postutxos(coin->symbol,coin->smartaddr);
-            }
-        }
     }
 }
 
