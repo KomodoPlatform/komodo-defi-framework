@@ -1418,6 +1418,8 @@ pub fn utxo_coin_from_iguana_info(
 fn kmd_interest(height: u64, value: u64, lock_time: u64, current_time: u64) -> u64 {
     const KOMODO_ENDOFERA: u64 = 7777777;
     const LOCKTIME_THRESHOLD: u64 = 500000000;
+    // value must be at least 10 KMD
+    if value < 1000000000 { return 0; }
     // interest will stop accrue after block 7777777
     if height >= KOMODO_ENDOFERA { return 0 };
     // interest doesn't accrue for lock_time < 500000000
@@ -1551,6 +1553,14 @@ mod tests {
         let lock_time = 1556623906;
         let current_time = 1556623906 + 3600 + 300;
         let expected = 36870;
+        let actual = kmd_interest(1000001, value, lock_time, current_time);
+        assert_eq!(expected, actual);
+
+        // UTXO amount must be at least 10 KMD to be eligible for interest
+        let value = 999999999;
+        let lock_time = 1556623906;
+        let current_time = 1556623906 + 3600 + 300;
+        let expected = 0;
         let actual = kmd_interest(1000001, value, lock_time, current_time);
         assert_eq!(expected, actual);
     }
