@@ -1,6 +1,7 @@
-use common::bits256;
+use common::{bits256, drive, CORE};
 use common::for_tests::wait_for_log;
 use common::mm_ctx::{MmArc, MmCtx};
+use crdts::CmRDT;
 use futures::Future;
 use gstuff::now_float;
 use rand::{self, Rng};
@@ -8,6 +9,10 @@ use serde_json::Value as Json;
 use std::mem::zeroed;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::Duration;
+
+use super::http_fallback::UniqueActorId;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn ulimit_n() -> Option<u32> {
@@ -47,7 +52,7 @@ fn destruction_check (mm: MmArc) {
     }
 }
 
-pub fn test_peers_dht() {
+pub fn peers_dht() {
     let alice = peer (json! ({"dht": "on"}), 2111);
     let bob = peer (json! ({"dht": "on"}), 2112);
 
@@ -82,7 +87,7 @@ pub fn test_peers_dht() {
     destruction_check (bob);
 }
 
-pub fn test_peers_direct_send() {
+pub fn peers_direct_send() {
     // NB: Still need the DHT enabled in order for the pings to work.
     let alice = peer (json! ({"dht": "on"}), 2121);
     let bob = peer (json! ({"dht": "on"}), 2122);
@@ -139,10 +144,12 @@ pub fn test_peers_direct_send() {
     destruction_check (bob);
 }
 
-pub fn test_http_fallback() {
+pub fn peers_http_fallback() {
+    let ctx = MmCtx::new (json! ({}));
+    let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30204);
+    let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
+    CORE.spawn (move |_| server);
 /*
-    let f = start_http_fallback_server();
-
     let alice = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
     let bob = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
     //With libtorrent DHT disabled the peers will hit the timeout that activates the HTTP fallback.
@@ -159,8 +166,6 @@ pub fn test_http_fallback() {
 
     destruction_check (alice);
     destruction_check (bob);
-
-    drop (f);  // Stops the HTTP server by dropping the Future.
 */
 }
 
@@ -168,40 +173,48 @@ pub fn test_http_fallback() {
 // These are useful in implementing NAT traversal in situations
 // where a truly distributed no-single-point-of failure operation is not necessary,
 // like when we're using the fallback server to drive a tested mm2 instance.
-pub fn test_http_fallback_kv() {
-/*
-    let f = start_http_fallback_server();
+pub fn peers_http_fallback_kv() {
+    let ctx = MmCtx::new (json! ({}));
+    let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30205);
+    let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
+    CORE.spawn (move |_| server);
 
-    crdt = add b"value1"
-    let s = super::http_store (addr, "key", crdt);
-    test s.wait() == [b"value1"]
+    // Wait for the HTTP server to start.
+    thread::sleep (Duration::from_millis (20));
 
-    crdt = add b"value2"
-    let s = super::http_store (addr, "key", crdt);
-    test s.wait() == [b"value1", b"value2"]
+    // Insert several entries in parallel, relying on CRDT to ensure that no entry is lost.
+    let entries = 9;
+    let mut handles = Vec::with_capacity (entries);
+    for en in 1 ..= entries {
+        let unique_actor_id = (99 + en) as UniqueActorId;
+        let key = fomat! ((en));
+        let f = super::http_fallback::fetch_map (&addr, Vec::from (&b"test-id"[..]));
+        let f = f.and_then (move |mut map| {
+            let read_ctx = map.len();
+            map.apply (
+                map.update (
+                    key,
+                    read_ctx.derive_add_ctx (unique_actor_id),
+                    |set, ctx| set.add ("1".into(), ctx)
+                )
+            );
+            super::http_fallback::merge_map (&addr, Vec::from (&b"test-id"[..]), map)
+        });
+        handles.push ((en, drive (f)))
+    }
+    for (en, f) in handles {
+        let map = unwrap! (unwrap! (f.wait()));
+        let _v = unwrap! (map.get (&fomat! ((en))) .val, "No such value: {}", en);
+    }
 
-    crdt = remove b"value1"
-    let s = super::http_store (addr, "key", crdt);
-    test s.wait() == [b"value2"]
+    // See if all entries survived.
+    let map = unwrap! (super::http_fallback::fetch_map (&addr, Vec::from (&b"test-id"[..])) .wait());
+    for en in 1 ..= entries {
+        let v = unwrap! (map.get (&fomat! ((en))) .val, "No such value: {}", en);
+        let members = v.read().val;
+        log! ("members of " (en) ": " [members]);
+    }
 
-    let g = super::http_fetch (addr, "key");
-    test g.wait() == [b"value2"]
-
-    // Server-side conversion of CRDT into a normal value
-    // in order to provide a simple cURL-compatible interface.
-    // (Should maybe test it with cURL?)
-    let g = super::http_get (addr, "key");
-    test g.wait() == b"value"
-
-    // Server-side conversion of a set operation into a CRDT modification
-    // in order to provide a simple cURL-compatible interface.
-    // (Should maybe test it with cURL?)
-    let s = super::http_set (addr, "key", b"value");
-    test s.wait()
-
-    let g = super::http_fetch (addr, "key");
-    test g.wait() == [b"value2", b"value"]
-
-    drop (f);  // Stops the HTTP server by dropping the Future.
-*/
+    // TODO: Shut down the HTTP server as well.
+    drop (ctx)
 }

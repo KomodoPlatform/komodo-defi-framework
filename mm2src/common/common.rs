@@ -282,6 +282,8 @@ pub fn free_c_ptr(ptr: *mut c_void) { unsafe {
 /// Use the value, preventing the compiler and linker from optimizing it away.
 pub fn black_box<T> (v: T) -> T {
     // https://github.com/rust-lang/rfcs/issues/1484#issuecomment-240853111
+    //std::hint::black_box (v)
+
     let ret = unsafe {read_volatile (&v)};
     forget (v);
     ret
@@ -379,6 +381,14 @@ pub fn stack_trace (format: &mut dyn FnMut (&mut Write, &backtrace::Symbol), out
         });
         true
     });
+}
+
+/// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
+/// by replacing all the non-printable bytes with the `blank` character.
+pub fn binprint (bin: &[u8], blank: u8) -> String {
+    let mut bin: Vec<u8> = bin.into();
+    for ch in bin.iter_mut() {if *ch < 0x20 || *ch >= 0x7F {*ch = blank}}
+    unsafe {String::from_utf8_unchecked (bin)}
 }
 
 /// Tries to detect if we're running under a test, allowing us to be lazy and *delay* some costly operations.

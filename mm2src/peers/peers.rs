@@ -22,7 +22,7 @@ pub mod peers_tests;
 pub mod http_fallback;
 
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use common::{bits256, is_a_test_drill, slice_to_malloc, RaiiRm};
+use common::{binprint, bits256, is_a_test_drill, slice_to_malloc, RaiiRm};
 use common::log::TagParam;
 use common::mm_ctx::{from_ctx, MmArc};
 use crc::crc32::{update, IEEE_TABLE};
@@ -157,15 +157,6 @@ extern "C" {
     // * `pkbuflen` - Must be 32 bytes. Passed explicitly in order for us to check it.
     fn dht_get (dugout: *mut dugout_t, key: *const u8, keylen: i32, salt: *const u8, saltlen: i32, pkbuf: *mut u8, pkbuflen: i32);
     fn lt_send_udp (dugout: *mut dugout_t, ip: *const u8, port: u16, benload: *const u8, benlen: i32);
-}
-
-/// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
-/// by replacing all the non-printable bytes with the `blank` character.
-#[allow(unused)]
-fn binprint (bin: &[u8], blank: u8) -> String {
-    let mut bin: Vec<u8> = bin.into();
-    for ch in bin.iter_mut() {if *ch < 0x20 || *ch >= 0x7F {*ch = blank}}
-    unsafe {String::from_utf8_unchecked (bin)}
 }
 
 // https://stackoverflow.com/a/50278316/257568

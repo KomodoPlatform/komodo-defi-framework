@@ -101,7 +101,7 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
 }
 
 #[no_mangle]
-pub extern fn broadcast_p2p_msg_for_c (pubkey: lp::bits256, msg: *mut c_char, ctx_h: u32) {
+pub extern fn broadcast_p2p_msg_for_c (_pubkey: lp::bits256, msg: *mut c_char, ctx_h: u32) {
     let ctx: MmArc = unwrap! (MmArc::from_ffi_handle (ctx_h), "No context");
 
     if msg.is_null() {

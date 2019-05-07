@@ -57,6 +57,8 @@ pub struct MmCtx {
     pub ordermatch_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
     /// The context belonging to the `peers` crate: `PeersContext`.
     pub peers_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    /// The context belonging to the `http_fallback` mod: `HttpFallbackContext`.
+    pub http_fallback_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
     pub coins_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
     /// The context belonging to the `prices` mod: `PricesContext`.
@@ -80,6 +82,7 @@ impl MmCtx {
             portfolio_ctx: Mutex::new (None),
             ordermatch_ctx: Mutex::new (None),
             peers_ctx: Mutex::new (None),
+            http_fallback_ctx: Mutex::new (None),
             coins_ctx: Mutex::new (None),
             prices_ctx: Mutex::new (None),
             seednode_p2p_channel: channel::unbounded(),
@@ -120,6 +123,12 @@ impl MmCtx {
             }
         }
         return Path::new ("DB")
+    }
+
+    pub fn netid (&self) -> u16 {
+        let big = self.conf["netid"].as_u64().unwrap_or (0);
+        if big > u16::max_value().into() {panic! ("netid {} is too big", big)}
+        big as u16
     }
 
     pub fn stop (&self) {

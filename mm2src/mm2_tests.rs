@@ -320,11 +320,17 @@ fn alice_can_see_the_active_order_after_connection() {
 fn test_status() {common::log::tests::test_status()}
 
 #[test]
-fn test_peers_dht() {peers::peers_tests::test_peers_dht()}
+fn peers_dht() {peers::peers_tests::peers_dht()}
 
 #[test]
 #[ignore]  // The plan is to re-enable the test after making it more reliable on Mac.
-fn test_peers_direct_send() {peers::peers_tests::test_peers_direct_send()}
+fn peers_direct_send() {peers::peers_tests::peers_direct_send()}
+
+#[test]
+fn peers_http_fallback() {peers::peers_tests::peers_http_fallback()}
+
+#[test]
+fn peers_http_fallback_kv() {peers::peers_tests::peers_http_fallback_kv()}
 
 #[test]
 fn test_my_balance() {
