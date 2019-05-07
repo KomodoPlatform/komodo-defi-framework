@@ -10,7 +10,7 @@
 //!                     |
 //!                   binary
 
-#![feature(non_ascii_idents)]
+#![feature(non_ascii_idents, integer_atomics)]
 
 #[macro_use] extern crate duct;
 #[macro_use] extern crate fomat_macros;

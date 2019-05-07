@@ -18,8 +18,8 @@
 //  marketmaker
 //
 
-#![feature(non_ascii_idents)]
 #![feature(integer_atomics)]
+#![feature(non_ascii_idents)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
@@ -842,6 +842,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };
 
+    try_s! (safecopy! (ii.smartaddr, "{}", coin.my_address()));
     let block_count = try_s!(coin.current_block().wait());
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
     log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=method] ", " [=block_count]);

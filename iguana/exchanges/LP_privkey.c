@@ -232,42 +232,25 @@ char *LP_convaddress(char *symbol,char *address,char *dest)
     return(jprint(retjson,1));
 }
 
-bits256 LP_privkeycalc(bits256 *pubkeyp,char *passphrase) {
+bits256 LP_privkeycalc(bits256 *pubkeyp) {
     //static uint32_t counter;
-    bits256 privkey, userpub, userpass, checkkey, tmpkey;
-    uint64_t nxtaddr;
+    bits256 userpub, userpass, checkkey, tmpkey;
     uint8_t rmd160[20];
-    if (passphrase != 0 && passphrase[0] != 0) {
-        if (strlen(passphrase) == 66 && passphrase[0] == '0' && passphrase[1] == 'x' &&
-            is_hexstr(passphrase + 2, 0) == 64) {
-            decode_hex(privkey.bytes, 32, passphrase + 2);
-            //printf("ETH style privkey.(%s)\n",passphrase);
-        } else {
-            calc_NXTaddr(G.LP_NXTaddr, userpub.bytes, (uint8_t *) passphrase, (int32_t) strlen(passphrase));
-            conv_NXTpassword(privkey.bytes, pubkeyp->bytes, (uint8_t *) passphrase, (int32_t) strlen(passphrase));
-            privkey.bytes[0] &= 248, privkey.bytes[31] &= 127, privkey.bytes[31] |= 64;
-        }
-    } else {
-        tmpkey = privkey;
-        nxtaddr = conv_NXTpassword(tmpkey.bytes, pubkeyp->bytes, 0, 0);
-        RS_encode(G.LP_NXTaddr, nxtaddr);
-    }
-    checkkey = privkey;
+    checkkey = G.LP_privkey;
     OS_randombytes(tmpkey.bytes, sizeof(tmpkey));
-    LP_privkeyadd(privkey, rmd160);
-    G.LP_privkey = privkey;
-    bitcoin_priv2wif("KMD",0,G.USERPASS_WIFSTR,privkey,188);
+    LP_privkeyadd(G.LP_privkey, rmd160);
+    bitcoin_priv2wif("KMD",0,G.USERPASS_WIFSTR,G.LP_privkey,188);
     conv_NXTpassword(userpass.bytes, pubkeyp->bytes, (uint8_t *) G.USERPASS_WIFSTR,
                      (int32_t) strlen(G.USERPASS_WIFSTR));
     userpub = curve25519(userpass,curve25519_basepoint9());
     bits256_str(G.USERPASS,userpub);
     printf("userpass.(userpass is deprecated, set the rpc_password in MM2 JSON config instead: https://github.com/artemii235/developer-docs/blob/mm/docs/basic-docs/atomic-swap-dex/dex-walkthrough.md#initiate-marketmaker-20)\n");
-    vcalc_sha256(0, checkkey.bytes, privkey.bytes, sizeof(privkey));
+    vcalc_sha256(0, checkkey.bytes, G.LP_privkey.bytes, sizeof(G.LP_privkey));
     checkkey.bytes[0] &= 248, checkkey.bytes[31] &= 127, checkkey.bytes[31] |= 64;
     G.LP_mypub25519 = *pubkeyp = curve25519(checkkey, curve25519_basepoint9());
     G.LP_mypriv25519 = checkkey;
     LP_pubkeyadd(G.LP_mypub25519);
-    return (privkey);
+    return (G.LP_privkey);
 }
 
 void LP_privkey_updates(void *ctx,int32_t pubsock,char *passphrase)
@@ -287,7 +270,7 @@ void LP_privkey_updates(void *ctx,int32_t pubsock,char *passphrase)
             memset(coin->smartaddr,0,sizeof(coin->smartaddr));
             if ( bits256_nonz(privkey) == 0 || coin->smartaddr[0] == 0 )
             {
-                privkey = LP_privkeycalc(&pubkey,passphrase);
+                privkey = LP_privkeycalc(&pubkey);
             }
         }
         //printf("i.%d of %d\n",i,LP_numcoins);

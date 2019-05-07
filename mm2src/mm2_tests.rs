@@ -17,7 +17,7 @@ use std::time::Duration;
 
 /// Asks MM to enable the given currency in native mode.  
 /// Returns the RPC reply containing the corresponding wallet address.
-fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> String {
+fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
     let native = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "enable",
@@ -28,12 +28,12 @@ fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> String {
         "mm2": 1,
     })));
     assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
-    native.1
+    unwrap!(json::from_str(&native.1))
 }
 
 /// Enables BEER, PIZZA, ETOMIC and ETH.
 /// Returns the RPC replies containing the corresponding wallet addresses.
-fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, String)> {
+fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
     let mut replies = Vec::new();
     replies.push (("BEER", enable_native (mm, "BEER", vec![])));
     replies.push (("PIZZA", enable_native (mm, "PIZZA", vec![])));
@@ -42,7 +42,7 @@ fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, String)> {
     replies
 }
 
-fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap<&'static str, String> {
+fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap<&'static str, Json> {
     let mut replies = HashMap::new();
     replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]));
     replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["electrum1.cipig.net:10024","electrum2.cipig.net:10024","electrum3.cipig.net:10024"]));
@@ -52,9 +52,8 @@ fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap
     replies
 }
 
-fn addr_from_enable(enable_response: &str) -> Json {
-    let json: Json = unwrap!(json::from_str(enable_response));
-    json["address"].clone()
+fn addr_from_enable(enable_response: &Json) -> Json {
+    enable_response["address"].clone()
 }
 
 #[test]
@@ -355,8 +354,7 @@ fn test_my_balance() {
     log!({"log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable BEER.
-    let enable = enable_electrum(&mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
-    let json: Json = unwrap!(json::from_str(&enable));
+    let json = enable_electrum(&mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
     let balance_on_enable = unwrap!(json["balance"].as_f64());
     assert_eq!(balance_on_enable, 1.0);
 
@@ -1095,7 +1093,7 @@ fn trade_etomic_pizza() {
     trade_base_rel_native("ETOMIC", "PIZZA");
 }
 
-fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &HashMap<&'static str, String>, expected_bal_change: f64) {
+fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &HashMap<&'static str, Json>, expected_bal_change: f64) {
     let addr = addr_from_enable(unwrap!(enable_res.get(coin)));
 
     let withdraw = unwrap! (mm.rpc (json! ({
@@ -1267,4 +1265,45 @@ fn test_order_errors_when_base_equal_rel() {
         "basevolume": 0.1,
     })));
     assert! (rc.0.is_server_error(), "sell should have failed, but got {:?}", rc);
+}
+
+fn startup_passphrase(passphrase: &str, expected_address: &str) {
+    let coins = json!([
+        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+    let enable = enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
+    let addr = addr_from_enable(&enable);
+    assert_eq!(Json::from(expected_address), addr);
+    unwrap!(mm.stop());
+}
+
+/// MM2 should detect if passphrase is WIF or 0x-prefixed hex encoded privkey and parse it properly.
+/// https://github.com/artemii235/SuperNET/issues/396
+#[test]
+fn test_startup_passphrase() {
+    // seed phrase
+    startup_passphrase("bob passphrase", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
+    // WIF
+    startup_passphrase("UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
+    // 0x prefixed hex
+    startup_passphrase("0xb8c774f071de08c7fd8f62b97f1a5726f6ce9f1bcf141b70b86689254ed6714e", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
 }

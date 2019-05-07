@@ -31,7 +31,7 @@ use common::mm_ctx::MmArc;
 use futures::{Future};
 use gstuff::{now_ms};
 use hashbrown::hash_map::{HashMap, Entry};
-use keys::{KeyPair, Private, Public, Address, Secret, Type};
+use keys::{Error as KeysError, KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
 use keys::generator::{Random, Generator};
 use primitives::hash::{H256, H264, H512};
@@ -41,7 +41,6 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Opcode, Builder, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput, SignatureVersion};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
-use sha2::{Sha256, Digest};
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::ops::Deref;
@@ -56,6 +55,7 @@ use self::rpc_clients::{UtxoRpcClientEnum, UnspentInfo, ElectrumClient, Electrum
 use super::{IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps};
 use std::cmp::Ordering;
+use bitcrypto::sha256;
 
 impl Transaction for UtxoTx {
     fn tx_hex(&self) -> Vec<u8> {
@@ -1260,21 +1260,41 @@ pub fn random_compressed_key_pair(prefix: u8, checksum_type: ChecksumType) -> Re
     })))
 }
 
-fn key_pair_from_seed(seed: &[u8], prefix: u8, checksum_type: ChecksumType) -> KeyPair {
-    let mut hasher = Sha256::new();
-    hasher.input(seed);
-    let mut hash = hasher.result();
-    hash[0] &= 248;
-    hash[31] &= 127;
-    hash[31] |= 64;
-    let private = Private {
-        prefix,
-        secret: H256::from(hash.as_slice()),
-        compressed: true,
-        checksum_type,
-    };
+fn private_from_seed(seed: &str) -> Result<Private, String> {
+    match seed.parse() {
+        Ok(private) => return Ok(private),
+        Err(e) => match e {
+            KeysError::InvalidChecksum => return ERR!("Provided WIF passphrase has invalid checksum!"),
+            _ => (), // ignore other errors, assume the passphrase is not WIF
+        },
+    }
 
-    KeyPair::from_private(private).unwrap()
+    if seed.starts_with("0x") {
+        let hash = try_s!(H256::from_str(&seed[2..]));
+        Ok(Private {
+            prefix: 0,
+            secret: hash,
+            compressed: true,
+            checksum_type: ChecksumType::DSHA256,
+        })
+    } else {
+        let mut hash = sha256(seed.as_bytes());
+        hash[0] &= 248;
+        hash[31] &= 127;
+        hash[31] |= 64;
+
+        Ok(Private {
+            prefix: 0,
+            secret: hash,
+            compressed: true,
+            checksum_type: ChecksumType::DSHA256,
+        })
+    }
+}
+
+pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
+    let private = try_s!(private_from_seed(seed));
+    Ok(try_s!(KeyPair::from_private(private)))
 }
 
 pub enum UtxoInitMode {
@@ -1445,7 +1465,7 @@ mod tests {
 
     fn utxo_coin_for_test() -> UtxoCoin {
         let checksum_type = ChecksumType::DSHA256;
-        let key_pair = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid".as_bytes(), 0, checksum_type);
+        let key_pair = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
         let my_address = Address {
             prefix: 60,
             hash: key_pair.public().address_hash(),

@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use coins::utxo::{ChecksumType, compressed_key_pair_from_bytes};
+use coins::utxo::{key_pair_from_seed};
 use peers::http_fallback::new_http_fallback;
 use portfolio::prices_loop;
 
@@ -1547,24 +1547,20 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     lp::G.initializing = 1;
     lp::G.netid = netid;
     lp::vcalc_sha256 (null_mut(), lp::G.LP_passhash.bytes.as_mut_ptr(), passphrase.as_ptr() as *mut u8, passphrase.len() as i32);
-    let passphrase_c = try_s! (CString::new (&passphrase[..]));
     let mut pubkey33: [u8; 100] = zeroed();
     lp::bitcoin_pubkey33 (ctx.btc_ctx() as *mut c_void, pubkey33.as_mut_ptr(), lp::G.LP_privkey);
     lp::calc_rmd160_sha256 (lp::G.LP_myrmd160.as_mut_ptr(), pubkey33.as_mut_ptr(), 33);
     try_s! (safecopy! (lp::G.LP_myrmd160str, "{}", hex::encode (lp::G.LP_myrmd160)));
     lp::G.LP_sessionid = (now_ms() / 1000) as u32;
     try_s! (safecopy! (lp::G.gui, "{}", gui));
-    let c_passphrase = try_s! (CString::new (&passphrase[..]));
+    let global_key_pair = try_s!(key_pair_from_seed(&passphrase));
+    lp::G.LP_privkey.bytes.clone_from_slice(&*global_key_pair.private().secret);
+    lp::G.LP_pubsecp.clone_from_slice(&**global_key_pair.public());
     unsafe {
         let mut pubkey: bits256 = zeroed();
-        let pk = lp::LP_privkeycalc (
-            &mut pubkey,                           // bits256 *pubkeyp
-            c_passphrase.as_ptr() as *mut c_char,  // char *passphrase
-        );
+        let pk = lp::LP_privkeycalc (&mut pubkey);
         if !pk.nonz() {return ERR! ("!LP_privkeycalc")}
         if !lp::G.LP_privkey.nonz() {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
-        let key_pair = try_s!(compressed_key_pair_from_bytes(&lp::G.LP_privkey.bytes, 0, ChecksumType::DSHA256));
-        lp::G.LP_pubsecp.clone_from_slice(&**key_pair.public());
     }
     try_s! (lp_initpeers (ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes));
 

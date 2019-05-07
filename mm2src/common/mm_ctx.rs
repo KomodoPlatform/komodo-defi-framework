@@ -9,7 +9,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex, Weak};
-use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::{bitcoin_ctx, bitcoin_ctx_destroy, lp, log, BitcoinCtx};
 
 /// MarketMaker state, shared between the various MarketMaker threads.
