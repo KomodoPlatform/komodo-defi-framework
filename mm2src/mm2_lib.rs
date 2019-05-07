@@ -15,15 +15,17 @@
 #[path = "mm2.rs"]
 mod mm2;
 
+use crate::common::mm_ctx::MmArc;
 use crate::common::log::LOG_OUTPUT;
 use gstuff::any_to_str;
 use libc::c_char;
 use std::ffi::{CStr};
 use std::panic::catch_unwind;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 
 static LP_MAIN_RUNNING: AtomicBool = AtomicBool::new (false);
+static CTX: AtomicU32 = AtomicU32::new (0);
 
 #[derive(Debug)]
 enum MainErr {
@@ -67,7 +69,8 @@ pub extern fn mm2_main (
             log! ("lp_main already started!");
             return
         }
-        match catch_unwind (move || mm2::run_lp_main (Some (&conf))) {
+        let ctx_cb = &|ctx| CTX.store (ctx, Ordering::Relaxed);
+        match catch_unwind (move || mm2::run_lp_main (Some (&conf), ctx_cb)) {
             Ok (Ok (_)) => log! ("run_lp_main finished"),
             Ok (Err (err)) => log! ("run_lp_main error: " (err)),
             Err (err) => log! ("run_lp_main panic: " [any_to_str (&*err)])
@@ -78,10 +81,23 @@ pub extern fn mm2_main (
     MainErr::Ok as i8
 }
 
-/// Checks if the MM2 singleton thread is currently running (1) or not (0).
+/// Checks if the MM2 singleton thread is currently running or not.  
+/// 0 .. not running.  
+/// 1 .. running, but no context yet.  
+/// 2 .. context, but no RPC yet.  
+/// 3 .. RPC is up.
 #[no_mangle]
 pub extern fn mm2_main_status() -> i8 {
-    if LP_MAIN_RUNNING.load (Ordering::Relaxed) {1} else {0}
+    if LP_MAIN_RUNNING.load (Ordering::Relaxed) {
+        let ctx = CTX.load (Ordering::Relaxed);
+        if ctx != 0 {
+            if let Ok (ctx) = MmArc::from_ffi_handle (ctx) {
+                if ctx.rpc_started.load (Ordering::Relaxed) {
+                    3
+                } else {2}
+            } else {2}
+        } else {1}
+    } else {0}
 }
 
 /// Run a few hand-picked tests.  
@@ -106,10 +122,10 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
     common::log::tests::test_status();
 
     log! ("test_peers_dht...");
-    peers::peers_tests::test_peers_dht();
+    peers::peers_tests::peers_dht();
 
     log! ("test_peers_direct_send...");
-    peers::peers_tests::test_peers_direct_send();
+    peers::peers_tests::peers_direct_send();
 
     torch
 }

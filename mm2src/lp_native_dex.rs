@@ -1645,7 +1645,8 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
     Ok ((shutdown_tx, port))
 }
 
-pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> Result<(), String> {
+pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON, ctx_cb: &Fn (u32))
+-> Result<(), String> {
     unsafe {lp::G.initializing = 1}  // Tells some of the spawned threads to wait till the `lp_passphrase_init` is done.
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
     if lp::LP_MAXPRICEINFOS > 255 {
@@ -1698,7 +1699,9 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON) -> R
     unsafe {lp::LP_mutex_init()};
 
     let ctx = MmCtx::new (conf);
-    try_s!(fix_directories(&ctx));
+    ctx_cb (try_s! (ctx.ffi_handle()));
+
+    try_s! (fix_directories (&ctx));
 
     fn simple_ip_extractor (ip: &str) -> Result<IpAddr, String> {
         let ip = ip.trim();

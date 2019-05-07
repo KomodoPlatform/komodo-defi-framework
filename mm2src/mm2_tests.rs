@@ -142,7 +142,7 @@ fn test_mm_start() {
         let conf: Json = unwrap! (json::from_str (&conf));
         let c_json = unwrap! (CString::new (unwrap! (json::to_string (&conf))));
         let c_conf = unwrap! (CJSON::from_zero_terminated (c_json.as_ptr() as *const c_char));
-        unwrap! (lp_main (c_conf, conf))
+        unwrap! (lp_main (c_conf, conf, &|_ctx|()))
     }
 }
 
@@ -179,7 +179,7 @@ fn local_start_impl (folder: PathBuf, log_path: PathBuf, mut conf: Json) {
 
         let c_json = unwrap! (CString::new (unwrap! (json::to_string (&conf))));
         let c_conf = unwrap! (CJSON::from_zero_terminated (c_json.as_ptr() as *const c_char));
-        unwrap! (lp_main (c_conf, conf))
+        unwrap! (lp_main (c_conf, conf, &|_ctx|()))
     }));
 }
 

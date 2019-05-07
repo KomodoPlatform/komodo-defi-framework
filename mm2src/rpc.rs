@@ -34,6 +34,7 @@ use std::ffi::{CStr, CString};
 use std::net::{SocketAddr};
 use std::ptr::null_mut;
 use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 use tokio_core::net::TcpListener;
 use hex;
 
@@ -339,9 +340,10 @@ pub extern fn spawn_rpc(ctx_h: u32) {
     }));
 
     let rpc_ip_port = unwrap! (ctx.rpc_ip_port());
-    CORE.spawn(move |_| {
+    CORE.spawn (move |_| {
         log!(">>>>>>>>>> DEX stats " (rpc_ip_port.ip())":"(rpc_ip_port.port()) " \
                 DEX stats API enabled at unixtime." (gstuff::now_ms() / 1000) " <<<<<<<<<");
+        ctx.rpc_started.store (true, Ordering::Relaxed);
         server
     });
 }

@@ -61,33 +61,8 @@ pub mod rpc;
 #[cfg(test)]
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
-/*
-#include "LP_nativeDEX.c"
 
-void LP_ports(uint16_t *pullportp,uint16_t *pubportp,uint16_t *busportp,uint16_t netid)
-{
-    int32_t netmod,netdiv; uint16_t otherports;
-    *pullportp = *pubportp = *busportp = 0;
-    if ( netid < 0 )
-        netid = 0;
-    else if ( netid > (65535-40-LP_RPCPORT)/4 )
-    {
-        printf("netid.%d overflow vs max netid.%d 14420?\n",netid,(65535-40-LP_RPCPORT)/4);
-        exit(-1);
-    }
-    if ( netid != 0 )
-    {
-        netmod = (netid % 10);
-        netdiv = (netid / 10);
-        otherports = (netdiv * 40) + (LP_RPCPORT + netmod);
-    } else otherports = LP_RPCPORT;
-    *pullportp = otherports + 10;
-    *pubportp = otherports + 20;
-    *busportp = otherports + 30;
-    printf("RPCport.%d remoteport.%d, nanoports %d %d %d\n",RPC_port,RPC_port-1,*pullportp,*pubportp,*busportp);
-}
-*/
-fn lp_main (c_conf: CJSON, conf: Json) -> Result<(), String> {
+fn lp_main (c_conf: CJSON, conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> {
     // Redirects the C stdout to the log.
     let c_log_path_buf: CString;
     let c_log_path = if conf["log"].is_null() {null()} else {
@@ -113,7 +88,7 @@ fn lp_main (c_conf: CJSON, conf: Json) -> Result<(), String> {
         unsafe {lp::LP_profitratio += profitmargin.unwrap_or (0.)};
         let netid = conf["netid"].as_u64().unwrap_or (0) as u16;
         unsafe {lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid)};
-        try_s! (lp_init (pullport, pubport, conf, c_conf));
+        try_s! (lp_init (pullport, pubport, conf, c_conf, ctx_cb));
         Ok(())
     } else {ERR! ("!passphrase")}
 }
@@ -210,7 +185,7 @@ pub fn mm2_main() {
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
 
-    if let Err (err) = run_lp_main (first_arg) {
+    if let Err (err) = run_lp_main (first_arg, &|_|()) {
         log! ((err));
         exit (1);
     }
@@ -288,9 +263,12 @@ fn vanity (substring: &str) {
     log! ({"done vanitygen.({}) done {} elapsed {}\n", substring, now_ms() / 1000, now_ms() / 1000 - timestamp});
 }
 
-/// Parses the `first_arg` as JSON and starts LP_main.
+/// Parses the `first_arg` as JSON and runs LP_main.
 /// Attempts to load the config from `MM2.json` file if `first_arg` is None
-pub fn run_lp_main (first_arg: Option<&str>) -> Result<(), String> {
+/// 
+/// * `ctx_cb` - Invoked with the MM context handle,
+///              allowing the `run_lp_main` caller to communicate with MM.
+pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &Fn (u32)) -> Result<(), String> {
     let conf_from_file = slurp(&"MM2.json");
     let conf = match first_arg {
         Some(s) => s,
@@ -326,6 +304,6 @@ pub fn run_lp_main (first_arg: Option<&str>) -> Result<(), String> {
         unsafe {lp::DOCKERFLAG = os::calc_ipbits (ip_port.as_ptr() as *mut c_char) as u32}
     }
 
-    try_s! (lp_main (c_conf, conf));
+    try_s! (lp_main (c_conf, conf, ctx_cb));
     Ok(())
 }

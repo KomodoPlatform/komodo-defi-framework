@@ -9,7 +9,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex, Weak};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicU32, Ordering};
 use super::{bitcoin_ctx, bitcoin_ctx_destroy, lp, log, BitcoinCtx};
 
 /// MarketMaker state, shared between the various MarketMaker threads.
@@ -44,11 +44,13 @@ pub struct MmCtx {
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
     pub initialized: AtomicBool,
+    /// True if the RPC HTTP server was started.
+    pub rpc_started: AtomicBool,
     /// True if the MarketMaker instance needs to stop.
     stop: AtomicBool,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
-    ffi_handle: AtomicUsize,
+    ffi_handle: AtomicU32,
     /// Callbacks to invoke from `fn stop`.
     stop_listeners: Mutex<Vec<Box<FnMut()->Result<(), String>>>>,
     /// The context belonging to the `portfolio` crate: `PortfolioContext`.
@@ -76,8 +78,9 @@ impl MmCtx {
             log,
             btc_ctx: unsafe {bitcoin_ctx()},
             initialized: AtomicBool::new (false),
+            rpc_started: AtomicBool::new (false),
             stop: AtomicBool::new (false),
-            ffi_handle: AtomicUsize::new (0),
+            ffi_handle: AtomicU32::new (0),
             stop_listeners: Mutex::new (Vec::new()),
             portfolio_ctx: Mutex::new (None),
             ordermatch_ctx: Mutex::new (None),
@@ -211,7 +214,7 @@ impl MmArc {
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     pub fn ffi_handle (&self) -> Result<u32, String> {
         let mut mm_ctx_ffi = try_s! (MM_CTX_FFI.lock());
-        let have = self.ffi_handle.load (Ordering::Relaxed) as u32;
+        let have = self.ffi_handle.load (Ordering::Relaxed);
         if have != 0 {return Ok (have)}
         let mut tries = 0;
         loop {
@@ -222,7 +225,7 @@ impl MmArc {
                 Entry::Occupied (_) => continue,  // Try another ID.
                 Entry::Vacant (ve) => {
                     ve.insert (self.weak());
-                    self.ffi_handle.store (rid as usize, Ordering::Relaxed);
+                    self.ffi_handle.store (rid, Ordering::Relaxed);
                     return Ok (rid)
                 }
             }
