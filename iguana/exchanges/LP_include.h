@@ -374,7 +374,7 @@ struct LP_pubkey_quote
     struct LP_pubkey_quote *next,*prev;
     float price;
     uint8_t baseind,relind,scale;
-    double_t balance;
+    long double balance;
 };
 
 struct LP_swapstats
