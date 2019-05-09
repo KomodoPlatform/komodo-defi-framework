@@ -292,8 +292,8 @@ fn alice_can_see_the_active_order_after_connection() {
     // Enable coins on Alice side. Print the replies in case we need the "address".
     log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"])});
 
-    // wait until Alice recognize Bob node by importing it's pubkey
-    // unwrap! (mm_alice.wait_for_log (33., &|log| log.contains ("set pubkey for")));
+    // give Alice 20 seconds to recognize the Bob, MM2 nodes broadcast their pubkey data every 20 seconds
+    thread::sleep(Duration::from_secs(20));
 
     for _ in 0..2 {
         // Alice should be able to see the order no later than 10 seconds after recognizing the bob
@@ -308,10 +308,14 @@ fn alice_can_see_the_active_order_after_connection() {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
+        log!("Alice orderbook " [alice_orderbook]);
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice BEER/PIZZA orderbook must have exactly 1 ask");
         let vol = asks[0]["maxvolume"].as_f64().unwrap();
         assert_eq!(vol, 1.0);
+        // orderbook must display valid Bob address
+        let address = asks[0]["address"].as_str().unwrap();
+        assert_eq!("RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD", address);
     }
 }
 

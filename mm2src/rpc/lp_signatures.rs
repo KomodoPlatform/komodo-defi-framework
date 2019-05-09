@@ -22,8 +22,10 @@
 use common::{jbits256, lp, rpc_response, HyRes, CJSON};
 use common::mm_ctx::MmArc;
 use libc::c_char;
+use rpc::v1::types::{H160 as H160Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CString};
+use gstuff::now_ms;
 
 /*
 struct basilisk_request *LP_requestinit(struct basilisk_request *rp,bits256 srchash,bits256 desthash,char *src,uint64_t srcsatoshis,char *dest,uint64_t destsatoshis,uint32_t timestamp,uint32_t quotetime,int32_t DEXselector,int32_t fillflag,int32_t gtcflag)
@@ -595,7 +597,7 @@ void LP_notify_pubkeys(void *ctx,int32_t pubsock)
 
 */
 
-pub fn lp_notify_recv (ctx: MmArc, req: Json) -> HyRes {
+pub fn lp_notify_recv (_ctx: MmArc, req: Json) -> HyRes {
     //log! ("lp_notify_recv] req: " [req]);
     let pubk = try_h! (jbits256 (&req["pub"]));
     if pubk.nonz() {
@@ -607,6 +609,11 @@ pub fn lp_notify_recv (ctx: MmArc, req: Json) -> HyRes {
 
         let pubp = unsafe {lp::LP_pubkeyadd (pubk)};
         unsafe {lp::LP_pubkey_sigcheck (pubp, c_json.0)};
+        let pub_secp: H264Json = try_h! (json::from_value(req["pubsecp"].clone()));
+        let rmd160: H160Json = try_h! (json::from_value(req["rmd160"].clone()));
+        unsafe { (*pubp).pubsecp = pub_secp.0 };
+        unsafe { (*pubp).rmd160 = rmd160.0 };
+        unsafe { (*pubp).timestamp = (now_ms() / 1000) as u32 };
 
         if let Some (peer_ip) = req["isLP"].as_str() {
             let peer_ip_c = try_h! (CString::new (peer_ip));

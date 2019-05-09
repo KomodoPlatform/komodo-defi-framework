@@ -405,7 +405,6 @@ fn lp_base_satoshis(
 
 unsafe fn lp_connect_start_bob(ctx: &MmArc, base: *mut c_char, rel: *mut c_char, qp: *mut lp::LP_quoteinfo) -> i32 {
     let dex_selector = 0;
-    let mut pair: i32 = -1;
     let mut retval: i32 = -1;
     let mut pair_str: [c_char; 512] = [0; 512];
     (*qp).quotetime = (now_ms() / 1000) as u32;
@@ -1315,7 +1314,6 @@ pub unsafe fn lp_trade_command(
     let q_trades: i32 = 1;
     let mut str: [libc::c_char; 65] = [0; 65];
     let mut i: i32;
-    let mut num: i32 = 0;
     let dex_selector: i32 = 0;
     let aliceid: u64;
     let qprice: f64;
@@ -1327,7 +1325,6 @@ pub unsafe fn lp_trade_command(
     let mut q2 = lp::LP_quoteinfo::default();
     let mut counter: i32 = 0;
     let mut retval: i32 = -1i32;
-    let mut proof : *mut lp::cJSON;
     let method = json["method"].as_str();
     match method {
         Some("reserved") | Some("connected") | Some("request") | Some("connect") => {

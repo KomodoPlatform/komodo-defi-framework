@@ -100,6 +100,7 @@ void LP_pubkey_update(struct LP_pubkey_info *pubp,uint32_t baseind,uint32_t reli
 //printf("%d/%d price %.8f balance %.8f %s num.%d min %.8f max %.8f\n",baseind,relind,price,dstr(balance),utxocoin,numutxos,dstr(minutxo),dstr(maxutxo));
     pq->price = price;
     pq->balance = balance;
+    pubp->timestamp = (uint32_t)time(NULL);
 }
 
 struct LP_priceinfo *LP_priceinfo(int32_t ind)
@@ -751,7 +752,6 @@ int32_t LP_orderbook_utxoentries(uint32_t now,int32_t polarity,char *base,char *
                 (*arrayp)[num++] = op;
             }
         }
-        printf("pubp.(%s) %.8f %p\n",coinaddr,price,ap);
     }
     return(num);
 }
@@ -1073,7 +1073,7 @@ cJSON *LP_pricearray(char *base,char *rel,uint32_t firsttime,uint32_t lasttime,i
 
 void LP_pricefeedupdate(bits256 pubkey,char *base,char *rel,double price,long double balance,int64_t unconfcredits)
 {
-    struct LP_priceinfo *basepp,*relpp; uint32_t now; int64_t price64; struct LP_pubkey_info *pubp; char str[65],fname[512]; FILE *fp;
+    struct LP_priceinfo *basepp,*relpp; uint32_t now; int64_t price64; struct LP_pubkey_info *pubp = 0; char str[65],fname[512]; FILE *fp;
 //printf("check PRICEFEED UPDATE.(%s/%s) %.8f %s balance %.8f min %.8f max %.8f\n",base,rel,price,bits256_str(str,pubkey),dstr(balance),dstr(minutxo),dstr(maxutxo));
     if ( LP_pricevalid(price) > 0 && (basepp= LP_priceinfofind(base)) != 0 && (relpp= LP_priceinfofind(rel)) != 0 )
     {
@@ -1103,21 +1103,22 @@ void LP_pricefeedupdate(bits256 pubkey,char *base,char *rel,double price,long do
             fwrite(&price64,1,sizeof(price64),fp);
             fclose(fp);
         }
-        if ( (pubp= LP_pubkeyadd(pubkey)) != 0 )
-        {
-            if ( (LP_rand() % 1000) == 0 )
-                printf("PRICEFEED UPDATE.(%-6s/%6s) %12.8f %s %12.8f\n",base,rel,price,bits256_str(str,pubkey),1./price);
-            if ( unconfcredits > pubp->unconfcredits )
+        HASH_FIND(hh,LP_pubkeyinfos,&pubkey,sizeof(pubkey),pubp);
+        if ( pubp != 0 ) {
+            if ((LP_rand() % 1000) == 0)
+                printf("PRICEFEED UPDATE.(%-6s/%6s) %12.8f %s %12.8f\n", base, rel, price, bits256_str(str, pubkey),
+                       1. / price);
+            if (unconfcredits > pubp->unconfcredits)
                 pubp->unconfcredits = unconfcredits;
-            pubp->timestamp = (uint32_t)time(NULL);
-            LP_pubkey_update(pubp,basepp->ind,relpp->ind,price,balance);
+            pubp->timestamp = (uint32_t) time(NULL);
+            LP_pubkey_update(pubp, basepp->ind, relpp->ind, price, balance);
             //pubp->depthinfo[basepp->ind][relpp->ind] = LP_depthinfo_compact();
             //if ( fabs(pubp->matrix[basepp->ind][relpp->ind] - price) > SMALLVAL )
             {
                 //pubp->matrix[basepp->ind][relpp->ind] = price;
                 //pubp->timestamps[basepp->ind][relpp->ind] = pubp->timestamp;
-                dxblend(&basepp->relvals[relpp->ind],price,0.9);
-                dxblend(&relpp->relvals[basepp->ind],1. / price,0.9);
+                dxblend(&basepp->relvals[relpp->ind], price, 0.9);
+                dxblend(&relpp->relvals[basepp->ind], 1. / price, 0.9);
             }
         } else printf("error finding pubkey entry %s, ok if rare\n",bits256_str(str,pubkey));
     }

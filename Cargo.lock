@@ -2269,7 +2269,7 @@ dependencies = [
 [[package]]
 name = "web3"
 version = "0.6.0"
-source = "git+https://github.com/artemii235/rust-web3#749639871a0f54d51e80c5bff2ea7f6d467d25fb"
+source = "git+https://github.com/artemii235/rust-web3#83d01da9564447419b445a432d5543cb8a9aad23"
 dependencies = [
  "arrayvec 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",

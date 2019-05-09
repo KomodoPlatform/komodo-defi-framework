@@ -961,14 +961,14 @@ pub fn lp_autoprice (ctx: MmArc, req: Json) -> HyRes {
     use std::ffi::CString;
 
     let req: AutopriceReq = try_h! (json::from_value (req));
-    let coin = match lp_coinfind (&ctx, "KMD") {
-        Ok (Some (t)) => t,
+    match lp_coinfind (&ctx, "KMD") {
+        Ok (Some (_)) => (),
         Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use autoprice")),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( KMD ): " (err)))
     };
 
-    let coin = match lp_coinfind (&ctx, "BTC") {
-        Ok (Some (t)) => t,
+    match lp_coinfind (&ctx, "BTC") {
+        Ok (Some (_)) => (),
         Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use autoprice")),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( BTC ): " (err)))
     };

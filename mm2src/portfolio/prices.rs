@@ -1657,14 +1657,14 @@ pub struct FundvalueRes {
 /// 
 /// * `immediate` - Don't wait for the external pricing resources, returning a "no price source" error for any prices that aren't already available.
 pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
-    let coin = match lp_coinfind (&ctx, "KMD") {
-        Ok (Some (t)) => t,
+    match lp_coinfind (&ctx, "KMD") {
+        Ok (Some (_)) => (),
         Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use fundvalue")),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( KMD ): " (err)))
     };
 
-    let coin = match lp_coinfind (&ctx, "BTC") {
-        Ok (Some (t)) => t,
+    match lp_coinfind (&ctx, "BTC") {
+        Ok (Some (_)) => (),
         Ok (None) => return rpc_err_response (500, &fomat! ("KMD and BTC must be enabled to use fundvalue")),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind( BTC ): " (err)))
     };
