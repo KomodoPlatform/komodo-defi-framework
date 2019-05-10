@@ -44,6 +44,7 @@ serde_derive = "1.0"
 serde_json = "1.0"
 serialization = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 sha2 = "0.8"
+sha3 = "0.8"
 tokio-timer = "0.1"
 tokio = "0.1.13"
 # Need try_clone to shutdown and reconnect the tcp connection when there's no data received from Electrum after some time.

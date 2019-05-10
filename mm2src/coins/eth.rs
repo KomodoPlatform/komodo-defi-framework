@@ -35,6 +35,7 @@ use rand::{Rng, thread_rng};
 use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
+use sha3::{Keccak256, Digest};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::ffi::CStr;
@@ -55,6 +56,9 @@ mod web3_transport;
 use self::web3_transport::Web3Transport;
 use futures::future::Either;
 use common::mm_ctx::MmArc;
+
+#[cfg(test)]
+mod eth_tests;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -368,7 +372,7 @@ impl SwapOps for EthCoin {
 
 impl MarketCoinOps for EthCoin {
     fn my_address(&self) -> Cow<str> {
-        format!("{:#02x}", self.my_address).into()
+        checksum_address(&format!("{:#02x}", self.my_address)).into()
     }
 
     fn my_balance(&self) -> Box<Future<Item=f64, Error=String> + Send> {
@@ -1066,8 +1070,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![format!("{:#02x}", to_addr)],
-                    from: vec![format!("{:#02x}", from_addr)],
+                    to: vec![checksum_address(&format!("{:#02x}", to_addr))],
+                    from: vec![checksum_address(&format!("{:#02x}", from_addr))],
                     coin: self.ticker.clone(),
                     fee_details: unwrap!(json::to_value(fee_details)),
                     block_height: block_number.into(),
@@ -1279,8 +1283,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![format!("{:#02x}", call_data.to)],
-                    from: vec![format!("{:#02x}", call_data.from)],
+                    to: vec![checksum_address(&format!("{:#02x}", call_data.to))],
+                    from: vec![checksum_address(&format!("{:#02x}", call_data.from))],
                     coin: self.ticker.clone(),
                     fee_details: unwrap!(json::to_value(fee_details)),
                     block_height: trace.block_number,
@@ -1439,7 +1443,7 @@ impl MmCoin for EthCoin {
                     let fee_details = try_s!(json::to_value(fee_details));
                     drop(nonce_lock);
                     Ok(TransactionDetails {
-                        to: vec![format!("{:#02x}", to_addr)],
+                        to: vec![checksum_address(&format!("{:#02x}", to_addr))],
                         from: vec![arc.my_address().into()],
                         total_amount: amount_f64,
                         spent_by_me,
@@ -1471,7 +1475,7 @@ impl MmCoin for EthCoin {
         let mut spent_by_me = 0f64;
 
         let to = match tx.to {
-            Some(addr) => vec![format!("{:#02x}", addr)],
+            Some(addr) => vec![checksum_address(&format!("{:#02x}", addr))],
             None => vec![],
         };
         let total_amount = try_s!(display_u256_with_decimal_point(tx.value, self.decimals).parse());
@@ -1487,7 +1491,7 @@ impl MmCoin for EthCoin {
                 }
 
                 Ok(TransactionDetails {
-                    from: vec![format!("{:#02x}", tx.from)],
+                    from: vec![checksum_address(&format!("{:#02x}", tx.from))],
                     to,
                     coin: self.ticker.clone(),
                     block_height: tx.block_number.unwrap_or(U256::from(0)).into(),
@@ -1504,7 +1508,7 @@ impl MmCoin for EthCoin {
             },
             EthCoinType::Erc20(_addr) => {
                 Ok(TransactionDetails {
-                    from: vec![format!("{:#02x}", tx.from)],
+                    from: vec![checksum_address(&format!("{:#02x}", tx.from))],
                     to,
                     coin: self.ticker.clone(),
                     block_height: tx.block_number.unwrap_or(U256::from(0)).into(),
@@ -1555,37 +1559,6 @@ fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {
     string.trim_end_matches('0').into()
 }
 
-#[test]
-fn display_u256_with_point() {
-    let number = U256::from_dec_str("1000000000000000000").unwrap();
-    let string = display_u256_with_decimal_point(number, 18);
-    assert_eq!("1.", string);
-
-    let number = U256::from_dec_str("1234567890000000000").unwrap();
-    let string = display_u256_with_decimal_point(number, 18);
-    assert_eq!("1.23456789", string);
-
-    let number = U256::from_dec_str("1234567890000000000").unwrap();
-    let string = display_u256_with_decimal_point(number, 16);
-    assert_eq!("123.456789", string);
-
-    let number = U256::from_dec_str("1234567890000000000").unwrap();
-    let string = display_u256_with_decimal_point(number, 0);
-    assert_eq!("1234567890000000000.", string);
-
-    let number = U256::from_dec_str("1000000000000000").unwrap();
-    let string = display_u256_with_decimal_point(number, 18);
-    assert_eq!("0.001", string);
-
-    let number = U256::from_dec_str("0").unwrap();
-    let string = display_u256_with_decimal_point(number, 18);
-    assert_eq!("0.", string);
-
-    let number = U256::from_dec_str("0").unwrap();
-    let string = display_u256_with_decimal_point(number, 0);
-    assert_eq!("0.", string);
-}
-
 fn u256_to_f64(number: U256, decimals: u8) -> Result<f64, String> {
     let string = display_u256_with_decimal_point(number, decimals);
     Ok(try_s!(string.parse()))
@@ -1608,49 +1581,6 @@ fn wei_from_f64(amount: f64, decimals: u8) -> Result<U256, String> {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
     Ok(try_s!(U256::from_dec_str(&amount).map_err(|e| ERRL!("{:?}", e))))
-}
-
-#[test]
-fn test_wei_from_f64() {
-    let amount = 0.000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
-    let expected_wei: U256 = 1000000000000u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1.000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
-    let expected_wei: U256 = 1000001000000000000u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1.;
-    let wei = wei_from_f64(amount, 18).unwrap();
-    let expected_wei: U256 = 1000000000000000000u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 0.000000000000000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
-    let expected_wei: U256 = 1u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 9).unwrap();
-    let expected_wei: U256 = 1234000000000u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 0).unwrap();
-    let expected_wei: U256 = 1234u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 1).unwrap();
-    let expected_wei: U256 = 12340u64.into();
-    assert_eq!(expected_wei, wei);
-
-    let amount = 1234.12345;
-    let wei = wei_from_f64(amount, 1).unwrap();
-    let expected_wei: U256 = 12341u64.into();
-    assert_eq!(expected_wei, wei);
 }
 
 impl Transaction for SignedEthTx {
@@ -1768,11 +1698,14 @@ fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result
     Ok(decimals as u8)
 }
 
-fn addr_from_str(mut addr_str: &str) -> Result<Address, String> {
-    if addr_str.starts_with("0x") {
-        addr_str = &addr_str[2..];
+fn addr_from_str(addr_str: &str) -> Result<Address, String> {
+    if !addr_str.starts_with("0x") {
+        return ERR!("Address must be prefixed with 0x");
+    };
+    if !is_valid_checksum_addr(addr_str) {
+        return ERR!("Invalid address checksum");
     }
-    Ok(try_s!(Address::from_str(addr_str)))
+    Ok(try_s!(Address::from_str(&addr_str[2..])))
 }
 
 pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Result<EthCoin, String> {
@@ -1821,4 +1754,41 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         web3,
     };
     Ok(EthCoin(Arc::new(coin)))
+}
+
+/// Displays the address in mixed-case checksum form
+/// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md
+fn checksum_address(addr: &str) -> String {
+    let mut addr = addr.to_lowercase();
+    if addr.starts_with("0x") {
+        addr.replace_range(..2, "");
+    }
+
+    let mut hasher = Keccak256::default();
+    hasher.input(&addr);
+    let hash = hasher.result();
+    let mut result: String = "0x".into();
+    for (i, c) in addr.chars().enumerate() {
+        if c.is_digit(10) {
+            result.push(c);
+        } else {
+            // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md#specification
+            // Convert the address to hex, but if the ith digit is a letter (ie. it's one of abcdef)
+            // print it in uppercase if the 4*ith bit of the hash of the lowercase hexadecimal
+            // address is 1 otherwise print it in lowercase.
+            if hash[i / 2] & (1 << (7 - 4 * (i % 2))) != 0 {
+                result.push(c.to_ascii_uppercase());
+            } else {
+                result.push(c.to_ascii_lowercase());
+            }
+        }
+    }
+
+    result
+}
+
+/// Checks that input is valid mixed-case checksum form address
+/// The input must be 0x prefixed hex string
+fn is_valid_checksum_addr(addr: &str) -> bool {
+    addr == &checksum_address(addr)
 }

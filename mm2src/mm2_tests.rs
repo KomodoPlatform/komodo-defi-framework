@@ -417,7 +417,7 @@ fn test_check_balance_on_order_post() {
         {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
         {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
-        {"coin":"JST","name":"jst","etomic":"0x2b294f029fde858b2c62184e8390591755521d8e"}
+        {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);
 
     // start bob and immediately place the order
@@ -727,7 +727,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         {"coin":"PIZZA","asset":"PIZZA"},
         {"coin":"ETOMIC","asset":"ETOMIC"},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
-        {"coin":"JST","name":"jst","etomic":"0x2b294f029fde858b2c62184e8390591755521d8e"}
+        {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);
 
     let mut mm_bob = unwrap! (MarketMakerIt::start (
@@ -1136,7 +1136,7 @@ fn test_withdraw_and_send() {
         {"coin":"PIZZA","asset":"PIZZA"},
         {"coin":"ETOMIC","asset":"ETOMIC"},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
-        {"coin":"JST","name":"jst","etomic":"0x2b294f029fde858b2c62184e8390591755521d8e"}
+        {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);
 
     let mut mm_alice = unwrap! (MarketMakerIt::start (
@@ -1165,8 +1165,8 @@ fn test_withdraw_and_send() {
     log! ("enable_coins (alice): " [enable_res]);
     withdraw_and_send(&mm_alice, "PIZZA", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, -0.00101);
     // dev chain gas price is 0 so ETH expected balance change doesn't include the fee
-    withdraw_and_send(&mm_alice, "ETH", "0x657980d55733b41c0c64c06003864e1aad917ca7", &enable_res, -0.001);
-    withdraw_and_send(&mm_alice, "JST", "0x657980d55733b41c0c64c06003864e1aad917ca7", &enable_res, -0.001);
+    withdraw_and_send(&mm_alice, "ETH", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
+    withdraw_and_send(&mm_alice, "JST", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
     unwrap!(mm_alice.stop());
 }
 
