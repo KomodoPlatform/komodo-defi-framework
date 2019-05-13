@@ -178,8 +178,7 @@ pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
     unsafe {lp::G.USERPASS_COUNTER = 1}
 
 
-    unsafe {try_h! (lp_passphrase_init (&ctx,
-        Some (&req.passphrase), req.gui.as_ref().map (|s| &s[..]), req.seednodes))};
+    unsafe {try_h! (lp_passphrase_init (Some (&req.passphrase), req.gui.as_ref().map (|s| &s[..])))};
 
     let mut coins = Vec::new();
     try_h! (unsafe {coins_iter (&mut |coin| {
@@ -697,13 +696,6 @@ pub fn inventory (ctx: MmArc, req: Json) -> HyRes {
     let ii = coin.iguana_info();
 
     unsafe {lp::LP_address (ii, (*ii).smartaddr.as_mut_ptr())};
-    if req["reset"].as_i64().unwrap_or (0) != 0 {
-        // AG: I wonder if we can narrow down the meaning of "reset" in order to touch the minimal amount of state?
-        //     Reinitializing the state of a running program is generally a bad idea.
-        (*ii).privkeydepth = 0;
-        let passphrase = match req["passphrase"].as_str() {Some (s) => s, None => return rpc_err_response (500, "No 'passphrase' in request")};
-        unsafe {try_h! (lp_passphrase_init (&ctx, Some (passphrase), None, None))};
-    }
     if unsafe {lp::G.LP_privkey.nonz()} {
         unsafe {lp::LP_privkey_init (-1, ii, lp::G.LP_privkey, lp::G.LP_mypub25519)};
     } else {

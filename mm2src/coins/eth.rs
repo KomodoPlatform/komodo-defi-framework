@@ -1702,10 +1702,13 @@ fn addr_from_str(addr_str: &str) -> Result<Address, String> {
     if !addr_str.starts_with("0x") {
         return ERR!("Address must be prefixed with 0x");
     };
+
+    let addr = try_s!(Address::from_str(&addr_str[2..]));
+
     if !is_valid_checksum_addr(addr_str) {
         return ERR!("Invalid address checksum");
     }
-    Ok(try_s!(Address::from_str(&addr_str[2..])))
+    Ok(addr)
 }
 
 pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Result<EthCoin, String> {

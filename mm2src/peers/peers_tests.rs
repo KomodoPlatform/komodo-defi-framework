@@ -33,7 +33,7 @@ fn peer (conf: Json, port: u16) -> MmArc {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
 
-    let ctx = MmCtx::new (conf);
+    let ctx = MmCtx::new (conf, [0; 20].into());
     unwrap! (ctx.log.thread_gravity_on());
     let mut rng = rand::thread_rng();
 
@@ -145,7 +145,7 @@ pub fn peers_direct_send() {
 }
 
 pub fn peers_http_fallback() {
-    let ctx = MmCtx::new (json! ({}));
+    let ctx = MmCtx::new (json! ({}), [0; 20].into());
     let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30204);
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);
@@ -174,7 +174,7 @@ pub fn peers_http_fallback() {
 // where a truly distributed no-single-point-of failure operation is not necessary,
 // like when we're using the fallback server to drive a tested mm2 instance.
 pub fn peers_http_fallback_kv() {
-    let ctx = MmCtx::new (json! ({}));
+    let ctx = MmCtx::new (json! ({}), [0; 20].into());
     let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30205);
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);

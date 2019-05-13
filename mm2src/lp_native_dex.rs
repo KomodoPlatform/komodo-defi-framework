@@ -17,12 +17,14 @@
 //  marketmaker
 //
 
+use bitcrypto::{dhash160, sha256};
 use futures::{Future};
 use futures::sync::oneshot::Sender;
 use gstuff::now_ms;
 use hex;
 use hyper::StatusCode;
 use libc::{self, c_char, c_void};
+use primitives::hash::H160;
 use rand::{random, Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use serde_json::{self as json, Value as Json};
@@ -985,6 +987,15 @@ const P2P_SEED_NODES_9999: [&'static str; 3] = [
 #[allow(unused_variables)]  // delme
 pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_peerinfo, myipaddr: &IpAddr, myport: u16,
                             netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
+    {
+        let mut status = ctx.log.status_handle();
+        while lp::G.waiting == 0 {
+            status.status (&[&"lp_init_peers"], "Waiting for `G.waiting`...");
+            sleep (Duration::from_millis (100))
+        }
+        status.append (" Done.");
+    }
+
     // Pick our ports.
     let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
     lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid);
@@ -1510,8 +1521,9 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
 /// 
 /// AG: If possible, I think we should avoid calling this function on a working MM, using it for initialization only,
 ///     in order to avoid the possibility of invalid state.
+/// AP: Totally agree, moreover maybe we even `must` deny calling this on a working MM as it's being refactored
 #[allow(unused_unsafe)]
-pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Option<&str>, seednodes: Option<Vec<String>>) -> Result<(), String> {
+pub unsafe fn lp_passphrase_init (passphrase: Option<&str>, gui: Option<&str>) -> Result<H160, String> {
     let passphrase = match passphrase {
         None | Some ("") => return ERR! ("jeezy says we cant use the nullstring as passphrase and I agree"),
         Some (s) => s.to_string()
@@ -1519,8 +1531,6 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     if lp::G.LP_pendingswaps != 0 {return ERR! ("There are pending swaps")}
     // Prepare and check some of the `lp_initpeers` parameters.
     let netid = lp::G.netid;
-    let myipaddr: IpAddr = try_s! (try_s! (CStr::from_ptr (lp::LP_myipaddr.as_ptr()) .to_str()) .parse());
-
     let gui: Cow<str> = match gui {
         Some (g) => g.into(),
         None => match try_s! (CStr::from_ptr (lp::G.gui.as_ptr()) .to_str()) {
@@ -1534,35 +1544,23 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
         Ok(())
     }));
 
-    {
-        let mut status = ctx.log.status_handle();
-        while lp::G.waiting == 0 {
-            status.status (&[&"lp_passphrase_init"], "Waiting for `G.waiting`...");
-            sleep (Duration::from_millis (100))
-        }
-        status.append (" Done.");
-    }
-
     lp::G = zeroed();
     lp::G.initializing = 1;
     lp::G.netid = netid;
-    lp::vcalc_sha256 (null_mut(), lp::G.LP_passhash.bytes.as_mut_ptr(), passphrase.as_ptr() as *mut u8, passphrase.len() as i32);
-    let mut pubkey33: [u8; 100] = zeroed();
-    lp::bitcoin_pubkey33 (ctx.btc_ctx() as *mut c_void, pubkey33.as_mut_ptr(), lp::G.LP_privkey);
-    lp::calc_rmd160_sha256 (lp::G.LP_myrmd160.as_mut_ptr(), pubkey33.as_mut_ptr(), 33);
+    let global_key_pair = try_s!(key_pair_from_seed(&passphrase));
+    let pass_hash = sha256(passphrase.as_bytes());
+    lp::G.LP_passhash.bytes.clone_from_slice(&*pass_hash);
+    let rmd_160 = dhash160(&**global_key_pair.public());
+    lp::G.LP_myrmd160.clone_from_slice(&*rmd_160);
     try_s! (safecopy! (lp::G.LP_myrmd160str, "{}", hex::encode (lp::G.LP_myrmd160)));
     lp::G.LP_sessionid = (now_ms() / 1000) as u32;
     try_s! (safecopy! (lp::G.gui, "{}", gui));
-    let global_key_pair = try_s!(key_pair_from_seed(&passphrase));
     lp::G.LP_privkey.bytes.clone_from_slice(&*global_key_pair.private().secret);
     lp::G.LP_pubsecp.clone_from_slice(&**global_key_pair.public());
-    unsafe {
-        let mut pubkey: bits256 = zeroed();
-        let pk = lp::LP_privkeycalc (&mut pubkey);
-        if !pk.nonz() {return ERR! ("!LP_privkeycalc")}
-        if !lp::G.LP_privkey.nonz() {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
-    }
-    try_s! (lp_initpeers (ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes));
+    let mut pubkey: bits256 = zeroed();
+    let pk = lp::LP_privkeycalc (&mut pubkey);
+    if !pk.nonz() {return ERR! ("!LP_privkeycalc")}
+    if !lp::G.LP_privkey.nonz() {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
 
     lp::LP_tradebot_pauseall();
     lp::LP_portfolio_reset();
@@ -1572,7 +1570,7 @@ pub unsafe fn lp_passphrase_init (ctx: &MmArc, passphrase: Option<&str>, gui: Op
     lp::G.USERPASS_COUNTER = userpass_counter;
 
     lp::G.initializing = 0;
-    Ok(())
+    Ok(rmd_160)
 }
 
 /// Tries to serve on the given IP to check if it's available.  
@@ -1682,19 +1680,16 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON, ctx_
             try_s! (write! (&mut cur, "\0"))
         }
     }
-    if !conf["dbdir"].is_null() {
-        let dbdir = unwrap! (conf["dbdir"].as_str()) .trim();
-        if !dbdir.is_empty() {
-            let global: &mut [c_char] = unsafe {&mut lp::GLOBAL_DBDIR[..]};
-            let global: &mut [u8] = unsafe {transmute (global)};
-            let mut cur = Cursor::new (global);
-            try_s! (write! (&mut cur, "{}", dbdir));
-            try_s! (write! (&mut cur, "\0"))
-        }
-    }
     unsafe {lp::LP_mutex_init()};
+    let rmd_160 = unsafe {try_s! (lp_passphrase_init (conf["passphrase"].as_str(), conf["gui"].as_str()))};
 
-    let ctx = MmCtx::new (conf);
+    let ctx = MmCtx::new (conf, rmd_160);
+    let global: &mut [c_char] = unsafe {&mut lp::GLOBAL_DBDIR[..]};
+    let global: &mut [u8] = unsafe {transmute (global)};
+    let mut cur = Cursor::new (global);
+    try_s! (write! (&mut cur, "{}", ctx.dbdir().display()));
+    try_s! (write! (&mut cur, "\0"));
+
     ctx_cb (try_s! (ctx.ffi_handle()));
 
     try_s! (fix_directories (&ctx));
@@ -1827,41 +1822,40 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON, ctx_
     try_s! (unsafe {safecopy! (lp::LP_myipaddr, "{}", myipaddr)});
 
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
-    unsafe {try_s! (lp_passphrase_init (&ctx,
-        ctx.conf["passphrase"].as_str(), ctx.conf["gui"].as_str(), seednodes))};
-/*
-#ifndef FROM_JS
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_psockloop,(void *)myipaddr) != 0 )
-    {
-        printf("error launching LP_psockloop for (%s)\n",myipaddr);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_reserved_msgs,(void *)myipaddr) != 0 )
-    {
-        printf("error launching LP_reserved_msgs for (%s)\n",myipaddr);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)stats_rpcloop,(void *)&myport) != 0 )
-    {
-        printf("error launching stats rpcloop for port.%u\n",myport);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)command_rpcloop,ctx) != 0 )
-    {
-        printf("error launching command_rpcloop for ctx.%p\n",ctx);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)queue_loop,ctx) != 0 )
-    {
-        printf("error launching queue_loop for ctx.%p\n",ctx);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)gc_loop,ctx) != 0 )
-    {
-        printf("error launching gc_loop for port.%p\n",ctx);
-        exit(-1);
-    }
-    */
+    unsafe { try_s! (lp_initpeers (&ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes)); }
+    /*
+    #ifndef FROM_JS
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_psockloop,(void *)myipaddr) != 0 )
+        {
+            printf("error launching LP_psockloop for (%s)\n",myipaddr);
+            exit(-1);
+        }
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_reserved_msgs,(void *)myipaddr) != 0 )
+        {
+            printf("error launching LP_reserved_msgs for (%s)\n",myipaddr);
+            exit(-1);
+        }
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)stats_rpcloop,(void *)&myport) != 0 )
+        {
+            printf("error launching stats rpcloop for port.%u\n",myport);
+            exit(-1);
+        }
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)command_rpcloop,ctx) != 0 )
+        {
+            printf("error launching command_rpcloop for ctx.%p\n",ctx);
+            exit(-1);
+        }
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)queue_loop,ctx) != 0 )
+        {
+            printf("error launching queue_loop for ctx.%p\n",ctx);
+            exit(-1);
+        }
+        if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)gc_loop,ctx) != 0 )
+        {
+            printf("error launching gc_loop for port.%p\n",ctx);
+            exit(-1);
+        }
+        */
     ctx.initialized.store (true, Ordering::Relaxed);
     let prices = try_s! (thread::Builder::new().name ("prices".into()) .spawn ({
         let ctx = ctx.clone();

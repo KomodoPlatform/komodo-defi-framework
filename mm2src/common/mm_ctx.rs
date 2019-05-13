@@ -1,12 +1,13 @@
 use crossbeam::{channel, Sender, Receiver};
 use hashbrown::hash_map::{Entry, HashMap};
 use libc::{c_void};
+use primitives::hash::H160;
 use rand::random;
 use serde_json::{Value as Json};
 use std::any::Any;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -69,9 +70,12 @@ pub struct MmCtx {
     pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     /// Standard node P2P message bus channel
     pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase
+    /// The replacement of lp::G.LP_myrmd160
+    pub rmd160: H160
 }
 impl MmCtx {
-    pub fn new (conf: Json) -> MmArc {
+    pub fn new (conf: Json, rmd160: H160) -> MmArc {
         let log = log::LogState::mm (&conf);
         MmArc (Arc::new (MmCtx {
             conf,
@@ -90,6 +94,7 @@ impl MmCtx {
             prices_ctx: Mutex::new (None),
             seednode_p2p_channel: channel::unbounded(),
             client_p2p_channel: channel::unbounded(),
+            rmd160,
         }))
     }
 
@@ -118,14 +123,18 @@ impl MmCtx {
     ///     "dbdir": "c:/Users/mm2user/.mm2-db"
     /// 
     /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
-    pub fn dbdir (&self) -> &Path {
-        if let Some (dbdir) = self.conf["dbdir"].as_str() {
+    pub fn dbdir (&self) -> PathBuf {
+        let path = if let Some (dbdir) = self.conf["dbdir"].as_str() {
             let dbdir = dbdir.trim();
             if !dbdir.is_empty() {
-                return Path::new (dbdir)
+                Path::new (dbdir)
+            } else {
+                Path::new ("DB")
             }
-        }
-        return Path::new ("DB")
+        } else {
+            Path::new ("DB")
+        };
+        path.join (hex::encode (&*self.rmd160) )
     }
 
     pub fn netid (&self) -> u16 {
