@@ -13,7 +13,7 @@ We need the Nightly revision of Rust, such as
 
 ### Install cross
 
-    git clone --depth=1 https://github.com/ArtemGr/cross
+    git clone --depth=1 git@github.com:ArtemGr/cross.git
     (cd cross && cargo install -f --path .) && rm -rf cross
 
 ### Install extra packages into the Docker image
@@ -27,7 +27,7 @@ To do this we'll need two terminals. In the first terminal we start a container 
         apt-get install -y llvm-3.9-dev libclang-3.9-dev clang-3.9 && \
         apt-get install -y libc6-dev-i386 && \
         apt-get clean && \
-        echo 'All done.'
+        echo 'Clang installed'
 
 Having done that, and still keeping the first container open,
 we use a second terminal to commit the changes back into the image
@@ -38,8 +38,8 @@ we use a second terminal to commit the changes back into the image
 
 ### Get the source code
 
-    git clone --depth=1 https://github.com/artemii235/SuperNET.git -b mm2-cross
-    cd SuperNET
+    git clone --depth=1 git@gitlab.com:artemciy/supernet.git -b mm2-cross
+    cd supernet
     git log --pretty=format:'%h' -n 1 > MM_VERSION
 
 ### Setup the NDK_HOME variable
