@@ -119,3 +119,19 @@ pub extern fn broadcast_p2p_msg_for_c (_pubkey: lp::bits256, msg: *mut c_char, c
     ctx.broadcast_p2p_msg(msg_str);
     free_c_ptr(msg as *mut c_void);
 }
+
+/*
+Example of working around the problem with Android API level 19
+where `sigemptyset` is inlined in the C header.
+Needs further testing.
+And we might rather go the opposite road of using the fresh versions of the NDK.
+
+use libc::{c_int, sigset_t};
+use std::mem::zeroed;
+
+#[no_mangle]
+pub extern fn sigemptyset (set: *mut sigset_t) -> c_int {
+    unsafe {*set = zeroed()}
+    0
+}
+*/
