@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex};
 use super::{default_pricing_provider, register_interest_in_coin_prices, PortfolioContext, InterestingCoins};
 use url;
 
-const MIN_TRADE: f64 = 0.001;
+const MIN_TRADE: f64 = 0.01;
 
 #[derive(Serialize)]
 struct PricePingRequest {

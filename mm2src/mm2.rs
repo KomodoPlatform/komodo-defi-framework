@@ -246,7 +246,6 @@ fn vanity (substring: &str) {
     let mut privkey: bits256 = unsafe {zeroed()};
     unsafe {lp::LP_mutex_init()};
     let ctx = MmCtx::new (json! ({}), [0; 20].into());
-    unwrap! (coins::lp_initcoins (&ctx));
     let timestamp = now_ms() / 1000;
     log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
     for i in 0..1000000000 {

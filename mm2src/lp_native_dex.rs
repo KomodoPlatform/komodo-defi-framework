@@ -1816,7 +1816,6 @@ pub fn lp_init (mypullport: u16, mypubport: u16, conf: Json, c_conf: CJSON, ctx_
     } else {
         None
     };
-    try_s! (coins::lp_initcoins (&ctx));
     unsafe {lp::RPC_port = try_s! (ctx.rpc_ip_port()) .port()}
     unsafe {lp::G.waiting = 1}
     try_s! (unsafe {safecopy! (lp::LP_myipaddr, "{}", myipaddr)});

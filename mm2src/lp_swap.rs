@@ -508,7 +508,8 @@ impl MakerSwap {
     }
 
     fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let amount_f64 = dstr(self.maker_amount as i64, self.maker_coin.decimals());
+        // maker and taker amounts are always in 10^-8 of coin units
+        let amount_f64 = dstr(self.maker_amount as i64, 8);
         if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(amount_f64, true).wait() {
             return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -1076,7 +1077,8 @@ impl TakerSwap {
     }
 
     fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let amount_f64 = dstr(self.taker_amount as i64, self.taker_coin.decimals());
+        // maker and taker amounts are always in 10^-8 of coin units
+        let amount_f64 = dstr(self.taker_amount as i64, 8);
         if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(amount_f64, true).wait() {
             return Ok((
                 Some(TakerSwapCommand::Finish),

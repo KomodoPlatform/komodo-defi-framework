@@ -1394,71 +1394,88 @@ impl MmCoin for EthCoin {
         }))
     }
 
-    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+    fn withdraw(&self, to: &str, amount: f64, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
         let to_addr = try_fus!(addr_from_str(to));
-        let wei_amount = try_fus!(wei_from_f64(amount, self.decimals));
-        let (value, data, call_addr) = match self.coin_type {
-            EthCoinType::Eth => (wei_amount, vec![], to_addr),
-            EthCoinType::Erc20(token_addr) => {
-                let function = try_fus!(ERC20_CONTRACT.function("transfer"));
-                let data = try_fus!(function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)]));
-                (0.into(), data, token_addr)
-            }
-        };
         let arc = self.clone();
-        let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
-        let nonce_fut = self.web3.eth().transaction_count(self.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
-        Box::new(nonce_fut.and_then(move |nonce| {
-            let gas_price_fut = if let Some(url) = &arc.gas_station_url {
-                Either::A(GasStationData::get_gas_price(&url.clone()))
+        Box::new(self.my_balance().and_then(move |my_balance| -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+            let mut wei_amount = if max {
+                my_balance
             } else {
-                Either::B(arc.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
+                try_fus!(wei_from_f64(amount, arc.decimals))
             };
-            gas_price_fut.and_then(move |gas_price| {
-                let estimate_gas_req = CallRequest {
-                    value: Some(value),
-                    data: Some(data.clone().into()),
-                    from: Some(arc.my_address),
-                    to: call_addr,
-                    gas: None,
-                    gas_price: Some(gas_price)
+            if wei_amount > my_balance {
+                return Box::new(futures::future::err(ERRL!("The amount {} to withdraw is larger than balance", amount)));
+            };
+            let (mut value, data, call_addr) = match arc.coin_type {
+                EthCoinType::Eth => (wei_amount, vec![], to_addr),
+                EthCoinType::Erc20(token_addr) => {
+                    let function = try_fus!(ERC20_CONTRACT.function("transfer"));
+                    let data = try_fus!(function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)]));
+                    (0.into(), data, token_addr)
+                }
+            };
+            let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
+            let nonce_fut = arc.web3.eth().transaction_count(arc.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
+            Box::new(nonce_fut.and_then(move |nonce| {
+                let gas_price_fut = if let Some(url) = &arc.gas_station_url {
+                    Either::A(GasStationData::get_gas_price(&url.clone()))
+                } else {
+                    Either::B(arc.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
                 };
+                gas_price_fut.and_then(move |gas_price| {
+                    let estimate_gas_req = CallRequest {
+                        value: Some(value),
+                        data: Some(data.clone().into()),
+                        from: Some(arc.my_address),
+                        to: call_addr,
+                        gas: None,
+                        gas_price: Some(gas_price)
+                    };
 
-                let estimate_gas_fut = arc.web3.eth().estimate_gas(estimate_gas_req, None).map_err(|e| ERRL!("{}", e));
-                estimate_gas_fut.and_then(move |gas| {
-                    let tx = UnSignedEthTx { nonce, value, action: Action::Call(call_addr), data, gas, gas_price };
+                    let estimate_gas_fut = arc.web3.eth().estimate_gas(estimate_gas_req, None).map_err(|e| ERRL!("{}", e));
+                    estimate_gas_fut.and_then(move |gas| {
+                        let total_fee = gas * gas_price;
+                        if max && arc.coin_type == EthCoinType::Eth {
+                            if value < total_fee || wei_amount < total_fee {
+                                return ERR!("The value {} to withdraw is lower than fee {}", value, total_fee);
+                            }
+                            value -= total_fee;
+                            wei_amount -= total_fee;
+                        };
+                        let tx = UnSignedEthTx { nonce, value, action: Action::Call(call_addr), data, gas, gas_price };
 
-                    let signed = tx.sign(arc.key_pair.secret(), None);
-                    let bytes = rlp::encode(&signed);
-                    let amount_f64 = try_s!(u256_to_f64(wei_amount, arc.decimals));
-                    let mut spent_by_me = amount_f64;
-                    let mut received_by_me = 0.;
-                    if to_addr == arc.my_address {
-                        received_by_me = amount_f64;
-                    }
-                    let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, "ETH"));
-                    if arc.coin_type == EthCoinType::Eth {
-                        spent_by_me += fee_details.total_fee;
-                    }
-                    let fee_details = try_s!(json::to_value(fee_details));
-                    drop(nonce_lock);
-                    Ok(TransactionDetails {
-                        to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-                        from: vec![arc.my_address().into()],
-                        total_amount: amount_f64,
-                        spent_by_me,
-                        received_by_me,
-                        my_balance_change: received_by_me - spent_by_me,
-                        tx_hex: bytes.into(),
-                        tx_hash: signed.tx_hash(),
-                        block_height: 0,
-                        fee_details,
-                        coin: arc.ticker.clone(),
-                        internal_id: vec![].into(),
-                        timestamp: now_ms() / 1000,
+                        let signed = tx.sign(arc.key_pair.secret(), None);
+                        let bytes = rlp::encode(&signed);
+                        let amount_f64 = try_s!(u256_to_f64(wei_amount, arc.decimals));
+                        let mut spent_by_me = amount_f64;
+                        let mut received_by_me = 0.;
+                        if to_addr == arc.my_address {
+                            received_by_me = amount_f64;
+                        }
+                        let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, "ETH"));
+                        if arc.coin_type == EthCoinType::Eth {
+                            spent_by_me += fee_details.total_fee;
+                        }
+                        let fee_details = try_s!(json::to_value(fee_details));
+                        drop(nonce_lock);
+                        Ok(TransactionDetails {
+                            to: vec![checksum_address(&format!("{:#02x}", to_addr))],
+                            from: vec![arc.my_address().into()],
+                            total_amount: amount_f64,
+                            spent_by_me,
+                            received_by_me,
+                            my_balance_change: received_by_me - spent_by_me,
+                            tx_hex: bytes.into(),
+                            tx_hash: signed.tx_hash(),
+                            block_height: 0,
+                            fee_details,
+                            coin: arc.ticker.clone(),
+                            internal_id: vec![].into(),
+                            timestamp: now_ms() / 1000,
+                        })
                     })
                 })
-            })
+            }))
         }))
     }
 

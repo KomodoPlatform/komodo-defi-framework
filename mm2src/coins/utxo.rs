@@ -96,18 +96,30 @@ pub struct AdditionalTxData {
     fee_amount: u64,
 }
 
+/// The fee set from coins config
 #[derive(Debug)]
 enum TxFee {
+    /// Tell the coin that it has fixed tx fee not depending on transaction size
     Fixed(u64),
+    /// Tell the coin that it should request the fee from daemon RPC and calculate it relying on tx size
     Dynamic,
 }
 
+/// The actual "runtime" fee that is received from RPC in case of dynamic calculation
 #[derive(Debug)]
 enum ActualTxFee {
     /// fixed tx fee not depending on transaction size
     Fixed(u64),
     /// fee amount per Kbyte received from coin RPC
     Dynamic(u64),
+}
+
+/// Fee policy applied on transaction creation
+enum FeePolicy {
+    /// Send the exact amount specified in output(s), fee is added to spent input amount
+    SendExact,
+    /// Contains the index of output from which fee should be deducted
+    DeductFromOutput(usize),
 }
 
 #[derive(Debug)]
@@ -439,6 +451,7 @@ impl UtxoCoin {
             arc.generate_transaction(
                 unspents,
                 outputs,
+                FeePolicy::SendExact,
             ).and_then(move |(unsigned, _)| -> TransactionFut {
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
                 let signed = try_fus!(sign_tx(unsigned, &arc.key_pair, prev_script));
@@ -510,8 +523,9 @@ impl UtxoCoin {
         &self,
         utxos: Vec<UnspentInfo>,
         mut outputs: Vec<TransactionOutput>,
+        fee_policy: FeePolicy
     ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
-        const DUST: u64 = 100;
+        const DUST: u64 = 1000;
         let lock_time = (now_ms() / 1000) as u32;
         let change_script_pubkey = Builder::build_p2pkh(&self.my_address.hash).to_bytes();
         let arc = self.clone();
@@ -553,9 +567,24 @@ impl UtxoCoin {
                     // + 34 bytes (pubkey with length) + 32 bytes (prev_out hash) + 4 bytes (prev_out index)
                     tx_fee += (fee_per_kb * (1 + 72 + 34 + 32 + 4)) / 1024;
                 }
-                if value_to_spend >= target_value + tx_fee { break; }
+                let target = match fee_policy {
+                    FeePolicy::SendExact => target_value + tx_fee,
+                    FeePolicy::DeductFromOutput(_) => target_value,
+                };
+                if value_to_spend >= target { break; }
             }
-            target_value += tx_fee;
+            match fee_policy {
+                FeePolicy::SendExact => target_value += tx_fee,
+                FeePolicy::DeductFromOutput(i) => {
+                    let min_output = tx_fee + DUST;
+                    let val = outputs[i].value;
+                    true_or_err!(val >= min_output, "Output {} value {} is too small, required no less than {}", i, val, min_output);
+                    outputs[i].value -= tx_fee;
+                    if outputs[i].script_pubkey == change_script_pubkey {
+                        received_by_me -= tx_fee;
+                    }
+                },
+            };
             true_or_err!(value_to_spend >= target_value, "Not sufficient balance. Couldn't collect enough value from utxos {:?} to create tx with outputs {:?}", utxos, outputs);
 
             let change = value_to_spend - target_value;
@@ -1023,9 +1052,9 @@ impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
     fn check_i_have_enough_to_trade(&self, amount: f64, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
-        const DUST_F64: f64 = 0.000001;
+        const DUST_F64: f64 = 0.00001;
         if amount / 777.0 < DUST_F64 {
-            return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, 0.000777)));
+            return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, 0.00777)));
         }
         let fee_fut = self.get_tx_fee();
         let arc = self.clone();
@@ -1055,21 +1084,27 @@ impl MmCoin for UtxoCoin {
         Box::new(futures::future::ok(()))
     }
 
-    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+    fn withdraw(&self, to: &str, amount: f64, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
         let to: Address = try_fus!(Address::from_str(to));
-        let value = (amount * 10.0_f64.powf(self.decimals as f64)) as u64;
         let script_pubkey = Builder::build_p2pkh(&to.hash).to_bytes();
-        let outputs = vec![TransactionOutput {
-            value,
-            script_pubkey,
-        }];
         let utxo_lock = MutexGuardWrapper(try_fus!(UTXO_LOCK.lock()));
         let unspent_fut = self.rpc_client.list_unspent_ordered(&self.my_address);
         let arc = self.clone();
         Box::new(unspent_fut.and_then(move |unspents| {
+            let (value, fee_policy) = if max {
+                (unspents.iter().fold(0, |sum, unspent| sum + unspent.value), FeePolicy::DeductFromOutput(0))
+            } else {
+                ((amount * 10.0_f64.powf(arc.decimals as f64)) as u64, FeePolicy::SendExact)
+            };
+            let outputs = vec![TransactionOutput {
+                value,
+                script_pubkey,
+            }];
+
             arc.generate_transaction(
                 unspents,
                 outputs,
+                fee_policy,
             ).and_then(move |(unsigned, data)| {
                 drop(utxo_lock);
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
@@ -1524,10 +1559,10 @@ mod tests {
 
         let outputs = vec![TransactionOutput {
             script_pubkey: vec![].into(),
-            value: 99,
+            value: 999,
         }];
 
-        let generated = coin.generate_transaction(unspents, outputs).wait();
+        let generated = coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait();
         // must not allow to use output with value < dust
         unwrap_err!(generated);
 
@@ -1538,17 +1573,49 @@ mod tests {
 
         let outputs = vec![TransactionOutput {
             script_pubkey: vec![].into(),
-            value: 98901,
+            value: 98001,
         }];
 
-        let generated = unwrap!(coin.generate_transaction(unspents, outputs).wait());
+        let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait());
         // the change that is less than dust must be included to miner fee
         // so no extra outputs should appear in generated transaction
         assert_eq!(generated.0.outputs.len(), 1);
 
-        assert_eq!(generated.1.fee_amount, 1099);
+        assert_eq!(generated.1.fee_amount, 1999);
         assert_eq!(generated.1.received_by_me, 0);
         assert_eq!(generated.1.spent_by_me, 100000);
+
+        let unspents = vec![UnspentInfo {
+            value: 100000,
+            outpoint: OutPoint::default(),
+        }];
+
+        let outputs = vec![TransactionOutput {
+            script_pubkey: "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into(),
+            value: 100000,
+        }];
+
+        // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
+        let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0)).wait());
+        assert_eq!(generated.0.outputs.len(), 1);
+
+        assert_eq!(generated.1.fee_amount, 1000);
+        assert_eq!(generated.1.received_by_me, 99000);
+        assert_eq!(generated.1.spent_by_me, 100000);
+        assert_eq!(generated.0.outputs[0].value, 99000);
+
+        let unspents = vec![UnspentInfo {
+            value: 100000,
+            outpoint: OutPoint::default(),
+        }];
+
+        let outputs = vec![TransactionOutput {
+            script_pubkey: vec![].into(),
+            value: 100000,
+        }];
+
+        // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
+        unwrap_err!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait());
     }
 
     #[test]

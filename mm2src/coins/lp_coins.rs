@@ -210,7 +210,10 @@ pub trait IguanaInfo {
 struct WithdrawRequest {
     coin: String,
     to: String,
+    #[serde(default)]
     amount: f64,
+    #[serde(default)]
+    max: bool
 }
 
 /// Transaction details
@@ -261,7 +264,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send>;
 
-    fn withdraw(&self, to: &str, amount: f64) -> Box<Future<Item=TransactionDetails, Error=String> + Send>;
+    fn withdraw(&self, to: &str, amount: f64, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
@@ -928,17 +931,6 @@ void LP_otheraddress(char *destcoin,char *otheraddr,char *srccoin,char *coinaddr
 }
 */
 
-pub fn lp_initcoins (ctx: &MmArc) -> Result<(), String> {
-    // The function lived in the "LP_nativeDEX.c" originally, but I suspect that we can have it encapsulated in the `coins` proper.
-
-    // NB: Most of the coins are initialized in `fn enable`. (Only knowing about the enabled coins
-    //     is not only faster but also safer, ensuring that every coin we know of is valid and operable).
-    //     But we currently need to initialize at least one coin here, in `fn lp_initcoins`,
-    //     in order to set the global key pair with `LP_privkeycalc`.
-    //     We also need the "KMD" initialized [and enabled] since it is currently used in `LP_pricepings` [etc].
-    Ok(())
-}
-
 /// Get my_balance of a coin
 pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
@@ -962,7 +954,7 @@ pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
     };
     let withdraw_req: WithdrawRequest = try_h!(json::from_value(req));
-    Box::new(coin.withdraw(&withdraw_req.to, withdraw_req.amount).and_then(|res| {
+    Box::new(coin.withdraw(&withdraw_req.to, withdraw_req.amount, withdraw_req.max).and_then(|res| {
         let body = try_h!(json::to_string(&res));
         rpc_response(200, body)
     }))
