@@ -140,7 +140,8 @@ fn help() {
         "  rpcport        ..  If > 1000 overrides the 7783 default.\n"
         "  i_am_seed      ..  Activate the seed node mode (acting as a relay for mm2 clients).\n"
         "                     Defaults to `false`.\n"
-        "  seednodes      ..  Seednode IPs that node will use. At least 1 seed IP be set if the node is not seed itself.\n"
+        "  seednodes      ..  Seednode IPs that node will use.\n"
+        "                     At least one seed IP must be present if the node is not a seed itself.\n"
         "  userhome       ..  System home directory of a user ('/root' by default).\n"
         "  wif            ..  `1` to add WIFs to the information we provide about a coin.\n"
         "\n"
@@ -245,7 +246,7 @@ fn vanity (substring: &str) {
     let mut wifstr: [c_char; 128] = unsafe {zeroed()};
     let mut privkey: bits256 = unsafe {zeroed()};
     unsafe {lp::LP_mutex_init()};
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
+    let ctx = MmCtx::new (json! ({}));
     let timestamp = now_ms() / 1000;
     log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
     for i in 0..1000000000 {

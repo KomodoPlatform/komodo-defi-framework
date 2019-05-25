@@ -15,6 +15,10 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+// TODO: Consider and/or try moving the integration tests into separate Rust files.
+// "Tests in your src files should be unit tests, and tests in tests/ should be integration-style tests."
+// - https://doc.rust-lang.org/cargo/guide/tests.html
+
 /// Asks MM to enable the given currency in native mode.  
 /// Returns the RPC reply containing the corresponding wallet address.
 fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
@@ -56,9 +60,11 @@ fn addr_from_enable(enable_response: &Json) -> Json {
     enable_response["address"].clone()
 }
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_autoprice_coingecko() {portfolio::portfolio_tests::test_autoprice_coingecko (local_start())}
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_autoprice_coinmarketcap() {portfolio::portfolio_tests::test_autoprice_coinmarketcap (local_start())}
 
@@ -205,6 +211,7 @@ fn test_notify() {
 }
 
 /// https://github.com/artemii235/SuperNET/issues/241
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn alice_can_see_the_active_order_after_connection() {
     let coins = json!([
@@ -326,15 +333,15 @@ fn test_status() {common::log::tests::test_status()}
 fn peers_dht() {peers::peers_tests::peers_dht()}
 
 #[test]
-#[ignore]  // The plan is to re-enable the test after making it more reliable on Mac.
 fn peers_direct_send() {peers::peers_tests::peers_direct_send()}
 
 #[test]
-fn peers_http_fallback() {peers::peers_tests::peers_http_fallback()}
+fn peers_http_fallback_recv() {peers::peers_tests::peers_http_fallback_recv()}
 
 #[test]
 fn peers_http_fallback_kv() {peers::peers_tests::peers_http_fallback_kv()}
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_my_balance() {
     let coins = json!([
@@ -358,7 +365,7 @@ fn test_my_balance() {
     log!({"log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable BEER.
-    let json = enable_electrum(&mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
+    let json = enable_electrum(&mm, "BEER", vec!["electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
     let balance_on_enable = unwrap!(json["balance"].as_f64());
     assert_eq!(balance_on_enable, 1.0);
 
@@ -410,6 +417,7 @@ fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
     assert! (rc.0.is_server_error(), "!sell success but should be error: {}", rc.1);
 }
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_check_balance_on_order_post() {
     let coins = json!([
@@ -468,6 +476,7 @@ fn test_check_balance_on_order_post() {
     check_sell_fails(&mm, "JST", "BEER", 0.1);
 }
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_rpc_password_from_json() {
     let coins = json!([
@@ -524,7 +533,7 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum1.cipig.net:10022"],
+        "urls": ["electrum2.cipig.net:10022"],
         "mm2": 1,
     })));
 
@@ -535,7 +544,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum1.cipig.net:10022"],
+        "urls": ["electrum2.cipig.net:10022"],
         "mm2": 1,
     })));
 
@@ -546,7 +555,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "PIZZA",
-        "urls": ["electrum1.cipig.net:10022"],
+        "urls": ["electrum1.cipig.net:10024"],
         "mm2": 1,
     })));
 
@@ -587,7 +596,7 @@ fn test_rpc_password_from_json_no_userpass() {
     let electrum = unwrap! (mm.rpc (json! ({
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum1.cipig.net:10022"],
+        "urls": ["electrum2.cipig.net:10022"],
     })));
 
     // electrum call must return 500 status code
@@ -883,6 +892,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
     unwrap! (mm_alice.stop());
 }
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 #[ignore]  // TODO: Re-enable once the PIZZA trades are fixed.
 fn trade_test_electrum_and_eth_coins() {
@@ -1125,6 +1135,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &Hash
     assert_eq! (withdraw_json["tx_hash"], send_json["tx_hash"]);
 }
 
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_withdraw_and_send() {
     let (alice_file_passphrase, _alice_file_userpass) = from_env_file (slurp (&".env.client"));
@@ -1215,6 +1226,7 @@ fn test_swap_status() {
 
 /// Ensure that setprice/buy/sell calls deny base == rel
 /// https://github.com/artemii235/SuperNET/issues/363
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_order_errors_when_base_equal_rel() {
     let coins = json!([
@@ -1239,7 +1251,7 @@ fn test_order_errors_when_base_equal_rel() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
-    enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
+    enable_electrum (&mm, "BEER", vec!["electrum2.cipig.net:10022"]);
 
     let rc = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -1273,7 +1285,7 @@ fn test_order_errors_when_base_equal_rel() {
 
 fn startup_passphrase(passphrase: &str, expected_address: &str) {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+        {"coin":"KMD","rpcport":8923,"txversion":4},
     ]);
 
     let mut mm = unwrap! (MarketMakerIt::start (
@@ -1294,7 +1306,7 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
-    let enable = enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022"]);
+    let enable = enable_electrum (&mm, "KMD", vec!["electrum1.cipig.net:10001"]);
     let addr = addr_from_enable(&enable);
     assert_eq!(Json::from(expected_address), addr);
     unwrap!(mm.stop());
@@ -1302,6 +1314,7 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
 
 /// MM2 should detect if passphrase is WIF or 0x-prefixed hex encoded privkey and parse it properly.
 /// https://github.com/artemii235/SuperNET/issues/396
+#[ignore]  // Electrum servers temporary on maintenance
 #[test]
 fn test_startup_passphrase() {
     // seed phrase

@@ -801,8 +801,6 @@ fn electrum_connect(
     addr: SocketAddr,
     responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
 ) -> Result<mpsc::Sender<Vec<u8>>, String> {
-    // try to connect synchronously first using std TcpStream to check if the server is reachable
-    try_s!(TcpStreamStd::connect(&addr));
     let (tx, rx) = mpsc::channel(0);
     let rx = rx_to_stream(rx);
 

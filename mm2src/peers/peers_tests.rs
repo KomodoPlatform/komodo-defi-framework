@@ -33,13 +33,20 @@ fn peer (conf: Json, port: u16) -> MmArc {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
 
-    let ctx = MmCtx::new (conf, [0; 20].into());
+    let ctx = MmCtx::new (conf);
     unwrap! (ctx.log.thread_gravity_on());
-    let mut rng = rand::thread_rng();
 
+    if let Some (seednodes) = ctx.conf["seednodes"].as_array() {
+        let mut seeds = unwrap! (ctx.seeds.lock());
+        assert! (seeds.is_empty());  // `fn lp_initpeers` was not invoked.
+        assert! (!seednodes.is_empty());
+        seeds.push (unwrap! (unwrap! (seednodes[0].as_str()) .parse()))
+    }
+
+    let mut rng = rand::thread_rng();
     let mut alice_key: bits256 = unsafe {zeroed()};
     unsafe {rng.fill (&mut alice_key.bytes[..])}
-    unwrap! (super::initialize (&ctx, 9999, alice_key, port, 0));
+    unwrap! (super::initialize (&ctx, 9999, alice_key, port));
 
     ctx
 }
@@ -52,9 +59,12 @@ fn destruction_check (mm: MmArc) {
     }
 }
 
-pub fn peers_dht() {
-    let alice = peer (json! ({"dht": "on"}), 2111);
-    let bob = peer (json! ({"dht": "on"}), 2112);
+fn peers_exchange (conf: Json) {
+    let fallback_on = conf["http-fallback"] == "on";
+    let fallback = if fallback_on {1} else {255};
+
+    let alice = peer (conf.clone(), 2111);
+    let bob = peer (conf, 2112);
 
     unwrap! (wait_for_log (&alice.log, 99., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
     unwrap! (wait_for_log (&bob.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
@@ -71,23 +81,54 @@ pub fn peers_dht() {
         let message: Vec<u8> = (0..*message_len) .map (|_| rng.gen()) .collect();
 
         println! ("Sending {} bytes …", message.len());
-        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", message.clone());
+        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", fallback, message.clone());
 
         // Get that message from Alice.
 
-        let receiving_f = super::recv (&bob, b"test_dht", Box::new ({
+        let receiving_f = super::recv (&bob, b"test_dht", fallback, Box::new ({
             let message = message.clone();
             move |payload| payload == &message[..]
         }));
         let received = unwrap! (receiving_f.wait());
         assert_eq! (received, message);
+
+        if fallback_on {
+            // TODO: Refine the log test.
+            // TODO: Check that the HTTP fallback was NOT used if `!fallback_on`.
+            unwrap! (wait_for_log (&alice.log, 0.1, &|en| en.contains (
+                "transmit] TBD, time to use the HTTP fallback...")))
+            // TODO: Check the time delta, with fallback 1 the delivery shouldn't take long.
+        }
     }
 
     destruction_check (alice);
     destruction_check (bob);
 }
 
+/// Send and receive messages of various length and chunking via the DHT.
+pub fn peers_dht() {peers_exchange (json! ({"dht": "on"}))}
+
+/// Using a minimal one second HTTP fallback which should happen before the DHT kicks in.
+pub fn peers_http_fallback_recv() {
+    let ctx = MmCtx::new (json! ({}));
+    let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30204);
+    let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
+    CORE.spawn (move |_| server);
+
+    peers_exchange (json! ({
+        "http-fallback": "on",
+        "seednodes": ["127.0.0.1"],
+        "http-fallback-port": 30204
+    }))
+}
+
 pub fn peers_direct_send() {
+    // Unstable results on our MacOS CI server,
+    // which isn't a problem in general (direct UDP communication is a best effort optimization)
+    // but is bad for the CI tests.
+    // Might experiment more with MacOS in the future.
+    if cfg! (target_os = "macos") {return}
+
     // NB: Still need the DHT enabled in order for the pings to work.
     let alice = peer (json! ({"dht": "on"}), 2121);
     let bob = peer (json! ({"dht": "on"}), 2122);
@@ -104,8 +145,8 @@ pub fn peers_direct_send() {
     let mut rng = rand::thread_rng();
     let message: Vec<u8> = (0..33) .map (|_| rng.gen()) .collect();
 
-    let _send_f = super::send (&alice, bob_key, b"subj", message.clone());
-    let recv_f = super::recv (&bob, b"subj", Box::new (|_| true));
+    let _send_f = super::send (&alice, bob_key, b"subj", 255, message.clone());
+    let recv_f = super::recv (&bob, b"subj", 255, Box::new (|_| true));
 
     // Confirm that Bob was added into the friendlist and that we don't know its address yet.
     {
@@ -144,37 +185,12 @@ pub fn peers_direct_send() {
     destruction_check (bob);
 }
 
-pub fn peers_http_fallback() {
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
-    let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30204);
-    let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
-    CORE.spawn (move |_| server);
-/*
-    let alice = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
-    let bob = peer ({seed: server_ip, lt dht disabled, lt direct disabled});
-    //With libtorrent DHT disabled the peers will hit the timeout that activates the HTTP fallback.
-
-        println! ("Sending {} bytes …", message.len());
-        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", message.clone());
-
-        let receiving_f = super::recv (&bob, b"test_dht", Box::new ({
-            let message = message.clone();
-            move |payload| payload == &message[..]
-        }));
-        let received = unwrap! (receiving_f.wait());
-        assert_eq! (received, message);
-
-    destruction_check (alice);
-    destruction_check (bob);
-*/
-}
-
 // Check the primitives used to communicate with the HTTP fallback server.  
 // These are useful in implementing NAT traversal in situations
 // where a truly distributed no-single-point-of failure operation is not necessary,
 // like when we're using the fallback server to drive a tested mm2 instance.
 pub fn peers_http_fallback_kv() {
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
+    let ctx = MmCtx::new (json! ({}));
     let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30205);
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);
@@ -198,7 +214,7 @@ pub fn peers_http_fallback_kv() {
                     |set, ctx| set.add ("1".into(), ctx)
                 )
             );
-            super::http_fallback::merge_map (&addr, Vec::from (&b"test-id"[..]), map)
+            super::http_fallback::merge_map (&addr, Vec::from (&b"test-id"[..]), &map)
         });
         handles.push ((en, drive (f)))
     }

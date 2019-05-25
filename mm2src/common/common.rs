@@ -482,7 +482,8 @@ E: fmt::Display + Send + 'static {
 /// Another option to consider is https://github.com/alexcrichton/futures-timer.
 /// P.S. The older `0.1` version of the `tokio::timer` might work NP, it works in other parts of our code.
 ///      The new version, on the other hand, requires the Tokio runtime (https://tokio.rs/blog/2018-03-timers/).
-/// TODO: Use futures-timer instead.
+/// P.S. We could try using the `futures-timer` crate instead, but note that it is currently under-maintained,
+///      https://github.com/rustasync/futures-timer/issues/9#issuecomment-400802515. 
 pub struct Timeout<R> {
     fut: Box<Future<Item=R, Error=String>>,
     started: f64,
@@ -557,7 +558,7 @@ lazy_static! {
     };
 }
 
-type SlurpFut = Box<Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=String> + Send + 'static>;
+pub type SlurpFut = Box<Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=String> + Send + 'static>;
 
 /// Executes a Hyper request, returning the response status, headers and body.
 pub fn slurp_req (request: Request<Body>) -> SlurpFut {

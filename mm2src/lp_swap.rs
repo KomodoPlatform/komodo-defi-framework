@@ -79,7 +79,7 @@ use std::time::{Duration, SystemTime};
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
-/// Default atomic swap payment locktime.
+/// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
@@ -132,13 +132,13 @@ fn payment_confirmations(_maker_coin: &MmCoinEnum, _taker_coin: &MmCoinEnum) -> 
 }
 
 // NB: Using a macro instead of a function in order to preserve the line numbers in the log.
-macro_rules! send_ {
-    ($ctx: expr, $to: expr, $subj: expr, $payload: expr) => {{
+macro_rules! send {
+    ($ctx: expr, $to: expr, $subj: expr, $fallback: expr, $payload: expr) => {{
         // Checksum here helps us visually verify the logistics between the Maker and Taker logs.
         let crc = crc32::checksum_ieee (&$payload);
         log!("Sending '" ($subj) "' (" ($payload.len()) " bytes, crc " (crc) ")");
 
-        peers::send ($ctx, $to, $subj.as_bytes(), $payload.into())
+        peers::send ($ctx, $to, $subj.as_bytes(), $fallback, $payload.into())
     }}
 }
 
@@ -146,7 +146,8 @@ macro_rules! recv_ {
     ($swap: expr, $subj: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {{
         let recv_subject = fomat! (($subj) '@' ($swap.uuid));
         let validator = Box::new ($validator) as Box<Fn(&[u8]) -> Result<(), String> + Send>;
-        let recv_f = peers::recv (&$swap.ctx, recv_subject.as_bytes(), Box::new ({
+        let fallback = ($timeout_sec / 3) .min (30) .max (60) as u8;
+        let recv_f = peers::recv (&$swap.ctx, recv_subject.as_bytes(), fallback, Box::new ({
             // NB: `peers::recv` is generic and not responsible for handling errors.
             //     Here, on the other hand, we should know enough to log the errors.
             //     Also through the macros the logging statements will carry informative line numbers on them.
@@ -414,11 +415,11 @@ enum SavedSwap {
 }
 
 macro_rules! recv {
-    ($selff: ident, $subj: expr, $desc: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {
+    ($selff: ident, $subj: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {
         recv_! ($selff, $subj, $timeout_sec, $ec, $validator)
     };
     // Use this form if there's a sending future to terminate upon receiving the answer.
-    ($selff: ident, $sending_f: ident, $subj: expr, $desc: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {{
+    ($selff: ident, $sending_f: ident, $subj: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {{
         let payload = recv_! ($selff, $subj, $timeout_sec, $ec, $validator);
         drop ($sending_f);
         payload
@@ -558,7 +559,7 @@ impl MakerSwap {
         };
 
         let bytes = serialize(&maker_negotiation_data);
-        let sending_f = match send_! (&self.ctx, self.taker, fomat!(("negotiation") '@' (self.uuid)), bytes.as_slice()) {
+        let sending_f = match send! (&self.ctx, self.taker, fomat!(("negotiation") '@' (self.uuid)), 30, bytes.as_slice()) {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -566,7 +567,7 @@ impl MakerSwap {
             )),
         };
 
-        let data = match recv!(self, sending_f, "negotiation-reply", "for Negotiation reply", 90, -2000, {|_: &[u8]| Ok(())}) {
+        let data = match recv!(self, sending_f, "negotiation-reply", 90, -2000, {|_: &[u8]| Ok(())}) {
             Ok(d) => d,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -582,7 +583,7 @@ impl MakerSwap {
         };
         // TODO add taker negotiation data validation
         let negotiated = serialize(&true);
-        let sending_f = match send_! (&self.ctx, self.taker, fomat!(("negotiated") '@' (self.uuid)), negotiated.as_slice()) {
+        let sending_f = match send! (&self.ctx, self.taker, fomat!(("negotiated") '@' (self.uuid)), 30, negotiated.as_slice()) {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -602,7 +603,7 @@ impl MakerSwap {
     }
 
     fn wait_taker_fee(&self, sending_f: Arc<SendHandler>) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let payload = match recv!(self, sending_f, "taker-fee", "for Taker fee", 600, -2003, {|_: &[u8]| Ok(())}) {
+        let payload = match recv!(self, sending_f, "taker-fee", 600, -2003, {|_: &[u8]| Ok(())}) {
             Ok(d) => d,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -654,7 +655,7 @@ impl MakerSwap {
         let hash = transaction.tx_hash();
         log!({"Maker payment tx {:02x}", hash});
         let tx_details = unwrap!(self.maker_coin.tx_details_by_hash(&hash));
-        let sending_f = match send_! (&self.ctx, self.taker, fomat!(("maker-payment") '@' (self.uuid)), transaction.tx_hex()) {
+        let sending_f = match send! (&self.ctx, self.taker, fomat!(("maker-payment") '@' (self.uuid)), 60, transaction.tx_hex()) {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::RefundMakerPayment),
@@ -670,7 +671,7 @@ impl MakerSwap {
 
     fn wait_for_taker_payment(&self, sending_f: Arc<SendHandler>) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let wait_duration = self.data.lock_duration / 3;
-        let payload = match recv!(self, sending_f, "taker-payment", "for Taker payment", wait_duration, -2006, {|_: &[u8]| Ok(())}) {
+        let payload = match recv!(self, sending_f, "taker-payment", wait_duration, -2006, {|_: &[u8]| Ok(())}) {
             Ok(p) => p,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::RefundMakerPayment),
@@ -1117,7 +1118,7 @@ impl TakerSwap {
     }
 
     fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let data = match recv!(self, "negotiation", "for Maker negotiation data", 90, -1000, {|_: &[u8]| Ok(())}) {
+        let data = match recv!(self, "negotiation", 90, -1000, {|_: &[u8]| Ok(())}) {
             Ok(d) => d,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -1146,14 +1147,14 @@ impl TakerSwap {
             persistent_pubkey: self.my_persistent_pub.clone(),
         };
         let bytes = serialize(&taker_data);
-        let sending_f = match send_! (&self.ctx, self.maker, fomat!(("negotiation-reply") '@' (self.uuid)), bytes.as_slice()) {
+        let sending_f = match send! (&self.ctx, self.maker, fomat!(("negotiation-reply") '@' (self.uuid)), 30, bytes.as_slice()) {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::NegotiateFailed(ERRL!("{}", e).into())]
             )),
         };
-        let data = match recv!(self, sending_f, "negotiated", "for Maker negotiated", 90, -1000, {|_: &[u8]| Ok(())}) {
+        let data = match recv!(self, sending_f, "negotiated", 90, -1000, {|_: &[u8]| Ok(())}) {
             Ok(d) => d,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -1199,7 +1200,7 @@ impl TakerSwap {
 
         let hash = transaction.tx_hash();
         log!({"Taker fee tx hash {:02x}", hash});
-        let sending_f = match send_! (&self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), transaction.tx_hex()) {
+        let sending_f = match send! (&self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), 60, transaction.tx_hex()) {
             Ok(f) => f,
             Err (err) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -1213,7 +1214,7 @@ impl TakerSwap {
     }
 
     fn wait_for_maker_payment(&self, sending_f: Arc<SendHandler>) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let payload = match recv!(self, sending_f, "maker-payment", "for Maker payment", 600, -1005, {|_: &[u8]| Ok(())}) {
+        let payload = match recv!(self, sending_f, "maker-payment", 600, -1005, {|_: &[u8]| Ok(())}) {
             Ok(p) => p,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -1292,7 +1293,7 @@ impl TakerSwap {
         log!({"Taker payment tx hash {:02x}", hash});
         let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
 
-        let sending_f = match send_! (&self.ctx, self.maker, fomat!(("taker-payment") '@' (self.uuid)), transaction.tx_hex()) {
+        let sending_f = match send! (&self.ctx, self.maker, fomat!(("taker-payment") '@' (self.uuid)), 60, transaction.tx_hex()) {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),

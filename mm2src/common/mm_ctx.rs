@@ -70,12 +70,31 @@ pub struct MmCtx {
     pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     /// Standard node P2P message bus channel
     pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase
-    /// The replacement of lp::G.LP_myrmd160
-    pub rmd160: H160
+    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.  
+    /// The replacement of `lp::G.LP_myrmd160`.  
+    /// Used as the `dbdir` suffix in order to support switching the passphrase.
+    pub rmd160: Mutex<Option<H160>>,
+    /// Seed node IPs, initialized in `fn lp_initpeers`.
+    pub seeds: Mutex<Vec<IpAddr>>
 }
 impl MmCtx {
-    pub fn new (conf: Json, rmd160: H160) -> MmArc {
+    pub fn new (conf: Json) -> MmArc {
+        // ^^ The arguments should be limited to the JSON configuration.
+        // 
+        // The way MM is currently designed it is *not* an OOP object but rather a set of threads.
+        // The context is a mutable memory shared between these various threads.
+        // This memory is intially empty.
+        // When we start MM from the command line we're passing a single argument - JSON configuration.
+        // Similarly, creation of the MM context takes a single argument - JSON configuration.
+        // Semantically they share the interface.
+        // To keep things uniform the initialization should happen *after* the allocation of the context.
+        // 
+        // Note that if we want the OOP initialization of MM
+        // then it should probably be incapsulated in a separate object
+        // (`impl Mm {fn initialize (conf: Json) -> Result<…, String>}`)
+        // because most of the intialization code resides in the root crate
+        // and is not accessible from the `common` subcrate.
+
         let log = log::LogState::mm (&conf);
         MmArc (Arc::new (MmCtx {
             conf,
@@ -94,7 +113,8 @@ impl MmCtx {
             prices_ctx: Mutex::new (None),
             seednode_p2p_channel: channel::unbounded(),
             client_p2p_channel: channel::unbounded(),
-            rmd160,
+            rmd160: Mutex::new (None),
+            seeds: Mutex::new (Vec::new())
         }))
     }
 
@@ -134,7 +154,9 @@ impl MmCtx {
         } else {
             Path::new ("DB")
         };
-        path.join (hex::encode (&*self.rmd160) )
+        let rmd160 = unwrap! (self.rmd160.lock());
+        let rmd160 = rmd160.clone().unwrap_or ([0; 20].into());
+        path.join (hex::encode (&*rmd160))
     }
 
     pub fn netid (&self) -> u16 {
