@@ -24,6 +24,7 @@ use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use libflate::gzip::Decoder;
+use shell_escape::escape;
 use std::cmp::max;
 use std::env::var;
 use std::fmt::{self, Write as FmtWrite};
@@ -1054,7 +1055,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         // The alternative to *finding* the library is adding " install --prefix=../lti"
         // to the BJam build, but that would waste space and time.
         let mut search_from = rasterbar.join("bin");
-        if let Target::iOS(ref targetᴱ) = target {
+        if let Target::iOS(ref _targetᴱ) = target {
             let cops = unwrap!(target.ios_clang_ops());
             search_from = search_from.join(cops.b2_toolset)
         }
@@ -1094,6 +1095,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
     let boostˢ = unwrap!(boost.to_str());
+    let boostᵉ = escape(boostˢ.into());
     // NB: The common compiler flags go to the "cxxflags=" here
     // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(
@@ -1103,7 +1105,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
         " cxxflags=-std=c++11"
         " cxxflags=-fPIC"
-        " include="(boostˢ)
+        " include="(boostᵉ)
     );
 
     fn jam(boost: &Path, from: &str) {
@@ -1127,11 +1129,11 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     }
 
     let boost_build_path = boost.join("tools").join("build");
-    let boost_build_pathˢ = unwrap!(boost_build_path.to_str());
+    let boost_build_pathᵉ = escape(unwrap!(boost_build_path.to_str()).into());
     let export = if cfg!(windows) { "SET" } else { "export" };
     epintln!("build_libtorrent]\n"
-      "  $ "(export)" PATH="(boostˢ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
-      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathˢ) "\n"
+      "  $ "(export)" PATH="(boostᵉ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
+      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathᵉ) "\n"
       "  $ "(b2));
     if cfg!(windows) {
         unwrap!(cmd!("cmd", "/c", b2)
