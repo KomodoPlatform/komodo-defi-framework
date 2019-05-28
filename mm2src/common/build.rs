@@ -636,6 +636,8 @@ struct IosClangOps {
     arch: &'static str,
     /// Identifies the corresponding clang options defined in "user-config.jam".
     b2_toolset: &'static str,
+    /// The minimal iOS version: 10 for 32-bit targets, 11 for 64-bit targets.
+    ios_min: f64,
 }
 
 #[allow(non_camel_case_types)]
@@ -697,14 +699,22 @@ impl Target {
                     // cf. `xcrun --sdk iphoneos --show-sdk-path`
                     sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
                     arch: "arm64",
-                    b2_toolset: "darwin-iphone"
+                    b2_toolset: "darwin-iphone",
+                    ios_min: 11.0,
                 }),
                 "x86_64-apple-ios" => Some(IosClangOps {
                     sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
                     arch: "x86_64",
-                    b2_toolset: "darwin-iphonesim"
+                    b2_toolset: "darwin-iphonesim",
+                    ios_min: 11.0,
                 }),
-                //"armv7-apple-ios" => "armv7", 32-bit
+                // armv7, 32-bit
+                "armv7-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "armv7",
+                    b2_toolset: "darwin-iphone10v7",
+                    ios_min: 10.0,
+                }),
                 //"armv7s-apple-ios" => "armv7s", 32-bit
                 _ => None,
             },
@@ -731,9 +741,9 @@ impl Target {
             });
             cc.flag(&fomat!("--sysroot="(cops.sysroot)));
             cc.flag("-stdlib=libc++");
-            cc.flag("-miphoneos-version-min=11.0"); // 64-bit.
-            cc.flag("-mios-simulator-version-min=11.0");
-            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
+            cc.flag(&fomat!("-miphoneos-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-mios-simulator-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-DIPHONEOS_DEPLOYMENT_TARGET="(cops.ios_min)));
             cc.flag("-arch").flag(cops.arch);
         }
         cc
@@ -1045,8 +1055,8 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         // to the BJam build, but that would waste space and time.
         let mut search_from = rasterbar.join("bin");
         if let Target::iOS(ref targetᴱ) = target {
-            search_from =
-                search_from.join(fomat!("darwin-iphone" if targetᴱ == "x86_64-apple-ios" {"sim"}))
+            let cops = unwrap!(target.ios_clang_ops());
+            search_from = search_from.join(cops.b2_toolset)
         }
         let search_for = if cfg!(windows) {
             "libtorrent.lib"

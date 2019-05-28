@@ -6,6 +6,16 @@ using darwin : iphone :
 -DIPHONEOS_DEPLOYMENT_TARGET=11.0
 -arch arm64
 ;
+
+using darwin : iphone10v7 :
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
+--sysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
+-stdlib=libc++
+-miphoneos-version-min=10.0
+-DIPHONEOS_DEPLOYMENT_TARGET=10.0
+-arch armv7
+;
+
 using darwin : iphonesim :
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
 --sysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk
