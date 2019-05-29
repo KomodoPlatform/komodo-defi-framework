@@ -118,6 +118,12 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         panic! ("Can't lock LOG_OUTPUT")
     }
 
+    static RUNNING: AtomicBool = AtomicBool::new (false);
+    if RUNNING.compare_and_swap (false, true, Ordering::Relaxed) != false {
+        log! ("mm2_test] Running already!");
+        return -1
+    }
+
     // NB: We have to catch the panic because the error isn't logged otherwise.
     // (In the release mode the `ud2` op will trigger a crash or debugger on panic
     // but we don't have debugging symbols in the Rust code then).
@@ -137,6 +143,7 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         log! ("mm2_test] peers_http_fallback_recv…");
         peers::peers_tests::peers_http_fallback_recv();
     });
+    RUNNING.store (false, Ordering::Relaxed);
     if let Err (err) = rc {
         log! ("mm2_test] There was an error: " (any_to_str (&*err) .unwrap_or ("-")));
         -1
