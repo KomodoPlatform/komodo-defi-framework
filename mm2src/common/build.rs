@@ -1435,13 +1435,20 @@ fn build_c_code(mm_version: &str) {
     if cfg!(windows) {
         // https://sourceware.org/pthreads-win32/
         // ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/
+
+        let pthread_dll = root().join("x64/pthreadVC2.dll");
+        if !pthread_dll.is_file() {
+            unwrap!(ecmd!("cmd", "/c", "marketmaker_build_depends.cmd")
+                .dir(&root())
+                .run());
+            assert!(pthread_dll.is_file(), "Missing {:?}", pthread_dll);
+        }
+
         println!("cargo:rustc-link-lib=pthreadVC2");
         unwrap!(
-            fs::copy(
-                root().join("x64/pthreadVC2.dll"),
-                root().join("target/debug/pthreadVC2.dll")
-            ),
-            "Can't copy pthreadVC2.dll"
+            fs::copy(&pthread_dll, root().join("target/debug/pthreadVC2.dll")),
+            "Can't copy {:?}",
+            pthread_dll
         );
     } else {
         println!("cargo:rustc-link-lib=crypto");
