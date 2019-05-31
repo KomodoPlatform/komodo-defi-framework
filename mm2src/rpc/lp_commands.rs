@@ -28,7 +28,7 @@ use libc::{c_void, free};
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CStr};
 use std::mem::zeroed;
-use std::ptr::null_mut;
+use std::ptr::{null_mut, write_volatile};
 use std::time::Duration;
 
 use crate::mm2::lp_native_dex::lp_passphrase_init;
@@ -326,7 +326,7 @@ pub fn stop (ctx: MmArc) -> HyRes {
     let pause_f = Delay::new (Duration::from_millis (50));
     let stop_f = pause_f.then (move |r| -> Result<(), ()> {
         if let Err (err) = r {log! ("stop] Warning, there was a Delay error: " (err))}
-        unsafe {lp::LP_STOP_RECEIVED = 1};
+        unsafe {write_volatile (&mut lp::LP_STOP_RECEIVED, 1)}
         ctx.stop();
         Ok(())
     });

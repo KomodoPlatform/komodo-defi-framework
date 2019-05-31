@@ -26,6 +26,7 @@ use num_traits::FromPrimitive;
 use serde_json::{self as json};
 use std::ffi::{CStr, CString};
 use std::panic::catch_unwind;
+use std::ptr::write_volatile;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -60,7 +61,7 @@ pub extern fn mm2_main (
 
     if LP_MAIN_RUNNING.load (Ordering::Relaxed) {eret! (MainErr::AlreadyRuns)}
     CTX.store (0, Ordering::Relaxed);  // Remove the old context ID during restarts.
-    unsafe {lp::LP_STOP_RECEIVED = 0};  // Erase the global stop flag on restart.
+    unsafe {write_volatile (&mut lp::LP_STOP_RECEIVED, 0)}  // Erase the global stop flag on restart.
 
     if conf.is_null() {eret! (MainErr::ConfIsNull)}
     let conf = unsafe {CStr::from_ptr (conf)};
@@ -155,6 +156,11 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
 
         Some ((ctx_id, conf))
     } else {None};
+
+    // The global stop flag should be zeroed in order for some of the tests to work.
+    let grace = 5;  // Grace time for late threads to discover the stop flag before we reset it.
+    thread::sleep (Duration::from_secs (grace));
+    unsafe {write_volatile (&mut lp::LP_STOP_RECEIVED, 0)}
 
     // NB: We have to catch the panic because the error isn't logged otherwise.
     // (In the release mode the `ud2` op will trigger a crash or debugger on panic

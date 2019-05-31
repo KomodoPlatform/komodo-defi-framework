@@ -8,7 +8,7 @@ use std::any::Any;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::ptr::{null_mut};
+use std::ptr::{null_mut, read_volatile};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::{bitcoin_ctx, bitcoin_ctx_destroy, lp, log, BitcoinCtx};
@@ -181,7 +181,7 @@ impl MmCtx {
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping (&self) -> bool {
-        if unsafe {lp::LP_STOP_RECEIVED != 0} {return true}
+        if unsafe {read_volatile (&lp::LP_STOP_RECEIVED) != 0} {return true}
         self.stop.load (Ordering::Relaxed)
     }
 

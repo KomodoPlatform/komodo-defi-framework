@@ -66,8 +66,10 @@ fn peers_exchange (conf: Json) {
     let alice = peer (conf.clone(), 2111);
     let bob = peer (conf, 2112);
 
-    unwrap! (wait_for_log (&alice.log, 99., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
-    unwrap! (wait_for_log (&bob.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
+    if !fallback_on {
+        unwrap! (wait_for_log (&alice.log, 99., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
+        unwrap! (wait_for_log (&bob.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
+    }
 
     let tested_lengths: &[usize] = &[
         2222,  // Send multiple chunks.
