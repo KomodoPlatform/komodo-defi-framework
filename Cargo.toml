@@ -41,6 +41,7 @@ crc = "1.8"
 crossbeam = "0.6"
 dirs = "1"
 duct = "0.11"
+enum-primitive-derive = "0.1"
 # `etomiclibrs` pulls https://github.com/briansmith/ring, to build which on Windows we need `perl` and `yasm` in the PATH.
 # Download http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win64.exe and rename to `yasm.exe`.
 fomat-macros = "0.2"
@@ -56,6 +57,7 @@ hyper = "0.12"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = "0.2"
+num-traits = "0.2"
 nix = "0.12"
 rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 peers = { path = "mm2src/peers" }

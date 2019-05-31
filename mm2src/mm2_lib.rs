@@ -4,6 +4,7 @@
 #[macro_use] extern crate common;
 #[allow(unused_imports)]
 #[macro_use] extern crate duct;
+#[macro_use] extern crate enum_primitive_derive;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
@@ -17,24 +18,29 @@ mod mm2;
 
 use crate::common::mm_ctx::MmArc;
 use crate::common::log::LOG_OUTPUT;
-use gstuff::any_to_str;
+use crate::common::lp;
+use futures::Future;
+use gstuff::{any_to_str, now_float};
 use libc::c_char;
-use std::ffi::{CStr};
+use num_traits::FromPrimitive;
+use serde_json::{self as json};
+use std::ffi::{CStr, CString};
 use std::panic::catch_unwind;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
+use std::time::Duration;
 
 static LP_MAIN_RUNNING: AtomicBool = AtomicBool::new (false);
 static CTX: AtomicU32 = AtomicU32::new (0);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Primitive)]
 enum MainErr {
     Ok = 0,
-    AlreadyRuns,
-    ConfIsNull,
-    ConfNotUtf8,
-    NoOutputLock,
-    CantThread
+    AlreadyRuns = 1,
+    ConfIsNull = 2,
+    ConfNotUtf8 = 3,
+    NoOutputLock = 4,
+    CantThread = 5
 }
 
 /// Starts the MM2 in a detached singleton thread.
@@ -53,6 +59,8 @@ pub extern fn mm2_main (
     }
 
     if LP_MAIN_RUNNING.load (Ordering::Relaxed) {eret! (MainErr::AlreadyRuns)}
+    CTX.store (0, Ordering::Relaxed);  // Remove the old context ID during restarts.
+    unsafe {lp::LP_STOP_RECEIVED = 0};  // Erase the global stop flag on restart.
 
     if conf.is_null() {eret! (MainErr::ConfIsNull)}
     let conf = unsafe {CStr::from_ptr (conf)};
@@ -124,6 +132,30 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         return -1
     }
 
+    // #402: Stop the MM in order to test the library restart.
+    let prev = if LP_MAIN_RUNNING.load (Ordering::Relaxed) {
+        let ctx_id = CTX.load (Ordering::Relaxed);
+        log! ("mm2_test] Stopping MM instance " (ctx_id) "…");
+        let ctx = match MmArc::from_ffi_handle (ctx_id) {
+            Ok (ctx) => ctx,
+            Err (err) => {log! ("mm2_test] Invalid CTX? !from_ffi_handle: " (err)); return -1}
+        };
+        let conf = unwrap! (json::to_string (&ctx.conf));
+        let hy_res = mm2::rpc::lp_commands::stop (ctx);
+        let r = match hy_res.wait() {Ok (r) => r, Err (err) => {log! ("mm2_test] !stop: " (err)); return -1}};
+        if !r.status().is_success() {log! ("mm2_test] stop status " (r.status())); return -1}
+
+        // Wait for `LP_MAIN_RUNNING` to flip.
+        let since = now_float();
+        loop {
+            thread::sleep (Duration::from_millis (100));
+            if !LP_MAIN_RUNNING.load (Ordering::Relaxed) {break}
+            if now_float() - since > 60. {log! ("mm2_test] LP_MAIN_RUNNING won't flip"); return -1}
+        }
+
+        Some ((ctx_id, conf))
+    } else {None};
+
     // NB: We have to catch the panic because the error isn't logged otherwise.
     // (In the release mode the `ud2` op will trigger a crash or debugger on panic
     // but we don't have debugging symbols in the Rust code then).
@@ -140,15 +172,37 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         log! ("mm2_test] peers_http_fallback_kv…");
         peers::peers_tests::peers_http_fallback_kv();
 
-        log! ("mm2_test] peers_http_fallback_recv…");
-        peers::peers_tests::peers_http_fallback_recv();
+        // log! ("mm2_test] peers_http_fallback_recv…");
+        // peers::peers_tests::peers_http_fallback_recv();
     });
-    RUNNING.store (false, Ordering::Relaxed);
+
     if let Err (err) = rc {
         log! ("mm2_test] There was an error: " (any_to_str (&*err) .unwrap_or ("-")));
-        -1
-    } else {
-        log! ("mm2_test] All done, passing the torch.");
-        torch
+        return -1
     }
+
+    // #402: Restart the MM.
+    if let Some ((prev_ctx_id, conf)) = prev {
+        log! ("mm2_test] Restarting MM…");
+        let confᶜ = unwrap! (CString::new (&conf[..]));
+        let rc = mm2_main (confᶜ.as_ptr(), log_cb);
+        let rc = unwrap! (MainErr::from_i8 (rc));
+        if rc != MainErr::Ok {log! ("!mm2_main: " [rc]); return -1}
+
+        // Wait for the new MM instance to allocate context.
+        let since = now_float();
+        loop {
+            thread::sleep (Duration::from_millis (10));
+            if LP_MAIN_RUNNING.load (Ordering::Relaxed) && CTX.load (Ordering::Relaxed) != 0 {break}
+            if now_float() - since > 60.0 {log! ("mm2_test] Won't start"); return -1}
+        }
+
+        let ctx_id = CTX.load (Ordering::Relaxed);
+        if ctx_id == prev_ctx_id {log! ("mm2_test] Context ID is the same"); return -1}
+        log! ("mm2_test] New MM instance " (ctx_id) " started");
+    }
+
+    RUNNING.store (false, Ordering::Relaxed);
+    log! ("mm2_test] All done, passing the torch.");
+    torch
 }
