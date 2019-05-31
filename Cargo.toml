@@ -1,9 +1,15 @@
+# TODO: (Upgrade Rust and) use https://github.com/rust-lang/rfcs/blob/master/text/2282-profile-dependencies.md
+#       cf. https://github.com/rust-lang/rust/issues/48683
+#       Keep debugging symbols in our release code (but not in the dependencies),
+#       in order for our panics to show up in iOS debugger and crash reports.
+
 [package]
 name = "mm2"
 version = "0.1.0"
 edition = "2018"
 
 # Waiting for https://doc.rust-lang.org/beta/cargo/reference/unstable.html#default-run to become stable.
+# cf. https://github.com/rust-lang/cargo/issues/2200 (closed, should work after a Rust upgrade).
 #default-run = "mm2"
 
 [[bin]]
