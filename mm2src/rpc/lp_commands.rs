@@ -772,8 +772,6 @@ pub fn inventory (ctx: MmArc, req: Json) -> HyRes {
     }
     else if ( strcmp(method,"postprice") == 0 )
         return(LP_postprice_recv(argjson));
-    else if ( strcmp(method,"uitem") == 0 )
-        return(LP_uitem_recv(argjson));
     else if ( strcmp(method,"dPoW") == 0 )
         return(LP_dPoW_recv(argjson));
     else if ( strcmp(method,"getpeers") == 0 )

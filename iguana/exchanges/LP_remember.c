@@ -1033,26 +1033,21 @@ char *LP_recent_swaps(int32_t limit,char *uuidstr)
         }
     }
     jadd(retjson,"netamounts",array);
-    if ( time(NULL) < Alice_expiration )
-    {
-        item = cJSON_CreateObject();
-        if ( uuidstr != 0 )
-            jaddstr(item,"uuid",uuidstr);
-        jaddnum(item,"expiration",Alice_expiration);
-        jaddnum(item,"timeleft",Alice_expiration-time(NULL));
-        jaddnum(item,"tradeid",LP_Alicequery.tradeid);
-        jaddnum(item,"requestid",LP_Alicequery.R.requestid);
-        jaddnum(item,"quoteid",LP_Alicequery.R.quoteid);
-        jaddstr(item,"bob",LP_Alicequery.srccoin);
-        jaddstr(item,"base",LP_Alicequery.srccoin);
-        jaddnum(item,"basevalue",dstr(LP_Alicequery.satoshis));
-        jaddstr(item,"alice",LP_Alicequery.destcoin);
-        jaddstr(item,"rel",LP_Alicequery.destcoin);
-        jaddnum(item,"relvalue",dstr(LP_Alicequery.destsatoshis));
-        jaddbits256(item,"desthash",G.LP_mypub25519);
-        jaddnum(item,"aliceid",LP_Alicequery.aliceid);
-        jadd(retjson,"pending",item);
-    } else Alice_expiration = 0;
+    item = cJSON_CreateObject();
+    if ( uuidstr != 0 )
+        jaddstr(item,"uuid",uuidstr);
+    jaddnum(item,"tradeid",LP_Alicequery.tradeid);
+    jaddnum(item,"requestid",LP_Alicequery.R.requestid);
+    jaddnum(item,"quoteid",LP_Alicequery.R.quoteid);
+    jaddstr(item,"bob",LP_Alicequery.srccoin);
+    jaddstr(item,"base",LP_Alicequery.srccoin);
+    jaddnum(item,"basevalue",dstr(LP_Alicequery.satoshis));
+    jaddstr(item,"alice",LP_Alicequery.destcoin);
+    jaddstr(item,"rel",LP_Alicequery.destcoin);
+    jaddnum(item,"relvalue",dstr(LP_Alicequery.destsatoshis));
+    jaddbits256(item,"desthash",G.LP_mypub25519);
+    jaddnum(item,"aliceid",LP_Alicequery.aliceid);
+    jadd(retjson,"pending",item);
     if ( uuidstr != 0 )
         jaddstr(retjson,"uuid",uuidstr);
     return(jprint(retjson,1));

@@ -675,25 +675,6 @@ return;
     }
 }
 
-char *LP_uitem_recv(cJSON *argjson)
-{
-    bits256 txid; int32_t vout,height; uint64_t value; struct iguana_info *coin; char *coinaddr,*symbol;
-printf("LP_uitem_recv deprecated\n");
-    txid = jbits256(argjson,"txid");
-    vout = jint(argjson,"vout");
-    height = jint(argjson,"ht");
-    value = j64bits(argjson,"value");
-    coinaddr = jstr(argjson,"coinaddr");
-    if ( (symbol= jstr(argjson,"coin")) != 0 && coinaddr != 0 && (coin= LP_coinfind(symbol)) != 0 )
-    {
-        //char str[65]; printf("uitem %s %s %s/v%d %.8f ht.%d\n",symbol,coinaddr,bits256_str(str,txid),vout,dstr(value),height);
-        if ( strcmp(coin->smartaddr,coinaddr) != 0 )
-            LP_address_utxoadd(0,(uint32_t)time(NULL),"LP_uitem_recv",coin,coinaddr,txid,vout,value,height,-1);
-        //else printf("ignore external uitem %s %s\n",symbol,coin->smartaddr);
-    }
-    return(clonestr("{\"result\":\"success\"}"));
-}
-
 void LP_listunspent_query(char *symbol,char *coinaddr)
 {
     bits256 zero; cJSON *reqjson = cJSON_CreateObject();

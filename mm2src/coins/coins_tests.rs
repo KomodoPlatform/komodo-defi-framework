@@ -28,8 +28,8 @@ pub fn test_import_address() {
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     };
     let import_addr = client.import_address(
-        "bMjWGCinft5qEvsuf9Wg1fgz1CjpXBXbTB".to_owned(),
-        "bMjWGCinft5qEvsuf9Wg1fgz1CjpXBXbTB".to_owned(),
+        "bMjWGCinft5qEvsuf9Wg1fgz1CjpXBXbTB",
+        "bMjWGCinft5qEvsuf9Wg1fgz1CjpXBXbTB",
         true
     );
     let import_addr = import_addr.wait().unwrap();

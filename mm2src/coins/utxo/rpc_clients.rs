@@ -21,13 +21,14 @@ use sha2::{Sha256, Digest};
 use std::{io, thread};
 use std::fmt::Debug;
 use std::cmp::Ordering;
-use std::net::{ToSocketAddrs, SocketAddr, TcpStream as TcpStreamStd, Shutdown};
+use std::net::{ToSocketAddrs, SocketAddr, Shutdown};
 use std::ops::Deref;
 use std::sync::{Mutex, Arc};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
 use tokio::codec::{Encoder, Decoder};
 use tokio_tcp::TcpStream;
+use bigdecimal::BigDecimal;
 
 #[derive(Debug)]
 pub enum UtxoRpcClientEnum {
@@ -96,7 +97,7 @@ pub trait UtxoRpcClientOps: Debug + 'static {
         }
     }
 
-    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<f64>;
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
     fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64>;
@@ -133,7 +134,7 @@ pub struct ValidateAddressRes {
     pub account: Option<String>,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ListTransactionsItem {
     pub account: String,
     #[serde(default)]
@@ -152,6 +153,14 @@ pub struct ListTransactionsItem {
     #[serde(default)]
     pub txid: H256Json,
     pub timereceived: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ReceivedByAddressItem {
+    #[serde(default)]
+    pub account: String,
+    pub address: String,
+    pub txids: Vec<H256Json>,
 }
 
 /// RPC client for UTXO based coins
@@ -304,9 +313,9 @@ impl UtxoRpcClientOps for NativeClient {
         }
     }
 
-    fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<f64> {
+    fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).map(|unspents|
-            unspents.iter().fold(0., |sum, unspent| sum + unspent.amount)
+            unspents.iter().fold(0., |sum, unspent| sum + unspent.amount).into()
         ))
     }
 
@@ -333,7 +342,7 @@ impl NativeClientImpl {
     }
 
     /// https://bitcoin.org/en/developer-reference#importaddress
-    pub fn import_address(&self, address: String, label: String, rescan: bool) -> RpcRes<()> {
+    pub fn import_address(&self, address: &str, label: &str, rescan: bool) -> RpcRes<()> {
         rpc_func!(self, "importaddress", address, label, rescan)
     }
 
@@ -376,6 +385,11 @@ impl NativeClientImpl {
         let account = "*";
         let watch_only = true;
         rpc_func!(self, "listtransactions", account, count, from, watch_only)
+    }
+
+    /// https://bitcoin.org/en/developer-reference#listreceivedbyaddress
+    pub fn list_received_by_address(&self, min_conf: u64, include_empty: bool, include_watch_only: bool) -> RpcRes<Vec<ReceivedByAddressItem>> {
+        rpc_func!(self, "listreceivedbyaddress", min_conf, include_empty, include_watch_only)
     }
 }
 
@@ -456,8 +470,7 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
 
 pub fn spawn_electrum(
     addr_str: &str,
-    arc: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
-) -> Result<mpsc::Sender<Vec<u8>>, String> {
+) -> Result<ElectrumConnection, String> {
     let mut addr = match addr_str.to_socket_addrs() {
         Ok(a) => a,
         Err(e) => return ERR!("{} error {:?}", addr_str, e),
@@ -466,14 +479,59 @@ pub fn spawn_electrum(
         Some(a) => a,
         None => return ERR!("Socket addr from addr {} is None.", addr_str),
     };
-    electrum_connect(addr, arc).map_err(|e| ERRL!("{} error {}", addr_str, e))
+    Ok(electrum_connect(addr))
+}
+
+#[derive(Debug)]
+pub struct ElectrumConnection {
+    addr: SocketAddr,
+    tx: mpsc::Sender<Vec<u8>>,
+    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    is_connected: Arc<AtomicBool>,
+}
+
+impl ElectrumConnection {
+    fn is_connected(&self) -> bool {
+        self.is_connected.load(AtomicOrdering::Relaxed)
+    }
 }
 
 #[derive(Debug)]
 pub struct ElectrumClientImpl {
-    results: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
-    senders: Vec<mpsc::Sender<Vec<u8>>>,
+    connections: Vec<ElectrumConnection>,
     next_id: Mutex<u64>,
+}
+
+impl ElectrumClientImpl {
+    fn electrum_request_multi(
+        &self,
+        request: JsonRpcRequest,
+    ) -> JsonRpcResponseFut {
+        let mut futures = vec![];
+        for connection in self.connections.iter() {
+            if connection.is_connected() {
+                futures.push(electrum_request(request.clone(), connection.tx.clone(), connection.responses.clone()));
+            }
+        }
+        if futures.is_empty() {
+            return Box::new(futures::future::err(ERRL!("All electrums are currently disconnected")));
+        }
+        if request.method != "server.ping" {
+            Box::new(select_ok_sequential(futures).map_err(|e| ERRL!("{:?}", e)))
+        } else {
+            // server.ping must be sent to all servers to keep all connections alive
+            Box::new(select_ok(futures).map(|(result, _)| result).map_err(|e| ERRL!("{:?}", e)))
+        }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        for connection in self.connections.iter() {
+            if connection.is_connected() {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[derive(Debug)]
@@ -492,7 +550,7 @@ impl JsonRpcClient for ElectrumClientImpl {
     }
 
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
-        Box::new(electrum_request_multi(request, self.senders.clone(), self.results.clone()))
+        Box::new(self.electrum_request_multi(request))
     }
 }
 
@@ -572,17 +630,8 @@ impl UtxoRpcClientOps for ElectrumClient {
         rpc_func!(self, "blockchain.transaction.get", txid, verbose)
     }
 
-    /// https://bitcoin.org/en/developer-reference#getblockcount
     fn get_block_count(&self) -> RpcRes<u64> {
-        let lock = try_fus!(self.results.lock());
-        let elem = lock.get(BLOCKCHAIN_HEADERS_SUB_ID);
-        match elem {
-            Some(response) => {
-                let response: ElectrumBlockHeader = try_fus!(json::from_value(response.result.clone()));
-                Box::new(futures::future::ok(response.block_height()))
-            },
-            None => Box::new(futures::future::err(ERRL!("{} is not active", BLOCKCHAIN_HEADERS_SUB_ID)))
-        }
+        Box::new(self.blockchain_headers_subscribe().map(|r| r.block_height()))
     }
 
     /// https://bitcoin.org/en/developer-reference#getblock
@@ -621,11 +670,11 @@ impl UtxoRpcClientOps for ElectrumClient {
         }
     }
 
-    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<f64> {
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
         let hash = electrum_script_hash(&Builder::build_p2pkh(&address.hash));
         let hash_str = hex::encode(hash);
         Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
-            (result.confirmed as f64 + result.unconfirmed as f64) / 10.0_f64.powf(decimals as f64)
+            BigDecimal::from(result.confirmed + result.unconfirmed) / BigDecimal::from(10u64.pow(decimals as u32))
         }))
     }
 
@@ -647,15 +696,14 @@ impl UtxoRpcClientOps for ElectrumClient {
 impl ElectrumClientImpl {
     pub fn new() -> ElectrumClientImpl {
         ElectrumClientImpl {
-            results: Arc::new(Mutex::new(HashMap::new())),
-            senders: vec![],
+            connections: vec![],
             next_id: Mutex::new(0),
         }
     }
 
     pub fn add_server(&mut self, addr: &str) -> Result<(), String> {
-        let sender = try_s!(spawn_electrum(addr, self.results.clone()));
-        self.senders.push(sender);
+        let connection = try_s!(spawn_electrum(addr));
+        self.connections.push(connection);
         Ok(())
     }
 
@@ -695,21 +743,7 @@ impl ElectrumClientImpl {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
     pub fn blockchain_headers_subscribe(&self) -> RpcRes<ElectrumBlockHeader> {
-        Box::new(
-            electrum_subscribe_multi(
-                JsonRpcRequest {
-                    jsonrpc: "2.0".into(),
-                    id: BLOCKCHAIN_HEADERS_SUB_ID.into(),
-                    method: "blockchain.headers.subscribe".into(),
-                    params: vec![],
-                },
-                self.senders.clone(),
-                self.results.clone(),
-            ).and_then(|result| {
-                let response: ElectrumBlockHeader = try_s!(json::from_value(result.result.clone()));
-                Ok(response)
-            })
-        )
+        rpc_func!(self, "blockchain.headers.subscribe")
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-broadcast
@@ -784,12 +818,13 @@ fn electrum_process_chunk(chunk: &[u8], arc: Arc<Mutex<HashMap<String, JsonRpcRe
 }
 
 macro_rules! try_loop {
-    ($e:expr, $addr: ident, $rx: ident, $responses: ident) => {
+    ($e:expr, $addr: ident, $rx: ident, $responses: ident, $connected: ident, $delay: ident) => {
         match $e {
             Ok(res) => res,
             Err(e) => {
                 log!([$addr] " error " [e]);
-                return Box::new(futures::future::ok(Loop::Continue(($addr, $rx, $responses, 5))));
+                $delay += 5;
+                return Box::new(futures::future::ok(Loop::Continue(($addr, $rx, $responses, $connected, $delay))));
             }
         }
     };
@@ -799,34 +834,42 @@ const ELECTRUM_TIMEOUT: u64 = 60;
 
 fn electrum_connect(
     addr: SocketAddr,
-    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
-) -> Result<mpsc::Sender<Vec<u8>>, String> {
-    // try to connect synchronously first using std TcpStream to check if the server is reachable
-    try_s!(TcpStreamStd::connect(&addr));
+) -> ElectrumConnection {
     let (tx, rx) = mpsc::channel(0);
     let rx = rx_to_stream(rx);
+    let connection = ElectrumConnection {
+        addr,
+        is_connected: Arc::new(AtomicBool::new(false)),
+        tx,
+        responses: Arc::new(Mutex::new(HashMap::new())),
+    };
 
-    let connect_loop = loop_fn((addr, rx, responses, 0), move |(addr, rx, responses, delay)| {
+    let connect_loop = loop_fn((addr, rx, connection.responses.clone(), connection.is_connected.clone(), 0), move |(addr, rx, responses, connected, mut delay)| {
         let tcp = if delay > 0 {
             Either::A(Delay::new(Duration::from_secs(delay)).and_then(move |_| TcpStream::connect(&addr)))
         } else {
             Either::B(TcpStream::connect(&addr))
         };
         tcp.then(move |stream| -> Box<Future<Item=Loop<(), _>, Error=_> + Send> {
-            let stream = try_loop!(stream, addr, rx, responses);
-            try_loop!(stream.set_nodelay(true), addr, rx, responses);
-            let stream_clone = try_loop!(stream.try_clone(), addr, rx, responses);
+            let stream = try_loop!(stream, addr, rx, responses, connected, delay);
+            try_loop!(stream.set_nodelay(true), addr, rx, responses, connected, delay);
+            connected.store(true, AtomicOrdering::Relaxed);
+            // reset the delay if we're connected successfully
+            delay = 5;
+            let stream_clone = try_loop!(stream.try_clone(), addr, rx, responses, connected, delay);
             let last_chunk = Arc::new(AtomicU64::new(now_ms()));
-            let last_chunk2 = last_chunk.clone();
             let interval = Interval::new(Duration::from_secs(ELECTRUM_TIMEOUT)).map_err(|e| { log!([e]); () });
-            CORE.spawn(move |_| {
-                interval.for_each(move |_| {
+            CORE.spawn({
+                let connected = connected.clone();
+                let last_chunk = last_chunk.clone();
+                move |_| interval.for_each(move |_| {
                     let last = last_chunk.load(AtomicOrdering::Relaxed);
                     if now_ms() - last > ELECTRUM_TIMEOUT * 1000 {
                         log!([addr] " Didn't receive any data since " (last / 1000) ". Shutting down the connection.");
                         if let Err(e) = stream_clone.shutdown(Shutdown::Both) {
                             log!([addr] " error shutting down the connection " [e]);
                         }
+                        connected.store(false, AtomicOrdering::Relaxed);
                         // return err to shutdown interval execution
                         return futures::future::err(());
                     };
@@ -837,21 +880,27 @@ fn electrum_connect(
             let (sink, stream) = Bytes.framed(stream).split();
             // this forwards the messages from rx to sink (write) part of tcp stream
             let send_all = SendAll::new(sink, rx);
-            let clone = responses.clone();
-            CORE.spawn(|_| {
-                stream
+            CORE.spawn({
+                let responses = responses.clone();
+                let connected = connected.clone();
+                move |_| stream
                     .for_each(move |chunk| {
-                        last_chunk2.store(now_ms(), AtomicOrdering::Relaxed);
-                        electrum_process_chunk(&chunk, clone.clone());
+                        last_chunk.store(now_ms(), AtomicOrdering::Relaxed);
+                        electrum_process_chunk(&chunk, responses.clone());
                         futures::future::ok(())
                     })
-                    .map_err(|e| { log!([e]); () })
+                    .map_err(move |e| {
+                        connected.store(false, AtomicOrdering::Relaxed);
+                        log!([e]);
+                        ()
+                    })
             });
 
             Box::new(send_all.then(move |result| {
+                connected.store(false, AtomicOrdering::Relaxed);
                 if let Err((rx, e)) = result {
                     log!([addr] " failed to write to socket " [e]);
-                    return Ok(Loop::Continue((addr, rx, responses, 5)));
+                    return Ok(Loop::Continue((addr, rx, responses, connected, delay + 5)));
                 }
                 Ok(Loop::Break(()))
             }))
@@ -859,7 +908,7 @@ fn electrum_connect(
     });
 
     CORE.spawn(|_| connect_loop);
-    Ok(tx)
+    connection
 }
 
 /// A simple `Codec` implementation that reads buffer until \n according to Electrum protocol specification:
@@ -893,7 +942,7 @@ impl Encoder for Bytes {
 }
 
 struct ElectrumResponseFut {
-    context: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
     request_id: String,
 }
 
@@ -903,36 +952,9 @@ impl Future for ElectrumResponseFut {
 
     fn poll(&mut self) -> Poll<JsonRpcResponse, String> {
         loop {
-            let elem = try_s!(self.context.lock()).remove(&self.request_id);
+            let elem = try_s!(self.responses.lock()).remove(&self.request_id);
             if let Some(res) = elem {
                 return Ok(Async::Ready(res))
-            } else {
-                let task = futures::task::current();
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(200));
-                    task.notify();
-                });
-                return Ok(Async::NotReady)
-            }
-        }
-    }
-}
-
-struct ElectrumSubscriptionFut {
-    context: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
-    request_id: String,
-}
-
-impl Future for ElectrumSubscriptionFut {
-    type Item = JsonRpcResponse;
-    type Error = String;
-
-    fn poll(&mut self) -> Poll<JsonRpcResponse, String> {
-        loop {
-            let lock = try_s!(self.context.lock());
-            let elem = lock.get(&self.request_id);
-            if let Some(res) = elem {
-                return Ok(Async::Ready(res.clone()))
             } else {
                 let task = futures::task::current();
                 std::thread::spawn(move || {
@@ -948,7 +970,7 @@ impl Future for ElectrumSubscriptionFut {
 fn electrum_request(
     request: JsonRpcRequest,
     tx: mpsc::Sender<Vec<u8>>,
-    context: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
+    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
 ) -> JsonRpcResponseFut {
     let mut json = try_fus!(json::to_string(&request));
     // Electrum request and responses must end with \n
@@ -961,69 +983,13 @@ fn electrum_request(
         .and_then(move |_res| {
             ElectrumResponseFut {
                 request_id,
-                context,
+                responses,
             }
         })
         .map_err(|e| StringError(e))
         .timeout(Duration::from_secs(ELECTRUM_TIMEOUT));
 
     Box::new(send_fut.map_err(|e| ERRL!("{}", e.0)))
-}
-
-fn electrum_request_multi(
-    request: JsonRpcRequest,
-    senders: Vec<mpsc::Sender<Vec<u8>>>,
-    ctx: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
-) -> JsonRpcResponseFut {
-    let mut futures = vec![];
-    for sender in senders.iter() {
-        futures.push(electrum_request(request.clone(), sender.clone(), ctx.clone()));
-    }
-    if request.method != "server.ping" {
-        Box::new(select_ok_sequential(futures).map_err(|e| ERRL!("{:?}", e)))
-    } else {
-        // server.ping must be sent to all servers to keep all connections alive
-        Box::new(select_ok(futures).map(|(result, _)| result).map_err(|e| ERRL!("{:?}", e)))
-    }
-}
-
-fn electrum_subscribe(
-    request: JsonRpcRequest,
-    tx: mpsc::Sender<Vec<u8>>,
-    context: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
-) -> JsonRpcResponseFut {
-    let mut json = try_fus!(json::to_string(&request));
-    // Electrum request and responses must end with \n
-    // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
-    json.push('\n');
-
-    let request_id = request.get_id().to_string();
-    let send_fut = tx.send(json.into_bytes())
-        .map_err(|e| ERRL!("{}", e))
-        .and_then(move |_res| -> ElectrumSubscriptionFut {
-            ElectrumSubscriptionFut {
-                request_id,
-                context,
-            }
-        })
-        .map_err(|e| StringError(e))
-        .timeout(Duration::from_secs(ELECTRUM_TIMEOUT));
-
-    Box::new(send_fut.map_err(|e| ERRL!("{}", e.0)))
-}
-
-fn electrum_subscribe_multi(
-    request: JsonRpcRequest,
-    senders: Vec<mpsc::Sender<Vec<u8>>>,
-    ctx: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
-) -> JsonRpcResponseFut {
-    let futures = senders.iter().map(|sender| electrum_subscribe(request.clone(), sender.clone(), ctx.clone()));
-
-    Box::new(futures::future::select_ok(futures)
-        .map(|(result, _)| {
-            result
-        })
-        .map_err(|e| ERRL!("{:?}", e)))
 }
 
 // TODO these are just helpers functions that I used during development.

@@ -103,7 +103,7 @@ void LP_autopriceset(int32_t ind,void *ctx,int32_t dir,struct LP_priceinfo *base
     oppomargin = basepp->buymargins[relpp->ind];
     if ( (fixedprice= basepp->fixedprices[relpp->ind]) > SMALLVAL )
     {
-        LP_mypriceset(1,&changed,relpp->symbol,basepp->symbol,fixedprice);
+        LP_mypriceset(relpp->symbol,basepp->symbol,fixedprice,0.);
         //printf("autoprice FIXED %s/%s <- %.8f\n",basepp->symbol,relpp->symbol,fixedprice);
         LP_pricepings(relpp->symbol,basepp->symbol,fixedprice);
         return;
@@ -114,7 +114,7 @@ void LP_autopriceset(int32_t ind,void *ctx,int32_t dir,struct LP_priceinfo *base
         factor = basepp->factors[relpp->ind];
         if ( fabs(price) < SMALLVAL && refbase != 0 && refrel != 0 )
         {
-            price = LP_myprice(1,&bid,&ask,refbase,refrel);
+            price = LP_myprice(&bid,&ask,refbase,refrel);
             //printf("%s/%s USE ref %s/%s %.8f factor %.8f offset %.8f margin %.8f/%.8f\n",basepp->symbol,relpp->symbol,refbase,refrel,price,factor,offset,oppomargin,margin);
         }
         if ( LP_pricevalid(price) > 0 )
@@ -141,7 +141,7 @@ void LP_autopriceset(int32_t ind,void *ctx,int32_t dir,struct LP_priceinfo *base
                     newprice = LP_autorefs[ind].lastask;
                     //printf("autopriceset %s/%s <- %.8f %.8f (%.8f %.8f)\n",basepp->symbol,relpp->symbol,price,newprice,LP_autorefs[ind].lastbid,LP_autorefs[ind].lastask);
                 }
-                LP_mypriceset(1,&changed,relpp->symbol,basepp->symbol,newprice);
+                LP_mypriceset(relpp->symbol,basepp->symbol,newprice,0.);
                 if ( changed != 0 || time(NULL) > lasttime+LP_ORDERBOOK_DURATION*.777)
                 {
                     lasttime = (uint32_t)time(NULL);
@@ -304,7 +304,7 @@ int32_t LP_portfolio_trade(void *ctx,uint32_t *requestidp,uint32_t *quoteidp,str
     char *retstr2; uint64_t txfee,desttxfee; double bid,ask,maxprice; bits256 zero; uint32_t requestid,quoteid,iter,i; cJSON *retjson2; struct LP_utxoinfo A; struct LP_address_utxo *utxos[1000]; int32_t max=(int32_t)(sizeof(utxos)/sizeof(*utxos));
     LP_txfees(&txfee,&desttxfee,buy->symbol,sell->symbol);
     requestid = quoteid = 0;
-    LP_myprice(1,&bid,&ask,buy->symbol,sell->symbol);
+    LP_myprice(&bid,&ask,buy->symbol,sell->symbol);
     maxprice = ask;
     if ( setbaserel != 0 )
     {

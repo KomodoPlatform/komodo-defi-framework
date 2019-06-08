@@ -1,5 +1,7 @@
 use crossbeam::{channel, Sender, Receiver};
+use hashbrown::HashSet;
 use hashbrown::hash_map::{Entry, HashMap};
+use keys::KeyPair;
 use libc::{c_void};
 use primitives::hash::H160;
 use rand::random;
@@ -71,15 +73,19 @@ pub struct MmCtx {
     /// Standard node P2P message bus channel
     pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase
-    /// The replacement of lp::G.LP_myrmd160
-    pub rmd160: H160
+    /// The future replacement of lp::G.LP_myrmd160
+    pub rmd160: H160,
+    /// secp256k1 key pair derived from passphrase
+    /// future replacement of lp::G.LP_privkey
+    pub secp256k1_key_pair: Option<KeyPair>,
+    /// Coins that should be enabled to kick start the interrupted swaps
+    pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
 }
 impl MmCtx {
-    pub fn new (conf: Json, rmd160: H160) -> MmArc {
-        let log = log::LogState::mm (&conf);
-        MmArc (Arc::new (MmCtx {
-            conf,
-            log,
+    pub fn new () -> MmCtx {
+        MmCtx {
+            conf: Json::Null,
+            log: log::LogState::in_memory(),
             btc_ctx: unsafe {bitcoin_ctx()},
             initialized: AtomicBool::new (false),
             rpc_started: AtomicBool::new (false),
@@ -94,8 +100,10 @@ impl MmCtx {
             prices_ctx: Mutex::new (None),
             seednode_p2p_channel: channel::unbounded(),
             client_p2p_channel: channel::unbounded(),
-            rmd160,
-        }))
+            rmd160: [0; 20].into(),
+            secp256k1_key_pair: None,
+            coins_needed_for_kick_start: Mutex::new(HashSet::new()),
+        }
     }
 
     /// This field is freed when `MmCtx` is dropped, make sure `MmCtx` stays around while it's used.
@@ -184,6 +192,11 @@ impl MmCtx {
         } else {
             unwrap!(self.client_p2p_channel.0.send(msg.to_owned().into_bytes()));
         }
+    }
+
+    /// Get the reference to secp256k1 key pair
+    pub fn secp256k1_key_pair(&self) -> &KeyPair {
+        unwrap!(self.secp256k1_key_pair.as_ref())
     }
 }
 impl Drop for MmCtx {
@@ -292,4 +305,32 @@ where C: FnOnce()->Result<T, String>, T: 'static + Send + Sync {
     let arc = Arc::new (try_s! (constructor()));
     *ctx_field = Some (arc.clone());
     return Ok (arc)
+}
+
+pub struct MmCtxBuilder {
+    ctx: MmCtx,
+}
+
+impl MmCtxBuilder {
+    pub fn new() -> Self {
+        MmCtxBuilder {
+            ctx: MmCtx::new(),
+        }
+    }
+
+    pub fn with_conf(mut self, conf: Json) -> Self {
+        self.ctx.log = log::LogState::mm(&conf);
+        self.ctx.conf = conf;
+        self
+    }
+
+    pub fn with_secp256k1_key_pair(mut self, key_pair: KeyPair) -> Self {
+        self.ctx.rmd160 = key_pair.public().address_hash();
+        self.ctx.secp256k1_key_pair = Some(key_pair);
+        self
+    }
+
+    pub fn into_mm_arc(self) -> MmArc {
+        MmArc(Arc::new(self.ctx))
+    }
 }

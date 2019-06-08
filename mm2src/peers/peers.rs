@@ -1268,6 +1268,7 @@ pub struct SendHandler;
 ///               Should include some kind of *session* mechanics
 ///               in order for the receiving side not to get the *older* and outdated versions of the message.
 ///               (Alternatively the receiving side should be able to recognise and *reject* the outdated versions in the `validator`).
+/// * `fallback` - The positive number of seconds after which we are to employ the HTTP fallback.
 /// 
 /// Returns a `Stream` that represents the effort extended to send the `payload`.
 /// There is currently no need to schedule the returned `Stream` on a reactor.
@@ -1283,7 +1284,10 @@ pub struct SendHandler;
 /// so stopping the UDP transmissions after a superficial confirmation or lack of it might be suboptimal,
 /// hence the manual control of when the transmission should stop.
 /// Think of it as a radio-signal set on a loop.
-pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], payload: Vec<u8>) -> Result<Arc<SendHandler>, String> {
+pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
+-> Result<Arc<SendHandler>, String> {
+    if fallback == 0 {return ERR! ("fallback is 0")}
+
     let pctx = try_s! (PeersContext::from_ctx (&ctx));
 
     // Add the peer into the friendlist, in order to discover and track its endpoints.
@@ -1352,6 +1356,7 @@ impl Drop for RecvFuture {
 ///               Should include some kind of *session* mechanics
 ///               in order for the receiving side not to get the *older* and outdated versions of the message.
 ///               (Alternatively the receiving side should be able to recognise and *reject* the outdated versions in the `validator`).
+/// * `fallback` - The positive number of seconds after which we are to employ the HTTP fallback.
 /// * `validator` - Receives candidate `subject`-matching transmissions.
 ///                 Returning `true` the `validator` gives us a green light to accept the transmission and finish.
 ///                 Returning `false` says transmission is invalid, corrupted or outdated and that we should keep looking.
@@ -1359,7 +1364,9 @@ impl Drop for RecvFuture {
 /// Returned `Future` represents our effort to receive the transmission.
 /// As of now doesn't need a reactor.
 /// Should be `drop`ped soon as we no longer need the transmission.
-pub fn recv (ctx: &MmArc, subject: &[u8], validator: Box<Fn(&[u8])->bool + Send>) -> Box<Future<Item=Vec<u8>, Error=String> + Send> {
+pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])->bool + Send>) -> Box<Future<Item=Vec<u8>, Error=String> + Send> {
+    if fallback == 0 {return Box::new (future::err (ERRL! ("fallback is 0")))}
+
     let pctx = try_fus! (PeersContext::from_ctx (&ctx));
 
     let seed: bits256 = {

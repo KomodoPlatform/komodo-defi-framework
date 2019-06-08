@@ -1,6 +1,6 @@
 use common::{bits256, drive, CORE};
 use common::for_tests::wait_for_log;
-use common::mm_ctx::{MmArc, MmCtx};
+use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
 use gstuff::now_float;
@@ -33,7 +33,7 @@ fn peer (conf: Json, port: u16) -> MmArc {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
 
-    let ctx = MmCtx::new (conf, [0; 20].into());
+    let ctx = MmCtxBuilder::new().with_conf (conf).into_mm_arc();
     unwrap! (ctx.log.thread_gravity_on());
     let mut rng = rand::thread_rng();
 
@@ -71,11 +71,11 @@ pub fn peers_dht() {
         let message: Vec<u8> = (0..*message_len) .map (|_| rng.gen()) .collect();
 
         println! ("Sending {} bytes …", message.len());
-        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", message.clone());
+        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", 255, message.clone());
 
         // Get that message from Alice.
 
-        let receiving_f = super::recv (&bob, b"test_dht", Box::new ({
+        let receiving_f = super::recv (&bob, b"test_dht", 255, Box::new ({
             let message = message.clone();
             move |payload| payload == &message[..]
         }));
@@ -104,8 +104,8 @@ pub fn peers_direct_send() {
     let mut rng = rand::thread_rng();
     let message: Vec<u8> = (0..33) .map (|_| rng.gen()) .collect();
 
-    let _send_f = super::send (&alice, bob_key, b"subj", message.clone());
-    let recv_f = super::recv (&bob, b"subj", Box::new (|_| true));
+    let _send_f = super::send (&alice, bob_key, b"subj", 255, message.clone());
+    let recv_f = super::recv (&bob, b"subj", 255, Box::new (|_| true));
 
     // Confirm that Bob was added into the friendlist and that we don't know its address yet.
     {
@@ -145,7 +145,7 @@ pub fn peers_direct_send() {
 }
 
 pub fn peers_http_fallback() {
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
+    let ctx = MmCtxBuilder::new().into_mm_arc();
     let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30204);
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);
@@ -174,7 +174,7 @@ pub fn peers_http_fallback() {
 // where a truly distributed no-single-point-of failure operation is not necessary,
 // like when we're using the fallback server to drive a tested mm2 instance.
 pub fn peers_http_fallback_kv() {
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
+    let ctx = MmCtxBuilder::new().into_mm_arc();
     let addr = SocketAddr::new (unwrap! ("127.0.0.1".parse()), 30205);
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);

@@ -33,6 +33,10 @@ fn display_u256_with_point() {
     let string = display_u256_with_decimal_point(number, 18);
     assert_eq!("1.", string);
 
+    let number = U256::from_dec_str("10000000000000000000000000000000000000000000000000000000000").unwrap();
+    let string = display_u256_with_decimal_point(number, 18);
+    assert_eq!("10000000000000000000000000000000000000000.", string);
+
     let number = U256::from_dec_str("1234567890000000000").unwrap();
     let string = display_u256_with_decimal_point(number, 18);
     assert_eq!("1.23456789", string);
@@ -59,44 +63,44 @@ fn display_u256_with_point() {
 }
 
 #[test]
-fn test_wei_from_f64() {
-    let amount = 0.000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
+fn test_wei_from_big_decimal() {
+    let amount = "0.000001".parse().unwrap();
+    let wei = wei_from_big_decimal(amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1.000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
+    let amount = "1.000001".parse().unwrap();
+    let wei = wei_from_big_decimal(amount, 18).unwrap();
     let expected_wei: U256 = 1000001000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1.;
-    let wei = wei_from_f64(amount, 18).unwrap();
+    let amount = 1.into();
+    let wei = wei_from_big_decimal(amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 0.000000000000000001;
-    let wei = wei_from_f64(amount, 18).unwrap();
+    let amount = "0.000000000000000001".parse().unwrap();
+    let wei = wei_from_big_decimal(amount, 18).unwrap();
     let expected_wei: U256 = 1u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 9).unwrap();
+    let amount = 1234.into();
+    let wei = wei_from_big_decimal(amount, 9).unwrap();
     let expected_wei: U256 = 1234000000000u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 0).unwrap();
+    let amount = 1234.into();
+    let wei = wei_from_big_decimal(amount, 0).unwrap();
     let expected_wei: U256 = 1234u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1234.;
-    let wei = wei_from_f64(amount, 1).unwrap();
+    let amount = 1234.into();
+    let wei = wei_from_big_decimal(amount, 1).unwrap();
     let expected_wei: U256 = 12340u64.into();
     assert_eq!(expected_wei, wei);
 
-    let amount = 1234.12345;
-    let wei = wei_from_f64(amount, 1).unwrap();
+    let amount = "1234.12345".parse().unwrap();
+    let wei = wei_from_big_decimal(amount, 1).unwrap();
     let expected_wei: U256 = 12341u64.into();
     assert_eq!(expected_wei, wei);
 }

@@ -23,23 +23,47 @@ use common::{free_c_ptr, HyRes, CJSON, CORE, QueuedCommand, COMMAND_QUEUE, lp_qu
 use common::mm_ctx::MmArc;
 use crossbeam::channel;
 use futures::{future, Future, Stream};
+use gstuff::now_ms;
 use hashbrown::hash_map::{HashMap, Entry};
 use libc::{c_void};
 use primitives::hash::H160;
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CStr};
-use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use crate::mm2::lp_native_dex::lp_command_process;
+use crate::mm2::lp_ordermatch::lp_post_price_recv;
 use crate::mm2::lp_swap::save_stats_swap_status;
-use crate::mm2::rpc::{dispatcher, DispatcherRes};
-use gstuff::now_ms;
+use crate::mm2::rpc::lp_signatures::lp_notify_recv;
 
-pub fn nanomsg_transportname (bindflag: i32, ipaddr: &fmt::Display, port: u16) -> String {
-    fomat! ("tcp://" if bindflag == 0 {(ipaddr)} else {"*"} ':' (port))
+/// Result of `fn dispatcher`.
+pub enum DispatcherRes {
+    /// `fn dispatcher` has found a Rust handler for the RPC "method".
+    Match (HyRes),
+    /// No handler found by `fn dispatcher`. Returning the `Json` request in order for it to be handled elsewhere.
+    NoMatch (Json)
+}
+
+/// The network module dispatcher, handles the messages received from other nodes
+fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
+    // AP: the HTTP RPC server dispatcher was previously used for this purpose which IMHO
+    // breaks single responsibility principe, makes harder to maintain the codebase and possibly
+    // adds security concerns. Also we might end with using different serialization formats (binary)
+    // for P2P messages - JSON is excessive for such purpose while it's completely fine to use it for HTTP server.
+    // See https://github.com/artemii235/SuperNET/issues/415 for more info
+    // So this is a starting point of further refactoring
+    //log! ("dispatcher] " (json::to_string (&req) .unwrap()));
+    let method = match req["method"].clone() {
+        Json::String (method) => method,
+        _ => return DispatcherRes::NoMatch (req)
+    };
+    DispatcherRes::Match (match &method[..] {  // Sorted alphanumerically (on the first latter) for readability.
+        "notify" => lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
+        "postprice" => lp_post_price_recv (&ctx, req),
+        _ => return DispatcherRes::NoMatch (req)
+    })
 }
 
 #[derive(Serialize)]
@@ -137,7 +161,7 @@ pub unsafe fn lp_command_q_loop(ctx: MmArc) {
             ctx.broadcast_p2p_msg(&cmd.msg);
         }
 
-        let json = match dispatcher(json, None, ctx.clone()) {
+        let json = match dispatcher(json, ctx.clone()) {
             DispatcherRes::Match(handler) => {
                 rpc_reply_to_peer(handler, cmd);
                 continue

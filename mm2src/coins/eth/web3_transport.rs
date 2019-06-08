@@ -16,7 +16,7 @@ use web3::helpers::{build_request, to_result_from_output, to_string};
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 fn single_response<T: Deref<Target = [u8]>>(response: T) -> Result<Json, Error> {
-    let response = serde_json::from_slice(&*response).map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{:?}", e))))?;
+    let response = serde_json::from_slice(&*response).map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}", e))))?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),

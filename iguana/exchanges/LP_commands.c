@@ -300,7 +300,7 @@ char *stats_JSON(void *ctx,char *myipaddr,int32_t pubsock,cJSON *argjson,char *r
             price = jdouble(argjson,"price");
             if ( strcmp(method,"myprice") == 0 )
             {
-                if ( LP_myprice(1,&bid,&ask,base,rel) > SMALLVAL )
+                if ( LP_myprice(&bid,&ask,base,rel) > SMALLVAL )
                 {
                     retjson = cJSON_CreateObject();
                     jaddstr(retjson,"base",base);
@@ -441,10 +441,6 @@ char *stats_JSON(void *ctx,char *myipaddr,int32_t pubsock,cJSON *argjson,char *r
         retstr = clonestr("{\"error\":\"deprecated\"}");
         //return(LP_gettradestatus(j64bits(argjson,"aliceid"),juint(argjson,"requestid"),juint(argjson,"quoteid")));
     }
-    else if ( strcmp(method,"postprice") == 0 )
-        return(LP_postprice_recv(argjson));
-    else if ( strcmp(method,"uitem") == 0 )
-        return(LP_uitem_recv(argjson));
     else if ( strcmp(method,"dPoW") == 0 )
         return(LP_dPoW_recv(argjson));
     else if ( strcmp(method,"getpeers") == 0 )

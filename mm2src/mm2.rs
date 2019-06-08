@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2014-2018 The SuperNET Developers.                             *
+ * Copyright © 2014-2019 The SuperNET Developers.                             *
  *                                                                            *
  * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
  * the top-level directory of this distribution for the individual copyright  *
@@ -16,7 +16,7 @@
 //  mm2.rs
 //  marketmaker
 //
-//  Copyright © 2017-2018 SuperNET. All rights reserved.
+//  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
 use common::{bitcoin_priv2wif, lp, os, BitcoinCtx, CJSON, MM_VERSION};
@@ -62,7 +62,7 @@ pub mod rpc;
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
 
-fn lp_main (c_conf: CJSON, conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> {
+fn lp_main (conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> {
     // Redirects the C stdout to the log.
     let c_log_path_buf: CString;
     let c_log_path = if conf["log"].is_null() {null()} else {
@@ -88,7 +88,7 @@ fn lp_main (c_conf: CJSON, conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> 
         unsafe {lp::LP_profitratio += profitmargin.unwrap_or (0.)};
         let netid = conf["netid"].as_u64().unwrap_or (0) as u16;
         unsafe {lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid)};
-        try_s! (lp_init (pullport, pubport, conf, c_conf, ctx_cb));
+        try_s! (lp_init (pubport, conf, ctx_cb));
         Ok(())
     } else {ERR! ("!passphrase")}
 }
@@ -245,7 +245,7 @@ fn vanity (substring: &str) {
     let mut wifstr: [c_char; 128] = unsafe {zeroed()};
     let mut privkey: bits256 = unsafe {zeroed()};
     unsafe {lp::LP_mutex_init()};
-    let ctx = MmCtx::new (json! ({}), [0; 20].into());
+    let ctx = MmCtx::new();
     let timestamp = now_ms() / 1000;
     log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
     for i in 0..1000000000 {
@@ -279,10 +279,6 @@ pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &Fn (u32)) -> Result<(), St
         }
     };
 
-    let c_conf = match CJSON::from_str (conf) {
-        Ok (json) => json,
-        Err (err) => return ERR! ("couldnt parse.({}).{}", conf, err)
-    };
     let mut conf: Json = match json::from_str(conf) {
         Ok (json) => json,
         Err (err) => return ERR! ("couldnt parse.({}).{}", conf, err)
@@ -303,6 +299,6 @@ pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &Fn (u32)) -> Result<(), St
         unsafe {lp::DOCKERFLAG = os::calc_ipbits (ip_port.as_ptr() as *mut c_char) as u32}
     }
 
-    try_s! (lp_main (c_conf, conf, ctx_cb));
+    try_s! (lp_main (conf, ctx_cb));
     Ok(())
 }

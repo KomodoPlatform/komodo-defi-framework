@@ -140,8 +140,6 @@ struct LP_peerinfo  *LP_peerinfos,*LP_mypeer;
 struct LP_forwardinfo *LP_forwardinfos;
 struct iguana_info *LP_coins;
 struct LP_pubkey_info *LP_pubkeyinfos;
-struct rpcrequest_info *LP_garbage_collector;
-struct LP_address_utxo *LP_garbage_collector2;
 struct LP_trade *LP_trades,*LP_tradesQ;
 
 //uint32_t LP_deadman_switch;
@@ -346,101 +344,6 @@ char *LP_process_message(void *ctx,char *typestr,char *myipaddr,int32_t pubsock,
     return(retstr);
 }
 
-void LP_coinsloop(void *_coins)
-{
-    static int32_t didfilescreate;
-    struct LP_address *ap=0; struct LP_transaction *tx; cJSON *retjson; struct LP_address_utxo *up,*tmp; struct iguana_info *coin,*ctmp; char str[65],*retstr,*hexstr,*txidstr; struct electrum_info *ep,*backupep=0; bits256 zero; int32_t notarized,oldht,j,nonz; char *coins = _coins;
-    if ( strcmp("BTC",coins) == 0 )
-    {
-        strcpy(LP_coinsloopBTC_stats.name,"BTC coin loop");
-        LP_coinsloopBTC_stats.threshold = 200000.;
-    }
-    else if ( strcmp("KMD",coins) == 0 )
-    {
-        strcpy(LP_coinsloopKMD_stats.name,"KMD coin loop");
-        LP_coinsloopKMD_stats.threshold = 100000.;
-    }
-    else
-    {
-        strcpy(LP_coinsloop_stats.name,"other coins loop");
-        LP_coinsloop_stats.threshold = 50000.;
-    }
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        if ( strcmp("BTC",coins) == 0 )
-            LP_millistats_update(&LP_coinsloopBTC_stats);
-        else if ( strcmp("KMD",coins) == 0 )
-            LP_millistats_update(&LP_coinsloopKMD_stats);
-        else LP_millistats_update(&LP_coinsloop_stats);
-        nonz = 0;
-        HASH_ITER(hh,LP_coins,coin,ctmp) // firstrefht,firstscanht,lastscanht
-        {
-            if ( coins != 0 )
-            {
-                if ( coins[0] != 0 )
-                {
-                    if ( strcmp(coins,coin->symbol) != 0 )
-                        continue;
-                }
-                else // avoid hardcode special case LP_coinsloop
-                {
-                    if ( strcmp("BTC",coin->symbol) == 0 || strcmp("KMD",coin->symbol) == 0 )
-                        continue;
-                }
-            }
-            if ( coin->smartaddr[0] == 0 )
-            {
-                //printf("%s has no smartaddress??\n",coin->symbol);
-                continue;
-            }
-            memset(&zero,0,sizeof(zero));
-            if ( coin->inactive != 0 )
-                continue;
-            if ( coin->firstrefht == 0 )
-                continue;
-            else if ( coin->firstscanht == 0 )
-                coin->lastscanht = coin->firstscanht = coin->firstrefht;
-            else if ( coin->firstrefht < coin->firstscanht )
-            {
-                printf("detected %s firstrefht.%d < firstscanht.%d\n",coin->symbol,coin->firstrefht,coin->firstscanht);
-                coin->lastscanht = coin->firstscanht = coin->firstrefht;
-            }
-            if ( coin->lastscanht == coin->longestchain+1 )
-            {
-                //printf("%s lastscanht.%d is longest.%d + 1\n",coin->symbol,coin->lastscanht,coin->longestchain);
-                continue;
-            }
-            else if ( coin->lastscanht > coin->longestchain+1 )
-            {
-                printf("detected chain rewind lastscanht.%d vs longestchain.%d, first.%d ref.%d\n",coin->lastscanht,coin->longestchain,coin->firstscanht,coin->firstrefht);
-                //LP_mempoolscan(coin->symbol,zero);
-                coin->lastscanht = coin->longestchain - 1;
-                if ( coin->firstscanht < coin->lastscanht )
-                    coin->lastscanht = coin->firstscanht;
-                continue;
-            }
-            //if ( strcmp(coin->symbol,"BTC") != 0 && strcmp(coin->symbol,"KMD") != 0 ) // SPV as backup
-            if ( coin->lastscanht < coin->longestchain )
-            {
-                nonz++;
-                if ( strcmp("BTC",coins) == 0 )//&& coin->lastscanht < coin->longestchain-3 )
-                    printf("[%s]: %s ref.%d scan.%d to %d, longest.%d\n",coins,coin->symbol,coin->firstrefht,coin->firstscanht,coin->lastscanht,coin->longestchain);
-                if ( strcmp("BTC",coins) == 0 )
-                    printf("done [%s]: %s ref.%d scan.%d to %d, longest.%d\n",coins,coin->symbol,coin->firstrefht,coin->firstscanht,coin->lastscanht,coin->longestchain);
-            }
-        }
-        if ( coins == 0 )
-            return;
-        //if ( nonz == 0 )
-            usleep(100000);
-    }
-}
-
 int my_strncasecmp(const char *s1,const char *s2,size_t n)
 {
     size_t i = 0;
@@ -633,97 +536,6 @@ struct LP_pendswap
     uint32_t expiration,requestid,quoteid,finished;
 };
 
-struct LP_pendswap *LP_pendingswaps;
-
-void LP_pendswap_add(uint32_t expiration,uint32_t requestid,uint32_t quoteid)
-{
-    struct LP_pendswap *sp;
-    printf("LP_pendswap_add expiration.%u %u-%u\n",expiration,requestid,quoteid);
-    portable_mutex_lock(&LP_pendswap_mutex);
-    sp = calloc(1,sizeof(*sp));
-    sp->expiration = expiration;
-    sp->requestid = requestid;
-    sp->quoteid = quoteid;
-    DL_APPEND(LP_pendingswaps,sp);
-    portable_mutex_unlock(&LP_pendswap_mutex);
-}
-
-void LP_swapsloop(uint32_t ctx_h)
-{
-    char *retstr; cJSON *retjson; uint32_t requestid,quoteid; int32_t i,nonz;
-    strcpy(LP_swapsloop_stats.name,"LP_swapsloop");
-    LP_swapsloop_stats.threshold = 605000.;
-    if ( (retstr= basilisk_swapentry(0,0,0,1)) != 0 )
-    {
-        if ( (retjson= cJSON_Parse(retstr)) != 0 )
-        {
-            if ( (requestid= juint(retjson,"requestid")) != 0 && (quoteid= juint(retjson,"quoteid")) != 0 && jobj(retjson,"error") == 0 )
-                LP_pendswap_add(0,requestid,quoteid);
-        }
-        free(retstr);
-    }
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        LP_millistats_update(&LP_swapsloop_stats);
-        nonz = 0;
-        if ( nonz == 0 )
-        {
-            for (i=0; i<10; i++)
-            {
-                //fprintf(stderr,"check on alice expiration\n");
-                LP_alice_eligible((uint32_t)time(NULL));
-                sleep(6);
-            }
-        } else sleep(10);
-        LP_gtc_iteration(ctx_h);
-    }
-}
-
-void gc_loop(void *ctx)
-{
-    uint32_t now; struct LP_address_utxo *up,*utmp; struct rpcrequest_info *req,*rtmp; int32_t flag = 0;
-    strcpy(LP_gcloop_stats.name,"gc_loop");
-    LP_gcloop_stats.threshold = 11000.;
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        flag = 0;
-        LP_millistats_update(&LP_gcloop_stats);
-        portable_mutex_lock(&LP_gcmutex);
-        DL_FOREACH_SAFE(LP_garbage_collector,req,rtmp)
-        {
-            DL_DELETE(LP_garbage_collector,req);
-            //printf("garbage collect ipbits.%x\n",req->ipbits);
-            free(req);
-            flag++;
-        }
-        now = (uint32_t)time(NULL);
-        DL_FOREACH_SAFE(LP_garbage_collector2,up,utmp)
-        {
-            if ( now > (uint32_t)up->spendheight+120 )
-            {
-                DL_DELETE(LP_garbage_collector2,up);
-                //char str[65]; printf("garbage collect %s/v%d lag.%d\n",bits256_str(str,up->U.txid),up->U.vout,now-up->spendheight);
-                free(up);
-            }
-            flag++;
-        }
-        portable_mutex_unlock(&LP_gcmutex);
-        if ( 0 && flag != 0 )
-            printf("gc_loop.%d\n",flag);
-        sleep(10);
-    }
-}
-
 int32_t LP_reserved_msg(int32_t priority,bits256 pubkey,char *msg)
 {
     struct LP_pubkey_info *pubp; uint32_t timestamp; char *method; cJSON *argjson; int32_t skip,sentbytes,n = 0;
@@ -811,43 +623,17 @@ void LP_mutex_init() {
 
 void* r_btc_ctx(uint32_t mm_ctx_id);
 
-void LPinit(char* myipaddr,uint16_t mypullport,uint16_t mypubport,char *passphrase,cJSON *argjson, uint32_t mm_ctx_id)
+void LPinit(uint32_t mm_ctx_id)
 {
-    long filesize; int32_t valid,timeout; struct LP_peerinfo *mypeer=0; char pushaddr[128],subaddr[128],bindaddr[128],*coins_str=0; cJSON *coinsjson=0; void* ctx;
-
+    void* ctx;
 #ifndef FROM_JS
     if ((ctx = r_btc_ctx(mm_ctx_id)) == 0) return;
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)gc_loop,ctx) != 0 )
-    {
-        printf("error launching gc_loop for port.%p\n",ctx);
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_coinsloop,(void *)"") != 0 )
-    {
-        printf("error launching LP_coinsloop for (%s)\n","");
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_coinsloop,(void *)"BTC") != 0 )
-    {
-        printf("error launching LP_coinsloop for (%s)\n","BTC");
-        exit(-1);
-    }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_coinsloop,(void *)"KMD") != 0 )
-    {
-        printf("error launching LP_coinsloop for (%s)\n","KMD");
-        exit(-1);
-    }
     if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_pubkeysloop,(void *)&mm_ctx_id) != 0 )
     {
         printf("error launching LP_pubkeysloop for ctx.%p\n",ctx);
         exit(-1);
     }
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_swapsloop,ctx) != 0 )
-    {
-        printf("error launching LP_swapsloop for ctx.%p\n",ctx);
-        exit(-1);
-    }
-    int32_t nonz,didremote=0;
+    int32_t didremote=0;
     LP_statslog_parse();
 
     if (SPAWN_RPC != 0) SPAWN_RPC(mm_ctx_id);
@@ -875,7 +661,6 @@ void LPinit(char* myipaddr,uint16_t mypullport,uint16_t mypubport,char *passphra
         if ( IAMLP != 0 && didremote == 0 && LP_cmdcount > 0 )
         {
             didremote = 1;
-            uint16_t myport2 = RPC_port-1;
             printf("start remote port\n");
         }
         sleep(1);
