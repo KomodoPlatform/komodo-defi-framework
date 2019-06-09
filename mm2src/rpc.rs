@@ -43,7 +43,7 @@ use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, stats_swa
 use crate::mm2::CJSON;
 
 #[path = "rpc/lp_commands.rs"]
-mod lp_commands;
+pub mod lp_commands;
 use self::lp_commands::*;
 
 #[path = "rpc/lp_signatures.rs"]

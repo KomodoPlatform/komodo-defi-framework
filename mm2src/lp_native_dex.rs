@@ -990,7 +990,7 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     {
         let mut status = ctx.log.status_handle();
         while lp::G.waiting == 0 {
-            status.status (&[&"lp_init_peers"], "Waiting for `G.waiting`...");
+            status.status (&[&"lp_init_peers"], "Waiting for `G.waiting`…");
             sleep (Duration::from_millis (100))
         }
         status.append (" Done.");
@@ -1000,7 +1000,6 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
     lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid);
     // Add ourselves into the list of known peers.
-    try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519, pubport + 1, lp::G.LP_sessionid));
     let myipaddr_c = try_s! (CString::new (fomat! ((myipaddr))));
     mypeer = lp::LP_addpeer (mypeer, pubsock, myipaddr_c.as_ptr() as *mut c_char, myport, pullport, pubport, 1, lp::G.LP_sessionid, netid);
     lp::LP_mypeer = mypeer;
@@ -1046,10 +1045,16 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
         }));
     }
 
+    let mut seed_ips = Vec::with_capacity (seeds.len());
     for (seed_ip, is_lp) in seeds {
+        seed_ips.push (try_s! (seed_ip.parse()));
         let ip = try_s! (CString::new (&seed_ip[..]));
         lp::LP_addpeer (mypeer, pubsock, ip.as_ptr() as *mut c_char, myport, pullport, pubport, if is_lp {1} else {0}, lp::G.LP_sessionid, netid);
     }
+    *try_s! (ctx.seeds.lock()) = seed_ips;
+
+    try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519, pubport + 1));
+
     Ok(())
 }
 
@@ -1420,8 +1425,8 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
 
-    let mut http_fallback_shutdown = None;
-    let mut http_fallback_port = None;
+    // Keeps HTTP fallback server alive until `lp_init` exits.
+    let mut _hf_shutdown;
 
     let myipaddr: IpAddr = if Path::new ("myipaddr") .exists() {
         match fs::File::open ("myipaddr") {
@@ -1487,14 +1492,11 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
             // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
             let tags: &[&TagParam] = &[&"myipaddr"];
             match test_ip (&ctx, ip) {
-                Ok ((hf_shutdown, hf_port)) => {
+                Ok ((hf_shutdown, _hf_port)) => {
                     ctx.log.log ("🙂", tags, &fomat! (
                         "We've detected an external IP " (ip) " and we can bind on it (port " (mypubport) ")"
                         ", so probably a dedicated IP."));
-                    if i_am_seed {
-                        http_fallback_shutdown = Some (hf_shutdown);
-                        http_fallback_port = Some (hf_port);
-                    }
+                    if i_am_seed {_hf_shutdown = hf_shutdown}
                     break ip
                 },
                 Err (err) => log! ("IP " (ip) " doesn't check: " (err))

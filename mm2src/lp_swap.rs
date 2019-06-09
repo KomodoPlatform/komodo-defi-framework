@@ -1471,7 +1471,6 @@ impl TakerSwap {
                 vec![TakerSwapEvent::TakerFeeSendFailed(ERRL!("{}", err).into())]
             )),
         };
-
         let payload = match recv!(self, sending_f, "maker-payment", 600, -1005, {|_: &[u8]| Ok(())}) {
             Ok(p) => p,
             Err(e) => return Ok((

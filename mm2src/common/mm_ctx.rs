@@ -5,12 +5,12 @@ use keys::KeyPair;
 use libc::{c_void};
 use primitives::hash::H160;
 use rand::random;
-use serde_json::{Value as Json};
+use serde_json::{self as json, Value as Json};
 use std::any::Any;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::ptr::{null_mut};
+use std::ptr::{null_mut, read_volatile};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::{bitcoin_ctx, bitcoin_ctx_destroy, lp, log, BitcoinCtx};
@@ -75,6 +75,8 @@ pub struct MmCtx {
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase
     /// The future replacement of lp::G.LP_myrmd160
     pub rmd160: H160,
+    /// Seed node IPs, initialized in `fn lp_initpeers`.
+    pub seeds: Mutex<Vec<IpAddr>>,
     /// secp256k1 key pair derived from passphrase
     /// future replacement of lp::G.LP_privkey
     pub secp256k1_key_pair: Option<KeyPair>,
@@ -82,9 +84,9 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
 }
 impl MmCtx {
-    pub fn new () -> MmCtx {
+    pub fn new() -> MmCtx {
         MmCtx {
-            conf: Json::Null,
+            conf: Json::Object (json::Map::new()),
             log: log::LogState::in_memory(),
             btc_ctx: unsafe {bitcoin_ctx()},
             initialized: AtomicBool::new (false),
@@ -101,6 +103,7 @@ impl MmCtx {
             seednode_p2p_channel: channel::unbounded(),
             client_p2p_channel: channel::unbounded(),
             rmd160: [0; 20].into(),
+            seeds: Mutex::new (Vec::new()),
             secp256k1_key_pair: None,
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
         }
@@ -167,7 +170,7 @@ impl MmCtx {
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping (&self) -> bool {
-        if unsafe {lp::LP_STOP_RECEIVED != 0} {return true}
+        if unsafe {read_volatile (&lp::LP_STOP_RECEIVED) != 0} {return true}
         self.stop.load (Ordering::Relaxed)
     }
 

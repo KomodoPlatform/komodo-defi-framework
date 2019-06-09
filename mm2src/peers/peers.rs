@@ -8,21 +8,15 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate unwrap;
-// As of now the large payloads are not compressable,
-// 01 13:30:15, peers:617] peers_send_compat] Compression from 16046 to 16056
-// 01 13:30:16, peers:617] peers_send_compat] Compression from 32084 to 32094
-// but we're going to refactor these payloads in the future,
-// and there might be different other payloads as we go through the port.
-// TODO: See if compression works for CRDT type(s).
-//extern crate zstd_safe;  // https://github.com/facebook/zstd/blob/dev/lib/zstd.h
 
 #[doc(hidden)]
 pub mod peers_tests;
 
 pub mod http_fallback;
+use crate::http_fallback::{hf_delayed_get, hf_drop_get, hf_poll, hf_transmit, HttpFallbackTargetTrack};
 
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use common::{binprint, bits256, is_a_test_drill, slice_to_malloc, RaiiRm};
+use common::{binprint, bits256, is_a_test_drill, slice_to_malloc, RaiiRm, SlurpFut};
 use common::log::TagParam;
 use common::mm_ctx::{from_ctx, MmArc};
 use crc::crc32::{update, IEEE_TABLE};
@@ -32,7 +26,7 @@ use either::Either;
 use futures::{future, Async, Future, Poll};
 use futures::task::Task;
 use gstuff::{now_float, slurp};
-use hashbrown::hash_map::{DefaultHashBuilder, Entry, HashMap, OccupiedEntry};
+use hashbrown::hash_map::{DefaultHashBuilder, Entry, HashMap, OccupiedEntry, RawEntryMut};
 use itertools::Itertools;
 use libc::{c_char, c_void};
 use rand::{thread_rng, Rng, RngCore};
@@ -40,6 +34,7 @@ use serde::Serialize;
 use serde_bencode::ser::to_bytes as bencode;
 use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
+use std::collections::btree_map::BTreeMap;
 use std::cmp::Ordering;
 use std::env::{temp_dir, var};
 use std::fs;
@@ -49,6 +44,7 @@ use std::io::{Cursor, Write};
 use std::iter::{once, FromIterator};
 use std::mem::{uninitialized, zeroed};
 use std::net::{IpAddr, SocketAddr};
+use std::num::{NonZeroU8, NonZeroU64};
 use std::path::Path;
 use std::ptr::{null, null_mut, read_volatile};
 use std::slice::from_raw_parts;
@@ -175,36 +171,45 @@ fn format_radix (mut x: u64, radix: u64) -> Vec<u8> {
     result
 }
 
-/// A command delivered to the `dht_thread` via the `PeersContext::cmd_tx`.
+// TODO: Maybe use an array instead.
+pub type Salt = Vec<u8>;
+
+/// A command delivered to the `peers_thread` via the `PeersContext::cmd_tx`.
 enum LtCommand {
     Put {
-        // The 32-byte seed which is given to `ed25519_create_keypair` in order to generate the key pair.
-        // The public key of the pair is also a pointer into the DHT space: nodes closest to it will be asked to store the value.
+        /// The 32-byte seed which is given to `ed25519_create_keypair` in order to generate the key pair.
+        /// The public key of the pair is also a pointer into the DHT space: nodes closest to it will be asked to store the value.
         seed: bits256,
-        // Identifies the value without affecting its DHT location (need to double-check this). Can be empty.  
-        // Should not be too large (BEP 44 mentions error code 207 "salt too big").  
-        // Must not contain zero bytes (we're passing it as a zero-terminated string sometimes).  
-        // NB: If the `data` is large then `dht_thread` will append chunk number to `salt` for every extra DHT chunk.
-        salt: Vec<u8>,
+        /// Identifies the value without affecting its DHT location (need to double-check this). Can be empty.  
+        /// Should not be too large (BEP 44 mentions error code 207 "salt too big").  
+        /// Must not contain zero bytes (we're passing it as a zero-terminated string sometimes).  
+        /// NB: If the `data` is large then `peers_thread` will append chunk number to `salt` for every extra DHT chunk.
+        salt: Salt,
         payload: Vec<u8>,
-        send_handler: Weak<SendHandler>
+        send_handler: Weak<SendHandler>,
+        /// Send the value to the HTTP fallback server
+        /// if the delivery isn't terminated after the given number of seconds.
+        fallback: NonZeroU8
     },
-    // Starts a new get operation, unless it is already in progress.
+    /// Starts a new get operation, unless it is already in progress.
     Get {
         seed: bits256,
-        salt: Vec<u8>,
-        // Identifies the `Future` responsible for this get operation.
-        frid: u64,
-        // The `Future` to wake when the payload is reassembled.
-        task: Task
+        salt: Salt,
+        /// Identifies the `Future` responsible for this get operation.
+        frid: NonZeroU64,
+        /// The `Future` to wake when the payload is reassembled.
+        task: Task,
+        /// Start checking the HTTP fallback server for the value
+        /// if it doesn't come through other channels in the given number of seconds.
+        fallback: NonZeroU8
     },
-    // Stops a get operation when a corresponding `Future` handler is dropped.
+    /// Stops a get operation when a corresponding `Future` handler is dropped.
     DropGet {
-        salt: Vec<u8>,
-        // Identifies the `Future` responsible for this get operation.
-        frid: u64
+        salt: Salt,
+        /// Identifies the `Future` responsible for this get operation.
+        frid: NonZeroU64
     },
-    // Direct communication. Sends a DHT ping packet to a given endpoint.
+    /// Direct communication. Sends a DHT ping packet to a given endpoint.
     Ping {
         endpoint: SocketAddr
     }
@@ -241,20 +246,32 @@ impl TransMeta {
 /// The peer-to-peer and connectivity information local to the MM2 instance.
 pub struct PeersContext {
     our_public_key: Mutex<bits256>,
-    dht_thread: Mutex<Option<thread::JoinHandle<()>>>,
+    peers_thread: Mutex<Option<thread::JoinHandle<()>>>,
     cmd_tx: channel::Sender<LtCommand>,
-    /// Should only be used by the `dht_thread`.
+    /// Should only be used by the `peers_thread`.
     cmd_rx: channel::Receiver<LtCommand>,
-    // TODO: Remove the outdated `recently_fetched` entries after a while.
     /// Salt -> last-modified, value.
-    recently_fetched: Mutex<HashMap<Vec<u8>, (f64, Vec<u8>)>>,
+    recently_fetched: Mutex<HashMap<Salt, (f64, Vec<u8>)>>,
     /// Of retransmission subsystem.
     trans_meta: Mutex<TransMeta>,
     /// The number of enhanced DHT pings received from MMs.
     direct_pings: AtomicU64,
     /// The number of data chunks delivered directly via the DHT pings.  
     /// (direct_pings - discovery pings - pongs - invalid).
-    direct_chunks: AtomicU64
+    direct_chunks: AtomicU64,
+    /// Recent attempts at reaching targets via HTTP fallback. seed -> track
+    hf_maps: Mutex<HashMap<bits256, HttpFallbackTargetTrack>>,
+    /// Subject salts we're trying to get for longer than their `fallback` timeout.
+    hf_delayed_salts: Mutex<HashMap<Salt, ()>>,
+    /// Long polling from HTTP fallback server.
+    hf_poll: Mutex<Option<SlurpFut>>,
+    /// The version of the HTTP fallback response that we already have.
+    hf_last_poll_id: AtomicU64,
+    /// Time (in seconds since UNIX epoch) util which we should skip polling the HTTP fallback server.
+    hf_skip_poll_till: AtomicU64,
+    /// Snapshot of chunks received through the HTTP fallback server.  
+    /// Using `BTreeMap` in order for `hf_to_gets` to get the first chunk (with the number of chunks) first.
+    hf_inbox: Mutex<BTreeMap<Salt, (bits256, Vec<u8>)>>
 }
 
 impl PeersContext {
@@ -264,13 +281,19 @@ impl PeersContext {
             let (cmd_tx, cmd_rx) = channel::unbounded::<LtCommand>();
             Ok (PeersContext {
                 our_public_key: Mutex::new (unsafe {zeroed()}),
-                dht_thread: Mutex::new (None),
+                peers_thread: Mutex::new (None),
                 cmd_tx,
                 cmd_rx,
                 recently_fetched: Mutex::new (HashMap::new()),
                 trans_meta: Mutex::new (TransMeta::default()),
                 direct_pings: AtomicU64::new (0),
-                direct_chunks: AtomicU64::new (0)
+                direct_chunks: AtomicU64::new (0),
+                hf_maps: Mutex::new (HashMap::new()),
+                hf_delayed_salts: Mutex::new (HashMap::new()),
+                hf_poll: Mutex::new (None),
+                hf_last_poll_id: AtomicU64::new (0),
+                hf_skip_poll_till: AtomicU64::new (0),
+                hf_inbox: Mutex::new (BTreeMap::new())
             })
         })))
     }
@@ -292,16 +315,16 @@ lazy_static! {
     static ref RATELIM: Mutex<HashMap<bits256, (f64, f32)>> = Mutex::new (HashMap::default());
 }
 
-fn with_ratelim<F> (seed: bits256, cb: F) where F: FnOnce (&mut f64, &mut f32) {
+fn with_ratelim<F> (seed: &bits256, cb: F) where F: FnOnce (&mut f64, &mut f32) {
     if let Ok (mut ratelim) = RATELIM.lock() {
-        let mut lim_entry = ratelim.entry (seed) .or_default();
+        let mut lim_entry = ratelim.entry (*seed) .or_default();
         if lim_entry.0 == 0. {lim_entry.0 = now_float() - 0.01}
         cb (&mut lim_entry.0, &mut lim_entry.1)
     } else {log! ("Can't lock RATELIM")}
 }
 
 /// Burn away ~10 ops per second.
-fn ratelim_maintenance (seed: bits256) -> f32 {
+fn ratelim_maintenance (seed: &bits256) -> f32 {
     let mut limops = 0f32;
     with_ratelim (seed, |lm, ops| {
         *ops = 0f32 .max (*ops - (now_float() - *lm) as f32 * 10.);
@@ -334,7 +357,7 @@ struct PingArgs<P> {
 
 /// Tells libtorrent to send a ping DHT packet with extra payload.
 /// 
-/// Should preferably be run from under the `dht_thread`
+/// Should preferably be run from under the `peers_thread`
 /// in order to minimize the chance of synchronization issues in the unsafe C code.
 /// 
 /// DHT packets larger than 1500 bytes are dropped. Experimenting with payload size shows
@@ -410,12 +433,16 @@ struct PayloadOutMeta {
 }
 
 /// A group of ping packets (one or more) that we want to deliver.  
-/// TODO: This groups is cancellable, like when we `drop` a `Future` returned by `send`.  
+/// Cancellable: transmission is stopped when the `Arc<SendHandler>` returned by `send` is dropped.  
 /// The target is either a specific endpoint (when we're trying to discover a peer)
 /// or a friend's public key (when we're `send`ing data to that friend).
-struct Package {
+pub struct Package {
     payloads: Vec<(MmPayload, PayloadOutMeta)>,
-    to: Either<(bits256, Weak<SendHandler>), SocketAddr>
+    to: Either<(bits256, Weak<SendHandler>), SocketAddr>,
+    /// Time (in seconds since UNIX epoch) when the package was scheduled.
+    scheduled_at: f64,
+    /// The number of seconds after which we should start sharing the data via the HTTP fallback.
+    fallback: Option<NonZeroU8>
 }
 
 extern fn put_callback (arg: *mut c_void, arg2: u64, have: *const u8, havelen: i32, benload: *mut *mut u8, benlen: *mut i32, seq: *mut i64) {
@@ -446,14 +473,15 @@ extern fn put_callback (arg: *mut c_void, arg2: u64, have: *const u8, havelen: i
     }
 }
 
-/// Invoked periodically from the `dht_thread` in order to manage and retransmit the outgoing ping packets.
-fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
+/// Invoked periodically from the `peers_thread` in order to manage and retransmit the outgoing ping packets.
+fn transmit (dugout: &mut dugout_t, ctx: &MmArc, hf_addr: &Option<SocketAddr>) -> Result<(), String> {
     // AG: Instead of the current random RATELIM skipping
     //     we might consider *ordering* the packets according to the endpoint freshness, etc.
     //     For `dht_put` the ordering might take into account the presense or absence of the corresponding `dht_put` callback
     //     (we want to repeat a `dht_put` more often, relative to others, if we haven't heard from it).
 
     let pctx = try_s! (PeersContext::from_ctx (ctx));
+    let our_public_key = try_s! (pctx.our_public_key.lock()) .clone();
     let mut trans = try_s! (pctx.trans_meta.lock());
     let (friends, packages) = trans.split_borrow();
     for pix in (0 .. packages.len()) .rev() {
@@ -479,11 +507,16 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
             },
             // Recipient is a `LP_mypub25519` key of a peer.
             Either::Left ((seed, ref send_handler)) => {
-                // Skip the transmission if the `SendHandler` arc was dropped.
-                // TODO: Should eventually remove the transmission from `packages`.
-                let _send_handler = match send_handler.upgrade() {Some (arc) => arc, None => continue};
+                // Skip the transmission if the `Arc<SendHandler>` was dropped.
+                let _send_handler = match send_handler.upgrade() {
+                    Some (arc) => arc,
+                    None => {
+                        package.payloads.clear();  // Marks the package for removal.
+                        continue
+                    }
+                };
 
-                let mut limops = ratelim_maintenance (seed);
+                let mut limops = ratelim_maintenance (&seed);
 
                 // See if the seed is a friend with directly-reachable endpoints.
                 if let Some (friend) = friends.get_mut (&seed) {
@@ -496,16 +529,17 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
                             if let Err (err) = ping (dugout, endpoint, payload) {
                                 log! ("ping error: " (err))
                             } else {
-                                with_ratelim (seed, |_lm, ops| {*ops += 1.; limops = *ops});
+                                with_ratelim (&seed, |_lm, ops| {*ops += 1.; limops = *ops});
                                 meta.pings += 1
                             }
                         }
                     }
                 }
 
-                // TODO: Delay the `dht_put` a bit (skipping for a few loops) if we're trying direct communication.
                 let now = now_float();
                 for (payload, meta) in package.payloads.iter_mut() {
+                    // Delay the `dht_put` a bit (skipping for a few loops) if we're trying direct communication.
+                    if meta.pings > 0 && now - package.scheduled_at < 1. {continue}
                     // NB: `dht_put` is usually reliable, but not 100% so.
                     //     In particular, invoking `dht_put` during DHT initialization might have no effect.
                     //     And DHT might reboot when the external IP changes, adding a chance of some `dht_put` calls being skipped.
@@ -526,7 +560,7 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
                             let _subject_salt = binprint (&saltʲ[0 .. saltʲ.len() - 1], b'.');
                             let _idx = saltʲ.last().unwrap();
                             //log! ("transmit] chunk " (_subject_salt) '.' (_idx) " stored, " (_have.len()) " → " (benload.len()));
-                            with_ratelim (seed, |_lm, ops| *ops += 1.);
+                            with_ratelim (&seed, |_lm, ops| *ops += 1.);
                             Ok (benload)
                         })
                     });
@@ -534,10 +568,12 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
                     let shuttle_ptr = (&*shuttle) as *const PutShuttle as *const c_void;
                     shuttles.insert (shuttle_ptr as usize, (now as u64, shuttle));
 
-                    with_ratelim (seed, |_lm, ops| {*ops += 1.; limops = *ops});
+                    with_ratelim (&seed, |_lm, ops| {*ops += 1.; limops = *ops});
                     unsafe {dht_put (dugout, seed_bytes.as_ptr(), seed_bytes.len() as i32, salt.as_ptr(), salt.len() as i32, put_callback, shuttle_ptr, now as u64)}
                     meta.dht_put_invoked = now
                 }
+
+                try_s! (hf_transmit (&pctx, hf_addr, &our_public_key, &seed, package));
             }
         }
         for ix in finished.into_iter().rev() {
@@ -548,10 +584,11 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc) -> Result<(), String> {
             packages.remove (pix);
         }
     }
+
     Ok(())
 }
 
-fn pingʹ (ctx: &MmArc, from: bits256, endpoint: SocketAddr, pong: Option<ByteBuf>) {
+fn pingʹ (ctx: &MmArc, from: &bits256, endpoint: &SocketAddr, pong: Option<ByteBuf>) {
     let pctx = match PeersContext::from_ctx (ctx) {Ok (c) => c, Err (err) => {log! ((err)); return}};
     let mut trans = unwrap! (pctx.trans_meta.lock());
     let (pong, id) = if let Some (original_id) = pong {
@@ -563,7 +600,7 @@ fn pingʹ (ctx: &MmArc, from: bits256, endpoint: SocketAddr, pong: Option<ByteBu
 
     let mm_payload = MmPayload {
         id,
-        from: unsafe {&from.bytes[..]} .to_vec().into(),
+        from: ByteBuf::from (unsafe {&from.bytes[..]} .to_vec()),
         pong: if pong {1} else {0},
         salt: None,
         chunk: None
@@ -571,15 +608,18 @@ fn pingʹ (ctx: &MmArc, from: bits256, endpoint: SocketAddr, pong: Option<ByteBu
 
     let direct_package = Package {
         payloads: vec! [(mm_payload.clone(), PayloadOutMeta::default())],
-        to: Either::Right (endpoint)
+        to: Either::Right (*endpoint),
+        scheduled_at: now_float(),
+        fallback: None
     };
 
     trans.packages.push (direct_package);
 }
 
-/// Invoked from the `dht_thread`, implementing the `LtCommand::Put` op.  
+/// Invoked from the `peers_thread`, implementing the `LtCommand::Put` op.  
 /// NB: If the `data` is large then we block to rate-limit.
-fn split_and_put (ctx: &MmArc, from: bits256, seed: bits256, mut salt: Vec<u8>, mut data: Vec<u8>, send_handler: Weak<SendHandler>) {
+fn split_and_put (ctx: &MmArc, from: &bits256, seed: bits256, mut salt: Salt, mut data: Vec<u8>,
+                  send_handler: Weak<SendHandler>, fallback: NonZeroU8) {
     // chunk 1 {{number of chunks, 1 byte; piece of data} crc32}
     // chunk 2 {{piece of data} crc32}
     // chunk 3 {{piece of data} crc32}
@@ -619,7 +659,7 @@ fn split_and_put (ctx: &MmArc, from: bits256, seed: bits256, mut salt: Vec<u8>, 
         assert! (chunk.len() <= 996);
     }
 
-    // Submit the chunks to libtorrent, appending the chunk number (1-based) to salt.
+    // Submit the chunks into delivery queue, appending the chunk number (1-based) to salt.
 
     let now = now_float();
     unwrap! (PUT_SHUTTLES.lock()) .retain (|_, (created, _)| now as u64 - *created < 600 * 1000);
@@ -628,7 +668,9 @@ fn split_and_put (ctx: &MmArc, from: bits256, seed: bits256, mut salt: Vec<u8>, 
     let salt_base_len = salt.len();
     let mut package = Package {
         payloads: Vec::new(),
-        to: Either::Left ((seed, send_handler))
+        to: Either::Left ((seed, send_handler)),
+        scheduled_at: now,
+        fallback: Some (fallback)
     };
 
     let mut trans = unwrap! (pctx.trans_meta.lock());
@@ -663,73 +705,150 @@ struct ChunkGetsEntry {
     payload: Option<Vec<u8>>
 }
 
-/// Tracks the get operations currently in progress in libtorrent.
+/// For each salt being sought, tracks the get operations currently in progress.
 #[derive(Debug, Default)]
 struct GetsEntry {
     /// Libtorrent's public key derived from `seed`.  
     /// In some APIs we only get this derived public key and not the `seed`.
     pk: Option<[u8; 32]>,
+    /// Last time (in seconds since UNIX epoch) when we had all the chunks
+    /// necessary to reassemble the value which corresponds to the salt.
+    /// We can have several reassembly attempts, each bumping this field.
     reassembled_at: Option<f64>,
-    number_of_chunks: Option<u8>,
+    /// How many chunks were used by the sender to upload the value.  
+    /// Retrieved from the first chunk.
+    number_of_chunks: Option<NonZeroU8>,
     /// Chunks we're getting from DHT.
     chunks: Vec<ChunkGetsEntry>,
-    /// A map from the index byte of the chunk salt to the ping payload received.
-    direct_chunks: HashMap<u8, Vec<u8>>,
     /// Futures currently interested in this entry (waiting for it).
-    futures: HashMap<u64, Task>,
+    futures: HashMap<NonZeroU64, Task>,
     /// The time when we first discovered that the `futures` is empty.  
     /// Reset to `None` if there are `futures`.
-    idle_since: Option<f64>
+    idle_since: Option<f64>,
+    /// The time (in seconds since UNIX epoch) when this `GetsEntry` was created.  
+    /// Might be `None` if the entry was created beforehand.
+    created_at: Option<f64>,
+    /// The time in seconds after which we begin to suspect that the entry was unduly delayed,
+    /// like when there's a connectivity problem. (If there are delayed entries then we might want
+    /// to contact the HTTP fallback service for extra reliability).  
+    /// Might be `None` if the value wasn't known when this entry was created.
+    fallback: Option<NonZeroU8>
 }
 impl GetsEntry {
     /// Invoked when the future `frid` is dropped.
-    fn drop_get (&mut self, frid: u64) {
+    fn drop_get (&mut self, frid: NonZeroU64) {
         self.futures.remove (&frid);
     }
 }
 
 /// A map from a subject salt (e.g. without chunk suffix) to GetsEntry.
-type Gets = HashMap<Vec<u8>, GetsEntry>;
+type Gets = HashMap<Salt, GetsEntry>;
+
+/// Unpack and check the incoming chunk, then add it to `Gets`.  
+/// Update the `GetsEntry::number_of_chunks` if the incoming chunk is the chunk number one.
+fn chunk_to_gets (i_salt: &Salt, i_chunk: &Vec<u8>, our_public_key: &bits256, gets: &mut Gets)
+-> Result<u8, String> {
+    if i_salt.len() < 2 {return ERR! ("short ping salt")}
+    let subject_salt = &i_salt[0 .. i_salt.len() - 1];
+    let chunk_idx = i_salt[i_salt.len() - 1];
+    if chunk_idx == 0 {return ERR! ("bad chunk index")}
+
+    // Reject the chunk if there is a checksum mismatch.
+    let mut payload = i_chunk.to_vec();
+    if payload.len() < 5 {return ERR! ("short ping chunk")}
+    let incoming_checksum = try_s! ((&payload[payload.len() - 4 ..]) .read_u32::<BigEndian>());
+    for _ in 0..4 {payload.pop();}  // Drain the checksum.
+    let mut crc = update (chunk_idx as u32, &IEEE_TABLE, &payload);
+    crc = update (crc, &IEEE_TABLE, unsafe {&our_public_key.bytes[..]});
+    crc = update (crc, &IEEE_TABLE, &subject_salt);
+    if incoming_checksum != crc {return ERR! ("bad ping chunk")}
+
+    let mut gets_en = gets.raw_entry_mut().from_key (subject_salt);
+    let (_, gets) = match gets_en {
+        RawEntryMut::Occupied (ref mut oe) => oe.get_key_value_mut(),
+        RawEntryMut::Vacant (ve) => ve.insert (subject_salt.to_vec(), GetsEntry::default())
+    };
+    if chunk_idx == 1 {
+        let number_of_chunks = try_s! (NonZeroU8::new (payload.remove (0)) .ok_or ("zero chunks"));
+        gets.number_of_chunks = Some (number_of_chunks)
+    }
+    let number_of_chunks = match gets.number_of_chunks {
+        Some (n) => n,
+        None => return ERR! ("no number_of_chunks")  // Out of order delivery?
+    };
+    if chunk_idx > number_of_chunks.get() {return ERR! ("ping chunk out of bounds")}
+    gets.chunks.resize_with (number_of_chunks.get() as usize, Default::default);
+    let mut en = &mut gets.chunks[chunk_idx as usize - 1];
+    en.direct = now_float();
+    en.payload = Some (payload);
+
+    Ok (chunk_idx)
+}
+
+/// Copy chunks obtained via HTTP fallback into `Gets`.
+fn hf_to_gets (our_public_key: &bits256, pctx: &PeersContext, gets: &mut Gets) -> Result<(), String> {
+    if pctx.hf_last_poll_id.load (AtomicOrdering::Relaxed) != 0 {
+        let hf_inbox = try_s! (pctx.hf_inbox.lock());
+        for (i_salt, (_from, chunk)) in hf_inbox.iter() {
+            let subject_salt = &i_salt[0 .. i_salt.len() - 1];
+            if !gets.contains_key (subject_salt) {continue}  // We're not currently getting that subject.
+            let _chunk_idx = try_s! (chunk_to_gets (i_salt, chunk, our_public_key, gets));
+        }
+    }
+    Ok(())
+}
 
 /// Responsible for reassembling all the DHT pieces stored for a potentially large value.
 /// Invoked whenever we see continued interest for the value
 /// (note that the fetching should be dropped if the interest vanishes)
 /// or when after one of the fetched pieces arrives.
-fn get_pieces_scheduler (seed: bits256, salt: Vec<u8>, frid: u64, task: Task, dugout: &mut dugout_t, gets: &mut Gets, pctx: &PeersContext) {
-    let gets = match gets.entry (salt) {
-        Entry::Vacant (ve) => {
+/// 
+/// * `seed` - The public key we're getting the data for (usually equals `our_public_key`).
+/// * `salt` - The subject salt of the payload we're interested in.
+fn get_pieces_scheduler (seed: &bits256, salt: Salt, frid: NonZeroU64, task: Task, fallback: NonZeroU8,
+                         dugout: &mut dugout_t, gets: &mut Gets, pctx: &PeersContext) {
+    let getsᵉ = match gets.entry (salt) {
+        Entry::Vacant (getsᵉ) => {
             // Fetch the first chunk.
             // Having it we'll know the number of chunks necessary to reassemble the entire value.
-            let mut chunk_salt = ve.key().clone();
+            let mut chunk_salt = getsᵉ.key().clone();
             chunk_salt.push (1);  // Identifies the first chunk.
             let mut pk: [u8; 32] = unsafe {zeroed()};
             let seed = unsafe {seed.bytes};
             unsafe {dht_get (dugout, seed.as_ptr(), seed.len() as i32, chunk_salt.as_ptr(), chunk_salt.len() as i32, pk.as_mut_ptr(), pk.len() as i32)}
-            ve.insert (GetsEntry {
+            getsᵉ.insert (GetsEntry {
                 pk: Some (pk),
                 reassembled_at: None,
                 number_of_chunks: None,
                 chunks: vec! [ChunkGetsEntry {restarted: now_float(), direct: 0., seq_auth: 0, payload: None}],
-                direct_chunks: HashMap::new(),
                 futures: HashMap::from_iter (once ((frid, task))),
-                idle_since: None
+                idle_since: None,
+                created_at: Some (now_float()),
+                fallback: Some (fallback)
             });
             return
         },
         Entry::Occupied (mut oe) => {
-            oe.get_mut().futures.insert (frid, task);
+            let getsᵉ = oe.get_mut();
+            getsᵉ.futures.insert (frid, task);
+            // Entries might be created before they are requested
+            // (like when we're getting a direct DHT ping from a C callback),
+            // so we should store the correct `fallback` value afterwards.
+            getsᵉ.fallback = Some (fallback);
             oe
         }
     };
 
-    get_pieces_scheduler_en (seed, dugout, gets, pctx)
+    get_pieces_scheduler_en (seed, dugout, getsᵉ, pctx)
 }
 
-fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: OccupiedEntry<Vec<u8>, GetsEntry, DefaultHashBuilder>, pctx: &PeersContext) {
+fn get_pieces_scheduler_en (seed: &bits256, dugout: &mut dugout_t,
+                            mut getsᵉ: OccupiedEntry<Salt, GetsEntry, DefaultHashBuilder>,
+                            pctx: &PeersContext) {
     // Skip or GC the package if there are no clients still working on it.
 
     let (skip, remove) = loop {
-        let gets = gets.get_mut();
+        let gets = getsᵉ.get_mut();
         if gets.futures.is_empty() {
             if let Some (idle_since) = gets.idle_since {
                 let idle_for = now_float() - idle_since;
@@ -743,21 +862,21 @@ fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: Occu
             break (false, false)
         }
     };
-    if remove {gets.remove_entry(); return}
+    if remove {getsᵉ.remove_entry(); return}
     if skip {return}
 
     // See if the first chunk has arrived and the number of chunks with it.
 
     let now = now_float();
-    if let Some (number_of_chunks) = gets.get().number_of_chunks {
+    if let Some (number_of_chunks) = getsᵉ.get().number_of_chunks {
         // We'll never reassemble the right value while having extra chunks.
-        gets.get_mut().chunks.resize_with (number_of_chunks as usize, Default::default)
+        getsᵉ.get_mut().chunks.resize_with (number_of_chunks.get() as usize, Default::default)
     }
 
     // Go over the chunks and see if it's time to maybe retry fetching some of them.
 
-    let salt = gets.key().clone();
-    let mut pk: [u8; 32] = match gets.get().pk {
+    let salt = getsᵉ.key().clone();
+    let mut pk: [u8; 32] = match getsᵉ.get().pk {
         Some (have) => have,
         None => Default::default()  // Tells `dht_get` to fill it.
     };
@@ -771,7 +890,7 @@ fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: Occu
             Ordering::Equal
         }
     }
-    for (idx, chunk) in (1..) .zip (gets.get_mut().chunks.iter_mut())
+    for (idx, chunk) in (1..) .zip (getsᵉ.get_mut().chunks.iter_mut())
     .sorted_by (|(_, ca), (_, cb)| ordering (ca.restarted, cb.restarted, ca.payload.is_none(), cb.payload.is_none())) {
         if now - chunk.restarted < 10. || now - chunk.direct < 10. || limops > 10. {continue}
 
@@ -788,30 +907,34 @@ fn get_pieces_scheduler_en (seed: bits256, dugout: &mut dugout_t, mut gets: Occu
         chunk.restarted = now;
         with_ratelim (seed, |_lm, ops| {*ops += 1.; limops = *ops})
     }
-    gets.get_mut().pk = Some (pk);  // In case it was initialized by `dht_get`.
+    getsᵉ.get_mut().pk = Some (pk);  // In case it was initialized by `dht_get`.
 
     // Reassemble the value.
     // We're doing it every time because the version of a chunk payload (and the number of chunks) might have been changed since the last time.
 
-    let missing_chunks = gets.get().chunks.iter().any (|chunk| chunk.payload.is_none());
+    let missing_chunks = getsᵉ.get().chunks.iter().any (|chunk| chunk.payload.is_none());
     if missing_chunks {return}
-    let mut buf = Vec::with_capacity (gets.get().chunks.len() * 992);
-    for chunk in &gets.get().chunks {for &byte in unwrap! (chunk.payload.as_ref()) {buf.push (byte)}}
-    if gets.get_mut().reassembled_at.is_none() {gets.get_mut().reassembled_at = Some (now)}
+    let mut buf = Vec::with_capacity (getsᵉ.get().chunks.len() * 992);
+    for chunk in &getsᵉ.get().chunks {for &byte in unwrap! (chunk.payload.as_ref()) {buf.push (byte)}}
+    if getsᵉ.get_mut().reassembled_at.is_none() {getsᵉ.get_mut().reassembled_at = Some (now)}
 
     let mut fetched = match pctx.recently_fetched.lock() {
         Ok (gets) => gets,
         Err (err) => {log! ("get_pieces_scheduler] Can't lock the `PeersContext::recently_fetched`: " (err)); return}
     };
-    match fetched.entry (gets.key().clone()) {
+    match fetched.entry (getsᵉ.key().clone()) {
         Entry::Vacant (ve) => {ve.insert ((now_float(), buf));},
         Entry::Occupied (oe) => *oe.into_mut() = (now_float(), buf)
     }
-    for task in gets.get().futures.values() {task.notify()}
+    for task in getsᵉ.get().futures.values() {task.notify()}
 }
 
 const BOOTSTRAP_STATUS: &[&TagParam] = &[&"dht-boot"];
 
+/// I've noticed that if we create a libtorrent session (`lt::session`) and destroy it right away
+/// then it will often crash. Apparently we're catching it unawares during some initalization procedures.
+/// Delaying the libtorrent bootstrap allows us to skip the libtorrent code altogether
+/// in some of the short-lived unit tests where the DHT isn't actually used.
 struct DhtDelayed {until: f64}
 impl DhtDelayed {
     fn init (ctx: &MmArc, seconds: f64) -> DhtDelayed {
@@ -861,6 +984,8 @@ struct CbCtx<'a, 'b, 'c> {
     bootstrapped: &'c mut f64
 }
 
+/// Process the incoming DHT pings,
+/// some of which are used for direct NAT-traversing communication between peers.
 fn incoming_ping (cbctx: &mut CbCtx, pkt: &[u8], ip: &[u8], port: u16) -> Result<(), String> {
     let ping = match bdecode::<Ping<MmPayload>> (pkt) {Ok (p) => p, Err (_) => return Ok(())};
 
@@ -876,7 +1001,7 @@ fn incoming_ping (cbctx: &mut CbCtx, pkt: &[u8], ip: &[u8], port: u16) -> Result
 
     let endpoint = SocketAddr::new (ip, port);
     if ping.a.mm.pong == 0 {
-        pingʹ (cbctx.ctx, cbctx.our_public_key, endpoint, Some (ping.a.mm.id.clone()))  // Pong.
+        pingʹ (cbctx.ctx, &cbctx.our_public_key, &endpoint, Some (ping.a.mm.id.clone()))  // Pong.
     }
     let pctx = try_s! (PeersContext::from_ctx (cbctx.ctx));
     // Now that we've got a direct ping from a friend, see if we can update the endpoints we have on record.
@@ -898,41 +1023,16 @@ fn incoming_ping (cbctx: &mut CbCtx, pkt: &[u8], ip: &[u8], port: u16) -> Result
     // Copy the chunk into `gets` where the `get_pieces_scheduler` will see it.
     let mm: MmPayload = ping.a.mm;
     if let (Some (i_salt), Some (i_chunk)) = (mm.salt.as_ref(), mm.chunk.as_ref()) {
-        if i_salt.len() < 2 {return ERR! ("short ping salt")}
-        let subject_salt = &i_salt[0 .. i_salt.len() - 1];
-        let chunk_idx = i_salt[i_salt.len() - 1];
-        if chunk_idx == 0 {return ERR! ("bad chunk index")}
-
-        // Reject the chunk if there is a checksum mismatch.
-        let mut payload = i_chunk.to_vec();
-        if payload.len() < 5 {return ERR! ("short ping chunk")}
-        let incoming_checksum = try_s! ((&payload[payload.len() - 4 ..]) .read_u32::<BigEndian>());
-        for _ in 0..4 {payload.pop();}  // Drain the checksum.
-        let mut crc = update (chunk_idx as u32, &IEEE_TABLE, &payload);
-        crc = update (crc, &IEEE_TABLE, unsafe {&cbctx.our_public_key.bytes[..]});
-        crc = update (crc, &IEEE_TABLE, &subject_salt);
-        if incoming_checksum != crc {return ERR! ("bad ping chunk")}
-
-        let (_, gets) = cbctx.gets.raw_entry_mut().from_key (subject_salt)
-            .or_insert (subject_salt.to_vec(), GetsEntry::default());
-        if chunk_idx == 1 {gets.number_of_chunks = Some (payload.remove (0))}
-        let number_of_chunks = gets.number_of_chunks.unwrap_or (0);
-        if chunk_idx > number_of_chunks {return ERR! ("ping chunk out of bounds")}
-        gets.chunks.resize_with (number_of_chunks as usize, Default::default);
-        let mut en = &mut gets.chunks[chunk_idx as usize - 1];
-        en.direct = now_float();
-        en.payload = Some (payload);
+        let chunk_idx = try_s! (chunk_to_gets (i_salt, i_chunk, &cbctx.our_public_key, &mut cbctx.gets));
         pctx.direct_chunks.fetch_add (1, AtomicOrdering::Relaxed);
+        log! ("incoming_ping] Chunk " (chunk_idx) " received directly");
     }
 
     Ok(())
 }
 
-/// I've noticed that if we create a libtorrent session (`lt::session`) and destroy it right away
-/// then it will often crash. Apparently we're catching it unawares during some initalization procedures.
-/// This seems like a good enough reason to use a separate thread for managing the libtorrent,
-/// allowing it to initialize and then stop at its own pace.
-fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port: u16, read_only: bool, delay_dht: f64) {
+/// The loop driving the peers crate.
+fn peers_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port: u16, read_only: bool, delay_dht: f64) {
     if let Err (err) = ctx.log.register_my_thread() {log! ((err))}
     let myipaddr = ctx.conf["myipaddr"].as_str();
     let listen_interfaces = (|| {
@@ -974,6 +1074,16 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
     let mut last_state_save = 0.;
 
     let mut gets = Gets::default();
+
+    let hf_addr = loop {
+        let ip = {
+            let seeds = unwrap! (ctx.seeds.lock());
+            if seeds.is_empty() {break None}
+            seeds[0].clone()
+        };
+        let port = ctx.conf["http-fallback-port"].as_u64().unwrap_or (80) as u16;
+        break Some (SocketAddr::new (ip, port))
+    };
 
     loop {
         extern fn cb (_dugout: *mut dugout_t, cbctx: *mut c_void, alert: *mut Alert) {
@@ -1031,12 +1141,12 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                 let payload: ByteBuf = if bencoded == b"0:" {ByteBuf::new()} else {
                     match serde_bencode::de::from_bytes (bencoded) {
                         Ok (payload) => payload,
-                        Err (err) => {log! ("dht_thread] Can not decode the received payload: " (err)); return}
+                        Err (err) => {log! ("peers_thread] Can not decode the received payload: " (err)); return}
                     }
                 };
                 let mut payload = payload.to_vec();
 
-                let salt: Vec<u8> = (&chunk_salt[0 .. chunk_salt.len() - 1]) .into();  // Without the chunk number suffix.
+                let salt: Salt = (&chunk_salt[0 .. chunk_salt.len() - 1]) .into();  // Without the chunk number suffix.
 
                 let gets = match cbctx.gets.iter_mut().find (|en| &en.0[..] == &salt[..] && en.1.pk == Some (keybuf)) {
                     Some (gets_entry) => gets_entry.1,
@@ -1053,7 +1163,12 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                 crc = update (crc, &IEEE_TABLE, &salt);
                 if incoming_checksum != crc {return}
 
-                let number_of_chunks = if idx == 1 {Some (payload.remove (0))} else {None};
+                let number_of_chunks = if idx == 1 {
+                    match NonZeroU8::new (payload.remove (0)) {
+                        Some (nz) => Some (nz),
+                        None => return  // Invalid ping, number_of_chunks can not be zero.
+                    }
+                } else {None};
                 let seq_auth = unsafe {read_volatile (&seq) as u64 * 2 + if read_volatile (&auth) {1} else {0}};
                 let chunk = &mut gets.chunks[idx-1];
                 if chunk.payload.is_none() || seq_auth > chunk.seq_auth {
@@ -1099,6 +1214,9 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
                 unsafe {libc::free (cs as *mut c_void)}
             }
         }
+
+        if ctx.is_stopping() {break}
+
         // Invoke the `cb` on the libtorrent alerts.
         {
             let mut cbctx = CbCtx {
@@ -1110,9 +1228,12 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
             unsafe {dht_alerts (&mut dugout, cb, &mut cbctx as *mut CbCtx as *mut c_void)};
         }
         if let Some (err) = dugout.take_err() {
-            // TODO: User-friendly log message (`LogState::log`).
             log! ("dht_alerts error: " (err));
-            return
+            // Try again and see if the error would go away.  
+            // (Given that libtorrent is not our only protocol we could also ignore the unexpected lt error,
+            //  but we should avoid spamming the log then, maybe use a dashboard condition instead).
+            thread::sleep (Duration::from_secs (2));
+            continue
         }
 
         if ctx.is_stopping() {break}
@@ -1133,26 +1254,52 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
         };
 
         match pctx.cmd_rx.recv_timeout (Duration::from_millis (100)) {
-            Ok (LtCommand::Put {seed, salt, payload, send_handler}) => split_and_put (&ctx, our_public_key, seed, salt, payload, send_handler),
-            Ok (LtCommand::Get {seed, salt, frid, task}) => {
+            Ok (LtCommand::Put {seed, salt, payload, send_handler, fallback}) =>
+                split_and_put (&ctx, &our_public_key, seed, salt, payload, send_handler, fallback),
+            Ok (LtCommand::Get {seed, salt, frid, task, fallback}) => {
                 assert_eq! (seed, our_public_key);
-                get_pieces_scheduler (seed, salt, frid, task, &mut dugout, &mut gets, &*pctx)},
+                get_pieces_scheduler (&seed, salt, frid, task, fallback, &mut dugout, &mut gets, &*pctx)},
             Ok (LtCommand::DropGet {salt, frid}) => {
-                if let Some (en) = gets.get_mut (&salt) {en.drop_get (frid)}},
-            Ok (LtCommand::Ping {endpoint}) => pingʹ (&ctx, our_public_key, endpoint, None),
+                if let Some (en) = gets.get_mut (&salt) {en.drop_get (frid)}
+                hf_drop_get (&pctx, &salt)},
+            Ok (LtCommand::Ping {endpoint}) => pingʹ (&ctx, &our_public_key, &endpoint, None),
             Err (channel::RecvTimeoutError::Timeout) => {},
             Err (channel::RecvTimeoutError::Disconnected) => break
         };
 
-        if let Err (err) = transmit (&mut dugout, &ctx) {log! ("send_pings error: " (err))}
+        if ctx.is_stopping() {break}
 
-        let gets_keys: Vec<_> = gets.keys().map (|k| k.clone()) .collect();
-        for key in gets_keys {
-            let entry = match gets.entry (key) {Entry::Vacant (_) => panic!(), Entry::Occupied (oe) => oe};
-            get_pieces_scheduler_en (our_public_key, &mut dugout, entry, &*pctx)
+        if let Err (err) = transmit (&mut dugout, &ctx, &hf_addr) {log! ("transmit error: " (err))}
+
+        // Cloning the keys allows `get_pieces_scheduler_en` to remove the `gets_oe` entry.
+        let get_salts: Vec<_> = gets.keys().map (|k| k.clone()) .collect();
+        let now = now_float();
+        for salt in get_salts {
+            let gets_oe = if let Entry::Occupied (oe) = gets.entry (salt) {oe} else {panic!()};
+
+            if let Some (created_at) = gets_oe.get().created_at {
+                if let Some (fallback) = gets_oe.get().fallback {
+                    if now - created_at > fallback.get() as f64 {
+                        hf_delayed_get (&pctx, gets_oe.key())
+            }   }   }
+
+            get_pieces_scheduler_en (&our_public_key, &mut dugout, gets_oe, &*pctx);
         }
 
-        let now = now_float();
+        if let Err (err) = hf_poll (&pctx, &hf_addr) {
+            log! ("hf_poll error: " (err))
+        } else if let Err (err) = hf_to_gets (&our_public_key, &pctx, &mut gets) {
+            log! ("hf_to_gets error: " (err))
+        }
+
+        // Remove old entries from `hf_maps`.
+        if let Ok (mut hf_maps) = pctx.hf_maps.lock() {
+            hf_maps.retain (|_seed, track| now - track.last_store < 600.)
+        }
+        if let Ok (mut recently_fetched) = pctx.recently_fetched.lock() {
+            recently_fetched.retain (|_, (lm, _)| now - *lm < 600.)
+        }
+
         let after_boot_sec = 20.;  // In order not to loose some potentially good but not yet checked nodes from a previous state.
         if bootstrapped != 0. && now - bootstrapped > after_boot_sec && now - last_state_save > 600. {
             // TODO, should: Only save the DHT state if we see some recent DHT traffic (via the counters).
@@ -1187,8 +1334,7 @@ fn dht_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_port:
 /// * `preferred_port` - We'll try to open an UDP endpoint on this port,
 ///                      which might help if the user configured this port in firewall and forwarding rules.
 ///                      We're not limited to this port though and might try other ports as well.
-/// * `session_id` - Identifies our incarnation, allowing other peers to know if they're talking with the same instance.
-pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16, _session_id: u32) -> Result<(), String> {
+pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
     let drill = is_a_test_drill();
 
     // NB: From the `fn test_trade` logs it looks like the `session_id` isn't shared with the peers currently.
@@ -1209,24 +1355,24 @@ pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_p
 
     let pctx = try_s! (PeersContext::from_ctx (&ctx));
     *try_s! (pctx.our_public_key.lock()) = our_public_key;
-    *try_s! (pctx.dht_thread.lock()) =
-        Some (try_s! (thread::Builder::new().name ("dht".into()) .spawn ({
+    *try_s! (pctx.peers_thread.lock()) =
+        Some (try_s! (thread::Builder::new().name ("peers".into()) .spawn ({
             let ctx = ctx.clone();
-            move || dht_thread (ctx, netid, our_public_key, preferred_port, read_only, delay_dht)
+            move || peers_thread (ctx, netid, our_public_key, preferred_port, read_only, delay_dht)
         })));
     ctx.on_stop ({
         let ctx = ctx.clone();
         let pctx = pctx.clone();
         Box::new (move || -> Result<(), String> {
-            assert! (ctx.is_stopping());  // Check that the `dht_thread` can see the flag.
-            if let Ok (mut dht_thread) = pctx.dht_thread.lock() {
-                if let Some (dht_thread) = dht_thread.take() {
-                    let join_status = ctx.log.status (&[&"dht-stop"], "Waiting for the dht_thread to stop...");
+            assert! (ctx.is_stopping());  // Check that the `peers_thread` can see the flag.
+            if let Ok (mut peers_thread) = pctx.peers_thread.lock() {
+                if let Some (peers_thread) = peers_thread.take() {
+                    let join_status = ctx.log.status (&[&"dht-stop"], "Waiting for the peers_thread to stop...");
                     // We want to shutdown libtorrent and stuff gracefully,
                     // but the `join` might sometimes hang when we're stopping libtorrent, so we implement a timeout.
                     let (tx, rx) = channel::bounded (1);
                     try_s! (thread::Builder::new().name ("dht-stop".into()) .spawn (move || {
-                        let _ = dht_thread.join();
+                        let _ = peers_thread.join();
                         let _ = tx.send (());
                     }));
                     match rx.recv_timeout (Duration::from_secs (3)) {
@@ -1286,7 +1432,7 @@ pub struct SendHandler;
 /// Think of it as a radio-signal set on a loop.
 pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
 -> Result<Arc<SendHandler>, String> {
-    if fallback == 0 {return ERR! ("fallback is 0")}
+    let fallback = try_s! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
     let pctx = try_s! (PeersContext::from_ctx (&ctx));
 
@@ -1304,8 +1450,8 @@ pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: 
     let send_handler_arc = Arc::new (SendHandler);
     let send_handler = Arc::downgrade (&send_handler_arc);
 
-    // Tell `dht_thread` to save the data.
-    try_s! (pctx.cmd_tx.send (LtCommand::Put {seed: peer, salt, payload, send_handler}));
+    // Tell `peers_thread` to save the data.
+    try_s! (pctx.cmd_tx.send (LtCommand::Put {seed: peer, salt, payload, send_handler, fallback}));
 
     Ok (send_handler_arc)
 }
@@ -1313,22 +1459,31 @@ pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: 
 struct RecvFuture {
     pctx: Arc<PeersContext>,
     seed: bits256,
-    salt: Vec<u8>,
+    salt: Salt,
     validator: Box<Fn(&[u8])->bool + Send>,
-    frid: Option<u64>
+    frid: Option<NonZeroU64>,
+    /// Start checking the HTTP fallback server for the value
+    /// if it doesn't come through other channels in the given number of seconds.
+    fallback: NonZeroU8
 }
 impl Future for RecvFuture {
     type Item = Vec<u8>;
     type Error = String;
     fn poll (&mut self) -> Poll<Vec<u8>, String> {
         if self.frid.is_none() {
-            let frid = thread_rng().gen();
+            let frid = loop {
+                match NonZeroU64::new (thread_rng().gen()) {Some (nz) => break nz, None => continue}
+            };
 
-            // Ask the `dht_thread` to fetch the data.
-            let task = futures::task::current();
-            if let Err (err) = self.pctx.cmd_tx.send (LtCommand::Get {seed: self.seed, salt: self.salt.clone(), task, frid}) {
-                return Err (ERRL! ("!send: {}", err))
-            }
+            // Ask the `peers_thread` to fetch the data.
+            let get = LtCommand::Get {
+                seed: self.seed,
+                salt: self.salt.clone(),
+                frid,
+                task: futures::task::current(),
+                fallback: self.fallback
+            };
+            if let Err (err) = self.pctx.cmd_tx.send (get) {return Err (ERRL! ("!send: {}", err))}
 
             self.frid = Some (frid)
         }
@@ -1364,8 +1519,9 @@ impl Drop for RecvFuture {
 /// Returned `Future` represents our effort to receive the transmission.
 /// As of now doesn't need a reactor.
 /// Should be `drop`ped soon as we no longer need the transmission.
-pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])->bool + Send>) -> Box<Future<Item=Vec<u8>, Error=String> + Send> {
-    if fallback == 0 {return Box::new (future::err (ERRL! ("fallback is 0")))}
+pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])->bool + Send>)
+-> Box<Future<Item=Vec<u8>, Error=String> + Send> {
+    let fallback = try_fus! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
     let pctx = try_fus! (PeersContext::from_ctx (&ctx));
 
@@ -1379,7 +1535,7 @@ pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])
     // NB: There should be no zero bytes in the salt (due to `CStr::from_ptr` and the possibility of a similar problem abroad).
     let salt = format_radix (checksum_ecma (subject), 36);
 
-    Box::new (RecvFuture {pctx, seed, salt, validator, frid: None})
+    Box::new (RecvFuture {pctx, seed, salt, validator, frid: None, fallback})
 }
 
 pub fn key (ctx: &MmArc) -> Result<bits256, String> {

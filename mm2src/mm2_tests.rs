@@ -13,6 +13,10 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+// TODO: Consider and/or try moving the integration tests into separate Rust files.
+// "Tests in your src files should be unit tests, and tests in tests/ should be integration-style tests."
+// - https://doc.rust-lang.org/cargo/guide/tests.html
+
 /// Asks MM to enable the given currency in native mode.  
 /// Returns the RPC reply containing the corresponding wallet address.
 fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
@@ -323,11 +327,10 @@ fn test_status() {common::log::tests::test_status()}
 fn peers_dht() {peers::peers_tests::peers_dht()}
 
 #[test]
-#[ignore]  // The plan is to re-enable the test after making it more reliable on Mac.
 fn peers_direct_send() {peers::peers_tests::peers_direct_send()}
 
 #[test]
-fn peers_http_fallback() {peers::peers_tests::peers_http_fallback()}
+fn peers_http_fallback_recv() {peers::peers_tests::peers_http_fallback_recv()}
 
 #[test]
 fn peers_http_fallback_kv() {peers::peers_tests::peers_http_fallback_kv()}

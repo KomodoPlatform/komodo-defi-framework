@@ -29,6 +29,7 @@ use libc::{c_void};
 use primitives::hash::H160;
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CStr};
+use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;

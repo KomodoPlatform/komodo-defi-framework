@@ -24,6 +24,7 @@ use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use libflate::gzip::Decoder;
+use shell_escape::escape;
 use std::cmp::max;
 use std::env::var;
 use std::fmt::{self, Write as FmtWrite};
@@ -625,6 +626,8 @@ struct IosClangOps {
     arch: &'static str,
     /// Identifies the corresponding clang options defined in "user-config.jam".
     b2_toolset: &'static str,
+    /// The minimal iOS version: 10 for 32-bit targets, 11 for 64-bit targets.
+    ios_min: f64,
 }
 
 #[allow(non_camel_case_types)]
@@ -686,14 +689,22 @@ impl Target {
                     // cf. `xcrun --sdk iphoneos --show-sdk-path`
                     sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
                     arch: "arm64",
-                    b2_toolset: "darwin-iphone"
+                    b2_toolset: "darwin-iphone",
+                    ios_min: 11.0,
                 }),
                 "x86_64-apple-ios" => Some(IosClangOps {
                     sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
                     arch: "x86_64",
-                    b2_toolset: "darwin-iphonesim"
+                    b2_toolset: "darwin-iphonesim",
+                    ios_min: 11.0,
                 }),
-                //"armv7-apple-ios" => "armv7", 32-bit
+                // armv7, 32-bit
+                "armv7-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "armv7",
+                    b2_toolset: "darwin-iphone10v7",
+                    ios_min: 10.0,
+                }),
                 //"armv7s-apple-ios" => "armv7s", 32-bit
                 _ => None,
             },
@@ -720,9 +731,9 @@ impl Target {
             });
             cc.flag(&fomat!("--sysroot="(cops.sysroot)));
             cc.flag("-stdlib=libc++");
-            cc.flag("-miphoneos-version-min=11.0"); // 64-bit.
-            cc.flag("-mios-simulator-version-min=11.0");
-            cc.flag("-DIPHONEOS_DEPLOYMENT_TARGET=11.0");
+            cc.flag(&fomat!("-miphoneos-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-mios-simulator-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-DIPHONEOS_DEPLOYMENT_TARGET="(cops.ios_min)));
             cc.flag("-arch").flag(cops.arch);
         }
         cc
@@ -1033,9 +1044,9 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         // The alternative to *finding* the library is adding " install --prefix=../lti"
         // to the BJam build, but that would waste space and time.
         let mut search_from = rasterbar.join("bin");
-        if let Target::iOS(ref targetᴱ) = target {
-            search_from =
-                search_from.join(fomat!("darwin-iphone" if targetᴱ == "x86_64-apple-ios" {"sim"}))
+        if let Target::iOS(ref _targetᴱ) = target {
+            let cops = unwrap!(target.ios_clang_ops());
+            search_from = search_from.join(cops.b2_toolset)
         }
         let search_for = if cfg!(windows) {
             "libtorrent.lib"
@@ -1073,6 +1084,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
     let boostˢ = unwrap!(boost.to_str());
+    let boostᵉ = escape(boostˢ.into());
     // NB: The common compiler flags go to the "cxxflags=" here
     // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(
@@ -1082,7 +1094,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
         " cxxflags=-std=c++11"
         " cxxflags=-fPIC"
-        " include="(boostˢ)
+        " include="(boostᵉ)
     );
 
     fn jam(boost: &Path, from: &str) {
@@ -1106,11 +1118,11 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     }
 
     let boost_build_path = boost.join("tools").join("build");
-    let boost_build_pathˢ = unwrap!(boost_build_path.to_str());
+    let boost_build_pathᵉ = escape(unwrap!(boost_build_path.to_str()).into());
     let export = if cfg!(windows) { "SET" } else { "export" };
     epintln!("build_libtorrent]\n"
-      "  $ "(export)" PATH="(boostˢ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
-      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathˢ) "\n"
+      "  $ "(export)" PATH="(boostᵉ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
+      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathᵉ) "\n"
       "  $ "(b2));
     if cfg!(windows) {
         unwrap!(cmd!("cmd", "/c", b2)
@@ -1412,13 +1424,20 @@ fn build_c_code(mm_version: &str) {
     if cfg!(windows) {
         // https://sourceware.org/pthreads-win32/
         // ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/
+
+        let pthread_dll = root().join("x64/pthreadVC2.dll");
+        if !pthread_dll.is_file() {
+            unwrap!(ecmd!("cmd", "/c", "marketmaker_build_depends.cmd")
+                .dir(&root())
+                .run());
+            assert!(pthread_dll.is_file(), "Missing {:?}", pthread_dll);
+        }
+
         println!("cargo:rustc-link-lib=pthreadVC2");
         unwrap!(
-            fs::copy(
-                root().join("x64/pthreadVC2.dll"),
-                root().join("target/debug/pthreadVC2.dll")
-            ),
-            "Can't copy pthreadVC2.dll"
+            fs::copy(&pthread_dll, root().join("target/debug/pthreadVC2.dll")),
+            "Can't copy {:?}",
+            pthread_dll
         );
     } else {
         println!("cargo:rustc-link-lib=crypto");
