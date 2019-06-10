@@ -598,7 +598,6 @@ void LP_notify_pubkeys(void *ctx,int32_t pubsock)
 */
 
 pub fn lp_notify_recv (_ctx: MmArc, req: Json) -> HyRes {
-    //log! ("lp_notify_recv] req: " [req]);
     let pubk = try_h! (jbits256 (&req["pub"]));
     if pubk.nonz() {
         let c_json = {

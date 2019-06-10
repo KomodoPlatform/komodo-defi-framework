@@ -33,7 +33,7 @@ fn peer (conf: Json, port: u16) -> MmArc {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
 
-    let ctx = MmCtxBuilder::new().with_conf (conf) .into_mm_arc();
+    let ctx = MmCtxBuilder::new().with_conf (conf).into_mm_arc();
     unwrap! (ctx.log.thread_gravity_on());
 
     if let Some (seednodes) = ctx.conf["seednodes"].as_array() {

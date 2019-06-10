@@ -471,8 +471,8 @@ fn windows_requirements() {
 #[cfg(not(windows))]
 fn windows_requirements() {}
 
-/// SuperNET's root.  
-/// Calculated from `CARGO_MANIFEST_DIR`.  
+/// SuperNET's root.
+/// Calculated from `CARGO_MANIFEST_DIR`.
 /// NB: `cross` mounts it at "/project" and mounts it read-only!
 fn root() -> PathBuf {
     let common = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -892,8 +892,8 @@ fn fetch_boost(_target: &Target) -> PathBuf {
     boost
 }
 
-/// In-place modification of file contents. Like "sed -i" (or "perl -i") but with a Rust code instead of a sed pattern.  
-/// Uses `String` instead of `Vec<u8>` simply because `str` has more helpers out of the box (`std::str::pattern` works with `str`).  
+/// In-place modification of file contents. Like "sed -i" (or "perl -i") but with a Rust code instead of a sed pattern.
+/// Uses `String` instead of `Vec<u8>` simply because `str` has more helpers out of the box (`std::str::pattern` works with `str`).
 /// Returns `false` if the file is absent or empty. Panics on errors.
 fn with_file(path: &AsRef<Path>, visitor: &Fn(&mut String)) -> bool {
     let bulk = slurp(path);
@@ -992,7 +992,7 @@ fn patch_libtorrent(rasterbar: &Path) {
     }
 }
 
-/// Downloads and builds libtorrent.  
+/// Downloads and builds libtorrent.
 fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     let out_dir = out_dir();
     // NB: On Windows the path length is limited

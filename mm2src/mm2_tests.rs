@@ -909,7 +909,6 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
 }
 
 #[test]
-#[ignore]  // TODO: Re-enable once the PIZZA trades are fixed.
 fn trade_test_electrum_and_eth_coins() {
     trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]);
 }

@@ -1063,7 +1063,7 @@ impl SwapOps for UtxoCoin {
                     hash,
                     checksum_type: self.checksum_type,
                 }.to_string();
-                let received_by_addr = client.list_received_by_address(0, true, true).wait().unwrap();
+                let received_by_addr = try_s!(client.list_received_by_address(0, true, true).wait());
                 for item in received_by_addr {
                     if item.address == target_addr && !item.txids.is_empty() {
                         let tx_bytes = try_s!(client.get_transaction_bytes(item.txids[0].clone()).wait());

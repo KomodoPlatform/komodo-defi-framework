@@ -1,5 +1,6 @@
 #![feature(non_ascii_idents)]
 #![feature(drain_filter)]
+#![feature(integer_atomics)]
 
 #[macro_use] extern crate common;
 #[allow(unused_imports)]
@@ -90,10 +91,10 @@ pub extern fn mm2_main (
     MainErr::Ok as i8
 }
 
-/// Checks if the MM2 singleton thread is currently running or not.  
-/// 0 .. not running.  
-/// 1 .. running, but no context yet.  
-/// 2 .. context, but no RPC yet.  
+/// Checks if the MM2 singleton thread is currently running or not.
+/// 0 .. not running.
+/// 1 .. running, but no context yet.
+/// 2 .. context, but no RPC yet.
 /// 3 .. RPC is up.
 #[no_mangle]
 pub extern fn mm2_main_status() -> i8 {
@@ -109,15 +110,15 @@ pub extern fn mm2_main_status() -> i8 {
     } else {0}
 }
 
-/// Run a few hand-picked tests.  
-/// 
+/// Run a few hand-picked tests.
+///
 /// The tests are wrapped into a library method in order to run them in such embedded environments
 /// where running "cargo test" is not an easy option.
-/// 
+///
 /// MM2 is mostly used as a library in environments where we can't simpy run it as a separate process
 /// and we can't spawn multiple MM2 instances in the same process YET
 /// therefore our usual process-spawning tests can not be used here.
-/// 
+///
 /// Returns the `torch` (as in Olympic flame torch) if the tests have passed. Panics otherwise.
 #[no_mangle]
 pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> i32 {

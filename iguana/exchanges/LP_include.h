@@ -708,7 +708,7 @@ int32_t LP_nanobind(void *ctx,char *pairstr);
 extern uint32_t LP_swap_critical;
 extern uint32_t LP_swap_endcritical;
 char *LP_price_sig(uint32_t timestamp,bits256 priv,uint8_t *pubsecp,bits256 pubkey,char *base,char *rel,uint64_t price64);
-void LP_pricefeedupdate(bits256 pubkey,char *base,char *rel,double price,long double balance,int64_t unconfcredits);
+void LP_pricefeedupdate(bits256 pubkey,char *base,char *rel,double price,double balance,int64_t unconfcredits);
 #endif
 
 // ---

@@ -516,6 +516,17 @@ enum SavedSwap {
     Taker(TakerSavedSwap),
 }
 
+/// The helper structure that makes easier to parse the response for GUI devs
+/// They won't have to parse the events themselves handling possible errors, index out of bounds etc.
+#[derive(Debug, Serialize, Deserialize)]
+struct MySwapInfo {
+    my_coin: String,
+    other_coin: String,
+    my_amount: BigDecimal,
+    other_amount: BigDecimal,
+    started_at: u64,
+}
+
 impl SavedSwap {
     fn is_finished(&self) -> bool {
         match self {
@@ -548,6 +559,43 @@ impl SavedSwap {
         match self {
             SavedSwap::Maker(swap) => swap.taker_coin(),
             SavedSwap::Taker(swap) => swap.taker_coin(),
+        }
+    }
+
+    fn get_my_info(&self) -> Result<MySwapInfo, String> {
+        match self {
+            SavedSwap::Maker(swap) => {
+                match swap.events.first() {
+                    Some(event) => match &event.event {
+                        MakerSwapEvent::Started(data) => {
+                            Ok(MySwapInfo {
+                                my_coin: data.maker_coin.clone(),
+                                other_coin: data.taker_coin.clone(),
+                                my_amount: data.maker_amount.clone(),
+                                other_amount: data.taker_amount.clone(),
+                                started_at: data.started_at,
+                            })
+                        },
+                        _ => ERR!("Swap first event is not `Started`"),
+                    },
+                    None => ERR!("Swap events are empty"),
+                }
+            },
+            SavedSwap::Taker(swap) => match swap.events.first() {
+                Some(event) => match &event.event {
+                    TakerSwapEvent::Started(data) => {
+                        Ok(MySwapInfo {
+                            my_coin: data.taker_coin.clone(),
+                            other_coin: data.maker_coin.clone(),
+                            my_amount: data.taker_amount.clone(),
+                            other_amount: data.maker_amount.clone(),
+                            started_at: data.started_at,
+                        })
+                    },
+                    _ => ERR!("Swap first event is not `Started`"),
+                },
+                None => ERR!("Swap events are empty"),
+            },
         }
     }
 }
@@ -777,12 +825,18 @@ impl MakerSwap {
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
         let fee_amount = self.taker_amount.clone() / 777;
-        let fee_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
         match self.taker_coin.validate_fee(taker_fee, &fee_addr_pub_key, fee_amount) {
             Ok(_) => (),
             Err(err) => return Ok((
                 Some(MakerSwapCommand::Finish),
                 vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into())]
+            ))
+        };
+        let fee_details = match self.taker_coin.tx_details_by_hash(&hash) {
+            Ok(details) => details,
+            Err(err) => return Ok((
+                Some(MakerSwapCommand::Finish),
+                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("Taker fee tx_details_by_hash failed {}", err).into())]
             ))
         };
         Ok((
@@ -834,7 +888,18 @@ impl MakerSwap {
 
         let hash = transaction.tx_hash();
         log!({ "Maker payment tx {:02x}", hash });
-        let tx_details = unwrap!(self.maker_coin.tx_details_by_hash(&hash));
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.maker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
 
         Ok((
             Some(MakerSwapCommand::WaitForTakerPayment),
@@ -871,7 +936,13 @@ impl MakerSwap {
 
         let hash = taker_payment.tx_hash();
         log!({ "Taker payment tx {:02x}", hash });
-        let tx_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
+        let tx_details = match self.taker_coin.tx_details_by_hash(&hash) {
+            Ok(details) => details,
+            Err(err) => return Ok((
+                Some(MakerSwapCommand::RefundMakerPayment),
+                vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_details_by_hash: {}", err).into())]
+            )),
+        };
 
         Ok((
             Some(MakerSwapCommand::ValidateTakerPayment),
@@ -936,7 +1007,18 @@ impl MakerSwap {
         let hash = transaction.tx_hash();
         log!({ "Taker payment spend tx {:02x}", hash });
 
-        let tx_details = unwrap!(self.taker_coin.tx_details_by_hash(&hash));
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         Ok((
             Some(MakerSwapCommand::Finish),
             vec![MakerSwapEvent::TakerPaymentSpent(tx_details)]
@@ -967,7 +1049,18 @@ impl MakerSwap {
         let hash = transaction.tx_hash();
         log!({ "Maker payment refund tx {:02x}", hash });
 
-        let tx_details = unwrap!(self.maker_coin.tx_details_by_hash(&hash));
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.maker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         Ok((
             Some(MakerSwapCommand::Finish),
             vec![MakerSwapEvent::MakerPaymentRefunded(tx_details)],
@@ -1455,10 +1548,22 @@ impl TakerSwap {
         };
 
         let hash = transaction.tx_hash();
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         log!({"Taker fee tx hash {:02x}", hash});
         Ok((
             Some(TakerSwapCommand::WaitForMakerPayment),
-            vec![TakerSwapEvent::TakerFeeSent(self.taker_coin.tx_details_by_hash(&hash).unwrap())],
+            vec![TakerSwapEvent::TakerFeeSent(tx_details)],
         ))
     }
 
@@ -1488,7 +1593,13 @@ impl TakerSwap {
 
         let hash = maker_payment.tx_hash();
         log!({"Got maker payment {:02x}", hash});
-        let tx_details = self.maker_coin.tx_details_by_hash(&hash).unwrap();
+        let tx_details = match self.maker_coin.tx_details_by_hash(&hash) {
+            Ok(details) => details,
+            Err(e) => return Ok((
+                Some(TakerSwapCommand::Finish),
+                vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!maker_coin.tx_details_by_hash: {}", e).into())]
+            )),
+        };
 
         Ok((
             Some(TakerSwapCommand::ValidateMakerPayment),
@@ -1573,7 +1684,18 @@ impl TakerSwap {
 
         let hash = transaction.tx_hash();
         log!({"Taker payment tx hash {:02x}", hash});
-        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
 
         Ok((
             Some(TakerSwapCommand::WaitForTakerPaymentSpend),
@@ -1601,7 +1723,18 @@ impl TakerSwap {
         drop(sending_f);
         let hash = tx.tx_hash();
         log!({"Taker payment spend tx {:02x}", hash});
-        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         let secret = match tx.extract_secret() {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(e) => return Ok((
@@ -1637,7 +1770,18 @@ impl TakerSwap {
 
         let hash = transaction.tx_hash();
         log!({"Maker payment spend tx {:02x}", hash});
-        let tx_details = self.maker_coin.tx_details_by_hash(&hash).unwrap();
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.maker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         Ok((
             Some(TakerSwapCommand::Finish),
             vec![TakerSwapEvent::MakerPaymentSpent(tx_details)],
@@ -1670,7 +1814,18 @@ impl TakerSwap {
 
         let hash = transaction.tx_hash();
         log!({"Taker refund tx hash {:02x}", hash});
-        let tx_details = self.taker_coin.tx_details_by_hash(&hash).unwrap();
+        // we can attempt to get the details in loop here as transaction was already sent and
+        // is present on blockchain so only transport errors are expected to happen
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => {
+                    log!({"Error {} getting tx details of {:02x}", e, hash});
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        };
         Ok((
             Some(TakerSwapCommand::Finish),
             vec![TakerSwapEvent::TakerPaymentRefunded(tx_details)],
@@ -1733,9 +1888,12 @@ pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
         }).to_string());
     }
     let status: SavedSwap = try_h!(json::from_slice(&content));
+    let my_info = try_h!(status.get_my_info());
+    let mut json = try_h!(json::to_value(status));
+    json["my_info"] = try_h!(json::to_value(my_info));
 
     rpc_response(200, json!({
-        "result": status
+        "result": json
     }).to_string())
 }
 
@@ -1841,10 +1999,23 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
 
     // iterate over file entries trying to parse the file contents and add to result vector
     let swaps: Vec<Json> = entries.iter().skip(skip).take(limit as usize).map(|(_, entry)|
-        json::from_slice(&slurp(&entry.path())).map_err(|e| {
-            log!("Error " (e) " parsing JSON from " (entry.path().display()));
-            e
-        }).unwrap_or(Json::Null)
+        match json::from_slice::<SavedSwap>(&slurp(&entry.path())) {
+            Ok(swap) => match swap.get_my_info() {
+                Ok(info) => {
+                    let mut json = unwrap!(json::to_value(swap));
+                    json["my_info"] = unwrap!(json::to_value(info));
+                    json
+                },
+                Err(e) => {
+                    log!("Error " (e) " getting my_swap_info of swap " (swap.uuid()));
+                    Json::Null
+                },
+            },
+            Err(e) => {
+                log!("Error " (e) " parsing JSON from " (entry.path().display()));
+                Json::Null
+            },
+        },
     ).collect();
 
     rpc_response(200, json!({
