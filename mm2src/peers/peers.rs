@@ -1,3 +1,9 @@
+// Environment variables:
+// LOG_UNHANDLED_ALERTS=true, runtime.
+// MM2_INCOMING_PING=f, build time, ignore direct UDP communication.
+// MM2_DHT_GET=f, build time, disable DHT retrieval.
+// MM2_FALLBACK=$, build time, override fallback timeouts.
+
 #![feature (non_ascii_idents, integer_atomics, vec_resize_default, ip, weak_counts)]
 
 #[macro_use] extern crate arrayref;
@@ -814,7 +820,10 @@ fn get_pieces_scheduler (seed: &bits256, salt: Salt, frid: NonZeroU64, task: Tas
             chunk_salt.push (1);  // Identifies the first chunk.
             let mut pk: [u8; 32] = unsafe {zeroed()};
             let seed = unsafe {seed.bytes};
-            unsafe {dht_get (dugout, seed.as_ptr(), seed.len() as i32, chunk_salt.as_ptr(), chunk_salt.len() as i32, pk.as_mut_ptr(), pk.len() as i32)}
+            if option_env! ("MM2_DHT_GET") != Some ("f") {unsafe {
+                dht_get (dugout, seed.as_ptr(), seed.len() as i32,
+                    chunk_salt.as_ptr(), chunk_salt.len() as i32, pk.as_mut_ptr(), pk.len() as i32)
+            }}
             getsᵉ.insert (GetsEntry {
                 pk: Some (pk),
                 reassembled_at: None,
@@ -899,10 +908,12 @@ fn get_pieces_scheduler_en (seed: &bits256, dugout: &mut dugout_t,
         //      " after " {"{:.1}", now - chunk.restarted}
         //      if limops > 1. {" limops " (limops)});
         let seed_bytes = unsafe {seed.bytes};
-        unsafe {dht_get (dugout,
-            seed_bytes.as_ptr(), seed_bytes.len() as i32,
-            chunk_salt.as_ptr(), chunk_salt.len() as i32,
-            pk.as_mut_ptr(), pk.len() as i32)}
+        if option_env! ("MM2_DHT_GET") != Some ("f") {unsafe {
+            dht_get (dugout,
+                seed_bytes.as_ptr(), seed_bytes.len() as i32,
+                chunk_salt.as_ptr(), chunk_salt.len() as i32,
+                pk.as_mut_ptr(), pk.len() as i32)
+        }}
         chunk.restarted = now;
         with_ratelim (seed, |_lm, ops| {*ops += 1.; limops = *ops})
     }
@@ -986,6 +997,7 @@ struct CbCtx<'a, 'b, 'c> {
 /// Process the incoming DHT pings,
 /// some of which are used for direct NAT-traversing communication between peers.
 fn incoming_ping (cbctx: &mut CbCtx, pkt: &[u8], ip: &[u8], port: u16) -> Result<(), String> {
+    if option_env! ("MM2_INCOMING_PING") == Some ("f") {return Ok(())}
     let ping = match bdecode::<Ping<MmPayload>> (pkt) {Ok (p) => p, Err (_) => return Ok(())};
 
     let from = &ping.a.mm.from[..];
@@ -1431,6 +1443,7 @@ pub struct SendHandler;
 /// Think of it as a radio-signal set on a loop.
 pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
 -> Result<Arc<SendHandler>, String> {
+    let fallback = match option_env! ("MM2_FALLBACK") {Some (n) => try_s! (n.parse()), None => fallback};
     let fallback = try_s! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
     let pctx = try_s! (PeersContext::from_ctx (&ctx));
@@ -1520,6 +1533,7 @@ impl Drop for RecvFuture {
 /// Should be `drop`ped soon as we no longer need the transmission.
 pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])->bool + Send>)
 -> Box<Future<Item=Vec<u8>, Error=String> + Send> {
+    let fallback = match option_env! ("MM2_FALLBACK") {Some (n) => try_fus! (n.parse()), None => fallback};
     let fallback = try_fus! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
     let pctx = try_fus! (PeersContext::from_ctx (&ctx));
