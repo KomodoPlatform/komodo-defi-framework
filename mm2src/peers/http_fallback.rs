@@ -202,9 +202,20 @@ fn merge_map_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
         if let Some (mapʰ) = maps.get_mut (id) {
             // NB: Diverging clocks coming from the same actor might lead to an empty map.
             // cf. https://github.com/rust-crdt/rust-crdt/blob/86c7c5601b6b4c4451e1c6840dc1481716ae1433/src/traits.rs#L14
-            mapʰ.merge (map);
-            let mapʳ = try_fus! (json::to_string (&mapʰ));
-            rpc_response (200, mapʳ)
+
+            let actor_id = 1;
+            let old_clock = mapʰ.len().add_clock.get (&actor_id);
+            let new_clock = map.len().add_clock.get (&actor_id);
+            if new_clock == 1 && old_clock > 1 {
+                // ^^ The clocks resets to 1 when when a client restarts.
+                log! ("merge_map_impl] Clock of " (binprint (id, b'.')) " rewound from " (old_clock) " to 1");
+                maps.insert (id.into(), map);
+                rpc_response (200, mapˢ.to_vec())
+            } else {
+                mapʰ.merge (map);
+                let mapʳ = try_fus! (json::to_string (&mapʰ));
+                rpc_response (200, mapʳ)
+            }
         } else {
             maps.insert (id.into(), map);
             rpc_response (200, mapˢ.to_vec())
