@@ -268,7 +268,7 @@ pub fn client_p2p_loop(ctx: MmArc, addrs: Vec<String>) {
             for (addr, last_attempt) in addrs.iter_mut() {
                 let is_connected = seed_connections.iter().find(|conn| &conn.addr == addr);
                 if is_connected.is_none() && *last_attempt + 30000 < now_ms() {
-                    ctx.log.log("😀", &[&"seed_connection", &addr.as_str()], "Connecting...");
+                    ctx.log.log("…", &[&"seed_connection", &addr.as_str()], "Connecting…");
                     *last_attempt = now_ms();
                     match TcpStream::connect(&*addr) {
                         Ok(stream) => {
@@ -279,7 +279,7 @@ pub fn client_p2p_loop(ctx: MmArc, addrs: Vec<String>) {
                                         addr: addr.to_string(),
                                         buf: String::new(),
                                     };
-                                    ctx.log.log("😀", &[&"seed_connection", &addr.as_str()], "Connected...");
+                                    ctx.log.log("⚡", &[&"seed_connection", &addr.as_str()], "Connected");
                                     seed_connections.push(conn);
                                 },
                                 Err(e) => ctx.log.log("😟", &[&"seed_connection", &addr.as_str()], &format!("Error {} setting non-blocking mode", e)),
