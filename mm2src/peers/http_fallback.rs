@@ -2,6 +2,7 @@ use base64;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use crc::crc64::checksum_ecma;
 use crdts::{CvRDT, CmRDT, Map, Orswot};
+use either::Either;
 use futures::{future, self, Async, Future};
 use gstuff::{netstring, now_float};
 use hashbrown::hash_map::{Entry, HashMap, RawEntryMut};
@@ -206,9 +207,11 @@ fn merge_map_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
             let actor_id = 1;
             let old_clock = mapʰ.len().add_clock.get (&actor_id);
             let new_clock = map.len().add_clock.get (&actor_id);
-            if new_clock == 1 && old_clock > 1 {
+            if new_clock <= 2 && 2 < old_clock {
                 // ^^ The clocks resets to 1 when when a client restarts.
-                log! ("merge_map_impl] Clock of " (binprint (id, b'.')) " rewound from " (old_clock) " to 1");
+                //    And to 2 when a client restarts and has two SWAPs with the same peer.
+                log! ("merge_map_impl] Clock of " (binprint (id, b'.'))
+                      " rewound from " (old_clock) " to " (new_clock));
                 maps.insert (id.into(), map);
                 rpc_response (200, mapˢ.to_vec())
             } else {
@@ -348,91 +351,104 @@ pub struct HttpFallbackTargetTrack {
 
 /// Plugged into `fn transmit` to send the chunks via HTTP fallback when necessary.
 pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, our_public_key: &bits256,
-                    seed: &bits256, package: &mut super::Package) -> Result<(), String> {
+                    packages: &mut Vec<super::Package>) -> Result<(), String> {
     let hf_addr = match hf_addr {Some (a) => a, None => return Ok(())};
 
-    let mut deliver_to_seed = HashMap::new();  // Things we want delivered as of now.
     let now = now_float();
-    for (payload, meta) in package.payloads.iter_mut() {
-        let fallback = match package.fallback {Some (sec) => sec, None => continue};
-        if now - package.scheduled_at < fallback.get() as f64 {continue}
-        let salt = if let Some (ref salt) = payload.salt {salt.clone()} else {continue};
-        if payload.chunk.is_none() {continue}
-        deliver_to_seed.insert (salt, (payload, meta));
+    let mut cart = HashMap::new();  // Things we want delivered as of now.
+    for package in packages.iter_mut() {
+        let seed = if let Either::Left ((seed, ref send_handler)) = package.to {
+            if send_handler.strong_count() == 0 {continue}
+            seed
+        } else {
+            continue
+        };
+
+        let deliver_to_seed = cart.entry (seed) .or_insert (HashMap::new());
+        for (payload, meta) in package.payloads.iter_mut() {
+            let fallback = match package.fallback {Some (sec) => sec, None => continue};
+            if now - package.scheduled_at < fallback.get() as f64 {continue}
+            let salt = if let Some (ref salt) = payload.salt {salt.clone()} else {continue};
+            if payload.chunk.is_none() {continue}
+            deliver_to_seed.insert (salt, (payload, meta));
+        }
     }
-    let mut http_fallback_maps = try_s! (pctx.hf_maps.lock());
-    let mut trackⁱ = http_fallback_maps.entry (*seed);
-    let track = match trackⁱ {
-        Entry::Occupied (ref mut oe) => oe.get_mut(),
-        Entry::Vacant (ve) => {
-            if deliver_to_seed.is_empty() {
-                return Ok(())
-            } else {
-                ve.insert (HttpFallbackTargetTrack::default())
+
+    for (seed, deliver_to_seed) in cart {
+        let mut http_fallback_maps = try_s! (pctx.hf_maps.lock());
+        let mut trackⁱ = http_fallback_maps.entry (seed);
+        let track = match trackⁱ {
+            Entry::Occupied (ref mut oe) => oe.get_mut(),
+            Entry::Vacant (ve) => {
+                if deliver_to_seed.is_empty() {
+                    return Ok(())
+                } else {
+                    ve.insert (HttpFallbackTargetTrack::default())
+                }
+            }
+        };
+
+        // Synchronize the replicated map with the `deliver_to_seed`.
+
+        let unique_actor_id = 1;
+        let mut changed = false;
+
+        let rep_keys = try_s! (rep_keys (&track.rep_map));
+        for key in rep_keys {
+            let salt = ByteBuf::from (try_s! (base64::decode_config (&key, base64::STANDARD_NO_PAD)));
+            if !deliver_to_seed.contains_key (&salt) {
+                track.rep_map.apply (track.rep_map.rm (key, track.rep_map.len().derive_rm_ctx()));
+                changed = true;
             }
         }
-    };
 
-    // Synchronize the replicated map with the `deliver_to_seed`.
+        for (salt, (payload, _meta)) in deliver_to_seed {
+            // We're only sending our own packages here.
+            assert_eq! (&payload.from[..], unsafe {&our_public_key.bytes[..]});
 
-    let unique_actor_id = 1;
-    let mut changed = false;
+            let saltᵊ = base64::encode_config (&salt, base64::STANDARD_NO_PAD);
+            let chunk = if let Some (ref chunk) = payload.chunk {
+                base64::encode_config (chunk, base64::STANDARD_NO_PAD)
+            } else {continue};
+            let has_chunk = match track.rep_map.get (&saltᵊ) .val.map (|v| v.read().val) {
+                None => false,
+                Some (set) => set.contains (&chunk)
+            };
 
-    let rep_keys = try_s! (rep_keys (&track.rep_map));
-    for key in rep_keys {
-        let salt = ByteBuf::from (try_s! (base64::decode_config (&key, base64::STANDARD_NO_PAD)));
-        if !deliver_to_seed.contains_key (&salt) {
-            track.rep_map.apply (track.rep_map.rm (key, track.rep_map.len().derive_rm_ctx()));
-            changed = true;
+            if !has_chunk {
+                track.rep_map.apply (
+                    track.rep_map.update (
+                        saltᵊ,
+                        track.rep_map.len().derive_add_ctx (unique_actor_id),
+                        |set, ctx| set.add (chunk, ctx)
+                    )
+                );
+                changed = true
+            }
         }
+
+        // We should keep storing the map even if we have stored it before, to account for server restarts.
+        let now = now_float();
+        let refresh = if track.last_store > 0. {now - track.last_store > 10.} else {false};
+        if !changed && !refresh {return Ok(())}
+
+    log! ("transmit] TBD, time to use the HTTP fallback...");
+
+        let mut hf_id = Vec::with_capacity (unsafe {seed.bytes.len() + 1 + our_public_key.bytes.len()});
+        hf_id.extend_from_slice (unsafe {&seed.bytes});
+        hf_id.push (b'<');
+        hf_id.extend_from_slice (unsafe {&our_public_key.bytes});
+        let merge_f = merge_map (&hf_addr, hf_id, &track.rep_map);
+        let merge_f = merge_f.then (|r| -> Result<(), ()> {
+            let _merged_rep_map = match r {
+                Ok (r) => r,
+                Err (err) => {log! ("manage_http_fallback] merge_map error: " (err)); return Err(())}
+            };
+            Ok(())
+        });
+        CORE.spawn (|_| merge_f);
+        track.last_store = now;
     }
-
-    for (salt, (payload, _meta)) in deliver_to_seed {
-        // We're only sending our own packages here.
-        assert_eq! (&payload.from[..], unsafe {&our_public_key.bytes[..]});
-
-        let salt = base64::encode_config (&salt, base64::STANDARD_NO_PAD);
-        let chunk = if let Some (ref chunk) = payload.chunk {
-            base64::encode_config (chunk, base64::STANDARD_NO_PAD)
-        } else {continue};
-        let has_chunk = match track.rep_map.get (&salt) .val.map (|v| v.read().val) {
-            None => false,
-            Some (set) => set.contains (&chunk)
-        };
-
-        if !has_chunk {
-            track.rep_map.apply (
-                track.rep_map.update (
-                    salt,
-                    track.rep_map.len().derive_add_ctx (unique_actor_id),
-                    |set, ctx| set.add (chunk, ctx)
-                )
-            );
-            changed = true
-        }
-    }
-
-    // We should keep storing the map even if we have stored it before, to account for server restarts.
-    let now = now_float();
-    let refresh = if track.last_store > 0. {now - track.last_store > 10.} else {false};
-    if !changed && !refresh {return Ok(())}
-
-log! ("transmit] TBD, time to use the HTTP fallback...");
-
-    let mut hf_id = Vec::with_capacity (unsafe {seed.bytes.len() + 1 + our_public_key.bytes.len()});
-    hf_id.extend_from_slice (unsafe {&seed.bytes});
-    hf_id.push (b'<');
-    hf_id.extend_from_slice (unsafe {&our_public_key.bytes});
-    let merge_f = merge_map (&hf_addr, hf_id, &track.rep_map);
-    let merge_f = merge_f.then (|r| -> Result<(), ()> {
-        let _merged_rep_map = match r {
-            Ok (r) => r,
-            Err (err) => {log! ("manage_http_fallback] merge_map error: " (err)); return Err(())}
-        };
-        Ok(())
-    });
-    CORE.spawn (|_| merge_f);
-    track.last_store = now;
 
     Ok(())
 }

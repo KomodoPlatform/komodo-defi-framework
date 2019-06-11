@@ -1172,7 +1172,6 @@ int32_t LP_portfolio_order(struct LP_portfoliotrade *trades,int32_t max,cJSON *a
 /// A thread driving the price and portfolio activity.
 pub fn prices_loop (ctx: MmArc) {
     let mut btc_wait_status = None;
-    let mut trades: [lp::LP_portfoliotrade; 256] = unsafe {zeroed()};
     loop {
         sleep (Duration::from_millis (200));
         if ctx.is_stopping() {break}

@@ -1,6 +1,6 @@
 use common::{bits256, drive, CORE};
 use common::for_tests::wait_for_log;
-use common::mm_ctx::{MmArc, MmCtx, MmCtxBuilder};
+use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
 use gstuff::now_float;

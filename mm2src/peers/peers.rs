@@ -1,4 +1,4 @@
-#![feature (non_ascii_idents, integer_atomics, vec_resize_default, ip)]
+#![feature (non_ascii_idents, integer_atomics, vec_resize_default, ip, weak_counts)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate common;
@@ -572,8 +572,6 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc, hf_addr: &Option<SocketAddr>) -
                     unsafe {dht_put (dugout, seed_bytes.as_ptr(), seed_bytes.len() as i32, salt.as_ptr(), salt.len() as i32, put_callback, shuttle_ptr, now as u64)}
                     meta.dht_put_invoked = now
                 }
-
-                try_s! (hf_transmit (&pctx, hf_addr, &our_public_key, &seed, package));
             }
         }
         for ix in finished.into_iter().rev() {
@@ -583,6 +581,7 @@ fn transmit (dugout: &mut dugout_t, ctx: &MmArc, hf_addr: &Option<SocketAddr>) -
             // A package was fully delivered.
             packages.remove (pix);
         }
+        try_s! (hf_transmit (&pctx, hf_addr, &our_public_key, packages));
     }
 
     Ok(())
