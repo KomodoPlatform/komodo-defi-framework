@@ -179,8 +179,8 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         log! ("mm2_test] peers_http_fallback_kv…");
         peers::peers_tests::peers_http_fallback_kv();
 
-        // log! ("mm2_test] peers_http_fallback_recv…");
-        // peers::peers_tests::peers_http_fallback_recv();
+        log! ("mm2_test] peers_http_fallback_recv…");
+        peers::peers_tests::peers_http_fallback_recv();
     });
 
     if let Err (err) = rc {

@@ -39,7 +39,8 @@ lazy_static! {
     };
     static ref PRINTF_LOCK: Mutex<()> = Mutex::new(());
     /// If this C callback is present then all the logging output should happen through it
-    /// (and leaving stdout untouched).
+    /// (and leaving stdout untouched).  
+    /// The *gravity* logging still gets a copy in order for the log-based tests to work.
     pub static ref LOG_OUTPUT: Mutex<Option<extern fn (line: *const c_char)>> = Mutex::new (None);
 }
 
@@ -77,7 +78,8 @@ impl Gravity {
     fn flush (&self) {
         let mut tail = self.tail.lock();
         while let Some (chunk) = self.landing.try_pop() {
-            println! ("{}", chunk);
+            let logged_with_log_output = LOG_OUTPUT.lock().map (|l| l.is_some()) .unwrap_or (false);
+            if !logged_with_log_output {println! ("{}", chunk)}
             if let Ok (ref mut tail) = tail {
                 if tail.len() == tail.capacity() {let _ = tail.pop_front();}
                 tail.push_back (chunk)
@@ -93,13 +95,13 @@ thread_local! {
 pub fn chunk2log (mut chunk: String) {
     extern {fn printf(_: *const c_char, ...) -> c_int;}
 
-    if let Ok (log_output) = LOG_OUTPUT.lock() {
+    let used_log_output = if let Ok (log_output) = LOG_OUTPUT.lock() {
         if let Some (log_cb) = *log_output {
             chunk.push ('\0');
             log_cb (chunk.as_ptr() as *const c_char);
-            return
-        }
-    }
+            true
+        } else {false}
+    } else {false};
 
     // NB: Using gravity even in the non-capturing tests in order to give the tests access to the gravity tail.
     let rc = GRAVITY.try_with (|gravity| {
@@ -113,6 +115,8 @@ pub fn chunk2log (mut chunk: String) {
         }
     });
     match rc {Ok (true) => return, _ => ()}
+
+    if used_log_output {return}
 
     // The C and the Rust standard outputs overlap on Windows,
     // so we use the C `printf` in order to avoid that.
