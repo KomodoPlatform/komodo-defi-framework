@@ -338,7 +338,6 @@ pub struct HttpFallbackTargetTrack {
 /// Plugged into `fn transmit` to send the chunks via HTTP fallback when necessary.
 pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, our_public_key: &bits256,
                     seed: &bits256, package: &mut super::Package) -> Result<(), String> {
-if 1==1 {return Ok(())}
     let hf_addr = match hf_addr {Some (a) => a, None => return Ok(())};
 
     let mut deliver_to_seed = HashMap::new();  // Things we want delivered as of now.
@@ -507,7 +506,6 @@ fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _he
 /// Manage HTTP fallback retrievals.  
 /// Invoked periodically from the peers loop.
 pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -> Result<(), String> {
-if 1==1 {return Ok(())}
     let hf_addr = match hf_addr {Some (ref a) => a, None => return Ok(())};
 
     {
