@@ -327,6 +327,7 @@ fn test_status() {common::log::tests::test_status()}
 fn peers_dht() {peers::peers_tests::peers_dht()}
 
 #[test]
+#[ignore]
 fn peers_direct_send() {peers::peers_tests::peers_direct_send()}
 
 #[test]
