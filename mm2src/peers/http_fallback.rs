@@ -210,6 +210,9 @@ fn merge_map_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
             if new_clock <= 2 && 2 < old_clock {
                 // ^^ The clocks resets to 1 when when a client restarts.
                 //    And to 2 when a client restarts and has two SWAPs with the same peer.
+                // TODO: We should add a client instance ID into the merge request
+                //       and only allow the rewinds when the client ID differs.
+                //       The clock should protect against the out-of-order updates otherwise.
                 log! ("merge_map_impl] Clock of " (binprint (id, b'.'))
                       " rewound from " (old_clock) " to " (new_clock));
                 maps.insert (id.into(), map);
