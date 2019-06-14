@@ -1584,15 +1584,3 @@ fn kmd_interest(height: u64, value: u64, lock_time: u64, current_time: u64) -> u
     minutes -= 59;
     (value / 10512000) * minutes
 }
-
-#[test]
-fn display_payment_script() {
-    let key_pair = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
-    let script = payment_script(
-        (now_ms() / 1000) as u32,
-        &*key_pair.private().secret,
-        key_pair.public(),
-        key_pair.public(),
-    );
-    log!((script));
-}

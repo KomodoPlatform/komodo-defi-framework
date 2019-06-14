@@ -11,7 +11,6 @@ fn utxo_coin_for_test() -> UtxoCoin {
     };
 
     let mut client = ElectrumClientImpl::new();
-    log!("My address "(my_address));
     client.add_server("electrum1.cipig.net:10025").unwrap();
 
     let coin = UtxoCoinImpl {

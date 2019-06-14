@@ -923,3 +923,16 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
         None => rpc_err_response(404, &format!("Order with uuid {} is not found", req.uuid))
     }
 }
+
+pub fn my_orders(ctx: MmArc) -> HyRes {
+    let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
+    let maker_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
+    let taker_orders = try_h!(ordermatch_ctx.my_taker_orders.lock());
+
+    rpc_response(200, json!({
+        "result": {
+            "maker_orders": *maker_orders,
+            "taker_orders": *taker_orders,
+        }
+    }).to_string())
+}
