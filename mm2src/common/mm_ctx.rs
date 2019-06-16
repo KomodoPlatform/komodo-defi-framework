@@ -80,7 +80,7 @@ pub struct MmCtx {
     /// secp256k1 key pair derived from passphrase
     /// future replacement of lp::G.LP_privkey
     pub secp256k1_key_pair: Option<KeyPair>,
-    /// Coins that should be enabled to kick start the interrupted swaps
+    /// Coins that should be enabled to kick start the interrupted swaps and orders
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
 }
 impl MmCtx {

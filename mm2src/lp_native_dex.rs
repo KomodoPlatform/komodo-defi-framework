@@ -52,7 +52,7 @@ use crate::common::{
 use crate::common::log::TagParam;
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
-use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop};
+use crate::mm2::lp_ordermatch::{lp_trade_command, lp_trades_loop, orders_kick_start};
 use crate::mm2::lp_swap::swap_kick_starts;
 use crate::mm2::rpc::{self, SINGLE_THREADED_C_LOCK};
 use common::mm_ctx::MmCtxBuilder;
@@ -1161,7 +1161,7 @@ fn test_crc32() {
 }
 
 /// Invokes `OS_ensure_directory`,
-/// then prints an error and returns `false` if the directory is not writeable.
+/// then prints an error and returns `false` if the directory is not writable.
 fn ensure_dir_is_writable(dir_path: &Path) -> bool {
     let c_dir_path = unwrap! (dir_path.to_str());
     let c_dir_path = unwrap! (CString::new (c_dir_path));
@@ -1222,15 +1222,19 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     let dbdir = ctx.dbdir();
     try_s!(std::fs::create_dir_all(&dbdir));
     unsafe {os::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
-    if !ensure_dir_is_writable(&dbdir.join ("SWAPS")) {return ERR!("SWAPS db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("MY")) {return ERR!("SWAPS/MY db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS")) {return ERR!("SWAPS/STATS db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("MAKER")) {return ERR!("SWAPS/STATS/MAKER db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("TAKER")) {return ERR!("SWAPS/STATS/TAKER db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("TRANSACTIONS")) {return ERR!("TRANSACTIONS db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("GTC")) {return ERR!("GTC db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("PRICES")) {return ERR!("PRICES db dir is not writeable")}
-    if !ensure_dir_is_writable(&dbdir.join ("UNSPENTS")) {return ERR!("UNSPENTS db dir is not writeable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS")) {return ERR!("SWAPS db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("MY")) {return ERR!("SWAPS/MY db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS")) {return ERR!("SWAPS/STATS db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("MAKER")) {return ERR!("SWAPS/STATS/MAKER db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS").join ("TAKER")) {return ERR!("SWAPS/STATS/TAKER db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("TRANSACTIONS")) {return ERR!("TRANSACTIONS db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("GTC")) {return ERR!("GTC db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("PRICES")) {return ERR!("PRICES db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("UNSPENTS")) {return ERR!("UNSPENTS db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("ORDERS")) {return ERR!("ORDERS db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("ORDERS").join ("MY")) {return ERR!("ORDERS/MY db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("ORDERS").join ("MY").join ("MAKER")) {return ERR!("ORDERS/MY/MAKER db dir is not writable")}
+    if !ensure_dir_is_writable(&dbdir.join ("ORDERS").join ("MY").join ("TAKER")) {return ERR!("ORDERS/MY/TAKER db dir is not writable")}
     try_s!(ensure_file_is_writable(&dbdir.join ("GTC").join ("orders")));
     Ok(())
 }
@@ -1553,6 +1557,12 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
         exit(-1);
     }
 */
+    // launch kickstart threads before RPC is available, this will prevent the API user to place
+    // an order and start new swap that might get started 2 times because of kick-start
+    let mut coins_needed_for_kick_start = swap_kick_starts (ctx.clone());
+    coins_needed_for_kick_start.extend(try_s!(orders_kick_start(&ctx)));
+    *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
+
     let trades = try_s! (thread::Builder::new().name ("trades".into()) .spawn ({
         let ctx = ctx.clone();
         move || lp_trades_loop (ctx)
@@ -1562,10 +1572,6 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
         let ctx = ctx.clone();
         move || unsafe { lp_command_q_loop (ctx) }
     }));
-    // launch kickstart threads before RPC is available, this will prevent the API user to place
-    // an order and start new swap that might get started 2 times because of kick-start
-    let coins_needed_for_kick_start = swap_kick_starts (ctx.clone());
-    *(unwrap!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
 /*
     int32_t nonz,didremote=0;
     LP_statslog_parse();
