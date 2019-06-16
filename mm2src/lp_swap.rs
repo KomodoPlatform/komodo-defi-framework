@@ -1934,7 +1934,19 @@ pub fn stats_swap_status(ctx: MmArc, req: Json) -> HyRes {
 fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
     let path = my_swap_file_path(ctx, uuid);
     let content = slurp(&path);
-    let status: SavedSwap = try_s!(json::from_slice(&content));
+    let mut status: SavedSwap = try_s!(json::from_slice(&content));
+    match &mut status {
+        SavedSwap::Taker(_) => (), // do nothing for taker
+        SavedSwap::Maker(ref mut swap) => {
+            match swap.events.first_mut() {
+                Some(ref mut event) => match &mut event.event {
+                    MakerSwapEvent::Started(ref mut data) => data.secret = H256Json::default(),
+                    _ => return ERR!("Swap first event must be Started"),
+                }
+                None => return ERR!("Swap events are empty"),
+            }
+        }
+    };
     try_s!(save_stats_swap(ctx, &status));
     let status_string = json!({
         "method": "swapstatus",

@@ -25,8 +25,8 @@ The current state can be considered as very early alpha.
 1. Run
 
 	```
-	rustup install nightly-2018-12-24  
-	rustup default nightly-2018-12-24 
+    rustup install nightly-2019-03-10
+    rustup default nightly-2019-03-10
 	rustup component add rustfmt-preview
 	```
 1. (Optional) Win: run `marketmaker_build_depends.cmd` to build dependencies.
