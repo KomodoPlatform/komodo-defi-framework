@@ -823,7 +823,9 @@ macro_rules! try_loop {
             Ok(res) => res,
             Err(e) => {
                 log!([$addr] " error " [e]);
-                $delay += 5;
+                if $delay < 30 {
+                    $delay += 5;
+                }
                 return Box::new(futures::future::ok(Loop::Continue(($addr, $rx, $responses, $connected, $delay))));
             }
         }
@@ -860,16 +862,14 @@ fn electrum_connect(
             let last_chunk = Arc::new(AtomicU64::new(now_ms()));
             let interval = Interval::new(Duration::from_secs(ELECTRUM_TIMEOUT)).map_err(|e| { log!([e]); () });
             CORE.spawn({
-                let connected = connected.clone();
                 let last_chunk = last_chunk.clone();
                 move |_| interval.for_each(move |_| {
                     let last = last_chunk.load(AtomicOrdering::Relaxed);
-                    if now_ms() - last > ELECTRUM_TIMEOUT * 1000 {
+                    if now_ms() > last + ELECTRUM_TIMEOUT * 1000 {
                         log!([addr] " Didn't receive any data since " (last / 1000) ". Shutting down the connection.");
                         if let Err(e) = stream_clone.shutdown(Shutdown::Both) {
                             log!([addr] " error shutting down the connection " [e]);
                         }
-                        connected.store(false, AtomicOrdering::Relaxed);
                         // return err to shutdown interval execution
                         return futures::future::err(());
                     };
@@ -882,7 +882,6 @@ fn electrum_connect(
             let send_all = SendAll::new(sink, rx);
             CORE.spawn({
                 let responses = responses.clone();
-                let connected = connected.clone();
                 move |_| stream
                     .for_each(move |chunk| {
                         last_chunk.store(now_ms(), AtomicOrdering::Relaxed);
@@ -890,7 +889,6 @@ fn electrum_connect(
                         futures::future::ok(())
                     })
                     .map_err(move |e| {
-                        connected.store(false, AtomicOrdering::Relaxed);
                         log!([e]);
                         ()
                     })
@@ -900,7 +898,7 @@ fn electrum_connect(
                 connected.store(false, AtomicOrdering::Relaxed);
                 if let Err((rx, e)) = result {
                     log!([addr] " failed to write to socket " [e]);
-                    return Ok(Loop::Continue((addr, rx, responses, connected, delay + 5)));
+                    return Ok(Loop::Continue((addr, rx, responses, connected, delay)));
                 }
                 Ok(Loop::Break(()))
             }))
