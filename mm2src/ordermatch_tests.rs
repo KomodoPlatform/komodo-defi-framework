@@ -441,3 +441,72 @@ fn test_taker_match_reserved() {
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
 }
+
+#[test]
+fn test_taker_order_cancellable() {
+    let request = TakerRequest {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        uuid: Uuid::new_v4(),
+        method: "request".into(),
+        dest_pub_key: H256Json::default(),
+        sender_pubkey: H256Json::default(),
+        base_amount: 1.into(),
+        rel_amount: 2.into(),
+        action: TakerAction::Buy,
+    };
+
+    let order = TakerOrder {
+        request,
+        matches: HashMap::new(),
+        created_at: now_ms()
+    };
+
+    assert!(order.is_cancellable());
+
+    let request = TakerRequest {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        uuid: Uuid::new_v4(),
+        method: "request".into(),
+        dest_pub_key: H256Json::default(),
+        sender_pubkey: H256Json::default(),
+        base_amount: 1.into(),
+        rel_amount: 2.into(),
+        action: TakerAction::Buy,
+    };
+
+    let mut order = TakerOrder {
+        request,
+        matches: HashMap::new(),
+        created_at: now_ms()
+    };
+
+    order.matches.insert(
+        Uuid::new_v4(),
+        TakerMatch {
+            last_updated: now_ms(),
+            reserved: MakerReserved {
+                method: "reserved".into(),
+                base: "BASE".into(),
+                rel: "REL".into(),
+                base_amount: 1.into(),
+                rel_amount: 3.into(),
+                sender_pubkey: H256Json::default(),
+                dest_pub_key: H256Json::default(),
+                maker_order_uuid: Uuid::new_v4(),
+                taker_order_uuid: Uuid::new_v4(),
+            },
+            connect: TakerConnect {
+                method: "connect".into(),
+                sender_pubkey: H256Json::default(),
+                dest_pub_key: H256Json::default(),
+                maker_order_uuid: Uuid::new_v4(),
+                taker_order_uuid: Uuid::new_v4(),
+            },
+            connected: None,
+        }
+    );
+
+    assert!(!order.is_cancellable());
+}

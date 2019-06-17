@@ -74,6 +74,12 @@ struct TakerOrder {
     matches: HashMap<Uuid, TakerMatch>
 }
 
+impl TakerOrder {
+    fn is_cancellable(&self) -> bool {
+        self.matches.is_empty()
+    }
+}
+
 /// Result of match_reserved function
 #[derive(Debug, PartialEq)]
 enum MatchReservedResult {
@@ -126,6 +132,16 @@ impl MakerOrder {
             |reserved, (_, order_match)| reserved + &order_match.reserved.base_amount
         );
         &self.max_base_vol - reserved
+    }
+
+    fn is_cancellable(&self) -> bool {
+        for (_, order_match) in self.matches.iter() {
+            // if there's at least 1 ongoing match the order is not cancellable
+            if order_match.connected.is_none() && order_match.connect.is_none() {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -897,8 +913,7 @@ pub fn order_status(ctx: MmArc, req: Json) -> HyRes {
     if let Some(order) = maker_orders.get(&req.uuid) {
         return rpc_response(200, json!({
             "type": "Maker",
-            "order": order,
-            "available_amount": order.available_amount(),
+            "order": MakerOrderForRpc::from(order),
         }).to_string());
     }
 
@@ -906,7 +921,7 @@ pub fn order_status(ctx: MmArc, req: Json) -> HyRes {
     if let Some(order) = taker_orders.get(&req.uuid) {
         return rpc_response(200, json!({
             "type": "Taker",
-            "order": order,
+            "order": TakerOrderForRpc::from(order),
         }).to_string());
     }
 
@@ -923,9 +938,13 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
 
     let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
     let mut maker_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
-    match maker_orders.remove(&req.uuid) {
-        Some(mut order) => {
+    match maker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return rpc_err_response(500, &format!("Order {} is being matched now, can't cancel", req.uuid));
+            }
             let mut cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
+            let mut order = order.remove();
             // TODO cancel means setting the volume to 0 as of now, should refactor
             order.max_base_vol = 0.into();
             delete_my_maker_order(&ctx, &order);
@@ -935,33 +954,72 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
             }).to_string())
         },
         // look for taker order with provided uuid
-        None => (),
+        Entry::Vacant(_) => (),
     }
 
     let mut taker_orders = try_h!(ordermatch_ctx.my_taker_orders.lock());
-    match taker_orders.remove(&req.uuid) {
-        Some(order) => {
+    match taker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return rpc_err_response(500, &format!("Order {} is being matched now, can't cancel", req.uuid));
+            }
+            let order = order.remove();
             delete_my_taker_order(&ctx, &order);
             return rpc_response(200, json!({
                 "result": "success"
             }).to_string())
         },
         // error is returned
-        None => (),
+        Entry::Vacant(_) => (),
     }
 
     rpc_err_response(404, &format!("Order with uuid {} is not found", req.uuid))
+}
+
+#[derive(Serialize)]
+struct MakerOrderForRpc<'a> {
+    #[serde(flatten)]
+    order: &'a MakerOrder,
+    cancellable: bool,
+    available_amount: BigDecimal,
+}
+
+impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
+    fn from(order: &'a MakerOrder) -> MakerOrderForRpc {
+        MakerOrderForRpc {
+            order,
+            cancellable: order.is_cancellable(),
+            available_amount: order.available_amount(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct TakerOrderForRpc<'a> {
+    #[serde(flatten)]
+    order: &'a TakerOrder,
+    cancellable: bool
+}
+
+impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
+    fn from(order: &'a TakerOrder) -> TakerOrderForRpc {
+        TakerOrderForRpc {
+            order,
+            cancellable: order.is_cancellable(),
+        }
+    }
 }
 
 pub fn my_orders(ctx: MmArc) -> HyRes {
     let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
     let maker_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
     let taker_orders = try_h!(ordermatch_ctx.my_taker_orders.lock());
-
+    let maker_orders_for_rpc: HashMap<_, _> = maker_orders.iter().map(|(uuid, order)| (uuid, MakerOrderForRpc::from(order))).collect();
+    let taker_orders_for_rpc: HashMap<_, _> = taker_orders.iter().map(|(uuid, order)| (uuid, TakerOrderForRpc::from(order))).collect();
     rpc_response(200, json!({
         "result": {
-            "maker_orders": *maker_orders,
-            "taker_orders": *taker_orders,
+            "maker_orders": maker_orders_for_rpc,
+            "taker_orders": taker_orders_for_rpc,
         }
     }).to_string())
 }

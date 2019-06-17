@@ -562,13 +562,13 @@ impl SavedSwap {
         }
     }
 
-    fn get_my_info(&self) -> Result<MySwapInfo, String> {
+    fn get_my_info(&self) -> Option<MySwapInfo> {
         match self {
             SavedSwap::Maker(swap) => {
                 match swap.events.first() {
                     Some(event) => match &event.event {
                         MakerSwapEvent::Started(data) => {
-                            Ok(MySwapInfo {
+                            Some(MySwapInfo {
                                 my_coin: data.maker_coin.clone(),
                                 other_coin: data.taker_coin.clone(),
                                 my_amount: data.maker_amount.clone(),
@@ -576,15 +576,15 @@ impl SavedSwap {
                                 started_at: data.started_at,
                             })
                         },
-                        _ => ERR!("Swap first event is not `Started`"),
+                        _ => None,
                     },
-                    None => ERR!("Swap events are empty"),
+                    None => None,
                 }
             },
             SavedSwap::Taker(swap) => match swap.events.first() {
                 Some(event) => match &event.event {
                     TakerSwapEvent::Started(data) => {
-                        Ok(MySwapInfo {
+                        Some(MySwapInfo {
                             my_coin: data.taker_coin.clone(),
                             other_coin: data.maker_coin.clone(),
                             my_amount: data.taker_amount.clone(),
@@ -592,9 +592,9 @@ impl SavedSwap {
                             started_at: data.started_at,
                         })
                     },
-                    _ => ERR!("Swap first event is not `Started`"),
+                    _ => None,
                 },
-                None => ERR!("Swap events are empty"),
+                None => None,
             },
         }
     }
@@ -1888,7 +1888,7 @@ pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
         }).to_string());
     }
     let status: SavedSwap = try_h!(json::from_slice(&content));
-    let my_info = try_h!(status.get_my_info());
+    let my_info = status.get_my_info();
     let mut json = try_h!(json::to_value(status));
     json["my_info"] = try_h!(json::to_value(my_info));
 
@@ -2012,16 +2012,11 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     // iterate over file entries trying to parse the file contents and add to result vector
     let swaps: Vec<Json> = entries.iter().skip(skip).take(limit as usize).map(|(_, entry)|
         match json::from_slice::<SavedSwap>(&slurp(&entry.path())) {
-            Ok(swap) => match swap.get_my_info() {
-                Ok(info) => {
-                    let mut json = unwrap!(json::to_value(swap));
-                    json["my_info"] = unwrap!(json::to_value(info));
-                    json
-                },
-                Err(e) => {
-                    log!("Error " (e) " getting my_swap_info of swap " (swap.uuid()));
-                    Json::Null
-                },
+            Ok(swap) => {
+                let my_info = swap.get_my_info();
+                let mut json = unwrap!(json::to_value(swap));
+                json["my_info"] = unwrap!(json::to_value(my_info));
+                json
             },
             Err(e) => {
                 log!("Error " (e) " parsing JSON from " (entry.path().display()));
