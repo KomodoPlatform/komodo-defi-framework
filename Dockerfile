@@ -10,13 +10,11 @@ FROM ubuntu:xenial
 
 RUN \
     apt-get update &&\
-    apt-get install -y git libcurl4-openssl-dev build-essential libssl-dev wget &&\
+    apt-get install -y git build-essential libssl-dev wget &&\
     # https://github.com/rust-lang/rust-bindgen/blob/master/book/src/requirements.md#debian-based-linuxes
     apt-get install -y llvm-3.9-dev libclang-3.9-dev clang-3.9 &&\
     # openssl-sys requirements, cf. https://crates.io/crates/openssl-sys
     apt-get install -y pkg-config libssl-dev &&\
-    # libtorrent needs Boost.
-    apt-get install -y libboost-dev libboost-system-dev &&\
     apt-get clean
 
 #Cmake 3.12.0 supports multi-platform -j option, it allows to use all cores for concurrent build to speed up it
@@ -32,14 +30,14 @@ RUN \
     rustup default nightly-2019-03-10 &&\
     # It seems that bindgen won't prettify without it:
     rustup component add rustfmt-preview &&\
-    rm -rf /root/.rustup/toolchains/nightly-2018-12-24-x86_64-unknown-linux-gnu/share/doc &&\
+    rm -rf /root/.rustup/toolchains/nightly-2019-03-10-x86_64-unknown-linux-gnu/share/doc &&\
     rm -f /tmp/rustup-init.sh
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Unlike the `COPY` command, the `RUN git clone` remains cached by Docker even if we change something locally.
 # This allows us to more easily play with later Dockerfile steps by adding the `COPY` there.
-RUN git clone --depth=1 -b mm2-dice https://github.com/artemii235/SuperNET.git /mm2
+RUN git clone --depth=1 -b mm2 https://github.com/artemii235/SuperNET.git /mm2
 
 # Or with the "etomic" branch:
 #RUN git clone --depth=1 -b etomic https://github.com/artemii235/SuperNET.git /mm2

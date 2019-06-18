@@ -752,6 +752,8 @@ fn lp_send_price_ping(req: &PricePingRequest, ctx: &MmArc) -> Result<(), String>
 
 fn one() -> u8 { 1 }
 
+fn get_true() -> bool { true }
+
 #[derive(Deserialize)]
 struct SetPriceReq {
     base: String,
@@ -763,6 +765,8 @@ struct SetPriceReq {
     broadcast: u8,
     #[serde(default)]
     volume: BigDecimal,
+    #[serde(default = "get_true")]
+    cancel_previous: bool,
 }
 
 pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
@@ -794,11 +798,13 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
                 rel_coin.can_i_spend_other_payment().and_then(move |_| {
                     let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
                     let mut my_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
-                    // remove the previous order if there's one to allow multiple setprice call per pair
-                    // it's common use case now as `autoprice` doesn't work with new ordermatching and
-                    // MM2 users request the coins price from aggregators by their own scripts issuing
-                    // repetitive setprice calls with new price
-                    *my_orders = my_orders.drain().filter(|(_, order)| !(order.base == req.base && order.rel == req.rel)).collect();
+                    if req.cancel_previous {
+                        // remove the previous order if there's one to allow multiple setprice call per pair
+                        // it's common use case now as `autoprice` doesn't work with new ordermatching and
+                        // MM2 users request the coins price from aggregators by their own scripts issuing
+                        // repetitive setprice calls with new price
+                        *my_orders = my_orders.drain().filter(|(_, order)| !(order.base == req.base && order.rel == req.rel)).collect();
+                    }
 
                     let uuid = Uuid::new_v4();
                     let order = MakerOrder {
