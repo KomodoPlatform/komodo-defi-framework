@@ -269,7 +269,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     fn is_asset_chain(&self) -> bool;
 
-    fn check_i_have_enough_to_trade(&self, amount: BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
 
     fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send>;
 

@@ -82,6 +82,8 @@ pub struct MmCtx {
     pub secp256k1_key_pair: Option<KeyPair>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
+    /// The context belonging to the `lp_swap` mod: `SwapsContext`.
+    pub swaps_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
 }
 impl MmCtx {
     pub fn new() -> MmCtx {
@@ -106,6 +108,7 @@ impl MmCtx {
             seeds: Mutex::new (Vec::new()),
             secp256k1_key_pair: None,
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
+            swaps_ctx: Mutex::new (None),
         }
     }
 

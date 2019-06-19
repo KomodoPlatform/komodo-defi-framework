@@ -60,19 +60,21 @@ use coins::{lp_coinfind, MmCoinEnum, TransactionDetails};
 use coins::utxo::compressed_pub_key_from_priv_raw;
 use common::{bits256, lp, HyRes, rpc_response, Timeout};
 use common::log::{TagParam};
-use common::mm_ctx::MmArc;
+use common::mm_ctx::{from_ctx, MmArc};
 use crc::crc32;
 use futures::{Future};
 use gstuff::{now_ms, slurp};
-use hashbrown::HashSet;
-use rand::Rng;
+use hashbrown::{HashSet, HashMap};
+use hashbrown::hash_map::Entry;
 use primitives::hash::{H160, H264};
+use rand::Rng;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize};
 use std::ffi::OsStr;
 use std::fs::{File, DirEntry};
 use std::io::prelude::*;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use bigdecimal::BigDecimal;
@@ -87,6 +89,83 @@ const BASIC_COMM_TIMEOUT: u64 = 90;
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 const SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
+
+/// Represents the amount of a coin locked by ongoing swap
+struct LockedAmount {
+    coin: String,
+    amount: BigDecimal,
+}
+
+struct SwapsContext {
+    locked_amounts: Mutex<HashMap<String, LockedAmount>>,
+}
+
+impl SwapsContext {
+    /// Obtains a reference to this crate context, creating it if necessary.
+    fn from_ctx (ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
+        Ok (try_s! (from_ctx (&ctx.swaps_ctx, move || {
+            Ok (SwapsContext {
+                locked_amounts: Mutex::new(HashMap::new()),
+            })
+        })))
+    }
+}
+
+/// Virtually locks the amount of a coin, called when swap is instantiated
+fn lock_amount(ctx: &MmArc, uuid: String, coin: String, amount: BigDecimal) {
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let mut locked = unwrap!(swap_ctx.locked_amounts.lock());
+    locked.insert(uuid, LockedAmount {
+        coin,
+        amount,
+    });
+}
+
+/// Virtually unlocks the amount of a coin, called when swap transaction is sent so the real balance
+/// is updated and virtual lock is not required.
+fn unlock_amount(ctx: &MmArc, uuid: &str, amount: &BigDecimal) {
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let mut locked = unwrap!(swap_ctx.locked_amounts.lock());
+    match locked.entry(uuid.into()) {
+        Entry::Occupied(mut e) => {
+            let entry = e.get_mut();
+            if &entry.amount <= amount {
+                e.remove();
+            } else {
+                entry.amount -= amount;
+            };
+        },
+        Entry::Vacant(_) => (),
+    };
+}
+
+/// Get total amount of selected coin locked by all currently ongoing swaps
+pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> BigDecimal {
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let locked = unwrap!(swap_ctx.locked_amounts.lock());
+    locked.iter().fold(
+        0.into(),
+        |total, (_, locked)| if locked.coin == coin {
+            total + &locked.amount
+        } else {
+            total
+        }
+    )
+}
+
+/// Get total amount of selected coin locked by all currently ongoing swaps except the one with selected uuid
+fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &str, coin: &str) -> BigDecimal {
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let locked = unwrap!(swap_ctx.locked_amounts.lock());
+    locked.iter().fold(
+        0.into(),
+        |total, (uuid, locked)| if uuid != except_uuid && locked.coin == coin {
+            total + &locked.amount
+        } else {
+            total
+        }
+    )
+}
 
 /// Some coins are "slow" (block time is high - e.g. BTC average block time is ~10 minutes).
 /// https://bitinfocharts.com/comparison/bitcoin-confirmationtime.html
@@ -630,7 +709,10 @@ impl MakerSwap {
             MakerSwapEvent::NegotiateFailed(err) => self.errors.push(err),
             MakerSwapEvent::TakerFeeValidated(tx) => self.taker_fee = Some(tx),
             MakerSwapEvent::TakerFeeValidateFailed(err) => self.errors.push(err),
-            MakerSwapEvent::MakerPaymentSent(tx) => self.maker_payment = Some(tx),
+            MakerSwapEvent::MakerPaymentSent(tx) => {
+                self.maker_payment = Some(tx);
+                unlock_amount(&self.ctx, &self.uuid, &self.maker_amount);
+            },
             MakerSwapEvent::MakerPaymentTransactionFailed(err) => self.errors.push(err),
             MakerSwapEvent::MakerPaymentDataSendFailed(err) => self.errors.push(err),
             MakerSwapEvent::TakerPaymentReceived(tx) => self.taker_payment = Some(tx),
@@ -641,7 +723,10 @@ impl MakerSwap {
             MakerSwapEvent::TakerPaymentSpendFailed(err) => self.errors.push(err),
             MakerSwapEvent::MakerPaymentRefunded(tx) => self.maker_payment_refund = Some(tx),
             MakerSwapEvent::MakerPaymentRefundFailed(err) => self.errors.push(err),
-            MakerSwapEvent::Finished => self.finished_at = now_ms() / 1000,
+            MakerSwapEvent::Finished => {
+                self.finished_at = now_ms() / 1000;
+                unlock_amount(&self.ctx, &self.uuid, &self.maker_amount);
+            },
         }
         Ok(())
     }
@@ -671,6 +756,7 @@ impl MakerSwap {
         my_persistent_pub: H264,
         uuid: String,
     ) -> Self {
+        lock_amount(&ctx, uuid.clone(), maker_coin.ticker().into(), maker_amount.clone());
         MakerSwap {
             ctx: ctx.clone(),
             maker_coin,
@@ -695,7 +781,26 @@ impl MakerSwap {
     }
 
     fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(self.maker_amount.clone(), true).wait() {
+        let my_balance = match self.maker_coin.my_balance().wait() {
+            Ok(balance) => balance,
+            Err(e) => return Ok((
+                Some(MakerSwapCommand::Finish),
+                vec![MakerSwapEvent::StartFailed(ERRL!("!my_balance {}", e).into())],
+            ))
+        };
+
+        let locked = get_locked_amount_by_other_swaps(&self.ctx, &self.uuid, self.maker_coin.ticker());
+        let available = &my_balance - &locked;
+        if self.maker_amount > available {
+            return Ok((
+                Some(MakerSwapCommand::Finish),
+                vec![MakerSwapEvent::StartFailed(ERRL!("maker amount {} is larger than available {}, balance {}, locked by other swaps {}",
+                    self.maker_amount, available, my_balance, locked
+                ).into())],
+            ));
+        }
+
+        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(&self.maker_amount, &my_balance, true).wait() {
             return Ok((
                 Some(MakerSwapCommand::Finish),
                 vec![MakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],
@@ -1112,6 +1217,12 @@ impl MakerSwap {
     }
 }
 
+impl Drop for MakerSwap {
+    fn drop(&mut self) {
+        unlock_amount(&self.ctx, &self.uuid, &self.maker_amount);
+    }
+}
+
 /// Starts the maker swap and drives it to completion (until None next command received).
 /// Panics in case of command or event apply fails, not sure yet how to handle such situations
 /// because it's usually means that swap is in invalid state which is possible only if there's developer error.
@@ -1325,13 +1436,20 @@ impl TakerSwap {
                 self.secret_hash = data.secret_hash;
             },
             TakerSwapEvent::NegotiateFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerFeeSent(tx) => self.taker_fee = Some(tx),
+            TakerSwapEvent::TakerFeeSent(tx) => {
+                self.taker_fee = Some(tx);
+                let fee_amount = &self.taker_amount / 777;
+                unlock_amount(&self.ctx, &self.uuid, &fee_amount);
+            },
             TakerSwapEvent::TakerFeeSendFailed(err) => self.errors.push(err),
             TakerSwapEvent::MakerPaymentReceived(tx) => self.maker_payment = Some(tx),
             TakerSwapEvent::MakerPaymentWaitConfirmStarted => (),
             TakerSwapEvent::MakerPaymentValidatedAndConfirmed => self.maker_payment_confirmed = true,
             TakerSwapEvent::MakerPaymentValidateFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerPaymentSent(tx) => self.taker_payment = Some(tx),
+            TakerSwapEvent::TakerPaymentSent(tx) => {
+                self.taker_payment = Some(tx);
+                unlock_amount(&self.ctx, &self.uuid, &self.taker_amount);
+            },
             TakerSwapEvent::TakerPaymentTransactionFailed(err) => self.errors.push(err),
             TakerSwapEvent::TakerPaymentDataSendFailed(err) => self.errors.push(err),
             TakerSwapEvent::TakerPaymentSpent(data) => {
@@ -1374,6 +1492,7 @@ impl TakerSwap {
         my_persistent_pub: H264,
         uuid: String,
     ) -> Self {
+        lock_amount(&ctx, uuid.clone(), taker_coin.ticker().into(), &taker_amount + &taker_amount / 777);
         TakerSwap {
             ctx,
             maker_coin,
@@ -1401,11 +1520,29 @@ impl TakerSwap {
     }
 
     fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        // maker and taker amounts are always in 10^-8 of coin units
-        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(self.taker_amount.clone(), true).wait() {
+        let my_balance = match self.taker_coin.my_balance().wait() {
+            Ok(balance) => balance,
+            Err(e) => return Ok((
+                Some(TakerSwapCommand::Finish),
+                vec![TakerSwapEvent::StartFailed(ERRL!("!my_balance {}", e).into())],
+            ))
+        };
+
+        let locked = get_locked_amount_by_other_swaps(&self.ctx, &self.uuid, self.taker_coin.ticker());
+        let available = &my_balance - &locked;
+        if self.taker_amount > available {
             return Ok((
                 Some(TakerSwapCommand::Finish),
-                vec![TakerSwapEvent::StartFailed(ERRL!("{}", e).into())],
+                vec![TakerSwapEvent::StartFailed(ERRL!("taker amount {} is larger than available {}, balance {}, locked by other swaps {}",
+                    self.taker_amount, available, my_balance, locked
+                ).into())],
+            ));
+        }
+
+        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount, &my_balance, true).wait() {
+            return Ok((
+                Some(TakerSwapCommand::Finish),
+                vec![TakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],
             ))
         }
 
@@ -1874,6 +2011,13 @@ impl TakerSwap {
             },
             _ => ERR!("First swap event must be Started"),
         }
+    }
+}
+
+impl Drop for TakerSwap {
+    fn drop(&mut self) {
+        let amount_to_unlock = &self.taker_amount + &self.taker_amount / 777;
+        unlock_amount(&self.ctx, &self.uuid, &amount_to_unlock);
     }
 }
 

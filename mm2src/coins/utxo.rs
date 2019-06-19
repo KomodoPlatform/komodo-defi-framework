@@ -1135,30 +1135,30 @@ struct UtxoFeeDetails {
 impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
-    fn check_i_have_enough_to_trade(&self, amount: BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
-        if &amount / BigDecimal::from(777) < "0.00001".parse().unwrap() {
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
+        if amount / 777 < "0.00001".parse().unwrap() {
             return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least 0.00777 is required", amount)));
         }
         let fee_fut = self.get_tx_fee();
         let arc = self.clone();
+        let amount = amount.clone();
+        let balance = balance.clone();
         Box::new(
             fee_fut.and_then(move |coin_fee| {
                 let fee = match coin_fee {
                     ActualTxFee::Fixed(f) => f,
                     ActualTxFee::Dynamic(f) => f,
                 };
-                arc.my_balance().and_then(move |balance| {
-                    let fee_decimal = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(arc.decimals as u32));
-                    let required = if maker {
-                        amount + fee_decimal
-                    } else {
-                        &amount + &amount / 777 + BigDecimal::from(2) * fee_decimal
-                    };
-                    if balance < required {
-                        return ERR!("{} balance {} is too low, required {:.8}", arc.ticker(), balance, required);
-                    }
-                    Ok(())
-                })
+                let fee_decimal = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(arc.decimals as u32));
+                let required = if maker {
+                    amount + fee_decimal
+                } else {
+                    &amount + &amount / 777 + BigDecimal::from(2) * fee_decimal
+                };
+                if balance < required {
+                    return ERR!("{} balance {} is too low, required {:.8}", arc.ticker(), balance, required);
+                }
+                Ok(())
             })
         )
     }

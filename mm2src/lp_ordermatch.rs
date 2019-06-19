@@ -42,7 +42,7 @@ use std::time::Duration;
 use std::thread;
 use uuid::Uuid;
 
-use crate::mm2::lp_swap::{MakerSwap, run_maker_swap, TakerSwap, run_taker_swap};
+use crate::mm2::lp_swap::{get_locked_amount, MakerSwap, run_maker_swap, run_taker_swap, TakerSwap};
 
 #[cfg(test)]
 #[path = "ordermatch_tests.rs"]
@@ -515,6 +515,16 @@ pub unsafe fn lp_trade_command(
     -1
 }
 
+fn check_locked_coins(ctx: &MmArc, amount: &BigDecimal, balance: &BigDecimal, ticker: &str) -> impl Future<Item=(), Error=String> {
+    let locked = get_locked_amount(ctx, ticker);
+    let available = balance - &locked;
+    if *amount > available {
+        futures::future::err(ERRL!("The amount {:.8} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}", amount, available, balance, locked))
+    } else {
+        futures::future::ok(())
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct AutoBuyInput {
     base: String,
@@ -533,35 +543,56 @@ pub struct AutoBuyInput {
 }
 
 pub fn buy(ctx: MmArc, json: Json) -> HyRes {
-    let input : AutoBuyInput = try_h!(json::from_value(json.clone()));
+    let input: AutoBuyInput = try_h!(json::from_value(json.clone()));
     if input.base == input.rel {
         return rpc_err_response(500, "Base and rel must be different coins");
     }
     let rel_coin = try_h!(lp_coinfind(&ctx, &input.rel));
-    let rel_coin = match rel_coin {Some(c) => c, None => return rpc_err_response(500, "Rel coin is not found or inactive")};
+    let rel_coin = match rel_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Rel coin is not found or inactive")
+    };
     let base_coin = try_h!(lp_coinfind(&ctx, &input.base));
-    let base_coin: MmCoinEnum = match base_coin {Some(c) => c, None => return rpc_err_response(500, "Base coin is not found or inactive")};
-    Box::new(rel_coin.check_i_have_enough_to_trade(&input.volume * &input.price, false).and_then(move |_|
-        base_coin.can_i_spend_other_payment().and_then(move |_|
-            rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+    let base_coin: MmCoinEnum = match base_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Base coin is not found or inactive")
+    };
+    let my_amount = &input.volume * &input.price;
+    Box::new(rel_coin.my_balance().and_then(move |my_balance| {
+        check_locked_coins(&ctx, &my_amount, &my_balance, rel_coin.ticker()).and_then(move |_|
+            rel_coin.check_i_have_enough_to_trade(&my_amount, &my_balance, false).and_then(move |_|
+                base_coin.can_i_spend_other_payment().and_then(move |_|
+                    rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+                )
+            )
         )
-    ))
+    }))
 }
 
 pub fn sell(ctx: MmArc, json: Json) -> HyRes {
-    let input : AutoBuyInput = try_h!(json::from_value(json.clone()));
+    let input: AutoBuyInput = try_h!(json::from_value(json.clone()));
     if input.base == input.rel {
         return rpc_err_response(500, "Base and rel must be different coins");
     }
     let base_coin = try_h!(lp_coinfind(&ctx, &input.base));
-    let base_coin = match base_coin {Some(c) => c, None => return rpc_err_response(500, "Base coin is not found or inactive")};
+    let base_coin = match base_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Base coin is not found or inactive")
+    };
     let rel_coin = try_h!(lp_coinfind(&ctx, &input.rel));
-    let rel_coin = match rel_coin {Some(c) => c, None => return rpc_err_response(500, "Rel coin is not found or inactive")};
-    Box::new(base_coin.check_i_have_enough_to_trade(input.volume.clone(), false).and_then(move |_|
-        rel_coin.can_i_spend_other_payment().and_then(move |_|
-            rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+    let rel_coin = match rel_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Rel coin is not found or inactive")
+    };
+    Box::new(base_coin.my_balance().and_then(move |my_balance| {
+        check_locked_coins(&ctx, &input.volume, &my_balance, base_coin.ticker()).and_then(move |_|
+            base_coin.check_i_have_enough_to_trade(&input.volume, &my_balance, false).and_then(move |_|
+                rel_coin.can_i_spend_other_payment().and_then(move |_|
+                    rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
+                )
+            )
         )
-    ))
+    }))
 }
 
 /// Created when maker order is matched with taker request
@@ -785,45 +816,50 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
         None => return rpc_err_response(500, &format!("Rel coin {} is not found", req.rel)),
     };
 
+    let balance_f = base_coin.my_balance();
     let volume_f = if req.max {
-        // entire balance deducted by 0.1 to reserve for tx fees
-        Either::A(base_coin.my_balance().map(|balance| balance - "0.1".parse::<BigDecimal>().unwrap()))
+        // use entire balance deducting the locked amount and skipping "check_i_have_enough"
+        Either::A(balance_f.map(move |my_balance| (my_balance - get_locked_amount(&ctx, base_coin.ticker()), req, ctx)))
     } else {
-        Either::B(futures::future::ok(req.volume.clone()))
+        Either::B(balance_f.and_then(move |my_balance|
+            check_locked_coins(&ctx, &req.volume, &my_balance, base_coin.ticker()).and_then(move |_|
+                base_coin.check_i_have_enough_to_trade(&req.volume, &my_balance, true).map(move |_|
+                    (req.volume.clone(), req, ctx)
+                )
+            )
+        ))
     };
 
     Box::new(
-        volume_f.and_then(move |volume| {
-            base_coin.check_i_have_enough_to_trade(volume.clone(), true).and_then(move |_|
-                rel_coin.can_i_spend_other_payment().and_then(move |_| {
-                    let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
-                    let mut my_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
-                    if req.cancel_previous {
-                        // remove the previous order if there's one to allow multiple setprice call per pair
-                        // it's common use case now as `autoprice` doesn't work with new ordermatching and
-                        // MM2 users request the coins price from aggregators by their own scripts issuing
-                        // repetitive setprice calls with new price
-                        *my_orders = my_orders.drain().filter(|(_, order)| !(order.base == req.base && order.rel == req.rel)).collect();
-                    }
+        volume_f.and_then(move |(volume, req, ctx)| {
+            rel_coin.can_i_spend_other_payment().and_then(move |_| {
+                let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
+                let mut my_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
+                if req.cancel_previous {
+                    // remove the previous order if there's one to allow multiple setprice call per pair
+                    // it's common use case now as `autoprice` doesn't work with new ordermatching and
+                    // MM2 users request the coins price from aggregators by their own scripts issuing
+                    // repetitive setprice calls with new price
+                    *my_orders = my_orders.drain().filter(|(_, order)| !(order.base == req.base && order.rel == req.rel)).collect();
+                }
 
-                    let uuid = Uuid::new_v4();
-                    let order = MakerOrder {
-                        max_base_vol: volume,
-                        min_base_vol: 0.into(),
-                        price: req.price,
-                        created_at: now_ms(),
-                        base: req.base,
-                        rel: req.rel,
-                        matches: HashMap::new(),
-                        started_swaps: Vec::new(),
-                        uuid,
-                    };
-                    let response = json!({"result":order}).to_string();
-                    save_my_maker_order(&ctx, &order);
-                    my_orders.insert(uuid, order);
-                    rpc_response(200, response)
-                })
-            )
+                let uuid = Uuid::new_v4();
+                let order = MakerOrder {
+                    max_base_vol: volume,
+                    min_base_vol: 0.into(),
+                    price: req.price,
+                    created_at: now_ms(),
+                    base: req.base,
+                    rel: req.rel,
+                    matches: HashMap::new(),
+                    started_swaps: Vec::new(),
+                    uuid,
+                };
+                let response = json!({"result":order}).to_string();
+                save_my_maker_order(&ctx, &order);
+                my_orders.insert(uuid, order);
+                rpc_response(200, response)
+            })
         })
     )
 }
