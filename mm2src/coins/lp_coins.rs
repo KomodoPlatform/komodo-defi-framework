@@ -1009,7 +1009,12 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
             }
         }).to_string())
     } else {
-        let history: Vec<TransactionDetails> = try_h!(json::from_slice(&content));
+        let history: Vec<TransactionDetails> = match json::from_slice(&content) {
+            Ok(h) => h,
+            Err(_) => {
+                return rpc_response(500, content);
+            }
+        };
         let total_records = history.len();
         Box::new(coin.current_block().and_then(move |block_number| {
             let skip = match &from_id {

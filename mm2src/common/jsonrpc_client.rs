@@ -1,6 +1,7 @@
 use futures::Future;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
+use std::fmt;
 
 /// Macro generating functions for RPC requests.
 /// Args must implement/derive Serialize trait.
@@ -10,7 +11,7 @@ macro_rules! rpc_func {
     ($selff:ident, $method:expr $(, $arg_name:ident)*) => {{
         let mut params = vec![];
         $(
-            params.push(try_fus!(json::value::to_value($arg_name)));
+            params.push(unwrap!(json::value::to_value($arg_name)));
         )*
         let request = JsonRpcRequest {
             jsonrpc: $selff.version().into(),
@@ -50,8 +51,27 @@ pub struct JsonRpcResponse {
     pub error: Json,
 }
 
+#[derive(Debug)]
+pub struct RequestError {
+    request: JsonRpcRequest,
+    pub error: Json,
+}
+
+#[derive(Debug)]
+pub enum JsonRpcError {
+    Transport(String),
+    Request(RequestError),
+    Parse(String),
+}
+
+impl fmt::Display for JsonRpcError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 pub type JsonRpcResponseFut = Box<Future<Item=JsonRpcResponse, Error=String> + Send + 'static>;
-pub type RpcRes<T> = Box<Future<Item=T, Error=String> + Send + 'static>;
+pub type RpcRes<T> = Box<Future<Item=T, Error=JsonRpcError> + Send + 'static>;
 
 pub trait JsonRpcClient {
     fn version(&self) -> &'static str;
@@ -61,15 +81,17 @@ pub trait JsonRpcClient {
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut;
 
     fn send_request<T: DeserializeOwned + Send + 'static>(&self, request: JsonRpcRequest) -> RpcRes<T> {
-        Box::new(self.transport(request.clone()).and_then(move |response| -> Result<T, String> {
+        Box::new(self.transport(request.clone()).map_err(|e| JsonRpcError::Transport(e)).and_then(move |response| -> Result<T, JsonRpcError> {
             if !response.error.is_null() {
-                return ERR!("Rpc request {:?} failed with error, response: {:?}",
-                        request, response);
+                return Err(JsonRpcError::Request(RequestError {
+                    request,
+                    error: response.error,
+                }));
             }
 
             match json::from_value(response.result.clone()) {
                 Ok(res) => Ok(res),
-                Err(e) => ERR!("Request {:?} error {:?} parsing result from response {:?}", request, e, response),
+                Err(e) => Err(JsonRpcError::Parse(ERRL!("Request {:?} error {:?} parsing result from response {:?}", request, e, response))),
             }
         }))
     }

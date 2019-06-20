@@ -54,11 +54,13 @@ pub struct UnspentInfo {
     pub value: u64,
 }
 
+pub type UtxoRpcRes<T> = Box<Future<Item=T, Error=String> + Send + 'static>;
+
 /// Common operations that both types of UTXO clients have but implement them differently
 pub trait UtxoRpcClientOps: Debug + 'static {
-    fn list_unspent_ordered(&self, address: &Address) -> RpcRes<Vec<UnspentInfo>>;
+    fn list_unspent_ordered(&self, address: &Address) -> UtxoRpcRes<Vec<UnspentInfo>>;
 
-    fn send_transaction(&self, tx: &UtxoTransaction, my_addr: Address) -> RpcRes<H256Json>;
+    fn send_transaction(&self, tx: &UtxoTransaction, my_addr: Address) -> UtxoRpcRes<H256Json>;
 
     fn send_raw_transaction(&self, tx: BytesJson) -> RpcRes<H256Json>;
 
@@ -210,9 +212,9 @@ impl JsonRpcClient for NativeClientImpl {
 }
 
 impl UtxoRpcClientOps for NativeClient {
-    fn list_unspent_ordered(&self, address: &Address) -> RpcRes<Vec<UnspentInfo>> {
+    fn list_unspent_ordered(&self, address: &Address) -> UtxoRpcRes<Vec<UnspentInfo>> {
         let clone = self.0.clone();
-        Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).and_then(move |unspents| {
+        Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).map_err(|e| ERRL!("{}", e)).and_then(move |unspents| {
             let mut futures = vec![];
             for unspent in unspents.iter() {
                 let delay_f = Delay::new(Duration::from_millis(10)).map_err(|e| ERRL!("{}", e));
@@ -222,7 +224,7 @@ impl UtxoRpcClientOps for NativeClient {
                 // The delay here is required to mitigate "Work queue depth exceeded" error from coin daemon.
                 // It happens even when we run requests sequentially.
                 // Seems like daemon need some time to clean up it's queue after response is sent.
-                futures.push(delay_f.and_then(move |_| arc.output_amount(tx_id, vout)));
+                futures.push(delay_f.and_then(move |_| arc.output_amount(tx_id, vout).map_err(|e| ERRL!("{}", e))));
             }
 
             join_all_sequential(futures).map(move |amounts| {
@@ -247,8 +249,8 @@ impl UtxoRpcClientOps for NativeClient {
         }))
     }
 
-    fn send_transaction(&self, tx: &UtxoTransaction, _addr: Address) -> RpcRes<H256Json> {
-        self.send_raw_transaction(BytesJson::from(serialize(tx)))
+    fn send_transaction(&self, tx: &UtxoTransaction, _addr: Address) -> UtxoRpcRes<H256Json> {
+        Box::new(self.send_raw_transaction(BytesJson::from(serialize(tx))).map_err(|e| ERRL!("{}", e)))
     }
 
     fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
@@ -351,8 +353,8 @@ impl NativeClientImpl {
         rpc_func!(self, "validateaddress", address)
     }
 
-    pub fn output_amount(&self, txid: H256Json, index: usize) -> RpcRes<u64> {
-        let fut = self.get_raw_transaction_bytes(txid);
+    pub fn output_amount(&self, txid: H256Json, index: usize) -> UtxoRpcRes<u64> {
+        let fut = self.get_raw_transaction_bytes(txid).map_err(|e| ERRL!("{}", e));
         Box::new(fut.and_then(move |bytes| {
             let tx: UtxoTransaction = try_s!(deserialize(bytes.as_slice()).map_err(|e| ERRL!("Error {:?} trying to deserialize the transaction {:?}", e, bytes)));
             Ok(tx.outputs[index].value)
@@ -555,10 +557,10 @@ impl JsonRpcClient for ElectrumClientImpl {
 }
 
 impl UtxoRpcClientOps for ElectrumClient {
-    fn list_unspent_ordered(&self, address: &Address) -> RpcRes<Vec<UnspentInfo>> {
+    fn list_unspent_ordered(&self, address: &Address) -> UtxoRpcRes<Vec<UnspentInfo>> {
         let script = Builder::build_p2pkh(&address.hash);
         let script_hash = electrum_script_hash(&script);
-        Box::new(self.scripthash_list_unspent(&hex::encode(script_hash)).map(move |unspents| {
+        Box::new(self.scripthash_list_unspent(&hex::encode(script_hash)).map_err(|e| ERRL!("{}", e)).map(move |unspents| {
             let mut result: Vec<UnspentInfo> = unspents.iter().map(|unspent| UnspentInfo {
                 outpoint: OutPoint {
                     hash: unspent.tx_hash.reversed().into(),
@@ -578,13 +580,13 @@ impl UtxoRpcClientOps for ElectrumClient {
         }))
     }
 
-    fn send_transaction(&self, tx: &UtxoTransaction, my_addr: Address) -> RpcRes<H256Json> {
+    fn send_transaction(&self, tx: &UtxoTransaction, my_addr: Address) -> UtxoRpcRes<H256Json> {
         let bytes = BytesJson::from(serialize(tx));
         let inputs = tx.inputs.clone();
         let arc = self.0.clone();
         let script = Builder::build_p2pkh(&my_addr.hash);
         let script_hash = hex::encode(electrum_script_hash(&script));
-        Box::new(self.blockchain_transaction_broadcast(bytes).and_then(move |res| {
+        Box::new(self.blockchain_transaction_broadcast(bytes).map_err(|e| ERRL!("{}", e)).and_then(move |res| {
             // Check every second until Electrum server recognizes that used UTXOs are spent
             loop_fn((res, arc, script_hash, inputs), move |(res, arc, script_hash, inputs)| {
                 let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
