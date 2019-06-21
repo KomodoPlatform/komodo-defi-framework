@@ -55,6 +55,7 @@ pub mod eth;
 use self::eth::{eth_coin_from_iguana_info, EthCoin, SignedEthTx};
 pub mod utxo;
 use self::utxo::{utxo_coin_from_iguana_info, UtxoTx, UtxoCoin, UtxoInitMode};
+use crate::utxo::rpc_clients::ElectrumRpcRequest;
 
 pub trait Transaction: Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -145,9 +146,9 @@ pub trait SwapOps {
 
     fn validate_fee(
         &self,
-        fee_tx: TransactionEnum,
+        fee_tx: &TransactionEnum,
         fee_addr: &[u8],
-        amount: BigDecimal,
+        amount: &BigDecimal,
     ) -> Result<(), String>;
 
     fn validate_maker_payment(
@@ -798,35 +799,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         try_s! (safecopy! (ii.etomic, "{}", etomic));
     }
 
-    let electrum_urls: Vec<String> = loop {
-        // See if the Electrum servers are explicitly defined in the request.
-        if let Some (urls) = req["urls"].as_array() {
-            if !urls.is_empty() {
-                break try_s! (urls.iter()
-                    .map (|j| j.as_str().map (|s| s.to_string()) .ok_or ("electrum/urls member is not a string"))
-                    .collect())
-        }   }
-
-        // Check the coin configuration for the list of Electrum servers.
-        // Example: https://github.com/atomiclabs/hyperdex/blob/1d4ed3234b482e769124725c7e979eef5cd72d24/app/marketmaker/supported-currencies.js#L20
-        if let Some (servers) = coins_en["electrumServers"].as_array() {
-            let mut urls = Vec::with_capacity (servers.len());
-            for server in servers {
-                let host = match server["host"].as_str() {
-                    Some (host) => host,
-                    None => return ERR! ("Found no string `host` field in `electrumServers` of coin {}", ticker)
-                };
-                let port = match server["port"].as_u64() {
-                    Some (port) => port,
-                    None => return ERR! ("Found no unsigned `port` field in `electrumServers` of coin {}", ticker)
-                };
-                urls.push (fomat! ((host) ':' (port)))
-            }
-            break urls
-        }
-        break Vec::new()
-    };
-
     let method: &str = loop {
         // See if the method was explicitly picked (by an RPC call).
         if let Some (method) = req["method"].as_str() {break method}
@@ -834,13 +806,11 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         // Enable in the "native" mode if the port of the local wallet is configured and electrum is not.
         if coins_en["rpcport"].as_u64().is_some() && coins_en["electrumServers"].as_array().is_none() {break "enable"}
 
-        // Enable in the "electrum" mode if we know of a list of electrum servers for that coin, default or otherwise.
-        if !electrum_urls.is_empty() {break "electrum"}
-
         return ERR! ("lp_coininit ({}): no method", ticker);
     };
     let utxo_mode = if method == "electrum" {
-        UtxoInitMode::Electrum (electrum_urls)
+        let servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
+        UtxoInitMode::Electrum (servers)
     } else if method == "enable" {
         if unsafe {!lp::LP_conflicts_find (ii) .is_null()} {return ERR! ("coin port conflicts with existing coin")}
         UtxoInitMode::Native

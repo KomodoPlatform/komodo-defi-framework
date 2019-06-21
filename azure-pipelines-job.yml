@@ -44,7 +44,18 @@ jobs:
       # Explicit --test-threads=8 makes the process faster
       - bash: |
           cargo test --all -- --test-threads=8
-        displayName: 'Test MM2'
+        displayName: 'Test MM2 Linux/MacOS'
+        condition: ne( variables['Agent.OS'], 'Windows_NT' )
+        timeoutInMinutes: 22
+        env:
+          BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
+          BOB_USERPASS: $(${{ parameters.bob_userpass }})
+          ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
+          ALICE_USERPASS: $(${{ parameters.alice_userpass }})
+      - powershell: |
+          $env:RUST_BACKTRACE=1; cargo test --all -- --test-threads=8
+        displayName: 'Test MM2 Windows'
+        condition: eq( variables['Agent.OS'], 'Windows_NT' )
         timeoutInMinutes: 22
         env:
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})

@@ -65,42 +65,42 @@ fn display_u256_with_point() {
 #[test]
 fn test_wei_from_big_decimal() {
     let amount = "0.000001".parse().unwrap();
-    let wei = wei_from_big_decimal(amount, 18).unwrap();
+    let wei = wei_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "1.000001".parse().unwrap();
-    let wei = wei_from_big_decimal(amount, 18).unwrap();
+    let wei = wei_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000001000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1.into();
-    let wei = wei_from_big_decimal(amount, 18).unwrap();
+    let wei = wei_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "0.000000000000000001".parse().unwrap();
-    let wei = wei_from_big_decimal(amount, 18).unwrap();
+    let wei = wei_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(amount, 9).unwrap();
+    let wei = wei_from_big_decimal(&amount, 9).unwrap();
     let expected_wei: U256 = 1234000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(amount, 0).unwrap();
+    let wei = wei_from_big_decimal(&amount, 0).unwrap();
     let expected_wei: U256 = 1234u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(amount, 1).unwrap();
+    let wei = wei_from_big_decimal(&amount, 1).unwrap();
     let expected_wei: U256 = 12340u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "1234.12345".parse().unwrap();
-    let wei = wei_from_big_decimal(amount, 1).unwrap();
+    let wei = wei_from_big_decimal(&amount, 1).unwrap();
     let expected_wei: U256 = 12341u64.into();
     assert_eq!(expected_wei, wei);
 }

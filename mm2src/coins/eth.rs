@@ -209,7 +209,7 @@ impl SwapOps for EthCoin {
 
         Box::new(self.send_to_address(
             address,
-            try_fus!(wei_from_big_decimal(amount, self.decimals)),
+            try_fus!(wei_from_big_decimal(&amount, self.decimals)),
         ).map(TransactionEnum::from))
     }
 
@@ -224,7 +224,7 @@ impl SwapOps for EthCoin {
 
         Box::new(self.send_hash_time_locked_payment(
             self.etomic_swap_id(time_lock, secret_hash),
-            try_fus!(wei_from_big_decimal(amount, self.decimals)),
+            try_fus!(wei_from_big_decimal(&amount, self.decimals)),
             time_lock,
             secret_hash,
             taker_addr,
@@ -242,7 +242,7 @@ impl SwapOps for EthCoin {
 
         Box::new(self.send_hash_time_locked_payment(
             self.etomic_swap_id(time_lock, secret_hash),
-            try_fus!(wei_from_big_decimal(amount, self.decimals)),
+            try_fus!(wei_from_big_decimal(&amount, self.decimals)),
             time_lock,
             secret_hash,
             maker_addr,
@@ -302,9 +302,9 @@ impl SwapOps for EthCoin {
 
     fn validate_fee(
         &self,
-        fee_tx: TransactionEnum,
+        fee_tx: &TransactionEnum,
         fee_addr: &[u8],
-        amount: BigDecimal,
+        amount: &BigDecimal,
     ) -> Result<(), String> {
         let tx = match fee_tx {
             TransactionEnum::SignedEthTx(t) => t,
@@ -888,7 +888,7 @@ impl EthCoin {
         let unsigned: UnverifiedTransaction = try_s!(rlp::decode(payment_tx));
         let tx = try_s!(SignedEthTx::new(unsigned));
 
-        let expected_value = try_s!(wei_from_big_decimal(amount, self.decimals));
+        let expected_value = try_s!(wei_from_big_decimal(&amount, self.decimals));
         let tx_from_rpc = try_s!(self.web3.eth().transaction(TransactionId::Hash(tx.hash)).wait());
         let tx_from_rpc = match tx_from_rpc {
             Some(t) => t,
@@ -1449,7 +1449,7 @@ impl MmCoin for EthCoin {
             let mut wei_amount = if max {
                 my_balance
             } else {
-                try_fus!(wei_from_big_decimal(amount.clone(), arc.decimals))
+                try_fus!(wei_from_big_decimal(&amount, arc.decimals))
             };
             if wei_amount > my_balance {
                 return Box::new(futures::future::err(ERRL!("The amount {} to withdraw is larger than balance", amount)));
@@ -1626,7 +1626,7 @@ fn u256_to_big_decimal(number: U256, decimals: u8) -> Result<BigDecimal, String>
     Ok(try_s!(string.parse()))
 }
 
-fn wei_from_big_decimal(amount: BigDecimal, decimals: u8) -> Result<U256, String> {
+fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, String> {
     let mut amount = amount.to_string();
     let dot = amount.find(|c| c == '.');
     let decimals = decimals as usize;

@@ -54,9 +54,9 @@ use std::time::Duration;
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{UtxoRpcClientEnum, UnspentInfo, ElectrumClient, ElectrumClientImpl, NativeClient, electrum_script_hash};
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, NativeClient, UtxoRpcClientEnum, UnspentInfo };
 use super::{IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
-use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps};
+use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 use futures::future::Either;
 
 #[cfg(test)]
@@ -429,8 +429,8 @@ fn sign_tx(
 }
 
 /// Denominate BigDecimal amount in coin units to satoshis
-fn sat_from_big_decimal(amount: BigDecimal, decimals: u8) -> Result<u64, String> {
-    (amount.clone() * BigDecimal::from(10u64.pow(decimals as u32))).to_u64().ok_or(ERRL!("Could not get sat from amount {} with decimals {}", amount, decimals))
+fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<u64, String> {
+    (amount * BigDecimal::from(10u64.pow(decimals as u32))).to_u64().ok_or(ERRL!("Could not get sat from amount {} with decimals {}", amount, decimals))
 }
 
 #[derive(Clone, Debug)]
@@ -482,7 +482,7 @@ impl UtxoCoin {
         amount: BigDecimal,
     ) -> Result<(), String> {
         let tx: UtxoTx = try_s!(deserialize(payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let amount = try_s!(sat_from_big_decimal(amount, self.decimals));
+        let amount = try_s!(sat_from_big_decimal(&amount, self.decimals));
 
         let mut attempts = 0;
         loop {
@@ -701,7 +701,7 @@ pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType)
 impl SwapOps for UtxoCoin {
     fn send_taker_fee(&self, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut {
         let address = try_fus!(address_from_raw_pubkey(fee_pub_key, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
-        let amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
+        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
         let output = TransactionOutput {
             value: amount,
             script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes()
@@ -722,7 +722,7 @@ impl SwapOps for UtxoCoin {
             self.key_pair.public(),
             &try_fus!(Public::from_slice(taker_pub)),
         );
-        let amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
+        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
         let output = TransactionOutput {
             value: amount,
             script_pubkey: Builder::build_p2sh(&dhash160(&redeem_script)).into(),
@@ -760,7 +760,7 @@ impl SwapOps for UtxoCoin {
             &try_fus!(Public::from_slice(maker_pub)),
         );
 
-        let amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
+        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
 
         let output = TransactionOutput {
             value: amount,
@@ -966,9 +966,9 @@ impl SwapOps for UtxoCoin {
 
     fn validate_fee(
         &self,
-        fee_tx: TransactionEnum,
+        fee_tx: &TransactionEnum,
         fee_addr: &[u8],
-        amount: BigDecimal,
+        amount: &BigDecimal,
     ) -> Result<(), String> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
@@ -977,7 +977,7 @@ impl SwapOps for UtxoCoin {
         let amount = try_s!(sat_from_big_decimal(amount, self.decimals));
         let tx_from_rpc = try_s!(self.rpc_client.get_transaction_bytes(tx.hash().reversed().into()).wait());
 
-        if tx_from_rpc.0 != serialize(&tx).take() {
+        if tx_from_rpc.0 != serialize(tx).take() {
             return ERR!("Provided dex fee tx {:?} doesn't match tx data from rpc {:?}", tx, tx_from_rpc);
         }
 
@@ -1178,7 +1178,7 @@ impl MmCoin for UtxoCoin {
             let (value, fee_policy) = if max {
                 (unspents.iter().fold(0, |sum, unspent| sum + unspent.value), FeePolicy::DeductFromOutput(0))
             } else {
-                (try_fus!(sat_from_big_decimal(amount, arc.decimals)), FeePolicy::SendExact)
+                (try_fus!(sat_from_big_decimal(&amount, arc.decimals)), FeePolicy::SendExact)
             };
             let outputs = vec![TransactionOutput {
                 value,
@@ -1443,7 +1443,7 @@ pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
 
 pub enum UtxoInitMode {
     Native,
-    Electrum(Vec<String>),
+    Electrum(Vec<ElectrumRpcRequest>),
 }
 
 pub fn utxo_coin_from_iguana_info(
@@ -1489,21 +1489,21 @@ pub fn utxo_coin_from_iguana_info(
 
             UtxoRpcClientEnum::Native(NativeClient(client))
         },
-        UtxoInitMode::Electrum(mut urls) => {
+        UtxoInitMode::Electrum(mut servers) => {
             let mut rng = thread_rng();
-            urls.as_mut_slice().shuffle(&mut rng);
+            servers.as_mut_slice().shuffle(&mut rng);
             let mut client = ElectrumClientImpl::new();
-            for url in urls.iter() {
-                match client.add_server(url) {
+            for server in servers.iter() {
+                match client.add_server(server) {
                     Ok(_) => (),
-                    Err(e) => log!("Error " (e) " connecting to " (url) ". Address won't be used")
+                    Err(e) => log!("Error " (e) " connecting to " [server] ". Address won't be used")
                 };
             }
 
             let mut attempts = 0;
             while !client.is_connected() {
                 if attempts >= 10 {
-                    return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", urls);
+                    return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
                 }
 
                 thread::sleep(Duration::from_millis(500));
@@ -1520,7 +1520,7 @@ pub fn utxo_coin_from_iguana_info(
                 loop {
                     if let Some(client) = weak_client.upgrade() {
                         if let Err(e) = client.server_ping().wait() {
-                            log!("Electrum servers " [urls] " ping error " [e]);
+                            log!("Electrum servers " [servers] " ping error " [e]);
                         }
                     } else {
                         break;

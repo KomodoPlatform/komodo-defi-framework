@@ -930,20 +930,39 @@ impl MakerSwap {
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
         let fee_amount = self.taker_amount.clone() / 777;
-        match self.taker_coin.validate_fee(taker_fee, &fee_addr_pub_key, fee_amount) {
-            Ok(_) => (),
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into())]
-            ))
+
+        let mut attempts = 0;
+        loop {
+            match self.taker_coin.validate_fee(&taker_fee, &fee_addr_pub_key, &fee_amount) {
+                Ok(_) => break,
+                Err(err) => if attempts >= 3 {
+                    return Ok((
+                        Some(MakerSwapCommand::Finish),
+                        vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into())]
+                    ))
+                } else {
+                    attempts += 1;
+                    thread::sleep(Duration::from_secs(10));
+                }
+            };
         };
-        let fee_details = match self.taker_coin.tx_details_by_hash(&hash) {
-            Ok(details) => details,
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("Taker fee tx_details_by_hash failed {}", err).into())]
-            ))
+
+        let mut attempts = 0;
+        let fee_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(err) => if attempts >= 3 {
+                    return Ok((
+                        Some(MakerSwapCommand::Finish),
+                        vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("Taker fee tx_details_by_hash failed {}", err).into())]
+                    ))
+                } else {
+                    attempts += 1;
+                    thread::sleep(Duration::from_secs(10));
+                }
+            };
         };
+
         Ok((
             Some(MakerSwapCommand::SendPayment),
             vec![MakerSwapEvent::TakerFeeValidated(fee_details)]
@@ -1041,12 +1060,20 @@ impl MakerSwap {
 
         let hash = taker_payment.tx_hash();
         log!({ "Taker payment tx {:02x}", hash });
-        let tx_details = match self.taker_coin.tx_details_by_hash(&hash) {
-            Ok(details) => details,
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_details_by_hash: {}", err).into())]
-            )),
+        let mut attempts = 0;
+        let tx_details = loop {
+            match self.taker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(err) => if attempts >= 3 {
+                    return Ok((
+                        Some(MakerSwapCommand::RefundMakerPayment),
+                        vec![MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_details_by_hash: {}", err).into())]
+                    ))
+                } else {
+                    attempts += 1;
+                    thread::sleep(Duration::from_secs(10));
+                }
+            };
         };
 
         Ok((
@@ -1730,12 +1757,20 @@ impl TakerSwap {
 
         let hash = maker_payment.tx_hash();
         log!({"Got maker payment {:02x}", hash});
-        let tx_details = match self.maker_coin.tx_details_by_hash(&hash) {
-            Ok(details) => details,
-            Err(e) => return Ok((
-                Some(TakerSwapCommand::Finish),
-                vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!maker_coin.tx_details_by_hash: {}", e).into())]
-            )),
+        let mut attempts = 0;
+        let tx_details = loop {
+            match self.maker_coin.tx_details_by_hash(&hash) {
+                Ok(details) => break details,
+                Err(e) => if attempts >= 3 {
+                    return Ok((
+                        Some(TakerSwapCommand::Finish),
+                        vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!maker_coin.tx_details_by_hash: {}", e).into())]
+                    ))
+                } else {
+                    attempts += 1;
+                    thread::sleep(Duration::from_secs(10));
+                },
+            };
         };
 
         Ok((

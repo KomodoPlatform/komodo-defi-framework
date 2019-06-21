@@ -525,7 +525,7 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum2.cipig.net:10022"],
+        "servers": [{"url":"electrum2.cipig.net:10022"}],
         "mm2": 1,
     })));
 
@@ -536,7 +536,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum2.cipig.net:10022"],
+        "servers": [{"url":"electrum2.cipig.net:10022"}],
         "mm2": 1,
     })));
 
@@ -547,7 +547,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "PIZZA",
-        "urls": ["electrum1.cipig.net:10024"],
+        "servers": [{"url":"electrum2.cipig.net:10024"}],
         "mm2": 1,
     })));
 

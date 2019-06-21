@@ -1,3 +1,4 @@
+use bigdecimal::BigDecimal;
 use bytes::{BytesMut};
 use chain::{OutPoint, Transaction as UtxoTransaction};
 use common::{CORE, slurp_req, StringError};
@@ -12,8 +13,10 @@ use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
 use hyper::{Body, Request, StatusCode};
 use hyper::header::{AUTHORIZATION};
+use hyper::Uri;
 use keys::Address;
 use rpc::v1::types::{H256 as H256Json, Transaction as RpcTransaction, Bytes as BytesJson, VerboseBlockClient};
+use rustls::{self, ClientConfig, Session};
 use script::{Builder};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
@@ -27,8 +30,24 @@ use std::sync::{Mutex, Arc};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
 use tokio::codec::{Encoder, Decoder};
+use tokio_io::{AsyncRead, AsyncWrite};
+use tokio_rustls::{TlsConnector, TlsStream};
+use tokio_rustls::webpki::{DNSName, DNSNameRef};
 use tokio_tcp::TcpStream;
-use bigdecimal::BigDecimal;
+use webpki_roots::TLS_SERVER_ROOTS;
+
+/// Skips the server certificate verification on TLS connection
+pub struct NoCertificateVerification {}
+
+impl rustls::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(&self,
+                          _roots: &rustls::RootCertStore,
+                          _presented_certs: &[rustls::Certificate],
+                          _dns_name: DNSNameRef<'_>,
+                          _ocsp: &[u8]) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
+    }
+}
 
 #[derive(Debug)]
 pub enum UtxoRpcClientEnum {
@@ -470,25 +489,75 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     result
 }
 
+#[derive(Debug, Deserialize)]
+/// Deserializable Electrum protocol representation for RPC
+pub enum ElectrumProtocol {
+    /// TCP
+    TCP,
+    /// SSL/TLS
+    SSL,
+}
+
+#[derive(Debug, Deserialize)]
+/// Electrum request RPC representation
+pub struct ElectrumRpcRequest {
+    pub url: String,
+    #[serde(default)]
+    pub protocol: ElectrumProtocol,
+    #[serde(default)]
+    pub disable_cert_verification: bool,
+}
+
+impl Default for ElectrumProtocol {
+    fn default() -> Self {
+        ElectrumProtocol::TCP
+    }
+}
+
+#[derive(Clone, Debug)]
+/// Electrum client configuration
+enum ElectrumConfig {
+    TCP,
+    SSL(DNSName, bool)
+}
+
+/// Attempts to proccess the request (parse url, etc), build up the config and create new electrum connection
 pub fn spawn_electrum(
-    addr_str: &str,
+    req: &ElectrumRpcRequest
 ) -> Result<ElectrumConnection, String> {
-    let mut addr = match addr_str.to_socket_addrs() {
+    let mut addr = match req.url.to_socket_addrs() {
         Ok(a) => a,
-        Err(e) => return ERR!("{} error {:?}", addr_str, e),
+        Err(e) => return ERR!("{} error {:?}", req.url, e),
     };
     let addr = match addr.next() {
         Some(a) => a,
-        None => return ERR!("Socket addr from addr {} is None.", addr_str),
+        None => return ERR!("Socket addr from addr {} is None.", req.url),
     };
-    Ok(electrum_connect(addr))
+    let config = match req.protocol {
+        ElectrumProtocol::TCP => ElectrumConfig::TCP,
+        ElectrumProtocol::SSL => {
+            let uri: Uri = try_s!(req.url.parse());
+            let host = try_s!(uri.host().ok_or(ERRL!("Couldn't retrieve host from addr {}", req.url)));
+            let dns = try_s!(DNSNameRef::try_from_ascii_str(host).map_err(|e| ERRL!("{:?}", e)));
+            ElectrumConfig::SSL(dns.into(), req.disable_cert_verification)
+        }
+    };
+
+    Ok(electrum_connect(addr, config))
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+/// Represents the active Electrum connection to selected address
 pub struct ElectrumConnection {
+    /// The client connected to this SocketAddr
     addr: SocketAddr,
+    /// Configuration
+    config: ElectrumConfig,
+    /// The Sender forwarding requests to writing part of underlying stream
     tx: mpsc::Sender<Vec<u8>>,
+    /// Responses are stored here
     responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    /// Tracks the current connection state
     is_connected: Arc<AtomicBool>,
 }
 
@@ -703,8 +772,8 @@ impl ElectrumClientImpl {
         }
     }
 
-    pub fn add_server(&mut self, addr: &str) -> Result<(), String> {
-        let connection = try_s!(spawn_electrum(addr));
+    pub fn add_server(&mut self, req: &ElectrumRpcRequest) -> Result<(), String> {
+        let connection = try_s!(spawn_electrum(req));
         self.connections.push(connection);
         Ok(())
     }
@@ -820,47 +889,121 @@ fn electrum_process_chunk(chunk: &[u8], arc: Arc<Mutex<HashMap<String, JsonRpcRe
 }
 
 macro_rules! try_loop {
-    ($e:expr, $addr: ident, $rx: ident, $responses: ident, $connected: ident, $delay: ident) => {
+    ($e:expr, $rx: ident, $connection: ident, $delay: ident) => {
         match $e {
             Ok(res) => res,
             Err(e) => {
-                log!([$addr] " error " [e]);
+                log!([$connection.addr] " error " [e]);
                 if $delay < 30 {
                     $delay += 5;
                 }
-                return Box::new(futures::future::ok(Loop::Continue(($addr, $rx, $responses, $connected, $delay))));
+                return Box::new(futures::future::ok(Loop::Continue(($rx, $connection, $delay))));
             }
         }
     };
 }
 
+/// The enum wrapping possible variants of underlying Streams
+enum ElectrumStream<S> {
+    Tcp(TcpStream),
+    Tls(TlsStream<TcpStream, S>),
+}
+
+impl<S> AsRef<TcpStream> for ElectrumStream<S> {
+    fn as_ref(&self) -> &TcpStream {
+        match self {
+            ElectrumStream::Tcp(stream) => stream,
+            ElectrumStream::Tls(stream) => stream.get_ref().0
+        }
+    }
+}
+
+impl<S: Session> std::io::Read for ElectrumStream<S> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            ElectrumStream::Tcp(stream) => stream.read(buf),
+            ElectrumStream::Tls(stream) => stream.read(buf),
+        }
+    }
+}
+
+impl<S: Session> AsyncRead for ElectrumStream<S> {}
+
+impl<S: Session> std::io::Write for ElectrumStream<S> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            ElectrumStream::Tcp(stream) => stream.write(buf),
+            ElectrumStream::Tls(stream) => stream.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            ElectrumStream::Tcp(stream) => stream.flush(),
+            ElectrumStream::Tls(stream) => stream.flush(),
+        }
+    }
+}
+
+impl<S: Session> AsyncWrite for ElectrumStream<S> {
+    fn shutdown(&mut self) -> Poll<(), std::io::Error> {
+        match self {
+            ElectrumStream::Tcp(stream) => stream.shutdown(),
+            ElectrumStream::Tls(stream) => stream.shutdown(),
+        }
+    }
+}
+
 const ELECTRUM_TIMEOUT: u64 = 60;
 
+/// Builds up the electrum connection, spawns endless loop that attempts to reconnect to the server
+/// in case of connection errors
 fn electrum_connect(
     addr: SocketAddr,
+    config: ElectrumConfig
 ) -> ElectrumConnection {
     let (tx, rx) = mpsc::channel(0);
     let rx = rx_to_stream(rx);
     let connection = ElectrumConnection {
         addr,
+        config,
         is_connected: Arc::new(AtomicBool::new(false)),
         tx,
         responses: Arc::new(Mutex::new(HashMap::new())),
     };
 
-    let connect_loop = loop_fn((addr, rx, connection.responses.clone(), connection.is_connected.clone(), 0), move |(addr, rx, responses, connected, mut delay)| {
-        let tcp = if delay > 0 {
-            Either::A(Delay::new(Duration::from_secs(delay)).and_then(move |_| TcpStream::connect(&addr)))
-        } else {
-            Either::B(TcpStream::connect(&addr))
+    let connect_loop = loop_fn((rx, connection.clone(), 0), move |(rx, connection, mut delay)| {
+        let connect_f = match &connection.config {
+            ElectrumConfig::TCP => Either::A(TcpStream::connect(&connection.addr).map(|stream| ElectrumStream::Tcp(stream))),
+            ElectrumConfig::SSL(dns, skip_validation) => {
+                let dns = dns.clone();
+                let mut ssl_config = ClientConfig::new();
+                ssl_config.root_store.add_server_trust_anchors(&TLS_SERVER_ROOTS);
+                if *skip_validation {
+                    ssl_config
+                        .dangerous()
+                        .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+                }
+                let tls_connector = TlsConnector::from(Arc::new(ssl_config));
+
+                Either::B(TcpStream::connect(&connection.addr).and_then(move |stream| {
+                    tls_connector.connect(dns.as_ref(), stream).map(|stream| ElectrumStream::Tls(stream))
+                }))
+            }
         };
-        tcp.then(move |stream| -> Box<Future<Item=Loop<(), _>, Error=_> + Send> {
-            let stream = try_loop!(stream, addr, rx, responses, connected, delay);
-            try_loop!(stream.set_nodelay(true), addr, rx, responses, connected, delay);
-            connected.store(true, AtomicOrdering::Relaxed);
-            // reset the delay if we're connected successfully
+
+        let with_delay_f = if delay > 0 {
+            Either::A(Delay::new(Duration::from_secs(delay)).and_then(move |_| connect_f))
+        } else {
+            Either::B(connect_f)
+        };
+        with_delay_f.then(move |stream| -> Box<Future<Item=Loop<(), _>, Error=_> + Send> {
+            let stream = try_loop!(stream, rx, connection, delay);
+            try_loop!(stream.as_ref().set_nodelay(true), rx, connection, delay);
+            connection.is_connected.store(true, AtomicOrdering::Relaxed);
+            // reset the delay if we've connected successfully
             delay = 5;
-            let stream_clone = try_loop!(stream.try_clone(), addr, rx, responses, connected, delay);
+            let stream_clone = try_loop!(stream.as_ref().try_clone(), rx, connection, delay);
             let last_chunk = Arc::new(AtomicU64::new(now_ms()));
             let interval = Interval::new(Duration::from_secs(ELECTRUM_TIMEOUT)).map_err(|e| { log!([e]); () });
             CORE.spawn({
@@ -878,12 +1021,11 @@ fn electrum_connect(
                     futures::future::ok(())
                 })
             });
-
             let (sink, stream) = Bytes.framed(stream).split();
             // this forwards the messages from rx to sink (write) part of tcp stream
             let send_all = SendAll::new(sink, rx);
             CORE.spawn({
-                let responses = responses.clone();
+                let responses = connection.responses.clone();
                 move |_| stream
                     .for_each(move |chunk| {
                         last_chunk.store(now_ms(), AtomicOrdering::Relaxed);
@@ -897,10 +1039,10 @@ fn electrum_connect(
             });
 
             Box::new(send_all.then(move |result| {
-                connected.store(false, AtomicOrdering::Relaxed);
+                connection.is_connected.store(false, AtomicOrdering::Relaxed);
                 if let Err((rx, e)) = result {
                     log!([addr] " failed to write to socket " [e]);
-                    return Ok(Loop::Continue((addr, rx, responses, connected, delay)));
+                    return Ok(Loop::Continue((rx, connection, delay)));
                 }
                 Ok(Loop::Break(()))
             }))
@@ -976,7 +1118,6 @@ fn electrum_request(
     // Electrum request and responses must end with \n
     // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
     json.push('\n');
-
     let request_id = request.get_id().to_string();
     let send_fut = tx.send(json.into_bytes())
         .map_err(|e| ERRL!("{}", e))
