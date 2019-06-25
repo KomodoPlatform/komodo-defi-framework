@@ -27,7 +27,7 @@ use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
 use common::{dstr, lp, MutexGuardWrapper};
 use common::custom_futures::join_all_sequential;
-use common::jsonrpc_client::JsonRpcError;
+use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
 use futures::{Future};
 use gstuff::{now_ms};
@@ -1261,14 +1261,14 @@ impl MmCoin for UtxoCoin {
                     let electrum_history = match client.scripthash_get_history(&hex::encode(script_hash)).wait() {
                         Ok(value) => value,
                         Err(e) => {
-                            match e {
-                                JsonRpcError::Transport(e) | JsonRpcError::Parse(e) => {
+                            match &e.error {
+                                JsonRpcErrorType::Transport(e) | JsonRpcErrorType::Parse(e) => {
                                     ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on scripthash_get_history, retrying", e));
                                     thread::sleep(Duration::from_secs(10));
                                     continue;
                                 },
-                                JsonRpcError::Request(e) => {
-                                    if e.error == history_too_large {
+                                JsonRpcErrorType::Response(err) => {
+                                    if *err == history_too_large {
                                         ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Got `history too large`, stopping further attempts to retrieve it"));
                                         self.save_history_to_file(&unwrap!(json::to_vec(&json!({
                                             "error": {

@@ -52,16 +52,19 @@ pub struct JsonRpcResponse {
 }
 
 #[derive(Debug)]
-pub struct RequestError {
+pub struct  JsonRpcError {
     request: JsonRpcRequest,
-    pub error: Json,
+    pub error: JsonRpcErrorType,
 }
 
 #[derive(Debug)]
-pub enum JsonRpcError {
+pub enum JsonRpcErrorType {
+    /// Error from transport layer
     Transport(String),
-    Request(RequestError),
+    /// Response parse error
     Parse(String),
+    /// The JSON-RPC error returned from server
+    Response(Json)
 }
 
 impl fmt::Display for JsonRpcError {
@@ -81,17 +84,27 @@ pub trait JsonRpcClient {
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut;
 
     fn send_request<T: DeserializeOwned + Send + 'static>(&self, request: JsonRpcRequest) -> RpcRes<T> {
-        Box::new(self.transport(request.clone()).map_err(|e| JsonRpcError::Transport(e)).and_then(move |response| -> Result<T, JsonRpcError> {
+        let request_f = self.transport(request.clone()).map_err({
+            let request = request.clone();
+            move |e| JsonRpcError {
+                request,
+                error: JsonRpcErrorType::Transport(e)
+            }
+        });
+        Box::new(request_f.and_then(move |response| -> Result<T, JsonRpcError> {
             if !response.error.is_null() {
-                return Err(JsonRpcError::Request(RequestError {
+                return Err(JsonRpcError {
                     request,
-                    error: response.error,
-                }));
+                    error: JsonRpcErrorType::Response(response.error),
+                });
             }
 
             match json::from_value(response.result.clone()) {
                 Ok(res) => Ok(res),
-                Err(e) => Err(JsonRpcError::Parse(ERRL!("Request {:?} error {:?} parsing result from response {:?}", request, e, response))),
+                Err(e) => Err(JsonRpcError {
+                    request,
+                    error: JsonRpcErrorType::Parse(ERRL!("error {:?} parsing result from response {:?}", e, response)),
+                }),
             }
         }))
     }

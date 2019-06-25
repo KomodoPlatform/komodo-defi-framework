@@ -1,3 +1,4 @@
+use rpc::v1::types::Transaction as RpcTransaction;
 use super::*;
 use crate::utxo::rpc_clients::ElectrumProtocol;
 
