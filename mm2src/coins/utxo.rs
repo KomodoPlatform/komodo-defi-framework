@@ -186,6 +186,10 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     zcash: bool,
     /// Address and privkey checksum type
     checksum_type: ChecksumType,
+    /// Fork id used in sighash
+    fork_id: u32,
+    /// Signature version
+    signature_version: SignatureVersion,
 }
 
 impl UtxoCoinImpl {
@@ -248,19 +252,19 @@ fn payment_script(
         .into_script()
 }
 
-fn script_sig(message: &H256, key_pair: &KeyPair) -> Result<Bytes, String> {
+fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
     let signature = try_s!(key_pair.private().sign(message));
 
     let mut sig_script = Bytes::default();
     sig_script.append(&mut Bytes::from((*signature).to_vec()));
     // Using SIGHASH_ALL only for now
-    sig_script.append(&mut Bytes::from(vec![1]));
+    sig_script.append(&mut Bytes::from(vec![1 | fork_id as u8]));
 
     Ok(sig_script)
 }
 
-fn script_sig_with_pub(message: &H256, key_pair: &KeyPair) -> Result<Bytes, String> {
-    let sig_script = try_s!(script_sig(message, key_pair));
+fn script_sig_with_pub(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
+    let sig_script = try_s!(script_sig(message, key_pair, fork_id));
 
     let builder = Builder::default();
 
@@ -275,16 +279,18 @@ fn p2pkh_spend(
     signer: &TransactionInputSigner,
     input_index: usize,
     key_pair: &KeyPair,
-    prev_script: &Script
+    prev_script: &Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
 ) -> Result<TransactionInput, String> {
     let script = Builder::build_p2pkh(&key_pair.public().address_hash());
     if script != *prev_script {
         return ERR!("p2pkh script {} built from input key pair doesn't match expected prev script {}", script, prev_script);
     }
+    let sighash_type = 1 | fork_id;
+    let sighash = signer.signature_hash(input_index, signer.inputs[input_index].amount, &script, signature_version, sighash_type);
 
-    let sighash = signer.signature_hash(input_index, 0, &script, SignatureVersion::Base, 1);
-
-    let script_sig = try_s!(script_sig_with_pub(&sighash, key_pair));
+    let script_sig = try_s!(script_sig_with_pub(&sighash, key_pair, fork_id));
 
     Ok(TransactionInput {
         script_sig,
@@ -301,10 +307,12 @@ fn p2sh_spend(
     key_pair: &KeyPair,
     script_data: Script,
     redeem_script: Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
 ) -> Result<TransactionInput, String> {
-    let sighash = signer.signature_hash(input_index, 0, &redeem_script, SignatureVersion::Base, 1);
+    let sighash = signer.signature_hash(input_index, signer.inputs[input_index].amount, &redeem_script, signature_version, 1 | fork_id);
 
-    let sig = try_s!(script_sig(&sighash, &key_pair));
+    let sig = try_s!(script_sig(&sighash, &key_pair, fork_id));
 
     let mut resulting_script = Builder::default().push_data(&sig).into_bytes();
     if !script_data.is_empty() {
@@ -334,6 +342,8 @@ fn p2sh_spending_tx(
     version_group_id: u32,
     zcash: bool,
     ticker: &str,
+    signature_version: SignatureVersion,
+    fork_id: u32,
 ) -> Result<UtxoTx, String> {
     // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
     // Implication for users: GetMedianTimePast() always trails behind the current time,
@@ -368,7 +378,7 @@ fn p2sh_spending_tx(
         zcash,
     };
     let signed_input = try_s!(
-        p2sh_spend(&unsigned, 0, key_pair, script_data, redeem_script.into())
+        p2sh_spend(&unsigned, 0, key_pair, script_data, redeem_script.into(), signature_version, fork_id)
     );
     Ok(UtxoTx {
         version: unsigned.version,
@@ -401,12 +411,14 @@ fn address_from_raw_pubkey(pub_key: &[u8], prefix: u8, t_addr_prefix: u8, checks
 fn sign_tx(
     unsigned: TransactionInputSigner,
     key_pair: &KeyPair,
-    prev_script: Script
+    prev_script: Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
 ) -> Result<UtxoTx, String> {
     let mut signed_inputs = vec![];
     for (i, _) in unsigned.inputs.iter().enumerate() {
         signed_inputs.push(
-            try_s!(p2pkh_spend(&unsigned, i, key_pair, &prev_script))
+            try_s!(p2pkh_spend(&unsigned, i, key_pair, &prev_script, signature_version, fork_id))
         );
     }
     Ok(UtxoTx {
@@ -461,7 +473,7 @@ impl UtxoCoin {
                 FeePolicy::SendExact,
             ).and_then(move |(unsigned, _)| -> TransactionFut {
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
-                let signed = try_fus!(sign_tx(unsigned, &arc.key_pair, prev_script));
+                let signed = try_fus!(sign_tx(unsigned, &arc.key_pair, prev_script, arc.signature_version, arc.fork_id));
                 Box::new(arc.rpc_client.send_transaction(&signed, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).then(move |res| {
                     // Drop the UTXO lock only when the transaction send result is known.
                     drop(utxo_lock);
@@ -821,7 +833,9 @@ impl SwapOps for UtxoCoin {
                 SEQUENCE_FINAL,
                 arc.version_group_id,
                 arc.zcash,
-                &arc.ticker
+                &arc.ticker,
+                arc.signature_version,
+                arc.fork_id,
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -866,6 +880,8 @@ impl SwapOps for UtxoCoin {
                 arc.version_group_id,
                 arc.zcash,
                 &arc.ticker,
+                arc.signature_version,
+                arc.fork_id,
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -909,6 +925,8 @@ impl SwapOps for UtxoCoin {
                 arc.version_group_id,
                 arc.zcash,
                 &arc.ticker,
+                arc.signature_version,
+                arc.fork_id,
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -957,6 +975,8 @@ impl SwapOps for UtxoCoin {
                 arc.version_group_id,
                 arc.zcash,
                 &arc.ticker,
+                arc.signature_version,
+                arc.fork_id,
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -1192,7 +1212,7 @@ impl MmCoin for UtxoCoin {
             ).and_then(move |(unsigned, data)| {
                 drop(utxo_lock);
                 let prev_script = Builder::build_p2pkh(&arc.my_address.hash);
-                let signed = try_s!(sign_tx(unsigned, &arc.key_pair, prev_script));
+                let signed = try_s!(sign_tx(unsigned, &arc.key_pair, prev_script, arc.signature_version, arc.fork_id));
                 let fee_details = UtxoFeeDetails {
                     amount: dstr(data.fee_amount as i64, arc.decimals),
                 };
@@ -1554,6 +1574,12 @@ pub fn utxo_coin_from_iguana_info(
     } else {
         8
     };
+
+    let (signature_version, fork_id) = if ticker == "BCH" {
+        (SignatureVersion::ForkId, 0x40)
+    } else {
+        (SignatureVersion::Base, 0)
+    };
     // should be sufficient to detect zcash by overwintered flag
     let zcash = overwintered;
     let coin = UtxoCoinImpl {
@@ -1580,6 +1606,8 @@ pub fn utxo_coin_from_iguana_info(
         version_group_id,
         zcash,
         checksum_type,
+        signature_version,
+        fork_id,
     };
     Ok(UtxoCoin(Arc::new(coin)).into())
 }

@@ -1,4 +1,3 @@
-use rpc::v1::types::Transaction as RpcTransaction;
 use super::*;
 use crate::utxo::rpc_clients::ElectrumProtocol;
 
@@ -43,6 +42,8 @@ fn utxo_coin_for_test() -> UtxoCoin {
         version_group_id: 0x892f2085,
         zcash: true,
         checksum_type,
+        fork_id: 0,
+        signature_version: SignatureVersion::Base,
     };
 
     UtxoCoin(Arc::new(coin))
