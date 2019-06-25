@@ -135,13 +135,17 @@ impl MakerOrder {
     }
 
     fn is_cancellable(&self) -> bool {
+        !self.has_ongoing_matches()
+    }
+
+    fn has_ongoing_matches(&self) -> bool {
         for (_, order_match) in self.matches.iter() {
             // if there's at least 1 ongoing match the order is not cancellable
             if order_match.connected.is_none() && order_match.connect.is_none() {
-                return false;
+                return true;
             }
         }
-        true
+        return false;
     }
 }
 
@@ -314,6 +318,7 @@ pub fn lp_trades_loop(ctx: MmArc) {
         let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
         let mut my_taker_orders = unwrap!(ordermatch_ctx.my_taker_orders.lock());
         let mut my_maker_orders = unwrap!(ordermatch_ctx.my_maker_orders.lock());
+        let mut my_cancelled_orders = unwrap!(ordermatch_ctx.cancelled_orders.lock());
         // move the timed out and unmatched taker orders to maker
         *my_taker_orders = my_taker_orders.drain().filter_map(|(uuid, order)| if order.created_at + ORDERMATCH_TIMEOUT < now_ms() {
             delete_my_taker_order(&ctx, &order);
@@ -333,8 +338,19 @@ pub fn lp_trades_loop(ctx: MmArc) {
             ).collect();
             save_my_maker_order(&ctx, order);
         });
+        *my_maker_orders = my_maker_orders.drain().filter_map(|(uuid, order)|
+            if order.available_amount() <= 0.into() && !order.has_ongoing_matches() {
+                delete_my_maker_order(&ctx, &order);
+                my_cancelled_orders.insert(uuid, order);
+                None
+            } else {
+                Some((uuid, order))
+            }
+        ).collect();
+
         drop(my_taker_orders);
         drop(my_maker_orders);
+        drop(my_cancelled_orders);
 
         if now_ms() > last_price_broadcast + 10000 {
             if let Err(e) = broadcast_my_maker_orders(&ctx) {
@@ -405,28 +421,28 @@ pub unsafe fn lp_trade_command(
         };
         if H256Json::from(lp::G.LP_mypub25519.bytes) == connected.dest_pub_key && H256Json::from(lp::G.LP_mypub25519.bytes) != connected.sender_pubkey {
             let mut my_taker_orders = unwrap!(ordermatch_ctx.my_taker_orders.lock());
-            let my_order = match my_taker_orders.get_mut(&connected.taker_order_uuid) {
-                Some(o) => o,
-                None => {
+            let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
+                Entry::Occupied(e) => e,
+                Entry::Vacant(_) => {
                     log!("Our node doesn't have the order with uuid "(connected.taker_order_uuid));
                     return 1;
                 },
             };
-            let order_match = match my_order.matches.get_mut(&connected.maker_order_uuid) {
+            let order_match = match my_order_entry.get().matches.get(&connected.maker_order_uuid) {
                 Some(o) => o,
                 None => {
                     log!("Our node doesn't have the match with uuid "(connected.maker_order_uuid));
                     return 1;
                 }
             };
-            order_match.connected = Some(connected);
-            order_match.last_updated = now_ms();
             // alice
             lp_connected_alice(
                 &ctx,
                 order_match,
             );
-            save_my_taker_order(&ctx, &my_order);
+            // remove the matched order immediately
+            delete_my_taker_order(&ctx, &my_order_entry.get());
+            my_order_entry.remove();
             // AG: Bob's p2p ID (`LP_mypub25519`) is in `json["srchash"]`.
             log!("CONNECTED.(" (json) ")");
         }
