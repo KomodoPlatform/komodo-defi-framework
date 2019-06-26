@@ -1276,7 +1276,9 @@ pub fn run_maker_swap(mut swap: MakerSwap, initial_command: Option<MakerSwapComm
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                unwrap!(broadcast_my_swap_status(&swap.uuid, &swap.ctx));
+                if let Err(e) = broadcast_my_swap_status(&swap.uuid, &swap.ctx) {
+                    log!("!broadcast_my_swap_status(" (swap.uuid) "): " (e));
+                }
                 break;
             },
         }
@@ -1309,7 +1311,9 @@ pub fn run_taker_swap(mut swap: TakerSwap, initial_command: Option<TakerSwapComm
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                unwrap!(broadcast_my_swap_status(&swap.uuid, &swap.ctx));
+                if let Err(e) = broadcast_my_swap_status(&swap.uuid, &swap.ctx) {
+                    log!("!broadcast_my_swap_status(" (swap.uuid) "): " (e));
+                }
                 break;
             },
         }
@@ -2120,9 +2124,9 @@ fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
             match swap.events.first_mut() {
                 Some(ref mut event) => match &mut event.event {
                     MakerSwapEvent::Started(ref mut data) => data.secret = H256Json::default(),
-                    _ => return ERR!("Swap first event must be Started"),
+                    _ => (),
                 }
-                None => return ERR!("Swap events are empty"),
+                None => (),
             }
         }
     };

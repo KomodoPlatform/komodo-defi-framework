@@ -240,8 +240,29 @@ impl OrdermatchContext {
 unsafe fn lp_connect_start_bob(ctx: &MmArc, maker_match: &MakerMatch) -> i32 {
     let mut retval = -1;
     let loop_thread = thread::Builder::new().name("maker_loop".into()).spawn({
-        let taker_coin = unwrap!(unwrap! (lp_coinfind (ctx, &maker_match.reserved.rel)));
-        let maker_coin = unwrap!(unwrap! (lp_coinfind (ctx, &maker_match.reserved.base)));
+        let taker_coin = match lp_coinfind (&ctx, &maker_match.reserved.rel) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log!("Coin " (maker_match.reserved.rel) " is not found/enabled");
+                return -1;
+            }
+            Err(e) => {
+                log!("!lp_coinfind(" (maker_match.reserved.rel) "): " (e));
+                return -1;
+            }
+        };
+
+        let maker_coin = match lp_coinfind (&ctx, &maker_match.reserved.base) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log!("Coin " (maker_match.reserved.base) " is not found/enabled");
+                return -1;
+            }
+            Err(e) => {
+                log!("!lp_coinfind(" (maker_match.reserved.base) "): " (e));
+                return -1;
+            }
+        };
         let ctx = ctx.clone();
         let mut alice = lp::bits256::default();
         alice.bytes = maker_match.request.sender_pubkey.0;
@@ -280,8 +301,30 @@ unsafe fn lp_connected_alice(ctx: &MmArc, taker_match: &TakerMatch) { // alice
         let ctx = ctx.clone();
         let mut maker = lp::bits256::default();
         maker.bytes = taker_match.reserved.sender_pubkey.0;
-        let taker_coin = unwrap!(unwrap! (lp_coinfind (&ctx, &taker_match.reserved.rel)));
-        let maker_coin = unwrap!(unwrap! (lp_coinfind (&ctx, &taker_match.reserved.base)));
+        let taker_coin = match lp_coinfind (&ctx, &taker_match.reserved.rel) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log!("Coin " (taker_match.reserved.rel) " is not found/enabled");
+                return;
+            }
+            Err(e) => {
+                log!("!lp_coinfind(" (taker_match.reserved.rel) "): " (e));
+                return;
+            }
+        };
+
+        let maker_coin = match lp_coinfind (&ctx, &taker_match.reserved.base) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log!("Coin " (taker_match.reserved.base) " is not found/enabled");
+                return;
+            }
+            Err(e) => {
+                log!("!lp_coinfind(" (taker_match.reserved.base) "): " (e));
+                return;
+            }
+        };
+
         let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256));
         let maker_amount = taker_match.reserved.base_amount.clone();
         let taker_amount = taker_match.reserved.rel_amount.clone();
