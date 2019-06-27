@@ -314,6 +314,9 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     /// Gets tx details by hash requesting the coin RPC if required
     fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String>;
+
+    /// Transaction history background sync status
+    fn history_sync_status(&self) -> HistorySyncState;
 }
 
 #[derive(Clone, Debug)]
@@ -819,7 +822,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     };
 
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
-        try_s! (utxo_coin_from_iguana_info (ii, utxo_mode, rpc_port)) .into()
+        try_s! (utxo_coin_from_iguana_info (ii, utxo_mode, rpc_port, req)) .into()
     } else {
         try_s! (eth_coin_from_iguana_info(ii, req)) .into()
     };
@@ -954,65 +957,68 @@ pub fn send_raw_transaction (ctx: MmArc, req: Json) -> HyRes {
     }))
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "state", content = "additional_info")]
+pub enum HistorySyncState {
+    NotEnabled,
+    NotStarted,
+    InProgress(Json),
+    Error(Json),
+    Finished,
+}
+
 /// Returns the transaction history of selected coin. Returns no more than `limit` records (default: 10).
 /// Skips the first `skip` records (default: 0).
 /// Transactions are sorted by number of confirmations in ascending order.
 pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind(&ctx, &ticker) {
+        Ok(Some(t)) => t,
+        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
+        Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
     };
     let limit = req["limit"].as_u64().unwrap_or(10);
     let from_id: Option<BytesJson> = try_h!(json::from_value(req["from_id"].clone()));
     let file_path = coin.tx_history_path(&ctx);
     let content = slurp(&file_path);
-    if content.is_empty() {
+    let history: Vec<TransactionDetails> = match json::from_slice(&content) {
+        Ok(h) => h,
+        Err(e) => {
+            if !content.is_empty() {
+                log!("Error " (e) " on attempt to deserialize file " (file_path.display()) " content as Vec<TransactionDetails>");
+            }
+            vec![]
+        }
+    };
+    let total_records = history.len();
+    Box::new(coin.current_block().and_then(move |block_number| {
+        let skip = match &from_id {
+            Some(id) => {
+                try_h!(history.iter().position(|item| item.internal_id == *id).ok_or(format!("from_id {:02x} is not found", id))) + 1
+            },
+            None => 0,
+        };
+        let history = history.into_iter().skip(skip).take(limit as usize);
+        let history: Vec<Json> = history.map(|item| {
+            let tx_block = item.block_height;
+            let mut json = unwrap!(json::to_value(item));
+            json["confirmations"] = if tx_block == 0 {
+                Json::from(0)
+            } else {
+                Json::from(block_number - tx_block + 1)
+            };
+            json
+        }).collect();
         rpc_response(200, json!({
             "result": {
-                "transactions": [],
+                "transactions": history,
                 "limit": limit,
-                "skipped": 0,
+                "skipped": skip,
                 "from_id": from_id,
-                "total": 0,
+                "total": total_records,
+                "current_block": block_number,
+                "sync_status": coin.history_sync_status(),
             }
         }).to_string())
-    } else {
-        let history: Vec<TransactionDetails> = match json::from_slice(&content) {
-            Ok(h) => h,
-            Err(_) => {
-                return rpc_response(500, content);
-            }
-        };
-        let total_records = history.len();
-        Box::new(coin.current_block().and_then(move |block_number| {
-            let skip = match &from_id {
-                Some(id) => {
-                    try_h!(history.iter().position(|item| item.internal_id == *id).ok_or(format!("from_id {:02x} is not found", id))) + 1
-                },
-                None => 0,
-            };
-            let history = history.into_iter().skip(skip).take(limit as usize);
-            let history: Vec<Json> = history.map(|item| {
-                let tx_block = item.block_height;
-                let mut json = unwrap!(json::to_value(item));
-                json["confirmations"] = if tx_block == 0 {
-                    Json::from(0)
-                } else {
-                    Json::from(block_number - tx_block + 1)
-                };
-                json
-            }).collect();
-            rpc_response(200, json!({
-                "result": {
-                    "transactions": history,
-                    "limit": limit,
-                    "skipped": skip,
-                    "from_id": from_id,
-                    "total": total_records,
-                }
-            }).to_string())
-        }))
-    }
+    }))
 }

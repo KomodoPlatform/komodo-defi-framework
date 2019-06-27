@@ -55,7 +55,7 @@ use std::time::Duration;
 pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
+use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 use futures::future::Either;
 
@@ -190,6 +190,7 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     fork_id: u32,
     /// Signature version
     signature_version: SignatureVersion,
+    history_sync_state: Mutex<HistorySyncState>,
 }
 
 impl UtxoCoinImpl {
@@ -1290,12 +1291,10 @@ impl MmCoin for UtxoCoin {
                                 JsonRpcErrorType::Response(err) => {
                                     if *err == history_too_large {
                                         ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Got `history too large`, stopping further attempts to retrieve it"));
-                                        self.save_history_to_file(&unwrap!(json::to_vec(&json!({
-                                            "error": {
-                                                "code": HISTORY_TOO_LARGE_ERR_CODE,
-                                                "message": "Got `history too large` error from Electrum server. History is not available"
-                                            }
-                                        }))), &ctx);
+                                        *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Error(json!({
+                                            "code": HISTORY_TOO_LARGE_ERR_CODE,
+                                            "message": "Got `history too large` error from Electrum server. History is not available",
+                                        }));
                                         break;
                                     } else {
                                         ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {:?} on scripthash_get_history, retrying", e));
@@ -1311,12 +1310,30 @@ impl MmCoin for UtxoCoin {
                     electrum_history.into_iter().rev().map(|item| item.tx_hash).collect()
                 }
             };
+            let mut transactions_left = if tx_ids.len() > history_map.len() {
+                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                    "transactions_left": tx_ids.len() - history_map.len()
+                }));
+                tx_ids.len() - history_map.len()
+            } else {
+                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                    "transactions_left": 0
+                }));
+                0
+            };
+
             for txid in tx_ids {
                 let mut updated = false;
                 match history_map.entry(txid.clone()) {
                     Entry::Vacant(e) => {
                         if let Ok(tx_details) = self.tx_details_by_hash(&txid.0) {
                             e.insert(tx_details);
+                            if transactions_left > 0 {
+                                transactions_left -= 1;
+                                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                                    "transactions_left": transactions_left
+                                }));
+                            }
                             updated = true;
                         }
                     },
@@ -1343,6 +1360,7 @@ impl MmCoin for UtxoCoin {
                     self.save_history_to_file(&unwrap!(json::to_vec(&to_write)), &ctx);
                 }
             }
+            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
             thread::sleep(Duration::from_secs(30));
         }
     }
@@ -1411,6 +1429,10 @@ impl MmCoin for UtxoCoin {
             timestamp: verbose_tx.time.into(),
         })
     }
+
+    fn history_sync_status(&self) -> HistorySyncState {
+        unwrap!(self.history_sync_state.lock()).clone()
+    }
 }
 
 pub fn random_compressed_key_pair(prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
@@ -1470,6 +1492,7 @@ pub fn utxo_coin_from_iguana_info(
     info: *mut lp::iguana_info,
     mode: UtxoInitMode,
     rpc_port: u16,
+    req: &Json,
 ) -> Result<MmCoinEnum, String> {
     let info = unsafe { *info };
     let ticker = try_s! (unsafe {CStr::from_ptr (info.symbol.as_ptr())} .to_str()) .into();
@@ -1582,6 +1605,13 @@ pub fn utxo_coin_from_iguana_info(
     };
     // should be sufficient to detect zcash by overwintered flag
     let zcash = overwintered;
+
+    let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
+        HistorySyncState::NotStarted
+    } else {
+        HistorySyncState::NotEnabled
+    };
+
     let coin = UtxoCoinImpl {
         ticker,
         decimals,
@@ -1608,6 +1638,7 @@ pub fn utxo_coin_from_iguana_info(
         checksum_type,
         signature_version,
         fork_id,
+        history_sync_state: Mutex::new(initial_history_state),
     };
     Ok(UtxoCoin(Arc::new(coin)).into())
 }

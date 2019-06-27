@@ -44,6 +44,7 @@ fn utxo_coin_for_test() -> UtxoCoin {
         checksum_type,
         fork_id: 0,
         signature_version: SignatureVersion::Base,
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
     };
 
     UtxoCoin(Arc::new(coin))

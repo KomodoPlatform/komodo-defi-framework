@@ -50,7 +50,7 @@ use std::time::Duration;
 use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
-use super::{IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, TransactionDetails};
+use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, TransactionDetails};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 
@@ -90,6 +90,16 @@ struct SavedTraces {
     latest_block: U256,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct SavedErc20Events {
+    /// ERC20 events for my_address
+    events: Vec<Log>,
+    /// Earliest processed block
+    earliest_block: U256,
+    /// Latest processed block
+    latest_block: U256,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
@@ -109,6 +119,7 @@ pub struct EthCoinImpl {  // pImpl idiom.
     web3: Web3<Web3Transport>,
     decimals: u8,
     gas_station_url: Option<String>,
+    history_sync_state: Mutex<HistorySyncState>,
 }
 
 impl EthCoinImpl {
@@ -184,6 +195,31 @@ impl EthCoinImpl {
         let tmp_file = format!("{}.tmp", self.eth_traces_path(&ctx).display());
         unwrap!(std::fs::write(&tmp_file, content));
         unwrap!(std::fs::rename(tmp_file, self.eth_traces_path(&ctx)));
+    }
+
+    fn erc20_events_path(&self, ctx: &MmArc) -> PathBuf {
+        ctx.dbdir().join("TRANSACTIONS").join(format!("{}_{:#02x}_events.json", self.ticker, self.my_address))
+    }
+
+    /// Store ERC20 events to local DB
+    fn store_erc20_events(&self, ctx: &MmArc, events: &SavedErc20Events) {
+        let content = unwrap!(json::to_vec(events));
+        let tmp_file = format!("{}.tmp", self.erc20_events_path(&ctx).display());
+        unwrap!(std::fs::write(&tmp_file, content));
+        unwrap!(std::fs::rename(tmp_file, self.erc20_events_path(&ctx)));
+    }
+
+    /// Load saved ERC20 events from local DB
+    fn load_saved_erc20_events(&self, ctx: &MmArc) -> Option<SavedErc20Events> {
+        let content = slurp(&self.erc20_events_path(ctx));
+        if content.is_empty() {
+            return None
+        } else {
+            match json::from_slice(&content) {
+                Ok(t) => Some(t),
+                Err(_) => None,
+            }
+        }
     }
 
     /// The id used to differentiate payments on Etomic swap smart contract
@@ -972,101 +1008,135 @@ impl EthCoin {
 
     /// Downloads and saves ERC20 transaction history of my_address
     fn process_erc20_history(&self, token_addr: H160, ctx: &MmArc) {
-        loop {
-            let mut existing_history = self.load_history_from_file(ctx);
+        let delta = U256::from(10000);
 
-            // find the earliest and latest blocks for which we have history
-            // if downloading is interrupted for some reason we might not have all transactions from the past
-            // transactions are sorted by block number in descending order so it's ok to get first and last elements
-            let (earliest_block, latest_block) = if existing_history.is_empty() {
-                (BlockNumber::Earliest, BlockNumber::Earliest)
-            } else {
-                // can safely unwrap as history is not empty here
-                let max = unwrap!(existing_history.first()).block_height + 1;
-                let min = unwrap!(existing_history.last()).block_height - 1;
-                (BlockNumber::Number(min), BlockNumber::Number(max))
+        loop {
+            let current_block = match self.web3.eth().block_number().wait() {
+                Ok(block) => block,
+                Err(e) => {
+                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on eth_block_number, retrying", e));
+                    thread::sleep(Duration::from_secs(10));
+                    continue;
+                }
             };
+
+            let mut saved_events = match self.load_saved_erc20_events(&ctx) {
+                Some(events) => events,
+                None => SavedErc20Events {
+                    events: vec![],
+                    earliest_block: current_block,
+                    latest_block: current_block,
+                }
+            };
+            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                "blocks_left": u64::from(saved_events.earliest_block),
+            }));
 
             // AP: AFAIK ETH RPC doesn't support conditional filters like `get this OR this` so we have
             // to run several queries to get transfer events including our address as sender `or` receiver
             // TODO refactor this to batch requests instead of single request per query
-            let from_events_before_earliest = match self.erc20_transfer_events(
-                token_addr,
-                Some(self.my_address),
-                None,
-                BlockNumber::Earliest,
-                earliest_block,
-                None,
-            ).wait() {
-                Ok(events) => events,
-                Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
-                    thread::sleep(Duration::from_secs(10));
-                    continue;
-                }
-            };
+            if saved_events.earliest_block > 0.into() {
+                let before_earliest = if saved_events.earliest_block >= delta {
+                    saved_events.earliest_block - delta
+                } else {
+                    0.into()
+                };
 
-            let to_events_before_earliest = match self.erc20_transfer_events(
-                token_addr,
-                None,
-                Some(self.my_address),
-                BlockNumber::Earliest,
-                earliest_block,
-                None,
-            ).wait() {
-                Ok(events) => events,
-                Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
-                    thread::sleep(Duration::from_secs(10));
-                    continue;
-                }
-            };
+                let from_events_before_earliest = match self.erc20_transfer_events(
+                    token_addr,
+                    Some(self.my_address),
+                    None,
+                    BlockNumber::Number(before_earliest.into()),
+                    BlockNumber::Number((saved_events.earliest_block - 1).into()),
+                    None,
+                ).wait() {
+                    Ok(events) => events,
+                    Err(e) => {
+                        ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
+                        thread::sleep(Duration::from_secs(10));
+                        continue;
+                    }
+                };
 
-            let from_events_after_latest = match self.erc20_transfer_events(
-                token_addr,
-                Some(self.my_address),
-                None,
-                latest_block,
-                BlockNumber::Latest,
-                None,
-            ).wait() {
-                Ok(events) => events,
-                Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
-                    thread::sleep(Duration::from_secs(10));
-                    continue;
-                }
-            };
+                let to_events_before_earliest = match self.erc20_transfer_events(
+                    token_addr,
+                    None,
+                    Some(self.my_address),
+                    BlockNumber::Number(before_earliest.into()),
+                    BlockNumber::Number((saved_events.earliest_block - 1).into()),
+                    None,
+                ).wait() {
+                    Ok(events) => events,
+                    Err(e) => {
+                        ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
+                        thread::sleep(Duration::from_secs(10));
+                        continue;
+                    }
+                };
 
-            let to_events_after_latest = match self.erc20_transfer_events(
-                token_addr,
-                None,
-                Some(self.my_address),
-                latest_block,
-                BlockNumber::Latest,
-                None,
-            ).wait() {
-                Ok(events) => events,
-                Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
-                    thread::sleep(Duration::from_secs(10));
-                    continue;
-                }
-            };
+                saved_events.events.extend(from_events_before_earliest);
+                saved_events.events.extend(to_events_before_earliest);
+                saved_events.earliest_block = if before_earliest > 0.into() {
+                    before_earliest - 1
+                } else {
+                    0.into()
+                };
+                self.store_erc20_events(&ctx, &saved_events);
+            }
 
-            let all_events = from_events_before_earliest.into_iter()
-                .chain(to_events_before_earliest)
-                .chain(from_events_after_latest)
-                .chain(to_events_after_latest);
+            if current_block > saved_events.latest_block {
+                let from_events_after_latest = match self.erc20_transfer_events(
+                    token_addr,
+                    Some(self.my_address),
+                    None,
+                    BlockNumber::Number((saved_events.latest_block + 1).into()),
+                    BlockNumber::Number(current_block.into()),
+                    None,
+                ).wait() {
+                    Ok(events) => events,
+                    Err(e) => {
+                        ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
+                        thread::sleep(Duration::from_secs(10));
+                        continue;
+                    }
+                };
 
-            let all_events: HashMap<H256, Log> = all_events
+                let to_events_after_latest = match self.erc20_transfer_events(
+                    token_addr,
+                    None,
+                    Some(self.my_address),
+                    BlockNumber::Number((saved_events.latest_block + 1).into()),
+                    BlockNumber::Number(current_block.into()),
+                    None,
+                ).wait() {
+                    Ok(events) => events,
+                    Err(e) => {
+                        ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on erc20_transfer_events, retrying", e));
+                        thread::sleep(Duration::from_secs(10));
+                        continue;
+                    }
+                };
+
+                saved_events.events.extend(from_events_after_latest);
+                saved_events.events.extend(to_events_after_latest);
+                saved_events.latest_block = current_block;
+                self.store_erc20_events(&ctx, &saved_events);
+            }
+
+            let all_events: HashMap<_, _> = saved_events.events.iter()
                 .filter(|e| e.block_number.is_some() && e.transaction_hash.is_some() && !e.is_removed())
                 .map(|e| (e.transaction_hash.clone().unwrap(), e)).collect();
-            let mut all_events: Vec<Log> = all_events.into_iter().map(|(_, log)| log).collect();
+            let mut all_events: Vec<_> = all_events.into_iter().map(|(_, log)| log).collect();
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
             for event in all_events {
-                let internal_id = sha256(&json::to_vec(&event).unwrap());
+                let mut existing_history = self.load_history_from_file(ctx);
+                let internal_id = BytesJson::from(sha256(&json::to_vec(&event).unwrap()).to_vec());
+                if existing_history.iter().find(|item| item.internal_id == internal_id).is_some() {
+                    // the transaction already imported
+                    continue;
+                };
+
                 let amount = U256::from(event.data.0.as_slice());
                 let total_amount: f64 = display_u256_with_decimal_point(amount, 18).parse().unwrap();
                 let mut received_by_me = 0.;
@@ -1111,7 +1181,11 @@ impl EthCoin {
                 };
                 let block_number = event.block_number.unwrap();
                 let block = match self.web3.eth().block(BlockId::Number(BlockNumber::Number(block_number.into()))).wait() {
-                    Ok(b) => unwrap!(b),
+                    Ok(Some(b)) => b,
+                    Ok(None) => {
+                        ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Block {} is None", block_number));
+                        continue;
+                    },
                     Err(e) => {
                         ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {} on getting block {} data", e, block_number));
                         continue;
@@ -1145,7 +1219,12 @@ impl EthCoin {
                 });
                 self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
             }
-            thread::sleep(Duration::from_secs(30));
+            if saved_events.earliest_block == 0.into() {
+                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
+                thread::sleep(Duration::from_secs(15));
+            } else {
+                thread::sleep(Duration::from_secs(2));
+            }
         }
     }
 
@@ -1172,11 +1251,13 @@ impl EthCoin {
                 Some(traces) => traces,
                 None => SavedTraces {
                     traces: vec![],
-                    earliest_block: if current_block >= delta { current_block - delta } else { 0.into() },
+                    earliest_block: current_block,
                     latest_block: current_block,
                 }
             };
-
+            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                "blocks_left": u64::from(saved_traces.earliest_block),
+            }));
             let mut existing_history = self.load_history_from_file(ctx);
 
             // AP: AFAIK ETH RPC doesn't support conditional filters like `get this OR this` so we have
@@ -1193,7 +1274,7 @@ impl EthCoin {
                     vec![self.my_address],
                     vec![],
                     BlockNumber::Number(before_earliest.into()),
-                    BlockNumber::Number((saved_traces.earliest_block - 1).into()),
+                    BlockNumber::Number((saved_traces.earliest_block).into()),
                     None,
                 ).wait() {
                     Ok(traces) => traces,
@@ -1208,7 +1289,7 @@ impl EthCoin {
                     vec![],
                     vec![self.my_address],
                     BlockNumber::Number(before_earliest.into()),
-                    BlockNumber::Number((saved_traces.earliest_block - 1).into()),
+                    BlockNumber::Number((saved_traces.earliest_block).into()),
                     None,
                 ).wait() {
                     Ok(traces) => traces,
@@ -1220,7 +1301,12 @@ impl EthCoin {
                 };
                 saved_traces.traces.extend(from_traces_before_earliest);
                 saved_traces.traces.extend(to_traces_before_earliest);
-                saved_traces.earliest_block = before_earliest;
+                saved_traces.earliest_block = if before_earliest > 0.into() {
+                    // need to exclude the before earliest block from next iteration
+                    before_earliest - 1
+                } else {
+                    0.into()
+                };
                 self.store_eth_traces(&ctx, &saved_traces);
             }
 
@@ -1359,7 +1445,10 @@ impl EthCoin {
                 self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
             }
             if saved_traces.earliest_block == 0.into() {
+                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
                 thread::sleep(Duration::from_secs(15));
+            } else {
+                thread::sleep(Duration::from_secs(2));
             }
         }
     }
@@ -1413,7 +1502,7 @@ impl MmCoin for EthCoin {
                     Box::new(futures::future::ok(()))
                 }
             },
-            EthCoinType::Erc20(_addr) => {
+            EthCoinType::Erc20(_) => {
                 if balance < &required {
                     Box::new(futures::future::err(ERRL!("{} balance {} too low, required {}", ticker, balance, required)))
                 } else {
@@ -1596,6 +1685,10 @@ impl MmCoin for EthCoin {
             EthCoinType::Eth => self.process_eth_history(&ctx),
             EthCoinType::Erc20(token) => self.process_erc20_history(token, &ctx),
         }
+    }
+
+    fn history_sync_status(&self) -> HistorySyncState {
+        unwrap!(self.history_sync_state.lock()).clone()
     }
 }
 
@@ -1808,6 +1901,11 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         (EthCoinType::Erc20(token_addr), decimals)
     };
 
+    let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
+        HistorySyncState::NotStarted
+    } else {
+        HistorySyncState::NotEnabled
+    };
     let coin = EthCoinImpl {
         key_pair,
         my_address,
@@ -1817,6 +1915,7 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         ticker,
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         web3,
+        history_sync_state: Mutex::new(initial_history_state),
     };
     Ok(EthCoin(Arc::new(coin)))
 }
