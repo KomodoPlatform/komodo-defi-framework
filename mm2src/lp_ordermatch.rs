@@ -382,7 +382,7 @@ pub fn lp_trades_loop(ctx: MmArc) {
             save_my_maker_order(&ctx, order);
         });
         *my_maker_orders = my_maker_orders.drain().filter_map(|(uuid, order)|
-            if order.available_amount() <= 0.into() && !order.has_ongoing_matches() {
+            if order.available_amount() <= "0.00777".parse().unwrap() && !order.has_ongoing_matches() {
                 delete_my_maker_order(&ctx, &order);
                 my_cancelled_orders.insert(uuid, order);
                 None
@@ -770,7 +770,7 @@ impl PricePingRequest {
         let sig = try_s!(ctx.secp256k1_key_pair().private().sign(&sig_hash));
 
         let available_amount = order.available_amount();
-        let max_volume = if available_amount > 0.into() {
+        let max_volume = if available_amount > "0.00777".parse().unwrap() {
             let my_balance = try_s!(base_coin.my_balance().wait());
             if available_amount <= my_balance && available_amount > 0.into() {
                 available_amount
