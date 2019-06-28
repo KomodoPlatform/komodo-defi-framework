@@ -1227,3 +1227,90 @@ pub fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     });
     Ok(coins)
 }
+
+#[derive(Deserialize)]
+struct Pair {
+    base: String,
+    rel: String,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", content = "data")]
+enum CancelBy {
+    All,
+    Pair(Pair)
+}
+
+pub fn cancel_all_orders(ctx: MmArc, req: Json) -> HyRes {
+    let cancel_by: CancelBy = try_h!(json::from_value(req["cancel_by"].clone()));
+    let mut cancelled = vec![];
+    let mut currently_matching = vec![];
+
+    let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
+    let mut maker_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
+    let mut taker_orders = try_h!(ordermatch_ctx.my_taker_orders.lock());
+    let mut my_cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
+
+    match cancel_by {
+        CancelBy::All => {
+            *maker_orders = maker_orders.drain().filter_map(|(uuid, order)| {
+                if order.is_cancellable() {
+                    delete_my_maker_order(&ctx, &order);
+                    my_cancelled_orders.insert(uuid, order);
+                    cancelled.push(uuid);
+                    None
+                } else {
+                    currently_matching.push(uuid);
+                    Some((uuid, order))
+                }
+            }).collect();
+            *taker_orders = taker_orders.drain().filter_map(|(uuid, order)| {
+                if order.is_cancellable() {
+                    delete_my_taker_order(&ctx, &order);
+                    cancelled.push(uuid);
+                    None
+                } else {
+                    currently_matching.push(uuid);
+                    Some((uuid, order))
+                }
+            }).collect();
+        },
+        CancelBy::Pair(pair) => {
+            *maker_orders = maker_orders.drain().filter_map(|(uuid, order)| {
+                if order.base == pair.base && order.rel == pair.rel {
+                    if order.is_cancellable() {
+                        delete_my_maker_order(&ctx, &order);
+                        my_cancelled_orders.insert(uuid, order);
+                        cancelled.push(uuid);
+                        None
+                    } else {
+                        currently_matching.push(uuid);
+                        Some((uuid, order))
+                    }
+                } else {
+                    Some((uuid, order))
+                }
+            }).collect();
+            *taker_orders = taker_orders.drain().filter_map(|(uuid, order)| {
+                if order.request.base == pair.base && order.request.rel == pair.rel {
+                    if order.is_cancellable() {
+                        delete_my_taker_order(&ctx, &order);
+                        cancelled.push(uuid);
+                        None
+                    } else {
+                        currently_matching.push(uuid);
+                        Some((uuid, order))
+                    }
+                } else {
+                    Some((uuid, order))
+                }
+            }).collect();
+        },
+    }
+    rpc_response(200, json!({
+        "result": {
+            "cancelled": cancelled,
+            "currently_matching": currently_matching,
+        }
+    }).to_string())
+}

@@ -38,7 +38,7 @@ use std::sync::atomic::Ordering;
 use tokio_core::net::TcpListener;
 use hex;
 
-use crate::mm2::lp_ordermatch::{buy, cancel_order, my_orders, order_status, sell, set_price};
+use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, sell, set_price};
 use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, stats_swap_status, my_recent_swaps};
 use crate::mm2::CJSON;
 
@@ -199,6 +199,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
     DispatcherRes::Match (match &method[..] {  // Sorted alphanumerically (on the first latter) for readability.
         "autoprice" => lp_autoprice (ctx, req),
         "buy" => buy (ctx, req),
+        "cancel_all_orders" => cancel_all_orders (ctx, req),
         "cancel_order" => cancel_order (ctx, req),
         "coins_needed_for_kick_start" => coins_needed_for_kick_start(ctx),
         // TODO coin initialization performs blocking IO, i.e request.wait(), have to run it on CPUPOOL to avoid blocking shared CORE.
