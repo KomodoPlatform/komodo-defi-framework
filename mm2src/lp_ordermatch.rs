@@ -1053,7 +1053,7 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
                 return rpc_err_response(500, &format!("Order {} is being matched now, can't cancel", req.uuid));
             }
             let mut cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
-            let mut order = order.remove();
+            let order = order.remove();
             delete_my_maker_order(&ctx, &order);
             cancelled_orders.insert(req.uuid, order);
             return rpc_response(200, json!({

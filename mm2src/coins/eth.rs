@@ -780,7 +780,7 @@ impl EthCoin {
                         Token::Uint(value),
                         decoded[2].clone(),
                         Token::Address(Address::default()),
-                        Token::Address(payment.sender()),
+                        decoded[1].clone(),
                     ]));
 
                     clone.sign_and_send_transaction(0.into(), Action::Call(clone.swap_contract_address), data, U256::from(150000))
@@ -800,7 +800,7 @@ impl EthCoin {
                         decoded[1].clone(),
                         decoded[4].clone(),
                         Token::Address(token_addr),
-                        Token::Address(payment.sender()),
+                        decoded[3].clone(),
                     ]));
 
                     clone.sign_and_send_transaction(0.into(), Action::Call(clone.swap_contract_address), data, U256::from(150000))

@@ -104,3 +104,83 @@ fn test_wei_from_big_decimal() {
     let expected_wei: U256 = 12341u64.into();
     assert_eq!(expected_wei, wei);
 }
+
+#[test]
+#[ignore]
+/// temporary ignore, will refactor later to use dev chain and properly check transaction statuses
+fn send_and_refund_erc20_payment() {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Erc20(Address::from("0xc0eb7AeD740E1796992A08962c15661bDEB58003")),
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        web3,
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+    }));
+
+    let payment = coin.send_maker_payment(
+        (now_ms() / 1000) as u32 - 200,
+        &unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06")),
+        &[1; 20],
+        "0.001".parse().unwrap(),
+    ).wait().unwrap();
+
+    log!([payment]);
+
+    thread::sleep(Duration::from_secs(60));
+
+    let refund = coin.send_maker_refunds_payment(
+        &payment.tx_hex(),
+        (now_ms() / 1000) as u32 - 200,
+        &unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06")),
+        &[1; 20],
+    ).wait().unwrap();
+
+    log!([refund]);
+}
+
+#[test]
+#[ignore]
+/// temporary ignore, will refactor later to use dev chain and properly check transaction statuses
+fn send_and_refund_eth_payment() {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Eth,
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        web3,
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+    }));
+
+    let payment = coin.send_maker_payment(
+        (now_ms() / 1000) as u32 - 200,
+        &unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06")),
+        &[1; 20],
+        "0.001".parse().unwrap(),
+    ).wait().unwrap();
+
+    log!([payment]);
+
+    thread::sleep(Duration::from_secs(60));
+
+    let refund = coin.send_maker_refunds_payment(
+        &payment.tx_hex(),
+        (now_ms() / 1000) as u32 - 200,
+        &unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06")),
+        &[1; 20],
+    ).wait().unwrap();
+
+    log!([refund]);
+}
