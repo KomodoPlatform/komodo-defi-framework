@@ -950,7 +950,9 @@ pub fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
     // the difference of cancelled orders from maker orders that we broadcast the cancel request only once
     // cancelled record can be just dropped then
     let cancelled_orders: HashMap<_, _> = try_s!(ordermatch_ctx.cancelled_orders.lock()).drain().collect();
-    for (_, order) in cancelled_orders {
+    for (_, mut order) in cancelled_orders {
+        // TODO cancel means setting the volume to 0 as of now, should refactor
+        order.max_base_vol = 0.into();
         let ping = match PricePingRequest::new(ctx, &order) {
             Ok(p) => p,
             Err(e) => {
@@ -1052,8 +1054,6 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
             }
             let mut cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
             let mut order = order.remove();
-            // TODO cancel means setting the volume to 0 as of now, should refactor
-            order.max_base_vol = 0.into();
             delete_my_maker_order(&ctx, &order);
             cancelled_orders.insert(req.uuid, order);
             return rpc_response(200, json!({
