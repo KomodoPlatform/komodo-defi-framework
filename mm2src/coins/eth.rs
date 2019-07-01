@@ -1138,7 +1138,7 @@ impl EthCoin {
                 };
 
                 let amount = U256::from(event.data.0.as_slice());
-                let total_amount: f64 = display_u256_with_decimal_point(amount, 18).parse().unwrap();
+                let total_amount: f64 = display_u256_with_decimal_point(amount, self.decimals).parse().unwrap();
                 let mut received_by_me = 0.;
                 let mut spent_by_me = 0.;
 
