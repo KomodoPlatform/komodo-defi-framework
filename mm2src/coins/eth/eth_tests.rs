@@ -118,6 +118,7 @@ fn send_and_refund_erc20_payment() {
         my_address: key_pair.address(),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
         decimals: 18,
         gas_station_url: None,
@@ -158,6 +159,7 @@ fn send_and_refund_eth_payment() {
         my_address: key_pair.address(),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
         decimals: 18,
         gas_station_url: None,
@@ -183,4 +185,34 @@ fn send_and_refund_eth_payment() {
     ).wait().unwrap();
 
     log!([refund]);
+}
+
+#[test]
+#[ignore]
+fn test_nonce_several_urls() {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let my_transport = Web3Transport::new(vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()]).unwrap();
+    let infura_transport = Web3Transport::new(vec!["https://ropsten-rpc.linkpool.io".into()]).unwrap();
+    let web_infura = Web3::new(infura_transport);
+    let web3 = Web3::new(my_transport);
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Eth,
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        web3_instances: vec![Web3Instance { web3: web_infura, is_parity: false }, Web3Instance { web3: web3.clone(), is_parity: false }],
+        web3,
+        decimals: 18,
+        gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+    }));
+
+    log!("My address " [coin.my_address]);
+    log!("before payment");
+    let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
+
+    log!([payment]);
+    let new_nonce = get_addr_nonce(coin.my_address, &coin.web3_instances).wait().unwrap();
+    log!([new_nonce]);
 }

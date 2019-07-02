@@ -1286,8 +1286,6 @@ fn libtorrent() {
         }
 
         // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
-        // The header [works](https://github.com/boostorg/system/issues/42#issuecomment-486362606)
-        // and is needed on Linux, but not necessarily works as intended on Windows.
         cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
 
         cc.file("dht.cc")

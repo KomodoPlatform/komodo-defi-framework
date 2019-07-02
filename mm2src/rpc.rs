@@ -16,7 +16,7 @@
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-use coins::{enable, electrum, my_balance, send_raw_transaction, withdraw, my_tx_history};
+use coins::{enable, electrum, get_trade_fee, my_balance, send_raw_transaction, withdraw, my_tx_history};
 use common::{err_to_rpc_json_string, free_c_ptr, lp, lp_queue_command_for_c,
         rpc_response, rpc_err_response, HyRes};
 use common::wio::{CORE, HTTP};
@@ -210,6 +210,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
         "enable" => Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) })),
         "electrum" => Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) })),
+        "get_trade_fee" => get_trade_fee (ctx, req),
         "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
         "inventory" => inventory (ctx, req),

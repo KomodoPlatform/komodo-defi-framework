@@ -20,7 +20,7 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{lp, MutexGuardWrapper};
+use common::{HyRes, lp, MutexGuardWrapper, rpc_response};
 use common::wio::slurp_url;
 use common::mm_ctx::MmArc;
 use secp256k1::key::PublicKey;
@@ -29,7 +29,7 @@ use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTrans
 use ethereum_types::{Address, U256, H160};
 use ethkey::{ KeyPair, Public, public_to_address, SECP256K1 };
 use futures::Future;
-use futures::future::{Either, loop_fn, Loop};
+use futures::future::{Either, join_all, loop_fn, Loop};
 use futures_timer::Delay;
 use gstuff::{now_ms, slurp};
 use hashbrown::HashMap;
@@ -118,9 +118,17 @@ pub struct EthCoinImpl {  // pImpl idiom.
     my_address: Address,
     swap_contract_address: Address,
     web3: Web3<Web3Transport>,
+    /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
+    web3_instances: Vec<Web3Instance>,
     decimals: u8,
     gas_station_url: Option<String>,
     history_sync_state: Mutex<HistorySyncState>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Web3Instance {
+    web3: Web3<Web3Transport>,
+    is_parity: bool,
 }
 
 impl EthCoinImpl {
@@ -233,6 +241,15 @@ impl EthCoinImpl {
         input.extend_from_slice(&time_lock.to_le_bytes());
         input.extend_from_slice(secret_hash);
         sha256(&input).to_vec()
+    }
+
+    /// Get gas price
+    fn get_gas_price(&self) -> impl Future<Item=U256, Error=String> {
+        if let Some(url) = &self.gas_station_url {
+            Either::A(GasStationData::get_gas_price(&url))
+        } else {
+            Either::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
+        }
     }
 }
 
@@ -585,15 +602,10 @@ impl EthCoin {
     ) -> EthTxFut {
         let arc = self.clone();
         let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
-        let nonce_fut = self.web3.eth().transaction_count(self.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
+        let nonce_fut = get_addr_nonce(self.my_address, &self.web3_instances);
         Box::new(nonce_fut.then(move |nonce| -> EthTxFut {
             let nonce = try_fus!(nonce);
-            let gas_price_fut = if let Some(url) = &arc.gas_station_url {
-                GasStationData::get_gas_price(&url.clone())
-            } else {
-                Box::new(arc.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
-            };
-            Box::new(gas_price_fut.then(move |gas_price| -> EthTxFut {
+            Box::new(arc.get_gas_price().then(move |gas_price| -> EthTxFut {
                 let gas_price = try_fus!(gas_price);
                 let tx = UnSignedEthTx {
                     nonce,
@@ -615,7 +627,7 @@ impl EthCoin {
                     loop_fn((res, arc, nonce, nonce_lock), move |(res, arc, nonce, nonce_lock)| {
                         let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
                         delay_f.and_then(move |_res| {
-                            arc.web3.eth().transaction_count(arc.my_address, Some(BlockNumber::Pending)).then(move |new_nonce| {
+                            get_addr_nonce(arc.my_address, &arc.web3_instances).then(move |new_nonce| {
                                 let new_nonce = match new_nonce {
                                     Ok(n) => n,
                                     Err(e) => {
@@ -1553,14 +1565,9 @@ impl MmCoin for EthCoin {
                 }
             };
             let nonce_lock = MutexGuardWrapper(try_fus!(NONCE_LOCK.lock()));
-            let nonce_fut = arc.web3.eth().transaction_count(arc.my_address, Some(BlockNumber::Pending)).map_err(|e| ERRL!("{}", e));
+            let nonce_fut = get_addr_nonce(arc.my_address, &arc.web3_instances);
             Box::new(nonce_fut.and_then(move |nonce| {
-                let gas_price_fut = if let Some(url) = &arc.gas_station_url {
-                    Either::A(GasStationData::get_gas_price(&url.clone()))
-                } else {
-                    Either::B(arc.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
-                };
-                gas_price_fut.and_then(move |gas_price| {
+                arc.get_gas_price().and_then(move |gas_price| {
                     let estimate_gas_req = CallRequest {
                         value: Some(value),
                         data: Some(data.clone().into()),
@@ -1691,6 +1698,19 @@ impl MmCoin for EthCoin {
     fn history_sync_status(&self) -> HistorySyncState {
         unwrap!(self.history_sync_state.lock()).clone()
     }
+
+    fn get_trade_fee(&self) -> HyRes {
+        Box::new(self.get_gas_price().then(|res| {
+            let gas_price = try_h!(res);
+            let fee = gas_price * U256::from(150000);
+            rpc_response(200, json!({
+                "result": {
+                    "coin": "ETH",
+                    "amount": try_h!(u256_to_big_decimal(fee, 18))
+                }
+            }).to_string())
+        }))
+    }
 }
 
 fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
@@ -1817,6 +1837,7 @@ struct GasStationData {
 
 impl GasStationData {
     fn average_gwei(&self) -> U256 {
+        // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
         U256::from(self.average as u64 + 10) * U256::exp10(8)
     }
 
@@ -1886,6 +1907,29 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
     let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(unsafe { &lp::G.LP_privkey.bytes }));
     let my_address = key_pair.address();
 
+    let mut web3_instances = vec![];
+    for url in urls.iter() {
+        let transport = try_s!(Web3Transport::new(vec![url.clone()]));
+        let web3 = Web3::new(transport);
+        let version = match web3.web3().client_version().wait() {
+            Ok(v) => v,
+            Err(e) => {
+                log!("Couldn't get client version for url " (url) ", " (e));
+                continue;
+            }
+        };
+        web3_instances.push(
+            Web3Instance {
+                web3,
+                is_parity: version.contains("Parity") || version.contains("parity")
+            }
+        )
+    }
+
+    if web3_instances.is_empty() {
+        return ERR!("Failed to get client version for all urls");
+    }
+
     let transport = try_s!(Web3Transport::new(urls));
     let web3 = Web3::new(transport);
 
@@ -1916,6 +1960,7 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         ticker,
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         web3,
+        web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
     };
     Ok(EthCoin(Arc::new(coin)))
@@ -1956,4 +2001,47 @@ fn checksum_address(addr: &str) -> String {
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool {
     addr == &checksum_address(addr)
+}
+
+/// Requests the nonce from all available nodes and checks that returned results equal.
+/// Nodes might need some time to sync and there can be other coins that use same nodes in different order.
+/// We need to be sure that nonce is updated on all of them after transaction is sent.
+fn get_addr_nonce(addr: Address, web3s: &Vec<Web3Instance>) -> impl Future<Item=U256, Error=String> {
+    loop_fn((addr, web3s.clone(), true, 0), move |(addr, web3s, first_run, mut errors)| {
+        let futures: Vec<_> = web3s.iter().map(|web3| if web3.is_parity {
+                web3.web3.eth().parity_next_nonce(addr)
+            } else {
+                web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))
+            }
+        ).collect();
+        let fut = if first_run {
+            Either::A(join_all(futures).map_err(|e| ERRL!("{}", e)))
+        } else {
+            let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
+            Either::B(delay_f.and_then(|_| join_all(futures).map_err(|e| ERRL!("{}", e))))
+        };
+        fut.then(move |result| {
+            match result {
+                Ok(nonces) => {
+                    let max = nonces.iter().max().unwrap();
+                    let min = nonces.iter().min().unwrap();
+                    if max == min {
+                        Ok(Loop::Break(*max))
+                    } else {
+                        log!("Max nonce " (max) " != " (min) " min nonce");
+                        Ok(Loop::Continue((addr, web3s, false, errors)))
+                    }
+                },
+                Err(e) => {
+                    log!("Error " (e) " when getting nonce for addr " [addr]);
+                    errors += 1;
+                    if errors > 5 {
+                        ERR!("Couldn't get nonce after 5 errored attempts, aborting")
+                    } else {
+                        Ok(Loop::Continue((addr, web3s, false, errors)))
+                    }
+                }
+            }
+        })
+    })
 }

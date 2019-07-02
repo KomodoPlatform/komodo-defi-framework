@@ -25,7 +25,7 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{dstr, lp, MutexGuardWrapper};
+use common::{dstr, HyRes, lp, MutexGuardWrapper, rpc_response};
 use common::custom_futures::join_all_sequential;
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
@@ -441,9 +441,14 @@ fn sign_tx(
     })
 }
 
-/// Denominate BigDecimal amount in coin units to satoshis
+/// Denominate BigDecimal amount of coin units to satoshis
 fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<u64, String> {
     (amount * BigDecimal::from(10u64.pow(decimals as u32))).to_u64().ok_or(ERRL!("Could not get sat from amount {} with decimals {}", amount, decimals))
+}
+
+/// Convert satoshis to BigDecimal amount of coin units
+fn big_decimal_from_sat(satoshis: u64, decimals: u8) -> BigDecimal {
+    BigDecimal::from(satoshis) / BigDecimal::from(10u64.pow(decimals as u32))
 }
 
 #[derive(Clone, Debug)]
@@ -1432,6 +1437,24 @@ impl MmCoin for UtxoCoin {
 
     fn history_sync_status(&self) -> HistorySyncState {
         unwrap!(self.history_sync_state.lock()).clone()
+    }
+
+    fn get_trade_fee(&self) -> HyRes {
+        let ticker = self.ticker.clone();
+        let decimals = self.decimals;
+        Box::new(self.get_tx_fee().then(move |fee| {
+            let fee = try_h!(fee);
+            let amount = match fee {
+                ActualTxFee::Fixed(f) => f,
+                ActualTxFee::Dynamic(f) => f,
+            };
+            rpc_response(200, json!({
+                "result": {
+                    "coin": ticker,
+                    "amount": big_decimal_from_sat(amount, decimals)
+                }
+            }).to_string())
+        }))
     }
 }
 

@@ -317,6 +317,9 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
+
+    /// Get fee to be paid per 1 swap transaction
+    fn get_trade_fee(&self) -> HyRes;
 }
 
 #[derive(Clone, Debug)]
@@ -1021,4 +1024,14 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
             }
         }).to_string())
     }))
+}
+
+pub fn get_trade_fee(ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind(&ctx, &ticker) {
+        Ok(Some(t)) => t,
+        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
+        Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
+    };
+    coin.get_trade_fee()
 }
