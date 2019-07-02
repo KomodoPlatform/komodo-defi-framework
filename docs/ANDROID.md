@@ -53,4 +53,4 @@ by setting the NDK_HOME variable and letting it into the `cross` build.
 
 ### Build
 
-    cross build -vv --target=armv7-linux-androideabi
+    cross build --features native --target=armv7-linux-androideabi -vv
