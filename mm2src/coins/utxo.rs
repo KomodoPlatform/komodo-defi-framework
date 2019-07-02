@@ -1254,7 +1254,7 @@ impl MmCoin for UtxoCoin {
         let history = self.load_history_from_file(&ctx);
         let mut history_map: HashMap<H256Json, TransactionDetails> = history.into_iter().map(|tx| (H256Json::from(tx.tx_hash.as_slice()), tx)).collect();
         loop {
-            let tx_ids: Vec<H256Json> = match &self.rpc_client {
+            let tx_ids: Vec<(H256Json, u64)> = match &self.rpc_client {
                 UtxoRpcClientEnum::Native(client) => {
                     let mut from = 0;
                     let mut all_transactions = vec![];
@@ -1275,7 +1275,7 @@ impl MmCoin for UtxoCoin {
                     }
                     all_transactions.into_iter().filter_map(|item| {
                         if item.address == self.my_address() {
-                            Some(item.txid)
+                            Some((item.txid, item.blockindex))
                         } else {
                             None
                         }
@@ -1312,7 +1312,7 @@ impl MmCoin for UtxoCoin {
                     };
                     // electrum returns the most recent transactions in the end but we need to
                     // process them first so rev is required
-                    electrum_history.into_iter().rev().map(|item| item.tx_hash).collect()
+                    electrum_history.into_iter().rev().map(|item| (item.tx_hash, item.height as u64)).collect()
                 }
             };
             let mut transactions_left = if tx_ids.len() > history_map.len() {
@@ -1327,11 +1327,14 @@ impl MmCoin for UtxoCoin {
                 0
             };
 
-            for txid in tx_ids {
+            for (txid, height) in tx_ids {
                 let mut updated = false;
                 match history_map.entry(txid.clone()) {
                     Entry::Vacant(e) => {
-                        if let Ok(tx_details) = self.tx_details_by_hash(&txid.0) {
+                        if let Ok(mut tx_details) = self.tx_details_by_hash(&txid.0) {
+                            if tx_details.block_height == 0 && height > 0 {
+                                tx_details.block_height = height;
+                            }
                             e.insert(tx_details);
                             if transactions_left > 0 {
                                 transactions_left -= 1;
@@ -1343,12 +1346,10 @@ impl MmCoin for UtxoCoin {
                         }
                     },
                     Entry::Occupied(mut e) => {
-                        // request tx details again for unconfirmed transaction
-                        if e.get().block_height == 0 {
-                            if let Ok(tx_details) = self.tx_details_by_hash(&txid.0) {
-                                e.insert(tx_details);
-                                updated = true;
-                            }
+                        // update block height for previously unconfirmed transaction
+                        if e.get().block_height == 0 && height > 0 {
+                            e.get_mut().block_height = height;
+                            updated = true;
                         }
                     }
                 }

@@ -1035,3 +1035,20 @@ pub fn get_trade_fee(ctx: MmArc, req: Json) -> HyRes {
     };
     coin.get_trade_fee()
 }
+
+#[derive(Serialize)]
+struct EnabledCoin {
+    ticker: String,
+    address: String,
+}
+
+pub fn get_enabled_coins(ctx: MmArc) -> HyRes {
+    let coins_ctx: Arc<CoinsContext> = try_h!(CoinsContext::from_ctx(&ctx));
+    let enabled_coins: Vec<_> = try_h!(coins_ctx.coins.lock()).iter().map(|(ticker, coin)| EnabledCoin {
+        ticker: ticker.clone(),
+        address: coin.my_address().to_string(),
+    }).collect();
+    rpc_response(200, json!({
+        "result": enabled_coins
+    }).to_string())
+}
