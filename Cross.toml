@@ -1,0 +1,8 @@
+[build.env]
+passthrough = [
+  "NDK_HOME",
+  "RUST_BACKTRACE"
+]
+
+[target.armv7-linux-androideabi]
+image = "armv7-linux-androideabi-aga"
