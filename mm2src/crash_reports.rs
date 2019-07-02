@@ -36,6 +36,7 @@ pub extern fn rust_seh_handler (exception_code: u32) {
 
 #[cfg(test)]
 #[inline(never)]
+#[allow(dead_code)]
 fn access_violation() {
     let ptr: *mut i32 = 0 as *mut i32;
     unsafe {*ptr = 123};
@@ -43,9 +44,11 @@ fn access_violation() {
 
 #[cfg(test)]
 #[inline(never)]
+#[allow(dead_code)]
 extern fn call_access_violation() {access_violation()}
 
 #[cfg(unix)]
+#[allow(dead_code)]
 extern fn signal_handler (sig: c_int) {
     {
         // NB: Manually writing to `stderr` is more reliable than using `eprintln!`, especially around `dup2`.
@@ -67,6 +70,9 @@ extern fn signal_handler (sig: c_int) {
 
 #[cfg(unix)]
 fn init_signal_handling() {
+    // TODO: Implement without `nix`.
+/*
+
     use nix::sys::signal::{sigaction, SaFlags, Signal, SigAction, SigHandler, SigSet};
 
     lazy_static! {
@@ -80,14 +86,17 @@ fn init_signal_handling() {
     for signal in [Signal::SIGILL, Signal::SIGFPE, Signal::SIGSEGV, Signal::SIGBUS, Signal::SIGSYS].iter() {
         unsafe {unwrap! (sigaction (*signal, &*ACTION), "!sigaction");}
     }
+*/
 }
 
+#[allow(dead_code)]
 #[cfg(not(unix))]
 fn init_signal_handling() {}
 
 /// Check that access violation stack traces are being reported to stderr under macOS and Linux.
 #[test]
 fn test_crash_handling() {
+/* TODO: Implement without `cmd!` (without `duct`).
     let executable = unwrap! (env::args().next());
     let executable = unwrap! (Path::new (&executable) .canonicalize());
 
@@ -113,13 +122,15 @@ fn test_crash_handling() {
         init_crash_reports();
         call_access_violation();
     }
+*/
 }
 
 /// Setup the crash handlers.
+#[allow(dead_code)]
 pub fn init_crash_reports() {
     static ONCE: Once = Once::new();
     ONCE.call_once (|| {
-        common::init();
+        common::wio::init();
 
         // Try to invoke the `rust_seh_handler` whenever the C code crashes.
         if cfg! (windows) {

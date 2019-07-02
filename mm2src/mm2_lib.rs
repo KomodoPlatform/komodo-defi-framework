@@ -3,8 +3,6 @@
 #![feature(integer_atomics)]
 
 #[macro_use] extern crate common;
-#[allow(unused_imports)]
-#[macro_use] extern crate duct;
 #[macro_use] extern crate enum_primitive_derive;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;

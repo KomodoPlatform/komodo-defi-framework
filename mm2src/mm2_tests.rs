@@ -160,7 +160,11 @@ fn chdir (dir: &Path) {
 
 #[cfg(not(windows))]
 fn chdir (dir: &Path) {
-    unwrap! (nix::unistd::chdir (dir))
+    use std::ffi::CString;
+    let dirˢ = unwrap! (dir.to_str());
+    let dirᶜ = unwrap! (CString::new (dirˢ));
+    let rc = unsafe {libc::chdir (dirᶜ.as_ptr())};
+    assert_eq! (rc, 0, "Can not chdir to {:?}", dir);
 }
 
 /// Typically used when the `LOCAL_THREAD_MM` env is set, helping debug the tested MM.  
@@ -1073,7 +1077,7 @@ fn trade_base_rel_native(base: &str, rel: &str) {
 /// 
 /// And run the test:
 /// 
-///     cargo test trade_etomic_pizza -- --nocapture --ignored
+///     cargo test --features native trade_etomic_pizza -- --nocapture --ignored
 #[test]
 #[ignore]
 fn trade_pizza_eth() {

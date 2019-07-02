@@ -58,7 +58,8 @@ use bitcrypto::{ChecksumType, dhash160};
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{lp_coinfind, MmCoinEnum, TransactionDetails};
 use coins::utxo::compressed_pub_key_from_priv_raw;
-use common::{bits256, lp, HyRes, rpc_response, Timeout};
+use common::{bits256, lp, HyRes, rpc_response};
+use common::wio::Timeout;
 use common::log::{TagParam};
 use common::mm_ctx::{from_ctx, MmArc};
 use crc::crc32;
@@ -87,8 +88,8 @@ const BASIC_COMM_TIMEOUT: u64 = 90;
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
-const SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
-const SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
+const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
+const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 
 /// Represents the amount of a coin locked by ongoing swap
 struct LockedAmount {
@@ -226,7 +227,7 @@ macro_rules! send {
 macro_rules! recv_ {
     ($swap: expr, $subj: expr, $timeout_sec: expr, $ec: expr, $validator: block) => {{
         let recv_subject = fomat! (($subj) '@' ($swap.uuid));
-        let validator = Box::new ($validator) as Box<Fn(&[u8]) -> Result<(), String> + Send>;
+        let validator = Box::new ($validator) as Box<dyn Fn(&[u8]) -> Result<(), String> + Send>;
         let fallback = ($timeout_sec / 3) .min (30) .max (60) as u8;
         let recv_f = peers::recv (&$swap.ctx, recv_subject.as_bytes(), fallback, Box::new ({
             // NB: `peers::recv` is generic and not responsible for handling errors.
@@ -1260,7 +1261,7 @@ pub fn run_maker_swap(mut swap: MakerSwap, initial_command: Option<MakerSwapComm
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
-    let swap_tags: &[&TagParam] = &[&"swap", &("uuid", &uuid[..])];
+    let swap_tags: &[&dyn TagParam] = &[&"swap", &("uuid", &uuid[..])];
     loop {
         let res = unwrap!(swap.handle_command(command));
         events = res.1;
@@ -1295,7 +1296,7 @@ pub fn run_taker_swap(mut swap: TakerSwap, initial_command: Option<TakerSwapComm
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
-    let swap_tags: &[&TagParam] = &[&"swap", &("uuid", &uuid[..])];
+    let swap_tags: &[&dyn TagParam] = &[&"swap", &("uuid", &uuid[..])];
     loop {
         let res = unwrap!(swap.handle_command(command));
         events = res.1;

@@ -62,7 +62,7 @@ pub mod rpc;
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
 
-fn lp_main (conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> {
+fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
     // Redirects the C stdout to the log.
     let c_log_path_buf: CString;
     let c_log_path = if conf["log"].is_null() {null()} else {
@@ -93,6 +93,7 @@ fn lp_main (conf: Json, ctx_cb: &Fn (u32)) -> Result<(), String> {
     } else {ERR! ("!passphrase")}
 }
 
+#[allow(dead_code)]
 fn help() {
     // Removed options:
     // "client" - In MM2 anyone can be a Maker, the "client" option is no longer applicable.
@@ -155,6 +156,7 @@ fn help() {
     )
 }
 
+#[allow(dead_code)]
 pub fn mm2_main() {
     init_crash_reports();
     unsafe {os::OS_init()};
@@ -197,6 +199,7 @@ pub fn mm2_main() {
 // Should mark it as shallowly pure.
 
 /// Implements the "btc2kmd" command line utility.
+#[allow(dead_code)]
 fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
     extern "C" {
         fn LP_wifstr_valid (symbol: *const u8, wifstr: *const u8) -> i32;
@@ -232,6 +235,7 @@ fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
     }
 }
 
+#[allow(dead_code)]
 fn vanity (substring: &str) {
     extern "C" {
         fn bitcoin_priv2pub (
@@ -268,7 +272,7 @@ fn vanity (substring: &str) {
 /// 
 /// * `ctx_cb` - Invoked with the MM context handle,
 ///              allowing the `run_lp_main` caller to communicate with MM.
-pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &Fn (u32)) -> Result<(), String> {
+pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
     let conf_from_file = slurp(&"MM2.json");
     let conf = match first_arg {
         Some(s) => s,

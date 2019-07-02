@@ -284,8 +284,12 @@ iguana/exchanges/manychains
 # Private IDE configuration
 /mm2src/*/.vscode/tasks.json
 /mm2src/*/.vscode/c_cpp_properties.json
+/.vscode/settings.json
 /.vscode/tasks.json
 
 # IDE artefacts
 /.vscode/ipch
 /mm2src/*/.vscode/ipch
+
+# Build logs
+/wasm-build.log

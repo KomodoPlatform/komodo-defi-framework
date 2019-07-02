@@ -82,7 +82,7 @@ impl Transaction for UtxoTx {
 
     fn tx_hash(&self) -> BytesJson { self.hash().reversed().to_vec().into() }
 
-    fn amount(&self, decimals: u8) -> Result<f64, String> { Ok(0.) }
+    fn amount(&self, _decimals: u8) -> Result<f64, String> { Ok(0.) }
 
     fn to(&self) -> Vec<String> { vec!["".into()] }
 
@@ -194,7 +194,7 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
 }
 
 impl UtxoCoinImpl {
-    fn get_tx_fee(&self) -> Box<Future<Item=ActualTxFee, Error=JsonRpcError> + Send> {
+    fn get_tx_fee(&self) -> Box<dyn Future<Item=ActualTxFee, Error=JsonRpcError> + Send> {
         match self.tx_fee {
             TxFee::Fixed(fee) => Box::new(futures::future::ok(ActualTxFee::Fixed(fee))),
             TxFee::Dynamic => Box::new(self.rpc_client.estimate_fee_sat(self.decimals).map(|fee| ActualTxFee::Dynamic(fee))),
@@ -544,12 +544,12 @@ impl UtxoCoin {
         utxos: Vec<UnspentInfo>,
         mut outputs: Vec<TransactionOutput>,
         fee_policy: FeePolicy
-    ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+    ) -> Box<dyn Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
         const DUST: u64 = 1000;
         let lock_time = (now_ms() / 1000) as u32;
         let change_script_pubkey = Builder::build_p2pkh(&self.my_address.hash).to_bytes();
         let arc = self.clone();
-        Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_tx_fee| -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+        Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_tx_fee| -> Box<dyn Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
             true_or_err!(!utxos.is_empty(), "Couldn't generate tx from empty utxos set");
             true_or_err!(!outputs.is_empty(), "Couldn't generate tx from empty outputs set");
             let mut tx_fee = match &coin_tx_fee {
@@ -652,7 +652,7 @@ impl UtxoCoin {
         mut unsigned: TransactionInputSigner,
         mut data: AdditionalTxData,
         my_script_pub: Bytes,
-    ) -> Box<Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
+    ) -> Box<dyn Future<Item=(TransactionInputSigner, AdditionalTxData), Error=String> + Send> {
         if self.ticker != "KMD" {
             return Box::new(futures::future::ok((unsigned, data)));
         }
@@ -1104,11 +1104,11 @@ impl MarketCoinOps for UtxoCoin {
         self.0.my_address.to_string().into()
     }
 
-    fn my_balance(&self) -> Box<Future<Item=BigDecimal, Error=String> + Send> {
+    fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
         Box::new(self.rpc_client.display_balance(self.my_address.clone(), self.decimals).map_err(|e| ERRL!("{}", e)))
     }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<Future<Item=String, Error=String> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item=String, Error=String> + Send> {
         let bytes = try_fus!(hex::decode(tx));
         Box::new(self.rpc_client.send_raw_transaction(bytes.into()).map_err(|e| ERRL!("{}", e)).map(|hash| format!("{:?}", hash)))
     }
@@ -1140,7 +1140,7 @@ impl MarketCoinOps for UtxoCoin {
         Ok(transaction.into())
     }
 
-    fn current_block(&self) -> Box<Future<Item=u64, Error=String> + Send> {
+    fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send> {
         Box::new(self.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
     }
 }
@@ -1157,7 +1157,7 @@ struct UtxoFeeDetails {
 impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send> {
         if amount / 777 < "0.00001".parse().unwrap() {
             return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least 0.00777 is required", amount)));
         }
@@ -1185,17 +1185,17 @@ impl MmCoin for UtxoCoin {
         )
     }
 
-    fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send> {
+    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send> {
         Box::new(futures::future::ok(()))
     }
 
-    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
         let to: Address = try_fus!(Address::from_str(to));
         let script_pubkey = Builder::build_p2pkh(&to.hash).to_bytes();
         let utxo_lock = MutexGuardWrapper(try_fus!(UTXO_LOCK.lock()));
         let unspent_fut = self.rpc_client.list_unspent_ordered(&self.my_address).map_err(|e| ERRL!("{}", e));
         let arc = self.clone();
-        Box::new(unspent_fut.and_then(move |unspents| -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+        Box::new(unspent_fut.and_then(move |unspents| -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
             let (value, fee_policy) = if max {
                 (unspents.iter().fold(0, |sum, unspent| sum + unspent.value), FeePolicy::DeductFromOutput(0))
             } else {

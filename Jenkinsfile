@@ -16,16 +16,16 @@ pipeline {
         // We have to point CMake back at g++-5 for now.
         sh '''
 export CC=gcc-5 CXX=g++-5
-cargo build -vv --color never 2>&1 | grep --line-buffered -v '     Running `rustc --' | grep --line-buffered -v '       Fresh'
-cargo test
+cargo build --features native -vv --color never 2>&1 | grep --line-buffered -v '     Running `rustc --' | grep --line-buffered -v '       Fresh'
+cargo test --features native
 '''
       }
     }
     stage('Test Trade') {
       steps {
         // --nocapture here allows us to examine the trade logs even when the trade was successful.
-        sh '''cargo test trade_pizza_etomic -- --ignored --nocapture'''
-        sh '''cargo test trade_etomic_pizza -- --ignored --nocapture'''
+        sh '''cargo test --features native trade_pizza_etomic -- --ignored --nocapture'''
+        sh '''cargo test --features native trade_etomic_pizza -- --ignored --nocapture'''
       }
     }
   }

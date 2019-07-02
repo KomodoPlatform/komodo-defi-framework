@@ -21,6 +21,7 @@ use std::fmt::Write as WriteFmt;
 use std::io::{Seek, SeekFrom, Write};
 use std::mem::swap;
 use std::path::{Path, PathBuf};
+use std::panic::catch_unwind;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
@@ -79,7 +80,17 @@ impl Gravity {
         let mut tail = self.tail.lock();
         while let Some (chunk) = self.landing.try_pop() {
             let logged_with_log_output = LOG_OUTPUT.lock().map (|l| l.is_some()) .unwrap_or (false);
-            if !logged_with_log_output {println! ("{}", chunk)}
+            if !logged_with_log_output {
+                // `catch_unwind` protects the tests from error
+                // 
+                //     thread 'CORE' panicked at 'cannot access stdout during shutdown
+                // 
+                // (which might be related to https://github.com/rust-lang/rust/issues/29488).
+                let chunk = chunk.clone();
+                let _ = catch_unwind (move || {
+                    println! ("{}", chunk)
+                });
+            }
             if let Ok (ref mut tail) = tail {
                 if tail.len() == tail.capacity() {let _ = tail.pop_front();}
                 tail.push_back (chunk)
@@ -301,7 +312,7 @@ impl<'a> StatusHandle<'a> {
     /// 
     /// The `tags` can be changed as well:
     /// with `StatusHandle` the status line is directly identified by the handle and doesn't use the tags to lookup the status line.
-    pub fn status<'b> (&mut self, tags: &[&TagParam], line: &str) {
+    pub fn status<'b> (&mut self, tags: &[&dyn TagParam], line: &str) {
         let mut stack_status = Status {
             tags: tags.iter().map (|t| Tag {key: t.key(), val: t.val()}) .collect(),
             line: line.into(),
@@ -536,7 +547,7 @@ impl LogState {
     }   }
 
     /// Creates the status or rewrites it if the tags match.
-    pub fn status<'b> (&self, tags: &[&TagParam], line: &str) -> StatusHandle {
+    pub fn status<'b> (&self, tags: &[&dyn TagParam], line: &str) -> StatusHandle {
         let mut status = self.claim_status (tags) .unwrap_or (self.status_handle());
         status.status (tags, line);
         status
@@ -545,7 +556,7 @@ impl LogState {
     /// Search dashboard for status matching the tags.
     /// 
     /// Note that returned status handle represent an ownership of the status and on the `drop` will mark the status as finished.
-    pub fn claim_status (&self, tags: &[&TagParam]) -> Option<StatusHandle> {
+    pub fn claim_status (&self, tags: &[&dyn TagParam]) -> Option<StatusHandle> {
         let mut found = Vec::new();
         let mut locked = Vec::new();
         let tags: Vec<Tag> = tags.iter().map (|t| Tag {key: t.key(), val: t.val()}) .collect();
@@ -573,7 +584,7 @@ impl LogState {
     }
 
     /// Returns `true` if there are recent log entries exactly matching the tags.
-    pub fn tail_any (&self, tags: &[&TagParam]) -> bool {
+    pub fn tail_any (&self, tags: &[&dyn TagParam]) -> bool {
         let tags: Vec<Tag> = tags.iter().map (|t| Tag {key: t.key(), val: t.val()}) .collect();
         let tail = match self.tail.lock() {Ok (l) => l, _ => return false};
         for en in tail.iter() {
@@ -604,7 +615,7 @@ impl LogState {
     ///   GUI might use it to get some useful information from the log.
     /// * `line` - The human-readable description of the event,
     ///   we have no intention to make it parsable.
-    pub fn log (&self, emotion: &str, tags: &[&TagParam], line: &str) {
+    pub fn log (&self, emotion: &str, tags: &[&dyn TagParam], line: &str) {
         let entry = LogEntry {
             time: now_ms(),
             emotion: emotion.into(),

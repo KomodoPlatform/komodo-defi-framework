@@ -12,7 +12,7 @@ init:
 build_script:
 - cmd: marketmaker2_build_win.cmd
 test_script:
-  - cargo test
+  - cargo test --features native
 cache:
   - marketmaker_depends
 

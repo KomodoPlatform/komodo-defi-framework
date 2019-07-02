@@ -22,7 +22,7 @@ use futures::{Future};
 use futures::sync::oneshot::Sender;
 use gstuff::now_ms;
 use hex;
-use hyper::StatusCode;
+use http::StatusCode;
 use keys::KeyPair;
 use libc::{self, c_char, c_void};
 use rand::{random, Rng, SeedableRng};
@@ -47,8 +47,8 @@ use peers::http_fallback::new_http_fallback;
 use portfolio::prices_loop;
 
 use crate::common::{
-    bits256, coins_iter, lp, lp_queue_command_for_c, os, slurp_url,
-    CORE, CJSON, MM_VERSION};
+    bits256, coins_iter, lp, lp_queue_command_for_c, os, CJSON, MM_VERSION};
+use crate::common::wio::{slurp_url, CORE};
 use crate::common::log::TagParam;
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
@@ -1366,7 +1366,7 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
     Ok ((shutdown_tx, port))
 }
 
-pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
+pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
 -> Result<(), String> {
     unsafe {lp::G.initializing = 1}  // Tells some of the spawned threads to wait till the `lp_passphrase_init` is done.
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
@@ -1493,7 +1493,7 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &Fn (u32))
             // Try to bind on this IP.
             // If we're not behind a NAT then the bind will likely suceed.
             // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
-            let tags: &[&TagParam] = &[&"myipaddr"];
+            let tags: &[&dyn TagParam] = &[&"myipaddr"];
             match test_ip (&ctx, ip) {
                 Ok ((hf_shutdown, _hf_port)) => {
                     ctx.log.log ("🙂", tags, &fomat! (

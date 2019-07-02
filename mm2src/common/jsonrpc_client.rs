@@ -73,8 +73,8 @@ impl fmt::Display for JsonRpcError {
     }
 }
 
-pub type JsonRpcResponseFut = Box<Future<Item=JsonRpcResponse, Error=String> + Send + 'static>;
-pub type RpcRes<T> = Box<Future<Item=T, Error=JsonRpcError> + Send + 'static>;
+pub type JsonRpcResponseFut = Box<dyn Future<Item=JsonRpcResponse, Error=String> + Send + 'static>;
+pub type RpcRes<T> = Box<dyn Future<Item=T, Error=JsonRpcError> + Send + 'static>;
 
 pub trait JsonRpcClient {
     fn version(&self) -> &'static str;

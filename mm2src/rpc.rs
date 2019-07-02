@@ -17,14 +17,18 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 use coins::{enable, electrum, my_balance, send_raw_transaction, withdraw, my_tx_history};
-use common::{free_c_ptr, lp, lp_queue_command_for_c, rpc_response, rpc_err_response, HyRes, CORE, HTTP};
+use common::{err_to_rpc_json_string, free_c_ptr, lp, lp_queue_command_for_c,
+        rpc_response, rpc_err_response, HyRes};
+use common::wio::{CORE, HTTP};
+use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
 use futures::{self, Future};
 use futures_cpupool::CpuPool;
 use gstuff;
-use hyper::{Request, Body, Method};
-use hyper::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
-use hyper::rt::{Stream};
+use http::{Request, Response, Method};
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
+use hyper;
+use hyper::rt::Stream;
 use hyper::service::Service;
 use libc::{c_char, c_void};
 use portfolio::lp_autoprice;
@@ -229,31 +233,50 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
     })
 }
 
-impl Service for RpcService {
-    type ReqBody = Body;
-    type ResBody = Body;
-    type Error = String;
-    type Future = HyRes;
+type RpcRes = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
 
-    fn call(&mut self, request: Request<Body>) -> HyRes {
-        let ctx = try_h! (MmArc::from_ffi_handle (self.ctx_h));
+fn hyres_into_rpcres<HR> (hyres: HR) -> impl Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send
+where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
+    hyres.map (move |r| {
+        let (parts, body) = r.into_parts();
+        Response::from_parts (parts, LiftBody::from (body))
+    })
+}
+
+impl Service for RpcService {
+    type ReqBody = hyper::Body;
+    type ResBody = LiftBody<Vec<u8>>;
+    type Error = String;
+    type Future = RpcRes;
+
+    fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
+        macro_rules! try_sf {($value: expr) => {match $value {Ok (ok) => ok, Err (err) => {
+            log! ({"RPC error response: {}", err});
+            let rep = rpc_response (500, err_to_rpc_json_string (&ERRL! ("{}", err)));
+            return Box::new (hyres_into_rpcres (rep))
+        }}}}
+
+        let ctx = try_sf! (MmArc::from_ffi_handle (self.ctx_h));
 
         // https://github.com/artemii235/SuperNET/issues/219
         let rpc_cors = match ctx.conf["rpccors"].as_str() {
-            Some(s) => try_h!(HeaderValue::from_str(s)),
+            Some(s) => try_sf!(HeaderValue::from_str(s)),
             None => HeaderValue::from_static("http://localhost:3000"),
         };
 
-        if request.method() != Method::POST {
-            return rpc_err_response (400, "Only POST requests are supported!")
+        if req.method() != Method::POST {
+            return Box::new (hyres_into_rpcres (rpc_err_response (400, "Only POST requests are supported!")))
         }
-        let body_f = request.into_body().concat2();
+
+        let (_parts, body) = req.into_parts();
+        let body_f = body.concat2();
 
         let remote_addr = self.remote_addr.clone();
 
-        let f = body_f.then (move |req| -> HyRes {
-            let req = try_h! (req);
-            let req: Json = try_h! (json::from_slice (&req));
+        let f = body_f.then (move |chunk| -> HyRes {
+
+            let vec = try_h! (chunk) .to_vec();
+            let req: Json = try_h! (json::from_slice (&vec));
 
             let method = req["method"].as_str();
             // https://github.com/artemii235/SuperNET/issues/368
@@ -278,15 +301,20 @@ impl Service for RpcService {
             }
         });
 
+        let f = hyres_into_rpcres (f);
+
         let f = f.map (|mut res| {
             res.headers_mut().insert(
                 ACCESS_CONTROL_ALLOW_ORIGIN,
                 rpc_cors
             );
             res
-        }).then(|res| {
+        });
+
+        let f = f.then (|res| -> Self::Future {
             // even if future returns error we need to map it to JSON response and send to client
-            Box::new(futures::future::ok(try_h!(res)))
+            let res = try_sf! (res);
+            Box::new (futures::future::ok (res))
         });
 
         Box::new (f)

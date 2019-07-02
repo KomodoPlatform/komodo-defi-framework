@@ -18,19 +18,17 @@ The current state can be considered as very early alpha.
  
 ## How to build
 
-1. Tools required: [Cmake 3.12 or higher](https://cmake.org/install/), [Rustup](https://rustup.rs/). You will also need your OS specific build tools (e.g. build-essentials on Linux, XCode on OSX or MSVC on Win).
-1. (Optional) Linux: install `libboost-dev libboost-system-dev` packages. E.g. `apt-get install libboost-dev libboost-system-dev` on Debian systems.
-1. (Optional) OSX: install boost and openssl, e.g. `brew install boost openssl`.  
+1. Tools required: [Cmake](https://cmake.org/install/), [Rustup](https://rustup.rs/). You will also need your OS specific build tools (e.g. build-essentials on Linux, XCode on OSX or MSVC on Win).
+1. (Optional) OSX: install openssl, e.g. `brew install openssl`.  
 1. (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 1. Run
 
-	```
-    rustup install nightly-2019-03-10
-    rustup default nightly-2019-03-10
-	rustup component add rustfmt-preview
-	```
+    rustup install nightly-2019-06-26
+    rustup default nightly-2019-06-26
+    rustup component add rustfmt-preview
+
 1. (Optional) Win: run `marketmaker_build_depends.cmd` to build dependencies.
-1. Run `cargo build` or `cargo build -vv` to get verbose build output.
+1. Run `cargo build --features native` (or `cargo build --features native -vv` to get verbose build output).
 
 ## Building for Android
 

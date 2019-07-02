@@ -1,10 +1,12 @@
 //! Helpers used in the unit and integration tests.
 
 use chrono::Local;
-use duct::Handle;
+#[cfg(feature = "native")]
 use futures::Future;
 use gstuff::{now_float, slurp, ISATTY};
-use hyper::{Request, StatusCode, HeaderMap};
+use http::{StatusCode, HeaderMap};
+#[cfg(feature = "native")]
+use http::{Request};
 use serde_json::{self as json, Value as Json};
 use term;
 use rand::{thread_rng, Rng};
@@ -14,18 +16,21 @@ use std::fs;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Child};
+#[cfg(feature = "native")]
 use std::str::from_utf8;
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
-use super::slurp_req;
+#[cfg(feature = "native")]
+use super::wio::slurp_req;
 use super::log::{dashboard_path, LogState};
 
 /// Automatically kill a wrapped process.
-pub struct RaiiKill {pub handle: Handle, running: bool}
+pub struct RaiiKill {pub handle: Child, running: bool}
 impl RaiiKill {
-    pub fn from_handle (handle: Handle) -> RaiiKill {
+    pub fn from_handle (handle: Child) -> RaiiKill {
         RaiiKill {handle, running: true}
     }
     pub fn running (&mut self) -> bool {
@@ -163,11 +168,15 @@ impl MarketMakerIt {
             local (folder.clone(), log_path.clone(), conf);
             None
         } else {
-            Some (RaiiKill::from_handle (try_s! (cmd! (&executable, "test_mm_start", "--nocapture")
-                .dir (&folder)
+            let log = try_s! (fs::File::create (&log_path));
+            let child = try_s! (Command::new (&executable) .arg ("test_mm_start") .arg ("--nocapture")
+                .current_dir (&folder)
                 .env ("_MM2_TEST_CONF", try_s! (json::to_string (&conf)))
                 .env ("MM2_UNBUFFERED_OUTPUT", "1")
-                .stderr_to_stdout().stdout (&log_path) .start())))
+                .stdout (try_s! (log.try_clone()))
+                .stderr (log)
+                .spawn());
+            Some (RaiiKill::from_handle (child))
         };
 
         Ok (MarketMakerIt {folder, ip, log_path, pc, userpass})
@@ -189,7 +198,9 @@ impl MarketMakerIt {
             sleep (Duration::from_millis (ms));
         }
     }
+
     /// Invokes the locally running MM and returns its reply.
+    #[cfg(feature = "native")]
     pub fn rpc (&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
         let payload = try_s! (json::to_string (&payload));
         let uri = format! ("http://{}:7783", self.ip);
@@ -197,14 +208,26 @@ impl MarketMakerIt {
         let (status, headers, body) = try_s! (slurp_req (request) .wait());
         Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
     }
+    #[cfg(not(feature = "native"))]
+    pub fn rpc (&self, _payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
+        unimplemented!()
+    }
+
     /// Sends the &str payload to the locally running MM and returns it's reply.
+    #[cfg(feature = "native")]
     pub fn rpc_str (&self, payload: &'static str) -> Result<(StatusCode, String, HeaderMap), String> {
         let uri = format! ("http://{}:7783", self.ip);
         let request = try_s! (Request::builder().method ("POST") .uri (uri) .body (payload.into()));
         let (status, headers, body) = try_s! (slurp_req (request) .wait());
         Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
     }
+    #[cfg(not(feature = "native"))]
+    pub fn rpc_str (&self, _payload: &'static str) -> Result<(StatusCode, String, HeaderMap), String> {
+        unimplemented!()
+    }
+
     /// Send the "stop" request to the locally running MM.
+    #[cfg(feature = "native")]
     pub fn stop (&self) -> Result<(), String> {
         let (status, body, _headers) = match self.rpc (json! ({"userpass": self.userpass, "method": "stop"})) {
             Ok (t) => t,
@@ -219,6 +242,10 @@ impl MarketMakerIt {
         }   }   };
         if status != StatusCode::OK {return ERR! ("MM didn't accept a stop. body: {}", body)}
         Ok(())
+    }
+    #[cfg(not(feature = "native"))]
+    pub fn stop (&self) -> Result<(), String>{
+        unimplemented!()
     }
 }
 impl Drop for MarketMakerIt {
@@ -286,6 +313,7 @@ pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'st
 
 /// Asks MM to enable the given currency in electrum mode
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
+#[cfg(feature = "native")]
 pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
     let servers: Vec<_> = urls.into_iter().map(|url| json!({"url": url})).collect();
     let electrum = unwrap! (mm.rpc (json! ({
@@ -297,6 +325,10 @@ pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json
     })));
     assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with status «{}»", electrum.0);
     unwrap!(json::from_str(&electrum.1))
+}
+#[cfg(not(feature = "native"))]
+pub fn enable_electrum (_mm: &MarketMakerIt, _coin: &str, _urls: Vec<&str>) -> Json {
+    unimplemented!()
 }
 
 /// Reads passphrase and userpass from .env file

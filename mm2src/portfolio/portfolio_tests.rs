@@ -1,6 +1,6 @@
 use common::identity;
 use common::for_tests::{enable_electrum, mm_spat, LocalStart};
-use hyper::StatusCode;
+use http::StatusCode;
 use regex::Regex;
 use serde_json::{self as json, Value as Json};
 

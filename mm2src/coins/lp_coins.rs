@@ -83,7 +83,7 @@ ifrom! (TransactionEnum, SignedEthTx);
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for TransactionEnum {
-    type Target = Transaction;
+    type Target = dyn Transaction;
     fn deref (&self) -> &dyn Transaction {
         match self {
             &TransactionEnum::UtxoTx (ref t) => t,
@@ -183,10 +183,10 @@ pub trait SwapOps {
 pub trait MarketCoinOps {
     fn my_address(&self) -> Cow<str>;
 
-    fn my_balance(&self) -> Box<Future<Item=BigDecimal, Error=String> + Send>;
+    fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send>;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<Future<Item=String, Error=String> + Send>;
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item=String, Error=String> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -199,7 +199,7 @@ pub trait MarketCoinOps {
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
-    fn current_block(&self) -> Box<Future<Item=u64, Error=String> + Send>;
+    fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send>;
 }
 
 /// Compatibility layer on top of `lp::iguana_info`.  
@@ -270,11 +270,11 @@ pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
 
     fn is_asset_chain(&self) -> bool;
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send>;
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
-    fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send>;
+    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
-    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send>;
+    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
@@ -337,7 +337,7 @@ impl From<EthCoin> for MmCoinEnum {
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for MmCoinEnum {
-    type Target = MmCoin;
+    type Target = dyn MmCoin;
     fn deref (&self) -> &dyn MmCoin {
         match self {
             &MmCoinEnum::UtxoCoin (ref c) => c,

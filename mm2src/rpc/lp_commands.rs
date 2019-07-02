@@ -17,7 +17,8 @@
 //  rpc_commands.rs
 //  marketmaker
 //
-use common::{bitcoin_address, bits256, coins_iter, lp, rpc_response, rpc_err_response, HyRes, CORE, MM_VERSION};
+use common::{bitcoin_address, bits256, coins_iter, lp, rpc_response, rpc_err_response, HyRes, MM_VERSION};
+use common::wio::CORE;
 use common::mm_ctx::MmArc;
 use coins::lp_coinfind;
 use futures::Future;

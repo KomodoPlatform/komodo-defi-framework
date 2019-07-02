@@ -796,7 +796,7 @@ impl PricePingRequest {
     }
 }
 
-pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
+pub fn lp_post_price_recv(_ctx: &MmArc, req: Json) -> HyRes {
     let req: PricePingRequest = try_h!(json::from_value(req));
     let signature: Signature = try_h!(req.sig.parse());
     let pub_secp = try_h!(Public::from_slice(&try_h!(hex::decode(&req.pubsecp))));
@@ -851,6 +851,7 @@ struct SetPriceReq {
     price: BigDecimal,
     #[serde(default)]
     max: bool,
+    #[allow(dead_code)]
     #[serde(default = "one")]
     broadcast: u8,
     #[serde(default)]

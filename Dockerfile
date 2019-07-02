@@ -26,11 +26,11 @@ RUN \
     wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
     sh /tmp/rustup-init.sh -y --default-toolchain none &&\
     . /root/.cargo/env &&\
-    rustup install nightly-2019-03-10 &&\
-    rustup default nightly-2019-03-10 &&\
+    rustup install nightly-2019-06-26 &&\
+    rustup default nightly-2019-06-26 &&\
     # It seems that bindgen won't prettify without it:
     rustup component add rustfmt-preview &&\
-    rm -rf /root/.rustup/toolchains/nightly-2019-03-10-x86_64-unknown-linux-gnu/share/doc &&\
+    rm -rf /root/.rustup/toolchains/nightly-2019-06-26-x86_64-unknown-linux-gnu/share/doc &&\
     rm -f /tmp/rustup-init.sh
 
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -39,8 +39,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # This allows us to more easily play with later Dockerfile steps by adding the `COPY` there.
 RUN git clone --depth=1 -b mm2 https://github.com/artemii235/SuperNET.git /mm2
 
-# Or with the "etomic" branch:
-#RUN git clone --depth=1 -b etomic https://github.com/artemii235/SuperNET.git /mm2
 
 # The number of Docker layers is limited AFAIK,
 # so here we have a couple of configuration actions packed into a single step.
@@ -61,9 +59,10 @@ COPY . /mm2
 # Build MM1 and MM2.
 # Increased verbosity here allows us to see the MM1 CMake logs.
 RUN cd /mm2 &&\
-    cargo build -vv &&\
+    cargo build --features native -vv &&\
     mv target/debug/mm2 /usr/local/bin/marketmaker-mainnet &&\
-    cargo test &&\
+    # We currently need BOB_PASSPHRASE, BOB_USERPASS, ALICE_PASSPHRASE and ALICE_USERPASS for the tests…
+    #cargo test --features native &&\
     cargo clean
 
 CMD marketmaker-testnet

@@ -4,7 +4,7 @@
 // MM2_DHT_GET=f, build time, disable DHT retrieval.
 // MM2_FALLBACK=$, build time, override fallback timeouts.
 
-#![feature (non_ascii_idents, integer_atomics, vec_resize_default, ip, weak_counts)]
+#![feature (non_ascii_idents, vec_resize_default, ip, weak_counts)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate common;
@@ -21,6 +21,7 @@ pub mod peers_tests;
 pub mod http_fallback;
 use crate::http_fallback::{hf_delayed_get, hf_drop_get, hf_poll, hf_transmit, HttpFallbackTargetTrack};
 
+use atomic::Atomic;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use common::{binprint, bits256, is_a_test_drill, slice_to_malloc, RaiiRm, SlurpFut};
 use common::log::TagParam;
@@ -56,7 +57,7 @@ use std::ptr::{null, null_mut, read_volatile};
 use std::slice::from_raw_parts;
 use std::str::from_utf8_unchecked;
 use std::sync::{Arc, Mutex, Weak};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
 
@@ -261,10 +262,10 @@ pub struct PeersContext {
     /// Of retransmission subsystem.
     trans_meta: Mutex<TransMeta>,
     /// The number of enhanced DHT pings received from MMs.
-    direct_pings: AtomicU64,
+    direct_pings: Atomic<u64>,
     /// The number of data chunks delivered directly via the DHT pings.  
     /// (direct_pings - discovery pings - pongs - invalid).
-    direct_chunks: AtomicU64,
+    direct_chunks: Atomic<u64>,
     /// Recent attempts at reaching targets via HTTP fallback. seed -> track
     hf_maps: Mutex<HashMap<bits256, HttpFallbackTargetTrack>>,
     /// Subject salts we're trying to get for longer than their `fallback` timeout.
@@ -272,9 +273,9 @@ pub struct PeersContext {
     /// Long polling from HTTP fallback server.
     hf_poll: Mutex<Option<SlurpFut>>,
     /// The version of the HTTP fallback response that we already have.
-    hf_last_poll_id: AtomicU64,
+    hf_last_poll_id: Atomic<u64>,
     /// Time (in seconds since UNIX epoch) util which we should skip polling the HTTP fallback server.
-    hf_skip_poll_till: AtomicU64,
+    hf_skip_poll_till: Atomic<u64>,
     /// Snapshot of chunks received through the HTTP fallback server.  
     /// Using `BTreeMap` in order for `hf_to_gets` to get the first chunk (with the number of chunks) first.
     hf_inbox: Mutex<BTreeMap<Salt, (bits256, Vec<u8>)>>
@@ -292,13 +293,13 @@ impl PeersContext {
                 cmd_rx,
                 recently_fetched: Mutex::new (HashMap::new()),
                 trans_meta: Mutex::new (TransMeta::default()),
-                direct_pings: AtomicU64::new (0),
-                direct_chunks: AtomicU64::new (0),
+                direct_pings: Atomic::new (0u64),
+                direct_chunks: Atomic::new (0u64),
                 hf_maps: Mutex::new (HashMap::new()),
                 hf_delayed_salts: Mutex::new (HashMap::new()),
                 hf_poll: Mutex::new (None),
-                hf_last_poll_id: AtomicU64::new (0),
-                hf_skip_poll_till: AtomicU64::new (0),
+                hf_last_poll_id: Atomic::new (0u64),
+                hf_skip_poll_till: Atomic::new (0u64),
                 hf_inbox: Mutex::new (BTreeMap::new())
             })
         })))
@@ -308,7 +309,7 @@ impl PeersContext {
 /// Data passed through the C code and into the callback during the put operation.
 struct PutShuttle {
     // NB: Looks like it can invoked multiple times by libtorrent.
-    put_handler: Box<Fn (&[u8]) -> Result<Vec<u8>, String> + 'static + Send + Sync>
+    put_handler: Box<dyn Fn (&[u8]) -> Result<Vec<u8>, String> + 'static + Send + Sync>
 }
 
 lazy_static! {
@@ -939,7 +940,7 @@ fn get_pieces_scheduler_en (seed: &bits256, dugout: &mut dugout_t,
     for task in getsᵉ.get().futures.values() {task.notify()}
 }
 
-const BOOTSTRAP_STATUS: &[&TagParam] = &[&"dht-boot"];
+const BOOTSTRAP_STATUS: &[&dyn TagParam] = &[&"dht-boot"];
 
 /// I've noticed that if we create a libtorrent session (`lt::session`) and destroy it right away
 /// then it will often crash. Apparently we're catching it unawares during some initalization procedures.
@@ -1472,7 +1473,7 @@ struct RecvFuture {
     pctx: Arc<PeersContext>,
     seed: bits256,
     salt: Salt,
-    validator: Box<Fn(&[u8])->bool + Send>,
+    validator: Box<dyn Fn(&[u8])->bool + Send>,
     frid: Option<NonZeroU64>,
     /// Start checking the HTTP fallback server for the value
     /// if it doesn't come through other channels in the given number of seconds.
@@ -1531,8 +1532,8 @@ impl Drop for RecvFuture {
 /// Returned `Future` represents our effort to receive the transmission.
 /// As of now doesn't need a reactor.
 /// Should be `drop`ped soon as we no longer need the transmission.
-pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<Fn(&[u8])->bool + Send>)
--> Box<Future<Item=Vec<u8>, Error=String> + Send> {
+pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<dyn Fn(&[u8])->bool + Send>)
+-> Box<dyn Future<Item=Vec<u8>, Error=String> + Send> {
     let fallback = match option_env! ("MM2_FALLBACK") {Some (n) => try_fus! (n.parse()), None => fallback};
     let fallback = try_fus! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
@@ -1556,3 +1557,13 @@ pub fn key (ctx: &MmArc) -> Result<bits256, String> {
     let pk = try_s! (pctx.our_public_key.lock());
     Ok (pk.clone())
 }
+
+/*
+  The `main` function might be useful now and then for trying the Emscripten build of the peers crate.
+
+#[cfg(not(feature = "native"))]
+pub fn main() {
+    extern "C" {fn emscripten_exit_with_live_runtime();}
+    unsafe {emscripten_exit_with_live_runtime()}
+}
+*/

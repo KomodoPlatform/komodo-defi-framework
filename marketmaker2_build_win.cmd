@@ -16,4 +16,4 @@ echo [#2] Build MM1 and MM2.
 rem Increased verbosity here allows us to see the MM1 CMake logs.
 rem And according to https://www.appveyor.com/docs/windows-images-software/#mingw-msys-cygwin
 rem we can use the GNU grep from MSYS to fine-tune.
-cargo build -vv --color never 2>&1 | grep --line-buffered -v '     Running `rustc --'
+cargo build --features native -vv --color never 2>&1 | grep --line-buffered -v '     Running `rustc --'

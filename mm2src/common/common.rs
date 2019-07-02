@@ -12,7 +12,6 @@
 
 #![feature(non_ascii_idents, integer_atomics)]
 
-#[macro_use] extern crate duct;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
@@ -61,19 +60,16 @@ pub mod iguana_utils;
 pub mod lp_privkey;
 pub mod mm_ctx;
 pub mod ser;
+#[cfg(feature = "native")]
+pub mod lift_body;
 
 use crossbeam::{channel};
-use futures::{future, Async, Future, Poll};
-use futures::sync::oneshot::{self, Receiver};
+use futures::{future, Future};
 use futures::task::Task;
-use gstuff::{any_to_str, duration_to_float, now_float};
+use gstuff::{now_float};
 use hex::FromHex;
-use hyper::{Body, Client, Request, Response, StatusCode, HeaderMap};
-use hyper::client::HttpConnector;
-use hyper::header::{ HeaderValue, CONTENT_TYPE };
-use hyper::rt::Stream;
-use hyper::server::conn::Http;
-use hyper_rustls::HttpsConnector;
+use http::{Response, StatusCode, HeaderMap};
+use http::header::{HeaderValue, CONTENT_TYPE};
 use libc::{c_char, c_void, malloc, free};
 use serde_json::{self as json, Value as Json};
 use std::env::args;
@@ -84,16 +80,10 @@ use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
 use std::path::{Path};
-use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::process::abort;
 use std::ptr::{null_mut, read_volatile};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread;
-use std::thread::JoinHandle;
-use std::time::Duration;
 use std::str;
-use tokio_core::reactor::Remote;
 
 // Make sure we're linking the eth-secp256k1 in for it is used in the MM1 C code.
 use secp256k1::Secp256k1;
@@ -133,7 +123,7 @@ impl fmt::Display for bits256 {
 
 impl fmt::Debug for bits256 {
     fn fmt (&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (self as &fmt::Display) .fmt (f)
+        (self as &dyn fmt::Display) .fmt (f)
 }   }
 
 impl std::cmp::PartialEq for bits256 {
@@ -320,7 +310,7 @@ fn trace_name_buf() -> MutexGuard<'static, [u8; 128]> {
 
 /// Formats a stack frame.
 /// Some common and less than useful frames are skipped.
-pub fn stack_trace_frame (buf: &mut Write, symbol: &backtrace::Symbol) {
+pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
     let filename = match symbol.filename() {Some (path) => path, None => return};
     let filename = match filename.components().rev().next() {Some (c) => c.as_os_str().to_string_lossy(), None => return};
     let lineno = match symbol.lineno() {Some (lineno) => lineno, None => return};
@@ -370,7 +360,7 @@ pub fn stack_trace_frame (buf: &mut Write, symbol: &backtrace::Symbol) {
 /// * `format` - Generates the string representation of a frame.
 /// * `output` - Function used to print the stack trace.
 ///              Printing immediately, without buffering, should make the tracing somewhat more reliable.
-pub fn stack_trace (format: &mut dyn FnMut (&mut Write, &backtrace::Symbol), output: &mut dyn FnMut (&str)) {
+pub fn stack_trace (format: &mut dyn FnMut (&mut dyn Write, &backtrace::Symbol), output: &mut dyn FnMut (&str)) {
     backtrace::trace (|frame| {
         backtrace::resolve (frame.ip(), |symbol| {
             let mut trace_buf = trace_buf();
@@ -400,6 +390,9 @@ pub fn binprint (bin: &[u8], blank: u8) -> String {
 /// For instance, DHT might take unknown time to initialize, and by delaying this initialization in the tests
 /// we can avoid the unnecessary overhead of DHT initializaion and destruction while maintaining the contract.
 pub fn is_a_test_drill() -> bool {
+    // Stack tracing would sometimes crash on Windows, doesn't worth the risk here.
+    if cfg! (windows) {return false}
+
     let mut trace = String::with_capacity (1024);
     stack_trace (
         &mut |mut fwr, sym| {if let Some (name) = sym.name() {let _ = witeln! (fwr, (name));}},
@@ -415,247 +408,316 @@ pub fn is_a_test_drill() -> bool {
     true
 }
 
-fn start_core_thread() -> Remote {
-    let (tx, rx) = oneshot::channel();
-    unwrap! (thread::Builder::new().name ("CORE".into()) .spawn (move || {
-        if let Err (err) = catch_unwind (AssertUnwindSafe (move || {
-            let mut core = unwrap! (tokio_core::reactor::Core::new(), "!core");
-            unwrap! (tx.send (core.remote()), "Can't send Remote.");
-            loop {core.turn (None)}
-        })) {
-            log! ({"CORE panic! {:?}", any_to_str (&*err)});
-            abort()
-        }
-    }), "!spawn");
-    let core: Remote = unwrap! (rx.wait(), "!wait");
-    core
-}
-
-lazy_static! {
-    /// Shared asynchronous reactor.
-    pub static ref CORE: Remote = start_core_thread();
-    /// Shared HTTP server.
-    pub static ref HTTP: Http = Http::new();
-}
-
-/// With a shared reactor drives the future `f` to completion.
-///
-/// NB: This function is only useful if you need to get the results of the execution.
-/// If the results are not necessary then a future can be scheduled directly on the reactor:
-///
-///     CORE.spawn (|_| f);
-pub fn drive<F, R, E> (f: F) -> Receiver<Result<R, E>> where
-F: Future<Item=R, Error=E> + Send + 'static,
-R: Send + 'static,
-E: Send + 'static {
-    let (sx, rx) = oneshot::channel();
-    CORE.spawn (move |_handle| {
-        f.then (move |fr: Result<R, E>| -> Result<(),()> {
-            let _ = sx.send (fr);
-            Ok(())
-        })
-    });
-    rx
-}
-
-/// With a shared reactor drives the future `f` to completion.
-///
-/// Similar to `fn drive`, but returns a stringified error,
-/// allowing us to collapse the `Receiver` and return the `R` directly.
-pub fn drive_s<F, R, E> (f: F) -> impl Future<Item=R, Error=String> where
-F: Future<Item=R, Error=E> + Send + 'static,
-R: Send + 'static,
-E: fmt::Display + Send + 'static {
-    drive (f) .then (move |r| -> Result<R, String> {
-        let r = try_s! (r);  // Peel the `Receiver`.
-        let r = try_s! (r);  // `E` to `String`.
-        Ok (r)
-    })
-}
-
-/// Finishes with the "timeout" error if the underlying future isn't ready withing the given timeframe.
-/// 
-/// NB: Tokio timers (in `tokio::timer`) only seem to work under the Tokio runtime,
-/// which is unfortunate as we want the different futures executed on the different reactors
-/// depending on how much they're I/O-bound, CPU-bound or blocking.
-/// Unlike the Tokio timers this `Timeout` implementation works with any reactor.
-/// Another option to consider is https://github.com/alexcrichton/futures-timer.
-/// P.S. The older `0.1` version of the `tokio::timer` might work NP, it works in other parts of our code.
-///      The new version, on the other hand, requires the Tokio runtime (https://tokio.rs/blog/2018-03-timers/).
-/// P.S. We could try using the `futures-timer` crate instead, but note that it is currently under-maintained,
-///      https://github.com/rustasync/futures-timer/issues/9#issuecomment-400802515. 
-pub struct Timeout<R> {
-    fut: Box<Future<Item=R, Error=String>>,
-    started: f64,
-    timeout: f64,
-    monitor: Option<JoinHandle<()>>
-}
-impl<R> Future for Timeout<R> {
-    type Item = R;
-    type Error = String;
-    fn poll (&mut self) -> Poll<R, String> {
-        match self.fut.poll() {
-            Err (err) => Err (err),
-            Ok (Async::Ready (r)) => Ok (Async::Ready (r)),
-            Ok (Async::NotReady) => {
-                let now = now_float();
-                if now >= self.started + self.timeout {
-                    Err (format! ("timeout ({:.1} > {:.1})", now - self.started, self.timeout))
-                } else {
-                    // Start waking up this future until it has a chance to timeout.
-                    // For now it's just a basic separate thread. Will probably optimize later.
-                    if self.monitor.is_none() {
-                        let task = futures::task::current();
-                        let deadline = self.started + self.timeout;
-                        self.monitor = Some (unwrap! (std::thread::Builder::new().name ("timeout monitor".into()) .spawn (move || {
-                            loop {
-                                std::thread::sleep (Duration::from_secs (1));
-                                task.notify();
-                                if now_float() > deadline + 2. {break}
-                            }
-                        })));
-                    }
-                    Ok (Async::NotReady)
-}   }   }   }   }
-impl<R> Timeout<R> {
-    pub fn new (fut: Box<Future<Item=R, Error=String>>, timeout: Duration) -> Timeout<R> {
-        Timeout {
-            fut: fut,
-            started: now_float(),
-            timeout: duration_to_float (timeout),
-            monitor: None
-}   }   }
-
-unsafe impl<R> Send for Timeout<R> {}
-
-/// Initialize the crate.
-pub fn init() {
-    // Pre-allocate the stack trace buffer in order to avoid allocating it from a signal handler.
-    black_box (&*trace_buf());
-    black_box (&*trace_name_buf());
-}
-
-lazy_static! {
-    /// NB: With a shared client there is a possibility that keep-alive connections will be reused.
-    pub static ref HYPER: Client<HttpsConnector<HttpConnector>> = {
-        let dns_threads = 2;
-        let https = HttpsConnector::new (dns_threads);
-        let client = Client::builder()
-            .executor (CORE.clone())
-            // Hyper had a lot of Keep-Alive bugs over the years and I suspect
-            // that with the shared client we might be getting errno 10054
-            // due to a closed Keep-Alive connection mismanagement.
-            // (To solve this problem Hyper should proactively close the Keep-Alive
-            // connections after a configurable amount of time has passed since
-            // their creation, thus saving us from trying to use the connections
-            // closed on the other side. I wonder if we can implement this strategy
-            // ourselves with a custom connector or something).
-            // Performance of Keep-Alive in the Hyper client is questionable as well,
-            // should measure it on a case-by-case basis when we need it.
-            .keep_alive (false)
-            .build (https);
-        client
-    };
-}
-
-pub type SlurpFut = Box<Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=String> + Send + 'static>;
-
-/// Executes a Hyper request, returning the response status, headers and body.
-pub fn slurp_req (request: Request<Body>) -> SlurpFut {
-    let uri = fomat! ((request.uri()));
-    let request_f = HYPER.request (request);
-    let response_f = request_f.then (move |res| -> SlurpFut {
-        // Can fail with:
-        // "an IO error occurred: An existing connection was forcibly closed by the remote host. (os error 10054)" (on Windows)
-        // "an error occurred trying to connect: No connection could be made because the target machine actively refused it. (os error 10061)"
-        // "an error occurred trying to connect: Connection refused (os error 111)"
-        let res = match res {
-            Ok (r) => r,
-            Err (err) => return Box::new (futures::future::err (
-                ERRL! ("Error accessing '{}': {}", uri, err)))
-        };
-        let status = res.status();
-        let headers = res.headers().clone();
-        let body_f = res.into_body().concat2();
-        let combined_f = body_f.then (move |body| -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
-            let body = try_s! (body);
-            Ok ((status, headers, body.to_vec()))
-        });
-        Box::new (combined_f)
-    });
-    Box::new (drive_s (response_f))
-}
-
-/// Executes a GET request, returning the response status, headers and body.
-pub fn slurp_url (url: &str) -> SlurpFut {
-    slurp_req (try_fus! (Request::builder().uri (url) .body (Body::empty())))
-}
-
-#[test]
-fn test_slurp_req() {
-    let (status, _headers, _body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
-    assert! (status.is_success());
-}
-
-/// Fetch URL by HTTPS and parse JSON response
-pub fn fetch_json<T>(url: &str) -> Box<Future<Item=T, Error=String>>
-where T: serde::de::DeserializeOwned + Send + 'static {
-    Box::new(slurp_url(url).and_then(|result| {
-        // try to parse as json with serde_json
-        let result = try_s!(serde_json::from_slice(&result.2));
-
-        Ok(result)
-    }))
-}
-
-/// Send POST JSON HTTPS request and parse response
-pub fn post_json<T>(url: &str, json: String) -> Box<Future<Item=T, Error=String>>
-where T: serde::de::DeserializeOwned + Send + 'static {
-    let request = try_fus!(Request::builder()
-        .method("POST")
-        .uri(url)
-        .header(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/json")
-        )
-        .body(json.into())
-    );
-
-    Box::new(slurp_req(request).and_then(|result| {
-        // try to parse as json with serde_json
-        let result = try_s!(serde_json::from_slice(&result.2));
-
-        Ok(result)
-    }))
-}
+pub type SlurpFut = Box<dyn Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=String> + Send + 'static>;
 
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
-pub type HyRes = Box<Future<Item=Response<Body>, Error=String> + Send>;
+pub type HyRes = Box<dyn Future<Item=Response<Vec<u8>>, Error=String> + Send>;
 
-/// Returns a JSON error HyRes on a failure.
-#[macro_export]
-macro_rules! try_h {
-    ($e: expr) => {
-        match $e {
-            Ok (ok) => ok,
-            Err (err) => {return $crate::rpc_err_response (500, &ERRL! ("{}", err))}
+// To improve git history and ease of exploratory refactoring
+// we're splitting the code in place with conditional compilation.
+// wio stands for "web I/O" or "wasm I/O",
+// it contains the parts which aren't directly available with WASM.
+
+// TODO: Move this.
+// How to link them together...
+// 1) Use separate folders for wasm and native builds in order not to mess the C objects and linking.
+// 2) In the native Rust binary add a mode which will run the WASM core (on wasmi),
+//    supplying it with the necessary helpers.
+
+#[cfg(not(feature = "native"))]
+pub mod wio {
+    use futures::future::IntoFuture;
+    use http::Request;
+    use super::SlurpFut;
+
+    pub fn spawn<F, R> (_f: F) where
+        F: FnOnce(()) -> R + Send + 'static,
+        R: IntoFuture<Item = (), Error = ()>,
+        R::Future: 'static
+    {
+        unimplemented!()
+    }
+
+    #[allow(dead_code)]
+    pub fn slurp_req (_request: Request<Vec<u8>>) -> SlurpFut {
+        unimplemented!()
+    }
+}
+
+#[cfg(feature = "native")]
+pub mod wio {
+    use crate::lift_body::LiftBody;
+    use crate::SlurpFut;
+    use futures::{future, Async, Future, Poll};
+    use futures::sync::oneshot::{self, Receiver};
+    use future::IntoFuture;
+    use gstuff::{any_to_str, duration_to_float, now_float};
+    use http::{Request, StatusCode, HeaderMap};
+    //use http_body::Body;
+    use hyper::Client;
+    use hyper::client::HttpConnector;
+    use hyper::header::{ HeaderValue, CONTENT_TYPE };
+    use hyper::rt::Stream;
+    use hyper::server::conn::Http;
+    use hyper_rustls::HttpsConnector;
+    use std::fmt;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::process::abort;
+    use std::thread;
+    use std::thread::JoinHandle;
+    use std::time::Duration;
+    use std::str;
+    use tokio_core::reactor::Remote;
+    use tokio_core::reactor::Handle;
+
+    fn start_core_thread() -> Remote {
+        let (tx, rx) = oneshot::channel();
+        unwrap! (thread::Builder::new().name ("CORE".into()) .spawn (move || {
+            if let Err (err) = catch_unwind (AssertUnwindSafe (move || {
+                let mut core = unwrap! (tokio_core::reactor::Core::new(), "!core");
+                unwrap! (tx.send (core.remote()), "Can't send Remote.");
+                loop {core.turn (None)}
+            })) {
+                log! ({"CORE panic! {:?}", any_to_str (&*err)});
+                abort()
+            }
+        }), "!spawn");
+        let core: Remote = unwrap! (rx.wait(), "!wait");
+        core
+    }
+
+    lazy_static! {
+        /// Shared asynchronous reactor.
+        pub static ref CORE: Remote = start_core_thread();
+        /// Shared HTTP server.
+        pub static ref HTTP: Http = Http::new();
+    }
+
+    pub fn spawn<F, R> (f: F) where
+        F: FnOnce(&Handle) -> R + Send + 'static,
+        R: IntoFuture<Item = (), Error = ()>,
+        R::Future: 'static
+    {
+        CORE.spawn (f);
+    }
+
+    /// With a shared reactor drives the future `f` to completion.
+    ///
+    /// NB: This function is only useful if you need to get the results of the execution.
+    /// If the results are not necessary then a future can be scheduled directly on the reactor:
+    ///
+    ///     CORE.spawn (|_| f);
+    pub fn drive<F, R, E> (f: F) -> Receiver<Result<R, E>> where
+    F: Future<Item=R, Error=E> + Send + 'static,
+    R: Send + 'static,
+    E: Send + 'static {
+        let (sx, rx) = oneshot::channel();
+        CORE.spawn (move |_handle| {
+            f.then (move |fr: Result<R, E>| -> Result<(),()> {
+                let _ = sx.send (fr);
+                Ok(())
+            })
+        });
+        rx
+    }
+
+    /// With a shared reactor drives the future `f` to completion.
+    ///
+    /// Similar to `fn drive`, but returns a stringified error,
+    /// allowing us to collapse the `Receiver` and return the `R` directly.
+    pub fn drive_s<F, R, E> (f: F) -> impl Future<Item=R, Error=String> where
+    F: Future<Item=R, Error=E> + Send + 'static,
+    R: Send + 'static,
+    E: fmt::Display + Send + 'static {
+        drive (f) .then (move |r| -> Result<R, String> {
+            let r = try_s! (r);  // Peel the `Receiver`.
+            let r = try_s! (r);  // `E` to `String`.
+            Ok (r)
+        })
+    }
+
+    /// Finishes with the "timeout" error if the underlying future isn't ready withing the given timeframe.
+    /// 
+    /// NB: Tokio timers (in `tokio::timer`) only seem to work under the Tokio runtime,
+    /// which is unfortunate as we want the different futures executed on the different reactors
+    /// depending on how much they're I/O-bound, CPU-bound or blocking.
+    /// Unlike the Tokio timers this `Timeout` implementation works with any reactor.
+    /// Another option to consider is https://github.com/alexcrichton/futures-timer.
+    /// P.S. The older `0.1` version of the `tokio::timer` might work NP, it works in other parts of our code.
+    ///      The new version, on the other hand, requires the Tokio runtime (https://tokio.rs/blog/2018-03-timers/).
+    /// P.S. We could try using the `futures-timer` crate instead, but note that it is currently under-maintained,
+    ///      https://github.com/rustasync/futures-timer/issues/9#issuecomment-400802515. 
+    pub struct Timeout<R> {
+        fut: Box<dyn Future<Item=R, Error=String>>,
+        started: f64,
+        timeout: f64,
+        monitor: Option<JoinHandle<()>>
+    }
+    impl<R> Future for Timeout<R> {
+        type Item = R;
+        type Error = String;
+        fn poll (&mut self) -> Poll<R, String> {
+            match self.fut.poll() {
+                Err (err) => Err (err),
+                Ok (Async::Ready (r)) => Ok (Async::Ready (r)),
+                Ok (Async::NotReady) => {
+                    let now = now_float();
+                    if now >= self.started + self.timeout {
+                        Err (format! ("timeout ({:.1} > {:.1})", now - self.started, self.timeout))
+                    } else {
+                        // Start waking up this future until it has a chance to timeout.
+                        // For now it's just a basic separate thread. Will probably optimize later.
+                        if self.monitor.is_none() {
+                            let task = futures::task::current();
+                            let deadline = self.started + self.timeout;
+                            self.monitor = Some (unwrap! (std::thread::Builder::new().name ("timeout monitor".into()) .spawn (move || {
+                                loop {
+                                    std::thread::sleep (Duration::from_secs (1));
+                                    task.notify();
+                                    if now_float() > deadline + 2. {break}
+                                }
+                            })));
+                        }
+                        Ok (Async::NotReady)
+    }   }   }   }   }
+    impl<R> Timeout<R> {
+        pub fn new (fut: Box<dyn Future<Item=R, Error=String>>, timeout: Duration) -> Timeout<R> {
+            Timeout {
+                fut: fut,
+                started: now_float(),
+                timeout: duration_to_float (timeout),
+                monitor: None
+    }   }   }
+
+    unsafe impl<R> Send for Timeout<R> {}
+
+    /// Initialize the crate.
+    pub fn init() {
+        // Pre-allocate the stack trace buffer in order to avoid allocating it from a signal handler.
+        super::black_box (&*super::trace_buf());
+        super::black_box (&*super::trace_name_buf());
+    }
+
+    lazy_static! {
+        /// NB: With a shared client there is a possibility that keep-alive connections will be reused.
+        pub static ref HYPER: Client<HttpsConnector<HttpConnector>, LiftBody<Vec<u8>>> = {
+            let dns_threads = 2;
+            let https = HttpsConnector::new (dns_threads);
+            let client = Client::builder()
+                .executor (CORE.clone())
+                // Hyper had a lot of Keep-Alive bugs over the years and I suspect
+                // that with the shared client we might be getting errno 10054
+                // due to a closed Keep-Alive connection mismanagement.
+                // (To solve this problem Hyper should proactively close the Keep-Alive
+                // connections after a configurable amount of time has passed since
+                // their creation, thus saving us from trying to use the connections
+                // closed on the other side. I wonder if we can implement this strategy
+                // ourselves with a custom connector or something).
+                // Performance of Keep-Alive in the Hyper client is questionable as well,
+                // should measure it on a case-by-case basis when we need it.
+                .keep_alive (false)
+                .build (https);
+            client
+        };
+    }
+
+    /// Executes a Hyper request, returning the response status, headers and body.
+    pub fn slurp_req (request: Request<Vec<u8>>) -> SlurpFut {
+        let (head, body) = request.into_parts();
+        let request = Request::from_parts (head, LiftBody::from (body));
+
+        let uri = fomat! ((request.uri()));
+        let request_f = HYPER.request (request);
+        let response_f = request_f.then (move |res| -> SlurpFut {
+            // Can fail with:
+            // "an IO error occurred: An existing connection was forcibly closed by the remote host. (os error 10054)" (on Windows)
+            // "an error occurred trying to connect: No connection could be made because the target machine actively refused it. (os error 10061)"
+            // "an error occurred trying to connect: Connection refused (os error 111)"
+            let res = match res {
+                Ok (r) => r,
+                Err (err) => return Box::new (futures::future::err (
+                    ERRL! ("Error accessing '{}': {}", uri, err)))
+            };
+            let status = res.status();
+            let headers = res.headers().clone();
+            let body = res.into_body();
+            let body_f = body.concat2();
+            let combined_f = body_f.then (move |body| -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
+                let body = try_s! (body);
+                Ok ((status, headers, body.to_vec()))
+            });
+            Box::new (combined_f)
+        });
+        Box::new (drive_s (response_f))
+    }
+
+    /// Executes a GET request, returning the response status, headers and body.
+    pub fn slurp_url (url: &str) -> SlurpFut {
+        slurp_req (try_fus! (Request::builder().uri (url) .body (Vec::new())))
+    }
+
+    #[test]
+    fn test_slurp_req() {
+        let (status, _headers, _body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
+        assert! (status.is_success());
+    }
+
+    /// Fetch URL by HTTPS and parse JSON response
+    pub fn fetch_json<T>(url: &str) -> Box<dyn Future<Item=T, Error=String>>
+    where T: serde::de::DeserializeOwned + Send + 'static {
+        Box::new(slurp_url(url).and_then(|result| {
+            // try to parse as json with serde_json
+            let result = try_s!(serde_json::from_slice(&result.2));
+
+            Ok(result)
+        }))
+    }
+
+    /// Send POST JSON HTTPS request and parse response
+    pub fn post_json<T>(url: &str, json: String) -> Box<dyn Future<Item=T, Error=String>>
+    where T: serde::de::DeserializeOwned + Send + 'static {
+        let request = try_fus!(Request::builder()
+            .method("POST")
+            .uri(url)
+            .header(
+                CONTENT_TYPE,
+                HeaderValue::from_static("application/json")
+            )
+            .body(json.into())
+        );
+
+        Box::new(slurp_req(request).and_then(|result| {
+            // try to parse as json with serde_json
+            let result = try_s!(serde_json::from_slice(&result.2));
+
+            Ok(result)
+        }))
+    }
+
+    /// Returns a JSON error HyRes on a failure.
+    #[macro_export]
+    macro_rules! try_h {
+        ($e: expr) => {
+            match $e {
+                Ok (ok) => ok,
+                Err (err) => {return $crate::rpc_err_response (500, &ERRL! ("{}", err))}
+            }
         }
     }
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.
-pub fn rpc_response<T>(status: u16, body: T) -> HyRes where Body: From<T> {
-    Box::new (
-        match Response::builder()
-            .status(status)
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .body(Body::from(body)) {
-                Ok (r) => future::ok::<Response<Body>, String> (r),
-                Err (err) => future::err::<Response<Body>, String> (ERRL! ("{}", err))
-            }
-    )
+pub fn rpc_response<T> (status: u16, body: T) -> HyRes where Vec<u8>: From<T> {
+    let rf = match Response::builder()
+        .status (status)
+        .header (CONTENT_TYPE, HeaderValue::from_static ("application/json"))
+        .body (Vec::from (body)) {
+            Ok (r) => future::ok::<Response<Vec<u8>>, String> (r),
+            Err (err) => future::err::<Response<Vec<u8>>, String> (ERRL! ("{}", err))
+        };
+    Box::new (rf)
 }
 
 /// Converts the given `err` message into the `{error: $err}` JSON string.
@@ -676,13 +738,14 @@ pub fn err_to_rpc_json_string(err: &str) -> String {
 pub fn rpc_err_response(status: u16, msg: &str) -> HyRes {
     // TODO: Like in most other places, we should check for a thread-local access to the proper log here.
     // Might be a good idea to use emoji too, like "🤒" or "🤐" or "😕".
+    // TODO: Consider turning this into a macros or merging with `try_h` in order to retain the `line!`.
     log! ({"RPC error response: {}", msg});
 
     rpc_response(status, err_to_rpc_json_string(msg))
 }
 
 /// A closure that would (re)start a `Future` to synchronize with an external resource in `RefreshedExternalResource`.
-type ExternalResourceSync<R> = Box<Fn()->Box<Future<Item=R,Error=String> + Send + 'static> + Send + 'static>;
+type ExternalResourceSync<R> = Box<dyn Fn()->Box<dyn Future<Item=R,Error=String> + Send + 'static> + Send + 'static>;
 
 /// Memory space accessible to the `Future` tail spawned by the `RefreshedExternalResource`.
 struct RerShelf<R: Send + 'static> {
@@ -779,7 +842,7 @@ impl<R: Send + 'static> RefreshedExternalResource<R> {
                 }
                 Ok(())
             });
-            CORE.spawn (move |_| f);  // Polls `f` in background.
+            wio::spawn (move |_| f);  // Polls `f` in background.
         }
 
         Ok(())

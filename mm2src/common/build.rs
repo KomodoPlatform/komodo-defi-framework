@@ -17,7 +17,6 @@ extern crate lazy_static;
 extern crate unwrap;
 
 use bzip2::read::BzDecoder;
-use duct::cmd;
 use futures::{Future, Stream};
 use futures_cpupool::CpuPool;
 use glob::{glob, Paths, PatternError};
@@ -26,13 +25,16 @@ use hyper_rustls::HttpsConnector;
 use libflate::gzip::Decoder;
 use shell_escape::escape;
 use std::cmp::max;
-use std::env::var;
+use std::env::{self, var};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::io::{Read, Write};
 use std::iter::empty;
 use std::path::{Component, Path, PathBuf};
+use std::process::{ChildStdout, Command, Stdio};
+use std::str::from_utf8_unchecked;
 use std::sync::Arc;
+use std::thread;
 use tar::Archive;
 
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
@@ -89,6 +91,10 @@ fn bindgen<
     types: TI,
     defines: DI,
 ) {
+    if cfg!(not(feature = "native")) {
+        return;
+    }
+
     // We'd like to regenerate the bindings whenever the build.rs changes, in case we changed bindgen configuration here.
     let lm_build_rs = unwrap!(last_modified_sec(&"build.rs"), "Can't stat build.rs");
 
@@ -416,6 +422,66 @@ fn show_args<'a, I: IntoIterator<Item = &'a String>>(args: I) -> String {
     buf
 }
 
+fn forward(stdout: ChildStdout) {
+    unwrap!(thread::Builder::new()
+        .name("forward".into())
+        .spawn(move || {
+            let mut buf = Vec::new();
+            for ch in stdout.bytes() {
+                let ch = match ch {
+                    Ok(k) => k,
+                    Err(_) => break,
+                };
+                if ch == b'\n' {
+                    eprintln!("{}", unsafe { from_utf8_unchecked(&buf) });
+                } else {
+                    buf.push(ch)
+                }
+            }
+            if !buf.is_empty() {
+                eprintln!("{}", unsafe { from_utf8_unchecked(&buf) });
+            }
+        }));
+}
+
+/// Like the `duct` `cmd!` but also prints the command into the standard error stream.
+macro_rules! ecmd {
+    ( $program:expr ) => {{
+        eprintln! ("$ {}", $program);
+        let mut command = Command::new ($program);
+        command.stdout (Stdio::piped());  // Printed to `stderr` in `run!`
+        command.stderr (Stdio::inherit());  // `stderr` is directly visible with "cargo build -vv".
+        command
+    }};
+    ( @s $args: expr, $arg:expr ) => {$args.push (String::from ($arg));};
+    ( @i $args: expr, $iterable:expr ) => {for v in $iterable {ecmd! (@s $args, v)}};
+    ( @a $args: expr, i $arg:expr ) => {ecmd! (@i $args, $arg);};
+    ( @a $args: expr, i $arg:expr, $( $tail:tt )* ) => {ecmd! (@i $args, $arg); ecmd! (@a $args, $($tail)*);};
+    ( @a $args: expr, $arg:expr ) => {ecmd! (@s $args, $arg);};
+    ( @a $args: expr, $arg:expr, $( $tail:tt )* ) => {ecmd! (@s $args, $arg); ecmd! (@a $args, $($tail)*);};
+    ( $program:expr, $( $args:tt )* ) => {{
+        let mut args: Vec<String> = Vec::new();
+        ecmd! (@a &mut args, $($args)*);
+        eprintln!("$ {}{}", $program, show_args (&args));
+        let mut command = Command::new ($program);
+        command.stdout (Stdio::inherit()) .stderr (Stdio::inherit());
+        for arg in args {command.arg (arg);}
+        command
+    }};
+}
+macro_rules! run {
+    ( $command: expr ) => {
+        let mut pc = unwrap!($command.spawn());
+        if let Some(stdout) = pc.stdout.take() {
+            forward(stdout)
+        }
+        let status = unwrap!(pc.wait());
+        if !status.success() {
+            panic!("Command returned an error status: {}", status)
+        }
+    };
+}
+
 /// See if we have the required libraries.
 #[cfg(windows)]
 fn windows_requirements() {
@@ -440,10 +506,12 @@ fn windows_requirements() {
 
     if !Path::new(r"c:\Program Files\LLVM\bin\libclang.dll").is_file() {
         // If `clang -v` works then maybe libclang is installed at a different location.
-        let clang_v = cmd!("clang", "-v")
-            .stderr_to_stdout()
-            .read()
-            .unwrap_or(Default::default());
+        let clang_v = ecmd!("clang", "-v").output();
+        let clang_v = if let Ok(output) = clang_v {
+            unsafe { String::from_utf8_unchecked(output.stdout) }
+        } else {
+            String::new()
+        };
         if !clang_v.contains("clang version") {
             panic!(
                 "\n\
@@ -544,8 +612,8 @@ fn hget(url: &str, to: PathBuf) {
         client: Arc<Client<HttpsConnector<HttpConnector>>>,
         request: Request<Body>,
         to: PathBuf,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
-        Box::new(client.request(request) .then(move |res| -> Box<Future<Item=(), Error=()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(client.request(request) .then(move |res| -> Box<dyn Future<Item=(), Error=()> + Send> {
             let res = unwrap!(res);
             let status = res.status();
             if status == StatusCode::FOUND {
@@ -596,7 +664,7 @@ fn hget(url: &str, to: PathBuf) {
 }
 
 /// Loads the `path`, runs `update` on it and saves back the result if it differs.
-fn _in_place(path: &AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>) {
+fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>) {
     let path: &Path = path.as_ref();
     if !path.is_file() {
         return;
@@ -650,6 +718,7 @@ impl Target {
             "armv7-unknown-linux-gnueabihf" => Target::Unix,
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
+            "wasm32-unknown-emscripten" => Target::Unix, // Pretend.
             "armv7-linux-androideabi" => {
                 if Path::new("/android-ndk").exists() {
                     Target::AndroidCross
@@ -883,9 +952,9 @@ fn fetch_boost(_target: &Target) -> PathBuf {
     let b2 = boost.join(if cfg!(windows) { "b2.exe" } else { "b2" });
     if !b2.exists() {
         if cfg!(windows) {
-            unwrap!(ecmd!("cmd", "/c", "bootstrap.bat").dir(&boost).run());
+            run!(ecmd!("cmd", "/c", "bootstrap.bat").current_dir(&boost));
         } else {
-            unwrap!(ecmd!("/bin/sh", "bootstrap.sh").dir(&boost).run());
+            run!(ecmd!("/bin/sh", "bootstrap.sh").current_dir(&boost));
         }
         assert!(b2.exists());
     }
@@ -1125,27 +1194,27 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
       "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathᵉ) "\n"
       "  $ "(b2));
     if cfg!(windows) {
-        unwrap!(cmd!("cmd", "/c", b2)
+        run!(ecmd!("cmd", "/c", b2)
             .env("PATH", format!("{};{}", boostˢ, unwrap!(var("PATH"))))
             .env("BOOST_BUILD_PATH", boost_build_path)
             .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
-            .dir(&rasterbar)
-            .stdout_to_stderr()
-            .run());
+            .current_dir(&rasterbar));
     } else {
-        unwrap!(cmd!("/bin/sh", "-c", b2)
+        run!(ecmd!("/bin/sh", "-c", b2)
             .env("PATH", format!("{}:{}", boostˢ, unwrap!(var("PATH"))))
             .env("BOOST_BUILD_PATH", boost_build_path)
             .env_remove("BOOST_ROOT") // cf. https://stackoverflow.com/a/55141466/257568
-            .dir(&rasterbar)
-            .stdout_to_stderr()
-            .run());
+            .current_dir(&rasterbar));
     }
 
     let a = unwrap!(find_libtorrent_a(&rasterbar, &target));
     (a, include)
 }
 
+#[cfg(not(feature = "native"))]
+fn libtorrent() {}
+
+#[cfg(feature = "native")]
 fn libtorrent() {
     // NB: Distributions should have a copy of https://github.com/arvidn/libtorrent/blob/master/LICENSE.
 
@@ -1217,6 +1286,8 @@ fn libtorrent() {
         }
 
         // Fixes the «Undefined symbols… "boost::system::detail::generic_category_ncx()"».
+        // The header [works](https://github.com/boostorg/system/issues/42#issuecomment-486362606)
+        // and is needed on Linux, but not necessarily works as intended on Windows.
         cc.flag("-DBOOST_ERROR_CODE_HEADER_ONLY=1");
 
         cc.file("dht.cc")
@@ -1351,36 +1422,16 @@ fn build_c_code(mm_version: &str) {
     cmake_prep_args.push("-DCMAKE_BUILD_TYPE=Debug".into());
     cmake_prep_args.push("..".into());
     eprintln!("$ cmake{}", show_args(&cmake_prep_args));
-    unwrap!(
-        cmd("cmake", cmake_prep_args)
-            .env("PATH", cmake_path())
-            .env("VERBOSE", "1")
-            .dir(root().join("build"))
-            .stdout_to_stderr() // NB: stderr is visible through "cargo build -vv".
-            .run(),
-        "!cmake"
-    );
+    run!(ecmd!("cmake", i cmake_prep_args).current_dir(root().join("build")));
 
-    let mut cmake_args: Vec<String> = vec![
+    let cmake_args: Vec<String> = vec![
         "--build".into(),
         ".".into(),
         "--target".into(),
         "marketmaker-lib".into(),
     ];
-    if !cfg!(windows) {
-        // Doesn't currently work on AppVeyor.
-        cmake_args.push("-j".into());
-        cmake_args.push(format!("{}", num_cpus::get()));
-    }
     eprintln!("$ cmake{}", show_args(&cmake_args));
-    unwrap!(
-        cmd("cmake", cmake_args)
-            .env("PATH", cmake_path())
-            .dir(root().join("build"))
-            .stdout_to_stderr() // NB: stderr is visible through "cargo build -vv".
-            .run(),
-        "!cmake"
-    );
+    run!(ecmd!("cmake", i cmake_args).current_dir(root().join("build")));
 
     println!("cargo:rustc-link-lib=static=marketmaker-lib");
 
@@ -1427,9 +1478,7 @@ fn build_c_code(mm_version: &str) {
 
         let pthread_dll = root().join("x64/pthreadVC2.dll");
         if !pthread_dll.is_file() {
-            unwrap!(ecmd!("cmd", "/c", "marketmaker_build_depends.cmd")
-                .dir(&root())
-                .run());
+            run!(ecmd!("cmd", "/c", "marketmaker_build_depends.cmd").current_dir(&root()));
             assert!(pthread_dll.is_file(), "Missing {:?}", pthread_dll);
         }
 
@@ -1464,11 +1513,17 @@ fn main() {
     //     https://github.com/rust-lang/cargo/issues/4213#issuecomment-310697337
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
 
+    println!("cargo:rerun-if-changed={}", path2s(rabs("MM_VERSION")));
+    let mm_version = mm_version();
+
+    if cfg!(not(feature = "native")) {
+        return;
+    }
+
     rerun_if_changed("iguana/exchanges/*.c");
     rerun_if_changed("crypto777/*.c");
     rerun_if_changed("crypto777/jpeg/*.c");
     println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));
-    println!("cargo:rerun-if-changed={}", path2s(rabs("MM_VERSION")));
 
     // NB: Using `rerun-if-env-changed` disables the default dependency heuristics.
     // cf. https://github.com/rust-lang/cargo/issues/4587
@@ -1479,7 +1534,6 @@ fn main() {
 
     windows_requirements();
     libtorrent();
-    let mm_version = mm_version();
     build_c_code(&mm_version);
     generate_bindings();
 }

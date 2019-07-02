@@ -32,23 +32,22 @@ use self::prices::{lp_btcprice, lp_fundvalue, Coins, CoinId, ExternalPrices, Fun
 #[doc(hidden)]
 pub mod portfolio_tests;
 
-use common::{lp, rpc_response, rpc_err_response, slurp_url,
-  HyRes, RefreshedExternalResource, SMALLVAL};
+use common::{lp, rpc_response, rpc_err_response, HyRes, RefreshedExternalResource, SMALLVAL};
+use common::wio::slurp_url;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::log::TagParam;
 use common::ser::de_none_if_empty;
 use coins::lp_coinfind;
-use futures::{Future, Stream};
+use futures::Future;
 use futures::task::Task;
 use gstuff::{now_ms, now_float};
 use hashbrown::HashSet;
 use hashbrown::hash_map::{Entry, HashMap};
-use hyper::{StatusCode, HeaderMap};
+use http::{StatusCode, HeaderMap};
 use libc::{c_char, c_void};
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CStr, CString};
 use std::iter::once;
-use std::mem::{zeroed};
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -705,7 +704,7 @@ fn lp_autoprice_iter (ctx: &MmArc, btcpp: *mut lp::LP_priceinfo) -> Result<(), S
     let (kmd_btc, bch_btc, ltc_btc) = {
         let price_resources = try_s! (portfolio_ctx.price_resources.lock());
         let resource = & try_s! (price_resources.get (&(provider.clone(), PriceUnit::Bitcoin)) .ok_or ("Not in PRICE_RESOURCES")) .1;
-        let status_tags: &[&TagParam] = &[&"portfolio", &"waiting-cmc-gecko"];
+        let status_tags: &[&dyn TagParam] = &[&"portfolio", &"waiting-cmc-gecko"];
         let prices = try_s! (resource.with_result (|r| -> Result<Option<(f64, f64, f64)>, String> {
             match r {
                 Some (Ok (ep)) => {
@@ -758,7 +757,7 @@ fn lp_autoprice_iter (ctx: &MmArc, btcpp: *mut lp::LP_priceinfo) -> Result<(), S
         let fundvalue = autoref.fundvalue_req as *const AutopriceReq;
         if fundvalue != null() {
             let fundjson = try_s! (lp_fundvalue (ctx.clone(), try_s! (json::to_value (unsafe {&*fundvalue})), true) .wait());  // Immediate.
-            let fundjson = try_s! (fundjson.into_body().concat2().wait());  // Immediate.
+            let fundjson = fundjson.into_body();
             let fundjson: FundvalueRes = try_s! (json::from_slice (&fundjson));
             if fundjson.missing != 0 {
                 let fundbid = try_s! (unsafe {CStr::from_ptr (autoref.fundbid.as_ptr())} .to_str());
@@ -798,7 +797,7 @@ fn lp_autoprice_iter (ctx: &MmArc, btcpp: *mut lp::LP_priceinfo) -> Result<(), S
             let extprice = {
                 let price_resources = try_s! (portfolio_ctx.price_resources.lock());
                 let resource = & try_s! (price_resources.get (&(provider.clone(), unit)) .ok_or ("Not in PRICE_RESOURCES")) .1;
-                let status_tags: &[&TagParam] = &[&"portfolio", &"ext-price", &("ref-num", ref_num)];
+                let status_tags: &[&dyn TagParam] = &[&"portfolio", &"ext-price", &("ref-num", ref_num)];
                 try_s! (resource.with_result (|r| -> Result<Option<f64>, String> {
                     match r {
                         Some (Ok (ep)) => {

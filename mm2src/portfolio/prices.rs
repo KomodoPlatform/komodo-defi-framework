@@ -18,7 +18,8 @@
 //  marketmaker
 //
 
-use common::{dstr, lp, rpc_response, rpc_err_response, slurp_req, HyRes, SATOSHIDEN, SMALLVAL};
+use common::{dstr, lp, rpc_response, rpc_err_response, HyRes, SATOSHIDEN, SMALLVAL};
+use common::wio::slurp_req;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::log::TagParam;
 use coins::{lp_coinfind};
@@ -26,8 +27,8 @@ use futures::{self, Future, Async, Poll};
 use futures::task::{self};
 use gstuff::{now_float};
 use hashbrown::{HashMap, HashSet};
-use hyper::{Body, Request, StatusCode};
-use hyper::header::CONTENT_TYPE;
+use http::{Request, StatusCode};
+use http::header::CONTENT_TYPE;
 use libc::{c_char};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
@@ -1359,7 +1360,7 @@ mod gecko_reply {
 /// 
 /// NB: We're using the MM command-line configuration ("coins") to convert between the coin names and the ticker symbols,
 /// meaning that the price loader futures are not reusable across the MM instances (the `MmWeak` argument hints at it).
-pub fn lp_btcprice (ctx_weak: MmWeak, provider: &PricingProvider, unit: PriceUnit, coins: &Arc<Coins>) -> Box<Future<Item=ExternalPrices, Error=String> + Send> {
+pub fn lp_btcprice (ctx_weak: MmWeak, provider: &PricingProvider, unit: PriceUnit, coins: &Arc<Coins>) -> Box<dyn Future<Item=ExternalPrices, Error=String> + Send> {
     let coin_labels: Vec<String> = {
         let ctx = try_fus! (MmArc::from_weak (&ctx_weak) .ok_or ("Context expired"));
         let coins_conf = try_fus! (ctx.conf["coins"].as_array().ok_or ("No 'coins' array in configuration"));
@@ -1378,16 +1379,16 @@ pub fn lp_btcprice (ctx_weak: MmWeak, provider: &PricingProvider, unit: PriceUni
                 for coin in coin_labels {(coin)} separated {','}
                 "&convert=" (cmc_price_unit)
             );
-            ( try_fus! (Request::builder().uri (&url) .header ("X-CMC_PRO_API_KEY", &cmc_key[..]) .body (Body::empty())),
-            format! ("curl --header \"X-CMC_PRO_API_KEY: {}\" \"{}\"", cmc_key, url) )
+            ( try_fus! (Request::builder().uri (&url) .header ("X-CMC_PRO_API_KEY", &cmc_key[..]) .body (Vec::new())),
+              format! ("curl --header \"X-CMC_PRO_API_KEY: {}\" \"{}\"", cmc_key, url) )
         },
         PricingProvider::CoinGecko => {
             let mut params = url::form_urlencoded::Serializer::new (String::new());
             params.append_pair ("ids", &fomat! (for coin in coin_labels {(coin)} separated {','}));
             params.append_pair ("vs_currency", gecko_price_unit);
             let url = fomat! ("https://api.coingecko.com/api/v3/coins/markets?" (params.finish()));
-            ( try_fus! (Request::builder().uri (&url) .body (Body::empty())),
-            format! ("curl \"{}\"", url) )
+            ( try_fus! (Request::builder().uri (&url) .body (Vec::new())),
+              format! ("curl \"{}\"", url) )
         }
     };
     log! ({"lp_btcprice] Fetching prices, akin to\n$ {}", curl_example});
@@ -1614,7 +1615,7 @@ pub fn lp_fundvalue (ctx: MmArc, req: Json, immediate: bool) -> HyRes {
 
             // See if we've got the prices.
 
-            let status_tags: &[&TagParam] = &[&"portfolio", &"fundvalue", &"ext-prices"];
+            let status_tags: &[&dyn TagParam] = &[&"portfolio", &"fundvalue", &"ext-prices"];
             let ctx = self.ctx.clone();
             let mut status = self.ctx.log.claim_status (status_tags);
 

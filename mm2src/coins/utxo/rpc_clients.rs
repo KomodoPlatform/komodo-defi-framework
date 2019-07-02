@@ -1,7 +1,8 @@
 use bigdecimal::BigDecimal;
 use bytes::{BytesMut};
 use chain::{OutPoint, Transaction as UtxoTransaction};
-use common::{CORE, slurp_req, StringError};
+use common::StringError;
+use common::wio::{slurp_req, CORE};
 use common::custom_futures::{join_all_sequential, select_ok_sequential, SendAll};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
 use futures::{Async, Future, Poll, Sink, Stream};
@@ -11,9 +12,9 @@ use futures_timer::{Delay, Interval, FutureExt};
 use gstuff::now_ms;
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
-use hyper::{Body, Request, StatusCode};
-use hyper::header::{AUTHORIZATION};
-use hyper::Uri;
+use http::{Request, StatusCode};
+use http::header::AUTHORIZATION;
+use http::Uri;
 use keys::Address;
 use rpc::v1::types::{H256 as H256Json, Transaction as RpcTransaction, Bytes as BytesJson, VerboseBlockClient};
 use rustls::{self, ClientConfig, Session};
@@ -56,7 +57,7 @@ pub enum UtxoRpcClientEnum {
 }
 
 impl Deref for UtxoRpcClientEnum {
-    type Target = UtxoRpcClientOps;
+    type Target = dyn UtxoRpcClientOps;
     fn deref(&self) -> &dyn UtxoRpcClientOps {
         match self {
             &UtxoRpcClientEnum::Native(ref c) => c,
@@ -73,7 +74,7 @@ pub struct UnspentInfo {
     pub value: u64,
 }
 
-pub type UtxoRpcRes<T> = Box<Future<Item=T, Error=String> + Send + 'static>;
+pub type UtxoRpcRes<T> = Box<dyn Future<Item=T, Error=String> + Send + 'static>;
 
 /// Common operations that both types of UTXO clients have but implement them differently
 pub trait UtxoRpcClientOps: Debug + 'static {
@@ -216,7 +217,7 @@ impl JsonRpcClient for NativeClientImpl {
                         self.auth.clone()
                     )
                     .uri(self.uri.clone())
-                    .body(Body::from(request_body))
+                    .body(Vec::from(request_body))
         );
         Box::new(slurp_req(http_request).then(move |result| -> Result<JsonRpcResponse, String> {
             let res = try_s!(result);
@@ -707,7 +708,7 @@ impl UtxoRpcClientOps for ElectrumClient {
 
     /// https://bitcoin.org/en/developer-reference#getblock
     /// Always returns verbose block
-    fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient> {
+    fn get_block(&self, _height: String) -> RpcRes<VerboseBlockClient> {
         unimplemented!()
     }
 
@@ -997,7 +998,7 @@ fn electrum_connect(
         } else {
             Either::B(connect_f)
         };
-        with_delay_f.then(move |stream| -> Box<Future<Item=Loop<(), _>, Error=_> + Send> {
+        with_delay_f.then(move |stream| -> Box<dyn Future<Item=Loop<(), _>, Error=_> + Send> {
             let stream = try_loop!(stream, rx, connection, delay);
             try_loop!(stream.as_ref().set_nodelay(true), rx, connection, delay);
             connection.is_connected.store(true, AtomicOrdering::Relaxed);

@@ -6,9 +6,11 @@ use either::Either;
 use futures::{future, self, Async, Future};
 use gstuff::{netstring, now_float};
 use hashbrown::hash_map::{Entry, HashMap, RawEntryMut};
-use hyper::{Request, Body};
-use hyper::body::Payload;
-use hyper::rt::{Stream};
+use http::{Request, Response, StatusCode};
+use http::header::HeaderMap;
+#[cfg(feature = "native")]
+use hyper::rt::Stream;
+#[cfg(feature = "native")]
 use hyper::service::Service;
 use libc::c_void;
 use serde_bytes::ByteBuf;
@@ -21,13 +23,17 @@ use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 use std::str::from_utf8_unchecked;
+#[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
 use zstd_sys::{ZSTD_CDict, ZSTD_createCDict_byReference, ZSTD_freeCDict, ZSTD_compress_usingCDict_advanced,
     ZSTD_frameParameters, ZSTD_createCCtx, ZSTD_freeCCtx, ZSTD_isError, ZSTD_compressBound,
     ZSTD_createDCtx, ZSTD_freeDCtx, ZSTD_DDict, ZSTD_createDDict, ZSTD_freeDDict, ZSTD_decompress_usingDDict};
 
-use crate::common::{bits256, binprint, rpc_response, slurp_req, HyRes, CORE, HTTP};
-use crate::common::mm_ctx::{from_ctx, MmArc, MmWeak};
+use common::{bits256, binprint, rpc_response, HyRes};
+use common::wio::{slurp_req};
+#[cfg(feature = "native")]
+use common::wio::{CORE, HTTP};
+use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 
 /// Data belonging to the server side of this module and owned by the MM2 instance.  
 /// NB: The client side uses the `hf_*` fields in `PeersContext`.
@@ -94,162 +100,171 @@ lazy_static! {
     )});
 }
 
-fn fetch_map_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
-    let f = req.into_body().concat2().then (move |body| -> HyRes {
-        let body = try_fus! (body);
-        let id = body.to_vec();
-
-        let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
-        let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
-        let maps = try_fus! (hfctx.maps.lock());
-        if let Some (mapʰ) = maps.get (&id) {
-            let mapʳ = try_fus! (json::to_string (&mapʰ));
-            rpc_response (200, mapʳ)
-        } else {
-            let map = RepStrMap::new();
-            let map = try_fus! (json::to_string (&map));
-            rpc_response (200, map)
-        }
-    });
-    Box::new (f)
+fn fetch_map_impl (ctx: MmWeak, req: Request<Vec<u8>>) -> HyRes {
+    let id = req.into_body();
+    let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
+    let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
+    let maps = try_fus! (hfctx.maps.lock());
+    if let Some (mapʰ) = maps.get (&id) {
+        let mapʳ = try_fus! (json::to_string (&mapʰ));
+        rpc_response (200, mapʳ)
+    } else {
+        let map = RepStrMap::new();
+        let map = try_fus! (json::to_string (&map));
+        rpc_response (200, map)
+    }
 }
 
-fn fetch_maps_by_prefix_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
-    let f = req.into_body().concat2().then (move |body| -> HyRes {
-        let body = try_fus! (body);
-        let body = body.to_vec();
-        let mut cur = Cursor::new (&body[..]);
-        let ver = try_fus! (cur.read_u8());
-        if ver != 1 {return Box::new (future::err (ERRL! ("Unknown request version: {}", ver)))}
-        let hf_last_poll_id = try_fus! (cur.read_u64::<BigEndian>());
-        let mut prefix = Vec::with_capacity (33);
-        try_fus! (cur.read_to_end (&mut prefix));
-        if prefix.len() < 1 {return Box::new (future::err (ERRL! ("No prefix")))}
+fn fetch_maps_by_prefix_impl (ctx: MmWeak, req: Request<Vec<u8>>) -> HyRes {
+    let body = req.into_body();
+    let mut cur = Cursor::new (&body[..]);
+    let ver = try_fus! (cur.read_u8());
+    if ver != 1 {return Box::new (future::err (ERRL! ("Unknown request version: {}", ver)))}
+    let hf_last_poll_id = try_fus! (cur.read_u64::<BigEndian>());
+    let mut prefix = Vec::with_capacity (33);
+    try_fus! (cur.read_to_end (&mut prefix));
+    if prefix.len() < 1 {return Box::new (future::err (ERRL! ("No prefix")))}
 //pintln! ("fetch_maps_by_prefix_impl] " [=hf_last_poll_id] ", prefix: " (binprint (&prefix, b'.')));
 
-        let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
-        let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
-        let maps = try_fus! (hfctx.maps.lock());
+    let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
+    let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
+    let maps = try_fus! (hfctx.maps.lock());
 
-        // Prefix search.
-        // TODO: Limit the number of entries.
-        // TODO: Limit the size of the returned payload.
-        // TODO: See if we can make the client prove having rights to the prefix.
-        let mut prefixⱼ = prefix.clone();
-        let last_byte = &mut prefixⱼ[prefix.len() - 1];
-        if *last_byte == u8::max_value() {
-            prefixⱼ.push (0)
-        } else {
-            *last_byte += 1
-        };
+    // Prefix search.
+    // TODO: Limit the number of entries.
+    // TODO: Limit the size of the returned payload.
+    // TODO: See if we can make the client prove having rights to the prefix.
+    let mut prefixⱼ = prefix.clone();
+    let last_byte = &mut prefixⱼ[prefix.len() - 1];
+    if *last_byte == u8::max_value() {
+        prefixⱼ.push (0)
+    } else {
+        *last_byte += 1
+    };
 
-        let mut buf = Vec::new();
-        for (k, map) in maps.range (prefix .. prefixⱼ) {
-            try_fus! (write! (&mut buf, "{}:{},", k.len(), unsafe {from_utf8_unchecked (k)}));
-            let js = try_fus! (json::to_string (map));
-            try_fus! (write! (&mut buf, "{}:{},", js.len(), js));
-        }
-        let crc = if buf.is_empty() {0} else {checksum_ecma (&buf)};
-        // HTTP fallback is not intended for large payloads; if we see some then something is likely wrong.
-        if buf.len() > u16::max_value() as usize {return Box::new (future::err (ERRL! ("Payload too big")))}
+    let mut buf = Vec::new();
+    for (k, map) in maps.range (prefix .. prefixⱼ) {
+        try_fus! (write! (&mut buf, "{}:{},", k.len(), unsafe {from_utf8_unchecked (k)}));
+        let js = try_fus! (json::to_string (map));
+        try_fus! (write! (&mut buf, "{}:{},", js.len(), js));
+    }
+    let crc = if buf.is_empty() {0} else {checksum_ecma (&buf)};
+    // HTTP fallback is not intended for large payloads; if we see some then something is likely wrong.
+    if buf.len() > u16::max_value() as usize {return Box::new (future::err (ERRL! ("Payload too big")))}
 
-        // CRDT JSON and base64 have good compression ratios.
-        let mut dst: Vec<u8> = Vec::new();
-        if !buf.is_empty() {
-            dst.reserve (unsafe {ZSTD_compressBound (buf.len())} + 32);
-            let cctx = unsafe {ZSTD_createCCtx()};  // TODO: Reuse (we already have a lock).
-            assert! (!cctx.is_null());
-            let len = unsafe {ZSTD_compress_usingCDict_advanced (cctx,
-                dst.as_mut_ptr() as *mut c_void, dst.capacity(),
-                buf.as_ptr() as *const c_void, buf.len(),
-                CDICT.0,
-                ZSTD_frameParameters {contentSizeFlag: 0, checksumFlag: 0, noDictIDFlag: 1}
-            )};
-            if unsafe {ZSTD_isError (len)} != 0 {return Box::new (future::err (ERRL! ("Can't compress")))}
-            unsafe {ZSTD_freeCCtx (cctx)};  // TODO: RAII
-            unsafe {dst.set_len (len)};
-        }
+    // CRDT JSON and base64 have good compression ratios.
+    let mut dst: Vec<u8> = Vec::new();
+    if !buf.is_empty() {
+        dst.reserve (unsafe {ZSTD_compressBound (buf.len())} + 32);
+        let cctx = unsafe {ZSTD_createCCtx()};  // TODO: Reuse (we already have a lock).
+        assert! (!cctx.is_null());
+        let len = unsafe {ZSTD_compress_usingCDict_advanced (cctx,
+            dst.as_mut_ptr() as *mut c_void, dst.capacity(),
+            buf.as_ptr() as *const c_void, buf.len(),
+            CDICT.0,
+            ZSTD_frameParameters {contentSizeFlag: 0, checksumFlag: 0, noDictIDFlag: 1}
+        )};
+        if unsafe {ZSTD_isError (len)} != 0 {return Box::new (future::err (ERRL! ("Can't compress")))}
+        unsafe {ZSTD_freeCCtx (cctx)};  // TODO: RAII
+        unsafe {dst.set_len (len)};
+    }
 
-        buf.clear();
-        try_fus! (buf.write_u8 (1));  // Reply protocol version.
-        try_fus! (buf.write_u64::<BigEndian> (crc));  // 8 bytes crc, aka `hf_last_poll_id`.
-        buf.extend_from_slice (&dst[..]);
+    buf.clear();
+    try_fus! (buf.write_u8 (1));  // Reply protocol version.
+    try_fus! (buf.write_u64::<BigEndian> (crc));  // 8 bytes crc, aka `hf_last_poll_id`.
+    buf.extend_from_slice (&dst[..]);
 
-        if crc == hf_last_poll_id {
-            // TODO: Implement HTTP long polling, returning the reply when it changes or upon a timeout.
-            rpc_response (200, "not modified")
-        } else {
-            rpc_response (200, buf)
-        }
-    });
-    Box::new (f)
+    if crc == hf_last_poll_id {
+        // TODO: Implement HTTP long polling, returning the reply when it changes or upon a timeout.
+        rpc_response (200, "not modified")
+    } else {
+        rpc_response (200, buf)
+    }
 }
 
-fn merge_map_impl (ctx: MmWeak, req: Request<Body>) -> HyRes {
-    if let Some (cl) = req.body().content_length() {
-        // Guard against abuse, HTTP fallback is only intended for small payloads.
-        if cl > u16::max_value() as u64 {return rpc_response (500, "Payload too big")}
-    }
-    let f = req.into_body().concat2().then (move |body| -> HyRes {
-        let body = try_fus! (body);
-        let buf = body.to_vec();
-        if body.len() > u16::max_value() as usize {return rpc_response (500, "Payload too big")}
-        let (id, mapˢ) = try_fus! (netstring (&buf));
-        let map: RepStrMap = try_fus! (json::from_slice (mapˢ));
+fn merge_map_impl (ctx: MmWeak, req: Request<Vec<u8>>) -> HyRes {
+    // No longer possible with body being `Vec<u8>`:
+    //     if let Some (cl) = req.body().content_length() {
+    //         // Guard against abuse, HTTP fallback is only intended for small payloads.
+    //         if cl > u16::max_value() as u64 {return rpc_response (500, "Payload too big")}
+    //     }
+    // Maybe we'll figure something out in the future though.
 
-        let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
-        let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
-        let mut maps = try_fus! (hfctx.maps.lock());
-        if let Some (mapʰ) = maps.get_mut (id) {
-            // NB: Diverging clocks coming from the same actor might lead to an empty map.
-            // cf. https://github.com/rust-crdt/rust-crdt/blob/86c7c5601b6b4c4451e1c6840dc1481716ae1433/src/traits.rs#L14
+    let buf = req.into_body();
+    if buf.len() > u16::max_value() as usize {return rpc_response (500, "Payload too big")}
+    let (id, mapˢ) = try_fus! (netstring (&buf));
+    let map: RepStrMap = try_fus! (json::from_slice (mapˢ));
 
-            let actor_id = 1;
-            let old_clock = mapʰ.len().add_clock.get (&actor_id);
-            let new_clock = map.len().add_clock.get (&actor_id);
-            if new_clock <= 2 && 2 < old_clock {
-                // ^^ The clocks resets to 1 when when a client restarts.
-                //    And to 2 when a client restarts and has two SWAPs with the same peer.
-                // TODO: We should add a client instance ID into the merge request
-                //       and only allow the rewinds when the client ID differs.
-                //       The clock should protect against the out-of-order updates otherwise.
-                log! ("merge_map_impl] Clock of " (binprint (id, b'.'))
-                      " rewound from " (old_clock) " to " (new_clock));
-                maps.insert (id.into(), map);
-                rpc_response (200, mapˢ.to_vec())
-            } else {
-                mapʰ.merge (map);
-                let mapʳ = try_fus! (json::to_string (&mapʰ));
-                rpc_response (200, mapʳ)
-            }
-        } else {
+    let ctx = try_fus! (MmArc::from_weak (&ctx) .ok_or ("MM stopping"));
+    let hfctx = try_fus! (HttpFallbackContext::from_ctx (&ctx));
+    let mut maps = try_fus! (hfctx.maps.lock());
+    if let Some (mapʰ) = maps.get_mut (id) {
+        // NB: Diverging clocks coming from the same actor might lead to an empty map.
+        // cf. https://github.com/rust-crdt/rust-crdt/blob/86c7c5601b6b4c4451e1c6840dc1481716ae1433/src/traits.rs#L14
+
+        let actor_id = 1;
+        let old_clock = mapʰ.len().add_clock.get (&actor_id);
+        let new_clock = map.len().add_clock.get (&actor_id);
+        if new_clock <= 2 && 2 < old_clock {
+            // ^^ The clocks resets to 1 when when a client restarts.
+            //    And to 2 when a client restarts and has two SWAPs with the same peer.
+            // TODO: We should add a client instance ID into the merge request
+            //       and only allow the rewinds when the client ID differs.
+            //       The clock should protect against the out-of-order updates otherwise.
+            log! ("merge_map_impl] Clock of " (binprint (id, b'.'))
+                    " rewound from " (old_clock) " to " (new_clock));
             maps.insert (id.into(), map);
             rpc_response (200, mapˢ.to_vec())
+        } else {
+            mapʰ.merge (map);
+            let mapʳ = try_fus! (json::to_string (&mapʰ));
+            rpc_response (200, mapʳ)
         }
-    });
-    Box::new (f)
+    } else {
+        maps.insert (id.into(), map);
+        rpc_response (200, mapˢ.to_vec())
+    }
 }
 
 /// Creates a Hyper Future that would run the HTTP fallback server.
-pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr) -> Result<Box<Future<Item=(), Error=()>+Send>, String> {
+#[cfg(feature = "native")]
+pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
+-> Result<Box<dyn Future<Item=(), Error=()>+Send>, String> {
+    use common::lift_body::LiftBody;
+
     let listener = try_s! (TcpListener::bind2 (&addr));
 
     struct RpcService {ctx: MmWeak}
     impl Service for RpcService {
-        type ReqBody = Body; type ResBody = Body; type Error = String; type Future = HyRes;
-        fn call (&mut self, req: Request<Body>) -> HyRes {
-            let path = req.uri().path();
-            if path == "/fallback/fetch_map" {
-                fetch_map_impl (self.ctx.clone(), req)
-            } else if path == "/fallback/fetch_maps_by_prefix" {
-                fetch_maps_by_prefix_impl (self.ctx.clone(), req)
-            } else if path == "/fallback/merge_map" {
-                merge_map_impl (self.ctx.clone(), req)
-            } else if path == "/test_ip" {  // Helps `fn test_ip` to check the IP availability.
-                rpc_response (200, "k")
-            } else {
-                rpc_response (404, "unknown path")
-            }
+        type ReqBody = hyper::Body;
+        type ResBody = LiftBody<Vec<u8>>;
+        type Error = String;
+        type Future = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
+        fn call (&mut self, req: Request<hyper::Body>) -> Self::Future {
+            let path = req.uri().path().to_owned();
+            let ctx = self.ctx.clone();
+            let (parts, body) = req.into_parts();
+            let body_f = body.concat2();
+            let f = body_f.then (move |chunk| -> HyRes {
+                let vec = try_fus! (chunk) .to_vec();
+                let req = Request::from_parts (parts, vec);
+                if path == "/fallback/fetch_map" {
+                    fetch_map_impl (ctx, req)
+                } else if path == "/fallback/fetch_maps_by_prefix" {
+                    fetch_maps_by_prefix_impl (ctx, req)
+                } else if path == "/fallback/merge_map" {
+                    merge_map_impl (ctx, req)
+                } else if path == "/test_ip" {  // Helps `fn test_ip` to check the IP availability.
+                    rpc_response (200, "k")
+                } else {
+                    rpc_response (404, "unknown path")
+                }
+            });
+            let f = f.map (move |r| {
+                let (parts, body) = r.into_parts();
+                Response::from_parts (parts, LiftBody::from (body))
+            });
+            Box::new (f)
         }
     }
     let server = listener.incoming().for_each (move |(socket, _my_sock)| {
@@ -262,6 +277,12 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr) -> Result<Box<Future<It
     }) .map_err (|err| log! ({"accept error: {}", err}));
 
     Ok (Box::new (server))
+}
+
+#[cfg(not(feature = "native"))]
+pub fn new_http_fallback (_ctx: MmWeak, _addr: SocketAddr)
+-> Result<Box<dyn Future<Item=(), Error=()>+Send>, String> {
+    unimplemented!()
 }
 
 /// CRDT clocks are tracked separately for each actor ID.  
@@ -297,12 +318,12 @@ fn fallback_url (hf_addr: &SocketAddr, method: &str) -> String {
 /// * `addr` - The address of the HTTP fallback server.
 ///            The port should be 80 or 443 as this should help the server to function
 ///            even with the most restrictive internet operators.
-pub fn fetch_map (addr: &SocketAddr, id: Vec<u8>) -> Box<Future<Item=RepStrMap, Error=String> + Send> {
+pub fn fetch_map (addr: &SocketAddr, id: Vec<u8>) -> Box<dyn Future<Item=RepStrMap, Error=String> + Send> {
     let hf_url = fallback_url (addr, "fetch_map");
     let request = try_fus! (Request::builder()
         .method("POST")
         .uri (hf_url)
-        .body (Body::from (id)));
+        .body (id));
     let f = slurp_req (request);
     let f = f.and_then (|(status, _headers, body)| -> Result<RepStrMap, String> {
         if status.as_u16() != 200 {return ERR! ("fetch_map not 200")}
@@ -320,7 +341,7 @@ pub fn fetch_map (addr: &SocketAddr, id: Vec<u8>) -> Box<Future<Item=RepStrMap, 
 /// 
 /// Returns a fresh version of the map which is provided by the server after the merge.
 pub fn merge_map (addr: &SocketAddr, id: Vec<u8>, map: &RepStrMap)
--> Box<Future<Item=RepStrMap, Error=String> + Send> {
+-> Box<dyn Future<Item=RepStrMap, Error=String> + Send> {
     let url = fallback_url (addr, "merge_map");
     let mut map = try_fus! (json::to_vec (map));
 
@@ -331,7 +352,7 @@ pub fn merge_map (addr: &SocketAddr, id: Vec<u8>, map: &RepStrMap)
     let request = try_fus! (Request::builder()
         .method("POST")
         .uri (url)
-        .body (Body::from (buf)));
+        .body (buf));
     let f = slurp_req (request);
     let f = f.and_then (|(status, _headers, body)| -> Result<RepStrMap, String> {
         if status.as_u16() != 200 {return ERR! ("merge_map not 200")}
@@ -353,6 +374,7 @@ pub struct HttpFallbackTargetTrack {
 }
 
 /// Plugged into `fn transmit` to send the chunks via HTTP fallback when necessary.
+#[cfg(feature = "native")]
 pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, our_public_key: &bits256,
                     packages: &mut Vec<super::Package>) -> Result<(), String> {
     let hf_addr = match hf_addr {Some (a) => a, None => return Ok(())};
@@ -435,7 +457,8 @@ pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, ou
         let refresh = if track.last_store > 0. {now - track.last_store > 10.} else {false};
         if !changed && !refresh {return Ok(())}
 
-    log! ("transmit] TBD, time to use the HTTP fallback...");
+// TODO: Patch the integration test to use an alternative method of checking if the fallback has worked.
+log! ("transmit] TBD, time to use the HTTP fallback...");
 
         let mut hf_id = Vec::with_capacity (unsafe {seed.bytes.len() + 1 + our_public_key.bytes.len()});
         hf_id.extend_from_slice (unsafe {&seed.bytes});
@@ -456,6 +479,10 @@ pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, ou
     Ok(())
 }
 
+#[cfg(not(feature = "native"))]
+pub fn hf_transmit (_pctx: &super::PeersContext, _hf_addr: &Option<SocketAddr>, _our_public_key: &bits256,
+                    _packages: &mut Vec<super::Package>) -> Result<(), String> {ERR! ("not implemented")}
+
 /// Invoked when a delayed retrieval is detected by the peers loop.
 /// 
 /// * `salt` - The subject salt (checksum of the `subject` passed to `fn recv`).
@@ -468,8 +495,6 @@ pub fn hf_delayed_get (pctx: &super::PeersContext, salt: &Vec<u8>) {
         ve.insert (salt.clone(), ());
     }
 }
-
-use hyper::{HeaderMap, StatusCode};
 
 /// Process the prefix search results obtained
 /// when we query the HTTP fallback server for maps addressed to our public key.
@@ -586,9 +611,9 @@ pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -
 
     let hf_url = fallback_url (hf_addr, "fetch_maps_by_prefix");
     let request = try_s! (Request::builder()
-        .method("POST")
+        .method ("POST")
         .uri (hf_url)
-        .body (Body::from (hf_id_prefix)));
+        .body (hf_id_prefix));
     *hf_pollₒ = Some (slurp_req (request));
 
     Ok(())

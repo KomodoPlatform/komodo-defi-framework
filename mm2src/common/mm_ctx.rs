@@ -55,19 +55,19 @@ pub struct MmCtx {
     /// 0 if the handler ID is allocated yet.
     ffi_handle: AtomicU32,
     /// Callbacks to invoke from `fn stop`.
-    stop_listeners: Mutex<Vec<Box<FnMut()->Result<(), String>>>>,
+    stop_listeners: Mutex<Vec<Box<dyn FnMut()->Result<(), String>>>>,
     /// The context belonging to the `portfolio` crate: `PortfolioContext`.
-    pub portfolio_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub portfolio_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
-    pub ordermatch_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `peers` crate: `PeersContext`.
-    pub peers_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub peers_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `http_fallback` mod: `HttpFallbackContext`.
-    pub http_fallback_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub http_fallback_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
-    pub coins_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `prices` mod: `PricesContext`.
-    pub prices_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub prices_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// Seednode P2P message bus channel
     pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     /// Standard node P2P message bus channel
@@ -83,7 +83,7 @@ pub struct MmCtx {
     /// Coins that should be enabled to kick start the interrupted swaps and orders
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
-    pub swaps_ctx: Mutex<Option<Arc<Any + 'static + Send + Sync>>>,
+    pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 impl MmCtx {
     pub fn new() -> MmCtx {
@@ -179,7 +179,7 @@ impl MmCtx {
 
     /// Register a callback to be invoked when the MM receives the "stop" request.  
     /// The callback is invoked immediately if the MM is stopped already.
-    pub fn on_stop (&self, mut cb: Box<FnMut()->Result<(), String>>) {
+    pub fn on_stop (&self, mut cb: Box<dyn FnMut()->Result<(), String>>) {
         let mut stop_listeners = unwrap! (self.stop_listeners.lock(), "Can't lock stop_listeners");
         if self.stop.load (Ordering::Relaxed) {
             if let Err (err) = cb() {
@@ -298,7 +298,7 @@ pub fn r_btc_ctx (mm_ctx_id: u32) -> *mut c_void {
 /// 
 /// * `ctx_field` - A dedicated crate context field in `MmCtx`, such as the `MmCtx::portfolio_ctx`.
 /// * `constructor` - Generates the initial crate context.
-pub fn from_ctx<T, C> (ctx_field: &Mutex<Option<Arc<Any + 'static + Send + Sync>>>, constructor: C) -> Result<Arc<T>, String>
+pub fn from_ctx<T, C> (ctx_field: &Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>, constructor: C) -> Result<Arc<T>, String>
 where C: FnOnce()->Result<T, String>, T: 'static + Send + Sync {
     let mut ctx_field = try_s! (ctx_field.lock());
     if let Some (ref ctx) = *ctx_field {

@@ -2,8 +2,6 @@
 #![feature(drain_filter)]
 
 #[macro_use] extern crate common;
-#[allow(unused_imports)]
-#[macro_use] extern crate duct;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;

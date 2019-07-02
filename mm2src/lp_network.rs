@@ -19,10 +19,11 @@
 //
 
 use bitcrypto::ripemd160;
-use common::{free_c_ptr, HyRes, CJSON, CORE, QueuedCommand, COMMAND_QUEUE, lp_queue_command};
+use common::{free_c_ptr, lp_queue_command, HyRes, QueuedCommand, CJSON, COMMAND_QUEUE};
+use common::wio::CORE;
 use common::mm_ctx::MmArc;
 use crossbeam::channel;
-use futures::{future, Future, Stream};
+use futures::{future, Future};
 use gstuff::now_ms;
 use hashbrown::hash_map::{HashMap, Entry};
 use libc::{c_void};
@@ -95,23 +96,17 @@ fn reply_to_peer (cmd: QueuedCommand, mut reply: Vec<u8>) -> Result<(), String> 
 
 /// Run the RPC handler and send it's reply to a peer.
 fn rpc_reply_to_peer (handler: HyRes, cmd: QueuedCommand) {
-    let f = handler.then (move |r| -> Box<Future<Item=(), Error=()> + Send> {
+    let f = handler.then (move |r| -> Box<dyn Future<Item=(), Error=()> + Send> {
         let res = match r {Ok (r) => r, Err (err) => {
             log! ("rpc_reply_to_peer] handler error: " (err));
             return Box::new (future::err(()))
         }};
-        let body_f = res.into_body().concat2();
-        Box::new (body_f.then (move |body| -> Result<(), ()> {
-            let body = match body {Ok (r) => r, Err (err) => {
-                log! ("rpc_reply_to_peer] error getting the body from the RPC handler: " (err));
-                return Err(())
-            }};
-            if let Err (err) = reply_to_peer (cmd, body.to_vec()) {
-                log! ("reply_to_peer error: " (err));
-                return Err(())
-            }
-            Ok(())
-        }))
+        let body = res.into_body();
+        if let Err (err) = reply_to_peer (cmd, body) {
+            log! ("reply_to_peer error: " (err));
+            return Box::new (future::err(()))
+        }
+        Box::new (future::ok(()))
     });
     CORE.spawn (|_| f)
 }

@@ -20,7 +20,8 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{lp, MutexGuardWrapper, slurp_url};
+use common::{lp, MutexGuardWrapper};
+use common::wio::slurp_url;
 use common::mm_ctx::MmArc;
 use secp256k1::key::PublicKey;
 use ethabi::{Contract, Token};
@@ -32,7 +33,7 @@ use futures::future::{Either, loop_fn, Loop};
 use futures_timer::Delay;
 use gstuff::{now_ms, slurp};
 use hashbrown::HashMap;
-use hyper::StatusCode;
+use http::StatusCode;
 use rand::{thread_rng};
 use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
@@ -71,8 +72,8 @@ const ERC20_ABI: &'static str = r#"[{"constant":true,"inputs":[],"name":"name","
 /// Payment states from etomic swap smart contract: https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol#L5
 const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
 const PAYMENT_STATE_SENT: u8 = 1;
-const PAYMENT_STATE_SPENT: u8 = 2;
-const PAYMENT_STATE_REFUNDED: u8 = 3;
+const _PAYMENT_STATE_SPENT: u8 = 2;
+const _PAYMENT_STATE_REFUNDED: u8 = 3;
 
 lazy_static! {
     static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
@@ -132,7 +133,7 @@ impl EthCoinImpl {
         from_block: BlockNumber,
         to_block: BlockNumber,
         limit: Option<usize>
-    ) -> Box<Future<Item=Vec<Log>, Error=String>> {
+    ) -> Box<dyn Future<Item=Vec<Log>, Error=String>> {
         let contract_event = try_fus!(ERC20_CONTRACT.event("Transfer"));
         let topic0 = Some(vec![contract_event.signature()]);
         let topic1 = from_addr.map(|addr| vec![addr.into()]);
@@ -158,7 +159,7 @@ impl EthCoinImpl {
         from_block: BlockNumber,
         to_block: BlockNumber,
         limit: Option<usize>
-    ) -> Box<Future<Item=Vec<Trace>, Error=String>> {
+    ) -> Box<dyn Future<Item=Vec<Trace>, Error=String>> {
         let mut filter = TraceFilterBuilder::default()
             .from_address(from_addr)
             .to_address(to_addr)
@@ -453,14 +454,14 @@ impl MarketCoinOps for EthCoin {
         checksum_address(&format!("{:#02x}", self.my_address)).into()
     }
 
-    fn my_balance(&self) -> Box<Future<Item=BigDecimal, Error=String> + Send> {
+    fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
         let decimals = self.decimals;
         Box::new(self.my_balance().and_then(move |result| {
             Ok(try_s!(u256_to_big_decimal(result, decimals)))
         }))
     }
 
-    fn send_raw_tx(&self, mut tx: &str) -> Box<Future<Item=String, Error=String> + Send> {
+    fn send_raw_tx(&self, mut tx: &str) -> Box<dyn Future<Item=String, Error=String> + Send> {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
@@ -561,7 +562,7 @@ impl MarketCoinOps for EthCoin {
         Ok(TransactionEnum::from(signed))
     }
 
-    fn current_block(&self) -> Box<Future<Item=u64, Error=String> + Send> {
+    fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send> {
         Box::new(self.web3.eth().block_number().map(|res| res.into()).map_err(|e| ERRL!("{}", e)))
     }
 }
@@ -572,7 +573,7 @@ impl MarketCoinOps for EthCoin {
 // So we would need to handle shared locks anyway.
 lazy_static! {static ref NONCE_LOCK: Mutex<()> = Mutex::new(());}
 
-type EthTxFut = Box<Future<Item=SignedEthTx, Error=String> + Send + 'static>;
+type EthTxFut = Box<dyn Future<Item=SignedEthTx, Error=String> + Send + 'static>;
 
 impl EthCoin {
     fn sign_and_send_transaction(
@@ -809,7 +810,7 @@ impl EthCoin {
         }
     }
 
-    fn my_balance(&self) -> Box<Future<Item=U256, Error=String> + Send> {
+    fn my_balance(&self) -> Box<dyn Future<Item=U256, Error=String> + Send> {
         match self.coin_type {
             EthCoinType::Eth => Box::new(self.web3.eth().balance(self.my_address, Some(BlockNumber::Latest)).map_err(|e| ERRL!("{}", e))),
             EthCoinType::Erc20(token_addr) => {
@@ -832,7 +833,7 @@ impl EthCoin {
         }
     }
 
-    fn eth_balance(&self) -> Box<Future<Item=U256, Error=String> + Send> {
+    fn eth_balance(&self) -> Box<dyn Future<Item=U256, Error=String> + Send> {
         Box::new(self.web3.eth().balance(self.my_address, Some(BlockNumber::Latest)).map_err(|e| ERRL!("{}", e)))
     }
 
@@ -849,7 +850,7 @@ impl EthCoin {
         self.web3.eth().call(request, Some(BlockNumber::Latest)).map_err(|e| ERRL!("{}", e))
     }
 
-    fn allowance(&self, spender: Address) -> Box<Future<Item=U256, Error=String> + Send + 'static> {
+    fn allowance(&self, spender: Address) -> Box<dyn Future<Item=U256, Error=String> + Send + 'static> {
         match self.coin_type {
             EthCoinType::Eth => panic!(),
             EthCoinType::Erc20(token_addr) => {
@@ -889,7 +890,7 @@ impl EthCoin {
     }
 
     /// Gets `ReceiverSpent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn spend_events(&self, from_block: u64) -> Box<Future<Item=Vec<Log>, Error=String>> {
+    fn spend_events(&self, from_block: u64) -> Box<dyn Future<Item=Vec<Log>, Error=String>> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("ReceiverSpent"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
@@ -901,7 +902,7 @@ impl EthCoin {
     }
 
     /// Gets `PaymentSent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn payment_sent_events(&self, from_block: u64) -> Box<Future<Item=Vec<Log>, Error=String>> {
+    fn payment_sent_events(&self, from_block: u64) -> Box<dyn Future<Item=Vec<Log>, Error=String>> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("PaymentSent"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
@@ -992,7 +993,7 @@ impl EthCoin {
         Ok(())
     }
 
-    fn payment_status(&self, token: Token) -> Box<Future<Item=U256, Error=String> + Send + 'static> {
+    fn payment_status(&self, token: Token) -> Box<dyn Future<Item=U256, Error=String> + Send + 'static> {
         let function = try_fus!(SWAP_CONTRACT.function("payments"));
 
         let data = try_fus!(function.encode_input(&[token]));
@@ -1486,7 +1487,7 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let ticker = self.ticker.clone();
         let required = if maker {
             amount.clone()
@@ -1520,7 +1521,7 @@ impl MmCoin for EthCoin {
         }
     }
 
-    fn can_i_spend_other_payment(&self) -> Box<Future<Item=(), Error=String> + Send> {
+    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send> {
         Box::new(self.eth_balance().and_then(move |eth_balance| {
             let eth_balance_f64: f64 = try_s!(display_u256_with_decimal_point(eth_balance, 18).parse());
             if eth_balance_f64 < 0.0002 {
@@ -1531,10 +1532,10 @@ impl MmCoin for EthCoin {
         }))
     }
 
-    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
         let to_addr = try_fus!(addr_from_str(to));
         let arc = self.clone();
-        Box::new(self.my_balance().and_then(move |my_balance| -> Box<Future<Item=TransactionDetails, Error=String> + Send> {
+        Box::new(self.my_balance().and_then(move |my_balance| -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
             let mut wei_amount = if max {
                 my_balance
             } else {
@@ -1819,7 +1820,7 @@ impl GasStationData {
         U256::from(self.average as u64 + 10) * U256::exp10(8)
     }
 
-    fn get_gas_price(uri: &str) -> Box<Future<Item=U256, Error=String> + Send> {
+    fn get_gas_price(uri: &str) -> Box<dyn Future<Item=U256, Error=String> + Send> {
         Box::new(slurp_url(uri).and_then(|res| -> Result<U256, String> {
             if res.0 != StatusCode::OK {
                 return ERR!("Gas price request failed with status code {}", res.0);
