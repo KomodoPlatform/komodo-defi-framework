@@ -58,14 +58,17 @@ impl Transport for Web3Transport {
         let mut futures = vec![];
         for uri in self.uris.iter() {
             let request = to_string(&request);
-            let mut req = http::Request::new(Vec::from(request));
+            let mut req = http::Request::new(Vec::from(request.clone()));
             *req.method_mut() = http::Method::POST;
             *req.uri_mut() = uri.clone();
             req.headers_mut().insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
             let fut = slurp_req(req)
                 .map_err(|e| StringError(e))
                 .timeout(Duration::from_secs(60))
-                .map_err(|e| ERRL!("{}", e.0));
+                .map_err(move |e| {
+                    log!("Error " (e.0) " on request " (request));
+                    ERRL!("{}", e.0)
+                });
             futures.push(fut);
         }
 
