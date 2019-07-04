@@ -54,7 +54,7 @@ use std::time::Duration;
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, NativeClient, UtxoRpcClientEnum, UnspentInfo };
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
 use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 use futures::future::Either;
@@ -107,7 +107,7 @@ enum TxFee {
     /// Tell the coin that it has fixed tx fee not depending on transaction size
     Fixed(u64),
     /// Tell the coin that it should request the fee from daemon RPC and calculate it relying on tx size
-    Dynamic,
+    Dynamic(EstimateFeeMethod),
 }
 
 /// The actual "runtime" fee that is received from RPC in case of dynamic calculation
@@ -195,9 +195,9 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
 
 impl UtxoCoinImpl {
     fn get_tx_fee(&self) -> Box<dyn Future<Item=ActualTxFee, Error=JsonRpcError> + Send> {
-        match self.tx_fee {
-            TxFee::Fixed(fee) => Box::new(futures::future::ok(ActualTxFee::Fixed(fee))),
-            TxFee::Dynamic => Box::new(self.rpc_client.estimate_fee_sat(self.decimals).map(|fee| ActualTxFee::Dynamic(fee))),
+        match &self.tx_fee {
+            TxFee::Fixed(fee) => Box::new(futures::future::ok(ActualTxFee::Fixed(*fee))),
+            TxFee::Dynamic(method) => Box::new(self.rpc_client.estimate_fee_sat(self.decimals, method).map(|fee| ActualTxFee::Dynamic(fee))),
         }
     }
 
@@ -1606,7 +1606,11 @@ pub fn utxo_coin_from_iguana_info(
     let tx_fee = if info.txfee > 0 {
         TxFee::Fixed(info.txfee)
     } else {
-        TxFee::Dynamic
+        let fee_method = match &rpc_client {
+            UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
+            UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().wait())
+        };
+        TxFee::Dynamic(fee_method)
     };
     let version_group_id = if tx_version == 3 && overwintered {
         0x03c48270

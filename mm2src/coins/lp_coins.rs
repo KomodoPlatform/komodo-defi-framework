@@ -722,7 +722,7 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     ii.wiftaddr = 0;
     ii.longestchain = 1;
     ii.txfee = match coins_en["txfee"].as_u64() {
-        None | Some (0) => if ticker == "BTC" {0} else {lp::LP_MIN_TXFEE as u64},
+        None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {0} else {lp::LP_MIN_TXFEE as u64},
         Some (fee) => fee
     };
     ii.pubtype = coins_en["pubtype"].as_u64().unwrap_or (if ticker == "BTC" {0} else {60}) as u8;

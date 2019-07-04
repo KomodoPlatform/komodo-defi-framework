@@ -1053,7 +1053,7 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     }
     *try_s! (ctx.seeds.lock()) = seed_ips;
 
-    try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519, pubport + 1));
+    try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519.bytes, pubport + 1));
 
     Ok(())
 }

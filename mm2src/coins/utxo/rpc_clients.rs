@@ -122,7 +122,7 @@ pub trait UtxoRpcClientOps: Debug + 'static {
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
-    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64>;
+    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64>;
 }
 
 #[derive(Clone, Deserialize, Debug, PartialEq)]
@@ -183,6 +183,24 @@ pub struct ReceivedByAddressItem {
     pub account: String,
     pub address: String,
     pub txids: Vec<H256Json>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EstimateSmartFeeRes {
+    #[serde(rename = "feerate")]
+    #[serde(default)]
+    pub fee_rate: f64,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    pub blocks: i64,
+}
+
+#[derive(Debug)]
+pub enum EstimateFeeMethod {
+    /// estimatefee, deprecated in many coins: https://bitcoincore.org/en/doc/0.16.0/rpc/util/estimatefee/
+    Standard,
+    /// estimatesmartfee added since 0.16.0 bitcoind RPC: https://bitcoincore.org/en/doc/0.16.0/rpc/util/estimatesmartfee/
+    SmartFee,
 }
 
 /// RPC client for UTXO based coins
@@ -341,14 +359,23 @@ impl UtxoRpcClientOps for NativeClient {
         ))
     }
 
-    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64> {
-        Box::new(self.estimate_fee().map(move |fee|
-            if fee > 0.00001 {
-                (fee * 10.0_f64.powf(decimals as f64)) as u64
-            } else {
-                1000
-            }
-        ))
+    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64> {
+        match fee_method {
+            EstimateFeeMethod::Standard => Box::new(self.estimate_fee().map(move |fee|
+                if fee > 0.00001 {
+                    (fee * 10.0_f64.powf(decimals as f64)) as u64
+                } else {
+                    1000
+                }
+            )),
+            EstimateFeeMethod::SmartFee => Box::new(self.estimate_smart_fee().map(move |res|
+                if res.fee_rate > 0.00001 {
+                    (res.fee_rate * 10.0_f64.powf(decimals as f64)) as u64
+                } else {
+                    1000
+                }
+            )),
+        }
     }
 
     /// https://bitcoin.org/en/developer-reference#sendrawtransaction
@@ -399,7 +426,14 @@ impl NativeClientImpl {
     /// Always estimate fee for transaction to be confirmed in next block
     fn estimate_fee(&self) -> RpcRes<f64> {
         let n_blocks = 1;
-        rpc_func!(self, "estimate_fee", n_blocks)
+        rpc_func!(self, "estimatefee", n_blocks)
+    }
+
+    /// https://bitcoincore.org/en/doc/0.18.0/rpc/util/estimatesmartfee/
+    /// Always estimate fee for transaction to be confirmed in next block
+    fn estimate_smart_fee(&self) -> RpcRes<EstimateSmartFeeRes> {
+        let n_blocks = 1;
+        rpc_func!(self, "estimatesmartfee", n_blocks)
     }
 
     /// https://bitcoin.org/en/developer-reference#listtransactions
@@ -412,6 +446,32 @@ impl NativeClientImpl {
     /// https://bitcoin.org/en/developer-reference#listreceivedbyaddress
     pub fn list_received_by_address(&self, min_conf: u64, include_empty: bool, include_watch_only: bool) -> RpcRes<Vec<ReceivedByAddressItem>> {
         rpc_func!(self, "listreceivedbyaddress", min_conf, include_empty, include_watch_only)
+    }
+
+    pub fn detect_fee_method(&self) -> impl Future<Item=EstimateFeeMethod, Error=String> {
+        let estimate_fee_fut = self.estimate_fee();
+        self.estimate_smart_fee().then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String>> {
+            match res {
+                Ok(smart_fee) => if smart_fee.fee_rate > 0. {
+                    Box::new(futures::future::ok(EstimateFeeMethod::SmartFee))
+                } else {
+                    log!("fee_rate from smart fee should be above zero, but got " [smart_fee] ", trying estimatefee");
+                    Box::new(estimate_fee_fut.map_err(|e| ERRL!("{}", e)).and_then(|res| if res > 0. {
+                        Ok(EstimateFeeMethod::Standard)
+                    } else {
+                        ERR!("Estimate fee result should be above zero, but got {}, consider setting txfee in config", res)
+                    }))
+                },
+                Err(e) => {
+                    log!("Error " (e) " on estimate smart fee, trying estimatefee");
+                    Box::new(estimate_fee_fut.map_err(|e| ERRL!("{}", e)).and_then(|res| if res > 0. {
+                        Ok(EstimateFeeMethod::Standard)
+                    } else {
+                        ERR!("Estimate fee result should be above zero, but got {}, consider setting txfee in config", res)
+                    }))
+                }
+            }
+        })
     }
 }
 
@@ -750,7 +810,7 @@ impl UtxoRpcClientOps for ElectrumClient {
         }))
     }
 
-    fn estimate_fee_sat(&self, decimals: u8) -> RpcRes<u64> {
+    fn estimate_fee_sat(&self, decimals: u8, _fee_method: &EstimateFeeMethod) -> RpcRes<u64> {
         Box::new(self.estimate_fee().map(move |fee|
             if fee > 0.00001 {
                 (fee * 10.0_f64.powf(decimals as f64)) as u64
