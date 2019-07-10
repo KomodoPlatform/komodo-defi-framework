@@ -23,11 +23,11 @@ use bitcrypto::sha256;
 use common::{HyRes, lp, MutexGuardWrapper, rpc_response};
 use common::wio::slurp_url;
 use common::mm_ctx::MmArc;
-use secp256k1::key::PublicKey;
+use secp256k1::PublicKey;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, U256, H160};
-use ethkey::{ KeyPair, Public, public_to_address, SECP256K1 };
+use ethkey::{ KeyPair, Public, public_to_address };
 use futures::Future;
 use futures::future::{Either, join_all, loop_fn, Loop};
 use futures_timer::Delay;
@@ -581,6 +581,12 @@ impl MarketCoinOps for EthCoin {
 
     fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send> {
         Box::new(self.web3.eth().block_number().map(|res| res.into()).map_err(|e| ERRL!("{}", e)))
+    }
+
+    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
+        let pubkey_bytes = try_s!(hex::decode(pubkey));
+        let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
+        Ok(format!("{:#02x}", addr))
     }
 }
 
@@ -1714,8 +1720,8 @@ impl MmCoin for EthCoin {
 }
 
 fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
-    let pubkey = try_s!(PublicKey::from_slice(&SECP256K1, &pubkey));
-    let eth_public = Public::from(&pubkey.serialize_vec(&SECP256K1, false)[1..65]);
+    let pubkey = try_s!(PublicKey::parse_slice(pubkey, None).map_err(|e| ERRL!("{:?}", e)));
+    let eth_public = Public::from(&pubkey.serialize()[1..65]);
     Ok(public_to_address(&eth_public))
 }
 

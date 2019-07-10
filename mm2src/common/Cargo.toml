@@ -5,7 +5,9 @@ links = "marketmaker-mainnet-lib"
 edition = "2018"
 
 [features]
-native = ["hyper", "hyper-rustls", "ring", "tokio-core"]
+native = [
+  "eth-secp256k1", "hyper", "hyper-rustls", "libc", "ring", "tokio-core"
+]
 
 [lib]
 name = "common"
@@ -17,7 +19,7 @@ backtrace = "0.3"
 # Using the `chrono` because the `time` formatting has serious limits, like the lack of subsecond support, IIRC.
 chrono = "0.4"
 crossbeam = "0.6"
-eth-secp256k1 = { git = "https://github.com/ethcore/rust-secp256k1" }
+eth-secp256k1 = { git = "https://github.com/paritytech/rust-secp256k1", optional = true }
 fomat-macros = "0.2"
 futures = "0.1"
 gstuff = "0.5"
@@ -27,7 +29,7 @@ http = "0.1"
 http-body = "0.1"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
-libc = "0.2"
+libc = { version = "0.2", optional = true }
 hyper = { version = "0.12", optional = true }
 hyper-rustls = { version = "0.16", optional = true }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }

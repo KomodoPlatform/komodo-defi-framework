@@ -1,4 +1,3 @@
-use common::identity;
 use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
 use dirs;
 use gstuff::{slurp};
@@ -8,6 +7,7 @@ use peers;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::convert::identity;
 use std::env::{self, var};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -46,9 +46,9 @@ fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
 
 fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap<&'static str, Json> {
     let mut replies = HashMap::new();
-    replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]));
-    replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["electrum1.cipig.net:10024","electrum2.cipig.net:10024","electrum3.cipig.net:10024"]));
-    replies.insert ("ETOMIC", enable_electrum (mm, "ETOMIC", vec!["electrum1.cipig.net:10025","electrum2.cipig.net:10025"]));
+    replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]));
+    replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024","test3.cipig.net:10024"]));
+    replies.insert ("ETOMIC", enable_electrum (mm, "ETOMIC", vec!["test1.cipig.net:10025","test2.cipig.net:10025"]));
     replies.insert ("ETH", enable_native (mm, "ETH", eth_urls.clone()));
     replies.insert ("JST", enable_native (mm, "JST", eth_urls));
     replies
@@ -77,7 +77,7 @@ fn test_rpc() {
     let no_method = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
         "coin": "BEER",
-        "ipaddr": "electrum1.cipig.net",
+        "ipaddr": "test1.cipig.net",
         "port": 10022
     })));
     assert! (no_method.0.is_server_error());
@@ -224,7 +224,6 @@ fn alice_can_see_the_active_order_after_connection() {
         json! ({
             "gui": "nogui",
             "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
@@ -275,15 +274,11 @@ fn alice_can_see_the_active_order_after_connection() {
         json! ({
             "gui": "nogui",
             "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
             "seednodes": [fomat!((mm_bob.ip))],
-            "alice_contract":"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c",
-            "bob_contract":"0x105aFE60fDC8B5c021092b09E8a042135A4A976E",
-            "ethnode":"http://195.201.0.6:8545"
         }),
         "08bfc72a25d860a6399005abc27d1aea35318c137fbaad686ab8d59f5716b473".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
@@ -297,11 +292,8 @@ fn alice_can_see_the_active_order_after_connection() {
     // Enable coins on Alice side. Print the replies in case we need the "address".
     log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"])});
 
-    // give Alice 20 seconds to recognize the Bob, MM2 nodes broadcast their pubkey data every 20 seconds
-    thread::sleep(Duration::from_secs(20));
-
     for _ in 0..2 {
-        // Alice should be able to see the order no later than 10 seconds after recognizing the bob
+        // Alice should be able to see the order no later than 10 seconds after connecting to bob
         thread::sleep(Duration::from_secs(10));
         log!("Get BEER/PIZZA orderbook on Alice side");
         let rc = unwrap!(mm_alice.rpc (json! ({
@@ -322,6 +314,9 @@ fn alice_can_see_the_active_order_after_connection() {
         let address = asks[0]["address"].as_str().unwrap();
         assert_eq!("RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD", address);
     }
+
+    unwrap! (mm_bob.stop());
+    unwrap! (mm_alice.stop());
 }
 
 #[test]
@@ -363,7 +358,7 @@ fn test_my_balance() {
     log!({"log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     // Enable BEER.
-    let json = enable_electrum(&mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
+    let json = enable_electrum(&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]);
     let balance_on_enable = unwrap!(json["balance"].as_str());
     assert_eq!(balance_on_enable, "1");
 
@@ -529,7 +524,7 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "BEER",
-        "servers": [{"url":"electrum1.cipig.net:10022"},{"url":"electrum2.cipig.net:10022"},{"url":"electrum3.cipig.net:10022"}],
+        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":"test3.cipig.net:10022"}],
         "mm2": 1,
     })));
 
@@ -540,7 +535,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BEER",
-        "servers": [{"url":"electrum1.cipig.net:10022"},{"url":"electrum2.cipig.net:10022"},{"url":"electrum3.cipig.net:10022"}],
+        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":"test3.cipig.net:10022"}],
         "mm2": 1,
     })));
 
@@ -551,7 +546,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "PIZZA",
-        "servers": [{"url":"electrum1.cipig.net:10024"},{"url":"electrum2.cipig.net:10024"},{"url":"electrum3.cipig.net:10024"}],
+        "servers": [{"url":"test1.cipig.net:10024"},{"url":"test2.cipig.net:10024"},{"url":"test3.cipig.net:10024"}],
         "mm2": 1,
     })));
 
@@ -592,7 +587,7 @@ fn test_rpc_password_from_json_no_userpass() {
     let electrum = unwrap! (mm.rpc (json! ({
         "method": "electrum",
         "coin": "BEER",
-        "urls": ["electrum2.cipig.net:10022"],
+        "urls": ["test2.cipig.net:10022"],
     })));
 
     // electrum call must return 500 status code
@@ -1268,7 +1263,7 @@ fn test_order_errors_when_base_equal_rel() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
-    enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022","electrum2.cipig.net:10022","electrum3.cipig.net:10022"]);
+    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]);
 
     let rc = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -1372,9 +1367,9 @@ fn test_multiple_buy_sell_no_delay() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
-    enable_electrum (&mm, "BEER", vec!["electrum1.cipig.net:10022", "electrum2.cipig.net:10022", "electrum3.cipig.net:10022"]);
-    enable_electrum (&mm, "PIZZA", vec!["electrum1.cipig.net:10024", "electrum2.cipig.net:10024", "electrum3.cipig.net:10024"]);
-    enable_electrum (&mm, "ETOMIC", vec!["electrum1.cipig.net:10025", "electrum2.cipig.net:10025", "electrum3.cipig.net:10025"]);
+    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022", "test2.cipig.net:10022", "test3.cipig.net:10022"]);
+    enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024", "test2.cipig.net:10024", "test3.cipig.net:10024"]);
+    enable_electrum (&mm, "ETOMIC", vec!["test1.cipig.net:10025", "test2.cipig.net:10025", "test3.cipig.net:10025"]);
 
     let rc = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -1505,8 +1500,8 @@ fn test_cancel_order() {
     // Enable coins on Alice side. Print the replies in case we need the "address".
     log! ({"enable_coins (alice): {:?}", enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"])});
 
-    // give Alice 40 seconds to recognize the Bob and import the order
-    thread::sleep(Duration::from_secs(40));
+    // give Alice 15 seconds to import the order
+    thread::sleep(Duration::from_secs(15));
 
     log!("Get BEER/PIZZA orderbook on Alice side");
     let rc = unwrap!(mm_alice.rpc (json! ({
@@ -1572,7 +1567,6 @@ fn test_electrum_enable_conn_errors() {
         {"coin":"MORTY","asset":"MORTY"},
     ]);
 
-    // start bob and immediately place the order
     let mut mm_bob = unwrap! (MarketMakerIt::start (
         json! ({
             "gui": "nogui",
@@ -1607,4 +1601,121 @@ fn test_electrum_enable_conn_errors() {
         "random-electrum-domain-name1.net:60017",
         "random-electrum-domain-name2.net:60017",
     ]);
+}
+
+#[test]
+fn test_order_should_not_be_displayed_when_node_is_down() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK"},
+        {"coin":"MORTY","asset":"MORTY"},
+    ]);
+
+    // start bob and immediately place the order
+    let mut mm_bob = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "db4be27033b636c6644c356ded97b0ad08914fcb8a1e2a1efc915b833c2cbd19".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    unwrap! (mm_bob.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+
+    enable_electrum(&mm_bob, "RICK", vec![
+        "electrum3.cipig.net:10017",
+        "electrum2.cipig.net:10017",
+        "electrum1.cipig.net:10017",
+    ]);
+
+    enable_electrum(&mm_bob, "MORTY", vec![
+        "electrum3.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum1.cipig.net:10018",
+    ]);
+
+    let mut mm_alice = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": coins,
+            "seednodes": [fomat!((mm_bob.ip))],
+        }),
+        "08bfc72a25d860a6399005abc27d1aea35318c137fbaad686ab8d59f5716b473".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
+    ));
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
+    log!({"Alice log path: {}", mm_alice.log_path.display()});
+
+    unwrap! (mm_alice.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+
+    enable_electrum(&mm_alice, "RICK", vec![
+        "electrum3.cipig.net:10017",
+        "electrum2.cipig.net:10017",
+        "electrum1.cipig.net:10017",
+    ]);
+
+    enable_electrum(&mm_alice, "MORTY", vec![
+        "electrum3.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum1.cipig.net:10018",
+    ]);
+
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell request");
+    let rc = unwrap! (mm_bob.rpc (json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "MORTY",
+        "price": 0.9,
+        "volume": "0.9",
+    })));
+    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
+
+    thread::sleep(Duration::from_secs(12));
+
+    log!("Get RICK/MORTY orderbook on Alice side");
+    let rc = unwrap!(mm_alice.rpc (json! ({
+            "userpass": mm_alice.userpass,
+            "method": "orderbook",
+            "base": "RICK",
+            "rel": "MORTY",
+        })));
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
+    log!("Alice orderbook " [alice_orderbook]);
+    let asks = alice_orderbook["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
+
+    unwrap! (mm_bob.stop());
+    thread::sleep(Duration::from_secs(30));
+
+    let rc = unwrap!(mm_alice.rpc (json! ({
+            "userpass": mm_alice.userpass,
+            "method": "orderbook",
+            "base": "RICK",
+            "rel": "MORTY",
+        })));
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
+    log!("Alice orderbook " [alice_orderbook]);
+    let asks = unwrap!(alice_orderbook["asks"].as_array());
+    assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have zero asks");
+
+    unwrap! (mm_alice.stop());
 }

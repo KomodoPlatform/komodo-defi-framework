@@ -29,12 +29,11 @@ use gstuff::{now_ms, slurp};
 use hashbrown::HashSet;
 use hashbrown::hash_map::{Entry, HashMap};
 use keys::{Public, Signature};
-use libc::c_char;
 use num_traits::cast::ToPrimitive;
 use primitives::hash::H256;
 use rpc::v1::types::{H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use std::ffi::{CString, OsStr};
+use std::ffi::{OsStr};
 use std::fs::{self, DirEntry};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -214,7 +213,8 @@ struct MakerConnected {
 struct OrdermatchContext {
     pub my_maker_orders: Mutex<HashMap<Uuid, MakerOrder>>,
     pub my_taker_orders: Mutex<HashMap<Uuid, TakerOrder>>,
-    pub cancelled_orders: Mutex<HashMap<Uuid, MakerOrder>>,
+    pub my_cancelled_orders: Mutex<HashMap<Uuid, MakerOrder>>,
+    pub orderbook: Mutex<HashMap<(String, String), HashMap<String, PricePingRequest>>>,
 }
 
 impl OrdermatchContext {
@@ -224,7 +224,8 @@ impl OrdermatchContext {
             Ok (OrdermatchContext {
                 my_taker_orders: Mutex::new (HashMap::default()),
                 my_maker_orders: Mutex::new (HashMap::default()),
-                cancelled_orders: Mutex::new (HashMap::default()),
+                my_cancelled_orders: Mutex::new (HashMap::default()),
+                orderbook: Mutex::new (HashMap::default()),
             })
         })))
     }
@@ -274,7 +275,7 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, maker_match: &MakerMatch) -> i32 {
             log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
             let maker_swap = MakerSwap::new(
                 ctx,
-                alice,
+                alice.into(),
                 maker_coin,
                 taker_coin,
                 maker_amount,
@@ -333,7 +334,7 @@ unsafe fn lp_connected_alice(ctx: &MmArc, taker_match: &TakerMatch) { // alice
             log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
             let taker_swap = TakerSwap::new(
                 ctx,
-                maker,
+                maker.into(),
                 maker_coin,
                 taker_coin,
                 maker_amount,
@@ -352,7 +353,7 @@ unsafe fn lp_connected_alice(ctx: &MmArc, taker_match: &TakerMatch) { // alice
     }
 }
 
-pub fn lp_trades_loop(ctx: MmArc) {
+pub fn lp_ordermatch_loop(ctx: MmArc) {
     const ORDERMATCH_TIMEOUT: u64 = 30000;
     let mut last_price_broadcast = 0;
 
@@ -361,7 +362,7 @@ pub fn lp_trades_loop(ctx: MmArc) {
         let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
         let mut my_taker_orders = unwrap!(ordermatch_ctx.my_taker_orders.lock());
         let mut my_maker_orders = unwrap!(ordermatch_ctx.my_maker_orders.lock());
-        let mut my_cancelled_orders = unwrap!(ordermatch_ctx.cancelled_orders.lock());
+        let mut my_cancelled_orders = unwrap!(ordermatch_ctx.my_cancelled_orders.lock());
         // move the timed out and unmatched taker orders to maker
         *my_taker_orders = my_taker_orders.drain().filter_map(|(uuid, order)| if order.created_at + ORDERMATCH_TIMEOUT < now_ms() {
             delete_my_taker_order(&ctx, &order);
@@ -401,6 +402,22 @@ pub fn lp_trades_loop(ctx: MmArc) {
             }
             last_price_broadcast = now_ms();
         }
+
+        let mut orderbook = unwrap!(ordermatch_ctx.orderbook.lock());
+        *orderbook = orderbook.drain().filter_map(|((base, rel), mut pair_orderbook)| {
+            pair_orderbook = pair_orderbook.drain().filter_map(|(pubkey, order)| if now_ms() / 1000 > order.timestamp + 30 {
+                None
+            } else {
+                Some((pubkey, order))
+            }).collect();
+            if pair_orderbook.is_empty() {
+                None
+            } else {
+                Some(((base, rel), pair_orderbook))
+            }
+        }).collect();
+        drop(orderbook);
+
         thread::sleep(Duration::from_secs(1));
     }
 }
@@ -796,7 +813,7 @@ impl PricePingRequest {
     }
 }
 
-pub fn lp_post_price_recv(_ctx: &MmArc, req: Json) -> HyRes {
+pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
     let req: PricePingRequest = try_h!(json::from_value(req));
     let signature: Signature = try_h!(req.sig.parse());
     let pub_secp = try_h!(Public::from_slice(&try_h!(hex::decode(&req.pubsecp))));
@@ -811,19 +828,26 @@ pub fn lp_post_price_recv(_ctx: &MmArc, req: Json) -> HyRes {
     );
     let sig_check = try_h!(pub_secp.verify(&sig_hash, &signature));
     if sig_check {
-        unsafe {
-            let mut pubkey_bits = lp::bits256::default();
-            pubkey_bits.bytes.copy_from_slice(&pubkey);
-            let base = try_h!(CString::new(req.base));
-            let rel = try_h!(CString::new(req.rel));
-            lp::LP_pricefeedupdate(
-                pubkey_bits,
-                base.as_ptr() as *mut c_char,
-                rel.as_ptr() as *mut c_char,
-                req.price.to_f64().unwrap(),
-                req.balance.to_f64().unwrap(),
-                0,
-            );
+        let ordermatch_ctx: Arc<OrdermatchContext> = try_h!(OrdermatchContext::from_ctx(ctx));
+        let mut orderbook = try_h!(ordermatch_ctx.orderbook.lock());
+        match orderbook.entry((req.base.clone(), req.rel.clone())) {
+            Entry::Vacant(pair_orders) => if req.balance > 0.into() && req.price > 0.into() {
+                let mut orders = HashMap::new();
+                orders.insert(req.pubkey.clone(), req);
+                pair_orders.insert(orders);
+            },
+            Entry::Occupied(mut pair_orders) => {
+                match pair_orders.get_mut().entry(req.pubkey.clone()) {
+                    Entry::Vacant(order) => if req.balance > 0.into() && req.price > 0.into() {
+                        order.insert(req);
+                    },
+                    Entry::Occupied(mut order) => if req.balance > 0.into() {
+                        order.insert(req);
+                    } else {
+                        order.remove();
+                    },
+                }
+            }
         }
         rpc_response(200, r#"{"result":"success"}"#)
     } else {
@@ -950,7 +974,7 @@ pub fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
     }
     // the difference of cancelled orders from maker orders that we broadcast the cancel request only once
     // cancelled record can be just dropped then
-    let cancelled_orders: HashMap<_, _> = try_s!(ordermatch_ctx.cancelled_orders.lock()).drain().collect();
+    let cancelled_orders: HashMap<_, _> = try_s!(ordermatch_ctx.my_cancelled_orders.lock()).drain().collect();
     for (_, mut order) in cancelled_orders {
         // TODO cancel means setting the volume to 0 as of now, should refactor
         order.max_base_vol = 0.into();
@@ -1053,7 +1077,7 @@ pub fn cancel_order(ctx: MmArc, req: Json) -> HyRes {
             if !order.get().is_cancellable() {
                 return rpc_err_response(500, &format!("Order {} is being matched now, can't cancel", req.uuid));
             }
-            let mut cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
+            let mut cancelled_orders = try_h!(ordermatch_ctx.my_cancelled_orders.lock());
             let order = order.remove();
             delete_my_maker_order(&ctx, &order);
             cancelled_orders.insert(req.uuid, order);
@@ -1250,7 +1274,7 @@ pub fn cancel_all_orders(ctx: MmArc, req: Json) -> HyRes {
     let ordermatch_ctx = try_h!(OrdermatchContext::from_ctx(&ctx));
     let mut maker_orders = try_h!(ordermatch_ctx.my_maker_orders.lock());
     let mut taker_orders = try_h!(ordermatch_ctx.my_taker_orders.lock());
-    let mut my_cancelled_orders = try_h!(ordermatch_ctx.cancelled_orders.lock());
+    let mut my_cancelled_orders = try_h!(ordermatch_ctx.my_cancelled_orders.lock());
 
     match cancel_by {
         CancelBy::All => {
@@ -1314,4 +1338,119 @@ pub fn cancel_all_orders(ctx: MmArc, req: Json) -> HyRes {
             "currently_matching": currently_matching,
         }
     }).to_string())
+}
+
+#[derive(Serialize)]
+pub struct OrderbookEntry {
+    coin: String,
+    address: String,
+    price: f64,
+    #[serde(rename="numutxos")]
+    num_utxos: u32,
+    #[serde(rename="avevolume")]
+    ave_volume: f64,
+    #[serde(rename="maxvolume")]
+    max_volume: f64,
+    depth: f64,
+    pubkey: String,
+    age: i64,
+    zcredits: u64,
+}
+
+#[derive(Serialize)]
+pub struct OrderbookResponse {
+    #[serde(rename="askdepth")]
+    ask_depth: u32,
+    asks: Vec<OrderbookEntry>,
+    base: String,
+    #[serde(rename="biddepth")]
+    bid_depth: u32,
+    bids: Vec<OrderbookEntry>,
+    netid: u16,
+    #[serde(rename="numasks")]
+    num_asks: usize,
+    #[serde(rename="numbids")]
+    num_bids: usize,
+    rel: String,
+    timestamp: u64,
+}
+
+#[derive(Deserialize)]
+struct OrderbookReq {
+    base: String,
+    rel: String,
+}
+
+pub fn orderbook(ctx: MmArc, req: Json) -> HyRes {
+    let req: OrderbookReq = try_h!(json::from_value(req));
+    if req.base == req.rel {
+        return rpc_err_response(500, "Base and rel must be different coins");
+    }
+    let rel_coin = try_h!(lp_coinfind(&ctx, &req.rel));
+    let rel_coin = match rel_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Rel coin is not found or inactive")
+    };
+    let base_coin = try_h!(lp_coinfind(&ctx, &req.base));
+    let base_coin: MmCoinEnum = match base_coin {
+        Some(c) => c,
+        None => return rpc_err_response(500, "Base coin is not found or inactive")
+    };
+    let ordermatch_ctx: Arc<OrdermatchContext> = try_h!(OrdermatchContext::from_ctx(&ctx));
+    let orderbook = try_h!(ordermatch_ctx.orderbook.lock());
+    let asks = match orderbook.get(&(req.base.clone(), req.rel.clone())) {
+        Some(asks) => {
+            let mut orderbook_entries = vec![];
+            for (_, ask) in asks.iter() {
+                orderbook_entries.push(OrderbookEntry {
+                    coin: req.base.clone(),
+                    address: try_h!(base_coin.address_from_pubkey_str(&ask.pubsecp)),
+                    price: unwrap!(ask.price.to_f64()),
+                    num_utxos: 0,
+                    ave_volume: 0.,
+                    max_volume: unwrap!(ask.balance.to_f64()),
+                    depth: 0.,
+                    pubkey: ask.pubkey.clone(),
+                    age: (now_ms() as i64 / 1000) - ask.timestamp as i64,
+                    zcredits: 0,
+                })
+            }
+            orderbook_entries
+        },
+        None => vec![],
+    };
+    let bids = match orderbook.get(&(req.rel.clone(), req.base.clone())) {
+        Some(asks) => {
+            let mut orderbook_entries = vec![];
+            for (_, ask) in asks.iter() {
+                orderbook_entries.push(OrderbookEntry {
+                    coin: req.rel.clone(),
+                    address: try_h!(rel_coin.address_from_pubkey_str(&ask.pubsecp)),
+                    price: 1. / unwrap!(ask.price.to_f64()),
+                    num_utxos: 0,
+                    ave_volume: 0.,
+                    max_volume: unwrap!(ask.balance.to_f64()),
+                    depth: 0.,
+                    pubkey: ask.pubkey.clone(),
+                    age: (now_ms() as i64 / 1000) - ask.timestamp as i64,
+                    zcredits: 0,
+                })
+            }
+            orderbook_entries
+        },
+        None => vec![],
+    };
+    let response = OrderbookResponse {
+        num_asks: asks.len(),
+        num_bids: bids.len(),
+        ask_depth: 0,
+        asks,
+        base: req.base,
+        bid_depth: 0,
+        bids,
+        netid: unsafe { lp::G.netid },
+        rel: req.rel,
+        timestamp: now_ms() / 1000,
+    };
+    rpc_response(200, try_h!(json::to_string(&response)))
 }

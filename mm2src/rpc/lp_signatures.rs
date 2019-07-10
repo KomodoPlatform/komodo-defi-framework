@@ -606,7 +606,7 @@ pub fn lp_notify_recv (_ctx: MmArc, req: Json) -> HyRes {
             try_h! (CJSON::from_zero_terminated (req.as_ptr() as *const c_char))
         };
 
-        let pubp = unsafe {lp::LP_pubkeyadd (pubk)};
+        let pubp = unsafe {lp::LP_pubkeyadd (pubk.into())};
         unsafe {lp::LP_pubkey_sigcheck (pubp, c_json.0)};
         let pub_secp: H264Json = try_h! (json::from_value(req["pubsecp"].clone()));
         let rmd160: H160Json = try_h! (json::from_value(req["rmd160"].clone()));

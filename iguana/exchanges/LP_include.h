@@ -432,7 +432,6 @@ uint32_t basilisk_quoteid(struct basilisk_request *rp);
 struct basilisk_swap *LP_swapinit(int32_t iambob,int32_t optionduration,bits256 privkey,struct basilisk_request *rp,struct LP_quoteinfo *qp,int32_t dynamictrust);
 struct LP_peerinfo *LP_peerfind(uint32_t ipbits,uint16_t port);
 uint64_t LP_value_extract(cJSON *obj,int32_t addinterest,bits256 txid);
-int64_t LP_kmdvalue(char *symbol,int64_t satoshis);
 void LP_availableset(bits256 txid,int32_t vout);
 int64_t LP_listunspent_parseitem(struct iguana_info *coin,bits256 *txidp,int32_t *voutp,int32_t *heightp,cJSON *item);
 void LP_unspents_cache(char *symbol,char *addr,char *arraystr,int32_t updatedflag);
@@ -543,7 +542,6 @@ struct iguana_info *LP_conflicts_find(struct iguana_info *refcoin);
 /// Helps `lp_coininit` to initialize the `userpass`.
 uint16_t LP_userpass(char *userpass,char *symbol,char *assetname,char *confroot,char *name,char *confpath,uint16_t origport);
 /// Helps `lp_coininit` to initialize things that we can't readily initialize from Rust.
-void LP_coin_curl_init(struct iguana_info* coin);
 void LP_mutex_init();
 struct LP_priceinfo *LP_priceinfofind(char *symbol);
 /// `num_LP_autorefs` is incremeted in `lp_autoprice`, invoked by RPC method "autoprice".
@@ -624,7 +622,6 @@ void (*SPAWN_RPC)(uint32_t);
 void (*LP_QUEUE_COMMAND)(char**,char*,int32_t,int32_t,uint32_t);
 
 extern int32_t IPC_ENDPOINT;
-char *stats_JSON(void *ctx,char *myipaddr,int32_t mypubsock,cJSON *argjson,char *remoteaddr,uint16_t port,int32_t authenticated, uint8_t loopback_only);
 char *LP_instantdex_deposit(struct iguana_info *coin,int32_t weeks,double amount,int32_t broadcast);
 
 struct LP_privkey { bits256 privkey; uint8_t rmd160[20]; };
@@ -703,12 +700,10 @@ void LP_unavailableset(bits256 txid,int32_t vout,uint32_t expiration,bits256 oth
 double LP_trades_pricevalidate(struct LP_quoteinfo *qp,struct iguana_info *coin,double price);
 uint32_t LP_allocated(bits256 txid,int32_t vout);
 int32_t LP_RTmetrics_blacklisted(bits256 pubkey);
-int32_t LP_reservation_check(bits256 txid,int32_t vout,bits256 pubkey);
 int32_t LP_nanobind(void *ctx,char *pairstr);
 extern uint32_t LP_swap_critical;
 extern uint32_t LP_swap_endcritical;
 char *LP_price_sig(uint32_t timestamp,bits256 priv,uint8_t *pubsecp,bits256 pubkey,char *base,char *rel,uint64_t price64);
-void LP_pricefeedupdate(bits256 pubkey,char *base,char *rel,double price,double balance,int64_t unconfcredits);
 #endif
 
 // ---

@@ -19,18 +19,15 @@
 //
 
 use bitcrypto::ripemd160;
-use common::{free_c_ptr, lp_queue_command, HyRes, QueuedCommand, CJSON, COMMAND_QUEUE};
+use common::{lp_queue_command, HyRes, QueuedCommand, COMMAND_QUEUE};
 use common::wio::CORE;
 use common::mm_ctx::MmArc;
 use crossbeam::channel;
 use futures::{future, Future};
 use gstuff::now_ms;
 use hashbrown::hash_map::{HashMap, Entry};
-use libc::{c_void};
 use primitives::hash::H160;
 use serde_json::{self as json, Value as Json};
-use std::ffi::{CStr};
-use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
@@ -165,24 +162,11 @@ pub unsafe fn lp_command_q_loop(ctx: MmArc) {
             DispatcherRes::NoMatch(req) => req
         };
 
-        // Invokes `lp_trade_command` and the older `stats_JSON` code.
-        let c_json = unwrap!(CJSON::from_str(&cmd.msg));
-        let retstr = lp_command_process(
+        // Invokes `lp_trade_command`.
+        lp_command_process(
             ctx.clone(),
-            cmd.response_sock,
             json,
-            c_json,
-            cmd.stats_json_only,
         );
-
-        if !retstr.is_null() {
-            let retvec = CStr::from_ptr(retstr).to_bytes().to_vec();
-            free_c_ptr(retstr as *mut c_void);
-
-            if let Err(err) = reply_to_peer(cmd, retvec) {
-                log!("reply_to_peer error: "(err))
-            }
-        }
     }
 }
 

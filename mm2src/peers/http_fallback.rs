@@ -25,11 +25,12 @@ use std::sync::atomic::Ordering;
 use std::str::from_utf8_unchecked;
 #[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
+#[cfg(feature = "native")]
 use zstd_sys::{ZSTD_CDict, ZSTD_createCDict_byReference, ZSTD_freeCDict, ZSTD_compress_usingCDict_advanced,
     ZSTD_frameParameters, ZSTD_createCCtx, ZSTD_freeCCtx, ZSTD_isError, ZSTD_compressBound,
     ZSTD_createDCtx, ZSTD_freeDCtx, ZSTD_DDict, ZSTD_createDDict, ZSTD_freeDDict, ZSTD_decompress_usingDDict};
 
-use common::{binprint, rpc_response, HyRes};
+use common::{bits256, binprint, rpc_response, HyRes};
 use common::wio::{slurp_req};
 #[cfg(feature = "native")]
 use common::wio::{CORE, HTTP};
@@ -375,7 +376,7 @@ pub struct HttpFallbackTargetTrack {
 
 /// Plugged into `fn transmit` to send the chunks via HTTP fallback when necessary.
 #[cfg(feature = "native")]
-pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, our_public_key: &[u8; 32],
+pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, our_public_key: &bits256,
                     packages: &mut Vec<super::Package>) -> Result<(), String> {
     let hf_addr = match hf_addr {Some (a) => a, None => return Ok(())};
 
@@ -429,7 +430,7 @@ pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, ou
 
         for (salt, (payload, _meta)) in deliver_to_seed {
             // We're only sending our own packages here.
-            assert_eq! (payload.from, our_public_key);
+            assert_eq! (&payload.from[..], &our_public_key.bytes[..]);
 
             let saltᵊ = base64::encode_config (&salt, base64::STANDARD_NO_PAD);
             let chunk = if let Some (ref chunk) = payload.chunk {
@@ -460,10 +461,10 @@ pub fn hf_transmit (pctx: &super::PeersContext, hf_addr: &Option<SocketAddr>, ou
 // TODO: Patch the integration test to use an alternative method of checking if the fallback has worked.
 log! ("transmit] TBD, time to use the HTTP fallback...");
 
-        let mut hf_id = Vec::with_capacity (seed.len() + 1 + our_public_key.len());
-        hf_id.extend_from_slice (&seed);
+        let mut hf_id = Vec::with_capacity (seed.bytes.len() + 1 + our_public_key.bytes.len());
+        hf_id.extend_from_slice (&seed.bytes);
         hf_id.push (b'<');
-        hf_id.extend_from_slice (&our_public_key[..]);
+        hf_id.extend_from_slice (&our_public_key.bytes);
         let merge_f = merge_map (&hf_addr, hf_id, &track.rep_map);
         let merge_f = merge_f.then (|r| -> Result<(), ()> {
             let _merged_rep_map = match r {
@@ -480,7 +481,7 @@ log! ("transmit] TBD, time to use the HTTP fallback...");
 }
 
 #[cfg(not(feature = "native"))]
-pub fn hf_transmit (_pctx: &super::PeersContext, _hf_addr: &Option<SocketAddr>, _our_public_key: &[u8; 32],
+pub fn hf_transmit (_pctx: &super::PeersContext, _hf_addr: &Option<SocketAddr>, _our_public_key: &bits256,
                     _packages: &mut Vec<super::Package>) -> Result<(), String> {ERR! ("not implemented")}
 
 /// Invoked when a delayed retrieval is detected by the peers loop.
@@ -531,9 +532,9 @@ fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _he
 
         if hf_id.len() != 65 || hf_id[32] != b'<' {return ERR! ("Bad hf_id: {}", binprint (hf_id, b'.'))}
         let to = &hf_id[0..32];
-        if to != our_public_key {return ERR! ("Bad to: {}", binprint (to, b'.'))}
+        if to != &our_public_key.bytes[..] {return ERR! ("Bad to: {}", binprint (to, b'.'))}
         let from = &hf_id[33..];  // The public key of the sender.
-        let from = *array_ref! (from, 0, 32);
+        let from = bits256 {bytes: *array_ref! (from, 0, 32)};
         // TODO: See if we can verify that payload is coming from `from`.
 
         let rep_map: RepStrMap = try_s! (json::from_slice (rep_map));
@@ -606,7 +607,7 @@ pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -
     let mut hf_id_prefix = Vec::with_capacity (1 + 4 + 32 + 1);
     hf_id_prefix.push (1);  // Version of the query protocol.
     try_s! (hf_id_prefix.write_u64::<BigEndian> (pctx.hf_last_poll_id.load (Ordering::Relaxed)));
-    hf_id_prefix.extend_from_slice (&try_s! (pctx.our_public_key.lock()) [..]);
+    hf_id_prefix.extend_from_slice (& try_s! (pctx.our_public_key.lock()) .bytes [..]);
     hf_id_prefix.push (b'<');
 
     let hf_url = fallback_url (hf_addr, "fetch_maps_by_prefix");

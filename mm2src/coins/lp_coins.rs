@@ -200,6 +200,8 @@ pub trait MarketCoinOps {
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
     fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send>;
+
+    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
 }
 
 /// Compatibility layer on top of `lp::iguana_info`.  
@@ -738,7 +740,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     ii.inactive = inactive as u32;
     ii.ctx = unsafe {bitcoin_ctx() as *mut c_void};
     ii.noimportprivkey_flag = match ticker {"XVG" | "CLOAK" | "PPC" | "BCC" | "ORB" => 1, _ => 0};
-    unsafe {lp::LP_coin_curl_init (&mut *ii)};
     ii.decimals = coins_en["decimals"].as_u64().unwrap_or (0) as u8;
     ii.overwintered = coins_en["overwintered"].as_u64().unwrap_or (0) as u8;
 

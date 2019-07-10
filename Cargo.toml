@@ -14,8 +14,8 @@ edition = "2018"
 
 [features]
 native = [
-  "common/native", "peers/native", "coins/native", "portfolio/native",
-  "hyper", "tokio-core"
+  "hyper", "tokio-core", "dirs",
+  "common/native", "peers/native", "coins/native", "portfolio/native"
 ]
 
 [[bin]]
@@ -46,7 +46,7 @@ coins = { path = "mm2src/coins" }
 common = { path = "mm2src/common" }
 crc = "1.8"
 crossbeam = "0.6"
-dirs = "1"
+dirs = { version = "1", optional = true }
 enum-primitive-derive = "0.1"
 fomat-macros = "0.2"
 futures = "0.1"

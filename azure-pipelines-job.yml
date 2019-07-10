@@ -27,7 +27,7 @@ jobs:
         continueOnError: true
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch#set-a-job-scoped-variable-from-a-script
       - bash: |
-          export TAG="$(git rev-parse --short HEAD)"
+          export TAG="$(git rev-parse --short=9 HEAD)"
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
       - powershell: |
@@ -63,8 +63,8 @@ jobs:
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS) target/debug/mm2
-          zip upload/mm2-latest-$(Agent.OS) target/debug/mm2
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS) target/debug/mm2 -j
+          zip upload/mm2-latest-$(Agent.OS) target/debug/mm2 -j
         displayName: 'Prepare upload Linux/MacOS'
         condition: ne( variables['Agent.OS'], 'Windows_NT' )
       - powershell: |

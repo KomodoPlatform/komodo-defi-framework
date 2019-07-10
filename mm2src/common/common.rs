@@ -11,6 +11,7 @@
 //!                   binary
 
 #![feature(non_ascii_idents, integer_atomics)]
+#![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
@@ -53,6 +54,7 @@ pub mod jsonrpc_client;
 #[macro_use]
 pub mod log;
 
+#[cfg(feature = "native")]
 pub mod for_c;
 pub mod for_tests;
 pub mod custom_futures;
@@ -70,10 +72,11 @@ use gstuff::{now_float};
 use hex::FromHex;
 use http::{Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
+#[cfg(feature = "native")]
 use libc::{c_char, c_void, malloc, free};
 use serde_json::{self as json, Value as Json};
 use std::env::args;
-use std::fmt;
+use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::ffi::{CStr, CString};
 use std::intrinsics::copy;
@@ -86,13 +89,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::str;
 
 // Make sure we're linking the eth-secp256k1 in for it is used in the MM1 C code.
+#[cfg(feature = "native")]
 use secp256k1::Secp256k1;
+#[cfg(feature = "native")]
 pub extern fn _we_are_using_secp256k1() -> Secp256k1 {Secp256k1::new()}
 
+#[cfg(feature = "native")]
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
-pub use self::lp::{_bits256 as bits256};
 
+#[cfg(feature = "native")]
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod os {include! (concat! (env! ("OUT_DIR"), "/c_headers/OS_portable.rs"));}
 
@@ -109,16 +115,27 @@ pub enum BitcoinCtx {}
 extern "C" {
     pub fn bitcoin_ctx() -> *mut BitcoinCtx;
     fn bitcoin_ctx_destroy (ctx: *mut BitcoinCtx);
-    pub fn bitcoin_priv2wif (symbol: *const u8, wiftaddr: u8, wifstr: *mut c_char, privkey: bits256, addrtype: u8) -> i32;
-    fn bits256_str (hexstr: *mut u8, x: bits256) -> *const c_char;
+    #[cfg(feature = "native")]
+    pub fn bitcoin_priv2wif (symbol: *const u8, wiftaddr: u8, wifstr: *mut c_char, privkey: _bits256, addrtype: u8) -> i32;
 }
 
+#[cfg(feature = "native")]
+pub use self::lp::_bits256;
+
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub struct bits256 {pub bytes: [u8; 32]}
+
 impl fmt::Display for bits256 {
-    fn fmt (&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut buf: [u8; 65] = unsafe {zeroed()};
-        let cs = unsafe {bits256_str (buf.as_mut_ptr(), *self)};
-        let hex = unwrap! (unsafe {CStr::from_ptr (cs)} .to_str());
-        f.write_str (hex)
+    fn fmt (&self, fm: &mut fmt::Formatter) -> fmt::Result {
+        for &ch in self.bytes.iter() {
+            fn hex_from_digit (num: u8) -> char {
+                if num < 10 {(b'0' + num) as char} else {(b'a' + num - 10) as char}}
+            fm.write_char (hex_from_digit (ch / 16)) ?;
+            fm.write_char (hex_from_digit (ch % 16)) ?;
+        }
+        Ok(())
 }   }
 
 impl fmt::Debug for bits256 {
@@ -126,32 +143,34 @@ impl fmt::Debug for bits256 {
         (self as &dyn fmt::Display) .fmt (f)
 }   }
 
-impl std::cmp::PartialEq for bits256 {
-    /// Should be preferred to `bits256_cmp`.
-    fn eq (&self, other: &bits256) -> bool {
-        unsafe {
-            self.ulongs[0] == other.ulongs[0] &&
-            self.ulongs[1] == other.ulongs[1] &&
-            self.ulongs[2] == other.ulongs[2] &&
-            self.ulongs[3] == other.ulongs[3]
-}   }   }
-impl std::cmp::Eq for bits256 {}
+impl From<[u8; 32]> for bits256 {
+    fn from (bytes: [u8; 32]) -> Self {bits256 {bytes}}
+}
 
-impl std::hash::Hash for bits256 {
-    fn hash<H: std::hash::Hasher> (&self, state: &mut H) {
-        unsafe {
-            self.ulongs[0].hash (state);
-            self.ulongs[1].hash (state);
-            self.ulongs[2].hash (state);
-            self.ulongs[3].hash (state);
-}   }   }
+#[cfg(feature = "native")]
+impl From<lp::_bits256> for bits256 {
+    fn from (bits: lp::_bits256) -> Self {unsafe {bits256 {bytes: bits.bytes}}}
+}
+
+#[cfg(feature = "native")]
+impl From<bits256> for _bits256 {
+    fn from (k: bits256) -> _bits256 {unsafe {
+        let mut bits: _bits256 = zeroed();
+        bits.bytes.copy_from_slice (&k.bytes[..]);
+        bits
+    }}
+}
 
 impl bits256 {
     /// Returns true if the hash is not zero.  
     /// Port of `#define bits256_nonz`.
     pub fn nonz (&self) -> bool {
-        unsafe {self.ulongs[0] != 0 || self.ulongs[1] != 0 || self.ulongs[2] != 0 || self.ulongs[3] != 0}
+        self.bytes.iter().any (|ch| *ch != 0)
     }
+}
+
+pub fn nonz (k: [u8; 32]) -> bool {
+    k.iter().any (|ch| *ch != 0)
 }
 
 /// Decodes a HEX string into a 32-bytes array.  
@@ -159,18 +178,16 @@ impl bits256 {
 /// (Use `fn nonz` to check if the array is zeroed).  
 /// A port of cJSON.c/jbits256.
 pub fn jbits256 (json: &Json) -> Result<bits256, String> {
-    let mut hash: bits256 = unsafe {zeroed()};
     if let Some (hex) = json.as_str() {
         if hex.len() == 64 {
             //try_s! (::common::iguana_utils::decode_hex (unsafe {&mut hash.bytes[..]}, hex.as_bytes()));
             let bytes: [u8; 32] = try_s! (FromHex::from_hex (hex));
-            unsafe {hash.bytes.copy_from_slice (&bytes)}
-        }
-    }
-    Ok (hash)
+            return Ok (bits256::from (bytes))
+    }   }
+    Ok (unsafe {zeroed()})
 }
 
-/// [functional]
+#[cfg(feature = "native")]
 pub fn bitcoin_address (coin: &str, addrtype: u8, rmd160: [u8; 20usize]) -> Result<String, String> {
     let coinaddr: [u8; 64] = unsafe {zeroed()};
     let coin = try_s! (CString::new (coin));
@@ -179,6 +196,7 @@ pub fn bitcoin_address (coin: &str, addrtype: u8, rmd160: [u8; 20usize]) -> Resu
 }
 
 /// A safer version of `HASH_ITER` over `iguana_info` coins from `for_c::COINS`.
+#[cfg(feature = "native")]
 pub fn coins_iter (cb: &mut dyn FnMut (*mut lp::iguana_info) -> Result<(), String>) -> Result<(), String> {
     let coins = try_s! (for_c::COINS.lock());
     let mut iis = Vec::with_capacity (coins.len());
@@ -200,7 +218,9 @@ pub fn dstr (x: i64, decimals: u8) -> f64 {x as f64 / 10.0_f64.powf(decimals as 
 pub const SMALLVAL: f64 = 0.000000000000001;  // 1e-15f64
 
 /// RAII and MT wrapper for `cJSON`.
+#[cfg(feature = "native")]
 pub struct CJSON (pub *mut lp::cJSON);
+#[cfg(feature = "native")]
 impl CJSON {
     pub fn from_zero_terminated (json: *const c_char) -> Result<CJSON, String> {
         lazy_static! {static ref LOCK: Mutex<()> = Mutex::new(());}
@@ -222,12 +242,14 @@ impl CJSON {
         unwrap! (CJSON::from_str (""))
     }
 }
+#[cfg(feature = "native")]
 impl Drop for CJSON {
     fn drop (&mut self) {
         unsafe {lp::cJSON_Delete (self.0)}
         self.0 = null_mut()
     }
 }
+#[cfg(feature = "native")]
 unsafe impl Send for CJSON {}
 
 /// Helps sharing a string slice with C code by allocating a zero-terminated string with the C standard library allocator.
@@ -235,11 +257,13 @@ unsafe impl Send for CJSON {}
 /// The difference from `CString` is that the memory is then *owned* by the C code instead of being temporarily borrowed,
 /// that is it doesn't need to be recycled in Rust.
 /// Plus we don't check the slice for zeroes, most of our code doesn't need that extra check.
+#[cfg(feature = "native")]
 pub fn str_to_malloc (s: &str) -> *mut c_char {
     slice_to_malloc (s.as_bytes()) as *mut c_char
 }
 
 /// Helps sharing a byte slice with C code by allocating a zero-terminated string with the C standard library allocator.
+#[cfg(feature = "native")]
 pub fn slice_to_malloc (bytes: &[u8]) -> *mut u8 {unsafe {
     let buf = malloc (bytes.len() + 1) as *mut u8;
     copy (bytes.as_ptr(), buf, bytes.len());
@@ -251,6 +275,7 @@ pub fn slice_to_malloc (bytes: &[u8]) -> *mut u8 {unsafe {
 /// Doesn't free the allocated memory
 /// It's responsibility of the caller to free the memory when required
 /// Returns error in case of null pointer input
+#[cfg(feature = "native")]
 pub fn c_char_to_string(ptr: *mut c_char) -> Result<String, String> { unsafe {
     if !ptr.is_null() {
         let res_str = try_s!(CStr::from_ptr(ptr).to_str());
@@ -263,6 +288,7 @@ pub fn c_char_to_string(ptr: *mut c_char) -> Result<String, String> { unsafe {
 
 /// Frees C raw pointer
 /// Does nothing in case of null pointer input
+#[cfg(feature = "native")]
 pub fn free_c_ptr(ptr: *mut c_void) { unsafe {
     if !ptr.is_null() {
         free(ptr as *mut libc::c_void);
@@ -278,10 +304,6 @@ pub fn black_box<T> (v: T) -> T {
     forget (v);
     ret
 }
-
-// https://doc.rust-lang.org/nightly/std/convert/fn.identity.html  
-// Waiting for https://github.com/rust-lang/rust/issues/53500.
-pub const fn identity<T> (v: T) -> T {v}
 
 /// Attempts to remove the `Path` on `drop`.
 #[derive(Debug)]
@@ -896,6 +918,7 @@ lazy_static! {
 
 /// Register an RPC command that came internally or from the peer-to-peer bus.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub extern "C" fn lp_queue_command_for_c (retstrp: *mut *mut c_char, buf: *mut c_char, response_sock: i32,
                                           stats_json_only: i32, queue_id: u32) -> () {
     if retstrp != null_mut() {

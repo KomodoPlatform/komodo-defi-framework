@@ -83,7 +83,8 @@ extern "C" void dht_load_state (dugout_t* dugout, char const* dht_state, int32_t
     int rc = lt::bdecode (dht_state, dht_state + dht_state_len, en, ec);
     if (rc) {
         std::ostringstream ss;
-        ss << "Can't bdecode the DHT state: " << ec.message();
+        ss << "Can't bdecode the DHT state";
+        // NB: Trying not to use error_code from different compilation units // << ec.message();
         throw std::runtime_error (ss.str());
     }
     dugout->session->load_state (en, lt::session::save_dht_state);
@@ -329,7 +330,8 @@ extern "C" void lt_send_udp (dugout_t* dugout, char const* ip, uint16_t port, ui
     lt::address addr = lt::make_address (ip, ec);
     if (ec) {
         std::ostringstream ss;
-        ss << "make_address error: " << ec;
+        ss << "make_address error";
+        // NB: Trying not to use error_code from different compilation units // << ec.message();
         dugout->err = strdup (ss.str().c_str());
         return;
     }

@@ -215,7 +215,6 @@ fn generate_bindings() {
             "calc_crc32",
             "LP_userpass",
             "LP_mutex_init",
-            "stats_JSON",
             "LP_priceinfofind",
             "prices_loop",
             "LP_portfolio",
@@ -267,7 +266,6 @@ fn generate_bindings() {
             "LP_pubkey_sigcheck",
             "LP_aliceid",
             "LP_dynamictrust",
-            "LP_kmdvalue",
             "LP_trades_alicevalidate",
             "LP_failedmsg",
             "LP_quote_validate",
@@ -286,15 +284,11 @@ fn generate_bindings() {
             "LP_basesatoshis",
             "LP_RTmetrics_blacklisted",
             "LP_getheight",
-            "LP_reservation_check",
-            "LP_instantdex_txids",
-            "LP_price_sig",
-            "LP_coin_curl_init",
-            "LP_pricefeedupdate",
         ]
         .iter(),
         // types
         [
+            "_bits256",
             "cJSON",
             "iguana_info",
             "LP_utxoinfo",
@@ -486,7 +480,6 @@ fn windows_requirements() {
     use std::ffi::OsString;
     use std::mem::uninitialized;
     use std::os::windows::ffi::OsStringExt;
-    use std::path::Path;
     // https://msdn.microsoft.com/en-us/library/windows/desktop/ms724373(v=vs.85).aspx
     use winapi::um::sysinfoapi::GetSystemDirectoryW;
 

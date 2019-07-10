@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-native = ["rustls", "tokio", "tokio-timer", "tokio-io", "tokio-rustls", "tokio-tcp", "webpki-roots", "common/native"]
+native = [
+  "dirs", "rustls", "tokio", "tokio-timer", "tokio-io", "tokio-rustls", "tokio-tcp", "webpki-roots",
+  "common/native"
+]
 
 [lib]
 name = "coins"
@@ -13,7 +16,7 @@ doctest = false
 
 [dependencies]
 base64 = "0.10.0"
-dirs = "1"
+dirs = { version = "1", optional = true }
 bigdecimal = { version = "0.1.0", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 byteorder = "1.2.2"
@@ -21,7 +24,6 @@ bytes = "0.4"
 chain = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 common = { path = "../common" }
 ethabi = { git = "https://github.com/artemii235/ethabi" }
-eth-secp256k1 = { git = "https://github.com/paritytech/rust-secp256k1" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
@@ -38,6 +40,7 @@ jsonrpc-core = "8.0.1"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = "0.2"
+libsecp256k1 = "0.2.2"
 num-traits = "0.2"
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = "0.6"

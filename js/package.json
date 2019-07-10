@@ -1,0 +1,12 @@
+{
+  "name": "wasm-run",
+  "version": "1.0.0",
+  "description": "",
+  "main": "wasm-run.js",
+  "scripts": {},
+  "author": "",
+  "license": "GPL-2.0-only",
+  "dependencies": {
+    "ffi": "github:lxe/node-ffi#node-12"
+  }
+}

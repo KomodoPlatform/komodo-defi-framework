@@ -4,3 +4,9 @@ indent_style = space
 
 [*.md]
 indent_size = 4
+
+[*.toml]
+indent_size = 2
+
+[*.js]
+indent_size = 2

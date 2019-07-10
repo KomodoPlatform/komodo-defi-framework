@@ -19,8 +19,7 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
-use common::{bitcoin_priv2wif, lp, os, BitcoinCtx, CJSON, MM_VERSION};
-use common::lp::{_bits256 as bits256};
+use common::{bits256, _bits256, bitcoin_priv2wif, lp, os, BitcoinCtx, MM_VERSION};
 use common::mm_ctx::MmCtx;
 
 use gstuff::{now_ms, slurp};
@@ -204,15 +203,15 @@ fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
     extern "C" {
         fn LP_wifstr_valid (symbol: *const u8, wifstr: *const u8) -> i32;
         fn LP_convaddress (symbol: *const u8, address: *const u8, dest: *const u8) -> *const c_char;
-        fn bitcoin_wif2priv (symbol: *const u8, wiftaddr: u8, addrtypep: *mut u8, privkeyp: *mut bits256, wifstr: *const c_char) -> i32;
+        fn bitcoin_wif2priv (symbol: *const u8, wiftaddr: u8, addrtypep: *mut u8, privkeyp: *mut _bits256, wifstr: *const c_char) -> i32;
     }
 
     let wif_or_btc_z = format! ("{}\0", wif_or_btc);
     /* (this line helps the IDE diff to match the old and new code)
     if ( strstr(argv[0],"btc2kmd") != 0 && argv[1] != 0 )
     */
-    let mut privkey: bits256 = unsafe {zeroed()};
-    let mut checkkey: bits256 = unsafe {zeroed()};
+    let mut privkey: _bits256 = unsafe {zeroed()};
+    let mut checkkey: _bits256 = unsafe {zeroed()};
     let mut tmptype = 0;
     let mut kmdwif: [c_char; 64] = unsafe {zeroed()};
     if unsafe {LP_wifstr_valid (b"BTC\0".as_ptr(), wif_or_btc_z.as_ptr())} > 0 {
@@ -223,10 +222,10 @@ fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
         let rc = unsafe {bitcoin_wif2priv (b"KMD\0".as_ptr(), 0, &mut tmptype, &mut checkkey, kmdwif.as_ptr())};
         if rc < 0 {return ERR! ("!bitcoin_wif2priv")}
         let kmdwif = try_s! (unsafe {CStr::from_ptr (kmdwif.as_ptr())} .to_str());
-        if privkey == checkkey {
-            Ok (format! ("BTC {} -> KMD {}: privkey {}", wif_or_btc, kmdwif, privkey))
+        if unsafe {privkey.bytes == checkkey.bytes} {
+            Ok (format! ("BTC {} -> KMD {}: privkey {}", wif_or_btc, kmdwif, bits256::from (privkey)))
         } else {
-            Err (format! ("ERROR BTC {} {} != KMD {} {}", wif_or_btc, privkey, kmdwif, checkkey))
+            Err (format! ("ERROR BTC {} {} != KMD {} {}", wif_or_btc, bits256::from (privkey), kmdwif, bits256::from (checkkey)))
         }
     } else {
         let retstr = unsafe {LP_convaddress(b"BTC\0".as_ptr(), wif_or_btc_z.as_ptr(), b"KMD\0".as_ptr())};
@@ -240,7 +239,7 @@ fn vanity (substring: &str) {
     extern "C" {
         fn bitcoin_priv2pub (
             ctx: *mut BitcoinCtx, symbol: *const u8, pubkey33: *mut u8, coinaddr: *mut u8,
-            privkey: bits256, taddr: u8, addrtype: u8);
+            privkey: _bits256, taddr: u8, addrtype: u8);
     }
     /*
     else if ( argv[1] != 0 && strcmp(argv[1],"vanity") == 0 && argv[2] != 0 )
@@ -248,19 +247,19 @@ fn vanity (substring: &str) {
     let mut pubkey33: [u8; 33] = unsafe {zeroed()};
     let mut coinaddr: [u8; 64] = unsafe {zeroed()};
     let mut wifstr: [c_char; 128] = unsafe {zeroed()};
-    let mut privkey: bits256 = unsafe {zeroed()};
+    let mut privkey: _bits256 = unsafe {zeroed()};
     unsafe {lp::LP_mutex_init()};
     let ctx = MmCtx::new();
     let timestamp = now_ms() / 1000;
     log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
     for i in 0..1000000000 {
         privkey.bytes = random();
-        unsafe {bitcoin_priv2pub (ctx.btc_ctx(), "KMD\0".as_ptr(), pubkey33.as_mut_ptr(), coinaddr.as_mut_ptr(), privkey, 0, 60)};
+        unsafe {bitcoin_priv2pub (ctx.btc_ctx(), "KMD\0".as_ptr(), pubkey33.as_mut_ptr(), coinaddr.as_mut_ptr(), privkey.into(), 0, 60)};
         let coinaddr = unsafe {from_utf8_unchecked (from_raw_parts (coinaddr.as_ptr(), 34))};
         if &coinaddr[1 .. substring.len()] == &substring[0 .. substring.len() - 1] {  // Print on near match.
             unsafe {bitcoin_priv2wif ("KMD\0".as_ptr(), 0, wifstr.as_mut_ptr(), privkey, 188)};
             let wifstr = unwrap! (unsafe {CStr::from_ptr (wifstr.as_ptr())} .to_str());
-            log! ({"i.{} {} -> {} wif.{}", i, privkey, coinaddr, wifstr});
+            log! ({"i.{} {} -> {} wif.{}", i, bits256::from (privkey), coinaddr, wifstr});
             if coinaddr.as_bytes()[substring.len()] == substring.as_bytes()[substring.len() - 1] {break}  // Stop on full match.
         }
     }

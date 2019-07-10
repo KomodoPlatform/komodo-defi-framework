@@ -34,7 +34,6 @@ use gstuff::{now_ms};
 use hashbrown::hash_map::{HashMap, Entry};
 use keys::{Error as KeysError, KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
-use keys::generator::{Random, Generator};
 use num_traits::cast::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
 use rand::{thread_rng};
@@ -559,7 +558,9 @@ impl UtxoCoin {
             true_or_err!(!outputs.is_empty(), "Couldn't generate tx from empty outputs set");
             let mut tx_fee = match &coin_tx_fee {
                 ActualTxFee::Fixed(f) => *f,
-                ActualTxFee::Dynamic(f) => (f * 20) / 1024, // every tx has version, locktime and maybe other fields depending on coin, using 20 bytes as default value for this
+                // every tx has version, locktime and maybe other fields depending on coin, using 20 bytes as default value for this
+                // change output size is also included here
+                ActualTxFee::Dynamic(f) => (f * (20 + 8 + 1 + 25)) / 1024,
             };
 
             let mut target_value = 0;
@@ -1148,6 +1149,12 @@ impl MarketCoinOps for UtxoCoin {
     fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send> {
         Box::new(self.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
     }
+
+    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
+        let pubkey_bytes = try_s!(hex::decode(pubkey));
+        let addr = try_s!(address_from_raw_pubkey(&pubkey_bytes, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
+        Ok(addr.to_string())
+    }
 }
 
 impl IguanaInfo for UtxoCoin {
@@ -1457,17 +1464,6 @@ impl MmCoin for UtxoCoin {
             }).to_string())
         }))
     }
-}
-
-pub fn random_compressed_key_pair(prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
-    let random_key = try_s!(Random::new(prefix).generate());
-
-    Ok(try_s!(KeyPair::from_private(Private {
-        prefix,
-        secret: random_key.private().secret.clone(),
-        compressed: true,
-        checksum_type,
-    })))
 }
 
 fn private_from_seed(seed: &str) -> Result<Private, String> {

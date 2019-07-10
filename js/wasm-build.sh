@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Builds WASM in a separate folder in order not to mess the native build.
-# Run with `bash wasm-build.sh`.
+# Run with `bash js/wasm-build.sh`.
 
 ORIGINAL=`pwd`
 
@@ -20,7 +20,4 @@ rsync -av --delete \
 
 cd /tmp/supernet-wasm/
 
-# Plug in the Emscripten
-. ~/emsdk/emsdk_env.sh
-
-cargo build --target=wasm32-unknown-emscripten 2>&1 | tee $ORIGINAL/wasm-build.log
+cargo build --target=wasm32-unknown-unknown --release --package=peers 2>&1 | tee $ORIGINAL/wasm-build.log

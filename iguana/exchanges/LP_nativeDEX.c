@@ -210,7 +210,6 @@ int32_t LP_merkleproof(struct iguana_info *coin,char *coinaddr,struct electrum_i
 #include "LP_ordermatch.c"
 #include "LP_tradebots.c"
 #include "LP_portfolio.c"
-#include "LP_commands.c"
 
 char *LP_decrypt(uint8_t decoded[LP_ENCRYPTED_MAXSIZE + crypto_box_ZEROBYTES],uint8_t *ptr,int32_t *recvlenp)
 {
@@ -572,22 +571,6 @@ int32_t LP_reserved_msg(int32_t priority,bits256 pubkey,char *msg)
 }
 
 extern int32_t bitcoind_RPC_inittime;
-
-void LP_coin_curl_init(struct iguana_info* coin) {
-    coin->curl_handle = 0; // curl_easy_init();
-    //portable_mutex_init(&coin->curl_mutex);
-
-    // From the former LP_coinadd:
-    coin->_txmutex = calloc (1, sizeof (portable_mutex_t));
-    portable_mutex_init(coin->_txmutex);
-    coin->_addrmutex = calloc (1, sizeof (portable_mutex_t));
-    portable_mutex_init(coin->_addrmutex);
-    coin->_addressutxo_mutex = calloc (1, sizeof (portable_mutex_t));
-    portable_mutex_init(coin->_addressutxo_mutex);
-    strcpy(coin->validateaddress,"validateaddress");
-    strcpy(coin->getinfostr,"getinfo");
-    strcpy(coin->estimatefeestr,"estimatefee");
-}
 
 void LP_mutex_init() {
     portable_mutex_init(&LP_peermutex);

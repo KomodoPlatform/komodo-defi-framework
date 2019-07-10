@@ -17,8 +17,7 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 use coins::{enable, electrum, get_enabled_coins, get_trade_fee, my_balance, send_raw_transaction, withdraw, my_tx_history};
-use common::{err_to_rpc_json_string, free_c_ptr, lp, lp_queue_command_for_c,
-        rpc_response, rpc_err_response, HyRes};
+use common::{err_to_rpc_json_string, lp, rpc_response, rpc_err_response, HyRes};
 use common::wio::{CORE, HTTP};
 use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
@@ -30,21 +29,17 @@ use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper;
 use hyper::rt::Stream;
 use hyper::service::Service;
-use libc::{c_char, c_void};
 use portfolio::lp_autoprice;
 use portfolio::prices::{lp_fundvalue};
 use serde_json::{self as json, Value as Json};
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr};
 use std::net::{SocketAddr};
-use std::ptr::null_mut;
-use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use tokio_core::net::TcpListener;
 use hex;
 
-use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, sell, set_price};
+use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
 use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, stats_swap_status, my_recent_swaps};
-use crate::mm2::CJSON;
 
 #[path = "rpc/lp_commands.rs"]
 pub mod lp_commands;
@@ -113,74 +108,6 @@ fn auth(json: &Json, ctx: &MmArc) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn rpc_process_json(ctx: MmArc, remote_addr: SocketAddr, json: Json, c_json: CJSON) -> HyRes {
-    // NB: `queueid` of `0` should be ignored, cf. https://github.com/atomiclabs/hyperdex/pull/563#issuecomment-434959074.
-    let queueid = match json["queueid"] {
-        Json::Number (ref n) => match n.as_u64() {
-            Some (n) => n,
-            None => return rpc_err_response (500, "The 'queueid' must be unsigned integer")
-        },
-        Json::Null => 0,
-        _ => return rpc_err_response (500, "The 'queueid' must be unsigned integer")
-    };
-
-    if queueid > 0 {
-        if unsafe { lp::IPC_ENDPOINT == -1 } {
-            return rpc_err_response (500, "Can't queue the command when the WebSocket endpoint is disabled")
-        } else if !remote_addr.ip().is_loopback() {
-            return rpc_err_response (500, &format! ("IP {} is not local. Only the local HTTP clients can use the queue", remote_addr.ip()))
-        } else {
-            let json_str = json.to_string();
-            let c_json_ptr = try_h! (CString::new (json_str));
-            unsafe {
-                lp_queue_command_for_c(null_mut(),
-                                    c_json_ptr.as_ptr() as *mut c_char,
-                                    lp::IPC_ENDPOINT,
-                                    1,
-                                    json["queueid"].as_u64().unwrap() as u32
-                );
-            }
-            return rpc_response (200, r#"{"result": "success", "status": "queued"}"#)
-        }
-    }
-
-    let rpc_ip_port = try_h! (ctx.rpc_ip_port());
-    let my_ip_ptr = try_h! (CString::new (fomat! ((rpc_ip_port.ip()))));
-    let remote_ip_ptr = try_h! (CString::new (fomat! ((remote_addr.ip()))));
-
-    let stats_result = unsafe {
-        lp::stats_JSON(
-            ctx.btc_ctx() as *mut c_void,
-            my_ip_ptr.as_ptr() as *mut c_char,
-            lp::LP_mypubsock,
-            c_json.0,
-            remote_ip_ptr.as_ptr() as *mut c_char,
-            rpc_ip_port.port(),
-            1,
-            ctx.conf["rpc_local_only"].as_bool().unwrap_or(true) as u8,
-        )
-    };
-
-    if !stats_result.is_null() {
-        let res_str = try_h! (unsafe {CStr::from_ptr(stats_result)} .to_str()) .to_string();
-        free_c_ptr(stats_result as *mut c_void);
-
-        // #220, See if `stats_JSON` returned an error and reflect this in the HTTP status.
-        #[derive(Deserialize)] struct MaybeError<'a> {error: Option<&'a str>}
-        let status = if let Ok (maybe_error) = json::from_str::<MaybeError> (&res_str) {
-            if maybe_error.error.is_some() {500} else {200}
-        } else {200};
-        rpc_response (status, res_str)
-    } else {
-        rpc_err_response (500, "Empty result from stats_JSON")
-    }
-}
-
-lazy_static! {
-    /// Emulating the single-threaded execution for the older C code.
-    pub static ref SINGLE_THREADED_C_LOCK: Mutex<()> = Mutex::new(());
-}
-
 /// Result of `fn dispatcher`.
 pub enum DispatcherRes {
     /// `fn dispatcher` has found a Rust handler for the RPC "method".
@@ -220,6 +147,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "my_balance" => my_balance (ctx, req),
         "my_tx_history" => my_tx_history(ctx, req),
         "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
+        "orderbook" => orderbook (ctx, req),
         "order_status" => order_status (ctx, req),
         "passphrase" => passphrase (ctx, req),
         "sell" => sell (ctx, req),
@@ -290,16 +218,7 @@ impl Service for RpcService {
 
             match dispatcher (req, Some (remote_addr), ctx.clone()) {
                 DispatcherRes::Match (handler) => handler,
-                DispatcherRes::NoMatch (req) => {
-                    // Evoke the older C dispatcher (stats_JSON), RPC methods we haven't ported yet are handled there.
-                    let c_json = try_h! (CJSON::from_str (&req.to_string()));
-                    let cpu_pool_fut = CPUPOOL.spawn_fn(move || {
-                        // Emulates the single-threaded execution of the old C code.
-                        let _lock = SINGLE_THREADED_C_LOCK.lock();
-                        rpc_process_json (ctx, remote_addr, req, c_json)
-                    });
-                    Box::new (cpu_pool_fut)
-                }
+                DispatcherRes::NoMatch (req) => return rpc_err_response (500, &ERRL!("No such method {}", req["method"]))
             }
         });
 
