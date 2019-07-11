@@ -217,41 +217,6 @@ pub fn dstr (x: i64, decimals: u8) -> f64 {x as f64 / 10.0_f64.powf(decimals as 
 /// but better safe than sorry.
 pub const SMALLVAL: f64 = 0.000000000000001;  // 1e-15f64
 
-/// RAII and MT wrapper for `cJSON`.
-#[cfg(feature = "native")]
-pub struct CJSON (pub *mut lp::cJSON);
-#[cfg(feature = "native")]
-impl CJSON {
-    pub fn from_zero_terminated (json: *const c_char) -> Result<CJSON, String> {
-        lazy_static! {static ref LOCK: Mutex<()> = Mutex::new(());}
-        let _lock = try_s! (LOCK.lock());  // Probably need a lock to access the error singleton.
-        let c_json = unsafe {lp::cJSON_Parse (json)};
-        if c_json == null_mut() {
-            let err = unsafe {lp::cJSON_GetErrorPtr()};
-            let err = try_s! (unsafe {CStr::from_ptr (err)} .to_str());
-            ERR! ("Can't parse JSON, error: {}", err)
-        } else {
-            Ok (CJSON (c_json))
-        }
-    }
-    pub fn from_str (json: &str) -> Result<CJSON, String> {
-        let cs = try_s! (CString::new (json));
-        CJSON::from_zero_terminated (cs.as_ptr())
-    }
-    pub fn new () -> CJSON {
-        unwrap! (CJSON::from_str (""))
-    }
-}
-#[cfg(feature = "native")]
-impl Drop for CJSON {
-    fn drop (&mut self) {
-        unsafe {lp::cJSON_Delete (self.0)}
-        self.0 = null_mut()
-    }
-}
-#[cfg(feature = "native")]
-unsafe impl Send for CJSON {}
-
 /// Helps sharing a string slice with C code by allocating a zero-terminated string with the C standard library allocator.
 /// 
 /// The difference from `CString` is that the memory is then *owned* by the C code instead of being temporarily borrowed,

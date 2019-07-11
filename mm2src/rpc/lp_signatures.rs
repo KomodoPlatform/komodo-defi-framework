@@ -19,13 +19,9 @@
 //  marketmaker
 //
 
-use common::{jbits256, lp, rpc_response, HyRes, CJSON};
+use common::{rpc_response, HyRes};
 use common::mm_ctx::MmArc;
-use libc::c_char;
-use rpc::v1::types::{H160 as H160Json, H264 as H264Json};
-use serde_json::{self as json, Value as Json};
-use std::ffi::{CString};
-use gstuff::now_ms;
+use serde_json::{Value as Json};
 
 /*
 struct basilisk_request *LP_requestinit(struct basilisk_request *rp,bits256 srchash,bits256 desthash,char *src,uint64_t srcsatoshis,char *dest,uint64_t destsatoshis,uint32_t timestamp,uint32_t quotetime,int32_t DEXselector,int32_t fillflag,int32_t gtcflag)
@@ -597,7 +593,12 @@ void LP_notify_pubkeys(void *ctx,int32_t pubsock)
 
 */
 
-pub fn lp_notify_recv (_ctx: MmArc, req: Json) -> HyRes {
+pub fn lp_notify_recv (_ctx: MmArc, _req: Json) -> HyRes {
+    // AP: we don't need to maintain list of peers for MM2 to work, so this function is doing nothing
+    // until we have the necessity to store the peers list locally
+
+    //log! ("lp_notify_recv] req: " [req]);
+    /*
     let pubk = try_h! (jbits256 (&req["pub"]));
     if pubk.nonz() {
         let c_json = {
@@ -634,6 +635,7 @@ pub fn lp_notify_recv (_ctx: MmArc, req: Json) -> HyRes {
             )};
         }
     }
+    */
     rpc_response (200, r#"{"result": "success", "notify": "received"}"#)
 }
 

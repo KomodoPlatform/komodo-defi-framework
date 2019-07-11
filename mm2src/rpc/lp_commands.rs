@@ -17,22 +17,13 @@
 //  rpc_commands.rs
 //  marketmaker
 //
-use common::{bitcoin_address, bits256, coins_iter, lp, nonz, rpc_response, rpc_err_response, HyRes, MM_VERSION};
+use common::{lp, rpc_response, HyRes, MM_VERSION};
 use common::wio::CORE;
 use common::mm_ctx::MmArc;
-use coins::lp_coinfind;
 use futures::Future;
 use futures_timer::Delay;
-use gstuff::now_ms;
-use hex;
-use libc::{c_void, free};
-use serde_json::{self as json, Value as Json};
-use std::ffi::{CStr};
-use std::mem::zeroed;
-use std::ptr::{null_mut, write_volatile};
+use std::ptr::{write_volatile};
 use std::time::Duration;
-
-use crate::mm2::lp_native_dex::lp_passphrase_init;
 
 pub fn help() -> HyRes {
     rpc_response(200, "
@@ -53,6 +44,9 @@ pub fn help() -> HyRes {
 }
 
 pub fn version() -> HyRes { rpc_response(200, MM_VERSION) }
+
+/*
+AP: Passphrase call is not documented and not used as of now, commented out
 
 /// JSON structure passed to the "passphrase" RPC call.  
 /// cf. https://docs.komodoplatform.com/barterDEX/barterDEX-API.html#passphrase
@@ -107,22 +101,7 @@ pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
 
     rpc_response (200, try_h! (json::to_string (&retjson)))
 }
-
-pub fn mpnet(json: &Json) -> HyRes {
-    if !json["onoff"].is_u64() {
-        return rpc_err_response(400, "onoff must be unsigned int");
-    }
-
-    let onoff = json["onoff"].as_u64().unwrap();
-    if onoff > 1 {
-        return rpc_err_response(400, "onoff must be 0 or 1");
-    }
-
-    unsafe { lp::G.mpnet = onoff as u32 };
-    log!({"MPNET onoff.{}", onoff});
-    rpc_response (200, r#"{"result": "success"}"#)
-}
-
+*/
 pub fn stop (ctx: MmArc) -> HyRes {
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
@@ -137,6 +116,8 @@ pub fn stop (ctx: MmArc) -> HyRes {
     rpc_response (200, r#"{"result": "success"}"#)
 }
 
+// AP: Inventory is not documented and not used as of now, commented out
+/*
 pub fn inventory (ctx: MmArc, req: Json) -> HyRes {
     let ticker = match req["coin"].as_str() {Some (s) => s, None => return rpc_err_response (500, "No 'coin' argument in request")};
     let coin = match lp_coinfind (&ctx, ticker) {
@@ -162,3 +143,4 @@ pub fn inventory (ctx: MmArc, req: Json) -> HyRes {
     //LP_smartutxos_push(ptr);
     rpc_response (200, try_h! (json::to_string (&retjson)))
 }
+*/

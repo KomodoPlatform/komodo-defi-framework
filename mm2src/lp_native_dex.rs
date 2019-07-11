@@ -44,7 +44,6 @@ use std::time::Duration;
 
 use coins::utxo::{key_pair_from_seed};
 use peers::http_fallback::new_http_fallback;
-use portfolio::prices_loop;
 
 use crate::common::{coins_iter, lp, lp_queue_command_for_c, nonz, os, MM_VERSION};
 use crate::common::wio::{slurp_url, CORE};
@@ -1267,10 +1266,6 @@ pub unsafe fn lp_passphrase_init (passphrase: Option<&str>, gui: Option<&str>) -
     if !nonz(pk.bytes) {return ERR! ("!LP_privkeycalc")}
     if !nonz(lp::G.LP_privkey.bytes) {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
 
-    lp::LP_tradebot_pauseall();
-    lp::LP_portfolio_reset();
-    lp::LP_priceinfos_clear();
-
     // Copy some of the fields from the old G.
     lp::G.USERPASS_COUNTER = userpass_counter;
 
@@ -1524,17 +1519,17 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
     unsafe { try_s! (lp_initpeers (&ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes)); }
     ctx.initialized.store (true, Ordering::Relaxed);
+    /*
     let prices = try_s! (thread::Builder::new().name ("prices".into()) .spawn ({
         let ctx = ctx.clone();
         move || prices_loop (ctx)
     }));
-    /*
     if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_pubkeysloop,ctx) != 0 )
     {
         printf("error launching LP_pubkeysloop for ctx.%p\n",ctx);
         exit(-1);
     }
-*/
+    */
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
     let mut coins_needed_for_kick_start = swap_kick_starts (ctx.clone());
@@ -1606,7 +1601,7 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     unsafe {lp::LP_QUEUE_COMMAND = Some (lp_queue_command_for_c)};
 
     unsafe {lp::LPinit (ctx_id)};
-    unwrap! (prices.join());
+    // unwrap! (prices.join());
     unwrap! (trades.join());
     unwrap! (command_queue.join());
     if let Some(seednode) = seednode_thread {

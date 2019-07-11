@@ -1008,14 +1008,20 @@ impl SwapOps for UtxoCoin {
             return ERR!("Provided dex fee tx {:?} doesn't match tx data from rpc {:?}", tx, tx_from_rpc);
         }
 
-        let address = try_s!(address_from_raw_pubkey(fee_addr, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
-        let expected_output = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes()
-        };
-
-        if tx.outputs[0] != expected_output {
-            return ERR!("Provided dex fee tx output doesn't match expected {:?} {:?}", tx.outputs[0], expected_output);
+        match tx.outputs.first() {
+            Some(out) => {
+                let address = try_s!(address_from_raw_pubkey(fee_addr, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
+                let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
+                if out.script_pubkey != expected_script_pubkey {
+                    return ERR!("Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}", out.script_pubkey, expected_script_pubkey);
+                }
+                if out.value < amount {
+                    return ERR!("Provided dex fee tx output value is less than expected {:?} {:?}", out.value, amount);
+                }
+            },
+            None => {
+                return ERR!("Provided dex fee tx {:?} has no outputs", tx);
+            }
         }
         Ok(())
     }
@@ -1170,9 +1176,6 @@ impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
     fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send> {
-        if amount / 777 < "0.00001".parse().unwrap() {
-            return Box::new(futures::future::err(ERRL!("Amount {} is too low, it'll result to dust error, at least 0.00777 is required", amount)));
-        }
         let fee_fut = self.get_tx_fee().map_err(|e| ERRL!("{}", e));
         let arc = self.clone();
         let amount = amount.clone();
@@ -1184,6 +1187,9 @@ impl MmCoin for UtxoCoin {
                     ActualTxFee::Dynamic(f) => f,
                 };
                 let fee_decimal = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(arc.decimals as u32));
+                if &amount < &fee_decimal {
+                    return ERR!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, fee_decimal);
+                }
                 let required = if maker {
                     amount + fee_decimal
                 } else {

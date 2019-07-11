@@ -58,6 +58,8 @@ fn addr_from_enable(enable_response: &Json) -> Json {
     enable_response["address"].clone()
 }
 
+/*
+portfolio is removed from dependencies temporary
 #[test]
 fn test_autoprice_coingecko() {portfolio::portfolio_tests::test_autoprice_coingecko (local_start())}
 
@@ -66,6 +68,7 @@ fn test_autoprice_coinmarketcap() {portfolio::portfolio_tests::test_autoprice_co
 
 #[test]
 fn test_fundvalue() {portfolio::portfolio_tests::test_fundvalue (local_start())}
+*/
 
 /// Integration test for RPC server.
 /// Check that MM doesn't crash in case of invalid RPC requests
@@ -93,16 +96,6 @@ fn test_rpc() {
 
     assert! (unknown_method.0.is_server_error());
     assert_eq!((unknown_method.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
-
-    let mpnet = unwrap! (mm.rpc (json! ({
-        "userpass": mm.userpass,
-        "method": "mpnet",
-        "onoff": 1,
-    })));
-    assert_eq!(mpnet.0, StatusCode::OK);
-    assert_eq!((mpnet.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
-
-    unwrap! (mm.wait_for_log (1., &|log| log.contains ("MPNET onoff")));
 
     let version = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,

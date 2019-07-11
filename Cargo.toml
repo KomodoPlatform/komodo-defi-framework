@@ -15,7 +15,7 @@ edition = "2018"
 [features]
 native = [
   "hyper", "tokio-core", "dirs",
-  "common/native", "peers/native", "coins/native", "portfolio/native"
+  "common/native", "peers/native", "coins/native", # "portfolio/native"
 ]
 
 [[bin]]
@@ -65,7 +65,9 @@ libc = "0.2"
 num-traits = "0.2"
 rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 peers = { path = "mm2src/peers" }
-portfolio = { path = "mm2src/portfolio" }
+# AP: portfolio RPCs are not documented and not used as of now
+# so the crate is disabled to speed up the entire removal of C code
+# portfolio = { path = "mm2src/portfolio" }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = "0.6"
 regex = "1"

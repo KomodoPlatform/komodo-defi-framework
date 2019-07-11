@@ -379,8 +379,8 @@ impl SwapOps for EthCoin {
                     return ERR!("Fee tx {:?} was sent to wrong address, expected {:?}", tx_from_rpc, fee_addr);
                 }
 
-                if tx_from_rpc.value != expected_value {
-                    return ERR!("Fee tx {:?} value is invalid, expected {:?}", tx_from_rpc, expected_value);
+                if tx_from_rpc.value < expected_value {
+                    return ERR!("Fee tx {:?} value is less than expected {:?}", tx_from_rpc, expected_value);
                 }
             },
             EthCoinType::Erc20(token_addr) => {
@@ -389,13 +389,19 @@ impl SwapOps for EthCoin {
                 }
 
                 let function = try_s!(ERC20_CONTRACT.function("transfer"));
-                let expected_data = try_s!(function.encode_input(&[
-                    Token::Address(fee_addr),
-                    Token::Uint(expected_value),
-                ]));
+                let decoded_input = try_s!(function.decode_input(&tx_from_rpc.input.0));
 
-                if tx_from_rpc.input.0 != expected_data {
-                    return ERR!("ERC20 Fee tx {:?} input is invalid, expected {:?}", tx_from_rpc, expected_data);
+                if decoded_input[0] != Token::Address(fee_addr) {
+                    return ERR!("ERC20 Fee tx was sent to wrong address {:?}, expected {:?}", decoded_input[0], fee_addr);
+                }
+
+                match decoded_input[1] {
+                    Token::Uint(value) => {
+                        if value < expected_value {
+                            return ERR!("ERC20 Fee tx value {} is less than expected {}", value, expected_value);
+                        }
+                    },
+                    _ => return ERR!("Should have got uint token but got {:?}", decoded_input[1])
                 }
             },
         }

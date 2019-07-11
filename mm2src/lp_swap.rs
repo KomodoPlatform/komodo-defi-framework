@@ -213,6 +213,26 @@ fn payment_confirmations(_maker_coin: &MmCoinEnum, _taker_coin: &MmCoinEnum) -> 
     (1, 1)
 }
 
+fn dex_fee_rate(base: &str, rel: &str) -> BigDecimal {
+    if base == "KMD" || rel == "KMD" {
+        // 1/777 - 10%
+        BigDecimal::from(9) / BigDecimal::from(7770)
+    } else {
+        BigDecimal::from(1) / BigDecimal::from(777)
+    }
+}
+
+fn dex_fee_amount(base: &str, rel: &str, trade_amount: &BigDecimal) -> BigDecimal {
+    let rate = dex_fee_rate(base, rel);
+    let min_fee = unwrap!("0.0001".parse());
+    let fee_amount = trade_amount * rate;
+    if fee_amount < min_fee {
+        min_fee
+    } else {
+        fee_amount
+    }
+}
+
 // NB: Using a macro instead of a function in order to preserve the line numbers in the log.
 macro_rules! send {
     ($ctx: expr, $to: expr, $subj: expr, $fallback: expr, $payload: expr) => {{
@@ -260,14 +280,6 @@ struct SwapNegotiationData {
     payment_locktime: u64,
     secret_hash: H160,
     persistent_pubkey: H264,
-}
-
-#[test]
-fn test_serde_swap_negotiation_data() {
-    let data = SwapNegotiationData::default();
-    let bytes = serialize(&data);
-    let deserialized = deserialize(bytes.as_slice()).unwrap();
-    assert_eq!(data, deserialized);
 }
 
 fn my_swaps_dir(ctx: &MmArc) -> PathBuf {
@@ -945,7 +957,7 @@ impl MakerSwap {
         log!({ "Taker fee tx {:02x}", hash });
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
-        let fee_amount = self.taker_amount.clone() / 777;
+        let fee_amount = dex_fee_amount(&self.data.maker_coin, &self.data.taker_coin, &self.taker_amount);
 
         let mut attempts = 0;
         loop {
@@ -1730,7 +1742,7 @@ impl TakerSwap {
         }
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
-        let fee_amount = &self.taker_amount / 777;
+        let fee_amount = dex_fee_amount(&self.data.maker_coin, &self.data.taker_coin, &self.taker_amount);
         let fee_tx = self.taker_coin.send_taker_fee(&fee_addr_pub_key, fee_amount).wait();
         let transaction = match fee_tx {
             Ok (t) => t,
@@ -2309,4 +2321,48 @@ pub fn coins_needed_for_kick_start(ctx: MmArc) -> HyRes {
     rpc_response(200, json!({
         "result": *(unwrap!(ctx.coins_needed_for_kick_start.lock()))
     }).to_string())
+}
+
+#[cfg(test)]
+mod lp_swap_tests {
+    use super::*;
+
+    #[test]
+    fn test_dex_fee_amount() {
+        let base = "BTC";
+        let rel = "ETH";
+        let amount = 1.into();
+        let actual_fee = dex_fee_amount(base, rel, &amount);
+        let expected_fee = amount / 777;
+        assert_eq!(expected_fee, actual_fee);
+
+        let base = "KMD";
+        let rel = "ETH";
+        let amount = 1.into();
+        let actual_fee = dex_fee_amount(base, rel, &amount);
+        let expected_fee = amount * BigDecimal::from(9) / 7770;
+        assert_eq!(expected_fee, actual_fee);
+
+        let base = "BTC";
+        let rel = "KMD";
+        let amount = 1.into();
+        let actual_fee = dex_fee_amount(base, rel, &amount);
+        let expected_fee = amount * BigDecimal::from(9) / 7770;
+        assert_eq!(expected_fee, actual_fee);
+
+        let base = "BTC";
+        let rel = "KMD";
+        let amount = unwrap!("0.001".parse());
+        let actual_fee = dex_fee_amount(base, rel, &amount);
+        let expected_fee: BigDecimal = unwrap!("0.0001".parse());
+        assert_eq!(expected_fee, actual_fee);
+    }
+
+    #[test]
+    fn test_serde_swap_negotiation_data() {
+        let data = SwapNegotiationData::default();
+        let bytes = serialize(&data);
+        let deserialized = unwrap!(deserialize(bytes.as_slice()));
+        assert_eq!(data, deserialized);
+    }
 }

@@ -29,8 +29,6 @@ use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper;
 use hyper::rt::Stream;
 use hyper::service::Service;
-use portfolio::lp_autoprice;
-use portfolio::prices::{lp_fundvalue};
 use serde_json::{self as json, Value as Json};
 use std::ffi::{CStr};
 use std::net::{SocketAddr};
@@ -128,7 +126,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         _ => return DispatcherRes::NoMatch (req)
     };
     DispatcherRes::Match (match &method[..] {  // Sorted alphanumerically (on the first latter) for readability.
-        "autoprice" => lp_autoprice (ctx, req),
+        // "autoprice" => lp_autoprice (ctx, req),
         "buy" => buy (ctx, req),
         "cancel_all_orders" => cancel_all_orders (ctx, req),
         "cancel_order" => cancel_order (ctx, req),
@@ -139,17 +137,16 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "electrum" => Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) })),
         "get_enabled_coins" => get_enabled_coins (ctx),
         "get_trade_fee" => get_trade_fee (ctx, req),
-        "fundvalue" => lp_fundvalue (ctx, req, false),
+        // "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
-        "inventory" => inventory (ctx, req),
-        "mpnet" => mpnet (&req),
+        // "inventory" => inventory (ctx, req),
         "my_orders" => my_orders (ctx),
         "my_balance" => my_balance (ctx, req),
         "my_tx_history" => my_tx_history(ctx, req),
         "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
         "orderbook" => orderbook (ctx, req),
         "order_status" => order_status (ctx, req),
-        "passphrase" => passphrase (ctx, req),
+        // "passphrase" => passphrase (ctx, req),
         "sell" => sell (ctx, req),
         "send_raw_transaction" => send_raw_transaction (ctx, req),
         "setprice" => set_price (ctx, req),

@@ -248,7 +248,6 @@ fn vanity (substring: &str) {
     let mut coinaddr: [u8; 64] = unsafe {zeroed()};
     let mut wifstr: [c_char; 128] = unsafe {zeroed()};
     let mut privkey: _bits256 = unsafe {zeroed()};
-    unsafe {lp::LP_mutex_init()};
     let ctx = MmCtx::new();
     let timestamp = now_ms() / 1000;
     log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
