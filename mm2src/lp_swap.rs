@@ -56,7 +56,7 @@
 //
 use bitcrypto::{ChecksumType, dhash160};
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
-use coins::{lp_coinfind, MmCoinEnum, TransactionDetails};
+use coins::{lp_coinfind, MmCoinEnum, TradeInfo, TransactionDetails};
 use coins::utxo::compressed_pub_key_from_priv_raw;
 use common::{bits256, lp, HyRes, rpc_response};
 use common::wio::Timeout;
@@ -222,7 +222,7 @@ fn dex_fee_rate(base: &str, rel: &str) -> BigDecimal {
     }
 }
 
-fn dex_fee_amount(base: &str, rel: &str, trade_amount: &BigDecimal) -> BigDecimal {
+pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &BigDecimal) -> BigDecimal {
     let rate = dex_fee_rate(base, rel);
     let min_fee = unwrap!("0.0001".parse());
     let fee_amount = trade_amount * rate;
@@ -813,7 +813,7 @@ impl MakerSwap {
             ));
         }
 
-        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(&self.maker_amount, &my_balance, true).wait() {
+        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(&self.maker_amount, &my_balance, TradeInfo::Maker).wait() {
             return Ok((
                 Some(MakerSwapCommand::Finish),
                 vec![MakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],
@@ -1598,7 +1598,8 @@ impl TakerSwap {
             ));
         }
 
-        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount, &my_balance, true).wait() {
+        let dex_fee_amount = dex_fee_amount(self.maker_coin.ticker(), self.taker_coin.ticker(), &self.taker_amount);
+        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount, &my_balance, TradeInfo::Taker(dex_fee_amount)).wait() {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],

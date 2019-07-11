@@ -22,7 +22,7 @@ use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
 use common::{lp, SMALLVAL, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
-use coins::{lp_coinfind, MmCoinEnum};
+use coins::{lp_coinfind, MmCoinEnum, TradeInfo};
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
 use futures::future::{Either, Future};
 use gstuff::{now_ms, slurp};
@@ -41,7 +41,7 @@ use std::time::Duration;
 use std::thread;
 use uuid::Uuid;
 
-use crate::mm2::lp_swap::{get_locked_amount, MakerSwap, run_maker_swap, run_taker_swap, TakerSwap};
+use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount, MakerSwap, run_maker_swap, run_taker_swap, TakerSwap};
 
 #[cfg(test)]
 #[path = "ordermatch_tests.rs"]
@@ -635,13 +635,15 @@ pub fn buy(ctx: MmArc, json: Json) -> HyRes {
     };
     let my_amount = &input.volume * &input.price;
     Box::new(rel_coin.my_balance().and_then(move |my_balance| {
-        check_locked_coins(&ctx, &my_amount, &my_balance, rel_coin.ticker()).and_then(move |_|
-            rel_coin.check_i_have_enough_to_trade(&my_amount, &my_balance, false).and_then(move |_|
+        check_locked_coins(&ctx, &my_amount, &my_balance, rel_coin.ticker()).and_then(move |_| {
+            let dex_fee = dex_fee_amount(base_coin.ticker(), rel_coin.ticker(), &my_amount);
+            let trade_info = TradeInfo::Taker(dex_fee);
+            rel_coin.check_i_have_enough_to_trade(&my_amount, &my_balance, trade_info).and_then(move |_|
                 base_coin.can_i_spend_other_payment().and_then(move |_|
                     rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
                 )
             )
-        )
+        })
     }))
 }
 
@@ -661,13 +663,15 @@ pub fn sell(ctx: MmArc, json: Json) -> HyRes {
         None => return rpc_err_response(500, "Rel coin is not found or inactive")
     };
     Box::new(base_coin.my_balance().and_then(move |my_balance| {
-        check_locked_coins(&ctx, &input.volume, &my_balance, base_coin.ticker()).and_then(move |_|
-            base_coin.check_i_have_enough_to_trade(&input.volume, &my_balance, false).and_then(move |_|
+        check_locked_coins(&ctx, &input.volume, &my_balance, base_coin.ticker()).and_then(move |_| {
+            let dex_fee = dex_fee_amount(base_coin.ticker(), rel_coin.ticker(), &input.volume);
+            let trade_info = TradeInfo::Taker(dex_fee);
+            base_coin.check_i_have_enough_to_trade(&input.volume, &my_balance, trade_info).and_then(move |_|
                 rel_coin.can_i_spend_other_payment().and_then(move |_|
                     rpc_response(200, try_h!(lp_auto_buy(&ctx, input)))
                 )
             )
-        )
+        })
     }))
 }
 
@@ -907,7 +911,7 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
     } else {
         Either::B(balance_f.and_then(move |my_balance|
             check_locked_coins(&ctx, &req.volume, &my_balance, base_coin.ticker()).and_then(move |_|
-                base_coin.check_i_have_enough_to_trade(&req.volume, &my_balance, true).map(move |_|
+                base_coin.check_i_have_enough_to_trade(&req.volume, &my_balance, TradeInfo::Maker).map(move |_|
                     (req.volume.clone(), req, ctx)
                 )
             )

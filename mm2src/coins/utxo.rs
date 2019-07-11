@@ -54,7 +54,7 @@ use std::time::Duration;
 pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
+use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, TradeInfo, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 use futures::future::Either;
 
@@ -1175,7 +1175,7 @@ struct UtxoFeeDetails {
 impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let fee_fut = self.get_tx_fee().map_err(|e| ERRL!("{}", e));
         let arc = self.clone();
         let amount = amount.clone();
@@ -1190,10 +1190,9 @@ impl MmCoin for UtxoCoin {
                 if &amount < &fee_decimal {
                     return ERR!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, fee_decimal);
                 }
-                let required = if maker {
-                    amount + fee_decimal
-                } else {
-                    &amount + &amount / 777 + BigDecimal::from(2) * fee_decimal
+                let required = match trade_info {
+                    TradeInfo::Maker => amount + fee_decimal,
+                    TradeInfo::Taker(dex_fee) => &amount + dex_fee + BigDecimal::from(2) * fee_decimal,
                 };
                 if balance < required {
                     return ERR!("{} balance {} is too low, required {:.8}", arc.ticker(), balance, required);

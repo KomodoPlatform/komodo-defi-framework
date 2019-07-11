@@ -51,7 +51,8 @@ use std::time::Duration;
 use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
-use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TransactionFut, TransactionEnum, Transaction, TransactionDetails};
+use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TradeInfo, TransactionFut,
+            TransactionEnum, Transaction, TransactionDetails};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 
@@ -1511,12 +1512,11 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, maker: bool) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let ticker = self.ticker.clone();
-        let required = if maker {
-            amount.clone()
-        } else {
-            amount + amount / 777
+        let required = match trade_info {
+            TradeInfo::Maker => amount.clone(),
+            TradeInfo::Taker(dex_fee) => amount + dex_fee,
         };
         match self.coin_type {
             EthCoinType::Eth => {
