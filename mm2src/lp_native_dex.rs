@@ -17,11 +17,8 @@
 //  marketmaker
 //
 
-use bitcrypto::{dhash160, sha256};
 use futures::{Future};
 use futures::sync::oneshot::Sender;
-use gstuff::now_ms;
-use hex;
 use http::StatusCode;
 use keys::KeyPair;
 use libc::{self, c_char};
@@ -30,7 +27,7 @@ use rand::rngs::SmallRng;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::fs;
-use std::ffi::{CStr, CString};
+use std::ffi::{CString};
 use std::io::{Cursor, Read, Write};
 use std::mem::{transmute, zeroed};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
@@ -39,20 +36,19 @@ use std::ptr::null_mut;
 use std::str;
 use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::{self, sleep};
-use std::time::Duration;
+use std::thread::{self};
 
 use coins::utxo::{key_pair_from_seed};
 use peers::http_fallback::new_http_fallback;
 
-use crate::common::{coins_iter, lp, lp_queue_command_for_c, nonz, os, MM_VERSION};
+use crate::common::{nonz, lp, MM_VERSION};
 use crate::common::wio::{slurp_url, CORE};
 use crate::common::log::TagParam;
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, orders_kick_start};
 use crate::mm2::lp_swap::swap_kick_starts;
-use crate::mm2::rpc::{self};
+use crate::mm2::rpc::{spawn_rpc};
 use common::mm_ctx::MmCtxBuilder;
 
 /*
@@ -960,27 +956,35 @@ const P2P_SEED_NODES_9999: [&'static str; 3] = [
     "46.4.78.11",
 ];
 
-/// Setup the peer-to-peer network.
-#[allow(unused_variables)]  // delme
-pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_peerinfo, myipaddr: &IpAddr, myport: u16,
-                            netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
-    {
-        let mut status = ctx.log.status_handle();
-        while lp::G.waiting == 0 {
-            status.status (&[&"lp_init_peers"], "Waiting for `G.waiting`…");
-            sleep (Duration::from_millis (100))
-        }
-        status.append (" Done.");
+pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
+    const LP_RPCPORT: u16 = 7783;
+    let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
+    if netid > max_netid {
+        return ERR!("Netid {} is larger than max {}", netid, max_netid);
     }
 
+    let other_ports = if netid != 0 {
+        let net_mod = netid % 10;
+        let net_div = netid / 10;
+        (net_div * 40) + LP_RPCPORT + net_mod
+    } else {
+        LP_RPCPORT
+    };
+    Ok((other_ports + 10, other_ports + 20, other_ports + 30))
+}
+
+/// Setup the peer-to-peer network.
+#[allow(unused_variables)]  // delme
+pub unsafe fn lp_initpeers (ctx: &MmArc, myipaddr: &IpAddr, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
     // Pick our ports.
-    let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
-    lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid);
+    let (pullport, pubport, busport) = try_s!(lp_ports(netid));
     // Add ourselves into the list of known peers.
     let myipaddr_c = try_s! (CString::new (fomat! ((myipaddr))));
+    /*
     mypeer = lp::LP_addpeer (mypeer, pubsock, myipaddr_c.as_ptr() as *mut c_char, myport, pullport, pubport, 1, lp::G.LP_sessionid, netid);
     lp::LP_mypeer = mypeer;
     if mypeer == null_mut() {return ERR! ("Error adding {} into the p2p ring", myipaddr)}
+    */
 
     type IP<'a> = Cow<'a, str>;
 
@@ -1026,7 +1030,7 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, pubsock: i32, mut mypeer: *mut lp::LP_p
     for (seed_ip, is_lp) in seeds {
         seed_ips.push (try_s! (seed_ip.parse()));
         let ip = try_s! (CString::new (&seed_ip[..]));
-        lp::LP_addpeer (mypeer, pubsock, ip.as_ptr() as *mut c_char, myport, pullport, pubport, if is_lp {1} else {0}, lp::G.LP_sessionid, netid);
+        // lp::LP_addpeer (mypeer, pubsock, ip.as_ptr() as *mut c_char, myport, pullport, pubport, if is_lp {1} else {0}, lp::G.LP_sessionid, netid);
     }
     *try_s! (ctx.seeds.lock()) = seed_ips;
 
@@ -1128,21 +1132,12 @@ int32_t LP_reserved_msg(int32_t priority,char *base,char *rel,bits256 pubkey,cha
 /// Mirrors the C `bitcoind_RPC_inittime`.
 const BITCOIND_RPC_INITIALIZING: AtomicBool = AtomicBool::new (false);
 
-// See if the CRC32 we have in Rust matches the C version.
-#[test]
-fn test_crc32() {
-    use crc::crc32;
-    use libc::c_void;
-    assert_eq! (crc32::checksum_ieee (b"123456789"), 0xcbf43926);
-    assert_eq! (unsafe {lp::calc_crc32 (0, b"123456789".as_ptr() as *mut c_void, 9)}, 0xcbf43926);
-}
-
 /// Invokes `OS_ensure_directory`,
 /// then prints an error and returns `false` if the directory is not writable.
 fn ensure_dir_is_writable(dir_path: &Path) -> bool {
     let c_dir_path = unwrap! (dir_path.to_str());
     let c_dir_path = unwrap! (CString::new (c_dir_path));
-    unsafe {os::OS_ensure_directory (c_dir_path.as_ptr() as *mut c_char)};
+    unsafe {lp::OS_ensure_directory (c_dir_path.as_ptr() as *mut c_char)};
 
     /*
     char fname[512],str[65],str2[65]; bits256 r,check; FILE *fp;
@@ -1198,7 +1193,7 @@ fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
 fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     let dbdir = ctx.dbdir();
     try_s!(std::fs::create_dir_all(&dbdir));
-    unsafe {os::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
+    unsafe {lp::OS_ensure_directory (lp::GLOBAL_DBDIR.as_ptr() as *mut c_char)};
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS")) {return ERR!("SWAPS db dir is not writable")}
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("MY")) {return ERR!("SWAPS/MY db dir is not writable")}
     if !ensure_dir_is_writable(&dbdir.join ("SWAPS").join ("STATS")) {return ERR!("SWAPS/STATS db dir is not writable")}
@@ -1227,49 +1222,20 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
 ///     in order to avoid the possibility of invalid state.
 /// AP: Totally agree, moreover maybe we even `must` deny calling this on a working MM as it's being refactored
 #[allow(unused_unsafe)]
-pub unsafe fn lp_passphrase_init (passphrase: Option<&str>, gui: Option<&str>) -> Result<KeyPair, String> {
+pub unsafe fn lp_passphrase_init (passphrase: Option<&str>, _gui: Option<&str>) -> Result<KeyPair, String> {
     let passphrase = match passphrase {
         None | Some ("") => return ERR! ("jeezy says we cant use the nullstring as passphrase and I agree"),
         Some (s) => s.to_string()
     };
-    if lp::G.LP_pendingswaps != 0 {return ERR! ("There are pending swaps")}
     // Prepare and check some of the `lp_initpeers` parameters.
     let netid = lp::G.netid;
-    let gui: Cow<str> = match gui {
-        Some (g) => g.into(),
-        None => match try_s! (CStr::from_ptr (lp::G.gui.as_ptr()) .to_str()) {
-            "" => "cli".into(),  // Default.
-            have => have.to_string().into()  // Reuse the existing `gui`.
-        }
-    };
-    let userpass_counter = lp::G.USERPASS_COUNTER;
-    try_s! (coins_iter (&mut |coin| {
-        (*coin).importedprivkey = 0;
-        Ok(())
-    }));
-
     lp::G = zeroed();
-    lp::G.initializing = 1;
     lp::G.netid = netid;
     let global_key_pair = try_s!(key_pair_from_seed(&passphrase));
-    let pass_hash = sha256(passphrase.as_bytes());
-    lp::G.LP_passhash.bytes.clone_from_slice(&*pass_hash);
-    let rmd_160 = dhash160(&**global_key_pair.public());
-    lp::G.LP_myrmd160.clone_from_slice(&*rmd_160);
-    try_s! (safecopy! (lp::G.LP_myrmd160str, "{}", hex::encode (lp::G.LP_myrmd160)));
-    lp::G.LP_sessionid = (now_ms() / 1000) as u32;
-    try_s! (safecopy! (lp::G.gui, "{}", gui));
     lp::G.LP_privkey.bytes.clone_from_slice(&*global_key_pair.private().secret);
     lp::G.LP_pubsecp.clone_from_slice(&**global_key_pair.public());
-    let mut pubkey: lp::_bits256 = zeroed();
-    let pk = lp::LP_privkeycalc (&mut pubkey);
-    if !nonz(pk.bytes) {return ERR! ("!LP_privkeycalc")}
+    lp::G.LP_mypub25519.bytes.clone_from_slice(&global_key_pair.public()[1..]);
     if !nonz(lp::G.LP_privkey.bytes) {return ERR! ("Error initializing the global private key (G.LP_privkey)")}
-
-    // Copy some of the fields from the old G.
-    lp::G.USERPASS_COUNTER = userpass_counter;
-
-    lp::G.initializing = 0;
     Ok(global_key_pair)
 }
 
@@ -1341,46 +1307,8 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
 
 pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
 -> Result<(), String> {
-    unsafe {lp::G.initializing = 1}  // Tells some of the spawned threads to wait till the `lp_passphrase_init` is done.
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
-    if lp::LP_MAXPRICEINFOS > 255 {
-        return ERR! ("LP_MAXPRICEINFOS {} wont fit in a u8, need to increase the width of the baseind and relind for struct LP_pubkey_quote", lp::LP_MAXPRICEINFOS)
-    }
-    unsafe {lp::LP_showwif = if conf["wif"] == 1 {1} else {0}};
-    log! ({"showwif.{} version: {}", unsafe {lp::LP_showwif}, MM_VERSION});
-    if conf["gui"] == 1 {
-        // Replace "cli\0" with "gui\0".
-        let lp_gui: &mut [c_char] = unsafe {&mut lp::LP_gui[..]};
-        let lp_gui: &mut [u8] = unsafe {transmute (lp_gui)};
-        let mut cur = Cursor::new (lp_gui);
-        unwrap! (write! (&mut cur, "gui\0"))
-    }
-
-    unsafe {
-        lp::LP_fixed_pairport = if conf["canbind"].is_null() {
-            0
-        } else {
-            let canbind = unwrap! (conf["canbind"].as_i64());
-            if canbind <= 1000 {return ERR! ("canbind <= 1000")}
-            if canbind > 65535 {return ERR! ("canbind > u16")}
-            canbind as u16
-        }
-    }
-
-    if !conf["userhome"].is_null() {
-        let userhome = unwrap! (conf["userhome"].as_str()) .trim();
-        if !userhome.is_empty() {
-            let global: &mut [c_char] = unsafe {&mut lp::USERHOME[..]};
-            let global: &mut [u8] = unsafe {transmute (global)};
-            let mut cur = Cursor::new (global);
-            try_s! (write! (&mut cur, "{}", userhome));
-            if cfg! (target_os = "macos") {
-                try_s! (write! (&mut cur, "/Library/Application Support"))
-            }
-            try_s! (write! (&mut cur, "\0"))
-        }
-    }
-    unsafe {lp::LP_mutex_init()};
+    log! ({"version: {}", MM_VERSION});
     let key_pair = unsafe {try_s! (lp_passphrase_init (conf["passphrase"].as_str(), conf["gui"].as_str()))};
     let ctx = MmCtxBuilder::new().with_conf(conf).with_secp256k1_key_pair(key_pair).into_mm_arc();
     let global: &mut [c_char] = unsafe {&mut lp::GLOBAL_DBDIR[..]};
@@ -1418,7 +1346,6 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     } else if !ctx.conf["myipaddr"].is_null() {
         let s = try_s! (ctx.conf["myipaddr"].as_str().ok_or ("'myipaddr' is not a string"));
         let ip = try_s! (simple_ip_extractor (s));
-        unsafe {lp::LP_myipaddr_from_command_line = 1};
         ip
     } else {
         // Detect the real IP address.
@@ -1496,11 +1423,6 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
         }
     };
 
-    unsafe {lp::IAMLP = 1}  // Anyone can be a Maker.
-    unsafe {lp::LP_canbind = 1}
-    unsafe {lp::G.netid = netid}
-    unsafe {lp::LP_mypubsock = -1}
-
     let seednode_thread = if i_am_seed {
         log! ("i_am_seed at " (myipaddr) ":" (mypubport));
         let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
@@ -1512,24 +1434,9 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     } else {
         None
     };
-    unsafe {lp::RPC_port = try_s! (ctx.rpc_ip_port()) .port()}
-    unsafe {lp::G.waiting = 1}
-    try_s! (unsafe {safecopy! (lp::LP_myipaddr, "{}", myipaddr)});
-
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
-    unsafe { try_s! (lp_initpeers (&ctx, lp::LP_mypubsock, lp::LP_mypeer, &myipaddr, lp::RPC_port, netid, seednodes)); }
+    unsafe { try_s! (lp_initpeers (&ctx, &myipaddr, netid, seednodes)); }
     ctx.initialized.store (true, Ordering::Relaxed);
-    /*
-    let prices = try_s! (thread::Builder::new().name ("prices".into()) .spawn ({
-        let ctx = ctx.clone();
-        move || prices_loop (ctx)
-    }));
-    if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)LP_pubkeysloop,ctx) != 0 )
-    {
-        printf("error launching LP_pubkeysloop for ctx.%p\n",ctx);
-        exit(-1);
-    }
-    */
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
     let mut coins_needed_for_kick_start = swap_kick_starts (ctx.clone());
@@ -1545,48 +1452,6 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
         let ctx = ctx.clone();
         move || unsafe { lp_command_q_loop (ctx) }
     }));
-/*
-    int32_t nonz,didremote=0;
-    LP_statslog_parse();
-    bitcoind_RPC_inittime = 0;
-    //LP_mpnet_init(); seems better to have the GUI send in persistent orders, exit mm is a cancel all
-    while ( LP_STOP_RECEIVED == 0 )
-    {
-        nonz = 0;
-        G.waiting = 1;
-        while ( G.initializing != 0 ) //&& strcmp(G.USERPASS,"1d8b27b21efabcd96571cd56f91a40fb9aa4cc623d273c63bf9223dc6f8cd81f") == 0 )
-        {
-            //fprintf(stderr,".");
-            sleep(3);
-        }
-        if ( G.initializing != 0 )
-        {
-            sleep(1);
-            continue;
-        }
-        if ( LP_mainloop_iter(ctx,myipaddr,mypeer,LP_mypubsock) != 0 )
-            nonz++;
-        if ( IAMLP != 0 && didremote == 0 && LP_cmdcount > 0 )
-        {
-            didremote = 1;
-            uint16_t myport2 = RPC_port-1;
-            printf("start remote port\n");
-            if ( OS_thread_create(malloc(sizeof(pthread_t)),NULL,(void *)stats_rpcloop,(void *)&myport2) != 0 )
-            {
-                printf("error launching stats rpcloop for port.%u\n",myport);
-                exit(-1);
-            }
-        }
-        if ( nonz == 0 )
-            usleep(1000);
-        else if ( IAMLP == 0 )
-            usleep(1000);
-    }
-#endif
-    printf("marketmaker exiting in 5 seconds\n");
-    sleep(5);
-    exit(0);
-*/
     let ctx_id = try_s! (ctx.ffi_handle());
 
     // `LPinit` currently fails to stop in a timely manner, so we're dropping the `lp_init` context early
@@ -1594,13 +1459,7 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     // In the future, when `LPinit` stops in a timely manner, we might relinquish the early `drop`.
     drop (ctx);
 
-    // When building etomicrs tests (cargo test --package etomicrs) we have no access
-    // to C functions defined here in the mm2 binary crate. Such functions should be shared dynamically
-    // in order not to interfere with the linking of the etomicrs test binary.
-    unsafe {lp::SPAWN_RPC = Some (rpc::spawn_rpc)};
-    unsafe {lp::LP_QUEUE_COMMAND = Some (lp_queue_command_for_c)};
-
-    unsafe {lp::LPinit (ctx_id)};
+    spawn_rpc(ctx_id);
     // unwrap! (prices.join());
     unwrap! (trades.join());
     unwrap! (command_queue.join());

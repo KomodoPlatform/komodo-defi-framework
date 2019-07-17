@@ -8,6 +8,7 @@
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
 #![feature(non_ascii_idents)]
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use]
 extern crate fomat_macros;
@@ -29,7 +30,6 @@ use std::env::{self, var};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::io::{Read, Write};
-use std::iter::empty;
 use std::path::{Component, Path, PathBuf};
 use std::process::{ChildStdout, Command, Stdio};
 use std::str::from_utf8_unchecked;
@@ -177,102 +177,26 @@ fn generate_bindings() {
     let _ = fs::create_dir(&c_headers);
     assert!(c_headers.is_dir());
 
-    // NB: curve25519.h and cJSON.h are needed to parse LP_include.h.
     bindgen(
         vec![
-            "../../includes/curve25519.h".into(),
-            "../../includes/cJSON.h".into(),
             "../../iguana/exchanges/LP_include.h".into(),
         ],
         c_headers.join("LP_include.rs"),
         [
             // functions
-            "bitcoin_address",
-            "calc_crc32",
-            "LP_addpeer",
-            "LP_coinadd_",
-            "LP_conflicts_find",
-            "LPinit",
-            "LP_mutex_init",
-            "LP_ports",
-            "LP_priceinfoadd",
-            "LP_privkeycalc",
-            "LP_rpcport",
-            "LP_userpass",
-            "unbuffered_output_support",
+            "OS_ensure_directory"
         ]
         .iter(),
         // types
         [
-            "_bits256",
-            "iguana_info",
         ]
         .iter(),
         [
             // defines
-            "bitcoind_RPC_inittime",
-            "GLOBAL_DBDIR",
-            "DOCKERFLAG",
-            "USERHOME",
-            "LP_profitratio",
-            "LP_RPCPORT",
-            "LP_MAXPRICEINFOS",
-            "LP_showwif",
-            "LP_coins",
-            "LP_IS_ZCASHPROTOCOL",
-            "LP_IS_BITCOINCASH",
-            "LP_IS_BITCOINGOLD",
-            "BOTS_BONDADDRESS",
-            "LP_MIN_TXFEE",
-            "IAMLP",
-            "LP_gui",
-            "LP_canbind",
-            "LP_fixed_pairport",
-            "LP_myipaddr",
-            "LP_myipaddr_from_command_line",
-            "LP_autoprices",
-            "num_LP_autorefs",
-            "LP_STOP_RECEIVED",
-            "IPC_ENDPOINT",
-            "SPAWN_RPC",
-            "LP_autorefs",
             "G",
-            "LP_mypubsock",
-            "LP_mypullsock",
-            "LP_mypeer",
-            "RPC_port",
-            "LP_ORDERBOOK_DURATION",
-            "LP_AUTOTRADE_TIMEOUT",
-            "LP_RESERVETIME",
-            "LP_Alicequery",
-            "LP_Alicedestpubkey",
-            "GTCorders",
-            "LP_QUEUE_COMMAND",
-            "LP_RTcount",
-            "LP_swapscount",
-            "LP_REQUEST",
-            "LP_RESERVED",
-            "LP_CONNECT",
-            "LP_CONNECTED",
-            "dstr",
-            "INSTANTDEX_PUBKEY",
+            "GLOBAL_DBDIR",
         ]
         .iter(),
-    );
-
-    bindgen(
-        vec!["../../crypto777/OS_portable.h".into()],
-        c_headers.join("OS_portable.rs"),
-        [
-            // functions
-            "OS_init",
-            "OS_ensure_directory",
-            "OS_compatible_path",
-            "calc_ipbits",
-        ]
-        .iter(),
-        empty(), // types
-        empty(), // defines
     );
 }
 
@@ -1220,10 +1144,6 @@ fn cmake_path() -> String {
 lazy_static! {
     static ref LIBEXCHANGES_SRC: Vec<PathBuf> = vec![
         rabs("iguana/exchanges/mm.c"),
-        rabs("iguana/mini-gmp.c"),
-        rabs("iguana/groestl.c"),
-        rabs("iguana/segwit_addr.c"),
-        rabs("iguana/keccak.c"),
     ];
 }
 
@@ -1241,7 +1161,6 @@ fn manual_mm1_build(target: Target) {
         for p in LIBEXCHANGES_SRC.iter() {
             cc.file(p);
         }
-        cc.include(rabs("crypto777"));
         cc.compile("exchanges");
         assert!(libexchanges_a.is_file());
     }
@@ -1249,35 +1168,6 @@ fn manual_mm1_build(target: Target) {
     println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
 
     // TODO: Rebuild the libraries when the C source code is updated.
-
-    let libjpeg_a = out_dir.join("libjpeg.a");
-    let mut libjpeg_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/jpeg/*.c"))
-        .map(|p| unwrap!(p))
-        .collect();
-    libjpeg_src.push(root.join("crypto777/jpeg/unix/jmemname.c"));
-    if make(&libjpeg_a, &libjpeg_src[..]) {
-        let mut cc = target.cc(false);
-        for p in &libjpeg_src {
-            cc.file(p);
-        }
-        cc.compile("jpeg");
-        assert!(libjpeg_a.is_file());
-    }
-    println!("cargo:rustc-link-lib=static=jpeg");
-
-    let libcrypto777_a = out_dir.join("libcrypto777.a");
-    let libcrypto777_src: Vec<PathBuf> = unwrap!(globʳ("crypto777/*.c"))
-        .map(|p| unwrap!(p))
-        .collect();
-    if make(&libcrypto777_a, &libcrypto777_src[..]) {
-        let mut cc = target.cc(false);
-        for p in &libcrypto777_src {
-            cc.file(p);
-        }
-        cc.compile("crypto777");
-        assert!(libcrypto777_a.is_file());
-    }
-    println!("cargo:rustc-link-lib=static=crypto777");
 }
 
 /// Build helper C code.
@@ -1336,11 +1226,6 @@ fn build_c_code(mm_version: &str) {
 
     println!("cargo:rustc-link-lib=static=marketmaker-lib");
 
-    // Link in the libraries needed for MM1.
-
-    println!("cargo:rustc-link-lib=static=libcrypto777");
-    println!("cargo:rustc-link-lib=static=libjpeg");
-
     if cfg!(windows) {
         println!("cargo:rustc-link-search=native={}", path2s(rabs("x64")));
         // When building locally with CMake 3.12.0 on Windows the artefacts are created in the "Debug" folders:
@@ -1348,28 +1233,12 @@ fn build_c_code(mm_version: &str) {
             "cargo:rustc-link-search=native={}",
             path2s(rabs("build/iguana/exchanges/Debug"))
         );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path2s(rabs("build/crypto777/Debug"))
-        );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path2s(rabs("build/crypto777/jpeg/Debug"))
-        );
     // https://stackoverflow.com/a/10234077/257568
     //println!(r"cargo:rustc-link-search=native=c:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Tools\MSVC\14.14.26428\lib\x64");
     } else {
         println!(
             "cargo:rustc-link-search=native={}",
             path2s(rabs("build/iguana/exchanges"))
-        );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path2s(rabs("build/crypto777"))
-        );
-        println!(
-            "cargo:rustc-link-search=native={}",
-            path2s(rabs("build/crypto777/jpeg"))
         );
     }
 

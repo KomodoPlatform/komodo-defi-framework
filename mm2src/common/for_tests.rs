@@ -303,8 +303,9 @@ pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'st
                 {"coin": "PIZZA", "asset": "PIZZA", "rpcport": 11116}
             ],
             "i_am_seed": true,
+            "rpc_password": "pass",
         })),
-        "aa503e7d7426ba8ce7f6627e066b04bf06004a41fd281e70690b3dbc6e066f69".into(),
+        "pass".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "1" => Some (local_start), _ => None}
     ));
     let (dump_log, dump_dashboard) = mm_dump (&mm.log_path);

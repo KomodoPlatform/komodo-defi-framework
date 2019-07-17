@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use common::{self, stack_trace, stack_trace_frame};
+use common::{self, set_panic_hook, stack_trace, stack_trace_frame};
 use libc::c_int;
 use std::env;
 use std::io::stderr;
@@ -131,6 +131,8 @@ pub fn init_crash_reports() {
     static ONCE: Once = Once::new();
     ONCE.call_once (|| {
         common::wio::init();
+
+        set_panic_hook();
 
         // Try to invoke the `rust_seh_handler` whenever the C code crashes.
         if cfg! (windows) {

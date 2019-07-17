@@ -3,23 +3,19 @@ use hashbrown::HashSet;
 use hashbrown::hash_map::{Entry, HashMap};
 use keys::KeyPair;
 use primitives::hash::H160;
-use rand::random;
+use rand::Rng;
 use serde_json::{self as json, Value as Json};
 use std::any::Any;
 use std::net::IpAddr;
 #[cfg(feature = "native")]
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::os::raw::{c_void};
 use std::path::{Path, PathBuf};
-use std::ptr::null_mut;
-#[cfg(feature = "native")]
-use std::ptr::read_volatile;
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use super::{bitcoin_ctx, bitcoin_ctx_destroy, log, BitcoinCtx};
-#[cfg(feature = "native")]
-use super::lp;
+
+use crate::{log, small_rng};
+use crate::log::LogState;
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -45,8 +41,6 @@ pub struct MmCtx {
     pub conf: Json,
     /// Human-readable log and status dashboard.
     pub log: log::LogState,
-    /// Bitcoin elliptic curve context, obtained from the C library linked with "eth-secp256k1".
-    btc_ctx: *mut BitcoinCtx,
     /// Set to true after `lp_passphrase_init`, indicating that we have a usable state.
     /// 
     /// Should be refactored away in the future. State should always be valid.
@@ -56,12 +50,12 @@ pub struct MmCtx {
     /// True if the RPC HTTP server was started.
     pub rpc_started: AtomicBool,
     /// True if the MarketMaker instance needs to stop.
-    stop: AtomicBool,
+    pub stop: AtomicBool,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
-    ffi_handle: AtomicU32,
+    pub ffi_handle: AtomicU32,
     /// Callbacks to invoke from `fn stop`.
-    stop_listeners: Mutex<Vec<Box<dyn FnMut()->Result<(), String>>>>,
+    pub stop_listeners: Mutex<Vec<Box<dyn FnMut()->Result<(), String>>>>,
     /// The context belonging to the `portfolio` crate: `PortfolioContext`.
     pub portfolio_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
@@ -92,11 +86,10 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 impl MmCtx {
-    pub fn new() -> MmCtx {
+    pub fn with_log_state (log: LogState) -> MmCtx {
         MmCtx {
             conf: Json::Object (json::Map::new()),
-            log: log::LogState::in_memory(),
-            btc_ctx: unsafe {bitcoin_ctx()},
+            log,
             initialized: AtomicBool::new (false),
             rpc_started: AtomicBool::new (false),
             stop: AtomicBool::new (false),
@@ -118,12 +111,9 @@ impl MmCtx {
         }
     }
 
-    /// This field is freed when `MmCtx` is dropped, make sure `MmCtx` stays around while it's used.
-    pub unsafe fn btc_ctx (&self) -> *mut BitcoinCtx {self.btc_ctx}
-
     #[cfg(feature = "native")]
     pub fn rpc_ip_port (&self) -> Result<SocketAddr, String> {
-        let port = self.conf["rpcport"].as_u64().unwrap_or (lp::LP_RPCPORT as u64);
+        let port = self.conf["rpcport"].as_u64().unwrap_or (7783);
         if port < 1000 {return ERR! ("rpcport < 1000")}
         if port > u16::max_value() as u64 {return ERR! ("rpcport > u16")}
 
@@ -181,7 +171,6 @@ impl MmCtx {
     /// True if the MarketMaker instance needs to stop.
     #[cfg(feature = "native")]
     pub fn is_stopping (&self) -> bool {
-        if unsafe {read_volatile (&lp::LP_STOP_RECEIVED) != 0} {return true}
         self.stop.load (Ordering::Relaxed)
     }
 
@@ -219,11 +208,10 @@ impl MmCtx {
         unwrap!(self.secp256k1_key_pair.as_ref())
     }
 }
-impl Drop for MmCtx {
-    fn drop (&mut self) {
-        unsafe {bitcoin_ctx_destroy (self.btc_ctx)}
-    }
-}
+impl Default for MmCtx {
+    fn default() -> Self {
+        Self::with_log_state (LogState::in_memory())
+}   }
 
 // We don't want to send `MmCtx` across threads, it will only obstruct the normal use case
 // (and might result in undefined behavior if there's a C struct or value in the context that is aliased from the various MM threads).
@@ -232,7 +220,7 @@ impl Drop for MmCtx {
 // which will likely come useful during the gradual port.
 //not-implemented-on-stable// impl !Send for MmCtx {}
 
-pub struct MmArc (Arc<MmCtx>);
+pub struct MmArc (pub Arc<MmCtx>);
 // NB: Explicit `Send` and `Sync` marks here should become unnecessary later,
 // after we finish the initial port and replace the C values with the corresponding Rust alternatives.
 unsafe impl Send for MmArc {}
@@ -259,9 +247,10 @@ impl MmArc {
         let have = self.ffi_handle.load (Ordering::Relaxed);
         if have != 0 {return Ok (have)}
         let mut tries = 0;
+        let mut rng = small_rng();
         loop {
             if tries > 999 {panic! ("MmArc] out of RIDs")} else {tries += 1}
-            let rid: u32 = random();
+            let rid: u32 = rng.gen();
             if rid == 0 {continue}
             match mm_ctx_ffi.entry (rid) {
                 Entry::Occupied (_) => continue,  // Try another ID.
@@ -274,7 +263,23 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    #[cfg(not(feature = "native"))]
+    pub fn send_to_helpers (&self) -> Result<(), String> {
+        use serde_json::Map;
+
+        // For now we only need to share the `conf` and the `ffi_handle`.
+        let mut ctxʲ = Map::new();
+        // TODO: Use a zero-copy `Serialize`.
+        ctxʲ.insert ("conf".into(), self.conf.clone());
+        ctxʲ.insert ("ffi_handle".into(), Json::Number (try_s! (self.ffi_handle()) .into()));
+        let ctxˢ = try_s! (json::to_vec (&ctxʲ));
+
+        extern "C" {pub fn ctx2helpers (ptr: *const u8, len: u32);}
+        unsafe {ctx2helpers (ctxˢ.as_ptr(), ctxˢ.len() as u32)}
+        Ok(())
+    }
+
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     pub fn from_ffi_handle (ffi_handle: u32) -> Result<MmArc, String> {
         if ffi_handle == 0 {return ERR! ("MmArc] Zeroed ffi_handle")}
@@ -299,12 +304,36 @@ impl MmArc {
     }
 }
 
+/// Receives a subset of a portable context in order to recreate a native copy of it.
+/// Can be invoked with the same context multiple times, synchronizing some of the fields.
+/// As of now we're expecting a one-to-one pairing between the portable and the native versions of MM
+/// so the uniqueness of the `ffi_handle` is not a concern yet.
+#[cfg(feature = "native")]
 #[no_mangle]
-pub fn r_btc_ctx (mm_ctx_id: u32) -> *mut c_void {
-    if let Ok (ctx) = MmArc::from_ffi_handle (mm_ctx_id) {
-        unsafe {ctx.btc_ctx() as *mut c_void}
+pub extern fn ctx2helpers (ptr: *const u8, len: u32) {
+    use std::slice::from_raw_parts;
+
+    log! ("Native ctx2helpers invoked! ptr is " [ptr] "; len is " (len));
+    let ctxˢ = unsafe {from_raw_parts (ptr, len as usize)};
+    let ctxʲ: Json = unwrap! (json::from_slice (ctxˢ), "!json::from_slice");
+
+    let ffi_handle = unwrap! (ctxʲ["ffi_handle"].as_u64(), "!ffi_handle") as u32;
+    log! ("ffi_handle: " (ffi_handle));
+
+    if let Ok (_ctx) = MmArc::from_ffi_handle (ffi_handle) {
+        log! ("ffi_handle " (ffi_handle) " already exists");
     } else {
-        null_mut()
+        log! ("ffi_handle " (ffi_handle) " is new, creating");
+        let ctx = MmCtx {
+            // TODO: Move from a `Deserialize`.
+            conf: ctxʲ["conf"].clone(),
+            ffi_handle: ffi_handle.into(),
+            ..MmCtx::with_log_state (LogState::in_memory())
+        };
+        let ctx = MmArc (Arc::new (ctx));
+        let mut ctx_ffi = unwrap! (MM_CTX_FFI.lock());
+        ctx_ffi.insert (ffi_handle, ctx.weak());
+        Arc::into_raw (ctx.0);  // Leak.
     }
 }
 
@@ -327,30 +356,41 @@ where C: FnOnce()->Result<T, String>, T: 'static + Send + Sync {
     return Ok (arc)
 }
 
+#[derive(Default)]
 pub struct MmCtxBuilder {
-    ctx: MmCtx,
+    conf: Option<Json>,
+    key_pair: Option<KeyPair>
 }
 
 impl MmCtxBuilder {
     pub fn new() -> Self {
-        MmCtxBuilder {
-            ctx: MmCtx::new(),
-        }
+        MmCtxBuilder::default()
     }
 
     pub fn with_conf(mut self, conf: Json) -> Self {
-        self.ctx.log = log::LogState::mm(&conf);
-        self.ctx.conf = conf;
+        self.conf = Some (conf);
         self
     }
 
     pub fn with_secp256k1_key_pair(mut self, key_pair: KeyPair) -> Self {
-        self.ctx.rmd160 = key_pair.public().address_hash();
-        self.ctx.secp256k1_key_pair = Some(key_pair);
+        self.key_pair = Some (key_pair);
         self
     }
 
     pub fn into_mm_arc(self) -> MmArc {
-        MmArc(Arc::new(self.ctx))
+        // NB: We avoid recreating LogState
+        // in order not to interfere with the integration tests checking LogState drop on shutdown.
+        let log = if let Some (ref conf) = self.conf {LogState::mm (conf)} else {LogState::in_memory()};
+        let mut ctx = MmCtx::with_log_state (log);
+        if let Some (conf) = self.conf {
+            ctx.conf = conf
+        }
+
+        if let Some (key_pair) = self.key_pair {
+            ctx.rmd160 = key_pair.public().address_hash();
+            ctx.secp256k1_key_pair = Some (key_pair);
+        }
+
+        MmArc (Arc::new (ctx))
     }
 }

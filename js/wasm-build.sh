@@ -3,11 +3,13 @@
 # Builds WASM in a separate folder in order not to mess the native build.
 # Run with `bash js/wasm-build.sh`.
 
+set -e
+
 ORIGINAL=`pwd`
 
 . ~/.profile
 
-rsync -av --delete \
+rsync -a --out-format=%n%L --delete \
   ./ /tmp/supernet-wasm/ \
   --exclude=/target \
   --exclude=/build \
@@ -16,6 +18,8 @@ rsync -av --delete \
   --exclude=/.git \
   --exclude=/.vscode \
   --exclude=/DB \
+  --exclude=/js/node_modules \
+  --exclude=/js/*.dll \
   --exclude=/wasm-build.log
 
 cd /tmp/supernet-wasm/

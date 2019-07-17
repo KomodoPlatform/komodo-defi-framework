@@ -1422,8 +1422,60 @@ pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_p
     Ok(())
 }
 
+#[cfg(feature = "native")]
+#[no_mangle]
+pub extern fn peers_initialize (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32) {
+    use serde_json::{self as json, Value as Json};
+    use std::slice::from_raw_parts_mut;
+
+    log! ("Native peers_initialize invoked! ptr is " [ptr] "; len is " (len));
+    let inˢ = unsafe {from_raw_parts (ptr, len as usize)};
+    let inʲ: Json = unwrap! (json::from_slice (inˢ), "!json::from_slice");
+    log! ("in: " [inʲ]);
+
+    // TODO: let rc = initialize (...);
+    let rc: Result<(), String> = ERR! ("TBD");
+
+    // TODO: Consider using a macros reducing the boilerplate.
+    unsafe {
+        log! ("here");
+        let rbuf_capacity = read_volatile (rlen) as usize;
+        log! ([=rbuf_capacity]);
+        let rbuf: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
+        let mut cur = Cursor::new (rbuf);
+        unwrap! (json::to_writer (&mut cur, &rc), "Error serializing response");
+        let seralized_len = cur.position();
+        assert! (seralized_len <= rbuf_capacity as u64);
+        *rlen = seralized_len as u32
+    }
+}
+
 #[cfg(not(feature = "native"))]
 pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
+    try_s! (ctx.send_to_helpers());
+
+    // TODO: Consider using a macros reducing the boilerplate.
+    extern "C" {pub fn peers_initialize (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32);}
+    unsafe {
+        use serde_json::{self as json};
+        use std::ptr::read_volatile;
+
+        let mut buf: [u8; 4096] = uninitialized();
+        log! ("Invoking peers_initialize ...");
+        let mut rlen = buf.len() as u32;
+        peers_initialize (
+            b"{}".as_ptr(), 2,
+            buf.as_mut_ptr(), &mut rlen
+        );
+        let rlen = read_volatile (&rlen) as usize;
+        log! ("peers_initialize returned rlen " [rlen]);
+        // Checks that `rlen` has changed
+        // (`rlen` staying the same might indicate that the helper was not invoked).
+        assert! (rlen < buf.len());
+        let rc: Result<(), String> = try_s! (json::from_slice (&buf[0..rlen]));
+        log! ("Decoded result: " [rc]);
+    }
+
     unimplemented!()
 }
 

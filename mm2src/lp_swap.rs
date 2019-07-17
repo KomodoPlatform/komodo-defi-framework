@@ -58,7 +58,7 @@ use bitcrypto::{ChecksumType, dhash160};
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{lp_coinfind, MmCoinEnum, TradeInfo, TransactionDetails};
 use coins::utxo::compressed_pub_key_from_priv_raw;
-use common::{bits256, lp, HyRes, rpc_response};
+use common::{bits256, HyRes, lp, rpc_response};
 use common::wio::Timeout;
 use common::log::{TagParam};
 use common::mm_ctx::{from_ctx, MmArc};
@@ -1234,7 +1234,7 @@ impl MakerSwap {
 
         match &saved.events[0].event {
             MakerSwapEvent::Started(data) => {
-                let mut taker = lp::bits256::default();
+                let mut taker = bits256::from([0; 32]);
                 taker.bytes = data.taker.0;
                 let mut taker_coin = None;
                 while taker_coin.is_none() {
@@ -2053,7 +2053,7 @@ impl TakerSwap {
 
         match &saved.events[0].event {
             TakerSwapEvent::Started(data) => {
-                let mut maker = lp::bits256::default();
+                let mut maker = bits256::from([0; 32]);
                 maker.bytes = data.maker.0;
                 let mut taker_coin = None;
                 while taker_coin.is_none() {
@@ -2068,7 +2068,7 @@ impl TakerSwap {
                     log!("Can't kickstart the swap " (saved.uuid) " until the coin " (data.maker_coin) " is activated");
                     maker_coin = try_s!(lp_coinfind(&ctx, &data.maker_coin));
                 };
-                let my_persistent_pub = unsafe { unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256)) };
+                let my_persistent_pub = H264::from(&**ctx.secp256k1_key_pair().public());
 
                 let mut swap = TakerSwap::new(
                     ctx,

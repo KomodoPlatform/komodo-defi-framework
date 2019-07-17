@@ -94,7 +94,7 @@ pub trait UtxoRpcClientOps: Debug + 'static {
 
     // TODO This operation is synchronous because it's currently simpler to do it this way.
     // Might consider refactoring when async/await is released.
-    fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64) -> Result<UtxoTransaction, String>;
+    fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, from_block: u64) -> Result<UtxoTransaction, String>;
 
     // TODO This operation is synchronous because it's currently simpler to do it this way.
     // Might consider refactoring when async/await is released.
@@ -311,45 +311,54 @@ impl UtxoRpcClientOps for NativeClient {
         rpc_func!(self, "getblock", height, verbose)
     }
 
-    fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64) -> Result<UtxoTransaction, String> {
-        let mut current_height = 0;
+    fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, from_block: u64) -> Result<UtxoTransaction, String> {
+        let mut current_height = from_block;
 
         loop {
             if now_ms() / 1000 > wait_until {
                 return ERR!("Waited too long until {} for transaction {:?} {} to be spent ", wait_until, tx, vout);
             }
 
-            if current_height == 0 {
-                let tx: RpcTransaction = try_s!(self.get_verbose_transaction(tx.hash().reversed().into()).wait());
-
-                if tx.confirmations >= 1 {
-                    current_height = tx.height;
+            let coin_height = match self.get_block_count().wait() {
+                Ok(h) => h,
+                Err(e) => {
+                    log!("Error " (e) " getting block count");
+                    thread::sleep(Duration::from_secs(10));
                     continue;
                 }
+            };
+            while current_height <= coin_height {
+                let block = match self.get_block(current_height.to_string()).wait() {
+                    Ok(b) => b,
+                    Err(e) => {
+                        log!("Error " (e) " getting block " (current_height));
+                        break;
+                    }
+                };
+                let mut got_error = false;
 
-                thread::sleep(Duration::from_secs(10));
-            } else {
-                let coin_height = try_s!(self.get_block_count().wait());
-                while current_height <= coin_height {
-                    let block = try_s!(self.get_block(current_height.to_string()).wait());
-                    for tx_hash in block.tx.iter() {
-                        let transaction = match self.get_verbose_transaction(tx_hash.clone()).wait() {
-                            Ok(tx) => tx,
-                            Err(_e) => continue
-                        };
+                for tx_hash in block.tx.iter() {
+                    let transaction = match self.get_verbose_transaction(tx_hash.clone()).wait() {
+                        Ok(tx) => tx,
+                        Err(_e) => {
+                            got_error = true;
+                            break;
+                        },
+                    };
 
-                        for input in transaction.vin.iter() {
-                            if input.txid == tx.hash().reversed().into() && input.vout == vout as u32 {
-                                let tx: UtxoTransaction = try_s!(deserialize(transaction.hex.as_slice()).map_err(|e| format!("{:?}", e)));
-                                return Ok(tx);
-                            }
+                    for input in transaction.vin.iter() {
+                        if input.txid == tx.hash().reversed().into() && input.vout == vout as u32 {
+                            let tx: UtxoTransaction = try_s!(deserialize(transaction.hex.as_slice()).map_err(|e| format!("{:?}", e)));
+                            return Ok(tx);
                         }
                     }
+                };
 
+                if !got_error {
                     current_height += 1;
                 }
-                thread::sleep(Duration::from_secs(10));
             }
+            thread::sleep(Duration::from_secs(10));
         }
     }
 
@@ -774,7 +783,7 @@ impl UtxoRpcClientOps for ElectrumClient {
 
     /// This function is assumed to be used to search for spend of swap payment.
     /// For this case we can just wait that address history contains 2 or more records: the payment itself and spending transaction.
-    fn wait_for_payment_spend(&self, transaction: &UtxoTransaction, vout: usize, wait_until: u64) -> Result<UtxoTransaction, String> {
+    fn wait_for_payment_spend(&self, transaction: &UtxoTransaction, vout: usize, wait_until: u64, _from_block: u64) -> Result<UtxoTransaction, String> {
         let script_hash = hex::encode(electrum_script_hash(&transaction.outputs[vout].script_pubkey));
 
         loop {
@@ -782,14 +791,27 @@ impl UtxoRpcClientOps for ElectrumClient {
                 return ERR!("Waited too long until {} for output {:?} to be spent ", wait_until, transaction.outputs[vout]);
             }
 
-            let history = try_s!(self.scripthash_get_history(&script_hash).wait());
+            let history = match self.scripthash_get_history(&script_hash).wait() {
+                Ok(h) => h,
+                Err(e) => {
+                    log!("Error {} " (e) " getting scripthash history");
+                    thread::sleep(Duration::from_secs(10));
+                    continue;
+                }
+            };
             if history.len() < 2 {
                 thread::sleep(Duration::from_secs(10));
                 continue;
             }
 
             for item in history.iter() {
-                let tx: RpcTransaction = try_s!(self.get_verbose_transaction(item.tx_hash.clone()).wait());
+                let tx = match self.get_verbose_transaction(item.tx_hash.clone()).wait() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log!("Error " (e) " getting transaction " [item.tx_hash]);
+                        continue;
+                    }
+                };
                 for input in tx.vin.iter() {
                     if input.txid == transaction.hash().reversed().into() && input.vout == vout as u32 {
                         let tx: UtxoTransaction = try_s!(deserialize(tx.hex.as_slice()).map_err(|e| format!("{:?}", e)));

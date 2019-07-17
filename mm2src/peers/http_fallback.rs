@@ -65,6 +65,7 @@ const DICT_PREFIX: &'static str = concat! (
 );
 
 struct StaticCDict (*mut ZSTD_CDict);
+unsafe impl Send for StaticCDict {}
 unsafe impl Sync for StaticCDict {}
 impl Drop for StaticCDict {
     fn drop (&mut self) {
@@ -85,6 +86,7 @@ lazy_static! {
 }
 
 struct DDict (*mut ZSTD_DDict);
+unsafe impl Send for DDict {}
 unsafe impl Sync for DDict {}
 impl Drop for DDict {
     fn drop (&mut self) {

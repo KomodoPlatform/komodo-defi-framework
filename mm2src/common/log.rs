@@ -7,7 +7,6 @@ use chrono::{Local, TimeZone, Utc};
 use chrono::format::DelayedFormat;
 use chrono::format::strftime::StrftimeItems;
 use crossbeam::queue::SegQueue;
-use gstuff::now_ms;
 use regex::Regex;
 use serde_json::{Value as Json};
 use std::cell::RefCell;
@@ -21,10 +20,11 @@ use std::io::{Seek, SeekFrom, Write};
 use std::mem::swap;
 use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
-use std::panic::catch_unwind;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
+use super::{now_ms, writeln};
 
+#[cfg(feature = "native")]
 lazy_static! {
     /// True if we're likely to be under a capturing cargo test.
     static ref CAPTURING_TEST: bool = {
@@ -68,33 +68,35 @@ struct Gravity {
 
 impl Gravity {
     /// Files a log chunk to be logged from the center of gravity thread.
+    #[cfg(feature = "native")]
     fn chunk2log (&self, chunk: String) {
         self.landing.push (chunk);
         if thread::current().id() == self.target_thread_id {
             self.flush()
         }
     }
+    #[cfg(not(feature = "native"))]
+    fn chunk2log (&self, chunk: String) {
+        writeln (&chunk);
+        self.landing.push (chunk);
+    }
+
     /// Prints the collected log chunks.  
     /// `println!` is used for compatibility with unit test stdout capturing.
+    #[cfg(feature = "native")]
     fn flush (&self) {
         let mut tail = self.tail.lock();
         while let Some (chunk) = self.landing.try_pop() {
             let logged_with_log_output = LOG_OUTPUT.lock().map (|l| l.is_some()) .unwrap_or (false);
             if !logged_with_log_output {
-                // `catch_unwind` protects the tests from error
-                // 
-                //     thread 'CORE' panicked at 'cannot access stdout during shutdown
-                // 
-                // (which might be related to https://github.com/rust-lang/rust/issues/29488).
-                let chunk = chunk.clone();
-                let _ = catch_unwind (move || {
-                    println! ("{}", chunk)
-                });
+                writeln (&chunk)
             }
             if let Ok (ref mut tail) = tail {
                 if tail.len() == tail.capacity() {let _ = tail.pop_front();}
                 tail.push_back (chunk)
     }   }   }
+    #[cfg(not(feature = "native"))]
+    fn flush (&self) {}
 }
 
 thread_local! {
@@ -102,6 +104,7 @@ thread_local! {
     static GRAVITY: RefCell<Option<Arc<Gravity>>> = RefCell::new (None)
 }
 
+#[cfg(feature = "native")]
 #[doc(hidden)]
 pub fn chunk2log (mut chunk: String) {
     extern {fn printf(_: *const c_char, ...) -> c_int;}
@@ -139,7 +142,7 @@ pub fn chunk2log (mut chunk: String) {
     // so we should fall back to `println!` while running under a capturing test.
 
     if cfg! (not (windows)) || *CAPTURING_TEST {
-        println! ("{}", chunk)
+        writeln (&chunk)
     } else {
         chunk.push ('\n');
         chunk.push ('\0');
@@ -152,6 +155,12 @@ pub fn chunk2log (mut chunk: String) {
             flush_stdout();
         }}
     }
+}
+
+#[cfg(not(feature = "native"))]
+#[doc(hidden)]
+pub fn chunk2log (chunk: String) {
+    writeln (&chunk)
 }
 
 #[doc(hidden)]
@@ -184,7 +193,8 @@ macro_rules! log {
         // though it doesn't worth the trouble at the moment.
         let mut buf = String::new();
         unwrap! (wite! (&mut buf,
-            ($crate::log::short_log_time()) ", "
+            ($crate::log::short_log_time())
+            if cfg! (feature = "native") {", "} else {"ʷ "}
             (::gstuff::filename (file!())) ':' (line!()) "] "
             $($args)+)
         );
@@ -673,6 +683,7 @@ impl LogState {
     /// Useful for unit tests, since they can only capture the output made from the initial test thread
     /// (https://github.com/rust-lang/rust/issues/12309,
     ///  https://github.com/rust-lang/rust/issues/50297#issuecomment-388988381).
+    #[cfg(feature = "native")]
     pub fn thread_gravity_on (&self) -> Result<(), String> {
         let mut gravity = try_s! (self.gravity.lock());
         if let Some (ref gravity) = *gravity {
@@ -690,8 +701,11 @@ impl LogState {
             Ok(())
         }
     }
+    #[cfg(not(feature = "native"))]
+    pub fn thread_gravity_on (&self) -> Result<(), String> {Ok(())}
 
     /// Start intercepting the `log!` invocations happening on the current thread.
+    #[cfg(feature = "native")]
     pub fn register_my_thread (&self) -> Result<(), String> {
         let gravity = try_s! (self.gravity.lock());
         if let Some (ref gravity) = *gravity {
@@ -705,8 +719,11 @@ impl LogState {
         }
         Ok(())
     }
+    #[cfg(not(feature = "native"))]
+    pub fn register_my_thread (&self) -> Result<(), String> {Ok(())}
 }
 
+#[cfg(feature = "native")]
 impl Drop for LogState {
     fn drop (&mut self) {
         // Make sure to log the chunks received from the satellite threads.

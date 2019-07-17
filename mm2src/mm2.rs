@@ -19,24 +19,18 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
-use common::{bits256, _bits256, bitcoin_priv2wif, lp, os, BitcoinCtx, MM_VERSION};
-use common::mm_ctx::MmCtx;
+use common::{MM_VERSION};
 
-use gstuff::{now_ms, slurp};
+use gstuff::{slurp};
 
 use libc::{c_char};
-
-use rand::random;
 
 use serde_json::{self as json, Value as Json};
 
 use std::env;
-use std::ffi::{CStr, CString, OsString};
-use std::mem::{zeroed};
+use std::ffi::{OsString};
 use std::process::exit;
 use std::ptr::{null};
-use std::str::from_utf8_unchecked;
-use std::slice::from_raw_parts;
 use std::str;
 
 #[path = "crash_reports.rs"]
@@ -45,7 +39,7 @@ use self::crash_reports::init_crash_reports;
 
 #[path = "lp_native_dex.rs"]
 mod lp_native_dex;
-use self::lp_native_dex::{lp_init};
+use self::lp_native_dex::{lp_init, lp_ports};
 
 #[path = "lp_network.rs"]
 pub mod lp_network;
@@ -62,15 +56,6 @@ pub mod rpc;
 mod mm2_tests;
 
 fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
-    // Redirects the C stdout to the log.
-    let c_log_path_buf: CString;
-    let c_log_path = if conf["log"].is_null() {null()} else {
-        let log = try_s! (conf["log"].as_str().ok_or ("log is not a string"));
-        c_log_path_buf = try_s! (CString::new (log));
-        c_log_path_buf.as_ptr()
-    };
-    unsafe {lp::unbuffered_output_support (c_log_path)};
-
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
             return ERR!("rpc_password must be string");
@@ -81,12 +66,9 @@ fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
         }
     }
 
-    let (mut pullport, mut pubport, mut busport) = (0, 0, 0);
     if conf["passphrase"].is_string() {
-        let profitmargin = conf["profitmargin"].as_f64();
-        unsafe {lp::LP_profitratio += profitmargin.unwrap_or (0.)};
         let netid = conf["netid"].as_u64().unwrap_or (0) as u16;
-        unsafe {lp::LP_ports (&mut pullport, &mut pubport, &mut busport, netid)};
+        let (_, pubport, _) = try_s!(lp_ports(netid));
         try_s! (lp_init (pubport, conf, ctx_cb));
         Ok(())
     } else {ERR! ("!passphrase")}
@@ -128,7 +110,6 @@ fn help() {
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
         "  netid          ..  Subnetwork. Affects ports and keys.\n"
         "  passphrase *   ..  Wallet seed.\n"
-        "  profitmargin   ..  Adds to `LP_profitratio`.\n"
         // cf. https://github.com/atomiclabs/hyperdex/pull/563/commits/6d17c0c994693b768e30130855c679a7849a2b27
         "  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.\n"
         "                     Default is currently 'http://localhost:3000'\n"
@@ -158,8 +139,7 @@ fn help() {
 #[allow(dead_code)]
 pub fn mm2_main() {
     init_crash_reports();
-    unsafe {os::OS_init()};
-    log!({"BarterDEX MarketMaker {}", MM_VERSION});
+    log!({"AtomicDEX MarketMaker {}", MM_VERSION});
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args().map (|mut arg| {arg.push ('\0'); arg}) .collect();
@@ -173,17 +153,6 @@ pub fn mm2_main() {
     // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
     let first_arg = args_os.get (1) .and_then (|arg| arg.to_str());
 
-    if first_arg == Some ("btc2kmd") && args_os.get (2) .is_some() {
-        match btc2kmd (unwrap! (args_os[2].to_str(), "Bad argument encoding")) {
-            Ok (output) => log! ((output)),
-            Err (err) => log! ({"btc2kmd error] {}", err})
-        }
-        return
-    }
-
-    let second_arg = args_os.get (2) .and_then (|arg| arg.to_str());
-    if first_arg == Some ("vanity") && second_arg.is_some() {vanity (unwrap! (second_arg)); return}
-
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
 
@@ -191,78 +160,6 @@ pub fn mm2_main() {
         log! ((err));
         exit (1);
     }
-}
-
-// TODO: `btc2kmd` is *pure*, it doesn't use shared state,
-// though some of the underlying functions (`LP_convaddress`) do (the hash of cryptocurrencies is shared).
-// Should mark it as shallowly pure.
-
-/// Implements the "btc2kmd" command line utility.
-#[allow(dead_code)]
-fn btc2kmd (wif_or_btc: &str) -> Result<String, String> {
-    extern "C" {
-        fn LP_wifstr_valid (symbol: *const u8, wifstr: *const u8) -> i32;
-        fn LP_convaddress (symbol: *const u8, address: *const u8, dest: *const u8) -> *const c_char;
-        fn bitcoin_wif2priv (symbol: *const u8, wiftaddr: u8, addrtypep: *mut u8, privkeyp: *mut _bits256, wifstr: *const c_char) -> i32;
-    }
-
-    let wif_or_btc_z = format! ("{}\0", wif_or_btc);
-    /* (this line helps the IDE diff to match the old and new code)
-    if ( strstr(argv[0],"btc2kmd") != 0 && argv[1] != 0 )
-    */
-    let mut privkey: _bits256 = unsafe {zeroed()};
-    let mut checkkey: _bits256 = unsafe {zeroed()};
-    let mut tmptype = 0;
-    let mut kmdwif: [c_char; 64] = unsafe {zeroed()};
-    if unsafe {LP_wifstr_valid (b"BTC\0".as_ptr(), wif_or_btc_z.as_ptr())} > 0 {
-        let rc = unsafe {bitcoin_wif2priv (b"BTC\0".as_ptr(), 0, &mut tmptype, &mut privkey, wif_or_btc_z.as_ptr() as *const c_char)};
-        if rc < 0 {return ERR! ("!bitcoin_wif2priv")}
-        let rc = unsafe {bitcoin_priv2wif (b"KMD\0".as_ptr(), 0, kmdwif.as_mut_ptr(), privkey, 188)};
-        if rc < 0 {return ERR! ("!bitcoin_priv2wif")}
-        let rc = unsafe {bitcoin_wif2priv (b"KMD\0".as_ptr(), 0, &mut tmptype, &mut checkkey, kmdwif.as_ptr())};
-        if rc < 0 {return ERR! ("!bitcoin_wif2priv")}
-        let kmdwif = try_s! (unsafe {CStr::from_ptr (kmdwif.as_ptr())} .to_str());
-        if unsafe {privkey.bytes == checkkey.bytes} {
-            Ok (format! ("BTC {} -> KMD {}: privkey {}", wif_or_btc, kmdwif, bits256::from (privkey)))
-        } else {
-            Err (format! ("ERROR BTC {} {} != KMD {} {}", wif_or_btc, bits256::from (privkey), kmdwif, bits256::from (checkkey)))
-        }
-    } else {
-        let retstr = unsafe {LP_convaddress(b"BTC\0".as_ptr(), wif_or_btc_z.as_ptr(), b"KMD\0".as_ptr())};
-        if retstr == null() {return ERR! ("LP_convaddress")}
-        Ok (unwrap! (unsafe {CStr::from_ptr (retstr)} .to_str()) .into())
-    }
-}
-
-#[allow(dead_code)]
-fn vanity (substring: &str) {
-    extern "C" {
-        fn bitcoin_priv2pub (
-            ctx: *mut BitcoinCtx, symbol: *const u8, pubkey33: *mut u8, coinaddr: *mut u8,
-            privkey: _bits256, taddr: u8, addrtype: u8);
-    }
-    /*
-    else if ( argv[1] != 0 && strcmp(argv[1],"vanity") == 0 && argv[2] != 0 )
-    */
-    let mut pubkey33: [u8; 33] = unsafe {zeroed()};
-    let mut coinaddr: [u8; 64] = unsafe {zeroed()};
-    let mut wifstr: [c_char; 128] = unsafe {zeroed()};
-    let mut privkey: _bits256 = unsafe {zeroed()};
-    let ctx = MmCtx::new();
-    let timestamp = now_ms() / 1000;
-    log! ({"start vanitygen ({}).{} t.{}", substring, substring.len(), timestamp});
-    for i in 0..1000000000 {
-        privkey.bytes = random();
-        unsafe {bitcoin_priv2pub (ctx.btc_ctx(), "KMD\0".as_ptr(), pubkey33.as_mut_ptr(), coinaddr.as_mut_ptr(), privkey.into(), 0, 60)};
-        let coinaddr = unsafe {from_utf8_unchecked (from_raw_parts (coinaddr.as_ptr(), 34))};
-        if &coinaddr[1 .. substring.len()] == &substring[0 .. substring.len() - 1] {  // Print on near match.
-            unsafe {bitcoin_priv2wif ("KMD\0".as_ptr(), 0, wifstr.as_mut_ptr(), privkey, 188)};
-            let wifstr = unwrap! (unsafe {CStr::from_ptr (wifstr.as_ptr())} .to_str());
-            log! ({"i.{} {} -> {} wif.{}", i, bits256::from (privkey), coinaddr, wifstr});
-            if coinaddr.as_bytes()[substring.len()] == substring.as_bytes()[substring.len() - 1] {break}  // Stop on full match.
-        }
-    }
-    log! ({"done vanitygen.({}) done {} elapsed {}\n", substring, now_ms() / 1000, now_ms() / 1000 - timestamp});
 }
 
 /// Parses the `first_arg` as JSON and runs LP_main.
@@ -293,13 +190,6 @@ pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &dyn Fn (u32)) -> Result<()
             return ERR!("No coins are set in JSON config and 'coins' file doesn't exist");
         }
         conf["coins"] = try_s!(json::from_slice(&coins_from_file));
-    }
-
-    if conf["docker"] == 1 {
-        unsafe {lp::DOCKERFLAG = 1}
-    } else if conf["docker"].is_string() {
-        let ip_port = unwrap! (CString::new (unwrap! (conf["docker"].as_str())));
-        unsafe {lp::DOCKERFLAG = os::calc_ipbits (ip_port.as_ptr() as *mut c_char) as u32}
     }
 
     try_s! (lp_main (conf, ctx_cb));

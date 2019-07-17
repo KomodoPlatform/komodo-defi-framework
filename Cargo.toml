@@ -39,6 +39,11 @@ opt-level = 1
 # Should probably match "profile.dev", given that we're reusing the libraries.
 opt-level = 1
 
+#[profile.release]
+# https://rustwasm.github.io/book/reference/debugging.html
+# ^^ Doesn't really help, we'll probably need a debug information standard first. Use rustfilt instead.
+#debug = true
+
 [dependencies]
 bigdecimal = { version = "0.1.0", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
@@ -69,7 +74,7 @@ peers = { path = "mm2src/peers" }
 # so the crate is disabled to speed up the entire removal of C code
 # portfolio = { path = "mm2src/portfolio" }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
-rand = "0.6"
+rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
 serde = "1.0"
 serde_json = "1.0"
@@ -85,3 +90,12 @@ winapi = "0.3"
 members = [
   "mm2src/coins"
 ]
+
+# The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function
+# names being printed, but dl_iterate_phdr is present since API version 21 https://github.com/rust-lang/rust/issues/17520#issuecomment-344885468
+# We're using 21 version for Android build so we're fine to use the patch.
+# Consider removing once this issue is solved and fix applied to upstream repository
+# https://github.com/rust-lang/backtrace-rs/issues/227
+[patch.crates-io]
+backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
+backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }

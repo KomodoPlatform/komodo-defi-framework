@@ -1,4 +1,4 @@
-# BarterDEX Marketmaker V2
+# AtomicDEX Marketmaker V2
 
 This repository contains the `work in progress` code of brand new Marketmaker version built mainly on Rust.  
 The current state can be considered as very early alpha.  
@@ -12,9 +12,6 @@ The current state can be considered as very early alpha.
 
 [mm2src](mm2src) - Rust code, contains some parts ported from C `as is` (e.g. `lp_ordermatch`) to reach the most essential/error prone code. Some other modules/crates are reimplemented from scratch.  
 [iguana](iguana) - Old C code that is still used and linked to Rust binary. According to gradual port goals this code will be either ported/removed in favor of Rust.  
-[crypto777](crypto777) - Additional C libs still required by old iguana/MM1 code.  
-[includes](includes) - Additional C headers still required by old iguana/MM1 code.  
-[OSlibs](OSlibs) - OS specific libs still required by old iguana/MM1 code.  
  
 ## How to build
 

@@ -1,11 +1,10 @@
-use common::bits256;
+use common::{bits256, now_float, small_rng};
 #[cfg(feature = "native")]
 use common::wio::{drive, CORE};
 use common::for_tests::wait_for_log;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
-use gstuff::now_float;
 use rand::{self, Rng};
 use serde_json::Value as Json;
 use std::mem::zeroed;
@@ -15,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 #[cfg(feature = "native")]
-use super::http_fallback::UniqueActorId;
+use crate::http_fallback::UniqueActorId;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn ulimit_n() -> Option<u32> {
@@ -36,7 +35,7 @@ fn peer (conf: Json, port: u16) -> MmArc {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
 
-    let ctx = MmCtxBuilder::new().with_conf (conf).into_mm_arc();
+    let ctx = MmCtxBuilder::new().with_conf (conf) .into_mm_arc();
     unwrap! (ctx.log.thread_gravity_on());
 
     if let Some (seednodes) = ctx.conf["seednodes"].as_array() {
@@ -46,9 +45,8 @@ fn peer (conf: Json, port: u16) -> MmArc {
         seeds.push (unwrap! (unwrap! (seednodes[0].as_str()) .parse()))
     }
 
-    let mut rng = rand::thread_rng();
     let mut alice_key: bits256 = unsafe {zeroed()};
-    rng.fill (&mut alice_key.bytes[..]);
+    small_rng().fill (&mut alice_key.bytes[..]);
     unwrap! (super::initialize (&ctx, 9999, alice_key, port));
 
     ctx
@@ -63,6 +61,7 @@ fn destruction_check (mm: MmArc) {
 }
 
 fn peers_exchange (conf: Json) {
+    log! ("Entering peers_exchange…");  // Added temporarily to test portable logging.
     let fallback_on = conf["http-fallback"] == "on";
     let fallback = if fallback_on {1} else {255};
 
@@ -112,6 +111,10 @@ fn peers_exchange (conf: Json) {
 
 /// Send and receive messages of various length and chunking via the DHT.
 pub fn peers_dht() {peers_exchange (json! ({"dht": "on"}))}
+
+// Temporarily exposed in order to experiment with portability helpers.
+#[no_mangle]
+pub extern fn test_peers_dht() {peers_dht()}
 
 /// Using a minimal one second HTTP fallback which should happen before the DHT kicks in.
 #[cfg(feature = "native")]

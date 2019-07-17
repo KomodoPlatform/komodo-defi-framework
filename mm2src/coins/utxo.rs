@@ -25,13 +25,17 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{dstr, HyRes, lp, MutexGuardWrapper, rpc_response};
+use common::{dstr, HyRes, MutexGuardWrapper, rpc_response};
 use common::custom_futures::join_all_sequential;
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
+#[cfg(feature = "native")]
+use dirs::home_dir;
 use futures::{Future};
 use gstuff::{now_ms};
 use hashbrown::hash_map::{HashMap, Entry};
+#[cfg(feature = "native")]
+use ini::Ini;
 use keys::{Error as KeysError, KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
 use num_traits::cast::ToPrimitive;
@@ -44,8 +48,9 @@ use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::ffi::CStr;
 use std::ops::Deref;
+#[cfg(feature = "native")]
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -54,7 +59,7 @@ use std::time::Duration;
 pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, TradeInfo, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
+use super::{HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, TradeInfo, Transaction, TransactionEnum, TransactionFut, TransactionDetails};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 use futures::future::Either;
 
@@ -162,13 +167,6 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// Is coin protected by Komodo dPoW?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
     notarized: bool,
-    /// The local RPC port of the coin wallet.  
-    /// Fetched from the wallet config when we can find it.
-    rpc_port: u16,
-    /// RPC username
-    rpc_user: String,
-    /// RPC password
-    rpc_password: String,
     /// RPC client
     rpc_client: UtxoRpcClientEnum,
     /// ECDSA key pair
@@ -1112,6 +1110,8 @@ impl SwapOps for UtxoCoin {
 }
 
 impl MarketCoinOps for UtxoCoin {
+    fn ticker (&self) -> &str {&self.ticker[..]}
+
     fn my_address(&self) -> Cow<str> {
         self.0.my_address.to_string().into()
     }
@@ -1139,10 +1139,10 @@ impl MarketCoinOps for UtxoCoin {
         )
     }
 
-    fn wait_for_tx_spend(&self, tx_bytes: &[u8], wait_until: u64, _from_block: u64) -> Result<TransactionEnum, String> {
+    fn wait_for_tx_spend(&self, tx_bytes: &[u8], wait_until: u64, from_block: u64) -> Result<TransactionEnum, String> {
         let tx: UtxoTx = try_s!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
 
-        let res = try_s!(self.rpc_client.wait_for_payment_spend(&tx, 0, wait_until));
+        let res = try_s!(self.rpc_client.wait_for_payment_spend(&tx, 0, wait_until, from_block));
 
         Ok(res.into())
     }
@@ -1161,10 +1161,6 @@ impl MarketCoinOps for UtxoCoin {
         let addr = try_s!(address_from_raw_pubkey(&pubkey_bytes, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
         Ok(addr.to_string())
     }
-}
-
-impl IguanaInfo for UtxoCoin {
-    fn ticker<'a> (&'a self) -> &'a str {&self.ticker[..]}
 }
 
 #[derive(Serialize)]
@@ -1508,20 +1504,64 @@ pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
     Ok(try_s!(KeyPair::from_private(private)))
 }
 
-pub enum UtxoInitMode {
-    Native,
-    Electrum(Vec<ElectrumRpcRequest>),
+#[cfg(feature = "native")]
+/// Returns a path to the native coin wallet configuration.
+/// (This path is used in `LP_userpassfp` to read the wallet credentials).
+/// cf. https://github.com/artemii235/SuperNET/issues/346
+fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
+    // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
+    // "USERHOME/" prefix should be replaced with the user's home folder.
+
+    macro_rules! home {() => {
+        // On Android the user home directory is not available.
+        // cf. https://discordapp.com/channels/@me/542973365846016001/562227773867819027
+        // Let's try using the current directory (.) instead.
+        home_dir().unwrap_or (".".into())
+    }}
+
+    let confpathˢ = coins_en["confpath"].as_str().unwrap_or ("") .trim();
+    if confpathˢ.is_empty() {
+        let home = home!();
+        if let Some (assetˢ) = coins_en["asset"].as_str() {
+            return Ok (home.join (".komodo") .join (&assetˢ) .join (fomat! ((assetˢ) ".conf")))
+        } else if let Some (nameˢ) = coins_en["name"].as_str() {
+            return Ok (home.join (fomat! ('.' (nameˢ))) .join (fomat! ((nameˢ) ".conf")))
+        }
+        return Ok (home.join ("mm2-default-coin-config.conf"))
+    }
+    let (confpathˢ, rel_to_home) =
+        if confpathˢ.starts_with ("~/") {(&confpathˢ[2..], true)}
+        else if confpathˢ.starts_with ("USERHOME/") {(&confpathˢ[9..], true)}
+        else {(confpathˢ, false)};
+
+    if rel_to_home {
+        let home = home!();
+        Ok (home.join (confpathˢ))
+    } else {
+        Ok (confpathˢ.into())
+    }
 }
 
-pub fn utxo_coin_from_iguana_info(
-    info: *mut lp::iguana_info,
-    mode: UtxoInitMode,
-    rpc_port: u16,
-    req: &Json,
-) -> Result<MmCoinEnum, String> {
-    let info = unsafe { *info };
-    let ticker = try_s! (unsafe {CStr::from_ptr (info.symbol.as_ptr())} .to_str()) .into();
+#[cfg(feature = "native")]
+/// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
+fn read_native_mode_conf<P: AsRef<Path>>(filename: P) -> Result<(Option<u16>, String, String), String> {
+    let conf: Ini = try_s!(Ini::load_from_file(&filename));
+    let section = conf.general_section();
+    let rpc_port = match section.get("rpcport") {
+        Some(port) => port.parse::<u16>().ok(),
+        None => None,
+    };
+    let rpc_user = try_s!(section.get("rpcuser").ok_or(ERRL!("Conf file {} doesn't have the rpcuser key", filename.as_ref().display())));
+    let rpc_password = try_s!(section.get("rpcpassword").ok_or(ERRL!("Conf file {} doesn't have the rpcpassword key", filename.as_ref().display())));
+    Ok((rpc_port, rpc_user.clone(), rpc_password.clone()))
+}
 
+pub fn utxo_coin_from_conf_and_request(
+    ticker: &str,
+    conf: &Json,
+    req: &Json,
+    priv_key: &[u8],
+) -> Result<MmCoinEnum, String> {
     let checksum_type = if ticker == "GRS" {
         ChecksumType::DGROESTL512
     } else if ticker == "SMART" {
@@ -1530,34 +1570,46 @@ pub fn utxo_coin_from_iguana_info(
         ChecksumType::DSHA256
     };
 
+    let pub_addr_prefix = conf["pubtype"].as_u64().unwrap_or (if ticker == "BTC" {0} else {60}) as u8;
+    let wif_prefix = conf["wiftype"].as_u64().unwrap_or (if ticker == "BTC" {128} else {188}) as u8;
+
     let private = Private {
-        prefix: info.wiftype,
-        secret: H256::from(unsafe { lp::G.LP_privkey.bytes }),
+        prefix: wif_prefix,
+        secret: H256::from(priv_key),
         compressed: true,
         checksum_type,
     };
 
     let key_pair = try_s!(KeyPair::from_private(private));
     let my_address = Address {
-        prefix: info.pubtype,
-        t_addr_prefix: info.taddr,
+        prefix: pub_addr_prefix,
+        t_addr_prefix: conf["taddr"].as_u64().unwrap_or (0) as u8,
         hash: key_pair.public().address_hash(),
         checksum_type,
     };
 
-    let rpc_client = match mode {
-        UtxoInitMode::Native => {
-            let auth_str = unsafe { try_s!(CStr::from_ptr(info.userpass.as_ptr()).to_str()) };
-            let uri = unsafe { try_s!(CStr::from_ptr(info.serverport.as_ptr()).to_str()) };
-            let client = Arc::new(NativeClientImpl {
-                // Similar to `fomat!("http://127.0.0.1:"(rpc_port))`.
-                uri: format!("http://{}", uri),
-                auth: format!("Basic {}", base64_encode(auth_str, URL_SAFE)),
-            });
+    let rpc_client = match req["method"].as_str() {
+        Some("enable") => {
+            if cfg!(feature = "native") {
+                let native_conf_path = try_s!(confpath(conf));
+                let (rpc_port, rpc_user, rpc_password) = try_s!(read_native_mode_conf(native_conf_path));
+                let auth_str = fomat!((rpc_user)":"(rpc_password));
+                let rpc_port = match rpc_port {
+                    Some(p) => p,
+                    None => try_s!(conf["rpcport"].as_u64().ok_or(ERRL!("Rpc port is not set neither in `coins` file nor in native daemon config"))) as u16,
+                };
+                let client = Arc::new(NativeClientImpl {
+                    uri: fomat!("http://127.0.0.1:"(rpc_port)),
+                    auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
+                });
 
-            UtxoRpcClientEnum::Native(NativeClient(client))
+                UtxoRpcClientEnum::Native(NativeClient(client))
+            } else {
+                return ERR!("Native UTXO mode is not available in non-native build");
+            }
         },
-        UtxoInitMode::Electrum(mut servers) => {
+        Some("electrum") => {
+            let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
             let mut rng = thread_rng();
             servers.as_mut_slice().shuffle(&mut rng);
             let mut client = ElectrumClientImpl::new();
@@ -1597,21 +1649,29 @@ pub fn utxo_coin_from_iguana_info(
                 }
             }));
             UtxoRpcClientEnum::Electrum(ElectrumClient(client))
-        }
+        },
+        _ => return ERR!("utxo_coin_from_conf_and_request should be called only by enable or electrum requests"),
     };
-    let (tx_version, overwintered) = if info.isassetchain == 1 || ticker == "KMD" || ticker == "BEER" || ticker == "PIZZA" {
-        (4, true)
+    let asset_chain = conf["asset"].as_str().is_some();
+    let tx_version = if ticker == "KMD" || asset_chain {
+        4
+    } else if ticker == "PART" {
+        160
     } else {
-        (info.txversion, info.overwintered == 1)
+        conf["txversion"].as_i64().unwrap_or (1) as i32
     };
-    let tx_fee = if info.txfee > 0 {
-        TxFee::Fixed(info.txfee)
-    } else {
-        let fee_method = match &rpc_client {
-            UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
-            UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().wait())
-        };
-        TxFee::Dynamic(fee_method)
+    let overwintered = ticker == "KMD" || asset_chain || conf["overwintered"].as_u64().unwrap_or (0) == 1;
+    let tx_fee = match conf["txfee"].as_u64() {
+        None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {
+            let fee_method = match &rpc_client {
+                UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
+                UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().wait())
+            };
+            TxFee::Dynamic(fee_method)
+        } else {
+            TxFee::Fixed(1000)
+        },
+        Some (fee) => TxFee::Fixed(fee),
     };
     let version_group_id = if tx_version == 3 && overwintered {
         0x03c48270
@@ -1621,11 +1681,7 @@ pub fn utxo_coin_from_iguana_info(
         0
     };
 
-    let decimals = if info.decimals > 0 {
-        info.decimals
-    } else {
-        8
-    };
+    let decimals = conf["decimals"].as_u64().unwrap_or (8) as u8;
 
     let (signature_version, fork_id) = if ticker == "BCH" {
         (SignatureVersion::ForkId, 0x40)
@@ -1642,25 +1698,22 @@ pub fn utxo_coin_from_iguana_info(
     };
 
     let coin = UtxoCoinImpl {
-        ticker,
+        ticker: ticker.into(),
         decimals,
         rpc_client,
         key_pair,
         is_pos: false,
         notarized: false,
         overwintered,
-        pub_addr_prefix: info.pubtype,
-        p2sh_addr_prefix: info.p2shtype,
-        pub_t_addr_prefix: info.taddr,
-        p2sh_t_addr_prefix: info.taddr,
-        rpc_password: "".to_owned(),
-        rpc_port,
-        rpc_user: "".to_owned(),
+        pub_addr_prefix,
+        p2sh_addr_prefix: conf["p2shtype"].as_u64().unwrap_or (if ticker == "BTC" {5} else {85}) as u8,
+        pub_t_addr_prefix: conf["taddr"].as_u64().unwrap_or (0) as u8,
+        p2sh_t_addr_prefix: conf["taddr"].as_u64().unwrap_or (0) as u8,
         segwit: false,
-        wif_prefix: info.wiftype,
+        wif_prefix,
         tx_version,
         my_address: my_address.clone(),
-        asset_chain: info.isassetchain == 1,
+        asset_chain,
         tx_fee,
         version_group_id,
         zcash,

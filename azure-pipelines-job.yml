@@ -37,6 +37,8 @@ jobs:
       - bash: |
           rm -rf upload
           mkdir upload
+          echo 2.0.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS) > MM_VERSION
+          cat MM_VERSION
           touch mm2src/common/build.rs
           cargo build --features native -vv
         displayName: 'Build MM2'
@@ -44,18 +46,7 @@ jobs:
       # Explicit --test-threads=8 makes the process faster
       - bash: |
           cargo test --features native --all -- --test-threads=8
-        displayName: 'Test MM2 Linux/MacOS'
-        condition: ne( variables['Agent.OS'], 'Windows_NT' )
-        timeoutInMinutes: 22
-        env:
-          BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
-          BOB_USERPASS: $(${{ parameters.bob_userpass }})
-          ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
-          ALICE_USERPASS: $(${{ parameters.alice_userpass }})
-      - powershell: |
-          $env:RUST_BACKTRACE=1; cargo test --features native --all -- --test-threads=8
-        displayName: 'Test MM2 Windows'
-        condition: eq( variables['Agent.OS'], 'Windows_NT' )
+        displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
@@ -81,3 +72,8 @@ jobs:
           targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
           overwrite: true
         displayName: 'Upload nightly'
+      # https://docs.microsoft.com/en-us/azure/devops/pipelines/artifacts/pipeline-artifacts?view=azure-devops&tabs=yaml
+      - task: PublishPipelineArtifact@0
+        inputs:
+          artifactName: "MM2-$(Agent.OS)"
+          targetPath: 'upload'

@@ -20,7 +20,7 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{HyRes, lp, MutexGuardWrapper, rpc_response};
+use common::{HyRes, MutexGuardWrapper, rpc_response};
 use common::wio::slurp_url;
 use common::mm_ctx::MmArc;
 use secp256k1::PublicKey;
@@ -41,7 +41,6 @@ use serde_json::{self as json, Value as Json};
 use sha3::{Keccak256, Digest};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::ffi::CStr;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -51,7 +50,7 @@ use std::time::Duration;
 use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
-use super::{HistorySyncState, IguanaInfo, MarketCoinOps, MmCoin, SwapOps, TradeInfo, TransactionFut,
+use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeInfo, TransactionFut,
             TransactionEnum, Transaction, TransactionDetails};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -474,6 +473,8 @@ impl SwapOps for EthCoin {
 }
 
 impl MarketCoinOps for EthCoin {
+    fn ticker (&self) -> &str {&self.ticker[..]}
+
     fn my_address(&self) -> Cow<str> {
         checksum_address(&format!("{:#02x}", self.my_address)).into()
     }
@@ -564,13 +565,32 @@ impl MarketCoinOps for EthCoin {
                 return ERR!("Waited too long until {} for transaction {:?} to be spent ", wait_until, tx);
             }
 
-            let events = try_s!(self.spend_events(from_block).wait());
+            let events = match self.spend_events(from_block).wait() {
+                Ok(ev) => ev,
+                Err(e) => {
+                    log!("Error " (e) " getting spend events");
+                    thread::sleep(Duration::from_secs(15));
+                    continue;
+                },
+            };
 
             let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
                 if let Some(tx_hash) = event.transaction_hash {
-                    let transaction = try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).wait()).unwrap();
+                    let transaction = match self.web3.eth().transaction(TransactionId::Hash(tx_hash)).wait() {
+                        Ok(Some(t)) => t,
+                        Ok(None) => {
+                            log!("Tx " (tx_hash) " not found yet");
+                            thread::sleep(Duration::from_secs(15));
+                            continue;
+                        }
+                        Err(e) => {
+                            log!("Get tx " (tx_hash) " error " (e));
+                            thread::sleep(Duration::from_secs(15));
+                            continue;
+                        }
+                    };
 
                     return Ok(TransactionEnum::from(try_s!(signed_tx_from_web3_tx(transaction))))
                 }
@@ -1480,10 +1500,6 @@ impl EthCoin {
     }
 }
 
-impl IguanaInfo for EthCoin {
-    fn ticker<'a> (&'a self) -> &'a str {&self.ticker[..]}
-}
-
 #[derive(Serialize)]
 struct EthTxFeeDetails {
     coin: String,
@@ -1900,10 +1916,12 @@ fn addr_from_str(addr_str: &str) -> Result<Address, String> {
     Ok(addr)
 }
 
-pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Result<EthCoin, String> {
-    let info = unsafe { *info };
-    let ticker = try_s! (unsafe {CStr::from_ptr (info.symbol.as_ptr())} .to_str()) .into();
-
+pub fn eth_coin_from_conf_and_request(
+    ticker: &str,
+    conf: &Json,
+    req: &Json,
+    priv_key: &[u8],
+) -> Result<EthCoin, String> {
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
         return ERR!("Enable request for ETH coin must have at least 1 node URL");
@@ -1916,7 +1934,7 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         return ERR!("swap_contract_address can't be zero address");
     }
 
-    let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(unsafe { &lp::G.LP_privkey.bytes }));
+    let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
     let my_address = key_pair.address();
 
     let mut web3_instances = vec![];
@@ -1945,15 +1963,14 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
     let transport = try_s!(Web3Transport::new(urls));
     let web3 = Web3::new(transport);
 
-    let etomic = try_s!(unsafe { CStr::from_ptr(info.etomic.as_ptr()).to_str() } );
+    let etomic = try_s!(conf["etomic"].as_str().ok_or(ERRL!("Etomic field is not string")));
     let (coin_type, decimals) = if etomic == "0x0000000000000000000000000000000000000000" {
         (EthCoinType::Eth, 18)
     } else {
         let token_addr = try_s!(addr_from_str(etomic));
-        let decimals = if info.decimals > 0 {
-            info.decimals
-        } else {
-            try_s!(get_token_decimals(&web3, token_addr))
+        let decimals = match conf["decimals"].as_u64() {
+            None | Some(0) => try_s!(get_token_decimals(&web3, token_addr)),
+            Some(d) => d as u8,
         };
         (EthCoinType::Erc20(token_addr), decimals)
     };
@@ -1969,7 +1986,7 @@ pub fn eth_coin_from_iguana_info(info: *mut lp::iguana_info, req: &Json) -> Resu
         coin_type,
         swap_contract_address,
         decimals,
-        ticker,
+        ticker: ticker.into(),
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         web3,
         web3_instances,

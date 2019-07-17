@@ -17,7 +17,7 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 use coins::{enable, electrum, get_enabled_coins, get_trade_fee, my_balance, send_raw_transaction, withdraw, my_tx_history};
-use common::{err_to_rpc_json_string, lp, rpc_response, rpc_err_response, HyRes};
+use common::{err_to_rpc_json_string, rpc_response, rpc_err_response, HyRes};
 use common::wio::{CORE, HTTP};
 use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
@@ -30,11 +30,9 @@ use hyper;
 use hyper::rt::Stream;
 use hyper::service::Service;
 use serde_json::{self as json, Value as Json};
-use std::ffi::{CStr};
 use std::net::{SocketAddr};
 use std::sync::atomic::Ordering;
 use tokio_core::net::TcpListener;
-use hex;
 
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
 use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, stats_swap_status, my_recent_swaps};
@@ -96,10 +94,7 @@ fn auth(json: &Json, ctx: &MmArc) -> Result<(), &'static str> {
             return Err("Userpass is not set!");
         }
 
-        let userpass = unsafe {unwrap! (CStr::from_ptr (lp::G.USERPASS.as_ptr()) .to_str())};
-        let pass_hash = hex::encode(unsafe { lp::G.LP_passhash.bytes });
-
-        if json["userpass"].as_str() != Some(userpass) && json["userpass"].as_str() != Some(&pass_hash) && json["userpass"] != ctx.conf["rpc_password"] {
+        if json["userpass"] != ctx.conf["rpc_password"] {
             return Err("Userpass is invalid!");
         }
     }

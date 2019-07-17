@@ -30,32 +30,26 @@
 #[macro_use] extern crate unwrap;
 
 use bigdecimal::BigDecimal;
-use common::{bitcoin_ctx, lp, rpc_response, rpc_err_response, HyRes};
+use common::{rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
-use dirs::home_dir;
 use futures::{Future};
-use gstuff::{now_ms, slurp};
+use gstuff::{slurp};
 use hashbrown::hash_map::{HashMap, RawEntryMut};
-use libc::{c_char, c_void};
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
-use std::ffi::{CString};
 use std::fmt::Debug;
-use std::mem::zeroed;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 #[doc(hidden)]
 pub mod coins_tests;
 pub mod eth;
-use self::eth::{eth_coin_from_iguana_info, EthCoin, SignedEthTx};
+use self::eth::{eth_coin_from_conf_and_request, EthCoin, SignedEthTx};
 pub mod utxo;
-use self::utxo::{utxo_coin_from_iguana_info, UtxoTx, UtxoCoin, UtxoInitMode};
-use crate::utxo::rpc_clients::ElectrumRpcRequest;
+use self::utxo::{utxo_coin_from_conf_and_request, UtxoTx, UtxoCoin};
 
 pub trait Transaction: Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -181,6 +175,8 @@ pub trait SwapOps {
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
+    fn ticker (&self) -> &str;
+
     fn my_address(&self) -> Cow<str>;
 
     fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send>;
@@ -202,19 +198,6 @@ pub trait MarketCoinOps {
     fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send>;
 
     fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
-}
-
-/// Compatibility layer on top of `lp::iguana_info`.  
-/// Some of the coin information is kept in the old C `iguana_info` struct,
-/// we're going to port it eventually and consequently this trait should go away.
-pub trait IguanaInfo {
-    fn ticker<'a> (&'a self) -> &'a str;
-
-    fn iguana_info (&self) -> &'static mut lp::iguana_info {
-        let ticker = unwrap! (CString::new (self.ticker()));
-        let ii = common::for_c::LP_coinsearch (ticker.as_ptr());
-        unsafe {&mut *ii}
-    }
 }
 
 #[allow(dead_code)]
@@ -270,7 +253,7 @@ pub enum TradeInfo {
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
-pub trait MmCoin: SwapOps + MarketCoinOps + IguanaInfo + Debug + 'static {
+pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;
@@ -645,43 +628,6 @@ struct iguana_info *LP_coinadd(struct iguana_info *cdata)
 }
 */
 
-/// Returns a path to the native coin wallet configuration.  
-/// (This path is used in `LP_userpassfp` to read the wallet credentials).  
-/// cf. https://github.com/artemii235/SuperNET/issues/346
-fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
-    // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
-    // "USERHOME/" prefix should be replaced with the user's home folder.
-
-    macro_rules! home {() => {
-        // On Android the user home directory is not available.
-        // cf. https://discordapp.com/channels/@me/542973365846016001/562227773867819027
-        // Let's try using the current directory (.) instead.
-        home_dir().unwrap_or (".".into())
-    }}
-
-    let confpathˢ = coins_en["confpath"].as_str().unwrap_or ("") .trim();
-    if confpathˢ.is_empty() {
-        let home = home!();
-        if let Some (assetˢ) = coins_en["asset"].as_str() {
-            return Ok (home.join (".komodo") .join (&assetˢ) .join (fomat! ((assetˢ) ".conf")))
-        } else if let Some (nameˢ) = coins_en["name"].as_str() {
-            return Ok (home.join (fomat! ('.' (nameˢ))) .join (fomat! ((nameˢ) ".conf")))
-        }
-        return Ok (home.join ("mm2-default-coin-config.conf"))
-    }
-    let (confpathˢ, rel_to_home) =
-        if confpathˢ.starts_with ("~/") {(&confpathˢ[2..], true)}
-        else if confpathˢ.starts_with ("USERHOME/") {(&confpathˢ[9..], true)}
-        else {(confpathˢ, false)};
-
-    if rel_to_home {
-        let home = home!();
-        Ok (home.join (confpathˢ))
-    } else {
-        Ok (confpathˢ.into())
-    }
-}
-
 /// Adds a new currency into the list of currencies configured.
 ///
 /// Returns an error if the currency already exists. Initializing the same currency twice is a bad habit
@@ -712,142 +658,17 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     if coins_en["mm2"].is_null() && req["mm2"].is_null() {
         return ERR!("mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported");
     }
-
-    let c_ticker = try_s! (CString::new (ticker));
-
-    let _estimatedrate = coins_en["estimatedrate"].as_f64().unwrap_or (20.);
-
-    // NB: Unlike the previous C implementation we're never *moving* the `iguana_info` instance, it's effectively pinned.
-    let mut ii: Box<lp::iguana_info> = Box::new (unsafe {zeroed()});
-    // NB: Read values from local variables and not from `ii`
-    //     (that is, to read A: let A = ...; ii.A = A; ii.B = ... A ...),
-    //     allowing the compiler to verify the dependencies.
-    try_s! (safecopy! (ii.symbol, "{}", ticker));
-    ii.txversion = coins_en["txversion"].as_i64().unwrap_or (if ticker == "PART" {160} else {1}) as i32;
-    ii.updaterate = (now_ms() / 1000) as u32;
-    ii.isPoS = coins_en["isPoS"].as_i64().unwrap_or (0) as u8;
-    let taddr = coins_en["taddr"].as_u64().unwrap_or (0) as u8;
-    ii.taddr = taddr;
-    ii.wiftaddr = 0;
-    ii.longestchain = 1;
-    ii.txfee = match coins_en["txfee"].as_u64() {
-        None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {0} else {lp::LP_MIN_TXFEE as u64},
-        Some (fee) => fee
-    };
-    ii.pubtype = coins_en["pubtype"].as_u64().unwrap_or (if ticker == "BTC" {0} else {60}) as u8;
-    ii.p2shtype = coins_en["p2shtype"].as_u64().unwrap_or (if ticker == "BTC" {5} else {85}) as u8;
-    ii.wiftype = coins_en["wiftype"].as_u64().unwrap_or (if ticker == "BTC" {128} else {188}) as u8;
-    let inactive = loop {
-        if ticker != "KMD" {
-            if let Some (active) = coins_en["active"].as_i64() {
-                if active != 0 {break 0}
-        }   }
-        break now_ms() / 1000
-    };
-    ii.inactive = inactive as u32;
-    ii.ctx = unsafe {bitcoin_ctx() as *mut c_void};
-    ii.noimportprivkey_flag = match ticker {"XVG" | "CLOAK" | "PPC" | "BCC" | "ORB" => 1, _ => 0};
-    ii.decimals = coins_en["decimals"].as_u64().unwrap_or (0) as u8;
-    ii.overwintered = coins_en["overwintered"].as_u64().unwrap_or (0) as u8;
-
-    let asset = coins_en["asset"].as_str();
-    let isassetchain = if let Some (asset) = asset {
-        if asset != "BEER" && asset != "PIZZA" {
-            ii.isassetchain = 1; 1
-        } else {0}
-    } else {0};
-
-    ii.zcash = match ticker {
-        "KMD" if isassetchain != 0 || taddr != 0 => lp::LP_IS_ZCASHPROTOCOL,
-        "BCH" => lp::LP_IS_BITCOINCASH,
-        "BTG" => lp::LP_IS_BITCOINGOLD,
-        "CMM" => lp::LP_IS_BITCOINCASH,
-        _ => 0
-    } as u8;
-
-    // NB: `LP_privkeycalc` initializes `lp::G.LP_privkey`, required to instantiate `UtxoCoin`.
-
-    // NB: `LP_privkeycalc` triggers a chain of functions that ends up calling `LP_coinfind`, which tries to auto-add a coin.
-    //     In order for this extra instance not to be added we have to make haste and add one ourselves.
-    // Copies the `iguana_info` generated by `lp_coininit` into the old global `LP_coins`.
-    let ii = Box::leak (ii);
-    common::for_c::LP_coinadd (ii);
-
-    let rpc_port = unsafe {
-        let rpcportₒ = match coins_en["rpcport"].as_u64() {
-            Some (port) if port > 0 && port < u16::max_value() as u64 => port as u16,
-            // NB: 0 for anything that's not "BTC" or "KMD".
-            _ => lp::LP_rpcport (c_ticker.as_ptr() as *mut c_char)
-        };
-
-        let confpathᵖ = try_s! (confpath (coins_en));
-        let confpathˢ = try_s! (confpathᵖ.to_str().ok_or ("Malformed confpath"));
-        let confpathᶜ = try_s! (CString::new (confpathˢ));
-
-        // Returns the port obtained from the wallet configuration.
-        // Wallet configuration ports are more likely to work,
-        // cf. https://github.com/artemii235/SuperNET/issues/359
-        lp::LP_userpass (
-            ii.userpass.as_mut_ptr(),            // userpass
-            c_ticker.as_ptr() as *mut c_char,    // symbol
-            null_mut(),                          // assetname
-            null_mut(),                          // confroot
-            null_mut(),                          // name
-            confpathᶜ.as_ptr() as *mut c_char,   // confpath
-            rpcportₒ                             // origport
-        )
-    };
-    if rpc_port == 0 {
-        log! ("Warning, coin " (ticker) " doesn't have the 'rpcport' configured")
-    } else {
-        try_s! (safecopy! (ii.serverport, "127.0.0.1:{}", rpc_port))
-    }
-
-    let c_ticker = try_s! (CString::new (ticker));
-    let c_ticker = c_ticker.as_ptr() as *mut c_char;
-
-    unsafe {lp::LP_priceinfoadd (c_ticker)};
-
-    if !coins_en["etomic"].is_null() {
-        let etomic = match coins_en["etomic"].as_str() {Some (s) => s, None => return ERR! ("Field 'etomic' is not a string")};
-        try_s! (safecopy! (ii.etomic, "{}", etomic));
-    }
-
-    let method: &str = loop {
-        // See if the method was explicitly picked (by an RPC call).
-        if let Some (method) = req["method"].as_str() {break method}
-
-        // Enable in the "native" mode if the port of the local wallet is configured and electrum is not.
-        if coins_en["rpcport"].as_u64().is_some() && coins_en["electrumServers"].as_array().is_none() {break "enable"}
-
-        return ERR! ("lp_coininit ({}): no method", ticker);
-    };
-    let utxo_mode = if method == "electrum" {
-        let servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
-        UtxoInitMode::Electrum (servers)
-    } else if method == "enable" {
-        if unsafe {!lp::LP_conflicts_find (ii) .is_null()} {return ERR! ("coin port conflicts with existing coin")}
-        UtxoInitMode::Native
-    } else {
-        return ERR! ("lp_coininit ({}): unknown method {:?}", ticker, method);
-    };
+    let secret = &*ctx.secp256k1_key_pair().private().secret;
 
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
-        try_s! (utxo_coin_from_iguana_info (ii, utxo_mode, rpc_port, req)) .into()
+        try_s! (utxo_coin_from_conf_and_request (ticker, coins_en, req, secret)) .into()
     } else {
-        try_s! (eth_coin_from_iguana_info(ii, req)) .into()
+        try_s! (eth_coin_from_conf_and_request (ticker, coins_en, req, secret)) .into()
     };
 
-    try_s! (safecopy! (ii.smartaddr, "{}", coin.my_address()));
     let block_count = try_s!(coin.current_block().wait());
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
-    log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=method] ", " [=block_count]);
-    if block_count == 0 {
-        ii.inactive = (now_ms() / 1000) as u32
-    } else {
-        ii.inactive = 0;
-    }
-
+    log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=block_count]);
     let history = req["tx_history"].as_bool().unwrap_or(false);
     if history {
         try_s!(thread::Builder::new().name(format!("tx_history_{}", ticker)).spawn({
@@ -1016,7 +837,11 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
             json["confirmations"] = if tx_block == 0 {
                 Json::from(0)
             } else {
-                Json::from(block_number - tx_block + 1)
+                if block_number >= tx_block {
+                    Json::from((block_number - tx_block) + 1)
+                } else {
+                    Json::from(0)
+                }
             };
             json
         }).collect();

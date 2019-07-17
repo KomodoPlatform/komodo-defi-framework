@@ -5,7 +5,7 @@ edition = "2018"
 
 [features]
 native = [
-  "dirs", "rustls", "tokio", "tokio-timer", "tokio-io", "tokio-rustls", "tokio-tcp", "webpki-roots",
+  "dirs", "rust-ini", "rustls", "tokio", "tokio-timer", "tokio-io", "tokio-rustls", "tokio-tcp", "webpki-roots",
   "common/native"
 ]
 
@@ -43,9 +43,10 @@ libc = "0.2"
 libsecp256k1 = "0.2.2"
 num-traits = "0.2"
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
-rand = "0.6"
+rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { git = "https://github.com/artemii235/parity-common" }
 rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+rust-ini = { version = "0.13", optional = true }
 rustls = { version = "0.15.2", features = ["dangerous_configuration"], optional = true }
 script = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 serde = "1.0"

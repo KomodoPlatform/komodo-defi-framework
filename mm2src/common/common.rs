@@ -10,8 +10,9 @@
 //!                     |
 //!                   binary
 
-#![feature(non_ascii_idents, integer_atomics)]
+#![feature(non_ascii_idents, integer_atomics, panic_info_message)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
@@ -68,17 +69,17 @@ pub mod lift_body;
 use crossbeam::{channel};
 use futures::{future, Future};
 use futures::task::Task;
-use gstuff::{now_float};
 use hex::FromHex;
 use http::{Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use libc::{c_char, c_void, malloc, free};
+use rand::{SeedableRng, rngs::SmallRng};
 use serde_json::{self as json, Value as Json};
 use std::env::args;
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr};
 use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
@@ -88,19 +89,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::str;
 
-// Make sure we're linking the eth-secp256k1 in for it is used in the MM1 C code.
-#[cfg(feature = "native")]
-use secp256k1::Secp256k1;
-#[cfg(feature = "native")]
-pub extern fn _we_are_using_secp256k1() -> Secp256k1 {Secp256k1::new()}
-
 #[cfg(feature = "native")]
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
-
-#[cfg(feature = "native")]
-#[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod os {include! (concat! (env! ("OUT_DIR"), "/c_headers/OS_portable.rs"));}
 
 pub const MM_VERSION: &'static str = env! ("MM_VERSION");
 
@@ -108,19 +99,6 @@ pub const SATOSHIS: u64 = 100000000;
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
-
-/// Created by `void *bitcoin_ctx()`.
-pub enum BitcoinCtx {}
-
-extern "C" {
-    pub fn bitcoin_ctx() -> *mut BitcoinCtx;
-    fn bitcoin_ctx_destroy (ctx: *mut BitcoinCtx);
-    #[cfg(feature = "native")]
-    pub fn bitcoin_priv2wif (symbol: *const u8, wiftaddr: u8, wifstr: *mut c_char, privkey: _bits256, addrtype: u8) -> i32;
-}
-
-#[cfg(feature = "native")]
-pub use self::lp::_bits256;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -153,9 +131,9 @@ impl From<lp::_bits256> for bits256 {
 }
 
 #[cfg(feature = "native")]
-impl From<bits256> for _bits256 {
-    fn from (k: bits256) -> _bits256 {unsafe {
-        let mut bits: _bits256 = zeroed();
+impl From<bits256> for lp::_bits256 {
+    fn from (k: bits256) -> lp::_bits256 {unsafe {
+        let mut bits: lp::_bits256 = zeroed();
         bits.bytes.copy_from_slice (&k.bytes[..]);
         bits
     }}
@@ -185,27 +163,6 @@ pub fn jbits256 (json: &Json) -> Result<bits256, String> {
             return Ok (bits256::from (bytes))
     }   }
     Ok (unsafe {zeroed()})
-}
-
-#[cfg(feature = "native")]
-pub fn bitcoin_address (coin: &str, addrtype: u8, rmd160: [u8; 20usize]) -> Result<String, String> {
-    let coinaddr: [u8; 64] = unsafe {zeroed()};
-    let coin = try_s! (CString::new (coin));
-    unsafe {lp::bitcoin_address (coin.as_ptr() as *mut c_char, coinaddr.as_ptr() as *mut c_char, 0, addrtype, rmd160.as_ptr() as *mut u8, 20)};
-    Ok (try_s! (try_s! (CStr::from_bytes_with_nul (&coinaddr[..])) .to_str()) .to_string())
-}
-
-/// A safer version of `HASH_ITER` over `iguana_info` coins from `for_c::COINS`.
-#[cfg(feature = "native")]
-pub fn coins_iter (cb: &mut dyn FnMut (*mut lp::iguana_info) -> Result<(), String>) -> Result<(), String> {
-    let coins = try_s! (for_c::COINS.lock());
-    let mut iis = Vec::with_capacity (coins.len());
-    for (_ticker, ii) in coins.iter() {iis.push (ii.0)}
-    drop (coins);  // Unlock before callbacks, avoiding possibility of deadlocks and poisoning.
-
-    for ii in iis {try_s! (cb (ii))}
-
-    Ok(())
 }
 
 pub const SATOSHIDEN: i64 = 100000000;
@@ -358,6 +315,23 @@ pub fn stack_trace (format: &mut dyn FnMut (&mut dyn Write, &backtrace::Symbol),
         });
         true
     });
+}
+
+/// Sets our own panic handler using patched backtrace crate. It was discovered that standard Rust panic
+/// handlers print only "unknown" in Android backtraces which is not helpful.
+/// Using custom hook with patched backtrace version solves this issue.
+/// NB: https://github.com/rust-lang/backtrace-rs/issues/227
+#[cfg(feature = "native")]
+pub fn set_panic_hook() {
+    use std::panic::{set_hook, PanicInfo};
+
+    set_hook (Box::new (|info: &PanicInfo| {
+        let mut trace = String::new();
+        stack_trace (&mut stack_trace_frame, &mut |l| trace.push_str (l));
+        log!((info));
+        log!("backtrace");
+        log!((trace));
+    }))
 }
 
 /// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
@@ -646,9 +620,10 @@ pub mod wio {
     }
 
     #[test]
+    #[ignore]
     fn test_slurp_req() {
-        let (status, _headers, _body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
-        assert! (status.is_success());
+        let (status, headers, body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
+        assert! (status.is_success(), format!("{:?} {:?} {:?}", status, headers, body));
     }
 
     /// Fetch URL by HTTPS and parse JSON response
@@ -909,4 +884,70 @@ pub fn lp_queue_command (msg: String) -> () {
         stats_json_only: 0,
     };
     unwrap! ((*COMMAND_QUEUE).0.send (cmd))
+}
+
+#[cfg(feature = "native")]
+pub use gstuff::{now_ms, now_float};
+#[cfg(not(feature = "native"))]
+pub fn now_ms() -> u64 {
+    extern "C" {pub fn date_now() -> f64;}
+    unsafe {date_now() as u64}
+}
+#[cfg(not(feature = "native"))]
+pub fn now_float() -> f64 {
+    use gstuff::duration_to_float;
+    use std::time::Duration;
+    duration_to_float (Duration::from_millis (now_ms()))
+}
+
+#[cfg(feature = "native")]
+pub fn writeln (line: &str) {
+    use std::panic::catch_unwind;
+
+    // `catch_unwind` protects the tests from error
+    //
+    //     thread 'CORE' panicked at 'cannot access stdout during shutdown'
+    //
+    // (which might be related to https://github.com/rust-lang/rust/issues/29488).
+    let _ = catch_unwind (|| {
+        println! ("{}", line);
+    });
+}
+#[cfg(not(feature = "native"))]
+pub fn writeln (line: &str) {
+    use std::ffi::CString;
+    use std::os::raw::c_char;
+
+    extern "C" {pub fn console_log (ptr: *const c_char, len: i32);}
+    let lineᶜ = unwrap! (CString::new (line));
+    unsafe {console_log (lineᶜ.as_ptr(), line.len() as i32)}
+}
+
+/// Set up a panic hook that prints the panic location and the message.
+/// (The default Rust handler doesn't have the means to print the message.
+///  Note that we're also getting the stack trace from Node.js and rustfilt).
+#[cfg(not(feature = "native"))]
+#[no_mangle]
+pub extern fn set_panic_hook() {
+    use gstuff::filename;
+    use std::panic::{set_hook, PanicInfo};
+
+    set_hook (Box::new (|info: &PanicInfo| {
+        let mut msg = String::new();
+        if let Some (loc) = info.location() {
+            let _ = wite! (&mut msg, (filename (loc.file())) ':' (loc.line()) "] ");
+        } else {
+            msg.push_str ("?] ");
+        }
+        if let Some (message) = info.message() {
+            let _ = wite! (&mut msg, "panick: " (message));
+        } else {
+            msg.push_str ("panick!")
+        }
+        writeln (&msg)
+    }))
+}
+
+pub fn small_rng() -> SmallRng {
+    SmallRng::seed_from_u64 (now_ms())
 }
