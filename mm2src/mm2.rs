@@ -124,6 +124,7 @@ fn help() {
         "                     Defaults to `false`.\n"
         "  seednodes      ..  Seednode IPs that node will use.\n"
         "                     At least one seed IP must be present if the node is not a seed itself.\n"
+        "  stderr         ..  Print a message to stderr and exit.\n"
         "  userhome       ..  System home directory of a user ('/root' by default).\n"
         "  wif            ..  `1` to add WIFs to the information we provide about a coin.\n"
         "\n"
@@ -155,6 +156,8 @@ pub fn mm2_main() {
     let first_arg = args_os.get (1) .and_then (|arg| arg.to_str());
 
     if first_arg == Some ("panic") {panic! ("panic message")}
+
+    if first_arg == Some("stderr") { eprintln!("This goes to stderr"); return; }
 
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
