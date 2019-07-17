@@ -110,6 +110,7 @@ fn help() {
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
         "  netid          ..  Subnetwork. Affects ports and keys.\n"
         "  passphrase *   ..  Wallet seed.\n"
+        "  panic          ..  Simulate a panic to see if backtrace works.\n"
         // cf. https://github.com/atomiclabs/hyperdex/pull/563/commits/6d17c0c994693b768e30130855c679a7849a2b27
         "  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.\n"
         "                     Default is currently 'http://localhost:3000'\n"
@@ -152,6 +153,8 @@ pub fn mm2_main() {
     // The other arguments might be used to pass the data to the various MM modes,
     // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
     let first_arg = args_os.get (1) .and_then (|arg| arg.to_str());
+
+    if first_arg == Some ("panic") {panic! ("panic message")}
 
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
