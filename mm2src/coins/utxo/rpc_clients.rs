@@ -16,7 +16,7 @@ use http::{Request, StatusCode};
 use http::header::AUTHORIZATION;
 use http::Uri;
 use keys::Address;
-use rpc::v1::types::{H256 as H256Json, Transaction as RpcTransaction, Bytes as BytesJson, VerboseBlockClient};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, Transaction as RpcTransaction, VerboseBlockClient};
 use rustls::{self, ClientConfig, Session};
 use script::{Builder};
 use serde_json::{self as json, Value as Json};
@@ -313,12 +313,7 @@ impl UtxoRpcClientOps for NativeClient {
 
     fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, from_block: u64) -> Result<UtxoTransaction, String> {
         let mut current_height = from_block;
-
         loop {
-            if now_ms() / 1000 > wait_until {
-                return ERR!("Waited too long until {} for transaction {:?} {} to be spent ", wait_until, tx, vout);
-            }
-
             let coin_height = match self.get_block_count().wait() {
                 Ok(h) => h,
                 Err(e) => {
@@ -338,25 +333,40 @@ impl UtxoRpcClientOps for NativeClient {
                 let mut got_error = false;
 
                 for tx_hash in block.tx.iter() {
-                    let transaction = match self.get_verbose_transaction(tx_hash.clone()).wait() {
+                    let transaction = match self.get_raw_transaction_bytes(tx_hash.clone()).wait() {
                         Ok(tx) => tx,
-                        Err(_e) => {
+                        Err(e) => {
+                            log!("Error " (e) " getting transaction " [tx_hash]);
                             got_error = true;
                             break;
                         },
                     };
 
-                    for input in transaction.vin.iter() {
-                        if input.txid == tx.hash().reversed().into() && input.vout == vout as u32 {
-                            let tx: UtxoTransaction = try_s!(deserialize(transaction.hex.as_slice()).map_err(|e| format!("{:?}", e)));
-                            return Ok(tx);
+                    let maybe_spend_tx: UtxoTransaction = match deserialize(transaction.as_slice()) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            log!("Error " [e] " deserializing transaction " [transaction]);
+                            got_error = true;
+                            break;
+                        }
+                    };
+
+                    for input in maybe_spend_tx.inputs.iter() {
+                        if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
+                            return Ok(maybe_spend_tx);
                         }
                     }
                 };
 
                 if !got_error {
                     current_height += 1;
+                } else {
+                    thread::sleep(Duration::from_secs(10));
                 }
+            }
+
+            if now_ms() / 1000 > wait_until {
+                return ERR!("Waited too long until {} for transaction {:?} {} to be spent ", wait_until, tx, vout);
             }
             thread::sleep(Duration::from_secs(10));
         }
@@ -783,14 +793,10 @@ impl UtxoRpcClientOps for ElectrumClient {
 
     /// This function is assumed to be used to search for spend of swap payment.
     /// For this case we can just wait that address history contains 2 or more records: the payment itself and spending transaction.
-    fn wait_for_payment_spend(&self, transaction: &UtxoTransaction, vout: usize, wait_until: u64, _from_block: u64) -> Result<UtxoTransaction, String> {
-        let script_hash = hex::encode(electrum_script_hash(&transaction.outputs[vout].script_pubkey));
+    fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, _from_block: u64) -> Result<UtxoTransaction, String> {
+        let script_hash = hex::encode(electrum_script_hash(&tx.outputs[vout].script_pubkey));
 
         loop {
-            if now_ms() / 1000 > wait_until {
-                return ERR!("Waited too long until {} for output {:?} to be spent ", wait_until, transaction.outputs[vout]);
-            }
-
             let history = match self.scripthash_get_history(&script_hash).wait() {
                 Ok(h) => h,
                 Err(e) => {
@@ -805,21 +811,32 @@ impl UtxoRpcClientOps for ElectrumClient {
             }
 
             for item in history.iter() {
-                let tx = match self.get_verbose_transaction(item.tx_hash.clone()).wait() {
-                    Ok(t) => t,
+                let transaction = match self.get_transaction_bytes(item.tx_hash.clone()).wait() {
+                    Ok(tx) => tx,
                     Err(e) => {
                         log!("Error " (e) " getting transaction " [item.tx_hash]);
                         continue;
+                    },
+                };
+
+                let maybe_spend_tx: UtxoTransaction = match deserialize(transaction.as_slice()) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log!("Error " [e] " deserializing transaction " [transaction]);
+                        continue;
                     }
                 };
-                for input in tx.vin.iter() {
-                    if input.txid == transaction.hash().reversed().into() && input.vout == vout as u32 {
-                        let tx: UtxoTransaction = try_s!(deserialize(tx.hex.as_slice()).map_err(|e| format!("{:?}", e)));
-                        return Ok(tx);
+
+                for input in maybe_spend_tx.inputs.iter() {
+                    if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
+                        return Ok(maybe_spend_tx);
                     }
                 }
             }
 
+            if now_ms() / 1000 > wait_until {
+                return ERR!("Waited too long until {} for output {:?} to be spent ", wait_until, tx.outputs[vout]);
+            }
             thread::sleep(Duration::from_secs(10));
         }
     }

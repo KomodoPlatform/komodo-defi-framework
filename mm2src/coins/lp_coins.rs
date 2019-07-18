@@ -634,17 +634,15 @@ struct iguana_info *LP_coinadd(struct iguana_info *cdata)
 /// (might lead to misleading and confusing information during debugging and maintenance, see DRY)
 /// and should be fixed on the call site.
 ///
-/// NB: As of now only a part of coin information has been ported to `MmCoinEnum`, as much as necessary to fix the SWAP in #233.
-///     We plan to port the rest of it later. Until then, it is accessible through the old `iguana_info` struct.
-///
 /// * `req` - Payload of the corresponding "enable" or "electrum" RPC request.
 fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    let mut coins = try_s! (cctx.coins.lock());
-    let ve = match coins.raw_entry_mut().from_key (ticker) {
-        RawEntryMut::Occupied (_oe) => return ERR! ("Coin {} already initialized", ticker),
-        RawEntryMut::Vacant (ve) => ve
-    };
+    {
+        let coins = try_s!(cctx.coins.lock());
+        if coins.get(ticker).is_some() {
+            return ERR!("Coin {} already initialized", ticker)
+        };
+    }
 
     let coins_en = if let Some (coins) = ctx.conf["coins"].as_array() {
         coins.iter().find (|coin| coin["coin"].as_str() == Some (ticker)) .unwrap_or (&Json::Null)
@@ -669,6 +667,16 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
     let block_count = try_s!(coin.current_block().wait());
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
     log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=block_count]);
+    // TODO AP: locking the coins list during the entire initialization prevents different coins from being
+    // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
+    // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
+    // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
+    let cctx = try_s! (CoinsContext::from_ctx (ctx));
+    let mut coins = try_s! (cctx.coins.lock());
+    match coins.raw_entry_mut().from_key (ticker) {
+        RawEntryMut::Occupied (_oe) => return ERR! ("Coin {} already initialized", ticker),
+        RawEntryMut::Vacant (ve) => ve.insert (ticker.to_string(), coin.clone())
+    };
     let history = req["tx_history"].as_bool().unwrap_or(false);
     if history {
         try_s!(thread::Builder::new().name(format!("tx_history_{}", ticker)).spawn({
@@ -678,7 +686,6 @@ fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, Str
         }));
     }
 
-    ve.insert (ticker.into(), coin.clone());
     Ok (coin)
 }
 

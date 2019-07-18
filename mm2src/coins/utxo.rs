@@ -1320,7 +1320,14 @@ impl MmCoin for UtxoCoin {
                     };
                     // electrum returns the most recent transactions in the end but we need to
                     // process them first so rev is required
-                    electrum_history.into_iter().rev().map(|item| (item.tx_hash, item.height as u64)).collect()
+                    electrum_history.into_iter().rev().map(|item| {
+                        let height = if item.height < 0 {
+                            0
+                        } else {
+                            item.height as u64
+                        };
+                        (item.tx_hash, height)
+                    }).collect()
                 }
             };
             let mut transactions_left = if tx_ids.len() > history_map.len() {
@@ -1355,9 +1362,15 @@ impl MmCoin for UtxoCoin {
                     },
                     Entry::Occupied(mut e) => {
                         // update block height for previously unconfirmed transaction
-                        if e.get().block_height == 0 && height > 0 {
+                        if (e.get().block_height == 0 || e.get().block_height == std::u64::MAX) && height > 0 {
                             e.get_mut().block_height = height;
                             updated = true;
+                        }
+                        if e.get().timestamp == 0 {
+                            if let Ok(tx_details) = self.tx_details_by_hash(&txid.0) {
+                                e.get_mut().timestamp = tx_details.timestamp;
+                                updated = true;
+                            }
                         }
                     }
                 }

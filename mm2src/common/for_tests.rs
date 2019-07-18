@@ -324,7 +324,7 @@ pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json
         "servers": servers,
         "mm2": 1,
     })));
-    assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with status «{}»", electrum.0);
+    assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with {} {}", electrum.0, electrum.1);
     unwrap!(json::from_str(&electrum.1))
 }
 #[cfg(not(feature = "native"))]

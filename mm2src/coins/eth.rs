@@ -561,10 +561,6 @@ impl MarketCoinOps for EthCoin {
         };
 
         loop {
-            if now_ms() / 1000 > wait_until {
-                return ERR!("Waited too long until {} for transaction {:?} to be spent ", wait_until, tx);
-            }
-
             let events = match self.spend_events(from_block).wait() {
                 Ok(ev) => ev,
                 Err(e) => {
@@ -594,6 +590,10 @@ impl MarketCoinOps for EthCoin {
 
                     return Ok(TransactionEnum::from(try_s!(signed_tx_from_web3_tx(transaction))))
                 }
+            }
+
+            if now_ms() / 1000 > wait_until {
+                return ERR!("Waited too long until {} for transaction {:?} to be spent ", wait_until, tx);
             }
             thread::sleep(Duration::from_secs(15));
             continue;
