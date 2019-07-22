@@ -14,6 +14,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
+#[macro_use] extern crate arrayref;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
@@ -57,12 +58,11 @@ pub mod log;
 
 #[cfg(feature = "native")]
 pub mod for_c;
-pub mod for_tests;
 pub mod custom_futures;
 pub mod iguana_utils;
 pub mod lp_privkey;
 pub mod mm_ctx;
-pub mod ser;
+pub mod seri;
 #[cfg(feature = "native")]
 pub mod lift_body;
 
@@ -75,6 +75,7 @@ use http::header::{HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use libc::{c_char, c_void, malloc, free};
 use rand::{SeedableRng, rngs::SmallRng};
+use serde::{ser, de};
 use serde_json::{self as json, Value as Json};
 use std::env::args;
 use std::fmt::{self, Write as FmtWrite};
@@ -114,6 +115,34 @@ impl fmt::Display for bits256 {
             fm.write_char (hex_from_digit (ch % 16)) ?;
         }
         Ok(())
+}   }
+
+impl ser::Serialize for bits256 {
+    fn serialize<S> (&self, se: S) -> Result<S::Ok, S::Error> where S: ser::Serializer {
+        se.serialize_bytes (&self.bytes[..])
+}   }
+
+impl<'de> de::Deserialize<'de> for bits256 {
+    fn deserialize<D> (deserializer: D) -> Result<bits256, D::Error> where D: de::Deserializer<'de> {
+        struct Bits256Visitor;
+        impl<'de> de::Visitor<'de> for Bits256Visitor {
+            type Value = bits256;
+            fn expecting (&self, fm: &mut fmt::Formatter) -> fmt::Result {fm.write_str ("a byte array")}
+            fn visit_seq<S> (self, mut seq: S) -> Result<bits256, S::Error> where S: de::SeqAccess<'de> {
+                let mut bytes: [u8; 32] = [0; 32];
+                let mut pos = 0;
+                while let Some (byte) = seq.next_element()? {
+                    if pos >= bytes.len() {return Err (de::Error::custom ("bytes length > 32"))}
+                    bytes[pos] = byte;
+                    pos += 1;
+                }
+                Ok (bits256 {bytes})
+            }
+            fn visit_bytes<E> (self, v: &[u8]) -> Result<Self::Value, E> where E: de::Error {
+                if v.len() != 32 {return Err (de::Error::custom ("bytes length <> 32"))}
+                Ok (bits256 {bytes: *array_ref! [v, 0, 32]})
+        }   }
+        deserializer.deserialize_bytes (Bits256Visitor)
 }   }
 
 impl fmt::Debug for bits256 {
@@ -951,3 +980,65 @@ pub extern fn set_panic_hook() {
 pub fn small_rng() -> SmallRng {
     SmallRng::seed_from_u64 (now_ms())
 }
+
+/// Proxy invoking a helper function which takes the (ptr, len) input and fills the (rbuf, rlen) output.
+#[macro_export]
+macro_rules! io_buf_proxy {
+    ($helper:ident, $payload:expr, $rlen:literal) => {
+        unsafe {
+            let payload = try_s! (json::to_vec ($payload));
+            let mut rbuf: [u8; $rlen] = std::mem::uninitialized();
+            let mut rlen = rbuf.len() as u32;
+            $helper (
+                payload.as_ptr(), payload.len() as u32,
+                rbuf.as_mut_ptr(), &mut rlen
+            );
+            let rlen = rlen as usize;
+            // Checks that `rlen` has changed
+            // (`rlen` staying the same might indicate that the helper was not invoked).
+            if rlen >= rbuf.len() {return ERR! ("Bad rlen: {}", rlen)}
+            try_s! (json::from_slice (&rbuf[0..rlen]))
+}   }   }
+
+#[doc(hidden)]
+pub fn serialize_to_rbuf<T: ser::Serialize> (line: u32, rc: Result<T, String>, rbuf: *mut u8, rlen: *mut u32) {
+    use std::io::Cursor;
+    use std::ptr::{read_unaligned, write_unaligned};
+    use std::slice::from_raw_parts_mut;
+    unsafe {
+        let rbuf_capacity = read_unaligned (rlen) as usize;
+        let rbufˢ: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
+        let mut cur = Cursor::new (rbufˢ);
+        if let Err (err) = json::to_writer (&mut cur, &rc) {
+            let rbufˢ: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
+            cur = Cursor::new (rbufˢ);
+            let rc: Result<T, String> = Err (fomat! ((line) "] Error serializing response: " (err)));
+            unwrap! (json::to_writer (&mut cur, &rc), "Error serializing an error");
+        }
+        let seralized_len = cur.position();
+        assert! (seralized_len <= rbuf_capacity as u64);
+        write_unaligned (rlen, seralized_len as u32)
+}   }
+
+#[macro_export]
+macro_rules! helper {
+    ($helperⁱ:ident, $encoded_argsⁱ:ident: $encoded_argsᵗ:ty, $body:block) => {
+        #[cfg(not(feature = "native"))]
+        extern "C" {pub fn $helperⁱ (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32);}
+
+        #[cfg(feature = "native")]
+        #[no_mangle]
+        pub extern fn $helperⁱ (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32) {
+            use std::slice::from_raw_parts;
+            // TODO: Try using bencode instead of JSON.
+
+            let rc: Result<_, String>;
+            let encoded_argsˢ = unsafe {from_raw_parts (ptr, len as usize)};
+            match json::from_slice::<$encoded_argsᵗ> (encoded_argsˢ) {
+                Err (err) => rc = ERR! (concat! (stringify! ($helperⁱ), "] error deserializing: {}"), err),
+                Ok ($encoded_argsⁱ) => rc = (|| $body)()
+            }
+            $crate::serialize_to_rbuf (line!(), rc, rbuf, rlen)
+}   }   }
+
+pub mod for_tests;

@@ -156,8 +156,7 @@ pub fn mm2_main() {
     let first_arg = args_os.get (1) .and_then (|arg| arg.to_str());
 
     if first_arg == Some ("panic") {panic! ("panic message")}
-
-    if first_arg == Some("stderr") { eprintln!("This goes to stderr"); return; }
+    if first_arg == Some ("stderr") {eprintln! ("This goes to stderr"); return}
 
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}
     if cfg! (windows) && first_arg == Some ("/?") {help(); return}
@@ -195,7 +194,10 @@ pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &dyn Fn (u32)) -> Result<()
         if coins_from_file.is_empty() {
             return ERR!("No coins are set in JSON config and 'coins' file doesn't exist");
         }
-        conf["coins"] = try_s!(json::from_slice(&coins_from_file));
+        conf["coins"] = match json::from_slice(&coins_from_file) {
+            Ok(j) => j,
+            Err(e) => return ERR!("Error {} parsing the coins file, please ensure it contains valid json", e),
+        }
     }
 
     try_s! (lp_main (conf, ctx_cb));

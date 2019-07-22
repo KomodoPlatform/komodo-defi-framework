@@ -13,11 +13,11 @@
             "externalConsole": false
         },
         {
-            "name": "test-autoprice",
+            "name": "test",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/mm2-3de214edaec591e4.exe",
-            "args": ["test_autoprice_coingecko", "--nocapture"],
+            "program": "${workspaceRoot}/target/debug/mm2-62664bdf1981f49d.exe",
+            "args": ["peers_dht"],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",
             "environment": [

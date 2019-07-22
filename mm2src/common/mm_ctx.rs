@@ -313,17 +313,14 @@ impl MmArc {
 pub extern fn ctx2helpers (ptr: *const u8, len: u32) {
     use std::slice::from_raw_parts;
 
-    log! ("Native ctx2helpers invoked! ptr is " [ptr] "; len is " (len));
     let ctxˢ = unsafe {from_raw_parts (ptr, len as usize)};
     let ctxʲ: Json = unwrap! (json::from_slice (ctxˢ), "!json::from_slice");
 
     let ffi_handle = unwrap! (ctxʲ["ffi_handle"].as_u64(), "!ffi_handle") as u32;
-    log! ("ffi_handle: " (ffi_handle));
 
     if let Ok (_ctx) = MmArc::from_ffi_handle (ffi_handle) {
-        log! ("ffi_handle " (ffi_handle) " already exists");
+        //log! ("ffi_handle " (ffi_handle) " already exists");
     } else {
-        log! ("ffi_handle " (ffi_handle) " is new, creating");
         let ctx = MmCtx {
             // TODO: Move from a `Deserialize`.
             conf: ctxʲ["conf"].clone(),

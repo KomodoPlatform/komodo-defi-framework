@@ -54,6 +54,7 @@ use serde::Serialize;
 use serde_bencode::ser::to_bytes as bencode;
 use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
+use serde_json::{self as json};
 use std::collections::btree_map::BTreeMap;
 use std::cmp::Ordering;
 use std::env::{temp_dir, var};
@@ -1422,61 +1423,35 @@ pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_p
     Ok(())
 }
 
-#[cfg(feature = "native")]
-#[no_mangle]
-pub extern fn peers_initialize (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32) {
-    use serde_json::{self as json, Value as Json};
-    use std::slice::from_raw_parts_mut;
-
-    log! ("Native peers_initialize invoked! ptr is " [ptr] "; len is " (len));
-    let inˢ = unsafe {from_raw_parts (ptr, len as usize)};
-    let inʲ: Json = unwrap! (json::from_slice (inˢ), "!json::from_slice");
-    log! ("in: " [inʲ]);
-
-    // TODO: let rc = initialize (...);
-    let rc: Result<(), String> = ERR! ("TBD");
-
-    // TODO: Consider using a macros reducing the boilerplate.
-    unsafe {
-        log! ("here");
-        let rbuf_capacity = read_volatile (rlen) as usize;
-        log! ([=rbuf_capacity]);
-        let rbuf: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
-        let mut cur = Cursor::new (rbuf);
-        unwrap! (json::to_writer (&mut cur, &rc), "Error serializing response");
-        let seralized_len = cur.position();
-        assert! (seralized_len <= rbuf_capacity as u64);
-        *rlen = seralized_len as u32
-    }
+#[derive(Serialize, Deserialize, Debug)]
+struct ToPeersInitialize {
+    ctx: u32,
+    netid: u16,
+    our_public_key: bits256,
+    preferred_port: u16
 }
+
+helper! (peers_initialize, args: ToPeersInitialize, {
+    match MmArc::from_ffi_handle (args.ctx) {
+        Err (err) => ERR! (concat! (stringify! ($helper_name), "] !from_ffi_handle: {}"), err),
+        Ok (ctx) => initialize (&ctx, args.netid, args.our_public_key, args.preferred_port)
+    }
+});
 
 #[cfg(not(feature = "native"))]
 pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
+    let pctx = try_s! (PeersContext::from_ctx (&ctx));
+    *try_s! (pctx.our_public_key.lock()) = our_public_key;
+
     try_s! (ctx.send_to_helpers());
 
-    // TODO: Consider using a macros reducing the boilerplate.
-    extern "C" {pub fn peers_initialize (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32);}
-    unsafe {
-        use serde_json::{self as json};
-        use std::ptr::read_volatile;
-
-        let mut buf: [u8; 4096] = uninitialized();
-        log! ("Invoking peers_initialize ...");
-        let mut rlen = buf.len() as u32;
-        peers_initialize (
-            b"{}".as_ptr(), 2,
-            buf.as_mut_ptr(), &mut rlen
-        );
-        let rlen = read_volatile (&rlen) as usize;
-        log! ("peers_initialize returned rlen " [rlen]);
-        // Checks that `rlen` has changed
-        // (`rlen` staying the same might indicate that the helper was not invoked).
-        assert! (rlen < buf.len());
-        let rc: Result<(), String> = try_s! (json::from_slice (&buf[0..rlen]));
-        log! ("Decoded result: " [rc]);
-    }
-
-    unimplemented!()
+    let args = ToPeersInitialize {
+        ctx: try_s! (ctx.ffi_handle()),
+        netid,
+        our_public_key,
+        preferred_port
+    };
+    io_buf_proxy! (peers_initialize, &args, 4096)
 }
 
 /// Try to reach a peer and establish connectivity with it while knowing no more than its port and IP.
@@ -1491,8 +1466,46 @@ pub fn investigate_peer (ctx: &MmArc, ip: &str, preferred_port: u16) -> Result<(
     Ok(())
 }
 
+// AG: I had trouble with Arc::into_raw in some builds (Rust 2019-06-25, pointers are correct, no double frees)
+// hence using a map to keep the arcs around.
+lazy_static! {static ref SEND_HANDLERS: Mutex<HashMap<u64, Arc<SendHandler>>> = Mutex::new (HashMap::new());}
+
+#[doc(hidden)]
+pub fn send_handlers_num() -> usize {unwrap! (SEND_HANDLERS.lock()) .len()}
+
 /// Dropping this (out of a corresponding Arc) stops the transmission effort.
+#[derive(Debug)]
 pub struct SendHandler;
+
+#[cfg(feature = "native")]
+#[no_mangle]
+pub unsafe extern fn peers_drop_send_handler (shp1: i32, shp2: i32) {
+    let send_handler_ptr = (shp1 as u32 as u64) << 32 | shp2 as u32 as u64;
+    if let Ok (mut handlers) = SEND_HANDLERS.lock() {
+        handlers.remove (&send_handler_ptr);
+}   }
+
+#[cfg(not(feature = "native"))]
+extern "C" {pub fn peers_drop_send_handler (shp1: i32, shp2: i32);}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SendHandlerRef (u64);
+
+impl From<Arc<SendHandler>> for SendHandlerRef {
+    fn from (arc: Arc<SendHandler>) -> SendHandlerRef {
+        let mut send_handlers = unwrap! (SEND_HANDLERS.lock());
+        let ptr = arc.as_ref() as *const SendHandler;
+        let ptr = ptr as u64;
+        send_handlers.insert (ptr, arc);
+        SendHandlerRef (ptr)
+}   }
+
+impl Drop for SendHandlerRef {
+    fn drop (&mut self) {
+        let shp1 = (self.0 >> 32) as u32 as i32;
+        let shp2 = (self.0 & 0xFFFFFFFF) as u32 as i32;
+        unsafe {peers_drop_send_handler (shp1, shp2)};
+}   }
 
 /// Start sending `data` to the peer.
 /// 
@@ -1523,7 +1536,7 @@ pub struct SendHandler;
 /// Think of it as a radio-signal set on a loop.
 #[cfg(feature = "native")]
 pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
--> Result<Arc<SendHandler>, String> {
+-> Result<SendHandlerRef, String> {
     let fallback = match option_env! ("MM2_FALLBACK") {Some (n) => try_s! (n.parse()), None => fallback};
     let fallback = try_s! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
 
@@ -1546,12 +1559,35 @@ pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: 
     // Tell `peers_thread` to save the data.
     try_s! (pctx.cmd_tx.send (LtCommand::Put {seed: peer, salt, payload, send_handler, fallback}));
 
-    Ok (send_handler_arc)
+    Ok (send_handler_arc.into())
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct ToPeersSend {ctx: u32, peer: bits256, subject: Vec<u8>, fallback: u8, payload: Vec<u8>}
+
+helper! (peers_send, args: ToPeersSend, {
+    let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
+    let mut shr = try_s! (send (&ctx, args.peer, &args.subject, args.fallback, args.payload));
+    // We need to leak the `SendHandlerRef` into the portable space
+    // in order not to terminate the send prematurely.
+    let ptr = shr.0;
+    shr.0 = 0;
+    Ok (ptr)
+});
+
+/// Returns the `Arc` address of the `SendHandler`.
 #[cfg(not(feature = "native"))]
 pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
--> Result<Arc<SendHandler>, String> {unimplemented!()}
+-> Result<SendHandlerRef, String> {
+    let to = ToPeersSend {
+        ctx: try_s! (ctx.ffi_handle()),
+        peer,
+        subject: subject.into(),
+        fallback,
+        payload
+    };
+    io_buf_proxy! (peers_send, &to, 4096)
+}
 
 struct RecvFuture {
     pctx: Arc<PeersContext>,
@@ -1637,9 +1673,40 @@ pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<dyn Fn(&[
     Box::new (RecvFuture {pctx, seed, salt, validator, frid: None, fallback})
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub enum FixedValidator {
+    AnythingGoes,
+    Exact (Vec<u8>)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ToPeersRecv {ctx: u32, subject: Vec<u8>, fallback: u8, validator: FixedValidator}
+
+helper! (peers_recv, args: ToPeersRecv, {
+    let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
+    let validator: Box<dyn Fn(&[u8])->bool + Send> = match args.validator {
+        FixedValidator::AnythingGoes => Box::new (|_| true),
+        FixedValidator::Exact (bytes) => Box::new (move |candidate| candidate == &bytes[..])
+    };
+    let rf = recv (&ctx, &args.subject, args.fallback, validator);
+    // Exploring, and for the simplicity's sake, we're going to just wait here.
+    // Tracking background future execution in portable code can be implemented later if necessary.
+    let vec = try_s! (rf.wait());
+    Ok (vec)
+});
+
 #[cfg(not(feature = "native"))]
-pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: Box<dyn Fn(&[u8])->bool + Send>)
--> Box<dyn Future<Item=Vec<u8>, Error=String> + Send> {unimplemented!()}
+pub fn recv (ctx: &MmArc, subject: &[u8], fallback: u8, validator: FixedValidator)
+-> Box<dyn Future<Item=Vec<u8>, Error=String> + Send> {
+    let args = ToPeersRecv {
+        ctx: try_fus! (ctx.ffi_handle()),
+        subject: subject.into(),
+        fallback,
+        validator
+    };
+    let rc = (|| -> Result<Vec<u8>, String> {io_buf_proxy! (peers_recv, &args, 65536)})();
+    Box::new (future::ok (try_fus! (rc)))
+}
 
 pub fn key (ctx: &MmArc) -> Result<bits256, String> {
     let pctx = try_s! (PeersContext::from_ctx (&ctx));

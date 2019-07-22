@@ -1,11 +1,10 @@
-# Happening in a well-defined setting the Docker builds should be somewhat
-# more reproducible than builds relying on the local workstation environment.
-# Hence we're going to use the Docker build as the reference one.
-# CI and local builds might be considered a second tier build optimizations.
-# 
-# docker build --tag mm2 .
+# Demo of driving the peers communication from the portable layer of the code.
+#
+#     docker build --file js/Dockerfile --tag mm2-peers-demo .
+#     docker run -ti mm2-peers-demo
 
-# NB: The version here was picked to match the one tested in our CI. The latest Travis has (as of 2018-11) is Xenial.
+# -- Begins with parts copied from the MM Dockerfile in order to share those filesystem layers --
+
 FROM ubuntu:xenial
 
 RUN \
@@ -17,7 +16,6 @@ RUN \
     apt-get install -y pkg-config libssl-dev &&\
     apt-get clean
 
-#Cmake 3.12.0 supports multi-platform -j option, it allows to use all cores for concurrent build to speed up it
 RUN wget https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh && \
     sh cmake-3.12.0-Linux-x86_64.sh --skip-license --exclude-subdir --prefix=/usr/local && \
     rm -rf cmake-3.12.0-Linux-x86_64.sh
@@ -48,17 +46,38 @@ RUN cd /tmp &&\
 
 RUN cd /mm2 && cargo fetch
 
+# -- End of the shared parts --
+
+RUN cd /tmp &&\
+    wget https://nodejs.org/dist/v12.6.0/node-v12.6.0-linux-x64.tar.xz &&\
+    tar -xJf node-v12.6.0-linux-x64.tar.xz &&\
+    cd /tmp/node-v12.6.0-linux-x64 &&\
+    cp -r * /usr/local/ &&\
+    cd /tmp &&\
+    rm -rf node* &&\
+    node --version
+
+RUN rustup target add wasm32-unknown-unknown
+
+RUN cargo install rustfilt
+
 # This will overwrite the Git version with the local one.
 # Only needed when we're developing or changing something locally.
 #COPY . /mm2
 
-# Build MM1 and MM2.
-# Increased verbosity here allows us to see the MM1 CMake logs.
 RUN cd /mm2 &&\
-    cargo build --features native -vv &&\
-    mv target/debug/mm2 /usr/local/bin/marketmaker-mainnet &&\
-    # We currently need BOB_PASSPHRASE, BOB_USERPASS, ALICE_PASSPHRASE and ALICE_USERPASS for the tests…
-    #cargo test --features native &&\
-    cargo clean
+    cargo build --target=wasm32-unknown-unknown --release --package=peers &&\
+    mv target/wasm32-unknown-unknown/release/peers.wasm js/ &&\
+    rm -rf target
 
-CMD marketmaker-testnet
+ENV WASM_PATH="/mm2/js/peers.wasm"
+
+RUN cd /mm2 &&\
+    cargo build --features native --package peers --release &&\
+    cp target/release/libpeers.so js/peers.so &&\
+    rm -rf target
+
+RUN cd /mm2/js &&\
+    npm install > npm-install.log 2>&1
+
+CMD cd /mm2/js && node wasm-run.js | rustfilt

@@ -1,7 +1,7 @@
 use common::{bits256, now_float, small_rng};
 #[cfg(feature = "native")]
 use common::wio::{drive, CORE};
-use common::for_tests::wait_for_log;
+use common::for_tests::wait_for_log_re;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
@@ -45,23 +45,22 @@ fn peer (conf: Json, port: u16) -> MmArc {
         seeds.push (unwrap! (unwrap! (seednodes[0].as_str()) .parse()))
     }
 
-    let mut alice_key: bits256 = unsafe {zeroed()};
-    small_rng().fill (&mut alice_key.bytes[..]);
-    unwrap! (super::initialize (&ctx, 9999, alice_key, port));
+    let mut key: bits256 = unsafe {zeroed()};
+    small_rng().fill (&mut key.bytes[..]);
+    unwrap! (super::initialize (&ctx, 9999, key, port));
 
     ctx
 }
 
 fn destruction_check (mm: MmArc) {
     mm.stop();
-    if let Err (err) = wait_for_log (&mm.log, 1., &|en| en.contains ("delete_dugout finished!")) {
+    if let Err (err) = wait_for_log_re (&mm, 1., "delete_dugout finished!") {
         // NB: We want to know if/when the `peers` destruction doesn't happen, but we don't want to panic about it.
         pintln! ((err))
     }
 }
 
 fn peers_exchange (conf: Json) {
-    log! ("Entering peers_exchange…");  // Added temporarily to test portable logging.
     let fallback_on = conf["http-fallback"] == "on";
     let fallback = if fallback_on {1} else {255};
 
@@ -69,8 +68,8 @@ fn peers_exchange (conf: Json) {
     let bob = peer (conf, 2112);
 
     if !fallback_on {
-        unwrap! (wait_for_log (&alice.log, 99., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
-        unwrap! (wait_for_log (&bob.log, 33., &|en| en.contains ("[dht-boot] DHT bootstrap ... Done.")));
+        unwrap! (wait_for_log_re (&alice, 99., r"\[dht-boot] DHT bootstrap \.\.\. Done\."));
+        unwrap! (wait_for_log_re (&bob, 33., r"\[dht-boot] DHT bootstrap \.\.\. Done\."));
     }
 
     let tested_lengths: &[usize] = &[
@@ -78,30 +77,48 @@ fn peers_exchange (conf: Json) {
         1,  // Reduce the number of chunks *in the same subject*.
         // 992 /* (1000 - bencode overhead - checksum) */ * 253 /* Compatible with (1u8..) */ - 1 /* space for number_of_chunks */
     ];
-    let mut rng = rand::thread_rng();
+    let mut rng = small_rng();
     for message_len in tested_lengths.iter() {
         // Send a message to Bob.
 
         let message: Vec<u8> = (0..*message_len) .map (|_| rng.gen()) .collect();
 
-        println! ("Sending {} bytes …", message.len());
-        let _sending_f = super::send (&alice, unwrap! (super::key (&bob)), b"test_dht", fallback, message.clone());
+        log! ("Sending " (message.len()) " bytes …");
+        let sending_f = unwrap! (super::send (
+            &alice, unwrap! (super::key (&bob)), b"test_dht", fallback, message.clone()));
 
         // Get that message from Alice.
 
-        let receiving_f = super::recv (&bob, b"test_dht", fallback, Box::new ({
-            let message = message.clone();
-            move |payload| payload == &message[..]
-        }));
+        #[cfg(feature = "native")]
+        fn fixed_validator (expect: Vec<u8>) -> Box<dyn Fn(&[u8])->bool + Send> {
+            Box::new (move |payload| payload == &expect[..])
+        }
+
+        #[cfg(not(feature = "native"))]
+        fn fixed_validator (expect: Vec<u8>) -> crate::FixedValidator {
+            crate::FixedValidator::Exact (expect)
+        }
+
+        let receiving_f = super::recv (&bob, b"test_dht", fallback, fixed_validator (message.clone()));
         let received = unwrap! (receiving_f.wait());
         assert_eq! (received, message);
 
         if fallback_on {
             // TODO: Refine the log test.
             // TODO: Check that the HTTP fallback was NOT used if `!fallback_on`.
-            unwrap! (wait_for_log (&alice.log, 0.1, &|en| en.contains (
-                "transmit] TBD, time to use the HTTP fallback...")))
+            unwrap! (wait_for_log_re (&alice, 0.1, r"transmit] TBD, time to use the HTTP fallback\.\.\."))
             // TODO: Check the time delta, with fallback 1 the delivery shouldn't take long.
+        }
+
+        let hn1 = crate::send_handlers_num();
+        drop (sending_f);
+        let hn2 = crate::send_handlers_num();
+        if cfg! (feature = "native") {
+            // Dropping SendHandlerRef results in the removal of the corresponding `Arc<SendHandler>`.
+            assert! (hn1 > 0 && hn2 == hn1 - 1, "hn1 {} hn2 {}", hn1, hn2)
+        } else {
+            // `SEND_HANDLERS` only tracks the arcs in the native helper.
+            assert! (hn1 == 0 && hn2 == 0, "hn1 {} hn2 {}", hn1, hn2)
         }
     }
 
@@ -134,11 +151,10 @@ pub fn peers_http_fallback_recv() {
 #[cfg(not(feature = "native"))]
 pub fn peers_http_fallback_recv() {}
 
-// TODO: delme
-/// Temporarily helps with running the peers test independently from the MM crate.
-#[test] fn test_peers_http_fallback_recv() {peers_http_fallback_recv()}
-
+#[cfg(feature = "native")]
 pub fn peers_direct_send() {
+    use common::for_tests::wait_for_log;
+
     // Unstable results on our MacOS CI server,
     // which isn't a problem in general (direct UDP communication is a best effort optimization)
     // but is bad for the CI tests.
@@ -158,7 +174,7 @@ pub fn peers_direct_send() {
         assert! (!alice_trans.friends.contains_key (&bob_key))
     }
 
-    let mut rng = rand::thread_rng();
+    let mut rng = small_rng();
     let message: Vec<u8> = (0..33) .map (|_| rng.gen()) .collect();
 
     let _send_f = super::send (&alice, bob_key, b"subj", 255, message.clone());
@@ -254,7 +270,3 @@ pub fn peers_http_fallback_kv() {
 
 #[cfg(not(feature = "native"))]
 pub fn peers_http_fallback_kv() {}
-
-// TODO: delme
-/// Temporarily helps with running the peers test independently from the MM crate.
-#[test] fn test_peers_http_fallback_kv() {peers_http_fallback_kv()}

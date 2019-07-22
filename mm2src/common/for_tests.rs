@@ -3,13 +3,14 @@
 use chrono::Local;
 #[cfg(feature = "native")]
 use futures::Future;
-use gstuff::{now_float, slurp, ISATTY};
+use gstuff::{slurp, ISATTY};
 use http::{StatusCode, HeaderMap};
 #[cfg(feature = "native")]
 use http::{Request};
 use serde_json::{self as json, Value as Json};
 use term;
 use rand::{thread_rng, Rng};
+use regex::Regex;
 use std::collections::HashSet;
 use std::env::{self, var};
 use std::fs;
@@ -23,9 +24,10 @@ use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
+use crate::now_float;
 #[cfg(feature = "native")]
-use super::wio::slurp_req;
-use super::log::{dashboard_path, LogState};
+use crate::wio::slurp_req;
+use crate::log::{dashboard_path, LogState};
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {pub handle: Child, running: bool}
@@ -257,6 +259,7 @@ impl Drop for MarketMakerIt {
 }
 
 /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
+#[cfg(feature = "native")]
 pub fn wait_for_log (log: &LogState, timeout_sec: f64, pred: &dyn Fn (&str) -> bool) -> Result<(), String> {
     let start = now_float();
     let ms = 50 .min ((timeout_sec * 1000.) as u64 / 20 + 10);
@@ -282,6 +285,31 @@ pub fn wait_for_log (log: &LogState, timeout_sec: f64, pred: &dyn Fn (&str) -> b
         if now_float() - start > timeout_sec {return ERR! ("Timeout expired waiting for a log condition")}
         sleep (Duration::from_millis (ms));
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ToWaitForLogRe {ctx: u32, timeout_sec: f64, re_pred: String}
+
+helper! (common_wait_for_log_re, args: ToWaitForLogRe, {
+    let ctx = try_s! (crate::mm_ctx::MmArc::from_ffi_handle (args.ctx));
+    let re = try_s! (Regex::new (&args.re_pred));
+    wait_for_log (&ctx.log, args.timeout_sec, &|line| re.is_match (line))
+});
+
+#[cfg(feature = "native")]
+pub fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
+    let re = try_s! (Regex::new (re_pred));
+    wait_for_log (&ctx.log, timeout_sec, &|line| re.is_match (line))
+}
+
+#[cfg(not(feature = "native"))]
+pub fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
+    let args = ToWaitForLogRe {
+        ctx: try_s! (ctx.ffi_handle()),
+        timeout_sec: timeout_sec,
+        re_pred: re_pred.into()
+    };
+    io_buf_proxy! (common_wait_for_log_re, &args, 4096)
 }
 
 /// Create RAII variables to the effect of dumping the log and the status dashboard at the end of the scope.

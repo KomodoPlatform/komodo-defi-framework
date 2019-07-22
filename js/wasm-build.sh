@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Builds WASM in a separate folder in order not to mess the native build.
-# Run with `bash js/wasm-build.sh`.
+# Run with `wsl js/wasm-build.sh`.
 
 set -e
 
