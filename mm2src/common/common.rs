@@ -357,9 +357,8 @@ pub fn set_panic_hook() {
     set_hook (Box::new (|info: &PanicInfo| {
         let mut trace = String::new();
         stack_trace (&mut stack_trace_frame, &mut |l| trace.push_str (l));
-        log!((info));
-        log!("backtrace");
-        log!((trace));
+        log! ((info));
+        log! ("backtrace\n" (trace));
     }))
 }
 

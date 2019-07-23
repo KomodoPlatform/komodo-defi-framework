@@ -24,8 +24,6 @@ use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use libflate::gzip::Decoder;
-use shell_escape::escape;
-use std::cmp::max;
 use std::env::{self, var};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
@@ -40,26 +38,17 @@ use tar::Archive;
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;
 
-/// Like the `duct` `cmd!` but also prints the command into the standard error stream.
-macro_rules! ecmd {
-    ( $program:expr ) => {{
-        eprintln!("$ {}", $program);
-        cmd($program, empty::<String>())
-            .stdout_to_stderr()
-    }};
-    ( @s $args: expr, $arg:expr ) => {$args.push(String::from($arg));};
-    ( @i $args: expr, $iterable:expr ) => {for v in $iterable {ecmd! (@s $args, v)}};
-    ( @a $args: expr, i $arg:expr ) => {ecmd! (@i $args, $arg);};
-    ( @a $args: expr, i $arg:expr, $( $tail:tt )* ) => {ecmd! (@i $args, $arg); ecmd! (@a $args, $($tail)*);};
-    ( @a $args: expr, $arg:expr ) => {ecmd! (@s $args, $arg);};
-    ( @a $args: expr, $arg:expr, $( $tail:tt )* ) => {ecmd! (@s $args, $arg); ecmd! (@a $args, $($tail)*);};
-    ( $program:expr, $( $args:tt )* ) => {{
-        let mut args: Vec<String> = Vec::new();
-        ecmd! (@a &mut args, $($args)*);
-        eprintln!("$ {}{}", $program, show_args(&args));
-        cmd($program, args)
-            .stdout_to_stderr()
-    }};
+/// Quote spaces, in case the project is on a path with them.
+fn escape_some (path: &str) -> String {
+    // AG: I've tried using the shell_escape crate for this,
+    // but it adds the single quotes, breaking the variable and argument assignments on Windows.
+
+    let mut esc = String::with_capacity (path.len());
+    for ch in path.chars() {
+        if ch == ' ' {esc.push ('\\')}
+        esc.push (ch)
+    }
+    esc
 }
 
 /// Returns `true` if the `target` is not as fresh as the `prerequisites`.
@@ -70,7 +59,7 @@ fn make(target: &AsRef<Path>, prerequisites: &[PathBuf]) -> bool {
     }
     let mut prerequisites_lm = 0;
     for path in prerequisites {
-        prerequisites_lm = max(
+        prerequisites_lm = std::cmp::max(
             prerequisites_lm,
             last_modified_sec(&path).expect("!last_modified") as u64,
         )
@@ -980,7 +969,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
     let boostˢ = unwrap!(boost.to_str());
-    let boostᵉ = escape(boostˢ.into());
+    let boostᵉ = escape_some(boostˢ.into());
     // NB: The common compiler flags go to the "cxxflags=" here
     // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(
@@ -1014,11 +1003,11 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     }
 
     let boost_build_path = boost.join("tools").join("build");
-    let boost_build_pathᵉ = escape(unwrap!(boost_build_path.to_str()).into());
+    let boost_build_pathˢ = unwrap!(boost_build_path.to_str());
     let export = if cfg!(windows) { "SET" } else { "export" };
     epintln!("build_libtorrent]\n"
       "  $ "(export)" PATH="(boostᵉ) if cfg!(windows) {";%PATH%"} else {":$PATH"} "\n"
-      "  $ "(export)" BOOST_BUILD_PATH="(boost_build_pathᵉ) "\n"
+      "  $ "(export)" BOOST_BUILD_PATH="(escape_some(boost_build_pathˢ)) "\n"
       "  $ "(b2));
     if cfg!(windows) {
         run!(ecmd!("cmd", "/c", b2)

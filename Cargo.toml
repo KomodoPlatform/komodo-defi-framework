@@ -1,16 +1,17 @@
-# TODO: (Upgrade Rust and) use https://github.com/rust-lang/rfcs/blob/master/text/2282-profile-dependencies.md
-#       cf. https://github.com/rust-lang/rust/issues/48683
-#       Keep debugging symbols in our release code (but not in the dependencies),
-#       in order for our panics to show up in iOS debugger and crash reports.
+
+# Support for split-debuginfo [should eventually](https://github.com/rust-lang/rust/issues/34651) land,
+# hopefully giving us an out-of-the-box way to separate the code from the debugging information.
+# We should use the "objcopy --only-keep-debug" and "add-symbol-file" meanwhile
+# and separating stack tracing into raw trace and symbolication parts.
+
+# https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#profile-overrides
+cargo-features = ["profile-overrides"]
 
 [package]
 name = "mm2"
 version = "0.1.0"
 edition = "2018"
-
-# Waiting for https://doc.rust-lang.org/beta/cargo/reference/unstable.html#default-run to become stable.
-# cf. https://github.com/rust-lang/cargo/issues/2200 (closed, should work after a Rust upgrade).
-#default-run = "mm2"
+default-run = "mm2"
 
 [features]
 native = [
@@ -39,10 +40,13 @@ opt-level = 1
 # Should probably match "profile.dev", given that we're reusing the libraries.
 opt-level = 1
 
-#[profile.release]
-# https://rustwasm.github.io/book/reference/debugging.html
-# ^^ Doesn't really help, we'll probably need a debug information standard first. Use rustfilt instead.
-#debug = true
+[profile.release]
+# Due to the "overrides" only affects our workspace crates, as intended.
+debug = true
+
+[profile.release.overrides."*"]
+# Turns debugging symbols off for the out-of-workspace dependencies.
+debug = false
 
 [dependencies]
 bigdecimal = { version = "0.1.0", features = ["serde"] }
