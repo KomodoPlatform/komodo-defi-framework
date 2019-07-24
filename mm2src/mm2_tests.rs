@@ -1180,6 +1180,32 @@ fn test_withdraw_and_send() {
     // dev chain gas price is 0 so ETH expected balance change doesn't include the fee
     withdraw_and_send(&mm_alice, "ETH", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
     withdraw_and_send(&mm_alice, "JST", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
+
+    // must not allow to withdraw to non-P2PKH addresses
+    let withdraw = unwrap! (mm_alice.rpc (json! ({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "PIZZA",
+        "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
+        "amount": "0.001"
+    })));
+
+    assert! (withdraw.0.is_server_error(), "PIZZA withdraw: {}", withdraw.1);
+    let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
+    assert!(unwrap!(withdraw_json["error"].as_str()).contains("Address bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q has invalid format, it must start with R"));
+
+    // must not allow to withdraw to invalid checksum address
+    let withdraw = unwrap! (mm_alice.rpc (json! ({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "ETH",
+        "to": "0x657980d55733b41c0c64c06003864e1aad917ca7",
+        "amount": "0.001"
+    })));
+
+    assert! (withdraw.0.is_server_error(), "PIZZA withdraw: {}", withdraw.1);
+    let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
+    assert!(unwrap!(withdraw_json["error"].as_str()).contains("Invalid address checksum"));
     unwrap!(mm_alice.stop());
 }
 

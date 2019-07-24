@@ -1204,6 +1204,12 @@ impl MmCoin for UtxoCoin {
 
     fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
         let to: Address = try_fus!(Address::from_str(to));
+        if to.prefix != self.pub_addr_prefix || to.t_addr_prefix != self.pub_t_addr_prefix {
+            return Box::new(futures::future::err(ERRL!("Address {} has invalid format, it must start with {}", to, &self.my_address()[..1])));
+        }
+        if to.checksum_type != self.checksum_type {
+            return Box::new(futures::future::err(ERRL!("Address {} has invalid checksum type, it must be {:?}", to, self.checksum_type)));
+        }
         let script_pubkey = Builder::build_p2pkh(&to.hash).to_bytes();
         let utxo_lock = MutexGuardWrapper(try_fus!(UTXO_LOCK.lock()));
         let unspent_fut = self.rpc_client.list_unspent_ordered(&self.my_address).map_err(|e| ERRL!("{}", e));
