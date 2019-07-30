@@ -530,8 +530,7 @@ impl Target {
         let targetᴱ = unwrap!(var("TARGET"));
         match &targetᴱ[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
-            // Used when compiling MM from under Raspberry Pi.
-            "armv7-unknown-linux-gnueabihf" => Target::Unix,
+            "armv7-unknown-linux-gnueabihf" => Target::Unix,  // Raspbian is a modified Debian
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
             "wasm32-unknown-emscripten" => Target::Unix, // Pretend.

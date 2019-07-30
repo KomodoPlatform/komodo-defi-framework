@@ -86,6 +86,13 @@ async function runWasm() {
   /** @type {WebAssembly.Memory} */
   wasmShared.memory = exports.memory;
 
+  setImmediate (function() {console.log ('immediate at', Date.now())});
+  // NB: The interval seems to run independently from the event loop,
+  // whereas the `setImmediate` and `nextTick` callbacks only run when the control is returned from Rust.
+  // On the other hand, an active interval prevents the Node.js process from exiting (on a panic).
+  //let i = setInterval (function() {console.log ('interval at', Date.now())}, 200);
+  process.nextTick (function() {console.log ('nextTick at', Date.now())});
+
   exports.set_panic_hook();
 
   const peers_check = exports.peers_check();
@@ -93,6 +100,9 @@ async function runWasm() {
 
   console.log ('running test_peers_dht...');
   exports.test_peers_dht();
-  console.log ('done with test_peers_dht')}
+  console.log ('done with test_peers_dht');
+
+  //clearInterval (i)
+}
 
 runWasm().catch (ex => console.log (ex));

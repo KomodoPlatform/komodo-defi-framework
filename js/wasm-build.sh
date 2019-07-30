@@ -12,6 +12,7 @@ ORIGINAL=`pwd`
 rsync -a --out-format=%n%L --delete \
   ./ /tmp/supernet-wasm/ \
   --exclude=/target \
+  --exclude=/mm2src/*/target \
   --exclude=/build \
   --exclude=/x64 \
   --exclude=/marketmaker_depends \

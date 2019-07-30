@@ -4,7 +4,7 @@
 // MM2_DHT_GET=f, build time, disable DHT retrieval.
 // MM2_FALLBACK=$, build time, override fallback timeouts.
 
-#![feature (non_ascii_idents, vec_resize_default, ip, weak_counts)]
+#![feature (non_ascii_idents, vec_resize_default, ip, weak_counts, async_await, await_macro)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 #![cfg_attr(not(feature = "native"), allow(unused_macros))]
@@ -18,6 +18,12 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate unwrap;
+
+#[cfg(feature = "native")]
+mod executor {}
+
+#[cfg(not(feature = "native"))]
+pub mod executor;
 
 #[doc(hidden)]
 pub mod peers_tests;

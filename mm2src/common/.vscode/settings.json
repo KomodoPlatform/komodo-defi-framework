@@ -1,6 +1,7 @@
 {
-  "C_Cpp.default.includePath": [
-    "${workspaceFolder}/../../marketmaker_depends/libtorrent-rasterbar-1.2.0-rc/include",
-    "${workspaceFolder}/../../marketmaker_depends/boost_1_68_0"
-  ]
+  // https://github.com/rust-lang/rls#configuration
+  "rust.features": ["native"],
+  "rust.build_on_save": true,
+  "rust.clippy_preference": "off",
+  "rust.build_lib": true 
 }

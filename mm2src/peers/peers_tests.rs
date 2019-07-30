@@ -5,8 +5,11 @@ use common::for_tests::wait_for_log_re;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
+use futures03::compat::Future01CompatExt;
+use futures03::executor::block_on;
 use rand::{self, Rng};
 use serde_json::Value as Json;
+use std::future::{Future as Future03};
 use std::mem::zeroed;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::Ordering;
@@ -60,7 +63,7 @@ fn destruction_check (mm: MmArc) {
     }
 }
 
-fn peers_exchange (conf: Json) {
+async fn peers_exchange (conf: Json) {
     let fallback_on = conf["http-fallback"] == "on";
     let fallback = if fallback_on {1} else {255};
 
@@ -100,7 +103,7 @@ fn peers_exchange (conf: Json) {
         }
 
         let receiving_f = super::recv (&bob, b"test_dht", fallback, fixed_validator (message.clone()));
-        let received = unwrap! (receiving_f.wait());
+        let received = unwrap! (await! (receiving_f.compat()));
         assert_eq! (received, message);
 
         if fallback_on {
@@ -127,11 +130,13 @@ fn peers_exchange (conf: Json) {
 }
 
 /// Send and receive messages of various length and chunking via the DHT.
-pub fn peers_dht() {peers_exchange (json! ({"dht": "on"}))}
+pub fn peers_dht() -> impl Future03<Output=()> {peers_exchange (json! ({"dht": "on"}))}
 
 // Temporarily exposed in order to experiment with portability helpers.
 #[no_mangle]
-pub extern fn test_peers_dht() {peers_dht()}
+pub extern fn test_peers_dht() {
+    block_on (peers_dht())
+}
 
 /// Using a minimal one second HTTP fallback which should happen before the DHT kicks in.
 #[cfg(feature = "native")]
@@ -141,11 +146,11 @@ pub fn peers_http_fallback_recv() {
     let server = unwrap! (super::http_fallback::new_http_fallback (ctx.weak(), addr));
     CORE.spawn (move |_| server);
 
-    peers_exchange (json! ({
+    block_on (peers_exchange (json! ({
         "http-fallback": "on",
         "seednodes": ["127.0.0.1"],
         "http-fallback-port": 30204
-    }))
+    })))
 }
 
 #[cfg(not(feature = "native"))]

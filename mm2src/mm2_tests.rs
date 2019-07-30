@@ -1,5 +1,6 @@
 use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
 use dirs;
+use futures03::executor::block_on;
 use gstuff::{slurp};
 use hyper::StatusCode;
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
@@ -310,7 +311,9 @@ fn alice_can_see_the_active_order_after_connection() {
 fn test_status() {common::log::tests::test_status()}
 
 #[test]
-fn peers_dht() {peers::peers_tests::peers_dht()}
+fn peers_dht() {
+    block_on (peers::peers_tests::peers_dht())
+}
 
 #[test]
 #[ignore]

@@ -7,7 +7,7 @@ use futures::{future, self, Async, Future};
 use gstuff::{netstring, now_float};
 use hashbrown::hash_map::{Entry, HashMap, RawEntryMut};
 use http::{Request, Response, StatusCode};
-use http::header::HeaderMap;
+use http::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use hyper::rt::Stream;
 #[cfg(feature = "native")]
@@ -241,8 +241,8 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
     impl Service for RpcService {
         type ReqBody = hyper::Body;
         type ResBody = LiftBody<Vec<u8>>;
-        type Error = String;
-        type Future = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
+        type Error = http::Error;  // Aborts the connection, should not be used.
+        type Future = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=http::Error> + Send>;
         fn call (&mut self, req: Request<hyper::Body>) -> Self::Future {
             let path = req.uri().path().to_owned();
             let ctx = self.ctx.clone();
@@ -263,9 +263,19 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
                     rpc_response (404, "unknown path")
                 }
             });
-            let f = f.map (move |r| {
-                let (parts, body) = r.into_parts();
-                Response::from_parts (parts, LiftBody::from (body))
+            let f = f.then (move |r| match r {
+                Ok (r) => {
+                    let (parts, body) = r.into_parts();
+                    Ok (Response::from_parts (parts, LiftBody::from (body)))
+                },
+                Err (err) => {
+                    log! ("ʰ500: " (err));
+                    let msg = fomat! ((err) '\n');
+                    Ok (Response::builder()
+                        .status (500)
+                        .header (CONTENT_TYPE, HeaderValue::from_static ("text/plain"))
+                        .body (LiftBody::from (Vec::from (msg))) ?)
+                }
             });
             Box::new (f)
         }

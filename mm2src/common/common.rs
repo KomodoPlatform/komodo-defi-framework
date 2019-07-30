@@ -11,6 +11,7 @@
 //!                   binary
 
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
+#![feature(await_macro, async_await)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 

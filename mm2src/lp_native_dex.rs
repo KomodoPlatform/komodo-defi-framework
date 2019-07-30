@@ -1332,6 +1332,7 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     // Keeps HTTP fallback server alive until `lp_init` exits.
     let mut _hf_shutdown;
 
+    let myipaddr_tags: &[&dyn TagParam] = &[&"myipaddr"];
     let myipaddr: IpAddr = if Path::new ("myipaddr") .exists() {
         match fs::File::open ("myipaddr") {
             Ok (mut f) => {
@@ -1346,6 +1347,16 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
     } else if !ctx.conf["myipaddr"].is_null() {
         let s = try_s! (ctx.conf["myipaddr"].as_str().ok_or ("'myipaddr' is not a string"));
         let ip = try_s! (simple_ip_extractor (s));
+
+        match test_ip (&ctx, ip) {
+            Ok ((hf_shutdown, hf_port)) => {
+                ctx.log.log ("🙂", myipaddr_tags, &fomat! (
+                    "IP " (ip) " works and we can bind on it (port " (hf_port) ")."));
+                if i_am_seed {_hf_shutdown = hf_shutdown}
+            },
+            Err (err) => ctx.log.log ("🤒", myipaddr_tags, &fomat! ("Can't bind on " (ip) "! " (err)))
+        };
+
         ip
     } else {
         // Detect the real IP address.
@@ -1393,11 +1404,10 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
             // Try to bind on this IP.
             // If we're not behind a NAT then the bind will likely suceed.
             // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
-            let tags: &[&dyn TagParam] = &[&"myipaddr"];
             match test_ip (&ctx, ip) {
-                Ok ((hf_shutdown, _hf_port)) => {
-                    ctx.log.log ("🙂", tags, &fomat! (
-                        "We've detected an external IP " (ip) " and we can bind on it (port " (mypubport) ")"
+                Ok ((hf_shutdown, hf_port)) => {
+                    ctx.log.log ("🙂", myipaddr_tags, &fomat! (
+                        "We've detected an external IP " (ip) " and we can bind on it (port " (hf_port) ")"
                         ", so probably a dedicated IP."));
                     if i_am_seed {_hf_shutdown = hf_shutdown}
                     break ip
@@ -1406,18 +1416,18 @@ pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
             }
             let all_interfaces = Ipv4Addr::new (0, 0, 0, 0) .into();
             if test_ip (&ctx, all_interfaces) .is_ok() {
-                ctx.log.log ("😅", tags, &fomat! (
+                ctx.log.log ("😅", myipaddr_tags, &fomat! (
                     "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
                 break all_interfaces
             }
             let locahost = Ipv4Addr::new (127, 0, 0, 1) .into();
             if test_ip (&ctx, locahost) .is_ok() {
-                ctx.log.log ("🤫", tags, &fomat! (
+                ctx.log.log ("🤫", myipaddr_tags, &fomat! (
                     "We couldn't bind on " (ip) " or 0.0.0.0!"
                     " Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."));
                 break locahost
             }
-            ctx.log.log ("🤒", tags, &fomat! (
+            ctx.log.log ("🤒", myipaddr_tags, &fomat! (
                 "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."));
             break all_interfaces  // Seems like a better default than 127.0.0.1, might still work for other ports.
         }
