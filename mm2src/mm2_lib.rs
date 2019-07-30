@@ -18,6 +18,7 @@ mod mm2;
 use crate::common::mm_ctx::MmArc;
 use crate::common::log::LOG_OUTPUT;
 use futures::Future;
+use futures03::executor::block_on;
 use gstuff::{any_to_str, now_float};
 use libc::c_char;
 use num_traits::FromPrimitive;
@@ -165,7 +166,7 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         common::log::tests::test_status();
 
         log! ("mm2_test] peers_dht…");
-        peers::peers_tests::peers_dht();
+        block_on (peers::peers_tests::peers_dht());
 
         log! ("mm2_test] peers_direct_send…");
         peers::peers_tests::peers_direct_send();
