@@ -19,7 +19,7 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
-use common::{MM_VERSION};
+use common::{double_panic_crash, MM_VERSION};
 
 use gstuff::{slurp};
 
@@ -105,6 +105,7 @@ fn help() {
         // cf. https://github.com/atomiclabs/hyperdex/blob/1d4ed3234b482e769124725c7e979eef5cd72d24/app/marketmaker/supported-currencies.js#L12
         "  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.\n"
         "                     If the field isn't present on the command line then we try loading it from the 'coins' file.\n"
+        "  crash          ..  Simulate a crash to check how the crash handling works.\n"
         "  dbdir          ..  MM database path. 'DB' by default.\n"
         "  log            ..  File path. Redirect (as of now only a part of) the log there.\n"
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
@@ -156,6 +157,7 @@ pub fn mm2_main() {
     let first_arg = args_os.get (1) .and_then (|arg| arg.to_str());
 
     if first_arg == Some ("panic") {panic! ("panic message")}
+    if first_arg == Some ("crash") {double_panic_crash()}
     if first_arg == Some ("stderr") {eprintln! ("This goes to stderr"); return}
 
     if first_arg == Some ("--help") || first_arg == Some ("-h") || first_arg == Some ("help") {help(); return}

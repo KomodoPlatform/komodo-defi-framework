@@ -381,6 +381,17 @@ pub fn set_panic_hook() {
     }))
 }
 
+/// Simulates the panic-in-panic crash.
+pub fn double_panic_crash() {
+    struct Panicker (u32);
+    impl Drop for Panicker {
+        fn drop (&mut self) {
+            panic! ("panic in drop; {}", self.0)
+    }   }
+    let panicker = Panicker (1);
+    panic! ("first panic; {}", panicker.0)
+}
+
 /// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
 /// by replacing all the non-printable bytes with the `blank` character.
 pub fn binprint (bin: &[u8], blank: u8) -> String {
