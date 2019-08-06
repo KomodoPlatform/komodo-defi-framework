@@ -16,6 +16,7 @@ doctest = false
 
 [dependencies]
 arrayref = "0.3"
+atomic = "0.4"
 backtrace = "0.3"
 bigdecimal = { version = "0.1", features = ["serde"] }
 # Using the `chrono` because the `time` formatting has serious limits, like the lack of subsecond support, IIRC.

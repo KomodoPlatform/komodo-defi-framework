@@ -394,6 +394,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "arrayref 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "atomic 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace 0.3.32 (git+https://github.com/artemii235/backtrace-rs.git)",
  "bigdecimal 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bindgen 0.43.2 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -252,7 +252,7 @@ impl JsonRpcClient for NativeClientImpl {
 impl UtxoRpcClientOps for NativeClient {
     fn list_unspent_ordered(&self, address: &Address) -> UtxoRpcRes<Vec<UnspentInfo>> {
         let clone = self.0.clone();
-        Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).map_err(|e| ERRL!("{}", e)).and_then(move |unspents| {
+        Box::new(self.list_unspent(0, std::i32::MAX, vec![address.to_string()]).map_err(|e| ERRL!("{}", e)).and_then(move |unspents| {
             let mut futures = vec![];
             for unspent in unspents.iter() {
                 let delay_f = Delay::new(Duration::from_millis(10)).map_err(|e| ERRL!("{}", e));
@@ -365,7 +365,7 @@ impl UtxoRpcClientOps for NativeClient {
     }
 
     fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
-        Box::new(self.list_unspent(0, 999999, vec![address.to_string()]).map(|unspents|
+        Box::new(self.list_unspent(0, std::i32::MAX, vec![address.to_string()]).map(|unspents|
             unspents.iter().fold(0., |sum, unspent| sum + unspent.amount).into()
         ))
     }
@@ -398,7 +398,7 @@ impl UtxoRpcClientOps for NativeClient {
 #[cfg_attr(test, mockable)]
 impl NativeClientImpl {
     /// https://bitcoin.org/en/developer-reference#listunspent
-    pub fn list_unspent(&self, min_conf: u64, max_conf: u64, addresses: Vec<String>) -> RpcRes<Vec<NativeUnspent>> {
+    pub fn list_unspent(&self, min_conf: i32, max_conf: i32, addresses: Vec<String>) -> RpcRes<Vec<NativeUnspent>> {
         rpc_func!(self, "listunspent", min_conf, max_conf, addresses)
     }
 
