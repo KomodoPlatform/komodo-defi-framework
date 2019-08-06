@@ -275,6 +275,7 @@ iguana/exchanges/manychains
 # JS artefacts
 /js/node_modules
 /js/*.dll
+/js/*.wasm
 
 # Rust artefacts
 /MM_VERSION
@@ -295,6 +296,3 @@ iguana/exchanges/manychains
 # IDE artefacts
 /.vscode/ipch
 /mm2src/*/.vscode/ipch
-
-# Build logs
-/wasm-build.log

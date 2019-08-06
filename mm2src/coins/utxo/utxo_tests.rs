@@ -1,5 +1,6 @@
 use super::*;
-use crate::utxo::rpc_clients::ElectrumProtocol;
+use crate::utxo::rpc_clients::{ElectrumProtocol};
+use mocktopus::mocking::*;
 
 fn utxo_coin_for_test() -> UtxoCoin {
     let checksum_type = ChecksumType::DSHA256;
@@ -204,4 +205,60 @@ fn test_sat_from_big_decimal() {
     let sat = sat_from_big_decimal(&amount, 1).unwrap();
     let expected_sat = 12341;
     assert_eq!(expected_sat, sat);
+}
+
+#[test]
+fn test_wait_for_payment_spend_timeout_native() {
+    use rpc::v1::types::VerboseBlockClient;
+
+    let client = NativeClientImpl {
+        uri: "http://127.0.0.1:10271".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    };
+
+    NativeClientImpl::get_block_count.mock_safe(|_| MockResult::Return(Box::new(futures::future::ok(1000))));
+    NativeClientImpl::get_block.mock_safe(|_, _| {
+        let block = VerboseBlockClient {
+            bits: "".into(),
+            chainwork: 0.into(),
+            confirmations: 0,
+            difficulty: 0.,
+            hash: 0.into(),
+            height: None,
+            mediantime: None,
+            merkleroot: 0.into(),
+            nextblockhash: None,
+            nonce: "".into(),
+            previousblockhash: None,
+            size: 0,
+            strippedsize: None,
+            time: 0,
+            tx: vec![],
+            version: 0,
+            version_hex: None,
+            weight: None,
+        };
+        MockResult::Return(Box::new(futures::future::ok(block)))
+    });
+    let client = NativeClient(Arc::new(client));
+    let transaction: UtxoTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000".into();
+    let vout = 0;
+    let wait_until = now_ms() / 1000 - 1;
+    let from_block = 1000;
+
+    assert!(client.wait_for_payment_spend(&transaction, vout, wait_until, from_block).is_err());
+}
+
+#[test]
+fn test_wait_for_payment_spend_timeout_electrum() {
+    ElectrumClientImpl::scripthash_get_history.mock_safe(|_, _| MockResult::Return(Box::new(futures::future::ok(vec![]))));
+
+    let client = ElectrumClientImpl::new();
+    let client = ElectrumClient(Arc::new(client));
+    let transaction: UtxoTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000".into();
+    let vout = 0;
+    let wait_until = now_ms() / 1000 - 1;
+    let from_block = 1000;
+
+    assert!(client.wait_for_payment_spend(&transaction, vout, wait_until, from_block).is_err());
 }

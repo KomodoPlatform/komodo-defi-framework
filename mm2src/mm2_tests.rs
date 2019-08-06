@@ -1649,17 +1649,17 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     unwrap! (mm_bob.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
 
-    enable_electrum(&mm_bob, "RICK", vec![
+    log!("Bob enable RICK " [enable_electrum(&mm_bob, "RICK", vec![
         "electrum3.cipig.net:10017",
         "electrum2.cipig.net:10017",
         "electrum1.cipig.net:10017",
-    ]);
+    ])]);
 
-    enable_electrum(&mm_bob, "MORTY", vec![
+    log!("Bob enable MORTY " [enable_electrum(&mm_bob, "MORTY", vec![
         "electrum3.cipig.net:10018",
         "electrum2.cipig.net:10018",
         "electrum1.cipig.net:10018",
-    ]);
+    ])]);
 
     let mut mm_alice = unwrap! (MarketMakerIt::start (
         json! ({
@@ -1681,17 +1681,17 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
 
     unwrap! (mm_alice.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
 
-    enable_electrum(&mm_alice, "RICK", vec![
+    log!("Alice enable RICK " [enable_electrum(&mm_alice, "RICK", vec![
         "electrum3.cipig.net:10017",
         "electrum2.cipig.net:10017",
         "electrum1.cipig.net:10017",
-    ]);
+    ])]);
 
-    enable_electrum(&mm_alice, "MORTY", vec![
+    log!("Alice enable MORTY " [enable_electrum(&mm_alice, "MORTY", vec![
         "electrum3.cipig.net:10018",
         "electrum2.cipig.net:10018",
         "electrum1.cipig.net:10018",
-    ]);
+    ])]);
 
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");

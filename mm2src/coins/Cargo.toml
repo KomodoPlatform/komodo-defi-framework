@@ -66,3 +66,6 @@ unwrap = "1.2"
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 webpki-roots = { version = "0.16.0", optional = true }
+
+[dev-dependencies]
+mocktopus = "0.7.0"

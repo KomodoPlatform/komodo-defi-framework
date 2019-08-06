@@ -11,7 +11,7 @@
 //!                   binary
 
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
-#![feature(await_macro, async_await)]
+#![feature(async_await)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -309,13 +309,16 @@ pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
     // Alphanumerically sorted on first letter.
     if name.starts_with ("alloc::") {return}
     if name.starts_with ("backtrace::") {return}
+    if name.starts_with ("common::set_panic_hook") {return}
     if name.starts_with ("common::stack_trace") {return}
+    if name.starts_with ("core::ops::") {return}
     if name.starts_with ("futures::") {return}
     if name.starts_with ("hyper::") {return}
     if name.starts_with ("mm2::crash_reports::signal_handler") {return}
     if name.starts_with ("panic_unwind::") {return}
     if name.starts_with ("std::") {return}
     if name.starts_with ("scoped_tls::") {return}
+    if name.starts_with ("test::run_test::") {return}
     if name.starts_with ("tokio::") {return}
     if name.starts_with ("tokio_core::") {return}
     if name.starts_with ("tokio_reactor::") {return}
@@ -1052,6 +1055,7 @@ fn without_trailing_zeroes (decimal: &str, dot: usize) -> &str {
     }
 }
 
+/// Round half away from zero (aka commercial rounding).
 pub fn round_to (bd: &BigDecimal, places: u8) -> String {
     // Normally we'd do
     // 
@@ -1091,8 +1095,7 @@ pub fn round_to (bd: &BigDecimal, places: u8) -> String {
 
         if pos == dot + places as usize && rounded < 10 {
             //println! ("{}, stopping at pos {}", bds, pos);
-            let full = format! ("{}{}", &bds[0..pos], rounded);
-            break unwrap! (full.parse())
+            break format! ("{}{}", &bds[0..pos], rounded)
         }
 
         pos -= 1;

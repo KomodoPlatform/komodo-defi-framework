@@ -16,6 +16,8 @@ use http::{Request, StatusCode};
 use http::header::AUTHORIZATION;
 use http::Uri;
 use keys::Address;
+#[cfg(test)]
+use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, Transaction as RpcTransaction, VerboseBlockClient};
 use rustls::{self, ClientConfig, Session};
 use script::{Builder};
@@ -89,8 +91,6 @@ pub trait UtxoRpcClientOps: Debug + 'static {
     fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction>;
 
     fn get_block_count(&self) -> RpcRes<u64>;
-
-    fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient>;
 
     // TODO This operation is synchronous because it's currently simpler to do it this way.
     // Might consider refactoring when async/await is released.
@@ -299,16 +299,8 @@ impl UtxoRpcClientOps for NativeClient {
         self.get_raw_transaction_bytes(txid)
     }
 
-    /// https://bitcoin.org/en/developer-reference#getblockcount
     fn get_block_count(&self) -> RpcRes<u64> {
-        rpc_func!(self, "getblockcount")
-    }
-
-    /// https://bitcoin.org/en/developer-reference#getblock
-    /// Always returns verbose block
-    fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient> {
-        let verbose = true;
-        rpc_func!(self, "getblock", height, verbose)
+        self.0.get_block_count()
     }
 
     fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, from_block: u64) -> Result<UtxoTransaction, String> {
@@ -403,6 +395,7 @@ impl UtxoRpcClientOps for NativeClient {
     }
 }
 
+#[cfg_attr(test, mockable)]
 impl NativeClientImpl {
     /// https://bitcoin.org/en/developer-reference#listunspent
     pub fn list_unspent(&self, min_conf: u64, max_conf: u64, addresses: Vec<String>) -> RpcRes<Vec<NativeUnspent>> {
@@ -425,6 +418,18 @@ impl NativeClientImpl {
             let tx: UtxoTransaction = try_s!(deserialize(bytes.as_slice()).map_err(|e| ERRL!("Error {:?} trying to deserialize the transaction {:?}", e, bytes)));
             Ok(tx.outputs[index].value)
         }))
+    }
+
+    /// https://bitcoin.org/en/developer-reference#getblock
+    /// Always returns verbose block
+    pub fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient> {
+        let verbose = true;
+        rpc_func!(self, "getblock", height, verbose)
+    }
+
+    /// https://bitcoin.org/en/developer-reference#getblockcount
+    pub fn get_block_count(&self) -> RpcRes<u64> {
+        rpc_func!(self, "getblockcount")
     }
 
     /// https://bitcoin.org/en/developer-reference#getrawtransaction
@@ -450,7 +455,7 @@ impl NativeClientImpl {
 
     /// https://bitcoincore.org/en/doc/0.18.0/rpc/util/estimatesmartfee/
     /// Always estimate fee for transaction to be confirmed in next block
-    fn estimate_smart_fee(&self) -> RpcRes<EstimateSmartFeeRes> {
+    pub fn estimate_smart_fee(&self) -> RpcRes<EstimateSmartFeeRes> {
         let n_blocks = 1;
         rpc_func!(self, "estimatesmartfee", n_blocks)
     }
@@ -785,12 +790,6 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(self.blockchain_headers_subscribe().map(|r| r.block_height()))
     }
 
-    /// https://bitcoin.org/en/developer-reference#getblock
-    /// Always returns verbose block
-    fn get_block(&self, _height: String) -> RpcRes<VerboseBlockClient> {
-        unimplemented!()
-    }
-
     /// This function is assumed to be used to search for spend of swap payment.
     /// For this case we can just wait that address history contains 2 or more records: the payment itself and spending transaction.
     fn wait_for_payment_spend(&self, tx: &UtxoTransaction, vout: usize, wait_until: u64, _from_block: u64) -> Result<UtxoTransaction, String> {
@@ -806,6 +805,9 @@ impl UtxoRpcClientOps for ElectrumClient {
                 }
             };
             if history.len() < 2 {
+                if now_ms() / 1000 > wait_until {
+                    return ERR!("Waited too long until {} for output {:?} to be spent ", wait_until, tx.outputs[vout]);
+                }
                 thread::sleep(Duration::from_secs(10));
                 continue;
             }
@@ -864,6 +866,7 @@ impl UtxoRpcClientOps for ElectrumClient {
     }
 }
 
+#[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
     pub fn new() -> ElectrumClientImpl {
         ElectrumClientImpl {
@@ -1232,131 +1235,3 @@ fn electrum_request(
 
     Box::new(send_fut.map_err(|e| ERRL!("{}", e.0)))
 }
-
-// TODO these are just helpers functions that I used during development.
-// Trade tests also cover these functions, if some of these doesn't work properly trade will fail.
-// Maybe we should remove them at all or move to a kind of "helpers" file.
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use base64::{encode_config as base64_encode, URL_SAFE};
-
-    #[test]
-    #[ignore]
-    fn test_electrum_ping() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10022").unwrap();
-        client.add_server("electrum2.cipig.net:10022").unwrap();
-        client.add_server("electrum3.cipig.net:10022").unwrap();
-        log!([client.server_ping().wait().unwrap()]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_electrum_listunspent() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10022").unwrap();
-        client.add_server("electrum2.cipig.net:10022").unwrap();
-        client.add_server("electrum3.cipig.net:10022").unwrap();
-        let script = Builder::build_p2pkh(&"05aab5342166f8594baf17a7d9bef5d567443327".into()).to_bytes();
-
-        let script_hash = electrum_script_hash(&script);
-        let res = client.scripthash_list_unspent(&hex::encode(script_hash)).wait().unwrap();
-        log!([res]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_electrum_transaction_get() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10022").unwrap();
-        client.add_server("electrum2.cipig.net:10022").unwrap();
-        client.add_server("electrum3.cipig.net:10022").unwrap();
-
-        let res = client.get_transaction("c2e633133449d0f3e1f8ddd79957f97c51a2c7ffd640e02e1731dcde75b2062a".into()).wait().unwrap();
-        log!([res]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_electrum_listunspent_ordered() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10022").unwrap();
-        client.add_server("electrum2.cipig.net:10022").unwrap();
-        client.add_server("electrum3.cipig.net:10022").unwrap();
-        let address: Address = "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW".into();
-        let res = client.list_unspent_ordered(&address).wait().unwrap();
-        log!([res]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_electrum_subsribe() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10001").unwrap();
-        client.add_server("electrum2.cipig.net:10001").unwrap();
-        client.add_server("electrum3.cipig.net:10001").unwrap();
-        let res = client.blockchain_headers_subscribe().wait().unwrap();
-        log!([res]);
-
-        loop {
-            let res = client.get_block_count().wait().unwrap();
-            println!("Block {}", res);
-            thread::sleep(Duration::from_secs(10));
-        }
-    }
-
-    #[test]
-    #[ignore]
-    fn test_electrum_get_history() {
-        let mut client = ElectrumClient::new();
-        client.add_server("electrum1.cipig.net:10022").unwrap();
-        client.add_server("electrum2.cipig.net:10022").unwrap();
-        client.add_server("electrum3.cipig.net:10022").unwrap();
-        let script = Builder::build_p2pkh(&"05aab5342166f8594baf17a7d9bef5d567443327".into()).to_bytes();
-
-        let script_hash = electrum_script_hash(&script);
-        let res = client.scripthash_get_history(&hex::encode(script_hash)).wait().unwrap();
-        log!([res]);
-    }
-
-    #[test]
-    fn test_wait_for_tx_spend_electrum() {
-        let mut client = ElectrumClientImpl::new();
-        client.add_server("electrum1.cipig.net:10000").unwrap();
-        client.add_server("electrum2.cipig.net:10000").unwrap();
-        client.add_server("electrum3.cipig.net:10000").unwrap();
-        let client = ElectrumClient(Arc::new(client));
-        let res = client.get_transaction("2428ed3600a8823611ce11e3228189d60f1be4131e7cac2a0e6056ef456b147a".into()).wait().unwrap();
-        log!([res]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_wait_for_tx_spend_native() {
-        let client = NativeClientImpl {
-            uri: "http://127.0.0.1:8923".to_owned(),
-            auth: fomat!("Basic " (base64_encode("user1031481471:pass4421be10fa22e70fca76c4917556f1613cdd1fa83e7c9d04abfd98c3367c6252ba", URL_SAFE))),
-        };
-
-        let res = client.get_transaction("f1c49150d561cae69607ae0c761d9cd6b69ca20dafa78158e8ae0b1a1c723381".into()).wait().unwrap();
-
-        let tx: UtxoTransaction = deserialize(res.hex.as_slice()).unwrap();
-        let wait = client.wait_for_payment_spend(&tx, 0, now_ms() / 1000 + 1000).unwrap();
-        log!([wait]);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_list_unspent_ordered_native() {
-        let client = NativeClientImpl {
-            uri: "http://127.0.0.1:11608".to_owned(),
-            auth: fomat!("Basic " (base64_encode("user693461146:passef3e4fbcee47f264b6bd071def8171800241cedd56705c27905f36dd1df2737f99", URL_SAFE))),
-        };
-
-        let res = client.list_unspent_ordered(&"RKGn1jkeS7VNLfwY74esW7a8JFfLNj1Yoo".into()).wait().unwrap();
-        log!([res]);
-    }
-}
-*/

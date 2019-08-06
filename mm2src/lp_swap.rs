@@ -67,6 +67,7 @@ use futures::{Future};
 use gstuff::{now_ms, slurp};
 use hashbrown::{HashSet, HashMap};
 use hashbrown::hash_map::Entry;
+use http::Response;
 use primitives::hash::{H160, H264};
 use rand::Rng;
 use serde_json::{self as json, Value as Json};
@@ -2318,10 +2319,11 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
     coins
 }
 
-pub fn coins_needed_for_kick_start(ctx: MmArc) -> HyRes {
-    rpc_response(200, json!({
-        "result": *(unwrap!(ctx.coins_needed_for_kick_start.lock()))
-    }).to_string())
+pub async fn coins_needed_for_kick_start(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    let res = try_s!(json::to_vec(&json!({
+        "result": *(try_s!(ctx.coins_needed_for_kick_start.lock()))
+    })));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 #[cfg(test)]

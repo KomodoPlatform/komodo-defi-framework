@@ -4,6 +4,7 @@ use crc::crc64::checksum_ecma;
 use crdts::{CvRDT, CmRDT, Map, Orswot};
 use either::Either;
 use futures::{future, self, Async, Future};
+use futures03::future::{FutureExt, TryFutureExt};
 use gstuff::{netstring, now_float};
 use hashbrown::hash_map::{Entry, HashMap, RawEntryMut};
 use http::{Request, Response, StatusCode};
@@ -259,6 +260,14 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
                     merge_map_impl (ctx, req)
                 } else if path == "/test_ip" {  // Helps `fn test_ip` to check the IP availability.
                     rpc_response (200, "k")
+                } else if path.starts_with ("/helper/") {
+                    let helper = &path[8..];
+                    if helper == "peers_recv" {
+                        let f = crate::peers_recv_helper (req);
+                        Box::new (f.boxed().compat())
+                    } else {
+                        rpc_response (404, "unknown helper")
+                    }
                 } else {
                     rpc_response (404, "unknown path")
                 }

@@ -1350,6 +1350,7 @@ pub struct OrderbookEntry {
     address: String,
     price: String,
     /// Original `ask.price` printed for bids in order to sidestep the decimal rounding (#495).
+    #[serde(skip_serializing_if = "Option::is_none")]
     askprice: Option<String>,
     #[serde(rename="numutxos")]
     num_utxos: u32,
@@ -1433,7 +1434,7 @@ pub fn orderbook(ctx: MmArc, req: Json) -> HyRes {
                 orderbook_entries.push(OrderbookEntry {
                     coin: req.rel.clone(),
                     address: try_h!(rel_coin.address_from_pubkey_str(&ask.pubsecp)),
-                    // NB: 1/x can not be represented as decimal and introduces a rounding error
+                    // NB: 1/x can not be represented as a decimal and introduces a rounding error
                     // cf. https://github.com/KomodoPlatform/atomicDEX-API/issues/495#issuecomment-516365682
                     price: round_to (&(BigDecimal::from (1.) / &ask.price), rel_coin.decimals()),
                     askprice: Some (round_to (&ask.price, base_coin.decimals())),

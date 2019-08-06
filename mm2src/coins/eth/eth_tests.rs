@@ -1,4 +1,5 @@
 use super::*;
+use mocktopus::mocking::*;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
@@ -215,4 +216,34 @@ fn test_nonce_several_urls() {
     log!([payment]);
     let new_nonce = get_addr_nonce(coin.my_address, &coin.web3_instances).wait().unwrap();
     log!([new_nonce]);
+}
+
+#[test]
+fn test_wait_for_payment_spend_timeout() {
+    EthCoinImpl::spend_events.mock_safe(|_, _| MockResult::Return(Box::new(futures::future::ok(vec![]))));
+
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8555".into()]).unwrap();
+    let web3 = Web3::new(transport);
+
+    let coin = EthCoinImpl {
+        coin_type: EthCoinType::Eth,
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        ticker: "ETH".into(),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
+        web3,
+    };
+
+    let coin = EthCoin(Arc::new(coin));
+    let wait_until = (now_ms() / 1000) - 1;
+    let from_block = 1;
+    // raw transaction bytes of https://etherscan.io/tx/0x0869be3e5d4456a29d488a533ad6c118620fef450f36778aecf31d356ff8b41f
+    let tx_bytes = [248, 240, 3, 133, 1, 42, 5, 242, 0, 131, 2, 73, 240, 148, 133, 0, 175, 192, 188, 82, 20, 114, 128, 130, 22, 51, 38, 194, 255, 12, 115, 244, 168, 113, 135, 110, 205, 245, 24, 127, 34, 254, 184, 132, 21, 44, 243, 175, 73, 33, 143, 82, 117, 16, 110, 27, 133, 82, 200, 114, 233, 42, 140, 198, 35, 21, 201, 249, 187, 180, 20, 46, 148, 40, 9, 228, 193, 130, 71, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 152, 41, 132, 9, 201, 73, 19, 94, 237, 137, 35, 61, 4, 194, 207, 239, 152, 75, 175, 245, 157, 174, 10, 214, 161, 207, 67, 70, 87, 246, 231, 212, 47, 216, 119, 68, 237, 197, 125, 141, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 72, 125, 102, 28, 159, 180, 237, 198, 97, 87, 80, 82, 200, 104, 40, 245, 221, 7, 28, 122, 104, 91, 99, 1, 159, 140, 25, 131, 101, 74, 87, 50, 168, 146, 187, 90, 160, 51, 1, 123, 247, 6, 108, 165, 181, 188, 40, 56, 47, 211, 229, 221, 73, 5, 15, 89, 81, 117, 225, 216, 108, 98, 226, 119, 232, 94, 184, 42, 106];
+
+    assert!(coin.wait_for_tx_spend(&tx_bytes, wait_until, from_block).is_err());
 }

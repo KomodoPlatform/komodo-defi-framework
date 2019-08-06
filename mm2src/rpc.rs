@@ -23,6 +23,7 @@ use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
 use futures::{self, Future};
 use futures_cpupool::CpuPool;
+use futures03::future::{FutureExt, TryFutureExt};
 use gstuff;
 use http::{Request, Response, Method};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
@@ -30,6 +31,7 @@ use hyper;
 use hyper::rt::Stream;
 use hyper::service::Service;
 use serde_json::{self as json, Value as Json};
+use std::future::{Future as Future03};
 use std::net::{SocketAddr};
 use std::sync::atomic::Ordering;
 use tokio_core::net::TcpListener;
@@ -109,6 +111,12 @@ pub enum DispatcherRes {
     NoMatch (Json)
 }
 
+// Using async/await (futures 0.3) in `dispatcher`
+// will pave the way for porting the remaining system threading code to async/await green threads.
+fn hyres(f: impl Future03<Output=Result<Response<Vec<u8>>, String>> + Send + 'static) -> HyRes {
+    Box::new(f.boxed().compat())
+}
+
 /// The dispatcher, with full control over the HTTP result and the way we run the `Future` producing it.
 /// 
 /// Invoked both directly from the HTTP endpoint handler below and in a delayed fashion from `lp_command_q_loop`.
@@ -125,7 +133,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "buy" => buy (ctx, req),
         "cancel_all_orders" => cancel_all_orders (ctx, req),
         "cancel_order" => cancel_order (ctx, req),
-        "coins_needed_for_kick_start" => coins_needed_for_kick_start(ctx),
+        "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         // TODO coin initialization performs blocking IO, i.e request.wait(), have to run it on CPUPOOL to avoid blocking shared CORE.
         //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
         "enable" => Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) })),
@@ -216,17 +224,19 @@ impl Service for RpcService {
 
         let f = hyres_into_rpcres (f);
 
-        let f = f.map (|mut res| {
+        let f = f.then (|res| -> Self::Future {
+            // even if future returns error we need to map it to JSON response and send to client
+            let mut res = match res {
+                Ok (res) => res,
+                Err (err) => {
+                    let ebody = err_to_rpc_json_string (&err);
+                    unwrap! (Response::builder().status (500) .body (LiftBody::from (Vec::from (ebody))))
+                }
+            };
             res.headers_mut().insert(
                 ACCESS_CONTROL_ALLOW_ORIGIN,
                 rpc_cors
             );
-            res
-        });
-
-        let f = f.then (|res| -> Self::Future {
-            // even if future returns error we need to map it to JSON response and send to client
-            let res = try_sf! (res);
             Box::new (futures::future::ok (res))
         });
 

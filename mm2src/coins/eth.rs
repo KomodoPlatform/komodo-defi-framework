@@ -34,6 +34,8 @@ use futures_timer::Delay;
 use gstuff::{now_ms, slurp};
 use hashbrown::HashMap;
 use http::StatusCode;
+#[cfg(test)]
+use mocktopus::macros::*;
 use rand::{thread_rng};
 use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
@@ -131,6 +133,7 @@ pub struct Web3Instance {
     is_parity: bool,
 }
 
+#[cfg_attr(test, mockable)]
 impl EthCoinImpl {
     /// Gets Transfer events from ERC20 smart contract `addr` between `from_block` and `to_block`
     fn erc20_transfer_events(
@@ -250,6 +253,18 @@ impl EthCoinImpl {
         } else {
             Either::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
         }
+    }
+
+    /// Gets `ReceiverSpent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
+    fn spend_events(&self, from_block: u64) -> Box<dyn Future<Item=Vec<Log>, Error=String>> {
+        let contract_event = try_fus!(SWAP_CONTRACT.event("ReceiverSpent"));
+        let filter = FilterBuilder::default()
+            .topics(Some(vec![contract_event.signature()]), None, None, None)
+            .from_block(BlockNumber::Number(from_block))
+            .address(vec![self.swap_contract_address])
+            .build();
+
+        Box::new(self.web3.eth().logs(filter).map_err(|e| ERRL!("{}", e)))
     }
 }
 
@@ -932,18 +947,6 @@ impl EthCoin {
                 self.sign_and_send_transaction(0.into(), Action::Call(token_addr), data, U256::from(150000))
             }
         }
-    }
-
-    /// Gets `ReceiverSpent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn spend_events(&self, from_block: u64) -> Box<dyn Future<Item=Vec<Log>, Error=String>> {
-        let contract_event = try_fus!(SWAP_CONTRACT.event("ReceiverSpent"));
-        let filter = FilterBuilder::default()
-            .topics(Some(vec![contract_event.signature()]), None, None, None)
-            .from_block(BlockNumber::Number(from_block))
-            .address(vec![self.swap_contract_address])
-            .build();
-
-        Box::new(self.web3.eth().logs(filter).map_err(|e| ERRL!("{}", e)))
     }
 
     /// Gets `PaymentSent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`

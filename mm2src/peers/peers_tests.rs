@@ -5,7 +5,7 @@ use common::for_tests::wait_for_log_re;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use crdts::CmRDT;
 use futures::Future;
-use futures03::compat::Future01CompatExt;
+//use futures03::compat::Future01CompatExt;
 use futures03::executor::block_on;
 use rand::{self, Rng};
 use serde_json::Value as Json;
@@ -27,8 +27,7 @@ fn ulimit_n() -> Option<u32> {
         Some (lim.rlim_cur as u32)
     } else {
         None
-    }
-}
+}   }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn ulimit_n() -> Option<u32> {None}
@@ -102,8 +101,8 @@ async fn peers_exchange (conf: Json) {
             crate::FixedValidator::Exact (expect)
         }
 
-        let receiving_f = super::recv (&bob, b"test_dht", fallback, fixed_validator (message.clone()));
-        let received = unwrap! (await! (receiving_f.compat()));
+        let received = super::recvʹ (bob.clone(), Vec::from (&b"test_dht"[..]), fallback, fixed_validator (message.clone())) .await;
+        let received = unwrap! (received);
         assert_eq! (received, message);
 
         if fallback_on {
@@ -133,9 +132,10 @@ async fn peers_exchange (conf: Json) {
 pub fn peers_dht() -> impl Future03<Output=()> {peers_exchange (json! ({"dht": "on"}))}
 
 // Temporarily exposed in order to experiment with portability helpers.
+#[cfg(not(feature = "native"))]
 #[no_mangle]
 pub extern fn test_peers_dht() {
-    block_on (peers_dht())
+    crate::executor::spawn (peers_dht())
 }
 
 /// Using a minimal one second HTTP fallback which should happen before the DHT kicks in.
@@ -183,7 +183,7 @@ pub fn peers_direct_send() {
     let message: Vec<u8> = (0..33) .map (|_| rng.gen()) .collect();
 
     let _send_f = super::send (&alice, bob_key, b"subj", 255, message.clone());
-    let recv_f = super::recv (&bob, b"subj", 255, Box::new (|_| true));
+    let recv_f = super::recvʹ (bob.clone(), Vec::from (&b"subj"[..]), 255, Box::new (|_| true));
 
     // Confirm that Bob was added into the friendlist and that we don't know its address yet.
     {
@@ -214,7 +214,7 @@ pub fn peers_direct_send() {
     // Finally see if Bob got the message.
     unwrap! (wait_for_log (&bob.log, 1., &|_| bob_pctx.direct_chunks.load (Ordering::Relaxed) > 0));
     let start = now_float();
-    let received = unwrap! (recv_f.wait());
+    let received = unwrap! (block_on (recv_f));
     assert_eq! (received, message);
     assert! (now_float() - start < 0.1);  // Double-check that we're not waiting for DHT chunks.
 
