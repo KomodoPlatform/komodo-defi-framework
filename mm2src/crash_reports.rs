@@ -48,7 +48,6 @@ fn access_violation() {
 extern fn call_access_violation() {access_violation()}
 
 #[cfg(unix)]
-#[allow(dead_code)]
 extern fn signal_handler (sig: c_int) {
     {
         // NB: Manually writing to `stderr` is more reliable than using `eprintln!`, especially around `dup2`.
@@ -70,24 +69,15 @@ extern fn signal_handler (sig: c_int) {
 
 #[cfg(unix)]
 fn init_signal_handling() {
-    // TODO: Implement without `nix`.
-/*
+    use std::mem::{uninitialized, zeroed};
 
-    use nix::sys::signal::{sigaction, SaFlags, Signal, SigAction, SigHandler, SigSet};
-
-    lazy_static! {
-        static ref ACTION: SigAction = SigAction::new (
-            SigHandler::Handler (signal_handler),
-            SaFlags::empty(),
-            SigSet::empty()
-        );
-    }
-
-    for signal in [Signal::SIGILL, Signal::SIGFPE, Signal::SIGSEGV, Signal::SIGBUS, Signal::SIGSYS].iter() {
-        unsafe {unwrap! (sigaction (*signal, &*ACTION), "!sigaction");}
-    }
-*/
-}
+    let mut sa: libc::sigaction = unsafe {zeroed()};
+    sa.sa_sigaction = signal_handler as *const extern fn (c_int) as usize;
+    for &signal in [libc::SIGILL, libc::SIGFPE, libc::SIGSEGV, libc::SIGBUS, libc::SIGSYS].iter() {
+        let mut prev: libc::sigaction = unsafe {uninitialized()};
+        let rc = unsafe {libc::sigaction (signal, &sa, &mut prev)};
+        if rc != 0 {log! ("Error " (rc) " invoking sigaction on " (signal))}
+}   }
 
 #[allow(dead_code)]
 #[cfg(not(unix))]
