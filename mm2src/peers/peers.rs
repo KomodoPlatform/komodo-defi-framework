@@ -4,7 +4,7 @@
 // MM2_DHT_GET=f, build time, disable DHT retrieval.
 // MM2_FALLBACK=$, build time, override fallback timeouts.
 
-#![feature (non_ascii_idents, vec_resize_default, ip, weak_counts, async_await)]
+#![feature (non_ascii_idents, vec_resize_default, ip, weak_counts, async_await, async_closure)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 #![cfg_attr(not(feature = "native"), allow(unused_macros))]
@@ -40,6 +40,8 @@ use crate::http_fallback::{hf_delayed_get, hf_drop_get, hf_poll, hf_transmit};
 use atomic::Atomic;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use common::{bits256, SlurpFut};
+#[cfg(not(feature = "native"))]
+use common::helperᶜ;
 #[cfg(feature = "native")]
 use common::{binprint, slice_to_malloc, is_a_test_drill, RaiiRm};
 use common::log::TagParam;
@@ -51,12 +53,11 @@ use either::Either;
 use futures::{Async, Future, Poll};
 use futures::task::Task;
 use futures03::compat::Future01CompatExt;
-use futures03::executor::block_on;
+#[cfg(not(feature = "native"))]
+use futures03::task::{Context, Poll as Poll03, Waker};
 use futures03::future::{FutureExt, TryFutureExt};
 use gstuff::{now_float, slurp};
 use hashbrown::hash_map::{DefaultHashBuilder, Entry, HashMap, OccupiedEntry, RawEntryMut};
-use http::{Request, Response};
-use http::header::CONTENT_LENGTH;
 use itertools::Itertools;
 #[cfg(feature = "native")]
 use libc::{c_char, c_void};
@@ -65,6 +66,7 @@ use serde::Serialize;
 use serde_bencode::ser::to_bytes as bencode;
 use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
+#[cfg(not(feature = "native"))]
 use serde_json::{self as json};
 use std::collections::btree_map::BTreeMap;
 use std::cmp::Ordering;
@@ -1380,7 +1382,7 @@ fn peers_thread (ctx: MmArc, _netid: u16, our_public_key: bits256, preferred_por
 ///                      which might help if the user configured this port in firewall and forwarding rules.
 ///                      We're not limited to this port though and might try other ports as well.
 #[cfg(feature = "native")]
-pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
+pub async fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
     let drill = is_a_test_drill();
 
     // NB: From the `fn test_trade` logs it looks like the `session_id` isn't shared with the peers currently.
@@ -1443,26 +1445,27 @@ struct ToPeersInitialize {
 }
 
 helper! (peers_initialize, args: ToPeersInitialize, {
-    match MmArc::from_ffi_handle (args.ctx) {
-        Err (err) => ERR! (concat! (stringify! ($helper_name), "] !from_ffi_handle: {}"), err),
-        Ok (ctx) => initialize (&ctx, args.netid, args.our_public_key, args.preferred_port)
-    }
+    let ctx = match MmArc::from_ffi_handle (args.ctx) {
+        Ok (ctx) => ctx,
+        Err (err) => return ERR! (concat! (stringify! ($helper_name), "] !from_ffi_handle: {}"), err)};
+    try_s! (initialize (&ctx, args.netid, args.our_public_key, args.preferred_port) .await);
+    Ok (Vec::new())
 });
 
 #[cfg(not(feature = "native"))]
-pub fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
+pub async fn initialize (ctx: &MmArc, netid: u16, our_public_key: bits256, preferred_port: u16) -> Result<(), String> {
     let pctx = try_s! (PeersContext::from_ctx (&ctx));
     *try_s! (pctx.our_public_key.lock()) = our_public_key;
 
     try_s! (ctx.send_to_helpers());
 
-    let args = ToPeersInitialize {
+    try_s! (helperᶜ ("peers_initialize", try_s! (json::to_vec (&ToPeersInitialize {
         ctx: try_s! (ctx.ffi_handle()),
         netid,
         our_public_key,
         preferred_port
-    };
-    io_buf_proxy! (peers_initialize, &args, 4096)
+    }))) .await);
+    Ok(())
 }
 
 /// Try to reach a peer and establish connectivity with it while knowing no more than its port and IP.
@@ -1546,7 +1549,7 @@ impl Drop for SendHandlerRef {
 /// hence the manual control of when the transmission should stop.
 /// Think of it as a radio-signal set on a loop.
 #[cfg(feature = "native")]
-pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
+pub async fn send (ctx: MmArc, peer: bits256, subject: Vec<u8>, fallback: u8, payload: Vec<u8>)
 -> Result<SendHandlerRef, String> {
     let fallback = match option_env! ("MM2_FALLBACK") {Some (n) => try_s! (n.parse()), None => fallback};
     let fallback = try_s! (NonZeroU8::new (fallback) .ok_or ("fallback is 0"));
@@ -1562,7 +1565,7 @@ pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: 
 
     // Predictable salt size.
     // NB: There should be no zero bytes in the salt (due to `CStr::from_ptr` and the possibility of a similar problem abroad).
-    let salt = format_radix (checksum_ecma (subject), 36);
+    let salt = format_radix (checksum_ecma (&subject), 36);
 
     let send_handler_arc = Arc::new (SendHandler);
     let send_handler = Arc::downgrade (&send_handler_arc);
@@ -1578,26 +1581,26 @@ struct ToPeersSend {ctx: u32, peer: bits256, subject: Vec<u8>, fallback: u8, pay
 
 helper! (peers_send, args: ToPeersSend, {
     let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
-    let mut shr = try_s! (send (&ctx, args.peer, &args.subject, args.fallback, args.payload));
+    let mut shr = try_s! (send (ctx, args.peer, args.subject, args.fallback, args.payload) .await);
     // We need to leak the `SendHandlerRef` into the portable space
     // in order not to terminate the send prematurely.
     let ptr = shr.0;
     shr.0 = 0;
-    Ok (ptr)
+    Ok (fomat! ((ptr)) .into())
 });
 
 /// Returns the `Arc` address of the `SendHandler`.
 #[cfg(not(feature = "native"))]
-pub fn send (ctx: &MmArc, peer: bits256, subject: &[u8], fallback: u8, payload: Vec<u8>)
+pub async fn send (ctx: MmArc, peer: bits256, subject: Vec<u8>, fallback: u8, payload: Vec<u8>)
 -> Result<SendHandlerRef, String> {
-    let to = ToPeersSend {
+    let rv = try_s! (helperᶜ ("peers_send", try_s! (json::to_vec (&ToPeersSend {
         ctx: try_s! (ctx.ffi_handle()),
         peer,
         subject: subject.into(),
         fallback,
         payload
-    };
-    io_buf_proxy! (peers_send, &to, 4096)
+    }))) .await);
+    Ok (try_s! (json::from_slice (&rv)))
 }
 
 struct RecvFuture {
@@ -1702,33 +1705,15 @@ pub enum FixedValidator {
 #[derive(Serialize, Deserialize, Debug)]
 struct ToPeersRecv {ctx: u32, subject: Vec<u8>, fallback: u8, validator: FixedValidator}
 
-#[cfg(feature = "native")]
-#[doc(hidden)]
-pub async fn peers_recv_helper (req: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, String> {
-    let args: ToPeersRecv = try_s! (json::from_slice (req.body()));
-    let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
-    let validator: Box<dyn Fn(&[u8])->bool + Send> = match args.validator {
-        FixedValidator::AnythingGoes => Box::new (|_| true),
-        FixedValidator::Exact (bytes) => Box::new (move |candidate| candidate == &bytes[..])
-    };
-    log! ("peers_recv_helper] waiting...");
-    let rc = recvʹ (ctx, args.subject, args.fallback, validator) .await;
-    log! ("peers_recv_helper] done waiting!");
-    let vec = try_s! (rc);
-    let res = try_s! (Response::builder().header (CONTENT_LENGTH, vec.len()) .body (vec));
-    Ok (res)
-}
-
 helper! (peers_recv, args: ToPeersRecv, {
     let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
     let validator: Box<dyn Fn(&[u8])->bool + Send> = match args.validator {
         FixedValidator::AnythingGoes => Box::new (|_| true),
         FixedValidator::Exact (bytes) => Box::new (move |candidate| candidate == &bytes[..])
     };
-    let rf = recvʹ (ctx, args.subject, args.fallback, validator);
-    // Exploring, and for the simplicity's sake, we're going to just wait here.
-    // Tracking background future execution in portable code can be implemented later if necessary.
-    let vec = try_s! (block_on (rf));
+    log! ("peers_recv_helper] waiting...");
+    let vec: Vec<u8> = try_s! (recvʹ (ctx, args.subject, args.fallback, validator) .await);
+    log! ("peers_recv_helper] done waiting!");
     Ok (vec)
 });
 
@@ -1755,71 +1740,15 @@ pub extern fn start_helpers() -> i32 {
             return port as i32
 }   }   }
 
-/// Ask the WASM host to send HTTP request to the native helpers.  
-/// Returns request ID used to wait for the reply.
-#[cfg(not(feature = "native"))]
-extern "C" {pub fn http_helper_if (
-    helper: *const u8, helper_len: i32,
-    payload: *const u8, payload_len: i32,
-    timeout_ms: i32) -> i32;}
-
-/// Check with the WASM host to see if the given HTTP request is ready.
-#[cfg(not(feature = "native"))]
-extern "C" {pub fn http_helper_check (http_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;}
-
-// Ask the WASM host to send HTTP request to the native helpers.  
-// Returns a Future containing the serializable reply obtained from the helpers.
-// (not sure yet whether it should be a 0.1 or 0.3 future,
-// 0.3 futures aren't as friendly to boxing in my experience)
-//async http_helper () {}
-
-/// Periodically invoked by the WASM host, allowing us to drive some of the asynchronous operations forward.
-#[no_mangle]
-pub extern fn tick () {}
-
 #[cfg(not(feature = "native"))]
 pub async fn recvʹ (ctx: MmArc, subject: Vec<u8>, fallback: u8, validator: FixedValidator)
 -> Result<Vec<u8>, String> {
-    let args = ToPeersRecv {
+    helperᶜ ("peers_recv", try_s! (json::to_vec (&ToPeersRecv {
         ctx: try_s! (ctx.ffi_handle()),
         subject: subject.into(),
         fallback,
         validator
-    };
-
-    // TODO: Make this HTTP call into a Future and (a)wait for it.
-    let helper = "peers_recv";
-    let payload = try_s! (json::to_vec (&args));
-    let helper_request_id = unsafe {http_helper_if (
-        helper.as_ptr(), helper.len() as i32,
-        payload.as_ptr(), payload.len() as i32,
-        9999)};
-
-    // TODO: Implement a Future waiting for the WASM host to provide us with the HTTP reply.
-    struct HttpReply {helper_request_id: i32, waker: Option<Waker>}
-    impl std::future::Future for HttpReply {
-        type Output = Result<Vec<u8>, String>;
-        fn poll (mut self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
-            log! ("HttpReply (ri " (self.helper_request_id) ") being polled...");
-            let mut buf: [u8; 65535] = unsafe {uninitialized()};
-            let rlen = unsafe {http_helper_check (self.helper_request_id, buf.as_mut_ptr(), buf.len() as i32)};
-            if rlen < 0 {  // Response is larger than capacity.
-                return Poll03::Ready (ERR! ("Helper result is too large ({})", rlen))
-            }
-            if rlen > 0 {
-                log! ("HttpReply, got " (rlen) " bytes!");
-                return Poll03::Ready (Ok (Vec::from (&buf[0..rlen as usize])))
-            }
-            // NB: Need a fresh waker each time `Pending` is returned, to support switching tasks.
-            // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
-            self.waker = Some (cx.waker().clone());
-            Poll03::Pending
-        }
-    }
-    log! ("Waiting for " [=helper_request_id]);
-    let rc = try_s! (await! (HttpReply {helper_request_id, waker: None}));
-    log! ("Done waiting for " [=helper_request_id]);
-    Ok (rc)
+    }))) .await
 }
 
 pub fn key (ctx: &MmArc) -> Result<bits256, String> {

@@ -25,12 +25,8 @@ const io_buf_args = [ref.types.void, [
   ref.refType (ref.types.uint8), ref.types.uint32, ref.refType (ref.types.uint8), ref.refType (ref.types.uint32)]];
 const libpeers = ffi.Library ('./peers', {
   'ctx2helpers': [ref.types.void, [ref.refType (ref.types.uint8), ref.types.uint32]],
-  'common_wait_for_log_re': io_buf_args,
   'is_loopback_ip': [ref.types.uint8, ['string']],
   'peers_drop_send_handler': [ref.types.void, [ref.types.int32, ref.types.int32]],
-  'peers_initialize': io_buf_args,
-  'peers_recv': io_buf_args,
-  'peers_send': io_buf_args,
   'start_helpers': [ref.types.int32, []]
 });
 const ili_127_0_0_1 = libpeers.is_loopback_ip ('127.0.0.1');
@@ -62,6 +58,7 @@ async function runWasm() {
   const wasmArray = new Uint8Array (wasmBytes);
   const keepAliveAgent = new http.Agent ({keepAlive: true});
   const ctx_and_port = libpeers.start_helpers();
+  console.log ('ctx_and_port', ctx_and_port);
   let httpRequests = {};
   let wasmShared = {};
   const wasmEnv = {
@@ -78,8 +75,8 @@ async function runWasm() {
     date_now: function() {return Date.now()},
     http_helper_check: function (http_request_id, rbuf, rcap) {
       let ris = '' + http_request_id;
-      if (httpRequests[ris] == null) return 0;
-      if (httpRequests[ris].buf == null) return 0;
+      if (httpRequests[ris] == null) return -1;
+      if (httpRequests[ris].buf == null) return -1;
       /** @type {Uint8Array} */ 
       const buf = httpRequests[ris].buf;
       if (buf.length > rcap) return -buf.length;

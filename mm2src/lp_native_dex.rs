@@ -19,6 +19,7 @@
 
 use futures::{Future};
 use futures::sync::oneshot::Sender;
+use futures03::executor::block_on;
 use http::StatusCode;
 use keys::KeyPair;
 use libc::{self, c_char};
@@ -1034,7 +1035,7 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, myipaddr: &IpAddr, netid: u16, seednode
     }
     *try_s! (ctx.seeds.lock()) = seed_ips;
 
-    try_s! (peers::initialize (ctx, netid, lp::G.LP_mypub25519.into(), pubport + 1));
+    try_s! (block_on (peers::initialize (ctx, netid, lp::G.LP_mypub25519.into(), pubport + 1)));
 
     Ok(())
 }

@@ -7,18 +7,16 @@ use chrono::{Local, TimeZone, Utc};
 use chrono::format::DelayedFormat;
 use chrono::format::strftime::StrftimeItems;
 use crossbeam::queue::SegQueue;
-use regex::Regex;
 use serde_json::{Value as Json};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::default::Default;
-use std::env;
 use std::fs;
 use std::fmt;
 use std::fmt::Write as WriteFmt;
 use std::io::{Seek, SeekFrom, Write};
 use std::mem::swap;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -26,35 +24,12 @@ use super::{now_ms, writeln};
 
 #[cfg(feature = "native")]
 lazy_static! {
-    /// True if we're likely to be under a capturing cargo test.
-    static ref CAPTURING_TEST: bool = {
-        // See if we're running under a test.
-        // Only the "cargo test" uses the "deps" dir to run the MM2.
-        // Plus `mm2-\w+` is a giveaway.
-        let ex = unwrap! (Regex::new (r#"(?x) target [/\\] debug [/\\] deps [/\\] mm2-\w+ (.exe)? $"#));
-        let mut args = env::args();
-        let cmd = unwrap! (args.next());
-        if ex.is_match (&cmd) {
-            !args.any (|a| a == "--nocapture")
-        } else {false}
-    };
     static ref PRINTF_LOCK: Mutex<()> = Mutex::new(());
     /// If this C callback is present then all the logging output should happen through it
     /// (and leaving stdout untouched).  
     /// The *gravity* logging still gets a copy in order for the log-based tests to work.
     pub static ref LOG_OUTPUT: Mutex<Option<extern fn (line: *const c_char)>> = Mutex::new (None);
 }
-
-#[cfg(windows)]
-fn flush_stdout() {
-    // I don't see the `stdout` in the Windows version of the `libc` crate, but `_flushall` comes to the rescue.
-    // https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/flushall?view=vs-2017
-    extern "C" {fn _flushall() -> c_int;}
-    unsafe {_flushall()};
-}
-
-#[cfg(not(windows))]
-fn flush_stdout() {}
 
 /// Initialized and used when there's a need to chute the logging into a given thread.
 struct Gravity {
@@ -107,8 +82,6 @@ thread_local! {
 #[cfg(feature = "native")]
 #[doc(hidden)]
 pub fn chunk2log (mut chunk: String) {
-    extern {fn printf(_: *const c_char, ...) -> c_int;}
-
     let used_log_output = if let Ok (log_output) = LOG_OUTPUT.lock() {
         if let Some (log_cb) = *log_output {
             chunk.push ('\0');
@@ -132,29 +105,7 @@ pub fn chunk2log (mut chunk: String) {
 
     if used_log_output {return}
 
-    // The C and the Rust standard outputs overlap on Windows,
-    // so we use the C `printf` in order to avoid that.
-
-    // On the other hand, on Darwin the `printf` is getting buffered or something, breaking some tests,
-    // so we only want to use the `printf` on Windows and not on Darwin.
-
-    // Also, `printf` isn't captured by the Rust tests,
-    // so we should fall back to `println!` while running under a capturing test.
-
-    if cfg! (not (windows)) || *CAPTURING_TEST {
-        writeln (&chunk)
-    } else {
-        chunk.push ('\n');
-        chunk.push ('\0');
-        if let Ok (_lock) = PRINTF_LOCK.lock() {unsafe {
-            printf (b"%s\0".as_ptr() as *const c_char, chunk.as_ptr() as *const c_char);
-            // Stdout buffering would sometimes mess with the tests.
-            // Particularly when running under the VSCode debugger on Windows, as the buffer size is bumped up then.
-            // But also with normal runs sometimes, when examining the end of the log.
-            // Explicitly flushing the stdout helps.
-            flush_stdout();
-        }}
-    }
+    writeln (&chunk)
 }
 
 #[cfg(not(feature = "native"))]
@@ -390,8 +341,6 @@ pub struct LogState {
     /// (this thread becomes a center of gravity for the other registered threads).
     /// In the future we might also use `gravity` to log into a file.
     gravity: Mutex<Option<Arc<Gravity>>>,
-    /// Log to stdout if `None`.
-    _log_file: Option<Mutex<fs::File>>,
     /// Dashboard is dumped here, allowing us to easily observe it from a command-line or the tests.  
     /// No dumping if `None`.
     dashboard_file: Option<Mutex<fs::File>>
@@ -404,28 +353,22 @@ impl LogState {
             dashboard: Mutex::new (Vec::new()),
             tail: Mutex::new (VecDeque::with_capacity (64)),
             gravity: Mutex::new (None),
-            _log_file: None,
             dashboard_file: None
         }
     }
 
     /// Initialize according to the MM command-line configuration.
     pub fn mm (conf: &Json) -> LogState {
-        let (log_file, dashboard_file) = match conf["log"] {
-            Json::Null => (None, None),
+        let dashboard_file = match conf["log"] {
+            Json::Null => None,
             Json::String (ref path) => {
-                let log_file = unwrap! (
-                    fs::OpenOptions::new().append (true) .create (true) .open (path),
-                    "Can't open log file {}", path
-                );
-
                 let dashboard_path = unwrap! (dashboard_path (Path::new (&path)));
                 let dashboard_file = unwrap! (
                     fs::OpenOptions::new().write (true) .create (true) .open (&dashboard_path),
                     "Can't open dashboard file {:?}", dashboard_path
                 );
 
-                (Some (Mutex::new (log_file)), Some (Mutex::new (dashboard_file)))
+                Some (Mutex::new (dashboard_file))
             },
             ref x => panic! ("The 'log' is not a string: {:?}", x)
         };
@@ -433,7 +376,6 @@ impl LogState {
             dashboard: Mutex::new (Vec::new()),
             tail: Mutex::new (VecDeque::with_capacity (64)),
             gravity: Mutex::new (None),
-            _log_file: log_file,
             dashboard_file
         }
     }

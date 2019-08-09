@@ -107,7 +107,6 @@ fn help() {
         "                     If the field isn't present on the command line then we try loading it from the 'coins' file.\n"
         "  crash          ..  Simulate a crash to check how the crash handling works.\n"
         "  dbdir          ..  MM database path. 'DB' by default.\n"
-        "  log            ..  File path. Redirect (as of now only a part of) the log there.\n"
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
         "  netid          ..  Subnetwork. Affects ports and keys.\n"
         "  passphrase *   ..  Wallet seed.\n"
@@ -129,13 +128,15 @@ fn help() {
         "  userhome       ..  System home directory of a user ('/root' by default).\n"
         "  wif            ..  `1` to add WIFs to the information we provide about a coin.\n"
         "\n"
-        // Generated from https://github.com/KomodoPlatform/Documentation (PR to dev branch).
-        // SHossain: "this would be the URL we would recommend and it will be maintained
-        //            Please let @gcharang or me know if anything needs updating there".
-        // P.S.
-        // siddhartha-crypto and artemii235 worked on updating the docs here:
-        // https://github.com/KomodoPlatform/developer-docs/tree/mm/docs/basic-docs/atomic-swap-dex
-        "See also the online documentation at https://docs.komodoplatform.com/barterDEX/barterDEX-API.html."
+        "Environment variables:\n"
+        "\n"
+        // Per-process (we might have several MM instances running but they will share the same log).
+        "  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.\n"
+        "\n"
+        // Generated from https://github.com/KomodoPlatform/developer-docs/tree/sidd.
+        // (SHossain, siddhartha-crypto).
+        "See also the online documentation at\n"
+        "https://github.com/KomodoPlatform/developer-docs/blob/sidd/docs/basic-docs/atomicdex/atomicdex-api.md\n"
     )
 }
 

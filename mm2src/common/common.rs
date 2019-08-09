@@ -11,7 +11,7 @@
 //!                   binary
 
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
-#![feature(async_await)]
+#![feature(async_await, async_closure)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -71,15 +71,19 @@ use bigdecimal::BigDecimal;
 use crossbeam::{channel};
 use futures::{future, Future};
 use futures::task::Task;
+#[cfg(not(feature = "native"))]
+use futures03::task::{Context, Poll as Poll03, Waker};
 use hex::FromHex;
 use http::{Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use libc::{c_char, c_void, malloc, free};
+#[cfg(not(feature = "native"))]
+use std::pin::Pin;
 use rand::{SeedableRng, rngs::SmallRng};
 use serde::{ser, de};
 use serde_json::{self as json, Value as Json};
-use std::env::args;
+use std::env::{args, var, VarError};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::ffi::{CStr};
@@ -383,13 +387,14 @@ pub fn set_panic_hook() {
 
 /// Simulates the panic-in-panic crash.
 pub fn double_panic_crash() {
-    struct Panicker (u32);
+    struct Panicker;
     impl Drop for Panicker {
         fn drop (&mut self) {
-            panic! ("panic in drop; {}", self.0)
+            panic! ("panic in drop")
     }   }
-    let panicker = Panicker (1);
-    panic! ("first panic; {}", panicker.0)
+    let panicker = Panicker;
+    if 1 == 1 {panic! ("first panic")}
+    drop (panicker)  // Delays the drop.
 }
 
 /// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
@@ -958,9 +963,31 @@ pub fn now_float() -> f64 {
     duration_to_float (Duration::from_millis (now_ms()))
 }
 
+/// If the `MM_LOG` variable is present then tries to open that file.  
+/// Prints a warning to `stdout` if there's a problem opening the file.  
+/// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
+fn open_log_file() -> Option<fs::File> {
+    let mm_log = match var ("MM_LOG") {
+        Ok (v) => v,
+        Err (VarError::NotPresent) => return None,
+        Err (err) => {println! ("open_log_file] Error getting MM_LOG: {}", err); return None}
+    };
+
+    // For security reasons we want the log path to always end with ".log".
+    if !mm_log.ends_with (".log") {println! ("open_log_file] MM_LOG doesn't end with '.log'"); return None}
+
+    match fs::OpenOptions::new().append (true) .create (true) .open (&mm_log) {
+        Ok (f) => Some (f),
+        Err (err) => {
+            println! ("open_log_file] Can't open {}: {}", mm_log, err);
+            None
+}   }   }
+
 #[cfg(feature = "native")]
 pub fn writeln (line: &str) {
     use std::panic::catch_unwind;
+
+    lazy_static! {static ref LOG_FILE: Mutex<Option<fs::File>> = Mutex::new (open_log_file());}
 
     // `catch_unwind` protects the tests from error
     //
@@ -968,6 +995,11 @@ pub fn writeln (line: &str) {
     //
     // (which might be related to https://github.com/rust-lang/rust/issues/29488).
     let _ = catch_unwind (|| {
+        if let Ok (mut log_file) = LOG_FILE.lock() {
+            if let Some (ref mut log_file) = *log_file {
+                let _ = witeln! (log_file, (line));
+                return
+        }   }
         println! ("{}", line);
     });
 }
@@ -1010,65 +1042,71 @@ pub fn small_rng() -> SmallRng {
     SmallRng::seed_from_u64 (now_ms())
 }
 
-/// Proxy invoking a helper function which takes the (ptr, len) input and fills the (rbuf, rlen) output.
-#[macro_export]
-macro_rules! io_buf_proxy {
-    ($helper:ident, $payload:expr, $rlen:literal) => {
-        unsafe {
-            let payload = try_s! (json::to_vec ($payload));
-            let mut rbuf: [u8; $rlen] = std::mem::uninitialized();
-            let mut rlen = rbuf.len() as u32;
-            $helper (
-                payload.as_ptr(), payload.len() as u32,
-                rbuf.as_mut_ptr(), &mut rlen
-            );
-            let rlen = rlen as usize;
-            // Checks that `rlen` has changed
-            // (`rlen` staying the same might indicate that the helper was not invoked).
-            if rlen >= rbuf.len() {return ERR! ("Bad rlen: {}", rlen)}
-            try_s! (json::from_slice (&rbuf[0..rlen]))
-}   }   }
+/// Ask the WASM host to send HTTP request to the native helpers.  
+/// Returns request ID used to wait for the reply.
+#[cfg(not(feature = "native"))]
+extern "C" {fn http_helper_if (
+    helper: *const u8, helper_len: i32,
+    payload: *const u8, payload_len: i32,
+    timeout_ms: i32) -> i32;}
 
-#[doc(hidden)]
-pub fn serialize_to_rbuf<T: ser::Serialize> (line: u32, rc: Result<T, String>, rbuf: *mut u8, rlen: *mut u32) {
-    use std::io::Cursor;
-    use std::ptr::{read_unaligned, write_unaligned};
-    use std::slice::from_raw_parts_mut;
-    unsafe {
-        let rbuf_capacity = read_unaligned (rlen) as usize;
-        let rbufˢ: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
-        let mut cur = Cursor::new (rbufˢ);
-        if let Err (err) = json::to_writer (&mut cur, &rc) {
-            let rbufˢ: &mut [u8] = from_raw_parts_mut (rbuf, rbuf_capacity);
-            cur = Cursor::new (rbufˢ);
-            let rc: Result<T, String> = Err (fomat! ((line) "] Error serializing response: " (err)));
-            unwrap! (json::to_writer (&mut cur, &rc), "Error serializing an error");
+/// Check with the WASM host to see if the given HTTP request is ready.
+#[cfg(not(feature = "native"))]
+extern "C" {pub fn http_helper_check (http_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;}
+
+#[cfg(not(feature = "native"))]
+pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let helper_request_id = unsafe {http_helper_if (
+        helper.as_ptr(), helper.len() as i32,
+        args.as_ptr(), args.len() as i32,
+        9999)};
+
+    struct HttpReply {helper: &'static str, helper_request_id: i32, waker: Option<Waker>}
+    impl std::future::Future for HttpReply {
+        type Output = Result<Vec<u8>, String>;
+        fn poll (mut self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
+            log! ("HttpReply (ri " (self.helper_request_id) ", " (self.helper) ") being polled...");
+            let mut buf: [u8; 65535] = unsafe {uninitialized()};
+            let rlen = unsafe {http_helper_check (self.helper_request_id, buf.as_mut_ptr(), buf.len() as i32)};
+            if rlen < -1 {  // Response is larger than capacity.
+                return Poll03::Ready (ERR! ("Helper result is too large ({})", rlen))
+            }
+            if rlen >= 0 {
+                log! ("HttpReply, got " (rlen) " bytes!");
+                return Poll03::Ready (Ok (Vec::from (&buf[0..rlen as usize])))
+            }
+            // NB: Need a fresh waker each time `Pending` is returned, to support switching tasks.
+            // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
+            self.waker = Some (cx.waker().clone());
+            Poll03::Pending
         }
-        let seralized_len = cur.position();
-        assert! (seralized_len <= rbuf_capacity as u64);
-        write_unaligned (rlen, seralized_len as u32)
-}   }
+    }
+    log! ("Waiting for " (helper_request_id) ", " (helper));
+    let rv = try_s! (HttpReply {helper, helper_request_id, waker: None} .await);
+    log! ("Done waiting for " (helper_request_id) ", " (helper) ": " (binprint (&rv, b'.') ));
+    Ok (rv)
+}
 
 #[macro_export]
 macro_rules! helper {
     ($helperⁱ:ident, $encoded_argsⁱ:ident: $encoded_argsᵗ:ty, $body:block) => {
-        #[cfg(not(feature = "native"))]
-        extern "C" {pub fn $helperⁱ (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32);}
-
         #[cfg(feature = "native")]
-        #[no_mangle]
-        pub extern fn $helperⁱ (ptr: *const u8, len: u32, rbuf: *mut u8, rlen: *mut u32) {
-            use std::slice::from_raw_parts;
-            // TODO: Try using bencode instead of JSON.
+        #[doc(hidden)]
+        pub async fn $helperⁱ (req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>, String> {
+            use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+            use serde_json::{self as json};
 
-            let rc: Result<_, String>;
-            let encoded_argsˢ = unsafe {from_raw_parts (ptr, len as usize)};
-            match json::from_slice::<$encoded_argsᵗ> (encoded_argsˢ) {
-                Err (err) => rc = ERR! (concat! (stringify! ($helperⁱ), "] error deserializing: {}"), err),
-                Ok ($encoded_argsⁱ) => rc = (|| $body)()
-            }
-            $crate::serialize_to_rbuf (line!(), rc, rbuf, rlen)
-}   }   }
+            let $encoded_argsⁱ: $encoded_argsᵗ = try_s! (json::from_slice (req.body()));
+            let rc: Result<Vec<u8>, String> = (async || $body) () .await;
+            let vec = try_s! (rc);
+            let res = try_s! (http::Response::builder()
+                .header (CONTENT_LENGTH, vec.len())
+                .header (CONTENT_TYPE, "application/octet-stream")
+                .body (vec));
+            Ok (res)
+        }
+    }
+}
 
 fn without_trailing_zeroes (decimal: &str, dot: usize) -> &str {
     let mut pos = decimal.len() - 1;

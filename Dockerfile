@@ -26,11 +26,11 @@ RUN \
     wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
     sh /tmp/rustup-init.sh -y --default-toolchain none &&\
     . /root/.cargo/env &&\
-    rustup install nightly-2019-06-26 &&\
-    rustup default nightly-2019-06-26 &&\
+    rustup install nightly-2019-08-05 &&\
+    rustup default nightly-2019-08-05 &&\
     # It seems that bindgen won't prettify without it:
     rustup component add rustfmt-preview &&\
-    rm -rf /root/.rustup/toolchains/nightly-2019-06-26-x86_64-unknown-linux-gnu/share/doc &&\
+    rm -rf /root/.rustup/toolchains/nightly-2019-08-05-x86_64-unknown-linux-gnu/share/doc &&\
     rm -f /tmp/rustup-init.sh
 
 ENV PATH="/root/.cargo/bin:${PATH}"

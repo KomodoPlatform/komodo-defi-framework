@@ -32,7 +32,7 @@ fn ulimit_n() -> Option<u32> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn ulimit_n() -> Option<u32> {None}
 
-fn peer (conf: Json, port: u16) -> MmArc {
+async fn peer (conf: Json, port: u16) -> MmArc {
     if let Some (n) = ulimit_n() {
       assert! (n > 2000, "`ulimit -n` is too low: {}", n)
     }
@@ -49,14 +49,14 @@ fn peer (conf: Json, port: u16) -> MmArc {
 
     let mut key: bits256 = unsafe {zeroed()};
     small_rng().fill (&mut key.bytes[..]);
-    unwrap! (super::initialize (&ctx, 9999, key, port));
+    unwrap! (super::initialize (&ctx, 9999, key, port) .await);
 
     ctx
 }
 
-fn destruction_check (mm: MmArc) {
+async fn destruction_check (mm: MmArc) {
     mm.stop();
-    if let Err (err) = wait_for_log_re (&mm, 1., "delete_dugout finished!") {
+    if let Err (err) = wait_for_log_re (&mm, 1., "delete_dugout finished!") .await {
         // NB: We want to know if/when the `peers` destruction doesn't happen, but we don't want to panic about it.
         pintln! ((err))
     }
@@ -66,12 +66,12 @@ async fn peers_exchange (conf: Json) {
     let fallback_on = conf["http-fallback"] == "on";
     let fallback = if fallback_on {1} else {255};
 
-    let alice = peer (conf.clone(), 2111);
-    let bob = peer (conf, 2112);
+    let alice = peer (conf.clone(), 2111) .await;
+    let bob = peer (conf, 2112) .await;
 
     if !fallback_on {
-        unwrap! (wait_for_log_re (&alice, 99., r"\[dht-boot] DHT bootstrap \.\.\. Done\."));
-        unwrap! (wait_for_log_re (&bob, 33., r"\[dht-boot] DHT bootstrap \.\.\. Done\."));
+        unwrap! (wait_for_log_re (&alice, 99., r"\[dht-boot] DHT bootstrap \.\.\. Done\.") .await);
+        unwrap! (wait_for_log_re (&bob, 33., r"\[dht-boot] DHT bootstrap \.\.\. Done\.") .await);
     }
 
     let tested_lengths: &[usize] = &[
@@ -87,7 +87,7 @@ async fn peers_exchange (conf: Json) {
 
         log! ("Sending " (message.len()) " bytes …");
         let sending_f = unwrap! (super::send (
-            &alice, unwrap! (super::key (&bob)), b"test_dht", fallback, message.clone()));
+            alice.clone(), unwrap! (super::key (&bob)), Vec::from (&b"test_dht"[..]), fallback, message.clone()) .await);
 
         // Get that message from Alice.
 
@@ -108,7 +108,7 @@ async fn peers_exchange (conf: Json) {
         if fallback_on {
             // TODO: Refine the log test.
             // TODO: Check that the HTTP fallback was NOT used if `!fallback_on`.
-            unwrap! (wait_for_log_re (&alice, 0.1, r"transmit] TBD, time to use the HTTP fallback\.\.\."))
+            unwrap! (wait_for_log_re (&alice, 0.1, r"transmit] TBD, time to use the HTTP fallback\.\.\.") .await)
             // TODO: Check the time delta, with fallback 1 the delivery shouldn't take long.
         }
 
@@ -124,8 +124,8 @@ async fn peers_exchange (conf: Json) {
         }
     }
 
-    destruction_check (alice);
-    destruction_check (bob);
+    destruction_check (alice) .await;
+    destruction_check (bob) .await;
 }
 
 /// Send and receive messages of various length and chunking via the DHT.
@@ -167,8 +167,8 @@ pub fn peers_direct_send() {
     if cfg! (target_os = "macos") {return}
 
     // NB: Still need the DHT enabled in order for the pings to work.
-    let alice = peer (json! ({"dht": "on"}), 2121);
-    let bob = peer (json! ({"dht": "on"}), 2122);
+    let alice = block_on (peer (json! ({"dht": "on"}), 2121));
+    let bob = block_on (peer (json! ({"dht": "on"}), 2122));
 
     let bob_key = unwrap! (super::key (&bob));
 
@@ -182,7 +182,7 @@ pub fn peers_direct_send() {
     let mut rng = small_rng();
     let message: Vec<u8> = (0..33) .map (|_| rng.gen()) .collect();
 
-    let _send_f = super::send (&alice, bob_key, b"subj", 255, message.clone());
+    let _send_f = block_on (super::send (alice.clone(), bob_key, Vec::from (&b"subj"[..]), 255, message.clone()));
     let recv_f = super::recvʹ (bob.clone(), Vec::from (&b"subj"[..]), 255, Box::new (|_| true));
 
     // Confirm that Bob was added into the friendlist and that we don't know its address yet.
@@ -218,8 +218,8 @@ pub fn peers_direct_send() {
     assert_eq! (received, message);
     assert! (now_float() - start < 0.1);  // Double-check that we're not waiting for DHT chunks.
 
-    destruction_check (alice);
-    destruction_check (bob);
+    block_on (destruction_check (alice));
+    block_on (destruction_check (bob));
 }
 
 /// Check the primitives used to communicate with the HTTP fallback server.  

@@ -238,7 +238,7 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
 
     let listener = try_s! (TcpListener::bind2 (&addr));
 
-    struct RpcService {ctx: MmWeak}
+    struct RpcService {ctx: MmWeak, client: SocketAddr}
     impl Service for RpcService {
         type ReqBody = hyper::Body;
         type ResBody = LiftBody<Vec<u8>>;
@@ -249,6 +249,7 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
             let ctx = self.ctx.clone();
             let (parts, body) = req.into_parts();
             let body_f = body.concat2();
+            let client = self.client;
             let f = body_f.then (move |chunk| -> HyRes {
                 let vec = try_fus! (chunk) .to_vec();
                 let req = Request::from_parts (parts, vec);
@@ -261,16 +262,16 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
                 } else if path == "/test_ip" {  // Helps `fn test_ip` to check the IP availability.
                     rpc_response (200, "k")
                 } else if path.starts_with ("/helper/") {
+                    if !client.ip().is_loopback() {return rpc_response (500, "non-local client")}
                     let helper = &path[8..];
-                    if helper == "peers_recv" {
-                        let f = crate::peers_recv_helper (req);
-                        Box::new (f.boxed().compat())
-                    } else {
-                        rpc_response (404, "unknown helper")
+                    macro_rules! bc {($f: expr) => {Box::new ($f.boxed().compat())}};
+                    match helper {
+                        "peers_initialize" => bc! (crate::peers_initialize (req)),
+                        "peers_recv" => bc! (crate::peers_recv (req)),
+                        "peers_send" => bc! (crate::peers_send (req)),
+                        _ => rpc_response (404, "unknown helper")
                     }
-                } else {
-                    rpc_response (404, "unknown path")
-                }
+                } else {rpc_response (404, "unknown path")}
             });
             let f = f.then (move |r| match r {
                 Ok (r) => {
@@ -289,10 +290,10 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
             Box::new (f)
         }
     }
-    let server = listener.incoming().for_each (move |(socket, _my_sock)| {
+    let server = listener.incoming().for_each (move |(socket, client)| {
         let ctx = ctx.clone();
         CORE.spawn (move |_| HTTP
-                .serve_connection (socket, RpcService {ctx})
+                .serve_connection (socket, RpcService {ctx, client})
                 .map(|_| ())
                 .map_err (|err| log! ({"{}", err})));
         Ok(())

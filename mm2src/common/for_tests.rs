@@ -25,6 +25,8 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use crate::now_float;
+#[cfg(not(feature = "native"))]
+use crate::helperᶜ;
 #[cfg(feature = "native")]
 use crate::wio::slurp_req;
 use crate::log::{dashboard_path, LogState};
@@ -293,23 +295,25 @@ struct ToWaitForLogRe {ctx: u32, timeout_sec: f64, re_pred: String}
 helper! (common_wait_for_log_re, args: ToWaitForLogRe, {
     let ctx = try_s! (crate::mm_ctx::MmArc::from_ffi_handle (args.ctx));
     let re = try_s! (Regex::new (&args.re_pred));
-    wait_for_log (&ctx.log, args.timeout_sec, &|line| re.is_match (line))
+    // XXX: Run `wait_for_log` in a separate thread in order not to block the `CORE`.
+    try_s! (wait_for_log (&ctx.log, args.timeout_sec, &|line| re.is_match (line)));
+    Ok (Vec::new())
 });
 
 #[cfg(feature = "native")]
-pub fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
+pub async fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
     let re = try_s! (Regex::new (re_pred));
     wait_for_log (&ctx.log, timeout_sec, &|line| re.is_match (line))
 }
 
 #[cfg(not(feature = "native"))]
-pub fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
-    let args = ToWaitForLogRe {
+pub async fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
+    try_s! (helperᶜ ("common_wait_for_log_re", try_s! (json::to_vec (&ToWaitForLogRe {
         ctx: try_s! (ctx.ffi_handle()),
         timeout_sec: timeout_sec,
         re_pred: re_pred.into()
-    };
-    io_buf_proxy! (common_wait_for_log_re, &args, 4096)
+    }))) .await);
+    Ok(())
 }
 
 /// Create RAII variables to the effect of dumping the log and the status dashboard at the end of the scope.

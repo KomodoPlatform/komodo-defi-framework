@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use common::{self, set_panic_hook, stack_trace, stack_trace_frame};
+use common::{self, set_panic_hook, stack_trace, stack_trace_frame, writeln};
 use libc::c_int;
 use std::env;
 use std::io::stderr;
@@ -24,13 +24,9 @@ fn exception_name (exception_code: u32) -> &'static str {
 #[cfg(windows)]
 #[no_mangle]
 pub extern fn rust_seh_handler (exception_code: u32) {
-    eprintln! ("SEH caught! ExceptionCode: {} ({}).", exception_code, exception_name (exception_code));
-    stack_trace (&mut stack_trace_frame, &mut |trace| {
-        let stderr = stderr();
-        let mut stderr = stderr.lock();
-        let _ = stderr.write_all (trace.as_bytes());
-        let _ = stderr.flush();
-    });
+    writeln ("SEH caught!");  // Write something without heap allocation first.
+    writeln (&format! ("ExceptionCode: {} ({}).", exception_code, exception_name (exception_code)));
+    stack_trace (&mut stack_trace_frame, &mut |trace| if !trace.is_empty() {writeln (trace.trim_end())});
     abort()
 }
 
@@ -49,21 +45,20 @@ extern fn call_access_violation() {access_violation()}
 
 #[cfg(unix)]
 extern fn signal_handler (sig: c_int) {
-    {
-        // NB: Manually writing to `stderr` is more reliable than using `eprintln!`, especially around `dup2`.
-        let stderr = stderr();
-        let mut stderr = stderr.lock();
-        let _ = writeln! (&mut stderr, "Signal caught! sig {}", sig);
-        let _ = stderr.flush();
-    }
+    writeln ("Signal caught!");  // Write something without heap allocation first.
 
-    stack_trace (&mut stack_trace_frame, &mut |trace| {
-        let stderr = stderr();
-        let mut stderr = stderr.lock();
-        let _ = stderr.write_all (trace.as_bytes());
-        // Explicitly flush the output stream. Under at least the Docker/Linux the tail is sometimes lost on `abort`.
-        let _ = stderr.flush();
-    });
+    let sigˢ;
+    let sigⁿ = match sig {
+        libc::SIGILL => "SIGILL",
+        libc::SIGFPE => "SIGFPE",
+        libc::SIGSEGV => "SIGSEGV",
+        libc::SIGBUS => "SIGBUS",
+        libc::SIGSYS => "SIGSYS",
+        sig => {sigˢ = fomat! ((sig)); &sigˢ[..]}
+    };
+
+    writeln (sigⁿ);
+    stack_trace (&mut stack_trace_frame, &mut |trace| if !trace.is_empty() {writeln (trace.trim_end())});
     abort();
 }
 
