@@ -5,8 +5,7 @@ use crdts::{CvRDT, CmRDT, Map, Orswot};
 use either::Either;
 use futures::{future, self, Async, Future};
 use futures03::future::{FutureExt, TryFutureExt};
-use gstuff::{netstring, now_float};
-use hashbrown::hash_map::{Entry, HashMap, RawEntryMut};
+use gstuff::{binprint, netstring, now_float};
 use http::{Request, Response, StatusCode};
 use http::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
@@ -17,6 +16,7 @@ use libc::c_void;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::btree_map::BTreeMap;
+use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
 use std::io::{Cursor, Read, Write};
 use std::mem::uninitialized;
 use std::net::SocketAddr;
@@ -25,16 +25,14 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 use std::str::from_utf8_unchecked;
 #[cfg(feature = "native")]
-use tokio_core::net::TcpListener;
-#[cfg(feature = "native")]
 use zstd_sys::{ZSTD_CDict, ZSTD_createCDict_byReference, ZSTD_freeCDict, ZSTD_compress_usingCDict_advanced,
     ZSTD_frameParameters, ZSTD_createCCtx, ZSTD_freeCCtx, ZSTD_isError, ZSTD_compressBound,
     ZSTD_createDCtx, ZSTD_freeDCtx, ZSTD_DDict, ZSTD_createDDict, ZSTD_freeDDict, ZSTD_decompress_usingDDict};
 
-use common::{bits256, binprint, rpc_response, HyRes};
-use common::wio::{slurp_req};
+use common::{bits256, rpc_response, HyRes};
+use common::wio::slurp_req;
 #[cfg(feature = "native")]
-use common::wio::{CORE, HTTP};
+use common::wio::CORE;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 
 /// Data belonging to the server side of this module and owned by the MM2 instance.  
@@ -234,9 +232,13 @@ fn merge_map_impl (ctx: MmWeak, req: Request<Vec<u8>>) -> HyRes {
 #[cfg(feature = "native")]
 pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
 -> Result<Box<dyn Future<Item=(), Error=()>+Send>, String> {
+    use common::executor::Timer;
     use common::lift_body::LiftBody;
-
-    let listener = try_s! (TcpListener::bind2 (&addr));
+    use futures::Poll;
+    use futures03::compat::Compat;
+    use hyper::Server;
+    use hyper::service::make_service_fn;
+    use hyper::server::conn::AddrStream;
 
     struct RpcService {ctx: MmWeak, client: SocketAddr}
     impl Service for RpcService {
@@ -288,16 +290,29 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
                 }
             });
             Box::new (f)
-        }
-    }
-    let server = listener.incoming().for_each (move |(socket, client)| {
-        let ctx = ctx.clone();
-        CORE.spawn (move |_| HTTP
-                .serve_connection (socket, RpcService {ctx, client})
-                .map(|_| ())
-                .map_err (|err| log! ({"{}", err})));
-        Ok(())
-    }) .map_err (|err| log! ({"accept error: {}", err}));
+    }   }
+
+    struct ServiceFabric {ctx: MmWeak, client: SocketAddr}
+    impl Future for ServiceFabric {
+        type Item = RpcService;
+        type Error = hyper::Error;
+        fn poll (&mut self) -> Poll<Self::Item, Self::Error> {
+            Poll::Ok (Async::Ready (RpcService {ctx: self.ctx.clone(), client: self.client}))
+    }   }
+
+    let ctxʹ = ctx.clone();
+    let make_svc = make_service_fn (move |addr: &AddrStream| {
+        ServiceFabric {ctx: ctxʹ.clone(), client: addr.remote_addr()}});
+
+    let shutdown_detector = async move {while !ctx.dropped() {Timer::sleep (0.5) .await}};
+    let shutdown_detector = Compat::new (Box::pin (shutdown_detector.map (|r|->Result<_,()>{Ok(r)})));
+
+    let server = try_s! (Server::try_bind (&addr))
+        .http1_half_close (false)  // https://github.com/hyperium/hyper/issues/1764
+        .executor (try_s! (CORE.lock()) .executor())
+        .serve (make_svc);
+    let server = server.with_graceful_shutdown (shutdown_detector);
+    let server = server.then (|r| {if let Err (err) = r {log! ((err))}; Ok(())});
 
     Ok (Box::new (server))
 }
@@ -495,7 +510,7 @@ log! ("transmit] TBD, time to use the HTTP fallback...");
             };
             Ok(())
         });
-        CORE.spawn (|_| merge_f);
+        unwrap! (CORE.lock()) .spawn (merge_f);
         track.last_store = now;
     }
 
@@ -521,7 +536,7 @@ pub fn hf_delayed_get (pctx: &super::PeersContext, salt: &Vec<u8>) {
 
 /// Process the prefix search results obtained
 /// when we query the HTTP fallback server for maps addressed to our public key.
-fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _headers: HeaderMap, body: Vec<u8>)
+fn process_pulled_maps (ctx: &MmArc, status: StatusCode, _headers: HeaderMap, body: Vec<u8>)
 -> Result<(), String> {
     if !status.is_success() {return ERR! ("HTTP status {}", status)}
     if body == &b"not modified"[..] {return Ok(())}
@@ -544,7 +559,7 @@ fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _he
     unsafe {ZSTD_freeDCtx (dctx)};
     if unsafe {ZSTD_isError (len)} != 0 {return ERR! ("Can't decompress")}
 
-    let our_public_key = try_s! (pctx.our_public_key.lock()) .clone();
+    let our_public_key = try_s! (ctx.public_id()) .clone();
     let mut chunks = BTreeMap::new();
 
     let mut tail = &buf[0..len];
@@ -574,6 +589,7 @@ fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _he
     }
 
     {
+        let pctx = try_s! (super::PeersContext::from_ctx (ctx));
         let mut hf_inbox = try_s! (pctx.hf_inbox.lock());
         *hf_inbox = chunks;
         pctx.hf_last_poll_id.store (crc, Ordering::Relaxed);
@@ -583,8 +599,9 @@ fn process_pulled_maps (pctx: &Arc<super::PeersContext>, status: StatusCode, _he
 
 /// Manage HTTP fallback retrievals.  
 /// Invoked periodically from the peers loop.
-pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -> Result<(), String> {
+pub fn hf_poll (ctx: &MmArc, hf_addr: &Option<SocketAddr>) -> Result<(), String> {
     let hf_addr = match hf_addr {Some (ref a) => a, None => return Ok(())};
+    let pctx = try_s! (super::PeersContext::from_ctx (ctx));
 
     {
         let delayed_salts = try_s! (pctx.hf_delayed_salts.lock());
@@ -610,9 +627,10 @@ pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -
                     return Ok (true)
                 },
                 Ok (Async::Ready ((status, headers, body))) => {
-                    let rc = process_pulled_maps (pctx, status, headers, body);
+                    let rc = process_pulled_maps (ctx, status, headers, body);
                     // Should reduce the pause when HTTP long polling is implemented server-side.
                     let pause = if rc.is_ok() {7.} else {10.};
+                    let pctx = unwrap! (super::PeersContext::from_ctx (ctx));
                     pctx.hf_skip_poll_till.store ((now + pause) as u64, Ordering::Relaxed);
                     try_s! (rc);
                     *hf_pollₒ = None;
@@ -629,7 +647,7 @@ pub fn hf_poll (pctx: &Arc<super::PeersContext>, hf_addr: &Option<SocketAddr>) -
     let mut hf_id_prefix = Vec::with_capacity (1 + 4 + 32 + 1);
     hf_id_prefix.push (1);  // Version of the query protocol.
     try_s! (hf_id_prefix.write_u64::<BigEndian> (pctx.hf_last_poll_id.load (Ordering::Relaxed)));
-    hf_id_prefix.extend_from_slice (& try_s! (pctx.our_public_key.lock()) .bytes [..]);
+    hf_id_prefix.extend_from_slice (& try_s! (ctx.public_id()) .bytes [..]);
     hf_id_prefix.push (b'<');
 
     let hf_url = fallback_url (hf_addr, "fetch_maps_by_prefix");

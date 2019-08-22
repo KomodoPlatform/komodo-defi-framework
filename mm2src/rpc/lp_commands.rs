@@ -17,12 +17,17 @@
 //  rpc_commands.rs
 //  marketmaker
 //
-use common::{rpc_response, HyRes, MM_VERSION};
-use common::wio::CORE;
+
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
+
+use coins::{lp_coinfind};
+use common::{rpc_err_response, rpc_response, HyRes, MM_VERSION};
+use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use futures::Future;
-use futures_timer::Delay;
-use std::time::Duration;
+use serde_json::{Value as Json};
+
+use crate::mm2::lp_swap::get_locked_amount;
 
 pub fn help() -> HyRes {
     rpc_response(200, "
@@ -40,6 +45,22 @@ pub fn help() -> HyRes {
         version
         withdraw(coin, amount, to)
     ")
+}
+
+/// Get my_balance of a coin
+pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind (&ctx, &ticker) {
+        Ok (Some (t)) => t,
+        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
+        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+    };
+    Box::new(coin.my_balance().and_then(move |balance| rpc_response(200, json!({
+        "coin": ticker,
+        "balance": balance,
+        "locked_by_swaps": get_locked_amount(&ctx, &ticker),
+        "address": coin.my_address(),
+    }).to_string())))
 }
 
 pub fn version() -> HyRes { rpc_response(200, json!({"result": MM_VERSION}).to_string()) }
@@ -104,13 +125,10 @@ pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
 pub fn stop (ctx: MmArc) -> HyRes {
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
-    let pause_f = Delay::new (Duration::from_millis (50));
-    let stop_f = pause_f.then (move |r| -> Result<(), ()> {
-        if let Err (err) = r {log! ("stop] Warning, there was a Delay error: " (err))}
+    spawn (async move {
+        Timer::sleep (0.05) .await;
         ctx.stop();
-        Ok(())
     });
-    CORE.spawn (move |_| stop_f);
     rpc_response (200, r#"{"result": "success"}"#)
 }
 

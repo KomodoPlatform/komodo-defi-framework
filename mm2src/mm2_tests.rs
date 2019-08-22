@@ -1,4 +1,5 @@
 use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
+use common::privkey::key_pair_from_seed;
 use dirs;
 use futures03::executor::block_on;
 use gstuff::{slurp};
@@ -1113,7 +1114,7 @@ fn trade_etomic_pizza() {
     trade_base_rel_native("ETOMIC", "PIZZA");
 }
 
-fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &HashMap<&'static str, Json>, expected_bal_change: f64) {
+fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &HashMap<&'static str, Json>, expected_bal_change: &str) {
     let addr = addr_from_enable(unwrap!(enable_res.get(coin)));
 
     let withdraw = unwrap! (mm.rpc (json! ({
@@ -1127,7 +1128,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &Hash
     assert! (withdraw.0.is_success(), "!{} withdraw: {}", coin, withdraw.1);
     let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
     assert_eq!(Some(&vec![Json::from(to)]), withdraw_json["to"].as_array());
-    assert_eq!(Some(expected_bal_change), withdraw_json["my_balance_change"].as_f64());
+    assert_eq!(Json::from(expected_bal_change), withdraw_json["my_balance_change"]);
     assert_eq!(Some(&vec![addr]), withdraw_json["from"].as_array());
 
     let send = unwrap! (mm.rpc (json! ({
@@ -1179,10 +1180,10 @@ fn test_withdraw_and_send() {
     // Enable coins. Print the replies in case we need the address.
     let enable_res = enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"]);
     log! ("enable_coins (alice): " [enable_res]);
-    withdraw_and_send(&mm_alice, "PIZZA", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, -0.00101);
+    withdraw_and_send(&mm_alice, "PIZZA", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, "-0.00101");
     // dev chain gas price is 0 so ETH expected balance change doesn't include the fee
-    withdraw_and_send(&mm_alice, "ETH", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
-    withdraw_and_send(&mm_alice, "JST", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, -0.001);
+    withdraw_and_send(&mm_alice, "ETH", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, "-0.001");
+    withdraw_and_send(&mm_alice, "JST", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, "-0.001");
 
     // must not allow to withdraw to non-P2PKH addresses
     let withdraw = unwrap! (mm_alice.rpc (json! ({
@@ -1206,7 +1207,7 @@ fn test_withdraw_and_send() {
         "amount": "0.001"
     })));
 
-    assert! (withdraw.0.is_server_error(), "PIZZA withdraw: {}", withdraw.1);
+    assert! (withdraw.0.is_server_error(), "ETH withdraw: {}", withdraw.1);
     let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
     assert!(unwrap!(withdraw_json["error"].as_str()).contains("Invalid address checksum"));
     unwrap!(mm_alice.stop());
@@ -1348,10 +1349,20 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
 fn test_startup_passphrase() {
     // seed phrase
     startup_passphrase("bob passphrase", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
+
     // WIF
+    assert!(key_pair_from_seed("UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g").is_ok());
     startup_passphrase("UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
+    // WIF, Invalid network version
+    assert!(key_pair_from_seed("92Qba5hnyWSn5Ffcka56yMQauaWY6ZLd91Vzxbi4a9CCetaHtYj").is_err());
+    // WIF, not compressed
+    assert!(key_pair_from_seed("5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreAnchuDf").is_err());
+
     // 0x prefixed hex
+    assert!(key_pair_from_seed("0xb8c774f071de08c7fd8f62b97f1a5726f6ce9f1bcf141b70b86689254ed6714e").is_ok());
     startup_passphrase("0xb8c774f071de08c7fd8f62b97f1a5726f6ce9f1bcf141b70b86689254ed6714e", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
+    // Out of range, https://en.bitcoin.it/wiki/Private_key#Range_of_valid_ECDSA_private_keys
+    assert!(key_pair_from_seed("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141").is_err());
 }
 
 /// MM2 should allow to issue several buy/sell calls in a row without delays.
@@ -1738,4 +1749,73 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have zero asks");
 
     unwrap! (mm_alice.stop());
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/511
+fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK"},
+        {"coin":"MORTY","asset":"MORTY"},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
+    enable_electrum(&mm, "RICK", vec!["electrum3.cipig.net:10017", "electrum2.cipig.net:10017", "electrum1.cipig.net:10017"]);
+    enable_electrum(&mm, "MORTY", vec!["electrum3.cipig.net:10018", "electrum2.cipig.net:10018", "electrum1.cipig.net:10018"]);
+
+    // set 2 orders with different prices
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "MORTY",
+        "price": 0.9,
+        "volume": "0.9",
+        "cancel_previous": false,
+    })));
+    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let rc = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "MORTY",
+        "price": 1,
+        "volume": "0.9",
+        "cancel_previous": false,
+    })));
+    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
+
+    thread::sleep(Duration::from_secs(12));
+
+    log!("Get RICK/MORTY orderbook");
+    let rc = unwrap!(mm.rpc (json! ({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "base": "RICK",
+            "rel": "MORTY",
+        })));
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    let orderbook: Json = unwrap!(json::from_str(&rc.1));
+    log!("orderbook " [orderbook]);
+    let asks = orderbook["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 2, "RICK/MORTY orderbook must have exactly 2 asks");
 }

@@ -15,5 +15,7 @@
 mod mm2;
 
 fn main() {
-    mm2::mm2_main()
+    #[cfg(feature = "native")] {
+        mm2::mm2_main()
+    }
 }

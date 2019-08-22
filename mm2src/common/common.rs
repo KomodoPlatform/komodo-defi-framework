@@ -12,6 +12,10 @@
 
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
 #![feature(async_await, async_closure)]
+#![feature(duration_float)]
+#![feature(weak_counts)]
+#![feature(hash_raw_entry)]
+
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -61,28 +65,36 @@ pub mod log;
 pub mod for_c;
 pub mod custom_futures;
 pub mod iguana_utils;
-pub mod lp_privkey;
+pub mod privkey;
 pub mod mm_ctx;
 pub mod seri;
+
 #[cfg(feature = "native")]
 pub mod lift_body;
+#[cfg(not(feature = "native"))]
+pub mod lift_body {
+    #[derive(Debug)]
+    pub struct LiftBody<T> {inner: T}
+}
 
 use bigdecimal::BigDecimal;
 use crossbeam::{channel};
 use futures::{future, Future};
 use futures::task::Task;
 #[cfg(not(feature = "native"))]
-use futures03::task::{Context, Poll as Poll03, Waker};
+use futures03::task::{Context, Poll as Poll03};
+use futures03::task::Waker;
+use futures03::compat::Future01CompatExt;
+use futures03::future::FutureExt;
 use hex::FromHex;
-use http::{Response, StatusCode, HeaderMap};
+use http::{Request, Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use libc::{c_char, c_void, malloc, free};
-#[cfg(not(feature = "native"))]
-use std::pin::Pin;
 use rand::{SeedableRng, rngs::SmallRng};
 use serde::{ser, de};
 use serde_json::{self as json, Value as Json};
+use std::collections::HashMap;
 use std::env::{args, var, VarError};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
@@ -91,10 +103,13 @@ use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
 use std::path::{Path};
+#[cfg(not(feature = "native"))]
+use std::pin::Pin;
 use std::ptr::{null_mut, read_volatile};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::str;
+use uuid::Uuid;
 
 #[cfg(feature = "native")]
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
@@ -111,6 +126,10 @@ pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct bits256 {pub bytes: [u8; 32]}
+
+impl Default for bits256 {
+    fn default() -> bits256 {
+        bits256 {bytes: unsafe {zeroed()}}}}
 
 impl fmt::Display for bits256 {
     fn fmt (&self, fm: &mut fmt::Formatter) -> fmt::Result {
@@ -158,20 +177,6 @@ impl fmt::Debug for bits256 {
 
 impl From<[u8; 32]> for bits256 {
     fn from (bytes: [u8; 32]) -> Self {bits256 {bytes}}
-}
-
-#[cfg(feature = "native")]
-impl From<lp::_bits256> for bits256 {
-    fn from (bits: lp::_bits256) -> Self {unsafe {bits256 {bytes: bits.bytes}}}
-}
-
-#[cfg(feature = "native")]
-impl From<bits256> for lp::_bits256 {
-    fn from (k: bits256) -> lp::_bits256 {unsafe {
-        let mut bits: lp::_bits256 = zeroed();
-        bits.bytes.copy_from_slice (&k.bytes[..]);
-        bits
-    }}
 }
 
 impl bits256 {
@@ -397,14 +402,6 @@ pub fn double_panic_crash() {
     drop (panicker)  // Delays the drop.
 }
 
-/// Helps logging binary data (particularly with text-readable parts, such as bencode, netstring)
-/// by replacing all the non-printable bytes with the `blank` character.
-pub fn binprint (bin: &[u8], blank: u8) -> String {
-    let mut bin: Vec<u8> = bin.into();
-    for ch in bin.iter_mut() {if *ch < 0x20 || *ch >= 0x7F {*ch = blank}}
-    unsafe {String::from_utf8_unchecked (bin)}
-}
-
 /// Tries to detect if we're running under a test, allowing us to be lazy and *delay* some costly operations.
 /// 
 /// Note that the code SHOULD behave uniformely regardless of where it's invoked from
@@ -444,25 +441,11 @@ pub type HyRes = Box<dyn Future<Item=Response<Vec<u8>>, Error=String> + Send>;
 // wio stands for "web I/O" or "wasm I/O",
 // it contains the parts which aren't directly available with WASM.
 
-// TODO: Move this.
-// How to link them together...
-// 1) Use separate folders for wasm and native builds in order not to mess the C objects and linking.
-// 2) In the native Rust binary add a mode which will run the WASM core (on wasmi),
-//    supplying it with the necessary helpers.
-
 #[cfg(not(feature = "native"))]
 pub mod wio {
     use futures::future::IntoFuture;
     use http::Request;
     use super::SlurpFut;
-
-    pub fn spawn<F, R> (_f: F) where
-        F: FnOnce(()) -> R + Send + 'static,
-        R: IntoFuture<Item = (), Error = ()>,
-        R::Future: 'static
-    {
-        unimplemented!()
-    }
 
     #[allow(dead_code)]
     pub fn slurp_req (_request: Request<Vec<u8>>) -> SlurpFut {
@@ -474,57 +457,30 @@ pub mod wio {
 pub mod wio {
     use crate::lift_body::LiftBody;
     use crate::SlurpFut;
-    use futures::{future, Async, Future, Poll};
+    use futures::{Async, Future, Poll};
     use futures::sync::oneshot::{self, Receiver};
-    use future::IntoFuture;
-    use gstuff::{any_to_str, duration_to_float, now_float};
+    use gstuff::{duration_to_float, now_float};
     use http::{Request, StatusCode, HeaderMap};
-    //use http_body::Body;
     use hyper::Client;
     use hyper::client::HttpConnector;
-    use hyper::header::{ HeaderValue, CONTENT_TYPE };
     use hyper::rt::Stream;
     use hyper::server::conn::Http;
     use hyper_rustls::HttpsConnector;
     use std::fmt;
-    use std::panic::{catch_unwind, AssertUnwindSafe};
-    use std::process::abort;
-    use std::thread;
     use std::thread::JoinHandle;
     use std::time::Duration;
-    use std::str;
-    use tokio_core::reactor::Remote;
-    use tokio_core::reactor::Handle;
+    use std::sync::Mutex;
+    use tokio::runtime::Runtime;
 
-    fn start_core_thread() -> Remote {
-        let (tx, rx) = oneshot::channel();
-        unwrap! (thread::Builder::new().name ("CORE".into()) .spawn (move || {
-            if let Err (err) = catch_unwind (AssertUnwindSafe (move || {
-                let mut core = unwrap! (tokio_core::reactor::Core::new(), "!core");
-                unwrap! (tx.send (core.remote()), "Can't send Remote.");
-                loop {core.turn (None)}
-            })) {
-                log! ({"CORE panic! {:?}", any_to_str (&*err)});
-                abort()
-            }
-        }), "!spawn");
-        let core: Remote = unwrap! (rx.wait(), "!wait");
-        core
+    fn start_core_thread() -> Runtime {
+        unwrap! (tokio::runtime::Builder::new().build())
     }
 
     lazy_static! {
         /// Shared asynchronous reactor.
-        pub static ref CORE: Remote = start_core_thread();
+        pub static ref CORE: Mutex<Runtime> = Mutex::new (start_core_thread());
         /// Shared HTTP server.
         pub static ref HTTP: Http = Http::new();
-    }
-
-    pub fn spawn<F, R> (f: F) where
-        F: FnOnce(&Handle) -> R + Send + 'static,
-        R: IntoFuture<Item = (), Error = ()>,
-        R::Future: 'static
-    {
-        CORE.spawn (f);
     }
 
     /// With a shared reactor drives the future `f` to completion.
@@ -538,12 +494,12 @@ pub mod wio {
     R: Send + 'static,
     E: Send + 'static {
         let (sx, rx) = oneshot::channel();
-        CORE.spawn (move |_handle| {
+        unwrap! (CORE.lock()) .spawn (
             f.then (move |fr: Result<R, E>| -> Result<(),()> {
                 let _ = sx.send (fr);
                 Ok(())
             })
-        });
+        );
         rx
     }
 
@@ -630,7 +586,7 @@ pub mod wio {
             let dns_threads = 2;
             let https = HttpsConnector::new (dns_threads);
             let client = Client::builder()
-                .executor (CORE.clone())
+                .executor (unwrap! (CORE.lock()) .executor())
                 // Hyper had a lot of Keep-Alive bugs over the years and I suspect
                 // that with the shared client we might be getting errno 10054
                 // due to a closed Keep-Alive connection mismanagement.
@@ -676,61 +632,117 @@ pub mod wio {
         });
         Box::new (drive_s (response_f))
     }
+}
 
-    /// Executes a GET request, returning the response status, headers and body.
-    pub fn slurp_url (url: &str) -> SlurpFut {
-        slurp_req (try_fus! (Request::builder().uri (url) .body (Vec::new())))
+#[cfg(feature = "native")]
+pub mod executor {
+    use futures03::{FutureExt, Future as Future03, Poll as Poll03, TryFutureExt};
+    use futures03::task::Context;
+    use gstuff::now_float;
+    use std::pin::Pin;
+    use std::time::Duration;
+    use std::thread;
+
+    pub fn spawn (future: impl Future03<Output = ()> + Send + 'static) {
+        let f = future.unit_error().boxed().compat();
+        unwrap! (crate::wio::CORE.lock()) .spawn (f);
     }
 
-    #[test]
-    #[ignore]
-    fn test_slurp_req() {
-        let (status, headers, body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
-        assert! (status.is_success(), format!("{:?} {:?} {:?}", status, headers, body));
+    /// A future that completes at a given time.  
+    pub struct Timer {till_utc: f64}
+
+    impl Timer {
+        pub fn till (till_utc: f64) -> Timer {Timer {till_utc}}
+        pub fn sleep (seconds: f64) -> Timer {Timer {till_utc: now_float() + seconds}}
+        pub fn till_utc (&self) -> f64 {self.till_utc}
     }
 
-    /// Fetch URL by HTTPS and parse JSON response
-    pub fn fetch_json<T>(url: &str) -> Box<dyn Future<Item=T, Error=String>>
-    where T: serde::de::DeserializeOwned + Send + 'static {
-        Box::new(slurp_url(url).and_then(|result| {
-            // try to parse as json with serde_json
-            let result = try_s!(serde_json::from_slice(&result.2));
-
-            Ok(result)
-        }))
-    }
-
-    /// Send POST JSON HTTPS request and parse response
-    pub fn post_json<T>(url: &str, json: String) -> Box<dyn Future<Item=T, Error=String>>
-    where T: serde::de::DeserializeOwned + Send + 'static {
-        let request = try_fus!(Request::builder()
-            .method("POST")
-            .uri(url)
-            .header(
-                CONTENT_TYPE,
-                HeaderValue::from_static("application/json")
-            )
-            .body(json.into())
-        );
-
-        Box::new(slurp_req(request).and_then(|result| {
-            // try to parse as json with serde_json
-            let result = try_s!(serde_json::from_slice(&result.2));
-
-            Ok(result)
-        }))
-    }
-
-    /// Returns a JSON error HyRes on a failure.
-    #[macro_export]
-    macro_rules! try_h {
-        ($e: expr) => {
-            match $e {
-                Ok (ok) => ok,
-                Err (err) => {return $crate::rpc_err_response (500, &ERRL! ("{}", err))}
-            }
+    impl Future03 for Timer {
+        type Output = ();
+        fn poll (self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
+            let delta = self.till_utc - now_float();
+            if delta <= 0. {return Poll03::Ready(())}
+            // NB: We should get a new `Waker` on every `poll` in case the future migrates between executors.
+            // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
+            let waker = cx.waker().clone();
+            unwrap! (thread::Builder::new().name ("Timer".into()) .spawn (move || {
+                thread::sleep (Duration::from_secs_f64 (delta));
+                waker.wake()
+            }), "Can't spawn a Timer thread");
+            Poll03::Pending
         }
     }
+
+    #[test] fn test_timer() {
+        use futures03::executor::block_on;
+
+        let started = now_float();
+        let ti = Timer::sleep (0.2);
+        assert! (now_float() - started < 0.01);
+        block_on (ti);
+        let delta = now_float() - started;
+        println! ("time delta is {}", delta);
+        assert! (delta > 0.2);
+        assert! (delta < 0.4)
+    }
+}
+
+#[cfg(not(feature = "native"))]
+pub mod executor;
+
+/// Returns a JSON error HyRes on a failure.
+#[macro_export]
+macro_rules! try_h {
+    ($e: expr) => {
+        match $e {
+            Ok (ok) => ok,
+            Err (err) => {return $crate::rpc_err_response (500, &ERRL! ("{}", err))}
+        }
+    }
+}
+
+/// Executes a GET request, returning the response status, headers and body.
+pub fn slurp_url (url: &str) -> SlurpFut {
+    wio::slurp_req (try_fus! (Request::builder().uri (url) .body (Vec::new())))
+}
+
+#[test]
+#[ignore]
+fn test_slurp_req() {
+    let (status, headers, body) = unwrap! (slurp_url ("https://httpbin.org/get") .wait());
+    assert! (status.is_success(), format!("{:?} {:?} {:?}", status, headers, body));
+}
+
+/// Fetch URL by HTTPS and parse JSON response
+pub fn fetch_json<T>(url: &str) -> Box<dyn Future<Item=T, Error=String>>
+where T: serde::de::DeserializeOwned + Send + 'static {
+    Box::new(slurp_url(url).and_then(|result| {
+        // try to parse as json with serde_json
+        let result = try_s!(serde_json::from_slice(&result.2));
+
+        Ok(result)
+    }))
+}
+
+/// Send POST JSON HTTPS request and parse response
+pub fn post_json<T>(url: &str, json: String) -> Box<dyn Future<Item=T, Error=String>>
+where T: serde::de::DeserializeOwned + Send + 'static {
+    let request = try_fus!(Request::builder()
+        .method("POST")
+        .uri(url)
+        .header(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/json")
+        )
+        .body(json.into())
+    );
+
+    Box::new(wio::slurp_req(request).and_then(|result| {
+        // try to parse as json with serde_json
+        let result = try_s!(serde_json::from_slice(&result.2));
+
+        Ok(result)
+    }))
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.
@@ -867,7 +879,7 @@ impl<R: Send + 'static> RefreshedExternalResource<R> {
                 }
                 Ok(())
             });
-            wio::spawn (move |_| f);  // Polls `f` in background.
+            executor::spawn (f.compat().map(|_|()));  // Polls `f` in background.
         }
 
         Ok(())
@@ -889,10 +901,6 @@ impl<R: Send + 'static> RefreshedExternalResource<R> {
         }
     }
 }
-
-/// A Send wrapper for MutexGuard
-pub struct MutexGuardWrapper(pub MutexGuard<'static, ()>);
-unsafe impl Send for MutexGuardWrapper {}
 
 /// From<io::Error> is required to be implemented by futures-timer timeout.
 /// We can't implement it for String directly due to Rust restrictions.
@@ -1023,17 +1031,8 @@ pub extern fn set_panic_hook() {
     use std::panic::{set_hook, PanicInfo};
 
     set_hook (Box::new (|info: &PanicInfo| {
-        let mut msg = String::new();
-        if let Some (loc) = info.location() {
-            let _ = wite! (&mut msg, (filename (loc.file())) ':' (loc.line()) "] ");
-        } else {
-            msg.push_str ("?] ");
-        }
-        if let Some (message) = info.message() {
-            let _ = wite! (&mut msg, "panick: " (message));
-        } else {
-            msg.push_str ("panick!")
-        }
+        let mut msg = String::with_capacity (256);
+        let _ = wite! (&mut msg, ((info)));
         writeln (&msg)
     }))
 }
@@ -1052,7 +1051,21 @@ extern "C" {fn http_helper_if (
 
 /// Check with the WASM host to see if the given HTTP request is ready.
 #[cfg(not(feature = "native"))]
-extern "C" {pub fn http_helper_check (http_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;}
+extern "C" {pub fn http_helper_check (helper_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;}
+
+lazy_static! {
+    /// Maps helper request ID to the corresponding Waker,
+    /// allowing WASM host to wake the `HelperReply`.
+    static ref HELPER_REQUESTS: Mutex<HashMap<i32, Waker>> = Mutex::new (HashMap::new());
+}
+
+/// WASM host invokes this method to signal the readiness of the HTTP request.
+#[no_mangle]
+#[cfg(not(feature = "native"))]
+pub extern fn http_ready (helper_request_id: i32) {
+    let mut helper_requests = unwrap! (HELPER_REQUESTS.lock());
+    if let Some (waker) = helper_requests.remove (&helper_request_id) {waker.wake()}
+}
 
 #[cfg(not(feature = "native"))]
 pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -1061,29 +1074,33 @@ pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, 
         args.as_ptr(), args.len() as i32,
         9999)};
 
-    struct HttpReply {helper: &'static str, helper_request_id: i32, waker: Option<Waker>}
-    impl std::future::Future for HttpReply {
+    struct HelperReply {helper: &'static str, helper_request_id: i32}
+    impl std::future::Future for HelperReply {
         type Output = Result<Vec<u8>, String>;
-        fn poll (mut self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
-            log! ("HttpReply (ri " (self.helper_request_id) ", " (self.helper) ") being polled...");
+        fn poll (self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
             let mut buf: [u8; 65535] = unsafe {uninitialized()};
             let rlen = unsafe {http_helper_check (self.helper_request_id, buf.as_mut_ptr(), buf.len() as i32)};
             if rlen < -1 {  // Response is larger than capacity.
                 return Poll03::Ready (ERR! ("Helper result is too large ({})", rlen))
             }
             if rlen >= 0 {
-                log! ("HttpReply, got " (rlen) " bytes!");
                 return Poll03::Ready (Ok (Vec::from (&buf[0..rlen as usize])))
             }
+
             // NB: Need a fresh waker each time `Pending` is returned, to support switching tasks.
             // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
-            self.waker = Some (cx.waker().clone());
+            let waker = cx.waker().clone();
+            unwrap! (HELPER_REQUESTS.lock()) .insert (self.helper_request_id, waker);
+
             Poll03::Pending
         }
     }
-    log! ("Waiting for " (helper_request_id) ", " (helper));
-    let rv = try_s! (HttpReply {helper, helper_request_id, waker: None} .await);
-    log! ("Done waiting for " (helper_request_id) ", " (helper) ": " (binprint (&rv, b'.') ));
+    impl Drop for HelperReply {
+        fn drop (&mut self) {
+            unwrap! (HELPER_REQUESTS.lock()) .remove (&self.helper_request_id);
+        }
+    }
+    let rv = try_s! (HelperReply {helper, helper_request_id} .await);
     Ok (rv)
 }
 
@@ -1107,6 +1124,8 @@ macro_rules! helper {
         }
     }
 }
+
+pub mod for_tests;
 
 fn without_trailing_zeroes (decimal: &str, dot: usize) -> &str {
     let mut pos = decimal.len() - 1;
@@ -1204,4 +1223,8 @@ fn test_round_to() {
     assert_eq! (round_to (&BigDecimal::from (-0), 0), "0");
 }
 
-pub mod for_tests;
+#[cfg(feature = "native")]
+pub fn new_uuid() -> Uuid {Uuid::new_v4()}
+
+#[cfg(not(feature = "native"))]
+pub fn new_uuid() -> Uuid {unimplemented!()}

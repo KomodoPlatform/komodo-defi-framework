@@ -18,21 +18,24 @@
 //  ordermatch.rs
 //  marketmaker
 //
+
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
+
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{lp, round_to, rpc_response, rpc_err_response, HyRes, SMALLVAL};
+use common::{bits256, new_uuid, round_to, rpc_response, rpc_err_response, HyRes, SMALLVAL};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use coins::{lp_coinfind, MmCoinEnum, TradeInfo};
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
 use futures::future::{Either, Future};
 use gstuff::{now_ms, slurp};
-use hashbrown::HashSet;
-use hashbrown::hash_map::{Entry, HashMap};
 use keys::{Public, Signature};
 use num_traits::cast::ToPrimitive;
 use primitives::hash::H256;
 use rpc::v1::types::{H256 as H256Json};
 use serde_json::{self as json, Value as Json};
+use std::collections::HashSet;
+use std::collections::hash_map::{Entry, HashMap};
 use std::ffi::{OsStr};
 use std::fs::{self, DirEntry};
 use std::path::PathBuf;
@@ -214,7 +217,7 @@ struct OrdermatchContext {
     pub my_maker_orders: Mutex<HashMap<Uuid, MakerOrder>>,
     pub my_taker_orders: Mutex<HashMap<Uuid, TakerOrder>>,
     pub my_cancelled_orders: Mutex<HashMap<Uuid, MakerOrder>>,
-    pub orderbook: Mutex<HashMap<(String, String), HashMap<String, PricePingRequest>>>,
+    pub orderbook: Mutex<HashMap<(String, String), HashMap<Uuid, PricePingRequest>>>,
 }
 
 impl OrdermatchContext {
@@ -265,11 +268,12 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, maker_match: &MakerMatch) -> i32 {
             }
         };
         let ctx = ctx.clone();
-        let mut alice = lp::bits256::default();
+        let mut alice = bits256::default();
         alice.bytes = maker_match.request.sender_pubkey.0;
         let maker_amount = maker_match.reserved.base_amount.clone();
         let taker_amount = maker_match.reserved.rel_amount.clone();
-        let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256));
+        let privkey = &ctx.secp256k1_key_pair().private().secret;
+        let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256));
         let uuid = maker_match.request.uuid.to_string();
         move || {
             log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
@@ -300,7 +304,7 @@ unsafe fn lp_connect_start_bob(ctx: &MmArc, maker_match: &MakerMatch) -> i32 {
 unsafe fn lp_connected_alice(ctx: &MmArc, taker_match: &TakerMatch) { // alice
     let alice_loop_thread = thread::Builder::new().name("taker_loop".into()).spawn({
         let ctx = ctx.clone();
-        let mut maker = lp::bits256::default();
+        let mut maker = bits256::default();
         maker.bytes = taker_match.reserved.sender_pubkey.0;
         let taker_coin = match lp_coinfind (&ctx, &taker_match.reserved.rel) {
             Ok(Some(c)) => c,
@@ -326,7 +330,8 @@ unsafe fn lp_connected_alice(ctx: &MmArc, taker_match: &TakerMatch) { // alice
             }
         };
 
-        let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&lp::G.LP_privkey.bytes, ChecksumType::DSHA256));
+        let privkey = &ctx.secp256k1_key_pair().private().secret;
+        let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256));
         let maker_amount = taker_match.reserved.base_amount.clone();
         let taker_amount = taker_match.reserved.rel_amount.clone();
         let uuid = taker_match.reserved.taker_order_uuid.to_string();
@@ -428,12 +433,13 @@ pub unsafe fn lp_trade_command(
 ) -> i32 {
     let method = json["method"].as_str();
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
+    let our_public_id = unwrap!(ctx.public_id());
     if method == Some("reserved") {
         let reserved_msg: MakerReserved = match json::from_value(json.clone()) {
             Ok(r) => r,
             Err(_) => return 1,
         };
-        if H256Json::from(lp::G.LP_mypub25519.bytes) != reserved_msg.dest_pub_key {
+        if H256Json::from(our_public_id.bytes) != reserved_msg.dest_pub_key {
             // ignore the messages that do not target our node
             return 1;
         }
@@ -456,7 +462,7 @@ pub unsafe fn lp_trade_command(
         // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
         if my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty() {
             let connect = TakerConnect {
-                sender_pubkey: H256Json::from(lp::G.LP_mypub25519.bytes),
+                sender_pubkey: H256Json::from(our_public_id.bytes),
                 dest_pub_key: reserved_msg.sender_pubkey.clone(),
                 method: "connect".into(),
                 taker_order_uuid: reserved_msg.taker_order_uuid,
@@ -479,7 +485,7 @@ pub unsafe fn lp_trade_command(
             Ok(c) => c,
             Err(_) => return 1,
         };
-        if H256Json::from(lp::G.LP_mypub25519.bytes) == connected.dest_pub_key && H256Json::from(lp::G.LP_mypub25519.bytes) != connected.sender_pubkey {
+        if H256Json::from(our_public_id.bytes) == connected.dest_pub_key && H256Json::from(our_public_id.bytes) != connected.sender_pubkey {
             let mut my_taker_orders = unwrap!(ordermatch_ctx.my_taker_orders.lock());
             let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
                 Entry::Occupied(e) => e,
@@ -514,7 +520,7 @@ pub unsafe fn lp_trade_command(
             Ok(r) => r,
             Err(_) => return 1,
         };
-        if lp::G.LP_mypub25519.bytes == taker_request.dest_pub_key.0 {
+        if our_public_id.bytes == taker_request.dest_pub_key.0 {
             log!("Skip the request originating from our pubkey");
             return 1;
         }
@@ -525,7 +531,7 @@ pub unsafe fn lp_trade_command(
             if let OrderMatchResult::Matched((base_amount, rel_amount)) = match_order_and_request(order, &taker_request) {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey.clone(),
-                    sender_pubkey: lp::G.LP_mypub25519.bytes.into(),
+                    sender_pubkey: our_public_id.bytes.into(),
                     base: order.base.clone(),
                     base_amount,
                     rel_amount,
@@ -555,7 +561,7 @@ pub unsafe fn lp_trade_command(
             Ok(m) => m,
             Err(_) => return 1,
         };
-        if lp::G.LP_mypub25519.bytes == connect_msg.dest_pub_key.0 && lp::G.LP_mypub25519.bytes != connect_msg.sender_pubkey.0 {
+        if our_public_id.bytes == connect_msg.dest_pub_key.0 && our_public_id.bytes != connect_msg.sender_pubkey.0 {
             let mut maker_orders = unwrap!(ordermatch_ctx.my_maker_orders.lock());
             let my_order = match maker_orders.get_mut(&connect_msg.maker_order_uuid) {
                 Some(o) => o,
@@ -573,7 +579,7 @@ pub unsafe fn lp_trade_command(
             };
 
             let connected = MakerConnected {
-                sender_pubkey: lp::G.LP_mypub25519.bytes.into(),
+                sender_pubkey: our_public_id.bytes.into(),
                 dest_pub_key: connect_msg.sender_pubkey.clone(),
                 taker_order_uuid: connect_msg.taker_order_uuid,
                 maker_order_uuid: connect_msg.maker_order_uuid,
@@ -711,7 +717,8 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let mut my_taker_orders = try_s!(ordermatch_ctx.my_taker_orders.lock());
-    let uuid = Uuid::new_v4();
+    let uuid = new_uuid();
+    let our_public_id = try_s!(ctx.public_id());
     let request = TakerRequest {
         base: input.base,
         rel: input.rel,
@@ -720,7 +727,7 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
         method: "request".into(),
         uuid,
         dest_pub_key: input.dest_pub_key,
-        sender_pubkey: H256Json::from(unsafe { lp::G.LP_mypub25519.bytes }),
+        sender_pubkey: H256Json::from(our_public_id.bytes),
         action,
     };
     ctx.broadcast_p2p_msg(&unwrap!(json::to_string(&request)));
@@ -763,6 +770,7 @@ struct PricePingRequest {
     // TODO rename, it's called "balance", but it's actual meaning is max available volume to trade
     #[serde(rename="bal")]
     balance: BigDecimal,
+    uuid: Option<Uuid>,
 }
 
 impl PricePingRequest {
@@ -777,12 +785,14 @@ impl PricePingRequest {
             None => return ERR!("Rel coin {} is not found", order.rel),
         };
 
+        let public_id = try_s!(ctx.public_id());
+
         let price64 = (&order.price * BigDecimal::from(100000000)).to_u64().unwrap();
         let timestamp = now_ms() / 1000;
         let sig_hash = price_ping_sig_hash(
             timestamp as u32,
             &**ctx.secp256k1_key_pair().public(),
-            unsafe { &lp::G.LP_mypub25519.bytes },
+            &public_id.bytes,
             order.base.as_bytes(),
             order.rel.as_bytes(),
             price64,
@@ -804,15 +814,16 @@ impl PricePingRequest {
 
         Ok(PricePingRequest {
             method: "postprice".into(),
-            pubkey: unsafe { hex::encode(&lp::G.LP_mypub25519.bytes) },
+            pubkey: hex::encode(&public_id.bytes),
             base: order.base.clone(),
             rel: order.rel.clone(),
             price64: price64.to_string(),
             price: order.price.clone(),
             timestamp,
-            pubsecp: unsafe { hex::encode(&lp::G.LP_pubsecp.to_vec()) },
+            pubsecp: hex::encode(&**ctx.secp256k1_key_pair().public()),
             sig: hex::encode(&*sig),
             balance: max_volume,
+            uuid: Some(order.uuid),
         })
     }
 }
@@ -832,16 +843,21 @@ pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
     );
     let sig_check = try_h!(pub_secp.verify(&sig_hash, &signature));
     if sig_check {
+        // identify the order by first 16 bytes of node pubkey to keep backwards-compatibility
+        // TODO remove this when all nodes are updated
+        let mut bytes = [0; 16];
+        bytes.copy_from_slice(&pubkey[..16]);
+        let uuid = req.uuid.unwrap_or(Uuid::from_bytes(bytes));
         let ordermatch_ctx: Arc<OrdermatchContext> = try_h!(OrdermatchContext::from_ctx(ctx));
         let mut orderbook = try_h!(ordermatch_ctx.orderbook.lock());
         match orderbook.entry((req.base.clone(), req.rel.clone())) {
             Entry::Vacant(pair_orders) => if req.balance > 0.into() && req.price > 0.into() {
                 let mut orders = HashMap::new();
-                orders.insert(req.pubkey.clone(), req);
+                orders.insert(uuid, req);
                 pair_orders.insert(orders);
             },
             Entry::Occupied(mut pair_orders) => {
-                match pair_orders.get_mut().entry(req.pubkey.clone()) {
+                match pair_orders.get_mut().entry(uuid) {
                     Entry::Vacant(order) => if req.balance > 0.into() && req.price > 0.into() {
                         order.insert(req);
                     },
@@ -937,7 +953,7 @@ pub fn set_price(ctx: MmArc, req: Json) -> HyRes {
                     }).collect();
                 }
 
-                let uuid = Uuid::new_v4();
+                let uuid = new_uuid();
                 let order = MakerOrder {
                     max_base_vol: volume,
                     min_base_vol: 0.into(),
@@ -1459,7 +1475,7 @@ pub fn orderbook(ctx: MmArc, req: Json) -> HyRes {
         base: req.base,
         bid_depth: 0,
         bids,
-        netid: unsafe { lp::G.netid },
+        netid: ctx.netid(),
         rel: req.rel,
         timestamp: now_ms() / 1000,
     };

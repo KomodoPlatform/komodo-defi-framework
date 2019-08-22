@@ -1,21 +1,25 @@
 use crossbeam::{channel, Sender, Receiver};
-use hashbrown::HashSet;
-use hashbrown::hash_map::{Entry, HashMap};
-use keys::KeyPair;
+use gstuff::Constructible;
+use keys::{DisplayLayout, KeyPair, Private};
 use primitives::hash::H160;
 use rand::Rng;
+#[cfg(not(feature = "native"))]
+use serde_bencode::ser::to_bytes as bencode;
+use serde_bencode::de::from_bytes as bdecode;
+use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::any::Any;
+use std::collections::HashSet;
+use std::collections::hash_map::{Entry, HashMap};
 use std::net::IpAddr;
 #[cfg(feature = "native")]
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use crate::{log, small_rng};
-use crate::log::LogState;
+use crate::{bits256, small_rng};
+use crate::log::{self, LogState};
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -46,14 +50,14 @@ pub struct MmCtx {
     /// Should be refactored away in the future. State should always be valid.
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
-    pub initialized: AtomicBool,
+    pub initialized: Constructible<bool>,
     /// True if the RPC HTTP server was started.
-    pub rpc_started: AtomicBool,
+    pub rpc_started: Constructible<bool>,
     /// True if the MarketMaker instance needs to stop.
-    pub stop: AtomicBool,
+    pub stop: Constructible<bool>,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
-    pub ffi_handle: AtomicU32,
+    pub ffi_handle: Constructible<u32>,
     /// Callbacks to invoke from `fn stop`.
     pub stop_listeners: Mutex<Vec<Box<dyn FnMut()->Result<(), String>>>>,
     /// The context belonging to the `portfolio` crate: `PortfolioContext`.
@@ -68,19 +72,20 @@ pub struct MmCtx {
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `prices` mod: `PricesContext`.
     pub prices_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// Seednode P2P message bus channel
+    /// Seednode P2P message bus channel.
     pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    /// Standard node P2P message bus channel
+    /// Standard node P2P message bus channel.
     pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase
-    /// The future replacement of lp::G.LP_myrmd160
-    pub rmd160: H160,
+    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
+    /// Replacement of `lp::G.LP_myrmd160`.
+    pub rmd160: Constructible<H160>,
     /// Seed node IPs, initialized in `fn lp_initpeers`.
     pub seeds: Mutex<Vec<IpAddr>>,
-    /// secp256k1 key pair derived from passphrase
-    /// future replacement of lp::G.LP_privkey
-    pub secp256k1_key_pair: Option<KeyPair>,
-    /// Coins that should be enabled to kick start the interrupted swaps and orders
+    /// secp256k1 key pair derived from passphrase.
+    /// cf. `key_pair_from_seed`.
+    /// Replacement of `lp::G.LP_privkey`.
+    pub secp256k1_key_pair: Constructible<KeyPair>,
+    /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -90,10 +95,10 @@ impl MmCtx {
         MmCtx {
             conf: Json::Object (json::Map::new()),
             log,
-            initialized: AtomicBool::new (false),
-            rpc_started: AtomicBool::new (false),
-            stop: AtomicBool::new (false),
-            ffi_handle: AtomicU32::new (0),
+            initialized: Constructible::default(),
+            rpc_started: Constructible::default(),
+            stop: Constructible::default(),
+            ffi_handle: Constructible::default(),
             stop_listeners: Mutex::new (Vec::new()),
             portfolio_ctx: Mutex::new (None),
             ordermatch_ctx: Mutex::new (None),
@@ -103,12 +108,17 @@ impl MmCtx {
             prices_ctx: Mutex::new (None),
             seednode_p2p_channel: channel::unbounded(),
             client_p2p_channel: channel::unbounded(),
-            rmd160: [0; 20].into(),
+            rmd160: Constructible::default(),
             seeds: Mutex::new (Vec::new()),
-            secp256k1_key_pair: None,
-            coins_needed_for_kick_start: Mutex::new(HashSet::new()),
+            secp256k1_key_pair: Constructible::default(),
+            coins_needed_for_kick_start: Mutex::new (HashSet::new()),
             swaps_ctx: Mutex::new (None),
         }
+    }
+
+    pub fn rmd160 (&self) -> &H160 {
+        lazy_static! {static ref DEFAULT: H160 = [0; 20].into();}
+        self.rmd160.or (&|| &*DEFAULT)
     }
 
     #[cfg(feature = "native")]
@@ -145,7 +155,7 @@ impl MmCtx {
         } else {
             Path::new ("DB")
         };
-        path.join (hex::encode (&*self.rmd160) )
+        path.join (hex::encode (&**self.rmd160()))
     }
 
     pub fn netid (&self) -> u16 {
@@ -155,7 +165,7 @@ impl MmCtx {
     }
 
     pub fn stop (&self) {
-        if self.stop.compare_and_swap (false, true, Ordering::Relaxed) == false {
+        if self.stop.pin (true) .is_ok() {
             let mut stop_listeners = unwrap! (self.stop_listeners.lock(), "Can't lock stop_listeners");
             // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
             // because otherwise there might be reference counting instances remaining in a listener
@@ -163,35 +173,24 @@ impl MmCtx {
             for mut listener in stop_listeners.drain (..) {
                 if let Err (err) = listener() {
                     log! ({"MmCtx::stop] Listener error: {}", err})
-                }
-            }
-        }
-    }
+    }   }   }   }
 
     /// True if the MarketMaker instance needs to stop.
-    #[cfg(feature = "native")]
     pub fn is_stopping (&self) -> bool {
-        self.stop.load (Ordering::Relaxed)
-    }
-
-    /// True if the MarketMaker instance needs to stop.
-    #[cfg(not(feature = "native"))]
-    pub fn is_stopping (&self) -> bool {
-        self.stop.load (Ordering::Relaxed)
+        self.stop.copy_or (false)
     }
 
     /// Register a callback to be invoked when the MM receives the "stop" request.  
     /// The callback is invoked immediately if the MM is stopped already.
     pub fn on_stop (&self, mut cb: Box<dyn FnMut()->Result<(), String>>) {
         let mut stop_listeners = unwrap! (self.stop_listeners.lock(), "Can't lock stop_listeners");
-        if self.stop.load (Ordering::Relaxed) {
+        if self.stop.copy_or (false) {
             if let Err (err) = cb() {
                 log! ({"MmCtx::on_stop] Listener error: {}", err})
             }
         } else {
             stop_listeners.push (cb)
-        }
-    }
+    }   }
 
     /// Sends the P2P message to a processing thread
     pub fn broadcast_p2p_msg(&self, msg: &str) {
@@ -200,14 +199,26 @@ impl MmCtx {
             unwrap!(self.seednode_p2p_channel.0.send(msg.to_owned().into_bytes()));
         } else {
             unwrap!(self.client_p2p_channel.0.send(msg.to_owned().into_bytes()));
-        }
-    }
+    }   }
 
-    /// Get the reference to secp256k1 key pair
-    pub fn secp256k1_key_pair(&self) -> &KeyPair {
-        unwrap!(self.secp256k1_key_pair.as_ref())
-    }
-}
+    /// Get a reference to the secp256k1 key pair.
+    /// Panics if the key pair is not available.
+    pub fn secp256k1_key_pair (&self) -> &KeyPair {
+        match self.secp256k1_key_pair.as_option() {
+            Some (pair) => pair,
+            None => panic! ("secp256k1_key_pair not available")
+    }   }
+
+    /// This is our public ID, allowing us to be different from other peers.
+    /// This should also be our public key which we'd use for message verification.
+    pub fn public_id (&self) -> Result<bits256, String> {
+        for pair in &self.secp256k1_key_pair {
+            let public = pair.public();  // Compressed public key is going to be 33 bytes.
+            // First byte is a prefix, https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys/.
+            return Ok (bits256 {bytes: *array_ref! (public, 1, 32)})
+        }
+        ERR! ("Public ID is not yet available")
+}   }
 impl Default for MmCtx {
     fn default() -> Self {
         Self::with_log_state (LogState::in_memory())
@@ -234,18 +245,30 @@ pub struct MmWeak (Weak<MmCtx>);
 unsafe impl Send for MmWeak {}
 unsafe impl Sync for MmWeak {}
 
+impl MmWeak {
+    pub fn dropped (&self) -> bool {
+        self.0.strong_count() == 0
+}   }
+
 lazy_static! {
     /// A map from a unique context ID to the corresponding MM context, facilitating context access across the FFI boundaries.  
     /// NB: The entries are not removed in order to keep the FFI handlers unique.
     pub static ref MM_CTX_FFI: Mutex<HashMap<u32, MmWeak>> = Mutex::new (HashMap::default());
 }
 
+#[derive (Serialize, Deserialize)]
+struct WiredCtx {
+    // Sending the `conf` as a string in order for bencode not to mess with JSON, and for wire readability.
+    conf: String,
+    secp256k1_key_pair: ByteBuf,
+    ffi_handle: u32
+}
+
 impl MmArc {
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     pub fn ffi_handle (&self) -> Result<u32, String> {
         let mut mm_ctx_ffi = try_s! (MM_CTX_FFI.lock());
-        let have = self.ffi_handle.load (Ordering::Relaxed);
-        if have != 0 {return Ok (have)}
+        for &have in &self.ffi_handle {return Ok (have)}
         let mut tries = 0;
         let mut rng = small_rng();
         loop {
@@ -256,23 +279,21 @@ impl MmArc {
                 Entry::Occupied (_) => continue,  // Try another ID.
                 Entry::Vacant (ve) => {
                     ve.insert (self.weak());
-                    self.ffi_handle.store (rid, Ordering::Relaxed);
+                    try_s! (self.ffi_handle.pin (rid));
                     return Ok (rid)
-                }
-            }
-        }
-    }
+    }   }   }   }
 
     #[cfg(not(feature = "native"))]
     pub fn send_to_helpers (&self) -> Result<(), String> {
-        use serde_json::Map;
-
-        // For now we only need to share the `conf` and the `ffi_handle`.
-        let mut ctxʲ = Map::new();
-        // TODO: Use a zero-copy `Serialize`.
-        ctxʲ.insert ("conf".into(), self.conf.clone());
-        ctxʲ.insert ("ffi_handle".into(), Json::Number (try_s! (self.ffi_handle()) .into()));
-        let ctxˢ = try_s! (json::to_vec (&ctxʲ));
+        let ctxʷ = WiredCtx {
+            conf: try_s! (json::to_string (&self.conf)),
+            secp256k1_key_pair: match self.secp256k1_key_pair.as_option() {
+                Some (k) => ByteBuf::from (k.private().layout()),
+                None => ByteBuf::new()
+            },
+            ffi_handle: try_s! (self.ffi_handle())
+        };
+        let ctxˢ = try_s! (bencode (&ctxʷ));
 
         extern "C" {pub fn ctx2helpers (ptr: *const u8, len: u32);}
         unsafe {ctx2helpers (ctxˢ.as_ptr(), ctxˢ.len() as u32)}
@@ -290,8 +311,7 @@ impl MmArc {
                 None => ERR! ("MmArc] ffi_handle {} is dead", ffi_handle)
             },
             None => ERR! ("MmArc] ffi_handle {} does not exists", ffi_handle)
-        }
-    }
+    }   }
 
     /// Generates a weak link, to track the context without prolonging its life.
     pub fn weak (&self) -> MmWeak {
@@ -314,22 +334,25 @@ pub extern fn ctx2helpers (ptr: *const u8, len: u32) {
     use std::slice::from_raw_parts;
 
     let ctxˢ = unsafe {from_raw_parts (ptr, len as usize)};
-    let ctxʲ: Json = unwrap! (json::from_slice (ctxˢ), "!json::from_slice");
+    let ctxʷ: WiredCtx = unwrap! (bdecode (ctxˢ), "!bdecode");
 
-    let ffi_handle = unwrap! (ctxʲ["ffi_handle"].as_u64(), "!ffi_handle") as u32;
-
-    if let Ok (_ctx) = MmArc::from_ffi_handle (ffi_handle) {
+    if let Ok (_ctx) = MmArc::from_ffi_handle (ctxʷ.ffi_handle) {
         //log! ("ffi_handle " (ffi_handle) " already exists");
     } else {
+        let pair: Option<KeyPair> = if ctxʷ.secp256k1_key_pair.is_empty() {None} else {
+            let private = unwrap! (Private::from_layout (&ctxʷ.secp256k1_key_pair[..]));
+            Some (unwrap! (KeyPair::from_private (private)))
+        };
+
         let ctx = MmCtx {
-            // TODO: Move from a `Deserialize`.
-            conf: ctxʲ["conf"].clone(),
-            ffi_handle: ffi_handle.into(),
+            conf: unwrap! (json::from_str (&ctxʷ.conf)),
+            secp256k1_key_pair: pair.into(),
+            ffi_handle: ctxʷ.ffi_handle.into(),
             ..MmCtx::with_log_state (LogState::in_memory())
         };
         let ctx = MmArc (Arc::new (ctx));
         let mut ctx_ffi = unwrap! (MM_CTX_FFI.lock());
-        ctx_ffi.insert (ffi_handle, ctx.weak());
+        ctx_ffi.insert (ctxʷ.ffi_handle, ctx.weak());
         Arc::into_raw (ctx.0);  // Leak.
     }
 }
@@ -384,8 +407,8 @@ impl MmCtxBuilder {
         }
 
         if let Some (key_pair) = self.key_pair {
-            ctx.rmd160 = key_pair.public().address_hash();
-            ctx.secp256k1_key_pair = Some (key_pair);
+            unwrap! (ctx.rmd160.pin (key_pair.public().address_hash()));
+            unwrap! (ctx.secp256k1_key_pair.pin (key_pair));
         }
 
         MmArc (Arc::new (ctx))

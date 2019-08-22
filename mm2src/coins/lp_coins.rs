@@ -20,10 +20,12 @@
 
 #![feature(integer_atomics)]
 #![feature(non_ascii_idents)]
-#![feature(async_await)]
+#![feature(async_await, async_closure)]
+#![feature(hash_raw_entry)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
+#[macro_use] extern crate futures03;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
@@ -35,10 +37,10 @@ use common::{rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use futures::{Future};
 use gstuff::{slurp};
-use hashbrown::hash_map::{HashMap, RawEntryMut};
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
+use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -51,6 +53,10 @@ pub mod eth;
 use self::eth::{eth_coin_from_conf_and_request, EthCoin, SignedEthTx};
 pub mod utxo;
 use self::utxo::{utxo_coin_from_conf_and_request, UtxoTx, UtxoCoin};
+#[doc(hidden)]
+#[allow(unused_variables)]
+pub mod test_coin;
+pub use self::test_coin::TestCoin;
 
 pub trait Transaction: Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -61,14 +67,14 @@ pub trait Transaction: Debug + 'static {
     /// Transaction amount
     fn amount(&self, decimals: u8) -> Result<f64, String>;
     /// From addresses
-    fn from(&self) -> Vec<String>;
+    fn from_addrs(&self) -> Vec<String>;
     /// To addresses
     fn to(&self) -> Vec<String>;
     /// Fee details
     fn fee_details(&self) -> Result<Json, String>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TransactionEnum {
     UtxoTx (UtxoTx),
     SignedEthTx (SignedEthTx)
@@ -86,6 +92,12 @@ impl Deref for TransactionEnum {
 }   }   }
 
 pub type TransactionFut = Box<dyn Future<Item=TransactionEnum, Error=String>>;
+
+#[derive(Debug, PartialEq)]
+pub enum FoundSwapTxSpend {
+    Spent(TransactionEnum),
+    Refunded(TransactionEnum),
+}
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 pub trait SwapOps {
@@ -171,6 +183,24 @@ pub trait SwapOps {
         secret_hash: &[u8],
         search_from_block: u64,
     ) -> Result<Option<TransactionEnum>, String>;
+
+    fn search_for_swap_tx_spend_my(
+        &self,
+        time_lock: u32,
+        other_pub: &[u8],
+        secret_hash: &[u8],
+        tx: &[u8],
+        search_from_block: u64,
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
+
+    fn search_for_swap_tx_spend_other(
+        &self,
+        time_lock: u32,
+        other_pub: &[u8],
+        secret_hash: &[u8],
+        tx: &[u8],
+        search_from_block: u64,
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -201,15 +231,28 @@ pub trait MarketCoinOps {
     fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+pub enum WithdrawFee {
+    UtxoFixed { amount: BigDecimal },
+    UtxoPerKbyte { amount: BigDecimal },
+    EthGas {
+        // in gwei
+        gas_price: BigDecimal,
+        gas: u64,
+    },
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize)]
-struct WithdrawRequest {
+pub struct WithdrawRequest {
     coin: String,
     to: String,
     #[serde(default)]
     amount: BigDecimal,
     #[serde(default)]
-    max: bool
+    max: bool,
+    fee: Option<WithdrawFee>,
 }
 
 /// Transaction details
@@ -224,13 +267,13 @@ pub struct TransactionDetails {
     /// Coins are sent to these addresses
     to: Vec<String>,
     /// Total tx amount
-    total_amount: f64,
+    total_amount: BigDecimal,
     /// The amount spent from "my" address
-    spent_by_me: f64,
+    spent_by_me: BigDecimal,
     /// The amount received by "my" address
-    received_by_me: f64,
+    received_by_me: BigDecimal,
     /// Resulting "my" balance change
-    my_balance_change: f64,
+    my_balance_change: BigDecimal,
     /// Block height
     block_height: u64,
     /// Transaction timestamp
@@ -267,7 +310,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
 
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
-    fn withdraw(&self, to: &str, amount: BigDecimal, max: bool) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send>;
+    fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
@@ -318,7 +361,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
 #[derive(Clone, Debug)]
 pub enum MmCoinEnum {
     UtxoCoin (UtxoCoin),
-    EthCoin (EthCoin)
+    EthCoin (EthCoin),
+    Test (TestCoin)
 }
 
 impl From<UtxoCoin> for MmCoinEnum {
@@ -331,13 +375,19 @@ impl From<EthCoin> for MmCoinEnum {
         MmCoinEnum::EthCoin (c)
 }   }
 
+impl From<TestCoin> for MmCoinEnum {
+    fn from (c: TestCoin) -> MmCoinEnum {
+        MmCoinEnum::Test (c)
+}   }
+
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for MmCoinEnum {
     type Target = dyn MmCoin;
     fn deref (&self) -> &dyn MmCoin {
         match self {
             &MmCoinEnum::UtxoCoin (ref c) => c,
-            &MmCoinEnum::EthCoin (ref c) => c
+            &MmCoinEnum::EthCoin (ref c) => c,
+            &MmCoinEnum::Test (ref c) => c,
 }   }   }
 
 struct CoinsContext {
@@ -730,10 +780,6 @@ int32_t LP_isdisabled(char *base,char *rel)
 }
 */
 
-/// NB: As of now only a part of coin information has been ported to `MmCoinEnum`.
-///     We plan to port the rest of it later (cf. `lp_coininit`).
-///     Use the `iguana_info()` interface to access the C version meanwhile.
-///
 /// NB: Returns only the enabled (aka active) coins.
 pub fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
@@ -753,21 +799,6 @@ void LP_otheraddress(char *destcoin,char *otheraddr,char *srccoin,char *coinaddr
 }
 */
 
-/// Get my_balance of a coin
-pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
-    };
-    Box::new(coin.my_balance().and_then(move |balance| rpc_response(200, json!({
-        "coin": ticker,
-        "balance": balance,
-        "address": coin.my_address(),
-    }).to_string())))
-}
-
 pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
     let coin = match lp_coinfind (&ctx, &ticker) {
@@ -776,7 +807,7 @@ pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
     };
     let withdraw_req: WithdrawRequest = try_h!(json::from_value(req));
-    Box::new(coin.withdraw(&withdraw_req.to, withdraw_req.amount, withdraw_req.max).and_then(|res| {
+    Box::new(coin.withdraw(withdraw_req).and_then(|res| {
         let body = try_h!(json::to_string(&res));
         rpc_response(200, body)
     }))

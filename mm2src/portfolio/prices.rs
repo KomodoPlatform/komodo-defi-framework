@@ -26,12 +26,12 @@ use coins::{lp_coinfind};
 use futures::{self, Future, Async, Poll};
 use futures::task::{self};
 use gstuff::{now_float};
-use hashbrown::{HashMap, HashSet};
 use http::{Request, StatusCode};
 use http::header::CONTENT_TYPE;
 use libc::{c_char};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::iter::once;
@@ -1073,7 +1073,7 @@ pub struct Coins {
 }
 
 mod cmc_reply {
-    use hashbrown::HashMap;
+    use std::collections::HashMap;
 
     pub type PriceUnit = String;
     pub type TickerSymbol = String;

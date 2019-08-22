@@ -64,8 +64,7 @@ futures-cpupool = "0.1"
 # whereas futures-timer works with any reactor and spawns one global timer thread (fits out load better).
 futures-timer = "0.1"
 futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
-gstuff = "0.5"
-hashbrown = {version = "0.1.8", features = ["serde", "nightly"]}
+gstuff = { version = "0.5", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"
 hyper = { version = "0.12", optional = true }
@@ -95,6 +94,9 @@ tokio-core = { version = "0.1", optional = true }
 unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 winapi = "0.3"
+
+[dev-dependencies]
+mocktopus = "0.7.0"
 
 [workspace]
 members = [

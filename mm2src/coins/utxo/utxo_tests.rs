@@ -1,8 +1,34 @@
-use super::*;
+use common::privkey::key_pair_from_seed;
+use crate::WithdrawFee;
 use crate::utxo::rpc_clients::{ElectrumProtocol};
+use futures03::executor::block_on;
 use mocktopus::mocking::*;
+use super::*;
 
-fn utxo_coin_for_test() -> UtxoCoin {
+fn electrum_client_for_test(servers: &[&str]) -> UtxoRpcClientEnum {
+    let mut client = ElectrumClientImpl::new();
+    for server in servers {
+        client.add_server(&ElectrumRpcRequest {
+            url: server.to_string(),
+            protocol: ElectrumProtocol::TCP,
+            disable_cert_verification: false,
+        }).unwrap();
+    }
+
+    let mut attempts = 0;
+    while !client.is_connected() {
+        if attempts >= 10 {
+            panic!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
+        }
+
+        thread::sleep(Duration::from_millis(500));
+        attempts += 1;
+    }
+
+    UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)))
+}
+
+fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum) -> UtxoCoin {
     let checksum_type = ChecksumType::DSHA256;
     let key_pair = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
     let my_address = Address {
@@ -12,16 +38,9 @@ fn utxo_coin_for_test() -> UtxoCoin {
         checksum_type,
     };
 
-    let mut client = ElectrumClientImpl::new();
-    client.add_server(&ElectrumRpcRequest {
-        url: "electrum1.cipig.net:10025".into(),
-        protocol: ElectrumProtocol::TCP,
-        disable_cert_verification: false,
-    }).unwrap();
-
     let coin = UtxoCoinImpl {
         decimals: 8,
-        rpc_client: UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client))),
+        rpc_client,
         key_pair,
         is_pos: false,
         notarized: false,
@@ -58,7 +77,8 @@ fn test_extract_secret() {
 
 #[test]
 fn test_generate_transaction() {
-    let coin = utxo_coin_for_test();
+    let client = electrum_client_for_test(&["test1.cipig.net:10025"]);
+    let coin = utxo_coin_for_test(client);
     let unspents = vec![UnspentInfo {
         value: 10000000000,
         outpoint: OutPoint::default(),
@@ -69,7 +89,7 @@ fn test_generate_transaction() {
         value: 999,
     }];
 
-    let generated = coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait();
+    let generated = coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait();
     // must not allow to use output with value < dust
     unwrap_err!(generated);
 
@@ -83,7 +103,7 @@ fn test_generate_transaction() {
         value: 98001,
     }];
 
-    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait());
+    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait());
     // the change that is less than dust must be included to miner fee
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
@@ -103,7 +123,7 @@ fn test_generate_transaction() {
     }];
 
     // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
-    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0)).wait());
+    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0), None).wait());
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
@@ -122,12 +142,13 @@ fn test_generate_transaction() {
     }];
 
     // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
-    unwrap_err!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact).wait());
+    unwrap_err!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait());
 }
 
 #[test]
 fn test_addresses_from_script() {
-    let coin = utxo_coin_for_test();
+    let client = electrum_client_for_test(&["test1.cipig.net:10025"]);
+    let coin = utxo_coin_for_test(client);
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
     let expected_addr: Vec<Address> = vec!["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW".into()];
@@ -209,56 +230,320 @@ fn test_sat_from_big_decimal() {
 
 #[test]
 fn test_wait_for_payment_spend_timeout_native() {
-    use rpc::v1::types::VerboseBlockClient;
-
     let client = NativeClientImpl {
         uri: "http://127.0.0.1:10271".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     };
 
-    NativeClientImpl::get_block_count.mock_safe(|_| MockResult::Return(Box::new(futures::future::ok(1000))));
-    NativeClientImpl::get_block.mock_safe(|_, _| {
-        let block = VerboseBlockClient {
-            bits: "".into(),
-            chainwork: 0.into(),
-            confirmations: 0,
-            difficulty: 0.,
-            hash: 0.into(),
-            height: None,
-            mediantime: None,
-            merkleroot: 0.into(),
-            nextblockhash: None,
-            nonce: "".into(),
-            previousblockhash: None,
-            size: 0,
-            strippedsize: None,
-            time: 0,
-            tx: vec![],
-            version: 0,
-            version_hex: None,
-            weight: None,
-        };
-        MockResult::Return(Box::new(futures::future::ok(block)))
+    static mut OUTPUT_SPEND_CALLED: bool = false;
+    NativeClient::find_output_spend.mock_safe(|_, _, _, _| {
+        unsafe { OUTPUT_SPEND_CALLED = true };
+        MockResult::Return(Ok(None))
     });
-    let client = NativeClient(Arc::new(client));
-    let transaction: UtxoTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000".into();
-    let vout = 0;
+    let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
+    let coin = utxo_coin_for_test(client);
+    let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
-    assert!(client.wait_for_payment_spend(&transaction, vout, wait_until, from_block).is_err());
+    assert!(coin.wait_for_tx_spend(&transaction, wait_until, from_block).is_err());
+    assert!(unsafe { OUTPUT_SPEND_CALLED });
 }
 
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
-    ElectrumClientImpl::scripthash_get_history.mock_safe(|_, _| MockResult::Return(Box::new(futures::future::ok(vec![]))));
+    static mut OUTPUT_SPEND_CALLED: bool = false;
+    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _| {
+        unsafe { OUTPUT_SPEND_CALLED = true };
+        MockResult::Return(Ok(None))
+    });
 
     let client = ElectrumClientImpl::new();
-    let client = ElectrumClient(Arc::new(client));
-    let transaction: UtxoTx = "01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000".into();
-    let vout = 0;
+    let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
+    let coin = utxo_coin_for_test(client);
+    let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
-    assert!(client.wait_for_payment_spend(&transaction, vout, wait_until, from_block).is_err());
+    assert!(coin.wait_for_tx_spend(&transaction, wait_until, from_block).is_err());
+    assert!(unsafe { OUTPUT_SPEND_CALLED });
+}
+
+#[test]
+fn test_search_for_swap_tx_spend_electrum_was_spent() {
+    let client = electrum_client_for_test(&["test1.cipig.net:10025", "test2.cipig.net:10025", "test3.cipig.net:10025"]);
+    let coin = utxo_coin_for_test(client);
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c514b3163d66636ebc3574817cb5853d5ab39886183de71ffedf5c5768570a6b
+    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f89013ac014d4926c8b435f7a5c58f38975d14f1aba597b1eef2dfdc093457678eb83010000006a47304402204ddb9b10237a1267a02426d923528213ad1e0b62d45be7d9629e2909f099d90c02205eecadecf6fd09cb8465170eb878c5d54e563f067b64e23c418da0f6519ca354012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a914bbd726b74f27b476d5d932e903b5893fd4e8bd2187acdaaa87010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2771515d000000000000000000000000000000"));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/e72be40bab15f3914e70507e863e26b8ccfaa75a9861d6fe706b39cab1272617
+    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f89016b0a5768575cdffe1fe73d188698b35a3d85b57c817435bc6e63663d16b314c500000000d8483045022100d3cf75d26d977c0358e46c5db3753aa332ba12130b36b24b541cb90416f4606102201d805c5bdfc4d630cb78adb63239911c97a09c41125af37be219e876610f15f201209ac4a742e81a47dc26a3ddf83de84783fdb49c2322c4a3fdafc0613bf3335c40004c6b6304218f515db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914954f5a3f3b5de4410e5e1a82949410de95a4b6ba882102631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640ac68ffffffff0198929800000000001976a91464ae8510aac9546d5e7704e31ce177451386455588ac3963515d000000000000000000000000000000"));
+    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
+
+    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        1565626145,
+        coin.key_pair.public(),
+        &unwrap!(Public::from_slice(&unwrap!(hex::decode("02631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640")))),
+        &unwrap!(hex::decode("954f5a3f3b5de4410e5e1a82949410de95a4b6ba")),
+        &payment_tx_bytes,
+        0
+    )));
+    assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
+}
+
+#[test]
+fn test_search_for_swap_tx_spend_electrum_was_refunded() {
+    let client = electrum_client_for_test(&["test1.cipig.net:10025", "test2.cipig.net:10025", "test3.cipig.net:10025"]);
+    let coin = utxo_coin_for_test(client);
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c9a47cc6e80a98355cd4e69d436eae6783cbee5991756caa6e64a0743442fa96
+    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8901887e809b10738b1625b7f47fd5d2201f32e8a4c6c0aaefc3b9ab6c07dc6a5925010000006a47304402203966f49ba8acc9fcc0e53e7b917ca5599ce6054a0c2d22752c57a3dc1b0fc83502206fde12c869da20a21cedd5bbc4bcd12977d25ff4b00e0999de5ac4254668e891012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a9147e9456f37fa53cf9053e192ea4951d2c8b58647c8784631684010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac0fb3525d000000000000000000000000000000"));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/a5f11bdb657ee834a4c410e2001beccce0374bfa3f662bd890fd3d01b0b3d101
+    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f890196fa423474a0646eaa6c759159eecb8367ae6e439de6d45c35980ae8c67ca4c900000000c4483045022100969c3b2c1ab630b67a6ee74316c9356e38872276a070d126da1d731503bb6e3e02204398d8c23cb59c2caddc33ce9c9716c54b11574126a3c3350a17043f3751696d01514c786304cf93525db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a92102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68feffffff0198929800000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac01a5525d000000000000000000000000000000"));
+    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
+
+    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        1565692879,
+        coin.key_pair.public(),
+        &unwrap!(Public::from_slice(&unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")))),
+        &unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")),
+        &payment_tx_bytes,
+        0
+    )));
+    assert_eq!(FoundSwapTxSpend::Refunded(spend_tx), found);
+}
+
+#[test]
+#[ignore]
+// ignored, will work only when ETOMIC daemon is running locally and has following addresses imported
+// with rescan: R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW, bVrUo5BSwzghCobtJs9Su1JxHyBGAhFVzc
+fn test_search_for_swap_tx_spend_native_was_spent() {
+    let conf = json!({"asset":"ETOMIC"});
+    let req = json!({"method":"enable"});
+    let priv_key = unwrap!(hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"));
+    let coin = unwrap!(utxo_coin_from_conf_and_request("ETOMIC", &conf, &req, &priv_key));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c514b3163d66636ebc3574817cb5853d5ab39886183de71ffedf5c5768570a6b
+    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f89013ac014d4926c8b435f7a5c58f38975d14f1aba597b1eef2dfdc093457678eb83010000006a47304402204ddb9b10237a1267a02426d923528213ad1e0b62d45be7d9629e2909f099d90c02205eecadecf6fd09cb8465170eb878c5d54e563f067b64e23c418da0f6519ca354012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a914bbd726b74f27b476d5d932e903b5893fd4e8bd2187acdaaa87010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2771515d000000000000000000000000000000"));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/e72be40bab15f3914e70507e863e26b8ccfaa75a9861d6fe706b39cab1272617
+    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f89016b0a5768575cdffe1fe73d188698b35a3d85b57c817435bc6e63663d16b314c500000000d8483045022100d3cf75d26d977c0358e46c5db3753aa332ba12130b36b24b541cb90416f4606102201d805c5bdfc4d630cb78adb63239911c97a09c41125af37be219e876610f15f201209ac4a742e81a47dc26a3ddf83de84783fdb49c2322c4a3fdafc0613bf3335c40004c6b6304218f515db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914954f5a3f3b5de4410e5e1a82949410de95a4b6ba882102631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640ac68ffffffff0198929800000000001976a91464ae8510aac9546d5e7704e31ce177451386455588ac3963515d000000000000000000000000000000"));
+    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
+
+    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
+        1565626145,
+        &unwrap!(hex::decode("02631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640")),
+        &unwrap!(hex::decode("954f5a3f3b5de4410e5e1a82949410de95a4b6ba")),
+        &payment_tx_bytes,
+        165597
+    )));
+    assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
+}
+
+#[test]
+#[ignore]
+// ignored, will work only when ETOMIC daemon is running locally and has following addresses imported
+// with rescan: R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW, bQGZYDnEvifgehVKxEzFt8ygNSnLV6Dqiz
+fn test_search_for_swap_tx_spend_native_was_refunded() {
+    let conf = json!({"asset":"ETOMIC"});
+    let req = json!({"method":"enable"});
+    let priv_key = unwrap!(hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"));
+    let coin = unwrap!(utxo_coin_from_conf_and_request("ETOMIC", &conf, &req, &priv_key));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c9a47cc6e80a98355cd4e69d436eae6783cbee5991756caa6e64a0743442fa96
+    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8901887e809b10738b1625b7f47fd5d2201f32e8a4c6c0aaefc3b9ab6c07dc6a5925010000006a47304402203966f49ba8acc9fcc0e53e7b917ca5599ce6054a0c2d22752c57a3dc1b0fc83502206fde12c869da20a21cedd5bbc4bcd12977d25ff4b00e0999de5ac4254668e891012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a9147e9456f37fa53cf9053e192ea4951d2c8b58647c8784631684010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac0fb3525d000000000000000000000000000000"));
+
+    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/a5f11bdb657ee834a4c410e2001beccce0374bfa3f662bd890fd3d01b0b3d101
+    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f890196fa423474a0646eaa6c759159eecb8367ae6e439de6d45c35980ae8c67ca4c900000000c4483045022100969c3b2c1ab630b67a6ee74316c9356e38872276a070d126da1d731503bb6e3e02204398d8c23cb59c2caddc33ce9c9716c54b11574126a3c3350a17043f3751696d01514c786304cf93525db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a92102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68feffffff0198929800000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac01a5525d000000000000000000000000000000"));
+    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
+
+    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
+        1565692879,
+        &unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")),
+        &unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")),
+        &payment_tx_bytes,
+        166864
+    )));
+    assert_eq!(FoundSwapTxSpend::Refunded(spend_tx), found);
+}
+
+#[test]
+fn test_withdraw_impl_set_fixed_fee() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: 1.into(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::UtxoFixed { amount: "0.1".parse().unwrap() }),
+    };
+    let expected = json!({
+        "amount": "0.1"
+    });
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    assert_eq!(expected, tx_details.fee_details);
+}
+
+#[test]
+fn test_withdraw_impl_sat_per_kb_fee() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: 1.into(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+    };
+    // The resulting transaction size might be 244 or 245 bytes depending on signature size
+    // MM2 always expects the worst case during fee calculation
+    // 0.1 * 245 / 1024 ~ 0.02392577
+    let expected = json!({
+        "amount": "0.02392577"
+    });
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    assert_eq!(expected, tx_details.fee_details);
+}
+
+#[test]
+fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: "9.97939454".parse().unwrap(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+    };
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    // The resulting transaction size might be 210 or 211 bytes depending on signature size
+    // MM2 always expects the worst case during fee calculation
+    // 0.1 * 211 / 1024 ~ 0.02060546
+    let expected_fee = json!({
+        "amount": "0.02060546"
+    });
+    assert_eq!(expected_fee, tx_details.fee_details);
+    let expected_balance_change = BigDecimal::from(-10);
+    assert_eq!(expected_balance_change, tx_details.my_balance_change);
+}
+
+#[test]
+fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: "9.97939454".parse().unwrap(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.09999999".parse().unwrap() }),
+    };
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    // The resulting transaction size might be 210 or 211 bytes depending on signature size
+    // MM2 always expects the worst case during fee calculation
+    // 0.1 * 211 / 1024 ~ 0.02060546
+    let expected_fee = json!({
+        "amount": "0.02060546"
+    });
+    assert_eq!(expected_fee, tx_details.fee_details);
+    let expected_balance_change = BigDecimal::from(-10);
+    assert_eq!(expected_balance_change, tx_details.my_balance_change);
+}
+
+#[test]
+fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: "9.97939455".parse().unwrap(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+    };
+    unwrap_err!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+}
+
+#[test]
+fn test_withdraw_impl_sat_per_kb_fee_max() {
+    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
+        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+        MockResult::Return(Box::new(futures::future::ok(unspents)))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl {
+        uri: "http://127.0.0.1".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    }));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client));
+
+    let withdraw_req = WithdrawRequest {
+        amount: 0.into(),
+        to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
+        coin: "ETOMIC".to_string(),
+        max: true,
+        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+    };
+    // The resulting transaction size might be 210 or 211 bytes depending on signature size
+    // MM2 always expects the worst case during fee calculation
+    // 0.1 * 211 / 1024 ~ 0.02060546
+    let expected = json!({
+        "amount": "0.02060546"
+    });
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    assert_eq!(expected, tx_details.fee_details);
 }

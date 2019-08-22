@@ -16,8 +16,13 @@
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-use coins::{enable, electrum, get_enabled_coins, get_trade_fee, my_balance, send_raw_transaction, withdraw, my_tx_history};
+
+#![cfg_attr(not(feature = "native"), allow(unused_imports))]
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
+
+use coins::{enable, electrum, get_enabled_coins, get_trade_fee, send_raw_transaction, withdraw, my_tx_history};
 use common::{err_to_rpc_json_string, rpc_response, rpc_err_response, HyRes};
+#[cfg(feature = "native")]
 use common::wio::{CORE, HTTP};
 use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
@@ -27,17 +32,17 @@ use futures03::future::{FutureExt, TryFutureExt};
 use gstuff;
 use http::{Request, Response, Method};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
-use hyper;
-use hyper::rt::Stream;
-use hyper::service::Service;
+#[cfg(feature = "native")]
+use hyper::{self, rt::Stream, service::Service};
 use serde_json::{self as json, Value as Json};
 use std::future::{Future as Future03};
 use std::net::{SocketAddr};
-use std::sync::atomic::Ordering;
+#[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
 
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
-use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, stats_swap_status, my_recent_swaps};
+use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, my_recent_swaps, recover_funds_of_swap,
+                          stats_swap_status};
 
 #[path = "rpc/lp_commands.rs"]
 pub mod lp_commands;
@@ -156,6 +161,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "stop" => stop (ctx),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
         "my_swap_status" => my_swap_status(ctx, req),
+        "recover_funds_of_swap" => Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) })),
         "stats_swap_status" => stats_swap_status(ctx, req),
         "version" => version(),
         "withdraw" => withdraw(ctx, req),
@@ -165,6 +171,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
 
 type RpcRes = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
 
+#[cfg(feature = "native")]
 fn hyres_into_rpcres<HR> (hyres: HR) -> impl Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send
 where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
     hyres.map (move |r| {
@@ -173,6 +180,7 @@ where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
     })
 }
 
+#[cfg(feature = "native")]
 impl Service for RpcService {
     type ReqBody = hyper::Body;
     type ResBody = LiftBody<Vec<u8>>;
@@ -244,6 +252,7 @@ impl Service for RpcService {
     }
 }
 
+#[cfg(feature = "native")]
 pub extern fn spawn_rpc(ctx_h: u32) {
     // NB: We need to manually handle the incoming connections in order to get the remote IP address,
     // cf. https://github.com/hyperium/hyper/issues/1410#issuecomment-419510220.
@@ -267,7 +276,7 @@ pub extern fn spawn_rpc(ctx_h: u32) {
                 }
             };
 
-            CORE.spawn(move |_|
+            unwrap!(CORE.lock()).spawn(
                 HTTP.serve_connection(
                     socket,
                     RpcService {
@@ -296,10 +305,13 @@ pub extern fn spawn_rpc(ctx_h: u32) {
     }));
 
     let rpc_ip_port = unwrap! (ctx.rpc_ip_port());
-    CORE.spawn (move |_| {
+    unwrap! (CORE.lock()) .spawn ({
         log!(">>>>>>>>>> DEX stats " (rpc_ip_port.ip())":"(rpc_ip_port.port()) " \
                 DEX stats API enabled at unixtime." (gstuff::now_ms() / 1000) " <<<<<<<<<");
-        ctx.rpc_started.store (true, Ordering::Relaxed);
+        let _ = ctx.rpc_started.pin (true);
         server
     });
 }
+
+#[cfg(not(feature = "native"))]
+pub extern fn spawn_rpc(_ctx_h: u32) {unimplemented!()}

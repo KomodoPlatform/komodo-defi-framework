@@ -14,6 +14,8 @@ const ffi = require ('ffi');
 const ref = require ('ref');
 const { Buffer } = require ('buffer');
 
+const snooze = ms => new Promise (resolve => setTimeout (resolve, ms));
+
 // Preparing the library:
 // 
 //     cargo build --features native --package peers --release
@@ -58,12 +60,29 @@ async function runWasm() {
   const wasmArray = new Uint8Array (wasmBytes);
   const keepAliveAgent = new http.Agent ({keepAlive: true});
   const ctx_and_port = libpeers.start_helpers();
-  console.log ('ctx_and_port', ctx_and_port);
-  let httpRequests = {};
-  let wasmShared = {};
+  console.log ('wasm-run] ctx_and_port', ctx_and_port);
+  const httpRequests = {};
+  const wasmShared = {};
+  wasmShared.callbacks = {};
+  function registerCallback (f) {
+    for (;;) {
+      const ri = Math.ceil (Math.random() * 2147483647);
+      const ris = '' + ri;
+      if (wasmShared.callbacks[ris] != null) continue;
+      wasmShared.callbacks[ris] = f;
+      return ri
+    }
+  }
   const wasmEnv = {
     bitcoin_ctx: function() {console.log ('env/bitcoin_ctx')},
     bitcoin_ctx_destroy: function() {console.log ('env/bitcoin_ctx_destroy')},
+    call_back: function (cb_id, ptr, len) {
+      //console.log ('call_back', cb_id, 'invoked, ptr', ptr, 'len', len);
+      const cb_id_s = '' + cb_id;
+      const f = wasmShared.callbacks[cb_id_s];
+      if (f != null) f (Buffer.from (wasmShared.memory.buffer.slice (ptr, ptr + len)));
+      delete wasmShared.callbacks[cb_id_s]
+    },
     console_log: function (ptr, len) {
       const decoded = from_utf8 (wasmShared.memory, ptr, len);
       console.log (decoded)},
@@ -87,7 +106,6 @@ async function runWasm() {
     http_helper_if: function (helper_ptr, helper_len, payload_ptr, payload_len, timeout_ms) {
       const helper = from_utf8 (wasmShared.memory, helper_ptr, helper_len);
       const payload = from_utf8 (wasmShared.memory, payload_ptr, payload_len);
-      console.log ('http_helper_if, helper is', helper);
 
       // Find a random ID.
       let ri, ris;
@@ -128,9 +146,9 @@ async function runWasm() {
               ++pos
             }
           }
-          if (pos != len) throw new Error ('length mismatch')
-          // TODO: Wake that particular future immediately?
-          httpRequests[ris].buf = buf
+          if (pos != len) throw new Error ('length mismatch');
+          httpRequests[ris].buf = buf;
+          wasmShared.exports.http_ready (ri)
         });
       });
       req.on ('error', function (err) {
@@ -153,34 +171,22 @@ async function runWasm() {
   const exports = wasmInstantiated.instance.exports;
   /** @type {WebAssembly.Memory} */
   wasmShared.memory = exports.memory;
+  wasmShared.exports = exports;
 
-  setImmediate (function() {
-    console.log ('immediate at', Date.now());
-    exports.run_executor();
-  });
-  // NB: The interval seems to run independently from the event loop,
-  // whereas the `setImmediate` and `nextTick` callbacks only run when the control is returned from Rust.
-  // On the other hand, an active interval prevents the Node.js process from exiting (on a panic).
-  let i = setInterval (function() {
-    console.log ('interval at', Date.now());
-    exports.run_executor();
-  }, 2000);
-  process.nextTick (function() {
-    console.log ('nextTick at', Date.now());
-    exports.run_executor();
-  });
+  const executor_i = setInterval (function() {exports.run_executor()}, 200);
 
   exports.set_panic_hook();
 
   const peers_check = exports.peers_check();
-  //console.log ('peers_check: ' + peers_check);
 
-  console.log ('running test_peers_dht...');
-  // TODO: A way to wait for that Future on the JavaScript side.
-  exports.test_peers_dht();
-  console.log ('done with test_peers_dht');
+  console.log ('wasm-run] running test_peers_dht...');
+  const test_finished = {};
+  const cb_id = registerCallback (r => test_finished.yep = true);
+  exports.test_peers_dht (cb_id);
+  while (!test_finished.yep) {await snooze (100)}
+  console.log ('wasm-run] done with test_peers_dht');
 
-  //clearInterval (i)
+  clearInterval (executor_i)
 }
 
 runWasm().catch (ex => console.log (ex));

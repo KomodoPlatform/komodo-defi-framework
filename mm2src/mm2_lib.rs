@@ -3,6 +3,8 @@
 #![feature(integer_atomics)]
 #![feature(async_await)]
 
+#![cfg_attr(not(feature = "native"), allow(unused_imports))]
+
 #[macro_use] extern crate common;
 #[macro_use] extern crate enum_primitive_derive;
 #[macro_use] extern crate fomat_macros;
@@ -17,10 +19,12 @@
 mod mm2;
 
 use crate::common::mm_ctx::MmArc;
+#[cfg(feature = "native")]
 use crate::common::log::LOG_OUTPUT;
 use futures::Future;
 use futures03::executor::block_on;
 use gstuff::{any_to_str, now_float};
+#[cfg(feature = "native")]
 use libc::c_char;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
@@ -45,6 +49,7 @@ enum MainErr {
 
 /// Starts the MM2 in a detached singleton thread.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub extern fn mm2_main (
   conf: *const c_char, log_cb: extern fn (line: *const c_char)) -> i8 {
     macro_rules! log {
@@ -66,7 +71,7 @@ pub extern fn mm2_main (
     let conf = match conf.to_str() {Ok (s) => s, Err (e) => eret! (MainErr::ConfNotUtf8, (e))};
     let conf = conf.to_owned();
 
-    {
+    #[cfg(feature = "native")] {
         let mut log_output = match LOG_OUTPUT.lock() {Ok (l) => l, Err (e) => eret! (MainErr::NoOutputLock, (e))};
         *log_output = Some (log_cb);
     }
@@ -99,7 +104,7 @@ pub extern fn mm2_main_status() -> i8 {
         let ctx = CTX.load (Ordering::Relaxed);
         if ctx != 0 {
             if let Ok (ctx) = MmArc::from_ffi_handle (ctx) {
-                if ctx.rpc_started.load (Ordering::Relaxed) {
+                if ctx.rpc_started.copy_or (false) {
                     3
                 } else {2}
             } else {2}
@@ -118,11 +123,14 @@ pub extern fn mm2_main_status() -> i8 {
 ///
 /// Returns the `torch` (as in Olympic flame torch) if the tests have passed. Panics otherwise.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> i32 {
-    if let Ok (mut log_output) = LOG_OUTPUT.lock() {
-        *log_output = Some (log_cb);
-    } else {
-        panic! ("Can't lock LOG_OUTPUT")
+    #[cfg(feature = "native")] {
+        if let Ok (mut log_output) = LOG_OUTPUT.lock() {
+            *log_output = Some (log_cb);
+        } else {
+            panic! ("Can't lock LOG_OUTPUT")
+        }
     }
 
     static RUNNING: AtomicBool = AtomicBool::new (false);
@@ -169,8 +177,10 @@ pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> 
         log! ("mm2_test] peers_dht…");
         block_on (peers::peers_tests::peers_dht());
 
-        log! ("mm2_test] peers_direct_send…");
-        peers::peers_tests::peers_direct_send();
+        #[cfg(feature = "native")] {
+            log! ("mm2_test] peers_direct_send…");
+            peers::peers_tests::peers_direct_send();
+        }
 
         log! ("mm2_test] peers_http_fallback_kv…");
         peers::peers_tests::peers_http_fallback_kv();

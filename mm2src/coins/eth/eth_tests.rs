@@ -1,9 +1,29 @@
+use futures03::executor::block_on;
 use super::*;
 use mocktopus::mocking::*;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
+}
+
+fn eth_coin_for_test(coin_type: EthCoinType) -> EthCoin {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://dummy.dummy".into()]).unwrap();
+    let web3 = Web3::new(transport);
+
+    EthCoin(Arc::new(EthCoinImpl {
+        coin_type,
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        ticker: "ETH".into(),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
+        web3,
+    }))
 }
 
 #[test]
@@ -246,4 +266,94 @@ fn test_wait_for_payment_spend_timeout() {
     let tx_bytes = [248, 240, 3, 133, 1, 42, 5, 242, 0, 131, 2, 73, 240, 148, 133, 0, 175, 192, 188, 82, 20, 114, 128, 130, 22, 51, 38, 194, 255, 12, 115, 244, 168, 113, 135, 110, 205, 245, 24, 127, 34, 254, 184, 132, 21, 44, 243, 175, 73, 33, 143, 82, 117, 16, 110, 27, 133, 82, 200, 114, 233, 42, 140, 198, 35, 21, 201, 249, 187, 180, 20, 46, 148, 40, 9, 228, 193, 130, 71, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 152, 41, 132, 9, 201, 73, 19, 94, 237, 137, 35, 61, 4, 194, 207, 239, 152, 75, 175, 245, 157, 174, 10, 214, 161, 207, 67, 70, 87, 246, 231, 212, 47, 216, 119, 68, 237, 197, 125, 141, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 72, 125, 102, 28, 159, 180, 237, 198, 97, 87, 80, 82, 200, 104, 40, 245, 221, 7, 28, 122, 104, 91, 99, 1, 159, 140, 25, 131, 101, 74, 87, 50, 168, 146, 187, 90, 160, 51, 1, 123, 247, 6, 108, 165, 181, 188, 40, 56, 47, 211, 229, 221, 73, 5, 15, 89, 81, 117, 225, 216, 108, 98, 226, 119, 232, 94, 184, 42, 106];
 
     assert!(coin.wait_for_tx_spend(&tx_bytes, wait_until, from_block).is_err());
+}
+
+#[test]
+fn test_search_for_swap_tx_spend_was_spent() {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        coin_type: EthCoinType::Eth,
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        ticker: "ETH".into(),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
+        web3,
+    }));
+
+    // raw transaction bytes of https://ropsten.etherscan.io/tx/0xb1c987e2ac79581bb8718267b5cb49a18274890494299239d1d0dfdb58d6d76a
+    let payment_tx = [248, 240, 52, 132, 119, 53, 148, 0, 131, 2, 73, 240, 148, 123, 193, 187, 221, 106, 10, 114, 47, 201, 191, 252, 73, 201, 33, 182, 133, 236, 184, 75, 148, 135, 71, 13, 228, 223, 130, 0, 0, 184, 132, 21, 44, 243, 175, 188, 96, 248, 252, 165, 132, 81, 30, 243, 34, 85, 165, 46, 224, 176, 90, 137, 30, 19, 123, 224, 67, 83, 53, 74, 57, 148, 140, 95, 45, 70, 147, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 117, 244, 28, 175, 51, 95, 91, 184, 141, 201, 45, 116, 26, 102, 210, 119, 151, 124, 143, 52, 215, 128, 89, 116, 30, 25, 35, 128, 122, 186, 177, 228, 149, 250, 55, 53, 62, 196, 51, 72, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 56, 62, 80, 28, 160, 65, 22, 195, 212, 184, 202, 226, 151, 224, 111, 174, 31, 160, 219, 39, 69, 137, 37, 8, 127, 177, 4, 104, 248, 27, 41, 245, 176, 131, 188, 215, 136, 160, 91, 134, 199, 67, 1, 58, 57, 103, 23, 215, 176, 64, 124, 1, 44, 88, 161, 200, 160, 64, 110, 13, 145, 127, 180, 27, 171, 131, 253, 90, 48, 147];
+    // raw transaction bytes of https://ropsten.etherscan.io/tx/0xcb7c14d3ff309996d582400369393b6fa42314c52245115d4a3f77f072c36da9
+    let spend_tx = [249, 1, 9, 37, 132, 119, 53, 148, 0, 131, 2, 73, 240, 148, 123, 193, 187, 221, 106, 10, 114, 47, 201, 191, 252, 73, 201, 33, 182, 133, 236, 184, 75, 148, 128, 184, 164, 2, 237, 41, 43, 188, 96, 248, 252, 165, 132, 81, 30, 243, 34, 85, 165, 46, 224, 176, 90, 137, 30, 19, 123, 224, 67, 83, 53, 74, 57, 148, 140, 95, 45, 70, 147, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 13, 228, 223, 130, 0, 0, 168, 151, 11, 232, 224, 253, 63, 180, 26, 114, 23, 184, 27, 10, 161, 80, 178, 251, 73, 204, 80, 174, 97, 118, 149, 204, 186, 187, 243, 185, 19, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 157, 73, 251, 238, 138, 245, 142, 240, 85, 44, 209, 63, 194, 242, 109, 242, 246, 6, 76, 176, 27, 160, 29, 157, 226, 23, 81, 174, 34, 82, 93, 182, 41, 248, 119, 42, 221, 214, 38, 243, 128, 2, 235, 208, 193, 192, 74, 208, 242, 26, 221, 83, 54, 74, 160, 111, 29, 92, 8, 75, 61, 97, 103, 199, 100, 189, 72, 74, 221, 144, 66, 170, 68, 121, 29, 105, 19, 194, 35, 245, 196, 131, 236, 29, 105, 101, 30];
+    let spend_tx = FoundSwapTxSpend::Spent(unwrap!(signed_eth_tx_from_bytes(&spend_tx)).into());
+
+    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        &payment_tx,
+        6051857,
+    )));
+    assert_eq!(spend_tx, found_tx);
+}
+
+#[test]
+fn test_search_for_swap_tx_spend_was_refunded() {
+    let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        coin_type: EthCoinType::Erc20(Address::from("0xc0eb7aed740e1796992a08962c15661bdeb58003")),
+        decimals: 18,
+        gas_station_url: None,
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        my_address: key_pair.address(),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        ticker: "ETH".into(),
+        web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
+        web3,
+    }));
+
+    // raw transaction bytes of https://ropsten.etherscan.io/tx/0xe18bbca69dea9a4624e1f5b0b2021d5fe4c8daa03f36084a8ba011b08e5cd938
+    let payment_tx = [249, 1, 43, 130, 10, 96, 132, 149, 2, 249, 0, 131, 2, 73, 240, 148, 123, 193, 187, 221, 106, 10, 114, 47, 201, 191, 252, 73, 201, 33, 182, 133, 236, 184, 75, 148, 128, 184, 196, 155, 65, 91, 42, 192, 158, 192, 175, 210, 198, 159, 244, 116, 46, 255, 28, 236, 147, 240, 68, 91, 16, 19, 6, 59, 187, 149, 138, 179, 151, 121, 47, 14, 80, 251, 147, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 141, 126, 164, 198, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 235, 122, 237, 116, 14, 23, 150, 153, 42, 8, 150, 44, 21, 102, 27, 222, 181, 128, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 216, 153, 121, 65, 221, 19, 70, 233, 35, 17, 24, 213, 104, 93, 134, 98, 148, 245, 158, 91, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 23, 98, 207, 27, 160, 4, 198, 61, 242, 141, 248, 157, 72, 229, 2, 162, 163, 250, 159, 26, 66, 37, 42, 159, 35, 58, 94, 57, 121, 252, 166, 34, 25, 206, 193, 113, 198, 160, 68, 125, 142, 153, 210, 177, 60, 173, 67, 127, 138, 52, 112, 9, 49, 108, 109, 44, 177, 142, 9, 124, 10, 200, 37, 100, 52, 137, 196, 74, 67, 192];
+    // raw transaction bytes of https://ropsten.etherscan.io/tx/0x9a50ac4d1737f4f04b94177996da7fa942b09469de52cfdadce891cd85afc37c
+    let refund_tx = [249, 1, 11, 130, 10, 97, 132, 149, 2, 249, 0, 131, 2, 73, 240, 148, 123, 193, 187, 221, 106, 10, 114, 47, 201, 191, 252, 73, 201, 33, 182, 133, 236, 184, 75, 148, 128, 184, 164, 70, 252, 2, 148, 192, 158, 192, 175, 210, 198, 159, 244, 116, 46, 255, 28, 236, 147, 240, 68, 91, 16, 19, 6, 59, 187, 149, 138, 179, 151, 121, 47, 14, 80, 251, 147, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 141, 126, 164, 198, 128, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 235, 122, 237, 116, 14, 23, 150, 153, 42, 8, 150, 44, 21, 102, 27, 222, 181, 128, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 216, 153, 121, 65, 221, 19, 70, 233, 35, 17, 24, 213, 104, 93, 134, 98, 148, 245, 158, 91, 28, 160, 127, 220, 190, 77, 221, 188, 140, 162, 198, 6, 127, 102, 222, 66, 38, 96, 10, 19, 27, 208, 119, 219, 60, 231, 2, 118, 91, 169, 99, 78, 209, 135, 160, 51, 115, 90, 189, 124, 172, 205, 134, 203, 159, 238, 40, 39, 99, 88, 48, 160, 189, 37, 60, 20, 117, 65, 238, 36, 98, 226, 48, 22, 235, 86, 183];
+    let refund_tx = FoundSwapTxSpend::Refunded(unwrap!(signed_eth_tx_from_bytes(&refund_tx)).into());
+
+    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        &payment_tx,
+        5886908,
+    )));
+    assert_eq!(refund_tx, found_tx);
+}
+
+#[test]
+fn test_withdraw_impl_manual_fee() {
+    EthCoin::my_balance.mock_safe(|_| {
+        let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
+        MockResult::Return(Box::new(futures::future::ok(balance)))
+    });
+    get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures::future::ok(0.into()))));
+
+    let coin = eth_coin_for_test(EthCoinType::Eth);
+    let withdraw_req = WithdrawRequest {
+        amount: 1.into(),
+        to: "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
+        coin: "ETH".to_string(),
+        max: false,
+        fee: Some(WithdrawFee::EthGas { gas: 150000, gas_price: 1.into() }),
+    };
+    let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
+    let expected = json!({
+        "coin": "ETH",
+        "gas_price": "0.000000001",
+        "gas": 150000,
+        "total_fee": "0.00015"
+    });
+    assert_eq!(expected, tx_details.fee_details);
 }

@@ -19,11 +19,12 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
+#![cfg_attr(not(feature = "native"), allow(unused_imports))]
+
 use common::{double_panic_crash, MM_VERSION};
 
 use gstuff::{slurp};
-
-use libc::{c_char};
 
 use serde_json::{self as json, Value as Json};
 
@@ -55,6 +56,7 @@ pub mod rpc;
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
 
+/// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
@@ -98,8 +100,10 @@ fn help() {
         // using the CoinGecko behind the scenes unless the "cmc_key" is given.
         // In the future, when MM2 is more widely used and thus we're working more tighly with the GUIs (BarterDEX, HyperDEX, dICO),
         // we might add the "refrel=cmc" and "refrel=coingecko" RPC options.
+/* we're not using the `portfolio` crate at present
         "  cmc_key        ..  CoinMarketCap Professional API Key. Switches from CoinGecko to CoinMarketCap.\n"
         "                     The Key can be obtained from 'https://pro.coinmarketcap.com/account'.\n"
+*/
         "                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,\n"
       r#"                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}."# "\n"
         // cf. https://github.com/atomiclabs/hyperdex/blob/1d4ed3234b482e769124725c7e979eef5cd72d24/app/marketmaker/supported-currencies.js#L12
@@ -110,6 +114,7 @@ fn help() {
         "  myipaddr       ..  IP address to bind to for P2P networking.\n"
         "  netid          ..  Subnetwork. Affects ports and keys.\n"
         "  passphrase *   ..  Wallet seed.\n"
+        "                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.\n"
         "  panic          ..  Simulate a panic to see if backtrace works.\n"
         // cf. https://github.com/atomiclabs/hyperdex/pull/563/commits/6d17c0c994693b768e30130855c679a7849a2b27
         "  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.\n"
@@ -140,8 +145,10 @@ fn help() {
     )
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "native")]
 pub fn mm2_main() {
+    use libc::c_char;
+
     init_crash_reports();
     log!({"AtomicDEX MarketMaker {}", MM_VERSION});
 
