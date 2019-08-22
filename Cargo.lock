@@ -953,7 +953,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "atomic 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "libc 0.2.58 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.2.60 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1330,7 +1330,7 @@ dependencies = [
  "hyper 0.12.31 (registry+https://github.com/rust-lang/crates.io-index)",
  "keys 0.1.0 (git+https://github.com/artemii235/parity-bitcoin.git)",
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "libc 0.2.58 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.2.60 (registry+https://github.com/rust-lang/crates.io-index)",
  "mocktopus 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "peers 0.1.0",
