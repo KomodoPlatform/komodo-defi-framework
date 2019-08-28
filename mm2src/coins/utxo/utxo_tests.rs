@@ -389,9 +389,9 @@ fn test_withdraw_impl_set_fixed_fee() {
         max: false,
         fee: Some(WithdrawFee::UtxoFixed { amount: "0.1".parse().unwrap() }),
     };
-    let expected = json!({
-        "amount": "0.1"
-    });
+    let expected = Some(UtxoFeeDetails {
+        amount: "0.1".parse().unwrap()
+    }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }
@@ -420,9 +420,9 @@ fn test_withdraw_impl_sat_per_kb_fee() {
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 245 / 1024 ~ 0.02392577
-    let expected = json!({
-        "amount": "0.02392577"
-    });
+    let expected = Some(UtxoFeeDetails {
+        amount: "0.02392577".parse().unwrap()
+    }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }
@@ -452,9 +452,9 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1024 ~ 0.02060546
-    let expected_fee = json!({
-        "amount": "0.02060546"
-    });
+    let expected_fee = Some(UtxoFeeDetails {
+        amount: "0.02060546".parse().unwrap()
+    }.into());
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
     assert_eq!(expected_balance_change, tx_details.my_balance_change);
@@ -485,9 +485,9 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1024 ~ 0.02060546
-    let expected_fee = json!({
-        "amount": "0.02060546"
-    });
+    let expected_fee = Some(UtxoFeeDetails {
+        amount: "0.02060546".parse().unwrap()
+    }.into());
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
     assert_eq!(expected_balance_change, tx_details.my_balance_change);
@@ -541,9 +541,9 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1024 ~ 0.02060546
-    let expected = json!({
-        "amount": "0.02060546"
-    });
+    let expected = Some(UtxoFeeDetails {
+        amount: "0.02060546".parse().unwrap()
+    }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }

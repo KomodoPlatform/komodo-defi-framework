@@ -1,13 +1,11 @@
 use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
 use common::privkey::key_pair_from_seed;
-use dirs;
 use futures03::executor::block_on;
 use gstuff::{slurp};
 use hyper::StatusCode;
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use peers;
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::identity;
 use std::env::{self, var};
@@ -587,57 +585,6 @@ fn test_rpc_password_from_json_no_userpass() {
     assert! (electrum.0.is_server_error(), "RPC «electrum» should have failed with server error, but got «{}», response «{}»", electrum.0, electrum.1);
 }
 
-#[cfg(windows)]
-fn get_special_folder_path() -> PathBuf {
-    use libc::c_char;
-    use std::ffi::CStr;
-    use std::mem::zeroed;
-    use std::ptr::null_mut;
-    use winapi::um::shlobj::SHGetSpecialFolderPathA;
-    use winapi::shared::minwindef::MAX_PATH;
-    use winapi::um::shlobj::CSIDL_APPDATA;
-
-    let mut buf: [c_char; MAX_PATH + 1] = unsafe {zeroed()};
-    // https://docs.microsoft.com/en-us/windows/desktop/api/shlobj_core/nf-shlobj_core-shgetspecialfolderpatha
-    let rc = unsafe {SHGetSpecialFolderPathA (null_mut(), buf.as_mut_ptr(), CSIDL_APPDATA, 1)};
-    if rc != 1 {panic! ("!SHGetSpecialFolderPathA")}
-    Path::new (unwrap! (unsafe {CStr::from_ptr (buf.as_ptr())} .to_str())) .to_path_buf()
-}
-
-#[cfg(not(windows))]
-fn get_special_folder_path() -> PathBuf {panic!("!windows")}
-
-/// Determines komodod conf file location, emulating komodo/util.cpp/GetConfigFile.
-fn komodo_conf_path (ac_name: Option<&'static str>) -> Result<PathBuf, String> {
-    let confname: Cow<str> = if let Some (ac_name) = ac_name {
-        format! ("{}.conf", ac_name).into()
-    } else {
-        "komodo.conf".into()
-    };
-
-    // komodo/util.cpp/GetDefaultDataDir
-
-    let mut path = match dirs::home_dir() {
-        Some (hd) => hd,
-        None => Path::new ("/") .to_path_buf()
-    };
-
-    if cfg! (windows) {
-        // >= Vista: c:\Users\$username\AppData\Roaming
-        path = get_special_folder_path();
-        path.push ("Komodo");
-    } else if cfg! (target_os = "macos") {
-        path.push ("Library");
-        path.push ("Application Support");
-        path.push ("Komodo");
-    } else {
-        path.push (".komodo");
-    }
-
-    if let Some (ac_name) = ac_name {path.push (ac_name)}
-    Ok (path.join (&confname[..]))
-}
-
 /// Helper function requesting my swap status and checking it's events
 fn check_my_swap_status(
     mm: &MarketMakerIt,
@@ -907,13 +854,6 @@ fn trade_test_electrum_and_eth_coins() {
 }
 
 fn trade_base_rel_native(base: &str, rel: &str) {
-    let beer_cfp = unwrap! (komodo_conf_path (Some ("BEER")));
-    let pizza_cfp = unwrap! (komodo_conf_path (Some ("PIZZA")));
-    let etomic_cfp = unwrap! (komodo_conf_path (Some ("ETOMIC")));
-    assert! (beer_cfp.exists(), "BEER config {:?} is not found", beer_cfp);
-    assert! (pizza_cfp.exists(), "PIZZA config {:?} is not found", pizza_cfp);
-    assert! (etomic_cfp.exists(), "ETOMIC config {:?} is not found", etomic_cfp);
-
     let (bob_file_passphrase, bob_file_userpass) = from_env_file (slurp (&".env.seed"));
     let (alice_file_passphrase, alice_file_userpass) = from_env_file (slurp (&".env.client"));
 
@@ -923,9 +863,9 @@ fn trade_base_rel_native(base: &str, rel: &str) {
     let alice_userpass = unwrap! (var ("ALICE_USERPASS") .ok().or (alice_file_userpass), "No ALICE_USERPASS or .env.client/USERPASS");
 
     let coins = json! ([
-        {"coin":"BEER","asset":"BEER","confpath":unwrap!(beer_cfp.to_str())},
-        {"coin":"PIZZA","asset":"PIZZA","confpath":unwrap!(pizza_cfp.to_str())},
-        {"coin":"ETOMIC","asset":"ETOMIC","confpath":unwrap!(etomic_cfp.to_str())},
+        {"coin":"BEER","asset":"BEER"},
+        {"coin":"PIZZA","asset":"PIZZA"},
+        {"coin":"ETOMIC","asset":"ETOMIC"},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80}
     ]);
 

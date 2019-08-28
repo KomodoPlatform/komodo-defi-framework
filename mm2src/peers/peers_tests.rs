@@ -10,6 +10,7 @@ use futures::Future;
 use futures03::executor::block_on;
 use futures03::future::{select, Either};
 use rand::{self, Rng, RngCore};
+use serde_bytes::ByteBuf;
 use serde_json::Value as Json;
 use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(not(feature = "native"))]
@@ -97,7 +98,7 @@ async fn peers_exchange (conf: Json) {
 
         // Get that message from Alice.
 
-        let validator = super::FixedValidator::Exact (message.clone());
+        let validator = super::FixedValidator::Exact (ByteBuf::from (&message[..]));
         let rc = super::recv (bob.clone(), Vec::from (&b"test_dht"[..]), fallback, validator);
         let rc = select (Box::pin (rc), Timer::sleep (99.)) .await;
         let received = match rc {

@@ -20,12 +20,14 @@ atomic = "0.4"
 backtrace = "0.3"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+bytes = "0.4"
 # Using the `chrono` because the `time` formatting has serious limits, like the lack of subsecond support, IIRC.
 chrono = "0.4"
 crossbeam = "0.6"
 fomat-macros = "0.2"
 futures = "0.1"
 futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+futures-cpupool = "0.1"
 gstuff = { version = "0.5", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"

@@ -51,9 +51,11 @@ debug = false
 [dependencies]
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+bytes = "0.4"
 coins = { path = "mm2src/coins" }
 common = { path = "mm2src/common" }
 crc = "1.8"
+crc32fast = { version = "1.2", features = ["std", "nightly"] }
 crossbeam = "0.6"
 dirs = { version = "1", optional = true }
 enum-primitive-derive = "0.1"

@@ -349,11 +349,11 @@ fn test_withdraw_impl_manual_fee() {
         fee: Some(WithdrawFee::EthGas { gas: 150000, gas_price: 1.into() }),
     };
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
-    let expected = json!({
-        "coin": "ETH",
-        "gas_price": "0.000000001",
-        "gas": 150000,
-        "total_fee": "0.00015"
-    });
+    let expected = Some(EthTxFeeDetails {
+        coin: "ETH".into(),
+        gas_price: "0.000000001".parse().unwrap(),
+        gas: 150000,
+        total_fee: "0.00015".parse().unwrap(),
+    }.into());
     assert_eq!(expected, tx_details.fee_details);
 }

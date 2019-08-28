@@ -20,7 +20,7 @@
 
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
-use coins::{lp_coinfind};
+use coins::{lp_coinfind, lp_coininit, MmCoinEnum};
 use common::{rpc_err_response, rpc_response, HyRes, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
@@ -28,6 +28,36 @@ use futures::Future;
 use serde_json::{Value as Json};
 
 use crate::mm2::lp_swap::get_locked_amount;
+
+/// Enable a coin in the Electrum mode.
+pub fn electrum (ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin: MmCoinEnum = try_h! (lp_coininit (&ctx, &ticker, &req));
+    Box::new(coin.my_balance().and_then(move |balance|
+        rpc_response(200, json!({
+            "result": "success",
+            "address": coin.my_address(),
+            "balance": balance,
+            "locked_by_swaps": get_locked_amount(&ctx, &ticker),
+            "coin": coin.ticker(),
+        }).to_string())
+    ))
+}
+
+/// Enable a coin in the local wallet mode.
+pub fn enable (ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin: MmCoinEnum = try_h! (lp_coininit (&ctx, &ticker, &req));
+    Box::new(coin.my_balance().and_then(move |balance|
+        rpc_response(200, json!({
+            "result": "success",
+            "address": coin.my_address(),
+            "balance": balance,
+            "locked_by_swaps": get_locked_amount(&ctx, &ticker),
+            "coin": coin.ticker(),
+        }).to_string())
+    ))
+}
 
 pub fn help() -> HyRes {
     rpc_response(200, "
@@ -62,8 +92,6 @@ pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
         "address": coin.my_address(),
     }).to_string())))
 }
-
-pub fn version() -> HyRes { rpc_response(200, json!({"result": MM_VERSION}).to_string()) }
 
 /*
 AP: Passphrase call is not documented and not used as of now, commented out
@@ -131,6 +159,8 @@ pub fn stop (ctx: MmArc) -> HyRes {
     });
     rpc_response (200, r#"{"result": "success"}"#)
 }
+
+pub fn version() -> HyRes { rpc_response(200, json!({"result": MM_VERSION}).to_string()) }
 
 // AP: Inventory is not documented and not used as of now, commented out
 /*

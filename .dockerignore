@@ -13,6 +13,9 @@ cmake-build-debug
 
 /js/node_modules
 /js/*.dll
+/js/*.wasm
+/js/mm2
+/js/mm2.exe
 /wasm-build.log
 
 # Opt out from history in order to speed the `COPY .` up.

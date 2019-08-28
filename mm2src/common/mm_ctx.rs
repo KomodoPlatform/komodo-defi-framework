@@ -1,9 +1,11 @@
+use bytes::Bytes;
 use crossbeam::{channel, Sender, Receiver};
 use gstuff::Constructible;
+#[cfg(not(feature = "native"))]
+use http::Response;
 use keys::{DisplayLayout, KeyPair, Private};
 use primitives::hash::H160;
 use rand::Rng;
-#[cfg(not(feature = "native"))]
 use serde_bencode::ser::to_bytes as bencode;
 use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
@@ -256,11 +258,19 @@ lazy_static! {
     pub static ref MM_CTX_FFI: Mutex<HashMap<u32, MmWeak>> = Mutex::new (HashMap::default());
 }
 
+/// Portable core sharing its context with the native helpers.
+/// 
+/// In the integration tests we're using this to create new native contexts.
 #[derive (Serialize, Deserialize)]
-struct WiredCtx {
+struct PortableCtx {
     // Sending the `conf` as a string in order for bencode not to mess with JSON, and for wire readability.
     conf: String,
     secp256k1_key_pair: ByteBuf,
+    ffi_handle: Option<u32>
+}
+
+#[derive (Serialize, Deserialize)]
+struct NativeCtx {
     ffi_handle: u32
 }
 
@@ -284,19 +294,28 @@ impl MmArc {
     }   }   }   }
 
     #[cfg(not(feature = "native"))]
-    pub fn send_to_helpers (&self) -> Result<(), String> {
-        let ctxʷ = WiredCtx {
+    pub async fn send_to_helpers (&self) -> Result<(), String> {
+        use crate::helperᶜ;
+
+        let ctxʷ = PortableCtx {
             conf: try_s! (json::to_string (&self.conf)),
             secp256k1_key_pair: match self.secp256k1_key_pair.as_option() {
                 Some (k) => ByteBuf::from (k.private().layout()),
                 None => ByteBuf::new()
             },
-            ffi_handle: try_s! (self.ffi_handle())
+            ffi_handle: self.ffi_handle.as_option().copied()
         };
-        let ctxˢ = try_s! (bencode (&ctxʷ));
+        let ctxᵇ = try_s! (bencode (&ctxʷ));
+        let hr = try_s! (helperᶜ ("ctx2helpers", ctxᵇ) .await);
 
-        extern "C" {pub fn ctx2helpers (ptr: *const u8, len: u32);}
-        unsafe {ctx2helpers (ctxˢ.as_ptr(), ctxˢ.len() as u32)}
+        // Remember the context ID used by the native helpers in order to simplify consecutive syncs.
+        let ctxⁿ: NativeCtx = try_s! (bdecode (&hr));
+        if let Some (ffi_handle) = self.ffi_handle.as_option().copied() {
+            if ffi_handle != ctxⁿ.ffi_handle {return ERR! ("ffi_handle mismatch")}
+        } else {
+            try_s! (self.ffi_handle.pin (ctxⁿ.ffi_handle));
+        }
+
         Ok(())
     }
 
@@ -329,32 +348,54 @@ impl MmArc {
 /// As of now we're expecting a one-to-one pairing between the portable and the native versions of MM
 /// so the uniqueness of the `ffi_handle` is not a concern yet.
 #[cfg(feature = "native")]
-#[no_mangle]
-pub extern fn ctx2helpers (ptr: *const u8, len: u32) {
-    use std::slice::from_raw_parts;
+pub async fn ctx2helpers (main_ctx: MmArc, req: Bytes) -> Result<Vec<u8>, String> {
+    let ctxʷ: PortableCtx = try_s! (bdecode (&req));
+    let private = try_s! (Private::from_layout (&ctxʷ.secp256k1_key_pair[..]));
+    let main_key = try_s! (main_ctx.secp256k1_key_pair.as_option().ok_or ("No key"));
 
-    let ctxˢ = unsafe {from_raw_parts (ptr, len as usize)};
-    let ctxʷ: WiredCtx = unwrap! (bdecode (ctxˢ), "!bdecode");
-
-    if let Ok (_ctx) = MmArc::from_ffi_handle (ctxʷ.ffi_handle) {
-        //log! ("ffi_handle " (ffi_handle) " already exists");
-    } else {
-        let pair: Option<KeyPair> = if ctxʷ.secp256k1_key_pair.is_empty() {None} else {
-            let private = unwrap! (Private::from_layout (&ctxʷ.secp256k1_key_pair[..]));
-            Some (unwrap! (KeyPair::from_private (private)))
-        };
-
-        let ctx = MmCtx {
-            conf: unwrap! (json::from_str (&ctxʷ.conf)),
-            secp256k1_key_pair: pair.into(),
-            ffi_handle: ctxʷ.ffi_handle.into(),
-            ..MmCtx::with_log_state (LogState::in_memory())
-        };
-        let ctx = MmArc (Arc::new (ctx));
-        let mut ctx_ffi = unwrap! (MM_CTX_FFI.lock());
-        ctx_ffi.insert (ctxʷ.ffi_handle, ctx.weak());
-        Arc::into_raw (ctx.0);  // Leak.
+    if *main_key.private() == private {
+        // We have a match with the primary native context, the one configured on the command line.
+        let res = try_s! (bencode (&NativeCtx {
+            ffi_handle: try_s! (main_ctx.ffi_handle())
+        }));
+        return Ok (res)
     }
+
+    if let Some (ffi_handle) = ctxʷ.ffi_handle {
+        if let Ok (ctx) = MmArc::from_ffi_handle (ffi_handle) {
+            let key = try_s! (ctx.secp256k1_key_pair.as_option().ok_or ("No key"));
+            if *key.private() != private {return ERR! ("key mismatch")}
+            let res = try_s! (bencode (&NativeCtx {
+                ffi_handle: try_s! (main_ctx.ffi_handle())
+            }));
+            return Ok (res)
+    }   }
+
+    // Create a native copy of the portable context.
+
+    let pair: Option<KeyPair> = if ctxʷ.secp256k1_key_pair.is_empty() {None} else {
+        let private = try_s! (Private::from_layout (&ctxʷ.secp256k1_key_pair[..]));
+        Some (try_s! (KeyPair::from_private (private)))
+    };
+
+    let ctx = MmCtx {
+        conf: try_s! (json::from_str (&ctxʷ.conf)),
+        secp256k1_key_pair: pair.into(),
+        ffi_handle: ctxʷ.ffi_handle.into(),
+        ..MmCtx::with_log_state (LogState::in_memory())
+    };
+    let ctx = MmArc (Arc::new (ctx));
+    if let Some (ffi_handle) = ctxʷ.ffi_handle {
+        let mut ctx_ffi = try_s! (MM_CTX_FFI.lock());
+        if ctx_ffi.contains_key (&ffi_handle) {return ERR! ("ID race")}
+        ctx_ffi.insert (ffi_handle, ctx.weak());
+    }
+    let res = try_s! (bencode (&NativeCtx {
+        ffi_handle: try_s! (ctx.ffi_handle())
+    }));
+    Arc::into_raw (ctx.0);  // Leak.
+
+    Ok (res)
 }
 
 /// Helps getting a crate context from a corresponding `MmCtx` field.

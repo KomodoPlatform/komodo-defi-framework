@@ -86,6 +86,7 @@ use futures03::task::{Context, Poll as Poll03};
 use futures03::task::Waker;
 use futures03::compat::Future01CompatExt;
 use futures03::future::FutureExt;
+use gstuff::binprint;
 use hex::FromHex;
 use http::{Request, Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
@@ -93,6 +94,9 @@ use http::header::{HeaderValue, CONTENT_TYPE};
 use libc::{c_char, c_void, malloc, free};
 use rand::{SeedableRng, rngs::SmallRng};
 use serde::{ser, de};
+#[cfg(not(feature = "native"))]
+use serde_bencode::de::from_bytes as bdecode;
+use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::{args, var, VarError};
@@ -459,6 +463,8 @@ pub mod wio {
     use crate::SlurpFut;
     use futures::{Async, Future, Poll};
     use futures::sync::oneshot::{self, Receiver};
+    use futures03::executor::ThreadPool;
+    use futures_cpupool::CpuPool;
     use gstuff::{duration_to_float, now_float};
     use http::{Request, StatusCode, HeaderMap};
     use hyper::Client;
@@ -479,6 +485,15 @@ pub mod wio {
     lazy_static! {
         /// Shared asynchronous reactor.
         pub static ref CORE: Mutex<Runtime> = Mutex::new (start_core_thread());
+        /// Shared CPU pool to run intensive/sleeping requests on a separate thread.
+        /// 
+        /// Deprecated, prefer the futures 0.3 `POOL` instead.
+        pub static ref CPUPOOL: CpuPool = CpuPool::new(8);
+        /// Shared CPU pool to run intensive/sleeping requests on s separate thread.
+        pub static ref POOL: Mutex<ThreadPool> = Mutex::new (unwrap! (ThreadPool::builder()
+            .pool_size (8)
+            .name_prefix ("POOL")
+            .create(), "!ThreadPool"));
         /// Shared HTTP server.
         pub static ref HTTP: Http = Http::new();
     }
@@ -1049,9 +1064,23 @@ extern "C" {fn http_helper_if (
     payload: *const u8, payload_len: i32,
     timeout_ms: i32) -> i32;}
 
-/// Check with the WASM host to see if the given HTTP request is ready.
 #[cfg(not(feature = "native"))]
-extern "C" {pub fn http_helper_check (helper_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;}
+extern "C" {
+    /// Check with the WASM host to see if the given HTTP request is ready.
+    /// 
+    /// Returns the amount of bytes copied to rbuf,  
+    /// or `-1` if the request is not yet finished,  
+    /// or `0 - amount of bytes` in case the intended size was larger than the `rcap`.
+    /// 
+    /// The bytes copied to rbuf are in the bencode format,
+    /// `{status: $number, ct: $bytes, cs: $bytes, body: $bytes}`
+    /// (the `HelperResponse`).
+    /// 
+    /// * `helper_request_id` - Request ID previously returned by `http_helper_if`.
+    /// * `rbuf` - The buffer to copy the response payload into if the request is finished.
+    /// * `rcap` - The size of the `rbuf` buffer.
+    pub fn http_helper_check (helper_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;
+}
 
 lazy_static! {
     /// Maps helper request ID to the corresponding Waker,
@@ -1066,6 +1095,21 @@ pub extern fn http_ready (helper_request_id: i32) {
     let mut helper_requests = unwrap! (HELPER_REQUESTS.lock());
     if let Some (waker) = helper_requests.remove (&helper_request_id) {waker.wake()}
 }
+
+#[derive(Deserialize, Debug)]
+pub struct HelperResponse {
+    pub status: u32,
+    #[serde(rename = "ct")]
+    pub content_type: Option<ByteBuf>,
+    #[serde(rename = "cs")]
+    pub checksum: Option<ByteBuf>,
+    pub body: ByteBuf
+}
+/// Mostly used to log the errors coming from the other side.
+impl fmt::Display for HelperResponse {
+    fn fmt (&self, ft: &mut fmt::Formatter) -> fmt::Result {
+        wite! (ft, (self.status) ", " (binprint (&self.body, b'.')))
+}   }
 
 #[cfg(not(feature = "native"))]
 pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -1100,29 +1144,11 @@ pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, 
             unwrap! (HELPER_REQUESTS.lock()) .remove (&self.helper_request_id);
         }
     }
-    let rv = try_s! (HelperReply {helper, helper_request_id} .await);
-    Ok (rv)
-}
-
-#[macro_export]
-macro_rules! helper {
-    ($helperⁱ:ident, $encoded_argsⁱ:ident: $encoded_argsᵗ:ty, $body:block) => {
-        #[cfg(feature = "native")]
-        #[doc(hidden)]
-        pub async fn $helperⁱ (req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>, String> {
-            use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
-            use serde_json::{self as json};
-
-            let $encoded_argsⁱ: $encoded_argsᵗ = try_s! (json::from_slice (req.body()));
-            let rc: Result<Vec<u8>, String> = (async || $body) () .await;
-            let vec = try_s! (rc);
-            let res = try_s! (http::Response::builder()
-                .header (CONTENT_LENGTH, vec.len())
-                .header (CONTENT_TYPE, "application/octet-stream")
-                .body (vec));
-            Ok (res)
-        }
-    }
+    let rv: Vec<u8> = try_s! (HelperReply {helper, helper_request_id} .await);
+    let rv: HelperResponse = try_s! (bdecode (&rv));
+    if rv.status != 200 {return ERR! ("!{}: {}", helper, rv)}
+    // TODO: Check `rv.checksum` if present.
+    Ok (rv.body.into_vec())
 }
 
 pub mod for_tests;
@@ -1228,3 +1254,20 @@ pub fn new_uuid() -> Uuid {Uuid::new_v4()}
 
 #[cfg(not(feature = "native"))]
 pub fn new_uuid() -> Uuid {unimplemented!()}
+
+pub fn first_char_to_upper(input: &str) -> String {
+    let mut v: Vec<char> = input.chars().collect();
+    match v.first_mut() {
+        Some(c) => c.make_ascii_uppercase(),
+        None => (),
+    }
+    v.into_iter().collect()
+}
+
+#[test]
+fn test_first_char_to_upper() {
+    assert_eq!("", first_char_to_upper(""));
+    assert_eq!("K", first_char_to_upper("k"));
+    assert_eq!("Komodo", first_char_to_upper("komodo"));
+    assert_eq!(".komodo", first_char_to_upper(".komodo"));
+}

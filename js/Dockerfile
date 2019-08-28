@@ -34,7 +34,7 @@ RUN \
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # First 7 characters of the commit ID.
-ENV MM_VERSION="8895511"
+ENV MM_VERSION="f44ffec"
 
 RUN cd /tmp &&\
     wget https://api.github.com/repos/KomodoPlatform/atomicDEX-API/tarball/$MM_VERSION &&\
@@ -66,18 +66,13 @@ RUN cargo install rustfilt
 #COPY . /mm2
 
 RUN cd /mm2 &&\
-    cargo build --target=wasm32-unknown-unknown --release --package=peers &&\
-    mv target/wasm32-unknown-unknown/release/peers.wasm js/ &&\
-    rm -rf target
-
-ENV WASM_PATH="/mm2/js/peers.wasm"
-
-RUN cd /mm2 &&\
-    cargo build --features native --package peers --release &&\
-    cp target/release/libpeers.so js/peers.so &&\
+    cargo build --target=wasm32-unknown-unknown --release &&\
+    mv target/wasm32-unknown-unknown/release/mm2.wasm js/ &&\
+    cargo build --features native --bin mm2 &&\
+    cp target/debug/mm2 js/ &&\
     rm -rf target
 
 RUN cd /mm2/js &&\
     npm install > npm-install.log 2>&1
 
-CMD cd /mm2/js && node wasm-run.js | rustfilt
+CMD cd /mm2/js && node wasm-run.js 2>&1 | rustfilt

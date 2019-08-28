@@ -7,6 +7,8 @@
   "author": "",
   "license": "GPL-2.0-only",
   "dependencies": {
-    "ffi": "github:lxe/node-ffi#node-12"
+    "bencode": "^2.0.1",
+    "crc-32": "^1.2.0",
+    "cross-spawn": "^6.0.5"
   }
 }

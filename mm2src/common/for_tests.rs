@@ -1,8 +1,11 @@
 //! Helpers used in the unit and integration tests.
 
+use bytes::Bytes;
 use chrono::Local;
 #[cfg(feature = "native")]
 use futures::Future;
+use futures03::task::SpawnExt;
+use futures03::channel::oneshot::channel;
 use gstuff::{slurp, ISATTY};
 use http::{StatusCode, HeaderMap};
 #[cfg(feature = "native")]
@@ -28,7 +31,7 @@ use crate::now_float;
 #[cfg(not(feature = "native"))]
 use crate::helperᶜ;
 #[cfg(feature = "native")]
-use crate::wio::slurp_req;
+use crate::wio::{slurp_req, POOL};
 use crate::log::{dashboard_path, LogState};
 
 /// Automatically kill a wrapped process.
@@ -292,13 +295,21 @@ pub fn wait_for_log (log: &LogState, timeout_sec: f64, pred: &dyn Fn (&str) -> b
 #[derive(Serialize, Deserialize, Debug)]
 struct ToWaitForLogRe {ctx: u32, timeout_sec: f64, re_pred: String}
 
-helper! (common_wait_for_log_re, args: ToWaitForLogRe, {
+#[cfg(feature = "native")]
+pub async fn common_wait_for_log_re (req: Bytes) -> Result<Vec<u8>, String> {
+    let args: ToWaitForLogRe = try_s! (json::from_slice (&req));
     let ctx = try_s! (crate::mm_ctx::MmArc::from_ffi_handle (args.ctx));
     let re = try_s! (Regex::new (&args.re_pred));
-    // XXX: Run `wait_for_log` in a separate thread in order not to block the `CORE`.
-    try_s! (wait_for_log (&ctx.log, args.timeout_sec, &|line| re.is_match (line)));
+
+    // Run the blocking `wait_for_log` in the `POOL`.
+    let (tx, rx) = channel();
+    try_s! (try_s! (POOL.lock()) .spawn (async move {
+        let _ = tx.send (wait_for_log (&ctx.log, args.timeout_sec, &|line| re.is_match (line)));
+    }));
+    try_s! (try_s! (rx.await));
+
     Ok (Vec::new())
-});
+}
 
 #[cfg(feature = "native")]
 pub async fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {

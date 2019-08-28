@@ -406,7 +406,6 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> Result<Transactio
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
-    let fee_details = try_s!(json::to_value(fee_details));
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
         from: vec![coin.my_address().into()],
@@ -417,7 +416,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> Result<Transactio
         tx_hex: bytes.into(),
         tx_hash: signed.tx_hash(),
         block_height: 0,
-        fee_details,
+        fee_details: Some(fee_details.into()),
         coin: coin.ticker.clone(),
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
@@ -1427,7 +1426,7 @@ impl EthCoin {
                     to: vec![checksum_address(&format!("{:#02x}", to_addr))],
                     from: vec![checksum_address(&format!("{:#02x}", from_addr))],
                     coin: self.ticker.clone(),
-                    fee_details: unwrap!(json::to_value(fee_details)),
+                    fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.into(),
                     tx_hash: BytesJson(raw.hash.to_vec()),
                     tx_hex: BytesJson(rlp::encode(&raw)),
@@ -1652,7 +1651,7 @@ impl EthCoin {
                     to: vec![checksum_address(&format!("{:#02x}", call_data.to))],
                     from: vec![checksum_address(&format!("{:#02x}", call_data.from))],
                     coin: self.ticker.clone(),
-                    fee_details: unwrap!(json::to_value(fee_details)),
+                    fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
                     tx_hash: BytesJson(raw.hash.to_vec()),
                     tx_hex: BytesJson(rlp::encode(&raw)),
@@ -1680,8 +1679,8 @@ impl EthCoin {
     }
 }
 
-#[derive(Serialize)]
-struct EthTxFeeDetails {
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct EthTxFeeDetails {
     coin: String,
     gas: u64,
     /// WEI units per 1 gas
@@ -1795,7 +1794,7 @@ impl MmCoin for EthCoin {
                     received_by_me,
                     spent_by_me,
                     total_amount,
-                    fee_details: Json::Null,
+                    fee_details: None,
                     internal_id: vec![0].into(),
                     timestamp: now_ms() / 1000,
                 })
@@ -1812,7 +1811,7 @@ impl MmCoin for EthCoin {
                     received_by_me,
                     spent_by_me,
                     total_amount,
-                    fee_details: Json::Null,
+                    fee_details: None,
                     internal_id: vec![0].into(),
                     timestamp: now_ms() / 1000,
                 })
@@ -1902,15 +1901,6 @@ impl Transaction for SignedEthTx {
 
     fn amount(&self, decimals: u8) -> Result<f64, String> {
         Ok(try_s!(display_u256_with_decimal_point(self.value, decimals).parse()))
-    }
-
-    fn from_addrs(&self) -> Vec<String> { vec![format!("{:#02x}", self.sender)] }
-
-    fn to(&self) -> Vec<String> {
-        match self.action {
-            Action::Create => vec!["null".into()],
-            Action::Call(addr) => vec![format!("{:#02x}", addr)],
-        }
     }
 
     fn fee_details(&self) -> Result<Json, String> {

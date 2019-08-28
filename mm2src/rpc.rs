@@ -20,20 +20,26 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
-use coins::{enable, electrum, get_enabled_coins, get_trade_fee, send_raw_transaction, withdraw, my_tx_history};
-use common::{err_to_rpc_json_string, rpc_response, rpc_err_response, HyRes};
+use bytes::Bytes;
+use coins::{get_enabled_coins, get_trade_fee, send_raw_transaction, withdraw, my_tx_history};
+use common::{err_to_rpc_json_string, HyRes};
 #[cfg(feature = "native")]
-use common::wio::{CORE, HTTP};
+use common::wio::{CORE, CPUPOOL, HTTP};
 use common::lift_body::LiftBody;
 use common::mm_ctx::MmArc;
-use futures::{self, Future};
-use futures_cpupool::CpuPool;
+#[cfg(feature = "native")]
+use common::mm_ctx::ctx2helpers;
+#[cfg(feature = "native")]
+use common::for_tests::common_wait_for_log_re;
+use futures::{self, Future, Stream};
+use futures03::compat::{Compat, Future01CompatExt};
 use futures03::future::{FutureExt, TryFutureExt};
 use gstuff;
 use http::{Request, Response, Method};
-use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
+use http::request::Parts;
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, CONTENT_LENGTH};
 #[cfg(feature = "native")]
-use hyper::{self, rt::Stream, service::Service};
+use hyper::{self, service::Service};
 use serde_json::{self as json, Value as Json};
 use std::future::{Future as Future03};
 use std::net::{SocketAddr};
@@ -50,11 +56,6 @@ use self::lp_commands::*;
 
 #[path = "rpc/lp_signatures.rs"]
 pub mod lp_signatures;
-
-lazy_static! {
-    /// Shared CPU pool to run intensive/sleeping requests on separate thread
-    pub static ref CPUPOOL: CpuPool = CpuPool::new(8);
-}
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -83,16 +84,74 @@ macro_rules! unwrap_or_err_response {
     ($e:expr, $($args:tt)*) => {
         match $e {
             Ok (ok) => ok,
-            Err (err) => {return err_response (500, &ERRL! ("{}", err))}
+            Err (err) => {return rpc_err_response (500, &ERRL! ("{}", err))}
         }
     }
+}
+
+/// Handle bencoded helper requests.
+/// 
+/// Example of a helper request (resulting in the "Missing Field: `conf`" error):
+/// 
+///     curl -v http://127.0.0.1:7783/helper/ctx2helpers \
+///       -X POST -H 'X-Helper-Checksum: 815441984' -H 'Content-Type: application/octet-stream' \
+///       -d 'd18:secp256k1_key_pair38:.0..Z......g)e.Q.@..d.sn<.v..>0.P....Ie'
+/// 
+#[cfg(feature = "native")]
+async fn helpers (ctx: MmArc, client: SocketAddr, req: Parts,
+                  reqᵇ: Box<dyn Stream<Item=Bytes,Error=String>+Send>) -> Result<Response<Vec<u8>>, String> {
+    let ct = try_s! (req.headers.get (CONTENT_TYPE) .ok_or ("No Content-Type"));
+    if ct.as_bytes() != b"application/octet-stream" {return ERR! ("Unexpected Content-Type")}
+
+    if !client.ip().is_loopback() {return ERR! ("Not local")}
+
+    let reqᵇ = try_s! (reqᵇ.concat2().compat().await);
+    //log! ("helpers] " [=req] ", " (gstuff::binprint (&reqᵇ, b'.')));
+
+    let method = req.uri.path();
+    if !method.starts_with ("/helper/") {return ERR! ("Bad method")}
+    let method = &method[8..];
+
+    let crc32 = try_s! (req.headers.get ("X-Helper-Checksum") .ok_or ("No checksum"));
+    let crc32 = try_s! (crc32.to_str());
+    let crc32: u32 = if crc32.starts_with ('-') {
+        // https://www.npmjs.com/package/crc-32 returns signed values
+        let i: i32 = try_s! (crc32.parse());
+        i as u32  // Intended as a wrapping conversion.
+    } else {try_s! (crc32.parse())};
+
+    let mut hasher = crc32fast::Hasher::default();
+    hasher.update (&reqᵇ);
+    let expected_checksum = hasher.finalize();
+    //log! ([=expected_checksum] ", " [=crc32]);
+    if crc32 != expected_checksum {return ERR! ("Damaged goods")}
+
+    let res = match method {
+        "common_wait_for_log_re" => try_s! (common_wait_for_log_re (reqᵇ) .await),
+        "ctx2helpers" => try_s! (ctx2helpers (ctx, reqᵇ) .await),
+        "peers_initialize" => try_s! (peers::peers_initialize (reqᵇ) .await),
+        "peers_send" => try_s! (peers::peers_send (reqᵇ) .await),
+        "peers_recv" => try_s! (peers::peers_recv (reqᵇ) .await),
+        "peers_drop_send_handler" => try_s! (peers::peers_drop_send_handlerʹ (reqᵇ) .await),
+        _ => return ERR! ("Unknown helper: {}", method)
+    };
+
+    let mut hasher = crc32fast::Hasher::default();
+    hasher.update (&res);
+
+    let res = try_s! (Response::builder()
+        .header (CONTENT_TYPE, "application/octet-stream")
+        .header (CONTENT_LENGTH, res.len())
+        .header ("X-Helper-Checksum", hasher.finalize())
+        .body (res));
+    Ok (res)
 }
 
 struct RpcService {
     /// Allows us to get the `MmCtx` if it is still around.
     ctx_h: u32,
     /// The IP and port from whence the request is coming from.
-    remote_addr: SocketAddr,
+    client: SocketAddr,
 }
 
 fn auth(json: &Json, ctx: &MmArc) -> Result<(), &'static str> {
@@ -116,10 +175,10 @@ pub enum DispatcherRes {
     NoMatch (Json)
 }
 
-// Using async/await (futures 0.3) in `dispatcher`
-// will pave the way for porting the remaining system threading code to async/await green threads.
-fn hyres(f: impl Future03<Output=Result<Response<Vec<u8>>, String>> + Send + 'static) -> HyRes {
-    Box::new(f.boxed().compat())
+/// Using async/await (futures 0.3) in `dispatcher`
+/// will pave the way for porting the remaining system threading code to async/await green threads.
+fn hyres(handler: impl Future03<Output=Result<Response<Vec<u8>>, String>> + Send + 'static) -> HyRes {
+    Box::new(handler.boxed().compat())
 }
 
 /// The dispatcher, with full control over the HTTP result and the way we run the `Future` producing it.
@@ -127,7 +186,7 @@ fn hyres(f: impl Future03<Output=Result<Response<Vec<u8>>, String>> + Send + 'st
 /// Invoked both directly from the HTTP endpoint handler below and in a delayed fashion from `lp_command_q_loop`.
 /// 
 /// Returns `None` if the requested "method" wasn't found among the ported RPC methods and has to be handled elsewhere.
-pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> DispatcherRes {
+pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
     //log! ("dispatcher] " (json::to_string (&req) .unwrap()));
     let method = match req["method"].clone() {
         Json::String (method) => method,
@@ -141,8 +200,18 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         // TODO coin initialization performs blocking IO, i.e request.wait(), have to run it on CPUPOOL to avoid blocking shared CORE.
         //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
-        "enable" => Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) })),
-        "electrum" => Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) })),
+        "enable" => {
+            #[cfg(feature = "native")] {
+                Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) }))
+            }
+            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
+        },
+        "electrum" => {
+            #[cfg(feature = "native")] {
+                Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) }))
+            }
+            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
+        },
         "get_enabled_coins" => get_enabled_coins (ctx),
         "get_trade_fee" => get_trade_fee (ctx, req),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
@@ -161,7 +230,12 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
         "stop" => stop (ctx),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
         "my_swap_status" => my_swap_status(ctx, req),
-        "recover_funds_of_swap" => Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) })),
+        "recover_funds_of_swap" => {
+            #[cfg(feature = "native")] {
+                Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) }))
+            }
+            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
+        },
         "stats_swap_status" => stats_swap_status(ctx, req),
         "version" => version(),
         "withdraw" => withdraw(ctx, req),
@@ -171,6 +245,7 @@ pub fn dispatcher (req: Json, _remote_addr: Option<SocketAddr>, ctx: MmArc) -> D
 
 type RpcRes = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
 
+/*
 #[cfg(feature = "native")]
 fn hyres_into_rpcres<HR> (hyres: HR) -> impl Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send
 where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
@@ -178,6 +253,76 @@ where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
         let (parts, body) = r.into_parts();
         Response::from_parts (parts, LiftBody::from (body))
     })
+}
+*/
+
+async fn rpc_serviceʹ (ctx: MmArc, req: Parts, reqᵇ: Box<dyn Stream<Item=Bytes,Error=String>+Send>, client: SocketAddr)
+-> Result<Response<Vec<u8>>, String> {
+    if req.method != Method::POST {return ERR! ("Only POST requests are supported!")}
+
+    #[cfg(feature = "native")] {
+        // Checksum *tags* the helper requests and serves as a sanity check.
+        if req.headers.contains_key ("X-Helper-Checksum") {return helpers (ctx, client, req, reqᵇ) .await}
+    }
+
+    let reqᵇ = try_s! (reqᵇ.concat2().compat().await);
+    let reqʲ: Json = try_s! (json::from_slice (&reqᵇ));
+
+    // https://github.com/artemii235/SuperNET/issues/368
+    let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
+    if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains (&reqʲ["method"].as_str()) {
+        return ERR! ("Selected method can be called from localhost only!")
+    }
+    try_s! (auth (&reqʲ, &ctx));
+
+    let handler = match dispatcher (reqʲ, ctx.clone()) {
+        DispatcherRes::Match (handler) => handler,
+        DispatcherRes::NoMatch (req) => return ERR! ("No such method: {:?}", req["method"])
+    };
+    let res = try_s! (handler.compat().await);
+    Ok (res)
+}
+
+#[cfg(feature = "native")]
+async fn rpc_service (req: Request<hyper::Body>, ctx_h: u32, client: SocketAddr) -> Response<LiftBody<Vec<u8>>> {
+    macro_rules! try_sf {($value: expr) => {match $value {Ok (ok) => ok, Err (err) => {
+        log! ("RPC error response: " (err));
+        let ebody = err_to_rpc_json_string (&fomat! ((err)));
+        return unwrap! (Response::builder().status (500) .body (LiftBody::from (Vec::from (ebody))))
+    }}}}
+
+    let ctx = try_sf! (MmArc::from_ffi_handle (ctx_h));
+    // https://github.com/artemii235/SuperNET/issues/219
+    let rpc_cors = match ctx.conf["rpccors"].as_str() {
+        Some(s) => try_sf! (HeaderValue::from_str (s)),
+        None => HeaderValue::from_static ("http://localhost:3000"),
+    };
+
+    // Convert the native Hyper stream into a portable stream of `Bytes`.
+    let (req, reqᵇ) = req.into_parts();
+    let reqᵇ = Box::new (reqᵇ.then (|chunk| -> Result<Bytes, String> {
+        match chunk {
+            Ok (c) => Ok (c.into_bytes()),
+            Err (err) => Err (fomat! ((err)))
+        }
+    }));
+
+    let (mut parts, body) = match rpc_serviceʹ (ctx, req, reqᵇ, client) .await {
+        Ok (r) => r.into_parts(),
+        Err (err) => {
+            log! ("RPC error response: " (err));
+            let ebody = err_to_rpc_json_string (&err);
+            return unwrap! (Response::builder()
+                .status (500)
+                .header (ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+                .body (LiftBody::from (Vec::from (ebody))))
+        }
+    };
+    parts.headers.insert(
+        ACCESS_CONTROL_ALLOW_ORIGIN,
+        rpc_cors
+    );
+    Response::from_parts (parts, LiftBody::from (body))
 }
 
 #[cfg(feature = "native")]
@@ -188,66 +333,8 @@ impl Service for RpcService {
     type Future = RpcRes;
 
     fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
-        macro_rules! try_sf {($value: expr) => {match $value {Ok (ok) => ok, Err (err) => {
-            log! ({"RPC error response: {}", err});
-            let rep = rpc_response (500, err_to_rpc_json_string (&ERRL! ("{}", err)));
-            return Box::new (hyres_into_rpcres (rep))
-        }}}}
-
-        let ctx = try_sf! (MmArc::from_ffi_handle (self.ctx_h));
-
-        // https://github.com/artemii235/SuperNET/issues/219
-        let rpc_cors = match ctx.conf["rpccors"].as_str() {
-            Some(s) => try_sf!(HeaderValue::from_str(s)),
-            None => HeaderValue::from_static("http://localhost:3000"),
-        };
-
-        if req.method() != Method::POST {
-            return Box::new (hyres_into_rpcres (rpc_err_response (400, "Only POST requests are supported!")))
-        }
-
-        let (_parts, body) = req.into_parts();
-        let body_f = body.concat2();
-
-        let remote_addr = self.remote_addr.clone();
-
-        let f = body_f.then (move |chunk| -> HyRes {
-
-            let vec = try_h! (chunk) .to_vec();
-            let req: Json = try_h! (json::from_slice (&vec));
-
-            let method = req["method"].as_str();
-            // https://github.com/artemii235/SuperNET/issues/368
-            let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
-            if local_only && !remote_addr.ip().is_loopback() && !PUBLIC_METHODS.contains (&method) {
-                return rpc_err_response (400, &ERRL!("Selected method can be called from localhost only!"))
-            }
-            try_h! (auth (&req, &ctx));
-
-            match dispatcher (req, Some (remote_addr), ctx.clone()) {
-                DispatcherRes::Match (handler) => handler,
-                DispatcherRes::NoMatch (req) => return rpc_err_response (500, &ERRL!("No such method {}", req["method"]))
-            }
-        });
-
-        let f = hyres_into_rpcres (f);
-
-        let f = f.then (|res| -> Self::Future {
-            // even if future returns error we need to map it to JSON response and send to client
-            let mut res = match res {
-                Ok (res) => res,
-                Err (err) => {
-                    let ebody = err_to_rpc_json_string (&err);
-                    unwrap! (Response::builder().status (500) .body (LiftBody::from (Vec::from (ebody))))
-                }
-            };
-            res.headers_mut().insert(
-                ACCESS_CONTROL_ALLOW_ORIGIN,
-                rpc_cors
-            );
-            Box::new (futures::future::ok (res))
-        });
-
+        let f = rpc_service (req, self.ctx_h, self.client.clone());
+        let f = Compat::new (Box::pin (f.map (|r|->Result<_,String>{Ok(r)})));
         Box::new (f)
     }
 }
@@ -268,7 +355,7 @@ pub extern fn spawn_rpc(ctx_h: u32) {
     let server = listener
         .incoming()
         .for_each(move |(socket, _my_sock)| {
-            let remote_addr = match socket.peer_addr() {
+            let client = match socket.peer_addr() {
                 Ok (addr) => addr,
                 Err (err) => {
                     log! ({"spawn_rpc] No peer_addr: {}", err});
@@ -281,7 +368,7 @@ pub extern fn spawn_rpc(ctx_h: u32) {
                     socket,
                     RpcService {
                         ctx_h,
-                        remote_addr
+                        client
                     },
                 )
                 .map(|_| ())

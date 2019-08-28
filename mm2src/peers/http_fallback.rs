@@ -4,7 +4,7 @@ use crc::crc64::checksum_ecma;
 use crdts::{CvRDT, CmRDT, Map, Orswot};
 use either::Either;
 use futures::{future, self, Async, Future};
-use futures03::future::{FutureExt, TryFutureExt};
+use futures03::future::FutureExt;
 use gstuff::{binprint, netstring, now_float};
 use http::{Request, Response, StatusCode};
 use http::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -240,7 +240,7 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
     use hyper::service::make_service_fn;
     use hyper::server::conn::AddrStream;
 
-    struct RpcService {ctx: MmWeak, client: SocketAddr}
+    struct RpcService {ctx: MmWeak}
     impl Service for RpcService {
         type ReqBody = hyper::Body;
         type ResBody = LiftBody<Vec<u8>>;
@@ -251,7 +251,6 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
             let ctx = self.ctx.clone();
             let (parts, body) = req.into_parts();
             let body_f = body.concat2();
-            let client = self.client;
             let f = body_f.then (move |chunk| -> HyRes {
                 let vec = try_fus! (chunk) .to_vec();
                 let req = Request::from_parts (parts, vec);
@@ -263,16 +262,6 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
                     merge_map_impl (ctx, req)
                 } else if path == "/test_ip" {  // Helps `fn test_ip` to check the IP availability.
                     rpc_response (200, "k")
-                } else if path.starts_with ("/helper/") {
-                    if !client.ip().is_loopback() {return rpc_response (500, "non-local client")}
-                    let helper = &path[8..];
-                    macro_rules! bc {($f: expr) => {Box::new ($f.boxed().compat())}};
-                    match helper {
-                        "peers_initialize" => bc! (crate::peers_initialize (req)),
-                        "peers_recv" => bc! (crate::peers_recv (req)),
-                        "peers_send" => bc! (crate::peers_send (req)),
-                        _ => rpc_response (404, "unknown helper")
-                    }
                 } else {rpc_response (404, "unknown path")}
             });
             let f = f.then (move |r| match r {
@@ -292,17 +281,18 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
             Box::new (f)
     }   }
 
-    struct ServiceFabric {ctx: MmWeak, client: SocketAddr}
+    struct ServiceFabric {ctx: MmWeak}
     impl Future for ServiceFabric {
         type Item = RpcService;
         type Error = hyper::Error;
         fn poll (&mut self) -> Poll<Self::Item, Self::Error> {
-            Poll::Ok (Async::Ready (RpcService {ctx: self.ctx.clone(), client: self.client}))
+            Poll::Ok (Async::Ready (RpcService {ctx: self.ctx.clone()}))
     }   }
 
     let ctxʹ = ctx.clone();
-    let make_svc = make_service_fn (move |addr: &AddrStream| {
-        ServiceFabric {ctx: ctxʹ.clone(), client: addr.remote_addr()}});
+    let make_svc = make_service_fn (move |_addr: &AddrStream| {
+        //let client: SocketAddr = addr.remote_addr();
+        ServiceFabric {ctx: ctxʹ.clone()}});
 
     let shutdown_detector = async move {while !ctx.dropped() {Timer::sleep (0.5) .await}};
     let shutdown_detector = Compat::new (Box::pin (shutdown_detector.map (|r|->Result<_,()>{Ok(r)})));

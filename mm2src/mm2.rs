@@ -146,6 +146,7 @@ fn help() {
 }
 
 #[cfg(feature = "native")]
+#[allow(dead_code)]  // Not used by mm2_lib.
 pub fn mm2_main() {
     use libc::c_char;
 
