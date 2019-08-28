@@ -1669,7 +1669,7 @@ fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
         else {(confpathˢ, false)};
 
     if rel_to_home {
-        let home = home!();
+        let home = try_s! (home_dir().ok_or ("Can not detect the user home directory"));
         Ok (home.join (confpathˢ))
     } else {
         Ok (confpathˢ.into())
