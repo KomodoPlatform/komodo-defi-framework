@@ -1,3 +1,5 @@
+use common::mm_ctx::{MmArc, MmCtxBuilder};
+use mocktopus::mocking::*;
 use super::*;
 
 #[test]
@@ -509,4 +511,119 @@ fn test_taker_order_cancellable() {
     );
 
     assert!(!order.is_cancellable());
+}
+
+fn prepare_for_cancel_by(ctx: &MmArc) {
+    let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(ctx));
+    let mut maker_orders = unwrap!(ordermatch_ctx.my_maker_orders.lock());
+    let mut taker_orders = unwrap!(ordermatch_ctx.my_taker_orders.lock());
+
+    maker_orders.insert(Uuid::from_bytes([0; 16]), MakerOrder {
+        uuid: Uuid::from_bytes([0; 16]),
+        base: "ETOMIC".into(),
+        rel: "BEER".into(),
+        created_at: now_ms(),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+    });
+    maker_orders.insert(Uuid::from_bytes([1; 16]), MakerOrder {
+        uuid: Uuid::from_bytes([1; 16]),
+        base: "BEER".into(),
+        rel: "ETOMIC".into(),
+        created_at: now_ms(),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+    });
+    maker_orders.insert(Uuid::from_bytes([2; 16]), MakerOrder {
+        uuid: Uuid::from_bytes([2; 16]),
+        base: "BEER".into(),
+        rel: "PIZZA".into(),
+        created_at: now_ms(),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+    });
+    taker_orders.insert(Uuid::from_bytes([3; 16]), TakerOrder {
+        matches: HashMap::new(),
+        created_at: now_ms(),
+        request: TakerRequest {
+            base: "ETOMIC".into(),
+            rel: "BEER".into(),
+            uuid: Uuid::from_bytes([3; 16]),
+            action: TakerAction::Buy,
+            base_amount: 0.into(),
+            rel_amount: 0.into(),
+            dest_pub_key: H256Json::default(),
+            method: "request".into(),
+            sender_pubkey: H256Json::default(),
+        }
+    });
+}
+
+#[test]
+fn test_cancel_by_single_coin() {
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    prepare_for_cancel_by(&ctx);
+
+    delete_my_maker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+    delete_my_taker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+
+    let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "ETOMIC".into() }));
+    assert!(cancelled.contains(&Uuid::from_bytes([0; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([1; 16])));
+    assert!(!cancelled.contains(&Uuid::from_bytes([2; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([3; 16])));
+}
+
+#[test]
+fn test_cancel_by_pair() {
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    prepare_for_cancel_by(&ctx);
+
+    delete_my_maker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+    delete_my_taker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+
+    let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::Pair{
+        base: "ETOMIC".into(),
+        rel: "BEER".into(),
+    }));
+    assert!(cancelled.contains(&Uuid::from_bytes([0; 16])));
+    assert!(!cancelled.contains(&Uuid::from_bytes([1; 16])));
+    assert!(!cancelled.contains(&Uuid::from_bytes([2; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([3; 16])));
+}
+
+#[test]
+fn test_cancel_by_all() {
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    prepare_for_cancel_by(&ctx);
+
+    delete_my_maker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+    delete_my_taker_order.mock_safe(|_, _| {
+        MockResult::Return(())
+    });
+
+    let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::All));
+    assert!(cancelled.contains(&Uuid::from_bytes([0; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([1; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([2; 16])));
+    assert!(cancelled.contains(&Uuid::from_bytes([3; 16])));
 }

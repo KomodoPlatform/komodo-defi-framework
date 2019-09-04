@@ -29,9 +29,9 @@ crossbeam = "0.6"
 dirs = { version = "1", optional = true }
 either = "1.5"
 fomat-macros = "0.2"
-futures = "0.1"
-futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
-gstuff = { version = "0.5", features = ["nightly"] }
+futures01 = { version = "0.1", package = "futures" }
+futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+gstuff = { version = "0.6", features = ["nightly"] }
 http = "0.1"
 http-body = "0.1"
 hyper = { version = "0.12", optional = true }

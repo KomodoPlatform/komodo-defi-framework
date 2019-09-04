@@ -1,5 +1,5 @@
 use base64::{encode_config as base64_encode, URL_SAFE};
-use futures::Future;
+use futures01::Future;
 
 use crate::utxo::rpc_clients::NativeClientImpl;
 

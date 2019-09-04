@@ -13,6 +13,7 @@ use serde_json::{self as json, Value as Json};
 use std::any::Any;
 use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
+use std::fmt;
 use std::net::IpAddr;
 #[cfg(feature = "native")]
 use std::net::SocketAddr;
@@ -250,6 +251,19 @@ unsafe impl Sync for MmWeak {}
 impl MmWeak {
     pub fn dropped (&self) -> bool {
         self.0.strong_count() == 0
+}   }
+
+impl fmt::Debug for MmWeak {
+    fn fmt (&self, ft: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let ctx = MmArc::from_weak (self);
+        wite! (ft, "MmWeak("
+            if let Some (ctx) = ctx {
+                match ctx.ffi_handle() {
+                    Ok (k) => {(k)}
+                    Err (err) => {"err " (err)}
+                }
+            } else {'-'}
+        ')')
 }   }
 
 lazy_static! {

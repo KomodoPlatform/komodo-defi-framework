@@ -1,4 +1,6 @@
 use common::{now_float, small_rng};
+#[cfg(not(feature = "native"))]
+use common::call_back;
 use common::executor::Timer;
 #[cfg(feature = "native")]
 use common::wio::{drive, CORE};
@@ -6,9 +8,9 @@ use common::for_tests::wait_for_log_re;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::privkey::key_pair_from_seed;
 use crdts::CmRDT;
-use futures::Future;
-use futures03::executor::block_on;
-use futures03::future::{select, Either};
+use futures01::Future;
+use futures::executor::block_on;
+use futures::future::{select, Either};
 use rand::{self, Rng, RngCore};
 use serde_bytes::ByteBuf;
 use serde_json::Value as Json;
@@ -135,11 +137,6 @@ pub async fn peers_dht() {
     peers_exchange (json! ({"dht": "on"})) .await
 }
 
-/// Invokes callback `cb_id` in the WASM host, passing a `(ptr,len)` string to it.
-#[cfg(not(feature = "native"))]
-extern "C" {pub fn call_back (cb_id: i32, ptr: *const c_char, len: i32);}
-
-// Temporarily exposed in order to experiment with portability helpers.
 #[cfg(not(feature = "native"))]
 #[no_mangle]
 pub extern fn test_peers_dht (cb_id: i32) {

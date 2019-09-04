@@ -20,11 +20,11 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use futures::{Future};
-use futures::sync::oneshot::Sender;
-use futures03::compat::Future01CompatExt;
-use futures03::executor::block_on;
-use futures03::future::FutureExt;
+use futures01::{Future};
+use futures01::sync::oneshot::Sender;
+use futures::compat::Future01CompatExt;
+use futures::executor::block_on;
+use futures::future::FutureExt;
 use http::StatusCode;
 use rand::{random, Rng, SeedableRng};
 use rand::rngs::SmallRng;
@@ -1140,7 +1140,7 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
     };
 
     // Finish the server `Future` when `shutdown_rx` fires.
-    let (shutdown_tx, shutdown_rx) = futures::sync::oneshot::channel::<()>();
+    let (shutdown_tx, shutdown_rx) = futures01::sync::oneshot::channel::<()>();
     let server = server.select2 (shutdown_rx) .then (|_| Ok(()));
     spawn (server.compat().map(|_:Result<(),()>|()));
 

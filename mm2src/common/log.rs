@@ -1,6 +1,5 @@
 //! Human-readable logging and statuses.
 
-// TODO: As we discussed with Artem, skip a status update if it is equal to the previous update.
 // TODO: Sort the tags while converting `&[&TagParam]` to `Vec<Tag>`.
 
 use chrono::{Local, TimeZone, Utc};
@@ -282,6 +281,10 @@ impl<'a> StatusHandle<'a> {
         if let Some (ref status) = self.status {
             {
                 let mut shared_status = unwrap! (status.lock(), "Can't lock the status");
+
+                // Skip a status update if it is equal to the previous update.
+                if shared_status.line == stack_status.line && shared_status.tags == stack_status.tags {return}
+
                 swap (&mut stack_status, &mut shared_status);
                 swap (&mut stack_status.trail, &mut shared_status.trail);  // Move the existing `trail` back to the `shared_status`.
                 shared_status.trail.push (stack_status);

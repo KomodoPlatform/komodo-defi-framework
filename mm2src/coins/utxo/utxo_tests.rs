@@ -1,7 +1,8 @@
 use common::privkey::key_pair_from_seed;
 use crate::WithdrawFee;
 use crate::utxo::rpc_clients::{ElectrumProtocol};
-use futures03::executor::block_on;
+use futures::executor::block_on;
+use futures::future::join_all;
 use mocktopus::mocking::*;
 use super::*;
 
@@ -372,7 +373,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded() {
 fn test_withdraw_impl_set_fixed_fee() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -400,7 +401,7 @@ fn test_withdraw_impl_set_fixed_fee() {
 fn test_withdraw_impl_sat_per_kb_fee() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -431,7 +432,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -464,7 +465,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -497,7 +498,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -521,7 +522,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 fn test_withdraw_impl_sat_per_kb_fee_max() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
-        MockResult::Return(Box::new(futures::future::ok(unspents)))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
@@ -546,4 +547,23 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
     }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
+}
+
+#[test]
+fn test_utxo_lock() {
+    // send several transactions concurrently to check that they are not using same inputs
+    let client = electrum_client_for_test(&["test1.cipig.net:10025", "test2.cipig.net:10025", "test3.cipig.net:10025"]);
+    let coin = utxo_coin_for_test(client);
+    let output = TransactionOutput {
+        value: 1000000,
+        script_pubkey: Builder::build_p2pkh(&coin.my_address.hash).to_bytes(),
+    };
+    let mut futures = vec![];
+    for _ in 0..5 {
+        futures.push(send_outputs_from_my_address_impl(coin.clone(), vec![output.clone()]));
+    }
+    let results = block_on(join_all(futures));
+    for result in results {
+        unwrap!(result);
+    }
 }

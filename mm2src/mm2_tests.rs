@@ -1,8 +1,13 @@
-use common::for_tests::{enable_electrum, from_env_file, mm_dump, mm_spat, LocalStart, MarketMakerIt};
+use common::slurp;
+#[cfg(not(feature = "native"))]
+use common::call_back;
+use common::for_tests::{enable_electrum, from_env_file, get_passphrase, mm_dump, mm_spat,
+  LocalStart, MarketMakerIt};
 use common::privkey::key_pair_from_seed;
-use futures03::executor::block_on;
-use gstuff::{slurp};
+use futures::executor::block_on;
+#[cfg(feature = "native")]
 use hyper::StatusCode;
+#[cfg(feature = "native")]
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use peers;
 use serde_json::{self as json, Value as Json};
@@ -19,6 +24,7 @@ use std::time::Duration;
 
 /// Asks MM to enable the given currency in native mode.  
 /// Returns the RPC reply containing the corresponding wallet address.
+#[cfg(feature = "native")]
 fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
     let native = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -33,8 +39,14 @@ fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
     unwrap!(json::from_str(&native.1))
 }
 
+#[cfg(not(feature = "native"))]
+fn enable_native(_mm: &MarketMakerIt, _coin: &str, _urls: Vec<&str>) -> Json {
+    unimplemented!()
+}
+
 /// Enables BEER, PIZZA, ETOMIC and ETH.
 /// Returns the RPC replies containing the corresponding wallet addresses.
+#[cfg(feature = "native")]
 fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
     let mut replies = Vec::new();
     replies.push (("BEER", enable_native (mm, "BEER", vec![])));
@@ -131,25 +143,27 @@ fn test_mm_start() {
     }
 }
 
-#[cfg(windows)]
+#[allow(unused_variables)]
 fn chdir (dir: &Path) {
-    use std::ffi::CString;
-    use winapi::um::processenv::SetCurrentDirectoryA;
+    #[cfg(feature = "native")] {
+        #[cfg(not(windows))] {
+            use std::ffi::CString;
+            let dirˢ = unwrap! (dir.to_str());
+            let dirᶜ = unwrap! (CString::new (dirˢ));
+            let rc = unsafe {libc::chdir (dirᶜ.as_ptr())};
+            assert_eq! (rc, 0, "Can not chdir to {:?}", dir);
+        }
 
-    let dir = unwrap! (dir.to_str());
-    let dir = unwrap! (CString::new (dir));
-    // https://docs.microsoft.com/en-us/windows/desktop/api/WinBase/nf-winbase-setcurrentdirectory
-    let rc = unsafe {SetCurrentDirectoryA (dir.as_ptr())};
-    assert_ne! (rc, 0);
-}
-
-#[cfg(not(windows))]
-fn chdir (dir: &Path) {
-    use std::ffi::CString;
-    let dirˢ = unwrap! (dir.to_str());
-    let dirᶜ = unwrap! (CString::new (dirˢ));
-    let rc = unsafe {libc::chdir (dirᶜ.as_ptr())};
-    assert_eq! (rc, 0, "Can not chdir to {:?}", dir);
+        #[cfg(windows)] {
+            use std::ffi::CString;
+            use winapi::um::processenv::SetCurrentDirectoryA;
+            let dir = unwrap! (dir.to_str());
+            let dir = unwrap! (CString::new (dir));
+            // https://docs.microsoft.com/en-us/windows/desktop/api/WinBase/nf-winbase-setcurrentdirectory
+            let rc = unsafe {SetCurrentDirectoryA (dir.as_ptr())};
+            assert_ne! (rc, 0);
+        }
+    }
 }
 
 /// Typically used when the `LOCAL_THREAD_MM` env is set, helping debug the tested MM.  
@@ -658,12 +672,9 @@ fn check_recent_swaps(
 
 /// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
-fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
-    let (bob_file_passphrase, _bob_file_userpass) = from_env_file (slurp (&".env.seed"));
-    let (alice_file_passphrase, _alice_file_userpass) = from_env_file (slurp (&".env.client"));
-
-    let bob_passphrase = unwrap! (var ("BOB_PASSPHRASE") .ok().or (bob_file_passphrase), "No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
-    let alice_passphrase = unwrap! (var ("ALICE_PASSPHRASE") .ok().or (alice_file_passphrase), "No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
+async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
+    let bob_passphrase = unwrap! (get_passphrase (&".env.seed", "BOB_PASSPHRASE"));
+    let alice_passphrase = unwrap! (get_passphrase (&".env.client", "ALICE_PASSPHRASE"));
 
     let coins = json! ([
         {"coin":"BEER","asset":"BEER"},
@@ -690,8 +701,8 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
     ));
 
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    log! ({"Bob log path: {}", mm_bob.log_path.display()});
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    #[cfg(feature = "native")] {log! ({"Bob log path: {}", mm_bob.log_path.display()})}
 
     // Both Alice and Bob might try to bind on the "0.0.0.0:47773" DHT port in this test
     // (because the local "127.0.0.*:47773" addresses aren't that useful for DHT).
@@ -716,8 +727,8 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "alice" => Some (local_start()), _ => None}
     ));
 
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
-    log! ({"Alice log path: {}", mm_alice.log_path.display()});
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    #[cfg(feature = "native")] {log! ({"Alice log path: {}", mm_alice.log_path.display()})}
 
     // wait until both nodes RPC API is active
     unwrap! (mm_bob.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
@@ -735,7 +746,7 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
     // issue sell request on Bob side by setting base/rel price
     for (base, rel) in pairs.iter() {
         log!("Issue bob " (base) "/" (rel) " sell request");
-            let rc = unwrap!(mm_bob.rpc (json! ({
+        let rc = unwrap!(mm_bob.rpc (json! ({
             "userpass": mm_bob.userpass,
             "method": "sell",
             "base": base,
@@ -848,11 +859,24 @@ fn trade_base_rel_electrum(pairs: Vec<(&str, &str)>) {
     unwrap! (mm_alice.stop());
 }
 
+#[cfg(feature = "native")]
 #[test]
 fn trade_test_electrum_and_eth_coins() {
-    trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]);
+    block_on(trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]));
 }
 
+#[cfg(not(feature = "native"))]
+#[no_mangle]
+pub extern fn trade_test_electrum_and_eth_coins (cb_id: i32) {
+    use std::ptr::null;
+
+    common::executor::spawn (async move {
+        trade_base_rel_electrum (vec! [("BEER", "ETOMIC"), ("ETH", "JST")]) .await;
+        unsafe {call_back (cb_id, null(), 0)}
+    })
+}
+
+#[cfg(feature = "native")]
 fn trade_base_rel_native(base: &str, rel: &str) {
     let (bob_file_passphrase, bob_file_userpass) = from_env_file (slurp (&".env.seed"));
     let (alice_file_passphrase, alice_file_userpass) = from_env_file (slurp (&".env.client"));
@@ -1274,8 +1298,8 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
         "pass".into(),
         match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
     ));
-    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
-    log!({"Log path: {}", mm.log_path.display()});
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    #[cfg(feature = "native")] {log!({"Log path: {}", mm.log_path.display()})}
     unwrap! (mm.wait_for_log (22., &|log| log.contains (">>>>>>>>> DEX stats ")));
     let enable = enable_electrum (&mm, "KMD", vec!["electrum1.cipig.net:10001"]);
     let addr = addr_from_enable(&enable);

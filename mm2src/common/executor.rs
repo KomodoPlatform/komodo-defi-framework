@@ -7,10 +7,10 @@
 
 use crate::now_float;
 use atomic::Atomic;
-use futures03::FutureExt;
-use futures03::executor::enter;
-use futures03::future::BoxFuture;
-use futures03::task::{waker_ref, ArcWake, Context, Poll};
+use futures::FutureExt;
+use futures::executor::enter;
+use futures::future::BoxFuture;
+use futures::task::{waker_ref, ArcWake, Context, Poll};
 use std::future::Future;
 use std::mem::swap;
 use std::pin::Pin;

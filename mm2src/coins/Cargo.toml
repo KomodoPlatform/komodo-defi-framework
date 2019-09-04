@@ -30,10 +30,11 @@ ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
 fomat-macros = "0.2"
-futures = "0.1"
-futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+futures01 = { version = "0.1", package = "futures" }
+# using select macro requires the crate to be named futures, compilation failed with futures03 name
+futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
 futures-timer = "0.1"
-gstuff = { version = "0.5", features = ["nightly"] }
+gstuff = { version = "0.6", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"
 jsonrpc-core = "8.0.1"
@@ -60,7 +61,7 @@ tokio = { version = "0.1", optional = true }
 tokio-io = { version = "0.1.10"  , optional = true }
 tokio-rustls = { version = "=0.9.1", optional = true }
 # Need try_clone to shutdown and reconnect the tcp connection when there's no data received from Electrum after some time.
-tokio-tcp = { version = "=0.1.2" , optional = true }
+tokio-tcp = { version = "0.1.2" , optional = true }
 unwrap = "1.2"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.

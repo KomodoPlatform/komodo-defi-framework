@@ -1,7 +1,7 @@
 use common::StringError;
 use common::wio::slurp_req;
 use common::custom_futures::select_ok_sequential;
-use futures::Future;
+use futures01::Future;
 use futures_timer::{FutureExt};
 use http::header::HeaderValue;
 use jsonrpc_core::{Call, Response};

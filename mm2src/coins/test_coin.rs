@@ -2,7 +2,7 @@ use bigdecimal::BigDecimal;
 use common::HyRes;
 use common::mm_ctx::MmArc;
 use crate::{TradeInfo, FoundSwapTxSpend, WithdrawRequest};
-use futures::Future;
+use futures01::Future;
 use mocktopus::macros::*;
 use std::borrow::Cow;
 use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TransactionDetails, TransactionEnum, TransactionFut};

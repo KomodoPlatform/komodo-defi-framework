@@ -1,4 +1,4 @@
-use futures::Future;
+use futures01::Future;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 use std::fmt;

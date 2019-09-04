@@ -25,10 +25,10 @@ bytes = "0.4"
 chrono = "0.4"
 crossbeam = "0.6"
 fomat-macros = "0.2"
-futures = "0.1"
-futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+futures01 = { version = "0.1", package = "futures" }
+futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
 futures-cpupool = "0.1"
-gstuff = { version = "0.5", features = ["nightly"] }
+gstuff = { version = "0.6", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"
 http-body = "0.1"
@@ -60,10 +60,10 @@ bindgen = "0.43"
 bzip2 = "0.3"
 cc = "1.0"
 fomat-macros = "0.3"
-futures = "0.1"
+futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 glob = "0.3"
-gstuff = { version = "0.5", features = ["nightly"] }
+gstuff = { version = "0.6", features = ["nightly"] }
 hyper = "0.12"
 hyper-rustls = "0.16"
 itertools = "0.8"

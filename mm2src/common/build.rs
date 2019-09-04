@@ -18,7 +18,7 @@ extern crate lazy_static;
 extern crate unwrap;
 
 use bzip2::read::BzDecoder;
-use futures::{Future, Stream};
+use futures01::{Future, Stream};
 use futures_cpupool::CpuPool;
 use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};

@@ -3,8 +3,8 @@ use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use crc::crc64::checksum_ecma;
 use crdts::{CvRDT, CmRDT, Map, Orswot};
 use either::Either;
-use futures::{future, self, Async, Future};
-use futures03::future::FutureExt;
+use futures01::{future, self, Async, Future};
+use futures::future::FutureExt;
 use gstuff::{binprint, netstring, now_float};
 use http::{Request, Response, StatusCode};
 use http::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -234,8 +234,8 @@ pub fn new_http_fallback (ctx: MmWeak, addr: SocketAddr)
 -> Result<Box<dyn Future<Item=(), Error=()>+Send>, String> {
     use common::executor::Timer;
     use common::lift_body::LiftBody;
-    use futures::Poll;
-    use futures03::compat::Compat;
+    use futures01::Poll;
+    use futures::compat::Compat;
     use hyper::Server;
     use hyper::service::make_service_fn;
     use hyper::server::conn::AddrStream;

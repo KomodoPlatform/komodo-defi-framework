@@ -60,13 +60,13 @@ crossbeam = "0.6"
 dirs = { version = "1", optional = true }
 enum-primitive-derive = "0.1"
 fomat-macros = "0.2"
-futures = "0.1"
+futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 # NB: tokio-timer 2+ is targeted at "Tokio runtime" and heavy load (spawns several timer threads there),
 # whereas futures-timer works with any reactor and spawns one global timer thread (fits out load better).
 futures-timer = "0.1"
-futures03 = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
-gstuff = { version = "0.5", features = ["nightly"] }
+futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+gstuff = { version = "0.6", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"
 hyper = { version = "0.12", optional = true }

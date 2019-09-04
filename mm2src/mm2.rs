@@ -52,7 +52,7 @@ pub mod lp_swap;
 #[path = "rpc.rs"]
 pub mod rpc;
 
-#[cfg(test)]
+#[cfg(any(test, not(feature = "native")))]
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
 

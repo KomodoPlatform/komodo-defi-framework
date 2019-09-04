@@ -2,7 +2,7 @@
 // cf. https://github.com/hyperium/hyper/issues/1782#issuecomment-473129843
 // cf. https://github.com/hyperium/http-body/issues/2
 
-use futures::Poll;
+use futures01::Poll;
 use http_body::Body as HttpBody;
 use hyper::body::Payload;
 

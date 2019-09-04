@@ -50,11 +50,11 @@ use crc::crc32::{update, IEEE_TABLE};
 use crc::crc64::checksum_ecma;
 use crossbeam::channel;
 use either::Either;
-use futures::{Async, Future, Poll};
-use futures::task::Task;
-use futures03::compat::Future01CompatExt;
+use futures01::{Async, Future, Poll};
+use futures01::task::Task;
+use futures::compat::Future01CompatExt;
 #[cfg(not(feature = "native"))]
-use futures03::task::{Context, Poll as Poll03, Waker};
+use futures::task::{Context, Poll as Poll03, Waker};
 use gstuff::{binprint, now_float, slurp};
 use itertools::Itertools;
 #[cfg(feature = "native")]
@@ -1634,7 +1634,7 @@ impl Future for RecvFuture {
                 seed: self.seed,
                 salt: self.salt.clone(),
                 frid,
-                task: futures::task::current(),
+                task: futures01::task::current(),
                 fallback: self.fallback
             };
             if let Err (err) = self.pctx.cmd_tx.send (get) {return Err (ERRL! ("!send: {}", err))}

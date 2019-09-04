@@ -3,10 +3,10 @@
 use bytes::Bytes;
 use chrono::Local;
 #[cfg(feature = "native")]
-use futures::Future;
-use futures03::task::SpawnExt;
-use futures03::channel::oneshot::channel;
-use gstuff::{slurp, ISATTY};
+use futures01::Future;
+use futures::task::SpawnExt;
+use futures::channel::oneshot::channel;
+use gstuff::ISATTY;
 use http::{StatusCode, HeaderMap};
 #[cfg(feature = "native")]
 use http::{Request};
@@ -27,7 +27,7 @@ use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::now_float;
+use crate::{now_float, slurp};
 #[cfg(not(feature = "native"))]
 use crate::helperᶜ;
 #[cfg(feature = "native")]
@@ -98,6 +98,7 @@ pub type LocalStart = fn (PathBuf, PathBuf, Json);
 
 /// An instance of a MarketMaker process started by and for an integration test.  
 /// Given that [in CI] the tests are executed before the build, the binary of that process is the tests binary.
+#[cfg(feature = "native")]
 pub struct MarketMakerIt {
     /// The MarketMaker's current folder where it will try to open the database files.
     pub folder: PathBuf,
@@ -111,11 +112,21 @@ pub struct MarketMakerIt {
     pub userpass: String
 }
 
+/// A MarketMaker instance started by and for an integration test.
+#[cfg(not(feature = "native"))]
+pub struct MarketMakerIt {
+    conf: Json,
+    /// Unique (to run multiple instances) IP, like "127.0.0.$x".
+    pub ip: IpAddr,
+    /// RPC API key.
+    pub userpass: String
+}
+
+#[cfg(feature = "native")]
 impl std::fmt::Debug for MarketMakerIt {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "MarketMakerIt {{ folder: {:?}, ip: {}, log_path: {:?}, userpass: {} }}", self.folder, self.ip, self.log_path, self.userpass)
-    }
-}
+}   }
 
 impl MarketMakerIt {
     /// Create a new temporary directory and start a new MarketMaker process there.
@@ -126,6 +137,7 @@ impl MarketMakerIt {
     /// * `local` - Function to start the MarketMaker in a local thread, instead of spawning a process.
     /// It's required to manually add 127.0.0.* IPs aliases on Mac to make it properly work.
     /// cf. https://superuser.com/a/458877, https://superuser.com/a/635327
+    #[cfg(feature = "native")]
     pub fn start (mut conf: Json, userpass: String, local: Option<LocalStart>)
     -> Result<MarketMakerIt, String> {
         let executable = try_s! (env::args().next().ok_or ("No program name"));
@@ -188,12 +200,25 @@ impl MarketMakerIt {
 
         Ok (MarketMakerIt {folder, ip, log_path, pc, userpass})
     }
+
+    #[cfg(not(feature = "native"))]
+    pub fn start (conf: Json, userpass: String, _local: Option<LocalStart>)
+    -> Result<MarketMakerIt, String> {
+        // TODO: Use the native helpers to generate the IP.
+        let ip: IpAddr = try_s! ("127.0.0.1".parse());
+
+        Ok (MarketMakerIt {conf, ip, userpass})
+    }
+
+    #[cfg(feature = "native")]
     pub fn log_as_utf8 (&self) -> Result<String, String> {
         let mm_log = slurp (&self.log_path);
         let mm_log = unsafe {String::from_utf8_unchecked (mm_log)};
         Ok (mm_log)
     }
+
     /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
+    #[cfg(feature = "native")]
     pub fn wait_for_log (&mut self, timeout_sec: f64, pred: &dyn Fn (&str) -> bool) -> Result<(), String> {
         let start = now_float();
         let ms = 50 .min ((timeout_sec * 1000.) as u64 / 20 + 10);
@@ -206,6 +231,13 @@ impl MarketMakerIt {
         }
     }
 
+    /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
+    #[cfg(not(feature = "native"))]
+    pub fn wait_for_log (&mut self, _timeout_sec: f64, _pred: &dyn Fn (&str) -> bool) -> Result<(), String> {
+        // TODO: Change the signatures to `pub async fn wait_for_log`.
+        unimplemented!()
+    }
+
     /// Invokes the locally running MM and returns its reply.
     #[cfg(feature = "native")]
     pub fn rpc (&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
@@ -215,8 +247,10 @@ impl MarketMakerIt {
         let (status, headers, body) = try_s! (slurp_req (request) .wait());
         Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
     }
+
     #[cfg(not(feature = "native"))]
     pub fn rpc (&self, _payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
+        // TODO: Change the signatures to `pub async fn rpc`.
         unimplemented!()
     }
 
@@ -228,10 +262,17 @@ impl MarketMakerIt {
         let (status, headers, body) = try_s! (slurp_req (request) .wait());
         Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
     }
+
     #[cfg(not(feature = "native"))]
     pub fn rpc_str (&self, _payload: &'static str) -> Result<(StatusCode, String, HeaderMap), String> {
         unimplemented!()
     }
+
+    #[cfg(feature = "native")]
+    pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {mm_dump (&self.log_path)}
+
+    #[cfg(not(feature = "native"))]
+    pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {unimplemented!()}
 
     /// Send the "stop" request to the locally running MM.
     #[cfg(feature = "native")]
@@ -250,11 +291,15 @@ impl MarketMakerIt {
         if status != StatusCode::OK {return ERR! ("MM didn't accept a stop. body: {}", body)}
         Ok(())
     }
+
     #[cfg(not(feature = "native"))]
     pub fn stop (&self) -> Result<(), String>{
+        // TODO: Change the signatures to `pub async fn stop`.
         unimplemented!()
     }
 }
+
+#[cfg(feature = "native")]
 impl Drop for MarketMakerIt {
     fn drop (&mut self) {
         if let Ok (mut mm_ips) = MM_IPS.lock() {
@@ -334,6 +379,7 @@ pub fn mm_dump (log_path: &Path) -> (RaiiDump, RaiiDump) {(
 )}
 
 /// A typical MM instance.
+#[cfg(feature = "native")]
 pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
     let passphrase = "SPATsRps3dhEtXwtnpRCKF";
     let mm = unwrap! (MarketMakerIt::start (
@@ -353,6 +399,11 @@ pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'st
     ));
     let (dump_log, dump_dashboard) = mm_dump (&mm.log_path);
     (passphrase, mm, dump_log, dump_dashboard)
+}
+
+#[cfg(not(feature = "native"))]
+pub fn mm_spat (_local_start: LocalStart, _conf_mod: &dyn Fn(Json)->Json) -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
+    unimplemented!()
 }
 
 /// Asks MM to enable the given currency in electrum mode
@@ -389,4 +440,39 @@ pub fn from_env_file (env: Vec<u8>) -> (Option<String>, Option<String>) {
         }
     }
     (passphrase, userpass)
+}
+
+#[cfg(not(feature = "native"))]
+use std::os::raw::c_char;
+
+/// Obtains the environment variable `name` from the host, copying it into `rbuf`.  
+/// Returns the length of the value copied to `rbuf` or -1 if there was an error.
+#[cfg(not(feature = "native"))]
+extern "C" {pub fn host_env (name: *const c_char, nameˡ: i32, rbuf: *mut c_char, rcap: i32) -> i32;}
+
+/// Reads passphrase from file or environment.
+pub fn get_passphrase (path: &dyn AsRef<Path>, env: &str) -> Result<String, String> {
+    if let (Some (file_passphrase), _file_userpass) = from_env_file (slurp (path)) {
+        return Ok (file_passphrase)
+    }
+
+    #[cfg(feature = "native")] {
+        match var (env) {
+            Ok (v) => Ok (v),
+            Err (_err) => ERR! ("No {} or {}", env, path.as_ref().display())
+        }
+    }
+
+    #[cfg(not(feature = "native"))] {  // Get the environment variable from the host.
+        use std::mem::zeroed;
+        use std::str::from_utf8;
+
+        let mut buf: [u8; 4096] = unsafe {zeroed()};
+        let rc = unsafe {host_env (
+            env.as_ptr() as *const c_char, env.len() as i32,
+            buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
+        if rc <= 0 {return ERR! ("No {} or {}", env, path.as_ref().display())}
+        let s = try_s! (from_utf8 (&buf[0 .. rc as usize]));
+        Ok (String::from (s))
+    }
 }
