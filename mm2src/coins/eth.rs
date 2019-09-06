@@ -51,6 +51,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrderding};
 use std::thread;
 use std::time::Duration;
 use web3::{ self, Web3 };
@@ -130,9 +131,10 @@ pub struct EthCoinImpl {  // pImpl idiom.
     decimals: u8,
     gas_station_url: Option<String>,
     history_sync_state: Mutex<HistorySyncState>,
+    required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
-    ctx: MmWeak
+    ctx: MmWeak,
 }
 
 #[derive(Clone, Debug)]
@@ -700,7 +702,7 @@ impl MarketCoinOps for EthCoin {
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
-        confirmations: u32,
+        confirmations: u64,
         wait_until: u64,
     ) -> Result<(), String> {
         let unsigned: UnverifiedTransaction = try_s!(rlp::decode(tx));
@@ -1797,6 +1799,13 @@ impl MmCoin for EthCoin {
         self.decimals
     }
 
+    fn process_history_loop(&self, ctx: MmArc) {
+        match self.coin_type {
+            EthCoinType::Eth => self.process_eth_history(&ctx),
+            EthCoinType::Erc20(token) => self.process_erc20_history(token, &ctx),
+        }
+    }
+
     fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String> {
         let hash = H256::from(hash);
         let tx = try_s!(self.web3.eth().transaction(TransactionId::Hash(hash)).wait());
@@ -1857,13 +1866,6 @@ impl MmCoin for EthCoin {
         }
     }
 
-    fn process_history_loop(&self, ctx: MmArc) {
-        match self.coin_type {
-            EthCoinType::Eth => self.process_eth_history(&ctx),
-            EthCoinType::Erc20(token) => self.process_erc20_history(token, &ctx),
-        }
-    }
-
     fn history_sync_status(&self) -> HistorySyncState {
         unwrap!(self.history_sync_state.lock()).clone()
     }
@@ -1879,6 +1881,14 @@ impl MmCoin for EthCoin {
                 }
             }).to_string())
         }))
+    }
+
+    fn required_confirmations(&self) -> u64 {
+        self.required_confirmations.load(AtomicOrderding::Relaxed)
+    }
+
+    fn set_required_confirmations(&self, confirmations: u64) {
+        self.required_confirmations.store(confirmations, AtomicOrderding::Relaxed);
     }
 }
 
@@ -1936,15 +1946,6 @@ impl Transaction for SignedEthTx {
     }
 
     fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
-
-    fn amount(&self, decimals: u8) -> Result<f64, String> {
-        Ok(try_s!(display_u256_with_decimal_point(self.value, decimals).parse()))
-    }
-
-    fn fee_details(&self) -> Result<Json, String> {
-        let fee = try_s!(EthTxFeeDetails::new(self.gas, self.gas_price, "ETH"));
-        Ok(try_s!(json::to_value(fee)))
-    }
 }
 
 fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, String> {
@@ -2119,7 +2120,8 @@ pub fn eth_coin_from_conf_and_request(
         web3,
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: conf["required_confirmations"].as_u64().unwrap_or(1).into(),
     };
     Ok(EthCoin(Arc::new(coin)))
 }

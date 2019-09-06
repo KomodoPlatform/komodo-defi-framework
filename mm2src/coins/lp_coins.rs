@@ -36,6 +36,7 @@ use common::{rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use futures01::{Future};
 use gstuff::{slurp};
+use http::Response;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
@@ -69,10 +70,6 @@ pub trait Transaction: Debug + 'static {
     fn extract_secret(&self) -> Result<Vec<u8>, String>;
     /// Serializable representation of tx hash for displaying purpose
     fn tx_hash(&self) -> BytesJson;
-    /// Transaction amount
-    fn amount(&self, decimals: u8) -> Result<f64, String>;
-    /// Fee details
-    fn fee_details(&self) -> Result<Json, String>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -219,7 +216,7 @@ pub trait MarketCoinOps {
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
-        confirmations: u32,
+        confirmations: u64,
         wait_until: u64,
     ) -> Result<(), String>;
 
@@ -375,6 +372,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
 
     /// Get fee to be paid per 1 swap transaction
     fn get_trade_fee(&self) -> HyRes;
+
+    /// required transaction confirmations number to ensure double-spend safety
+    fn required_confirmations(&self) -> u64;
+
+    /// set required transaction confirmations number
+    fn set_required_confirmations(&self, confirmations: u64);
 }
 
 #[derive(Clone, Debug)]
@@ -626,4 +629,27 @@ pub fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
         Some(_) => Ok(()),
         None => ERR!("{} is disabled already", ticker)
     }
+}
+
+#[derive(Deserialize)]
+pub struct ConfirmationsReq {
+    coin: String,
+    confirmations: u64,
+}
+
+pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: ConfirmationsReq = try_s!(json::from_value(req));
+    let coin = match lp_coinfind(&ctx, &req.coin) {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin {}", req.coin),
+        Err(err) => return ERR!("!lp_coinfind ({}): {}", req.coin, err),
+    };
+    coin.set_required_confirmations(req.confirmations);
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "coin": req.coin,
+            "confirmations": req.confirmations,
+        }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
 }

@@ -57,6 +57,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrderding};
 use std::thread;
 use std::time::Duration;
 
@@ -111,10 +112,6 @@ impl Transaction for UtxoTx {
     }
 
     fn tx_hash(&self) -> BytesJson { self.hash().reversed().to_vec().into() }
-
-    fn amount(&self, _decimals: u8) -> Result<f64, String> { Ok(0.) }
-
-    fn fee_details(&self) -> Result<Json, String> { Ok(Json::Null) }
 }
 
 /// Additional transaction data that can't be easily got from raw transaction without calling
@@ -211,6 +208,7 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// Signature version
     signature_version: SignatureVersion,
     history_sync_state: Mutex<HistorySyncState>,
+    required_confirmations: AtomicU64,
 }
 
 impl UtxoCoinImpl {
@@ -1252,7 +1250,7 @@ impl MarketCoinOps for UtxoCoin {
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
-        confirmations: u32,
+        confirmations: u64,
         wait_until: u64,
     ) -> Result<(), String> {
         let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
@@ -1631,6 +1629,14 @@ impl MmCoin for UtxoCoin {
             }).to_string())
         }))
     }
+
+    fn required_confirmations(&self) -> u64 {
+        self.required_confirmations.load(AtomicOrderding::Relaxed)
+    }
+
+    fn set_required_confirmations(&self, confirmations: u64) {
+        self.required_confirmations.store(confirmations, AtomicOrderding::Relaxed);
+    }
 }
 
 #[cfg(feature = "native")]
@@ -1891,6 +1897,7 @@ pub fn utxo_coin_from_conf_and_request(
         signature_version,
         fork_id,
         history_sync_state: Mutex::new(initial_history_state),
+        required_confirmations: conf["required_confirmations"].as_u64().unwrap_or(1).into(),
     };
     Ok(UtxoCoin(Arc::new(coin)).into())
 }

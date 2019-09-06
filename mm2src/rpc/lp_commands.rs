@@ -76,6 +76,7 @@ pub fn electrum (ctx: MmArc, req: Json) -> HyRes {
             "balance": balance,
             "locked_by_swaps": get_locked_amount(&ctx, &ticker),
             "coin": coin.ticker(),
+            "required_confirmations": coin.required_confirmations(),
         }).to_string())
     ))
 }
@@ -91,6 +92,7 @@ pub fn enable (ctx: MmArc, req: Json) -> HyRes {
             "balance": balance,
             "locked_by_swaps": get_locked_amount(&ctx, &ticker),
             "coin": coin.ticker(),
+            "required_confirmations": coin.required_confirmations(),
         }).to_string())
     ))
 }

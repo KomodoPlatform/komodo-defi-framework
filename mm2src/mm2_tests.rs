@@ -862,7 +862,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
 #[cfg(feature = "native")]
 #[test]
 fn trade_test_electrum_and_eth_coins() {
-    block_on(trade_base_rel_electrum(vec![("BEER", "ETOMIC"), ("ETH", "JST")]));
+    block_on(trade_base_rel_electrum(vec![("ETH", "JST")]));
 }
 
 #[cfg(not(feature = "native"))]

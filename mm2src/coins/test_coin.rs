@@ -34,7 +34,7 @@ impl MarketCoinOps for TestCoin {
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
-        confirmations: u32,
+        confirmations: u64,
         wait_until: u64,
     ) -> Result<(), String> {
         unimplemented!()
@@ -223,6 +223,14 @@ impl MmCoin for TestCoin {
 
     /// Get fee to be paid per 1 swap transaction
     fn get_trade_fee(&self) -> HyRes {
+        unimplemented!()
+    }
+
+    fn required_confirmations(&self) -> u64 {
+        unimplemented!()
+    }
+
+    fn set_required_confirmations(&self, confirmations: u64) {
         unimplemented!()
     }
 }

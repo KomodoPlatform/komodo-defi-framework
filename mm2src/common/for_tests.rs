@@ -1,7 +1,9 @@
 //! Helpers used in the unit and integration tests.
 
+#![cfg_attr(not(feature = "native"), allow(unused_variables))]
+
 use bytes::Bytes;
-use chrono::Local;
+use chrono::{Local, TimeZone};
 #[cfg(feature = "native")]
 use futures01::Future;
 use futures::task::SpawnExt;
@@ -12,7 +14,7 @@ use http::{StatusCode, HeaderMap};
 use http::{Request};
 use serde_json::{self as json, Value as Json};
 use term;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use regex::Regex;
 use std::collections::HashSet;
 use std::env::{self, var};
@@ -137,14 +139,11 @@ impl MarketMakerIt {
     /// * `local` - Function to start the MarketMaker in a local thread, instead of spawning a process.
     /// It's required to manually add 127.0.0.* IPs aliases on Mac to make it properly work.
     /// cf. https://superuser.com/a/458877, https://superuser.com/a/635327
-    #[cfg(feature = "native")]
     pub fn start (mut conf: Json, userpass: String, local: Option<LocalStart>)
     -> Result<MarketMakerIt, String> {
-        let executable = try_s! (env::args().next().ok_or ("No program name"));
-        let executable = try_s! (Path::new (&executable) .canonicalize());
         let ip: IpAddr = if conf["myipaddr"].is_null() {  // Generate an unique IP.
             let mut attempts = 0;
-            let mut rng = thread_rng();
+            let mut rng = super::small_rng();
             loop {
                 let ip4 = Ipv4Addr::new (127, 0, 0, rng.gen_range (1, 255));
                 if attempts > 128 {return ERR! ("Out of local IPs?")}
@@ -167,47 +166,47 @@ impl MarketMakerIt {
         // Use a separate (unique) temporary folder for each MM.
         // (We could also remove the old folders after some time in order not to spam the temporary folder.
         // Though we don't always want to remove them right away, allowing developers to check the files).
-        let now = Local::now();
+        let now = super::now_ms();
+        let now = Local.timestamp ((now / 1000) as i64, (now % 1000) as u32 * 1000000);
         let folder = format! ("mm2_{}_{}", now.format ("%Y-%m-%d_%H-%M-%S-%3f"), ip);
-        let folder = env::temp_dir().join (folder);
-        try_s! (fs::create_dir (&folder));
+        let folder = super::temp_dir().join (folder);
         let db_dir = folder.join ("DB");
         conf["dbdir"] = unwrap! (db_dir.to_str()) .into();
 
-        try_s! (fs::create_dir (db_dir));
-        let log_path = folder.join ("mm2.log");
-        conf["log"] = unwrap! (log_path.to_str()) .into();
+        #[cfg(not(feature = "native"))] {
+            Ok (MarketMakerIt {conf, ip, userpass})
+        }
 
-        // If `local` is provided
-        // then instead of spawning a process we start the MarketMaker in a local thread,
-        // allowing us to easily *debug* the tested MarketMaker code.
-        // Note that this should only be used while running a single test,
-        // using this option while running multiple tests (or multiple MarketMaker instances) is currently UB.
-        let pc = if let Some (local) = local {
-            local (folder.clone(), log_path.clone(), conf);
-            None
-        } else {
-            let log = try_s! (fs::File::create (&log_path));
-            let child = try_s! (Command::new (&executable) .arg ("test_mm_start") .arg ("--nocapture")
-                .current_dir (&folder)
-                .env ("_MM2_TEST_CONF", try_s! (json::to_string (&conf)))
-                .env ("MM2_UNBUFFERED_OUTPUT", "1")
-                .stdout (try_s! (log.try_clone()))
-                .stderr (log)
-                .spawn());
-            Some (RaiiKill::from_handle (child))
-        };
+        #[cfg(feature = "native")] {
+            try_s! (fs::create_dir (&folder));
+            try_s! (fs::create_dir (db_dir));
+            let log_path = folder.join ("mm2.log");
+            conf["log"] = unwrap! (log_path.to_str()) .into();
 
-        Ok (MarketMakerIt {folder, ip, log_path, pc, userpass})
-    }
+            // If `local` is provided
+            // then instead of spawning a process we start the MarketMaker in a local thread,
+            // allowing us to easily *debug* the tested MarketMaker code.
+            // Note that this should only be used while running a single test,
+            // using this option while running multiple tests (or multiple MarketMaker instances) is currently UB.
+            let pc = if let Some (local) = local {
+                local (folder.clone(), log_path.clone(), conf);
+                None
+            } else {
+                let executable = try_s! (env::args().next().ok_or ("No program name"));
+                let executable = try_s! (Path::new (&executable) .canonicalize());
+                let log = try_s! (fs::File::create (&log_path));
+                let child = try_s! (Command::new (&executable) .arg ("test_mm_start") .arg ("--nocapture")
+                    .current_dir (&folder)
+                    .env ("_MM2_TEST_CONF", try_s! (json::to_string (&conf)))
+                    .env ("MM2_UNBUFFERED_OUTPUT", "1")
+                    .stdout (try_s! (log.try_clone()))
+                    .stderr (log)
+                    .spawn());
+                Some (RaiiKill::from_handle (child))
+            };
 
-    #[cfg(not(feature = "native"))]
-    pub fn start (conf: Json, userpass: String, _local: Option<LocalStart>)
-    -> Result<MarketMakerIt, String> {
-        // TODO: Use the native helpers to generate the IP.
-        let ip: IpAddr = try_s! ("127.0.0.1".parse());
-
-        Ok (MarketMakerIt {conf, ip, userpass})
+            Ok (MarketMakerIt {folder, ip, log_path, pc, userpass})
+        }
     }
 
     #[cfg(feature = "native")]

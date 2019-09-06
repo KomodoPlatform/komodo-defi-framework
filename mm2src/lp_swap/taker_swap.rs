@@ -180,8 +180,8 @@ pub struct TakerSwapData {
     lock_duration: u64,
     maker_amount: BigDecimal,
     taker_amount: BigDecimal,
-    maker_payment_confirmations: u32,
-    taker_payment_confirmations: u32,
+    maker_payment_confirmations: u64,
+    taker_payment_confirmations: u64,
     taker_payment_lock: u64,
     /// Allows to recognize one SWAP from the other in the logs. #274.
     uuid: String,
@@ -416,7 +416,6 @@ impl TakerSwap {
         };
 
         let lock_duration = lp_atomic_locktime(self.maker_coin.ticker(), self.taker_coin.ticker());
-        let (maker_payment_confirmations, taker_payment_confirmations) = payment_confirmations(&self.maker_coin, &self.taker_coin);
         let started_at = now_ms() / 1000;
 
         let maker_coin_start_block = match self.maker_coin.current_block().wait() {
@@ -443,8 +442,8 @@ impl TakerSwap {
             lock_duration,
             maker_amount: self.maker_amount.clone(),
             taker_amount: self.taker_amount.clone(),
-            maker_payment_confirmations,
-            taker_payment_confirmations,
+            maker_payment_confirmations: self.maker_coin.required_confirmations(),
+            taker_payment_confirmations: self.taker_coin.required_confirmations(),
             taker_payment_lock: started_at + lock_duration,
             my_persistent_pub: self.my_persistent_pub.clone().into(),
             uuid: self.uuid.clone(),

@@ -2,11 +2,12 @@
 // 
 //     dash js/wasm-build.sh && (cd js && node wasm-run.js 2>&1 | rustfilt)
 
-const bencode = require( 'bencode' )
-const { Buffer } = require ('buffer');
-const crc32 = require ('crc-32');  // TODO: Calculate the checksum in Rust instead.
-const fs = require ('fs');
+const bencode = require('bencode')
+const { Buffer } = require('buffer');
+const crc32 = require('crc-32');  // TODO: Calculate the checksum in Rust instead.
+const fs = require('fs');
 const http = require('http');  // https://nodejs.org/dist/latest-v12.x/docs/api/http.html
+const os = require('os');
 // https://nodejs.org/api/child_process.html
 // https://www.npmjs.com/package/cross-spawn
 const spawn = require('cross-spawn');
@@ -141,7 +142,8 @@ async function runWasm() {
       const req = http_helper ('peers_drop_send_handler', 100, payload, (res) => {res.on ('end', () => {})});
       req.on ('error', function (_) {});
       req.write (payload);
-      req.end()}};
+      req.end()},
+    temp_dir: function (rbuf, rcap) {return to_utf8 (wasmShared.memory, rbuf, rcap, os.tmpdir())}};
   const wasmInstantiated = await WebAssembly.instantiate (wasmBytes, {env: wasmEnv});
   const exports = wasmInstantiated.instance.exports;
   /** @type {WebAssembly.Memory} */

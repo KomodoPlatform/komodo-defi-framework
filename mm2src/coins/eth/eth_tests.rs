@@ -27,7 +27,8 @@ fn eth_coin_for_test(coin_type: EthCoinType, urls: Vec<String>) -> (MmArc, EthCo
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
     (ctx, eth_coin)
 }
@@ -151,7 +152,8 @@ fn send_and_refund_erc20_payment() {
         decimals: 18,
         gas_station_url: None,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
 
     let payment = coin.send_maker_payment(
@@ -194,7 +196,8 @@ fn send_and_refund_eth_payment() {
         decimals: 18,
         gas_station_url: None,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
 
     let payment = coin.send_maker_payment(
@@ -238,7 +241,8 @@ fn test_nonce_several_urls() {
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
 
     log!("My address " [coin.my_address]);
@@ -270,7 +274,8 @@ fn test_wait_for_payment_spend_timeout() {
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -300,7 +305,8 @@ fn test_search_for_swap_tx_spend_was_spent() {
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xb1c987e2ac79581bb8718267b5cb49a18274890494299239d1d0dfdb58d6d76a
@@ -334,7 +340,8 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {web3: web3.clone(), is_parity: true}],
         web3,
-        ctx: ctx.weak()
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xe18bbca69dea9a4624e1f5b0b2021d5fe4c8daa03f36084a8ba011b08e5cd938

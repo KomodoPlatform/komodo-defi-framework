@@ -21,7 +21,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use bytes::Bytes;
-use coins::{get_enabled_coins, get_trade_fee, send_raw_transaction, withdraw, my_tx_history};
+use coins::{get_enabled_coins, get_trade_fee, send_raw_transaction, set_required_confirmations, withdraw, my_tx_history};
 use common::{err_to_rpc_json_string, HyRes};
 #[cfg(feature = "native")]
 use common::wio::{CORE, CPUPOOL, HTTP};
@@ -237,6 +237,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
             }
             #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
         },
+        "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
         "stats_swap_status" => stats_swap_status(ctx, req),
         "version" => version(),
         "withdraw" => withdraw(ctx, req),

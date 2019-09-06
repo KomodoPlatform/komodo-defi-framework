@@ -98,7 +98,7 @@ use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::env::{args, var, VarError};
+use std::env::{self, args, var, VarError};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::ffi::{CStr};
@@ -106,7 +106,7 @@ use std::intrinsics::copy;
 use std::io::{Write};
 use std::mem::{forget, size_of, uninitialized, zeroed};
 use std::os::raw::{c_char, c_void};
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 #[cfg(not(feature = "native"))]
 use std::pin::Pin;
 use std::ptr::{null_mut, read_volatile};
@@ -352,6 +352,8 @@ pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
 /// * `output` - Function used to print the stack trace.
 ///              Printing immediately, without buffering, should make the tracing somewhat more reliable.
 pub fn stack_trace (format: &mut dyn FnMut (&mut dyn Write, &backtrace::Symbol), output: &mut dyn FnMut (&str)) {
+    // cf. https://github.com/rust-lang/rust/pull/64154 (standard library backtrace)
+
     backtrace::trace (|frame| {
         backtrace::resolve (frame.ip(), |symbol| {
             let mut trace_buf = trace_buf();
@@ -992,6 +994,19 @@ pub fn slurp (path: &dyn AsRef<Path>) -> Vec<u8> {gstuff::slurp (path)}
 
 #[cfg(not(feature = "native"))]
 pub fn slurp (_path: &dyn AsRef<Path>) -> Vec<u8> {Vec::new()}
+
+#[cfg(feature = "native")]
+pub fn temp_dir() -> PathBuf {env::temp_dir()}
+
+#[cfg(not(feature = "native"))]
+pub fn temp_dir() -> PathBuf {
+    extern "C" {pub fn temp_dir (rbuf: *mut c_char, rcap: i32) -> i32;}
+    let mut buf: [u8; 4096] = unsafe {zeroed()};
+    let rc = unsafe {temp_dir (buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
+    if rc <= 0 {panic! ("!temp_dir")}
+    let path = unwrap! (std::str::from_utf8 (&buf[0 .. rc as usize]));
+    Path::new (path) .into()
+}
 
 /// If the `MM_LOG` variable is present then tries to open that file.  
 /// Prints a warning to `stdout` if there's a problem opening the file.  

@@ -280,38 +280,6 @@ fn lp_atomic_locktime(base: &str, rel: &str) -> u64 {
     }
 }
 
-fn payment_confirmations(_maker_coin: &MmCoinEnum, _taker_coin: &MmCoinEnum) -> (u32, u32) {
-    /*
-    let mut maker_confirmations = SWAP_DEFAULT_NUM_CONFIRMS;
-    let mut taker_confirmations = SWAP_DEFAULT_NUM_CONFIRMS;
-    if maker_coin.ticker() == "BTC" {
-        maker_confirmations = 1;
-    }
-
-    if taker_coin.ticker() == "BTC" {
-        taker_confirmations = 1;
-    }
-
-    if maker_coin.is_asset_chain() {
-        maker_confirmations = 1;
-    }
-
-    if taker_coin.is_asset_chain() {
-        taker_confirmations = 1;
-    }
-    */
-
-    // TODO recognize why the BAY case is special, ask JL777
-    /*
-        if ( strcmp("BAY",swap->I.req.src) != 0 && strcmp("BAY",swap->I.req.dest) != 0 )
-    {
-        swap->I.bobconfirms *= !swap->I.bobistrusted;
-        swap->I.aliceconfirms *= !swap->I.aliceistrusted;
-    }
-    */
-    (1, 1)
-}
-
 fn dex_fee_rate(base: &str, rel: &str) -> BigDecimal {
     if base == "KMD" || rel == "KMD" {
         // 1/777 - 10%
