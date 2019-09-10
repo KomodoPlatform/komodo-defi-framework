@@ -23,6 +23,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use common::{double_panic_crash, MM_VERSION};
+use common::mm_ctx::MmCtxBuilder;
 
 use gstuff::{slurp};
 
@@ -71,7 +72,9 @@ fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
     if conf["passphrase"].is_string() {
         let netid = conf["netid"].as_u64().unwrap_or (0) as u16;
         let (_, pubport, _) = try_s!(lp_ports(netid));
-        try_s! (lp_init (pubport, conf, ctx_cb));
+        let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+        ctx_cb (try_s! (ctx.ffi_handle()));
+        try_s! (lp_init (pubport, ctx));
         Ok(())
     } else {ERR! ("!passphrase")}
 }

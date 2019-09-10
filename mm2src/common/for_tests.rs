@@ -16,7 +16,7 @@ use serde_json::{self as json, Value as Json};
 use term;
 use rand::Rng;
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::env::{self, var};
 use std::fs;
 use std::io::Write;
@@ -30,6 +30,9 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use crate::{now_float, slurp};
+use crate::executor::Timer;
+#[cfg(not(feature = "native"))]
+use crate::mm_ctx::{MmArc, MmCtxBuilder};
 #[cfg(not(feature = "native"))]
 use crate::helperᶜ;
 #[cfg(feature = "native")]
@@ -64,8 +67,10 @@ impl Drop for RaiiKill {
 /// Note that because of https://github.com/rust-lang/rust/issues/42474 it's currently impossible to share the MM log interactively,
 /// hence we're doing it in the `drop`.
 pub struct RaiiDump {
+    #[cfg(feature = "native")]
     pub log_path: PathBuf
 }
+#[cfg(feature = "native")]
 impl Drop for RaiiDump {
     fn drop (&mut self) {
         // `term` bypasses the stdout capturing, we should only use it if the capturing was disabled.
@@ -92,11 +97,16 @@ impl Drop for RaiiDump {
 }
 
 lazy_static! {
-    /// A singleton with the IPs used by the MarketMakerIt instances created in this session.
-    static ref MM_IPS: Mutex<HashSet<IpAddr>> = Mutex::new (HashSet::new());
+    /// A singleton with the IPs used by the MarketMakerIt instances created in this session.  
+    /// The value is set to `false` when the instance is retired.
+    static ref MM_IPS: Mutex<HashMap<IpAddr, bool>> = Mutex::new (HashMap::new());
 }
 
+#[cfg(feature = "native")]
 pub type LocalStart = fn (PathBuf, PathBuf, Json);
+
+#[cfg(not(feature = "native"))]
+pub type LocalStart = fn (MmArc);
 
 /// An instance of a MarketMaker process started by and for an integration test.  
 /// Given that [in CI] the tests are executed before the build, the binary of that process is the tests binary.
@@ -117,7 +127,7 @@ pub struct MarketMakerIt {
 /// A MarketMaker instance started by and for an integration test.
 #[cfg(not(feature = "native"))]
 pub struct MarketMakerIt {
-    conf: Json,
+    pub ctx: super::mm_ctx::MmArc,
     /// Unique (to run multiple instances) IP, like "127.0.0.$x".
     pub ip: IpAddr,
     /// RPC API key.
@@ -149,8 +159,8 @@ impl MarketMakerIt {
                 if attempts > 128 {return ERR! ("Out of local IPs?")}
                 let ip: IpAddr = ip4.clone().into();
                 let mut mm_ips = try_s! (MM_IPS.lock());
-                if mm_ips.contains (&ip) {attempts += 1; continue}
-                mm_ips.insert (ip.clone());
+                if mm_ips.contains_key (&ip) {attempts += 1; continue}
+                mm_ips.insert (ip.clone(), true);
                 conf["myipaddr"] = format! ("{}", ip) .into();
                 conf["rpcip"] = format! ("{}", ip) .into();
                 break ip
@@ -158,8 +168,8 @@ impl MarketMakerIt {
         } else {  // Just use the IP given in the `conf`.
             let ip: IpAddr = try_s! (try_s! (conf["myipaddr"].as_str().ok_or ("myipaddr is not a string")) .parse());
             let mut mm_ips = try_s! (MM_IPS.lock());
-            if mm_ips.contains (&ip) {log! ({"MarketMakerIt] Warning, IP {} was already used.", ip})}
-            mm_ips.insert (ip.clone());
+            if mm_ips.contains_key (&ip) {log! ({"MarketMakerIt] Warning, IP {} was already used.", ip})}
+            mm_ips.insert (ip.clone(), true);
             ip
         };
 
@@ -174,7 +184,10 @@ impl MarketMakerIt {
         conf["dbdir"] = unwrap! (db_dir.to_str()) .into();
 
         #[cfg(not(feature = "native"))] {
-            Ok (MarketMakerIt {conf, ip, userpass})
+            let ctx = MmCtxBuilder::new().with_conf (conf) .into_mm_arc();
+            let local = try_s! (local.ok_or ("!local"));
+            local (ctx.clone());
+            Ok (MarketMakerIt {ctx, ip, userpass})
         }
 
         #[cfg(feature = "native")] {
@@ -218,7 +231,8 @@ impl MarketMakerIt {
 
     /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
     #[cfg(feature = "native")]
-    pub fn wait_for_log (&mut self, timeout_sec: f64, pred: &dyn Fn (&str) -> bool) -> Result<(), String> {
+    pub async fn wait_for_log<F> (&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
+    where F: Fn (&str) -> bool {
         let start = now_float();
         let ms = 50 .min ((timeout_sec * 1000.) as u64 / 20 + 10);
         loop {
@@ -226,14 +240,15 @@ impl MarketMakerIt {
             if pred (&mm_log) {return Ok(())}
             if now_float() - start > timeout_sec {return ERR! ("Timeout expired waiting for a log condition")}
             if let Some (ref mut pc) = self.pc {if !pc.running() {return ERR! ("MM process terminated prematurely.")}}
-            sleep (Duration::from_millis (ms));
+            Timer::sleep (ms as f64 / 1000.) .await
         }
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
     #[cfg(not(feature = "native"))]
-    pub fn wait_for_log (&mut self, _timeout_sec: f64, _pred: &dyn Fn (&str) -> bool) -> Result<(), String> {
-        // TODO: Change the signatures to `pub async fn wait_for_log`.
+    pub async fn wait_for_log<F> (&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
+    where F: Fn (&str) -> bool {
+        
         unimplemented!()
     }
 
@@ -271,7 +286,7 @@ impl MarketMakerIt {
     pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {mm_dump (&self.log_path)}
 
     #[cfg(not(feature = "native"))]
-    pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {unimplemented!()}
+    pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {(RaiiDump{}, RaiiDump{})}
 
     /// Send the "stop" request to the locally running MM.
     #[cfg(feature = "native")]
@@ -302,9 +317,23 @@ impl MarketMakerIt {
 impl Drop for MarketMakerIt {
     fn drop (&mut self) {
         if let Ok (mut mm_ips) = MM_IPS.lock() {
-            mm_ips.remove (&self.ip);
+            // The IP addresses might still be used by the libtorrent even after a context is dropped,
+            // hence we're not trying to reuse them but rather just mark them as fried.
+            if let Some (active) = mm_ips.get_mut (&self.ip) {
+                *active = false
+            }
         } else {log! ("MarketMakerIt] Can't lock MM_IPS.")}
     }
+}
+
+#[macro_export]
+macro_rules! wait_log_re {
+    ($mm_it: expr, $timeout_sec: expr, $re_pred: expr) => {{
+        log! ("Waiting for “" ($re_pred) "”…");
+        let re = unwrap! (regex::Regex::new ($re_pred));
+        let rc = $mm_it.wait_for_log ($timeout_sec, |line| re.is_match (line)) .await;
+        if let Err (err) = rc {panic! ("{}: {}", $re_pred, err)}
+    }};
 }
 
 /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
@@ -372,6 +401,7 @@ pub async fn wait_for_log_re (ctx: &crate::mm_ctx::MmArc, timeout_sec: f64, re_p
 }
 
 /// Create RAII variables to the effect of dumping the log and the status dashboard at the end of the scope.
+#[cfg(feature = "native")]
 pub fn mm_dump (log_path: &Path) -> (RaiiDump, RaiiDump) {(
     RaiiDump {log_path: log_path.to_path_buf()},
     RaiiDump {log_path: unwrap! (dashboard_path (log_path))}

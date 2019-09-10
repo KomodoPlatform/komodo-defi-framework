@@ -53,7 +53,6 @@ use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, orders_kick_start};
 use crate::mm2::lp_swap::swap_kick_starts;
 use crate::mm2::rpc::{spawn_rpc};
-use common::mm_ctx::MmCtxBuilder;
 
 /// Process a previously queued command that wasn't handled by the RPC `dispatcher`.  
 /// NB: It might be preferable to port more commands into the RPC `dispatcher`, rather than `lp_command_process`, because:  
@@ -1157,16 +1156,14 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
 fn test_ip (_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {unimplemented!()}
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub fn lp_init (mypubport: u16, conf: Json, ctx_cb: &dyn Fn (u32))
--> Result<(), String> {
+pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
     log! ({"version: {}", MM_VERSION});
-    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
     unsafe {try_s! (lp_passphrase_init (&ctx))}
 
-    ctx_cb (try_s! (ctx.ffi_handle()));
-
-    try_s! (fix_directories (&ctx));
+    #[cfg(feature = "native")] {
+        try_s! (fix_directories (&ctx));
+    }
 
     fn simple_ip_extractor (ip: &str) -> Result<IpAddr, String> {
         let ip = ip.trim();

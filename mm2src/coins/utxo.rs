@@ -1497,18 +1497,22 @@ impl MmCoin for UtxoCoin {
                 let mut updated = false;
                 match history_map.entry(txid.clone()) {
                     Entry::Vacant(e) => {
-                        if let Ok(mut tx_details) = self.tx_details_by_hash(&txid.0) {
-                            if tx_details.block_height == 0 && height > 0 {
-                                tx_details.block_height = height;
-                            }
-                            e.insert(tx_details);
-                            if transactions_left > 0 {
-                                transactions_left -= 1;
-                                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+                        match self.tx_details_by_hash(&txid.0) {
+                            Ok(mut tx_details) => {
+                                if tx_details.block_height == 0 && height > 0 {
+                                    tx_details.block_height = height;
+                                }
+
+                                e.insert(tx_details);
+                                if transactions_left > 0 {
+                                    transactions_left -= 1;
+                                    *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
                                     "transactions_left": transactions_left
                                 }));
-                            }
-                            updated = true;
+                                }
+                                updated = true;
+                            },
+                            Err(e) => ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {:?} on getting the details of {:?}, skipping the tx", e, txid)),
                         }
                     },
                     Entry::Occupied(mut e) => {
@@ -1557,8 +1561,9 @@ impl MmCoin for UtxoCoin {
         for input in tx.inputs.iter() {
             let input_tx = match input_transactions.entry(&input.previous_output.hash) {
                 Entry::Vacant(e) => {
-                    let prev: BytesJson = try_s!(self.rpc_client.get_transaction_bytes(input.previous_output.hash.reversed().into()).wait());
-                    let prev_tx: UtxoTx = try_s!(deserialize(prev.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+                    let prev_hash = input.previous_output.hash.reversed();
+                    let prev: BytesJson = try_s!(self.rpc_client.get_transaction_bytes(prev_hash.clone().into()).wait());
+                    let prev_tx: UtxoTx = try_s!(deserialize(prev.as_slice()).map_err(|e| ERRL!("{:?}, tx: {:?}", e, prev_hash)));
                     e.insert(prev_tx)
                 },
                 Entry::Occupied(e) => e.into_mut(),
