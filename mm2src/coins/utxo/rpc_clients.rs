@@ -1101,6 +1101,7 @@ async fn connect_loop(
         try_loop!(stream.as_ref().set_nodelay(true), addr, delay);
         // reset the delay if we've connected successfully
         delay = 0;
+        log!("Electrum client connected to " (addr));
         let last_chunk = Arc::new(AtomicU64::new(now_ms()));
         let mut last_chunk_f = electrum_last_chunk_loop(last_chunk.clone()).boxed().fuse();
 
@@ -1120,9 +1121,13 @@ async fn connect_loop(
 
         // this forwards the messages from rx to sink (write) part of tcp stream
         let mut send_f = sink.send_all(rx).compat().fuse();
-        macro_rules! break_on_ok {
+        macro_rules! reset_tx_and_continue {
             ($e: expr) => { match $e {
-                    Ok(_) => break Ok(()),
+                    Ok(_) => {
+                        log!([addr] " stopped with Ok");
+                        *connection_tx.lock().await = None;
+                        continue;
+                    },
                     Err(e) => {
                         log!([addr] " error " [e]);
                         *connection_tx.lock().await = None;
@@ -1133,9 +1138,9 @@ async fn connect_loop(
         }
 
         select! {
-            last_chunk = last_chunk_f => break_on_ok!(last_chunk),
-            recv = recv_f => break_on_ok!(recv),
-            send = send_f => break_on_ok!(send),
+            last_chunk = last_chunk_f => reset_tx_and_continue!(last_chunk),
+            recv = recv_f => reset_tx_and_continue!(recv),
+            send = send_f => reset_tx_and_continue!(send),
         }
     }
 }
