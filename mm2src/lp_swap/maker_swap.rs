@@ -506,6 +506,7 @@ impl MakerSwap {
             &unwrap!(self.taker_payment.clone()).tx_hex,
             self.data.taker_payment_confirmations,
             wait_taker_payment,
+            15,
         );
 
         if let Err(err) = wait {

@@ -15,7 +15,7 @@ default-run = "mm2"
 
 [features]
 native = [
-  "hyper", "tokio-core", "dirs",
+  "hyper", "tokio-core", "dirs", "docker_tests",
   "common/native", "peers/native", "coins/native", # "portfolio/native"
 ]
 
@@ -43,6 +43,8 @@ opt-level = 1
 [profile.release]
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true
+# For better or worse, might affect the stack traces in our portion of the code.
+#opt-level = 1
 
 [profile.release.overrides."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
@@ -56,8 +58,9 @@ coins = { path = "mm2src/coins" }
 common = { path = "mm2src/common" }
 crc = "1.8"
 crc32fast = { version = "1.2", features = ["std", "nightly"] }
-crossbeam = "0.6"
+crossbeam = "0.7"
 dirs = { version = "1", optional = true }
+docker_tests = { path = "mm2src/docker_tests", optional = true }
 enum-primitive-derive = "0.1"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
@@ -81,8 +84,11 @@ peers = { path = "mm2src/peers" }
 # portfolio = { path = "mm2src/portfolio" }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
+# TODO: Reduce the size of regex by disabling the features we don't use.
+# cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
 serde = "1.0"
+serde_bencode = "0.2"
 serde_json = "1.0"
 serde_derive = "1.0"
 serialization = { git = "https://github.com/artemii235/parity-bitcoin.git" }
@@ -102,7 +108,7 @@ mocktopus = "0.7.0"
 
 [workspace]
 members = [
-  "mm2src/coins"
+  "mm2src/coins",
 ]
 
 # The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function

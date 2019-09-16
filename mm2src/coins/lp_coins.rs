@@ -218,6 +218,7 @@ pub trait MarketCoinOps {
         tx: &[u8],
         confirmations: u64,
         wait_until: u64,
+        check_every: u64,
     ) -> Result<(), String>;
 
     fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> Result<TransactionEnum, String>;

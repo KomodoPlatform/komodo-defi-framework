@@ -1497,7 +1497,7 @@ pub unsafe extern fn peers_drop_send_handler (shp1: i32, shp2: i32) {
         handlers.remove (&send_handler_ptr);
 }   }
 
-pub async fn peers_drop_send_handlerʹ (req: Bytes) -> Result<Vec<u8>, String> {
+pub async fn peers_drop_send_handlerʰ (req: Bytes) -> Result<Vec<u8>, String> {
     let (shp1, shp2): (i32, i32) = try_s! (bdecode (&req));
     unsafe {peers_drop_send_handler (shp1, shp2)};
     Ok (Vec::new())}

@@ -329,60 +329,6 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 }
 
 #[test]
-#[ignore]
-// ignored, will work only when ETOMIC daemon is running locally and has following addresses imported
-// with rescan: R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW, bVrUo5BSwzghCobtJs9Su1JxHyBGAhFVzc
-fn test_search_for_swap_tx_spend_native_was_spent() {
-    let conf = json!({"asset":"ETOMIC"});
-    let req = json!({"method":"enable"});
-    let priv_key = unwrap!(hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"));
-    let coin = unwrap!(utxo_coin_from_conf_and_request("ETOMIC", &conf, &req, &priv_key));
-
-    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c514b3163d66636ebc3574817cb5853d5ab39886183de71ffedf5c5768570a6b
-    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f89013ac014d4926c8b435f7a5c58f38975d14f1aba597b1eef2dfdc093457678eb83010000006a47304402204ddb9b10237a1267a02426d923528213ad1e0b62d45be7d9629e2909f099d90c02205eecadecf6fd09cb8465170eb878c5d54e563f067b64e23c418da0f6519ca354012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a914bbd726b74f27b476d5d932e903b5893fd4e8bd2187acdaaa87010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2771515d000000000000000000000000000000"));
-
-    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/e72be40bab15f3914e70507e863e26b8ccfaa75a9861d6fe706b39cab1272617
-    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f89016b0a5768575cdffe1fe73d188698b35a3d85b57c817435bc6e63663d16b314c500000000d8483045022100d3cf75d26d977c0358e46c5db3753aa332ba12130b36b24b541cb90416f4606102201d805c5bdfc4d630cb78adb63239911c97a09c41125af37be219e876610f15f201209ac4a742e81a47dc26a3ddf83de84783fdb49c2322c4a3fdafc0613bf3335c40004c6b6304218f515db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914954f5a3f3b5de4410e5e1a82949410de95a4b6ba882102631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640ac68ffffffff0198929800000000001976a91464ae8510aac9546d5e7704e31ce177451386455588ac3963515d000000000000000000000000000000"));
-    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
-
-    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
-        1565626145,
-        &unwrap!(hex::decode("02631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640")),
-        &unwrap!(hex::decode("954f5a3f3b5de4410e5e1a82949410de95a4b6ba")),
-        &payment_tx_bytes,
-        165597
-    )));
-    assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
-}
-
-#[test]
-#[ignore]
-// ignored, will work only when ETOMIC daemon is running locally and has following addresses imported
-// with rescan: R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW, bQGZYDnEvifgehVKxEzFt8ygNSnLV6Dqiz
-fn test_search_for_swap_tx_spend_native_was_refunded() {
-    let conf = json!({"asset":"ETOMIC"});
-    let req = json!({"method":"enable"});
-    let priv_key = unwrap!(hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"));
-    let coin = unwrap!(utxo_coin_from_conf_and_request("ETOMIC", &conf, &req, &priv_key));
-
-    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/c9a47cc6e80a98355cd4e69d436eae6783cbee5991756caa6e64a0743442fa96
-    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8901887e809b10738b1625b7f47fd5d2201f32e8a4c6c0aaefc3b9ab6c07dc6a5925010000006a47304402203966f49ba8acc9fcc0e53e7b917ca5599ce6054a0c2d22752c57a3dc1b0fc83502206fde12c869da20a21cedd5bbc4bcd12977d25ff4b00e0999de5ac4254668e891012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02809698000000000017a9147e9456f37fa53cf9053e192ea4951d2c8b58647c8784631684010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac0fb3525d000000000000000000000000000000"));
-
-    // raw tx bytes of https://etomic.explorer.dexstats.info/tx/a5f11bdb657ee834a4c410e2001beccce0374bfa3f662bd890fd3d01b0b3d101
-    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f890196fa423474a0646eaa6c759159eecb8367ae6e439de6d45c35980ae8c67ca4c900000000c4483045022100969c3b2c1ab630b67a6ee74316c9356e38872276a070d126da1d731503bb6e3e02204398d8c23cb59c2caddc33ce9c9716c54b11574126a3c3350a17043f3751696d01514c786304cf93525db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a92102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68feffffff0198929800000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac01a5525d000000000000000000000000000000"));
-    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
-
-    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
-        1565692879,
-        &unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")),
-        &unwrap!(hex::decode("02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3")),
-        &payment_tx_bytes,
-        166864
-    )));
-    assert_eq!(FoundSwapTxSpend::Refunded(spend_tx), found);
-}
-
-#[test]
 fn test_withdraw_impl_set_fixed_fee() {
     NativeClient::list_unspent_ordered.mock_safe(|_,_| {
         let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];

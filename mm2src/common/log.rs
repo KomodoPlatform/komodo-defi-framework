@@ -60,7 +60,7 @@ impl Gravity {
     #[cfg(feature = "native")]
     fn flush (&self) {
         let mut tail = self.tail.lock();
-        while let Some (chunk) = self.landing.try_pop() {
+        while let Ok (chunk) = self.landing.pop() {
             let logged_with_log_output = LOG_OUTPUT.lock().map (|l| l.is_some()) .unwrap_or (false);
             if !logged_with_log_output {
                 writeln (&chunk)

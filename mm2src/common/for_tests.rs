@@ -248,9 +248,13 @@ impl MarketMakerIt {
     #[cfg(not(feature = "native"))]
     pub async fn wait_for_log<F> (&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
     where F: Fn (&str) -> bool {
-        
-        unimplemented!()
-    }
+        let start = now_float();
+        loop {
+            let tail = unsafe {std::str::from_utf8_unchecked (&crate::PROCESS_LOG_TAIL[..])};
+            if pred (tail) {return Ok(())}
+            if now_float() - start > timeout_sec {return ERR! ("Timeout expired waiting for a log condition")}
+            Timer::sleep (0.1) .await
+    }   }
 
     /// Invokes the locally running MM and returns its reply.
     #[cfg(feature = "native")]

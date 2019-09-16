@@ -283,7 +283,7 @@ struct PortableCtx {
     ffi_handle: Option<u32>
 }
 
-#[derive (Serialize, Deserialize)]
+#[derive (Serialize, Deserialize, Debug)]
 struct NativeCtx {
     ffi_handle: u32
 }
@@ -380,7 +380,7 @@ pub async fn ctx2helpers (main_ctx: MmArc, req: Bytes) -> Result<Vec<u8>, String
             let key = try_s! (ctx.secp256k1_key_pair.as_option().ok_or ("No key"));
             if *key.private() != private {return ERR! ("key mismatch")}
             let res = try_s! (bencode (&NativeCtx {
-                ffi_handle: try_s! (main_ctx.ffi_handle())
+                ffi_handle: try_s! (ctx.ffi_handle())
             }));
             return Ok (res)
     }   }

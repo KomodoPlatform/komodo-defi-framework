@@ -77,6 +77,7 @@ pub mod lift_body {
     pub struct LiftBody<T> {inner: T}
 }
 
+use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use crossbeam::{channel};
 use futures01::{future, task::Task, Future};
@@ -372,7 +373,6 @@ pub fn stack_trace (format: &mut dyn FnMut (&mut dyn Write, &backtrace::Symbol),
 /// NB: https://github.com/rust-lang/backtrace-rs/issues/227
 #[cfg(feature = "native")]
 pub fn set_panic_hook() {
-    use atomic::Atomic;
     use std::panic::{set_hook, PanicInfo};
 
     thread_local! {static ENTERED: Atomic<bool> = Atomic::new (false);}
@@ -665,6 +665,50 @@ pub mod executor {
         unwrap! (crate::wio::CORE.lock()) .spawn (f);
     }
 
+    /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
+    pub fn spawn_after (utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
+        use crossbeam::channel;
+        use gstuff::Constructible;
+        use std::collections::BTreeMap;
+        use std::sync::Once;
+
+        static START: Once = Once::new();
+        static SCHEDULE: Constructible<channel::Sender<(f64, Pin<Box<dyn Future03<Output = ()> + Send + 'static>>)>> = Constructible::new();
+        START.call_once (|| {
+            unwrap! (thread::Builder::new().name ("spawn_after".into()) .spawn (move || {
+                let (tx, rx) = channel::bounded (0);
+                unwrap! (SCHEDULE.pin (tx), "spawn_after] Can't pin the channel");
+                let mut tasks: BTreeMap<Duration, Vec<Pin<Box<dyn Future03<Output = ()> + Send + 'static>>>> = BTreeMap::new();
+                loop {
+                    let now = Duration::from_secs_f64 (now_float());
+                    let mut ready = Vec::new();
+                    let mut next_stop = Duration::from_secs_f64 (0.1);
+                    for (utc, _) in tasks.iter() {
+                        if *utc <= now {ready.push (*utc)}
+                        else {next_stop = *utc - now; break}
+                    }
+                    for utc in ready {
+                        let v = match tasks.remove (&utc) {Some (v) => v, None => continue};
+                        //log! ("spawn_after] spawning " (v.len()) " tasks at " [utc]);
+                        for f in v {spawn (f)}
+                    }
+                    let (utc, f) = match rx.recv_timeout (next_stop) {
+                        Ok (t) => t,
+                        Err (channel::RecvTimeoutError::Disconnected) => break,
+                        Err (channel::RecvTimeoutError::Timeout) => continue
+                    };
+                    tasks.entry (Duration::from_secs_f64 (utc)) .or_insert (Vec::new()) .push (f)
+                }
+            }), "Can't spawn a spawn_after thread");
+        });
+        loop {
+            match SCHEDULE.as_option() {
+                None => {thread::yield_now(); continue}
+                Some (tx) => {unwrap! (tx.send ((utc, Box::pin (future))), "Can't reach spawn_after"); break}
+            }
+        }
+    }
+
     /// A future that completes at a given time.  
     pub struct Timer {till_utc: f64}
 
@@ -682,10 +726,7 @@ pub mod executor {
             // NB: We should get a new `Waker` on every `poll` in case the future migrates between executors.
             // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
             let waker = cx.waker().clone();
-            unwrap! (thread::Builder::new().name ("Timer".into()) .spawn (move || {
-                thread::sleep (Duration::from_secs_f64 (delta));
-                waker.wake()
-            }), "Can't spawn a Timer thread");
+            spawn_after (self.till_utc, async move {waker.wake()});
             Poll03::Pending
         }
     }
@@ -1048,6 +1089,15 @@ pub fn writeln (line: &str) {
         println! ("{}", line);
     });
 }
+
+#[cfg(not(feature = "native"))]
+const fn make_tail() -> [u8; 0x10000] {[0; 0x10000]}
+
+#[cfg(not(feature = "native"))]
+static mut PROCESS_LOG_TAIL: [u8; 0x10000] = make_tail();
+#[cfg(not(feature = "native"))]
+static TAIL_CUR: Atomic<usize> = Atomic::new (0);
+
 #[cfg(not(feature = "native"))]
 pub fn writeln (line: &str) {
     use std::ffi::CString;
@@ -1055,7 +1105,16 @@ pub fn writeln (line: &str) {
     extern "C" {pub fn console_log (ptr: *const c_char, len: i32);}
     let lineᶜ = unwrap! (CString::new (line));
     unsafe {console_log (lineᶜ.as_ptr(), line.len() as i32)}
-}
+
+    // Keep a tail of the log in RAM for the integration tests.
+    unsafe {
+        if line.len() < PROCESS_LOG_TAIL.len() {
+            let posⁱ = TAIL_CUR.load (Ordering::Relaxed);
+            let posⱼ = posⁱ + line.len();
+            let (posˢ, posⱼ) = if posⱼ > PROCESS_LOG_TAIL.len() {(0, line.len())} else {(posⁱ, posⱼ)};
+            if TAIL_CUR.compare_exchange (posⁱ, posⱼ, Ordering::Relaxed, Ordering::Relaxed) .is_ok() {
+                for (cur, ix) in (posˢ..posⱼ) .zip (0..line.len()) {PROCESS_LOG_TAIL[cur] = line.as_bytes()[ix]}
+}   }   }   }
 
 /// Set up a panic hook that prints the panic location and the message.
 /// (The default Rust handler doesn't have the means to print the message.

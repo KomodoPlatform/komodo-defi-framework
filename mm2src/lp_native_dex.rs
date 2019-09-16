@@ -23,7 +23,6 @@
 use futures01::{Future};
 use futures01::sync::oneshot::Sender;
 use futures::compat::Future01CompatExt;
-use futures::executor::block_on;
 use futures::future::FutureExt;
 use http::StatusCode;
 use rand::{random, Rng, SeedableRng};
@@ -46,10 +45,9 @@ use std::thread::{self};
 use crate::common::lp;
 use crate::common::executor::spawn;
 use crate::common::{slurp_url, MM_VERSION};
-use crate::common::log::TagParam;
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::common::privkey::key_pair_from_seed;
-use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, client_p2p_loop};
+use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, start_client_p2p_loop};
 use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, orders_kick_start};
 use crate::mm2::lp_swap::swap_kick_starts;
 use crate::mm2::rpc::{spawn_rpc};
@@ -812,17 +810,9 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
 }
 
 /// Setup the peer-to-peer network.
-#[allow(unused_variables)]  // delme
-pub unsafe fn lp_initpeers (ctx: &MmArc, myipaddr: &IpAddr, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
+pub async fn lp_initpeers (ctx: &MmArc, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
     // Pick our ports.
-    let (pullport, pubport, busport) = try_s!(lp_ports(netid));
-    // Add ourselves into the list of known peers.
-    let myipaddr_c = try_s! (CString::new (fomat! ((myipaddr))));
-    /*
-    mypeer = lp::LP_addpeer (mypeer, pubsock, myipaddr_c.as_ptr() as *mut c_char, myport, pullport, pubport, 1, lp::G.LP_sessionid, netid);
-    lp::LP_mypeer = mypeer;
-    if mypeer == null_mut() {return ERR! ("Error adding {} into the p2p ring", myipaddr)}
-    */
+    let (_pullport, pubport, _busport) = try_s!(lp_ports(netid));
 
     type IP<'a> = Cow<'a, str>;
 
@@ -837,7 +827,7 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, myipaddr: &IpAddr, netid: u16, seednode
             // We don't want to unnecessarily spam the friendlist of a public seed node,
             // but for a custom `seednode` we invoke the `investigate_peer`,
             // facilitating direct `peers` communication between the two.
-            try_s!(peers::investigate_peer (ctx, &seednode, pubport + 1));
+            try_s!(peers::investigate_peer (&ctx, &seednode, pubport + 1));
         }
         seednodes.into_iter().map(|ip| (Cow::Owned (ip), true)).collect()
     } else if netid > 0 && netid < 9 {
@@ -858,21 +848,16 @@ pub unsafe fn lp_initpeers (ctx: &MmArc, myipaddr: &IpAddr, netid: u16, seednode
             return ERR!("At least 1 IP must be provided");
         }
         let seed_ips = seeds.iter().map(|(ip, _)| fomat!((ip) ":" (pubport))).collect();
-        try_s!(thread::Builder::new().name ("client_p2p_loop".into()) .spawn ({
-            let ctx = ctx.clone();
-            move || client_p2p_loop(ctx, seed_ips)
-        }));
+        try_s! (start_client_p2p_loop (ctx.clone(), seed_ips) .await);
     }
 
     let mut seed_ips = Vec::with_capacity (seeds.len());
-    for (seed_ip, is_lp) in seeds {
+    for (seed_ip, _is_lp) in seeds {
         seed_ips.push (try_s! (seed_ip.parse()));
-        let ip = try_s! (CString::new (&seed_ip[..]));
-        // lp::LP_addpeer (mypeer, pubsock, ip.as_ptr() as *mut c_char, myport, pullport, pubport, if is_lp {1} else {0}, lp::G.LP_sessionid, netid);
     }
     *try_s! (ctx.seeds.lock()) = seed_ips;
 
-    try_s! (block_on (peers::initialize (ctx, netid, pubport + 1)));
+    try_s! (peers::initialize (&ctx, netid, pubport + 1) .await);
 
     Ok(())
 }
@@ -1153,10 +1138,13 @@ fn test_ip (ctx: &MmArc, ip: IpAddr) -> Result<(Sender<()>, u16), String> {
 }
 
 #[cfg(not(feature = "native"))]
-fn test_ip (_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {unimplemented!()}
+fn test_ip (_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {
+    // Try to return a simple okay for tests.
+    let (shutdown_tx, _shutdown_rx) = futures01::sync::oneshot::channel::<()>();
+    Ok ((shutdown_tx, 80))}
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
+pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
     log! ({"version: {}", MM_VERSION});
     unsafe {try_s! (lp_passphrase_init (&ctx))}
@@ -1176,7 +1164,6 @@ pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     // Keeps HTTP fallback server alive until `lp_init` exits.
     let mut _hf_shutdown;
 
-    let myipaddr_tags: &[&dyn TagParam] = &[&"myipaddr"];
     let myipaddr: IpAddr = if Path::new ("myipaddr") .exists() {
         match fs::File::open ("myipaddr") {
             Ok (mut f) => {
@@ -1194,11 +1181,11 @@ pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
         match test_ip (&ctx, ip) {
             Ok ((hf_shutdown, hf_port)) => {
-                ctx.log.log ("🙂", myipaddr_tags, &fomat! (
+                ctx.log.log ("🙂", &[&"myipaddr"], &fomat! (
                     "IP " (ip) " works and we can bind on it (port " (hf_port) ")."));
                 if i_am_seed {_hf_shutdown = hf_shutdown}
             },
-            Err (err) => ctx.log.log ("🤒", myipaddr_tags, &fomat! ("Can't bind on " (ip) "! " (err)))
+            Err (err) => ctx.log.log ("🤒", &[&"myipaddr"], &fomat! ("Can't bind on " (ip) "! " (err)))
         };
 
         ip
@@ -1250,7 +1237,7 @@ pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
             // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
             match test_ip (&ctx, ip) {
                 Ok ((hf_shutdown, hf_port)) => {
-                    ctx.log.log ("🙂", myipaddr_tags, &fomat! (
+                    ctx.log.log ("🙂", &[&"myipaddr"], &fomat! (
                         "We've detected an external IP " (ip) " and we can bind on it (port " (hf_port) ")"
                         ", so probably a dedicated IP."));
                     if i_am_seed {_hf_shutdown = hf_shutdown}
@@ -1260,24 +1247,28 @@ pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
             }
             let all_interfaces = Ipv4Addr::new (0, 0, 0, 0) .into();
             if test_ip (&ctx, all_interfaces) .is_ok() {
-                ctx.log.log ("😅", myipaddr_tags, &fomat! (
+                ctx.log.log ("😅", &[&"myipaddr"], &fomat! (
                     "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
                 break all_interfaces
             }
             let locahost = Ipv4Addr::new (127, 0, 0, 1) .into();
             if test_ip (&ctx, locahost) .is_ok() {
-                ctx.log.log ("🤫", myipaddr_tags, &fomat! (
+                ctx.log.log ("🤫", &[&"myipaddr"], &fomat! (
                     "We couldn't bind on " (ip) " or 0.0.0.0!"
                     " Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."));
                 break locahost
             }
-            ctx.log.log ("🤒", myipaddr_tags, &fomat! (
+            ctx.log.log ("🤒", &[&"myipaddr"], &fomat! (
                 "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."));
             break all_interfaces  // Seems like a better default than 127.0.0.1, might still work for other ports.
         }
     };
 
-    let seednode_thread = if i_am_seed {
+    #[cfg(not(feature = "native"))] {
+        try_s! (ctx.send_to_helpers().await);
+    }
+
+    let seednode_thread = if i_am_seed && cfg! (feature = "native") {
         log! ("i_am_seed at " (myipaddr) ":" (mypubport));
         let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
         try_s!(listener.set_nonblocking(true));
@@ -1288,9 +1279,12 @@ pub fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     } else {
         None
     };
+
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
-    unsafe { try_s! (lp_initpeers (&ctx, &myipaddr, netid, seednodes)); }
+    try_s! (lp_initpeers (&ctx, netid, seednodes) .await);
+
     try_s! (ctx.initialized.pin (true));
+    #[cfg(not(feature = "native"))] {if 1==1 {return Ok(())}}  // TODO: Gradually move this point further down.
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
     let mut coins_needed_for_kick_start = swap_kick_starts (ctx.clone());

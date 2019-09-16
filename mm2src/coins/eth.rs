@@ -704,6 +704,7 @@ impl MarketCoinOps for EthCoin {
         tx: &[u8],
         confirmations: u64,
         wait_until: u64,
+        check_every: u64,
     ) -> Result<(), String> {
         let unsigned: UnverifiedTransaction = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unsigned));
@@ -718,7 +719,7 @@ impl MarketCoinOps for EthCoin {
                 Ok(r) => r,
                 Err(e) => {
                     log!("Error " [e] " getting the " (self.ticker()) " transaction " [tx.tx_hash()] ", retrying in 15 seconds");
-                    thread::sleep(Duration::from_secs(15));
+                    thread::sleep(Duration::from_secs(check_every));
                     continue;
                 }
             };
@@ -732,7 +733,7 @@ impl MarketCoinOps for EthCoin {
                         Ok(b) => b,
                         Err(e) => {
                             log!("Error " [e] " getting the " (self.ticker()) " block number retrying in 15 seconds");
-                            thread::sleep(Duration::from_secs(15));
+                            thread::sleep(Duration::from_secs(check_every));
                             continue;
                         }
                     };
@@ -741,7 +742,7 @@ impl MarketCoinOps for EthCoin {
                     }
                 }
             }
-            thread::sleep(Duration::from_secs(15));
+            thread::sleep(Duration::from_secs(check_every));
         }
     }
 

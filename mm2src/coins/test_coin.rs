@@ -36,6 +36,7 @@ impl MarketCoinOps for TestCoin {
         tx: &[u8],
         confirmations: u64,
         wait_until: u64,
+        check_every: u64,
     ) -> Result<(), String> {
         unimplemented!()
     }

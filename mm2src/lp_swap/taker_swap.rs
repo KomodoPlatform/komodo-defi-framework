@@ -643,6 +643,7 @@ impl TakerSwap {
             &unwrap!(self.maker_payment.clone()).tx_hex,
             self.data.maker_payment_confirmations,
             self.data.maker_payment_wait,
+            15,
         ) {
             return Ok((
                 Some(TakerSwapCommand::Finish),

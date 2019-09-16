@@ -46,6 +46,7 @@ use std::net::{SocketAddr};
 #[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
 
+use crate::mm2::lp_network;
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
 use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, my_recent_swaps, recover_funds_of_swap,
                           stats_swap_status};
@@ -132,7 +133,8 @@ async fn helpers (ctx: MmArc, client: SocketAddr, req: Parts,
         "peers_initialize" => try_s! (peers::peers_initialize (reqᵇ) .await),
         "peers_send" => try_s! (peers::peers_send (reqᵇ) .await),
         "peers_recv" => try_s! (peers::peers_recv (reqᵇ) .await),
-        "peers_drop_send_handler" => try_s! (peers::peers_drop_send_handlerʹ (reqᵇ) .await),
+        "peers_drop_send_handler" => try_s! (peers::peers_drop_send_handlerʰ (reqᵇ) .await),
+        "start_client_p2p_loop" => try_s! (lp_network::start_client_p2p_loopʰ (reqᵇ) .await),
         _ => return ERR! ("Unknown helper: {}", method)
     };
 

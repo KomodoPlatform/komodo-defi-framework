@@ -64,12 +64,12 @@ use std::time::Duration;
 pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, SwapOps, TradeInfo,
+use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeInfo,
             Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 
 #[cfg(test)]
-mod utxo_tests;
+pub mod utxo_tests;
 
 #[cfg(windows)]
 #[cfg(feature = "native")]
@@ -283,6 +283,14 @@ impl UtxoCoinImpl {
             },
             None => Ok(None),
         }
+    }
+
+    pub fn my_public_key(&self) -> &Public {
+        self.key_pair.public()
+    }
+
+    pub fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.rpc_client
     }
 }
 
@@ -1252,12 +1260,14 @@ impl MarketCoinOps for UtxoCoin {
         tx: &[u8],
         confirmations: u64,
         wait_until: u64,
+        check_every: u64,
     ) -> Result<(), String> {
         let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
         self.rpc_client.wait_for_confirmations(
             &tx,
             confirmations as u32,
             wait_until,
+            check_every,
         )
     }
 
@@ -1299,7 +1309,7 @@ impl MarketCoinOps for UtxoCoin {
 }
 
 async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
-    let to: Address = try_s!(Address::from_str(&req.to));
+    let to = try_s!(Address::from_str(&req.to));
     if to.prefix != coin.pub_addr_prefix || to.t_addr_prefix != coin.pub_t_addr_prefix {
         return ERR!("Address {} has invalid format, it must start with {}", to, &coin.my_address()[..1]);
     }
@@ -1645,6 +1655,61 @@ impl MmCoin for UtxoCoin {
 }
 
 #[cfg(feature = "native")]
+// https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh#L5
+// https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.bat#L4
+pub fn zcash_params_path() -> PathBuf {
+    if cfg! (windows) {
+        // >= Vista: c:\Users\$username\AppData\Roaming
+        get_special_folder_path().join("ZcashParams")
+    } else if cfg! (target_os = "macos") {
+        unwrap!(home_dir()).join("Library").join("Application Support").join("ZcashParams")
+    } else {
+        unwrap!(home_dir()).join(".zcash-params")
+    }
+}
+
+#[cfg(feature = "native")]
+pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
+    // komodo/util.cpp/GetDefaultDataDir
+    let mut data_dir = match dirs::home_dir() {
+        Some (hd) => hd,
+        None => Path::new ("/") .to_path_buf()
+    };
+
+    if cfg! (windows) {
+        // >= Vista: c:\Users\$username\AppData\Roaming
+        data_dir = get_special_folder_path();
+        if is_asset_chain {
+            data_dir.push ("Komodo");
+        } else {
+            data_dir.push (first_char_to_upper(name));
+        }
+    } else if cfg! (target_os = "macos") {
+        data_dir.push ("Library");
+        data_dir.push ("Application Support");
+        if is_asset_chain {
+            data_dir.push ("Komodo");
+        } else {
+            data_dir.push (first_char_to_upper(name));
+        }
+    } else {
+        if is_asset_chain {
+            data_dir.push (".komodo");
+        } else {
+            data_dir.push (format!(".{}", name));
+        }
+    }
+
+    if is_asset_chain {data_dir.push (name)};
+    data_dir
+}
+
+#[cfg(not(feature = "native"))]
+pub fn coin_daemon_data_dir(_name: &str, _is_asset_chain: bool) -> PathBuf {
+    unimplemented!()
+}
+
+#[cfg(feature = "native")]
 /// Returns a path to the native coin wallet configuration.
 /// (This path is used in `LP_userpassfp` to read the wallet credentials).
 /// cf. https://github.com/artemii235/SuperNET/issues/346
@@ -1660,37 +1725,7 @@ fn confpath (coins_en: &Json) -> Result<PathBuf, String> {
             }
         };
 
-        // komodo/util.cpp/GetDefaultDataDir
-        let mut data_dir = match dirs::home_dir() {
-            Some (hd) => hd,
-            None => Path::new ("/") .to_path_buf()
-        };
-
-        if cfg! (windows) {
-            // >= Vista: c:\Users\$username\AppData\Roaming
-            data_dir = get_special_folder_path();
-            if is_asset_chain {
-                data_dir.push ("Komodo");
-            } else {
-                data_dir.push (first_char_to_upper(name));
-            }
-        } else if cfg! (target_os = "macos") {
-            data_dir.push ("Library");
-            data_dir.push ("Application Support");
-            if is_asset_chain {
-                data_dir.push ("Komodo");
-            } else {
-                data_dir.push (first_char_to_upper(name));
-            }
-        } else {
-            if is_asset_chain {
-                data_dir.push (".komodo");
-            } else {
-                data_dir.push (format!(".{}", name));
-            }
-        }
-
-        if is_asset_chain {data_dir.push (name)}
+        let data_dir = coin_daemon_data_dir(name, is_asset_chain);
 
         let confname = format! ("{}.conf", name);
 
@@ -1741,7 +1776,7 @@ pub fn utxo_coin_from_conf_and_request(
     conf: &Json,
     req: &Json,
     priv_key: &[u8],
-) -> Result<MmCoinEnum, String> {
+) -> Result<UtxoCoin, String> {
     let checksum_type = if ticker == "GRS" {
         ChecksumType::DGROESTL512
     } else if ticker == "SMART" {
@@ -1904,7 +1939,7 @@ pub fn utxo_coin_from_conf_and_request(
         history_sync_state: Mutex::new(initial_history_state),
         required_confirmations: conf["required_confirmations"].as_u64().unwrap_or(1).into(),
     };
-    Ok(UtxoCoin(Arc::new(coin)).into())
+    Ok(UtxoCoin(Arc::new(coin)))
 }
 
 /// Function calculating KMD interest

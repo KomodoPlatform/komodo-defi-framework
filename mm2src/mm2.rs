@@ -25,6 +25,8 @@
 use common::{double_panic_crash, MM_VERSION};
 use common::mm_ctx::MmCtxBuilder;
 
+use futures::executor::block_on;
+
 use gstuff::{slurp};
 
 use serde_json::{self as json, Value as Json};
@@ -74,7 +76,7 @@ fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
         let (_, pubport, _) = try_s!(lp_ports(netid));
         let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
         ctx_cb (try_s! (ctx.ffi_handle()));
-        try_s! (lp_init (pubport, ctx));
+        try_s! (block_on (lp_init (pubport, ctx)));
         Ok(())
     } else {ERR! ("!passphrase")}
 }

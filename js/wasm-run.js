@@ -11,6 +11,10 @@ const os = require('os');
 // https://nodejs.org/api/child_process.html
 // https://www.npmjs.com/package/cross-spawn
 const spawn = require('cross-spawn');
+// https://nodejs.org/api/worker_threads.html
+// https://medium.com/@Trott/using-worker-threads-in-node-js-80494136dbb6
+// https://github.com/WebAssembly/threads/blob/master/proposals/threads/Overview.md
+const worker_threads = require('worker_threads');
 
 const snooze = ms => new Promise (resolve => setTimeout (resolve, ms));
 
@@ -63,7 +67,9 @@ async function runWasm() {
   const wasmBytes = fs.readFileSync ('mm2.wasm');
   const httpRequests = {};
   wasmShared.callbacks = {};
+  const memory = new WebAssembly.Memory ({initial: 1, shared: true});
   const wasmEnv = {
+    //memory: memory,
     bitcoin_ctx: function() {console.log ('env/bitcoin_ctx')},
     bitcoin_ctx_destroy: function() {console.log ('env/bitcoin_ctx_destroy')},
     call_back: function (cb_id, ptr, len) {
@@ -144,6 +150,15 @@ async function runWasm() {
       req.write (payload);
       req.end()},
     temp_dir: function (rbuf, rcap) {return to_utf8 (wasmShared.memory, rbuf, rcap, os.tmpdir())}};
+
+  const worker = new worker_threads.Worker ('./worker.js', {
+    // Fails with `DOMException [DataCloneError]: #<Memory> could not be cloned.`
+    //workerData: memory
+  });
+  worker.on ('error', (err) => {throw err});
+  // Fails with `DOMException [DataCloneError]: #<Memory> could not be cloned.`
+  //worker.on ('online', (_) => {worker.postMessage (memory)});
+
   const wasmInstantiated = await WebAssembly.instantiate (wasmBytes, {env: wasmEnv});
   const exports = wasmInstantiated.instance.exports;
   /** @type {WebAssembly.Memory} */

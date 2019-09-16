@@ -18,8 +18,11 @@
 //  marketmaker
 //
 
+use bytes::Bytes;
 use bitcrypto::ripemd160;
 use common::{lp_queue_command, HyRes, QueuedCommand, COMMAND_QUEUE};
+#[cfg(not(feature = "native"))]
+use common::helperᶜ;
 use common::executor::spawn;
 use common::mm_ctx::MmArc;
 use crossbeam::channel;
@@ -29,9 +32,13 @@ use futures::future::FutureExt;
 use gstuff::now_ms;
 use primitives::hash::H160;
 use serde_json::{self as json, Value as Json};
+#[cfg(not(feature = "native"))]
+use serde_bencode::ser::to_bytes as bencode;
+use serde_bencode::de::from_bytes as bdecode;
 use std::collections::hash_map::{HashMap, Entry};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::thread;
 use std::time::Duration;
 
 use crate::mm2::lp_native_dex::lp_command_process;
@@ -236,8 +243,37 @@ struct SeedConnection {
     buf: String,
 }
 
+#[cfg(feature = "native")]
+pub async fn start_client_p2p_loop (ctx: MmArc, addrs: Vec<String>) -> Result<(), String> {
+    try_s!(thread::Builder::new().name ("client_p2p_loop".into()) .spawn ({
+        move || client_p2p_loop (ctx, addrs)
+    }));
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct StartClientP2pLoopArgs {
+    ctx: u32,
+    addrs: Vec<String>
+}
+
+#[cfg(not(feature = "native"))]
+pub async fn start_client_p2p_loop (ctx: MmArc, addrs: Vec<String>) -> Result<(), String> {
+    let args = StartClientP2pLoopArgs {ctx: try_s! (ctx.ffi_handle()), addrs};
+    let args = try_s! (bencode (&args));
+    try_s! (helperᶜ ("start_client_p2p_loop", args) .await);
+    Ok(())
+}
+
+pub async fn start_client_p2p_loopʰ (req: Bytes) -> Result<Vec<u8>, String> {
+    let args: StartClientP2pLoopArgs = try_s! (bdecode (&req));
+    let ctx = try_s! (MmArc::from_ffi_handle (args.ctx));
+    try_s! (start_client_p2p_loop (ctx, args.addrs) .await);
+    Ok (Vec::new())
+}
+
 /// The loop processing client node activity
-pub fn client_p2p_loop(ctx: MmArc, addrs: Vec<String>) {
+fn client_p2p_loop(ctx: MmArc, addrs: Vec<String>) {
     let mut seed_connections: Vec<SeedConnection> = vec![];
     // ip and last connection attempt timestamp
     let mut addrs: Vec<(String, u64)> = addrs.into_iter().map(|addr| (addr, 0)).collect();
