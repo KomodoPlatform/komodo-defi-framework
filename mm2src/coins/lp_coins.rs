@@ -32,8 +32,9 @@
 #[macro_use] extern crate unwrap;
 
 use bigdecimal::BigDecimal;
-use common::{rpc_response, rpc_err_response, HyRes};
+use common::{HyRes, rpc_response, rpc_err_response};
 use common::mm_ctx::{from_ctx, MmArc};
+use common::mm_number::MmNumber;
 use futures01::{Future};
 use gstuff::{slurp};
 use http::Response;
@@ -323,7 +324,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
 
     fn is_asset_chain(&self) -> bool;
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send>;
+    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send>;
 

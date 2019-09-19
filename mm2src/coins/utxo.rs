@@ -32,6 +32,7 @@ use common::{first_char_to_upper, HyRes, rpc_response};
 use common::custom_futures::join_all_sequential;
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
+use common::mm_number::MmNumber;
 #[cfg(feature = "native")]
 use dirs::home_dir;
 use futures01::{Future};
@@ -1365,7 +1366,7 @@ pub struct UtxoFeeDetails {
 impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let fee_fut = self.get_tx_fee().map_err(|e| ERRL!("{}", e));
         let arc = self.clone();
         let amount = amount.clone();
@@ -1376,16 +1377,16 @@ impl MmCoin for UtxoCoin {
                     ActualTxFee::Fixed(f) => f,
                     ActualTxFee::Dynamic(f) => f,
                 };
-                let fee_decimal = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(arc.decimals as u32));
+                let fee_decimal = MmNumber::from(fee) / MmNumber::from(10u64.pow(arc.decimals as u32));
                 if &amount < &fee_decimal {
                     return ERR!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, fee_decimal);
                 }
                 let required = match trade_info {
                     TradeInfo::Maker => amount + fee_decimal,
-                    TradeInfo::Taker(dex_fee) => &amount + dex_fee + BigDecimal::from(2) * fee_decimal,
+                    TradeInfo::Taker(dex_fee) => &amount + &MmNumber::from(dex_fee.clone()) + MmNumber::from(2) * fee_decimal,
                 };
                 if balance < required {
-                    return ERR!("{} balance {} is too low, required {:.8}", arc.ticker(), balance, required);
+                    return ERR!("{} balance {} is too low, required {}", arc.ticker(), balance, required);
                 }
                 Ok(())
             })
@@ -1869,14 +1870,9 @@ pub fn utxo_coin_from_conf_and_request(
         _ => return ERR!("utxo_coin_from_conf_and_request should be called only by enable or electrum requests"),
     };
     let asset_chain = conf["asset"].as_str().is_some();
-    let tx_version = if ticker == "KMD" || asset_chain {
-        4
-    } else if ticker == "PART" {
-        160
-    } else {
-        conf["txversion"].as_i64().unwrap_or (1) as i32
-    };
-    let overwintered = ticker == "KMD" || asset_chain || conf["overwintered"].as_u64().unwrap_or (0) == 1;
+    let tx_version = conf["txversion"].as_i64().unwrap_or (1) as i32;
+    let overwintered = conf["overwintered"].as_u64().unwrap_or (0) == 1;
+
     let tx_fee = match conf["txfee"].as_u64() {
         None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {
             let fee_method = match &rpc_client {

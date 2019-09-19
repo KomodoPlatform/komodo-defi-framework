@@ -6,12 +6,11 @@ use bytes::Bytes;
 use chrono::{Local, TimeZone};
 #[cfg(feature = "native")]
 use futures01::Future;
-use futures::task::SpawnExt;
 use futures::channel::oneshot::channel;
+//use futures::executor::block_on;
+use futures::task::SpawnExt;
 use gstuff::ISATTY;
-use http::{StatusCode, HeaderMap};
-#[cfg(feature = "native")]
-use http::{Request};
+use http::{HeaderMap, Request, StatusCode};
 use serde_json::{self as json, Value as Json};
 use term;
 use rand::Rng;
@@ -21,6 +20,8 @@ use std::env::{self, var};
 use std::fs;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
+#[cfg(not(feature = "native"))]
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Child};
 #[cfg(feature = "native")]
@@ -257,19 +258,24 @@ impl MarketMakerIt {
     }   }
 
     /// Invokes the locally running MM and returns its reply.
-    #[cfg(feature = "native")]
-    pub fn rpc (&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
-        let payload = try_s! (json::to_string (&payload));
+    pub async fn rpc (&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
+        let payload = try_s! (json::to_vec (&payload));
         let uri = format! ("http://{}:7783", self.ip);
-        let request = try_s! (Request::builder().method ("POST") .uri (uri) .body (payload.into()));
-        let (status, headers, body) = try_s! (slurp_req (request) .wait());
-        Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
-    }
-
-    #[cfg(not(feature = "native"))]
-    pub fn rpc (&self, _payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
-        // TODO: Change the signatures to `pub async fn rpc`.
-        unimplemented!()
+        #[cfg(not(feature = "native"))] let payload = futures01::stream::once (Ok (Bytes::from (payload)));
+        let request = try_s! (Request::builder().method ("POST") .uri (uri) .body (payload));
+        #[cfg(feature = "native")] {
+            let (status, headers, body) = try_s! (slurp_req (request) .wait());
+            Ok ((status, try_s! (from_utf8 (&body)) .trim().into(), headers))
+        }
+        #[cfg(not(feature = "native"))] {
+            let rpc_service = try_s! (crate::header::RPC_SERVICE.as_option().ok_or ("!RPC_SERVICE"));
+            let (parts, body) = request.into_parts();
+            let client: SocketAddr = try_s! ("127.0.0.1:1".parse());
+            let f = rpc_service (self.ctx.clone(), parts, Box::new (body), client);
+            let response = try_s! (f.await);
+            let (parts, body) = response.into_parts();
+            Ok ((parts.status, try_s! (String::from_utf8 (body)), parts.headers))
+        }
     }
 
     /// Sends the &str payload to the locally running MM and returns it's reply.
@@ -293,9 +299,8 @@ impl MarketMakerIt {
     pub fn mm_dump (&self) -> (RaiiDump, RaiiDump) {(RaiiDump{}, RaiiDump{})}
 
     /// Send the "stop" request to the locally running MM.
-    #[cfg(feature = "native")]
-    pub fn stop (&self) -> Result<(), String> {
-        let (status, body, _headers) = match self.rpc (json! ({"userpass": self.userpass, "method": "stop"})) {
+    pub async fn stop (&self) -> Result<(), String> {
+        let (status, body, _headers) = match self.rpc (json! ({"userpass": self.userpass, "method": "stop"})) .await {
             Ok (t) => t,
             Err (err) => {
                 // Downgrade the known errors into log warnings,
@@ -308,12 +313,6 @@ impl MarketMakerIt {
         }   }   };
         if status != StatusCode::OK {return ERR! ("MM didn't accept a stop. body: {}", body)}
         Ok(())
-    }
-
-    #[cfg(not(feature = "native"))]
-    pub fn stop (&self) -> Result<(), String>{
-        // TODO: Change the signatures to `pub async fn stop`.
-        unimplemented!()
     }
 }
 
@@ -441,8 +440,7 @@ pub fn mm_spat (_local_start: LocalStart, _conf_mod: &dyn Fn(Json)->Json) -> (&'
 
 /// Asks MM to enable the given currency in electrum mode
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
-#[cfg(feature = "native")]
-pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
+pub async fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
     let servers: Vec<_> = urls.into_iter().map(|url| json!({"url": url})).collect();
     let electrum = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -450,13 +448,9 @@ pub fn enable_electrum (mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json
         "coin": coin,
         "servers": servers,
         "mm2": 1,
-    })));
+    })) .await);
     assert_eq! (electrum.0, StatusCode::OK, "RPC «electrum» failed with {} {}", electrum.0, electrum.1);
     unwrap!(json::from_str(&electrum.1))
-}
-#[cfg(not(feature = "native"))]
-pub fn enable_electrum (_mm: &MarketMakerIt, _coin: &str, _urls: Vec<&str>) -> Json {
-    unimplemented!()
 }
 
 /// Reads passphrase and userpass from .env file

@@ -1,6 +1,7 @@
 use bigdecimal::BigDecimal;
-use common::HyRes;
+use common::{HyRes};
 use common::mm_ctx::MmArc;
+use common::mm_number::MmNumber;
 use crate::{TradeInfo, FoundSwapTxSpend, WithdrawRequest};
 use futures01::Future;
 use mocktopus::macros::*;
@@ -194,7 +195,7 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
 

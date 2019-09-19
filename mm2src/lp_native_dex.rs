@@ -35,7 +35,6 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::os::raw::c_char;
 use std::path::Path;
-use std::ptr::null_mut;
 use std::str;
 use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,7 +47,7 @@ use crate::common::{slurp_url, MM_VERSION};
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::common::privkey::key_pair_from_seed;
 use crate::mm2::lp_network::{lp_command_q_loop, seednode_loop, start_client_p2p_loop};
-use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, orders_kick_start};
+use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, migrate_saved_orders, orders_kick_start};
 use crate::mm2::lp_swap::swap_kick_starts;
 use crate::mm2::rpc::{spawn_rpc};
 
@@ -58,18 +57,17 @@ use crate::mm2::rpc::{spawn_rpc};
 /// 2) It allows the command handler to run asynchronously and use more time wihtout slowing down the queue loop;  
 /// 3) By being present in the `dispatcher` table the commands are easier to find and to be accounted for;  
 /// 4) No need for `unsafe`, `CJSON` and `*mut c_char` there.
-pub unsafe fn lp_command_process(
+pub fn lp_command_process(
     ctx: MmArc,
     json: Json,
-) -> *mut c_char {
+) {
     if !json["result"].is_null() || !json["error"].is_null() {
-        null_mut()
+        return;
     } else {
         if std::env::var("LOG_COMMANDS").is_ok() {
             log!("Got command: " [json]);
         }
         lp_trade_command(ctx.clone(), json);
-        null_mut()
     }
 }
 
@@ -1044,6 +1042,36 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "native")]
+fn migrate_db(ctx: &MmArc) -> Result<(), String> {
+    let migration_num_path = ctx.dbdir().join(".migration");
+    let mut current_migration = match std::fs::read(&migration_num_path) {
+        Ok(bytes) => {
+            let mut num_bytes = [0; 8];
+            if bytes.len() == 8 {
+                num_bytes.clone_from_slice(&bytes);
+                u64::from_le_bytes(num_bytes)
+            } else {
+                0
+            }
+        },
+        Err(_) => 0,
+    };
+
+    if current_migration < 1 {
+        try_s!(migration_1(ctx));
+        current_migration = 1;
+    }
+    try_s!(std::fs::write(&migration_num_path, &current_migration.to_le_bytes()));
+    Ok(())
+}
+
+#[cfg(feature = "native")]
+fn migration_1(ctx: &MmArc) -> Result<(), String> {
+    try_s!(migrate_saved_orders(ctx));
+    Ok(())
+}
+
 /// Resets the context (most of which resides currently in `lp::G` but eventually would move into `MmCtx`).
 /// Restarts the peer connections.
 /// Reloads the coin keys.
@@ -1151,6 +1179,7 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     #[cfg(feature = "native")] {
         try_s! (fix_directories (&ctx));
+        try_s! (migrate_db (&ctx));
     }
 
     fn simple_ip_extractor (ip: &str) -> Result<IpAddr, String> {
@@ -1264,9 +1293,7 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
         }
     };
 
-    #[cfg(not(feature = "native"))] {
-        try_s! (ctx.send_to_helpers().await);
-    }
+    #[cfg(not(feature = "native"))] try_s! (ctx.send_to_helpers().await);
 
     let seednode_thread = if i_am_seed && cfg! (feature = "native") {
         log! ("i_am_seed at " (myipaddr) ":" (mypubport));

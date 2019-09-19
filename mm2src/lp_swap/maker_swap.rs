@@ -187,7 +187,7 @@ impl MakerSwap {
             ));
         }
 
-        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(&self.maker_amount, &my_balance, TradeInfo::Maker).wait() {
+        if let Err(e) = self.maker_coin.check_i_have_enough_to_trade(&self.maker_amount.clone().into(), &my_balance.clone().into(), TradeInfo::Maker).wait() {
             return Ok((
                 Some(MakerSwapCommand::Finish),
                 vec![MakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],

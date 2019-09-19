@@ -401,7 +401,7 @@ impl TakerSwap {
         }
 
         let dex_fee_amount = dex_fee_amount(self.maker_coin.ticker(), self.taker_coin.ticker(), &self.taker_amount);
-        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount, &my_balance, TradeInfo::Taker(dex_fee_amount)).wait() {
+        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount.clone().into(), &my_balance.clone().into(), TradeInfo::Taker(dex_fee_amount)).wait() {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],

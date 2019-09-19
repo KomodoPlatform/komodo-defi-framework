@@ -20,10 +20,11 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{rpc_response, slurp_url, HyRes};
+use common::{HyRes, rpc_response, slurp_url};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
+use common::mm_number::MmNumber;
 use secp256k1::PublicKey;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -1747,15 +1748,15 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn check_i_have_enough_to_trade(&self, amount: &BigDecimal, balance: &BigDecimal, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let ticker = self.ticker.clone();
         let required = match trade_info {
             TradeInfo::Maker => amount.clone(),
-            TradeInfo::Taker(dex_fee) => amount + dex_fee,
+            TradeInfo::Taker(dex_fee) => amount + &MmNumber::from(dex_fee.clone()),
         };
         match self.coin_type {
             EthCoinType::Eth => {
-                let required = required + BigDecimal::from_str("0.0002").unwrap();
+                let required = required + BigDecimal::from_str("0.0002").unwrap().into();
                 if balance < &required {
                     Box::new(futures01::future::err(ERRL!("{} balance {} too low, required {}", ticker, balance, required)))
                 } else {

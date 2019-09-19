@@ -173,7 +173,7 @@ mod docker_tests {
         // if previous transaction is not confirmed yet
         let _lock = unwrap!(COINS_LOCK.lock());
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let conf = json!({"asset":"MYCOIN"});
+        let conf = json!({"asset":"MYCOIN","txversion":4,"overwintered":1});
         let req = json!({"method":"enable"});
         let priv_key = SecretKey::random(&mut rand::thread_rng());
         let coin = unwrap!(utxo_coin_from_conf_and_request("MYCOIN", &conf, &req, &priv_key.serialize()));

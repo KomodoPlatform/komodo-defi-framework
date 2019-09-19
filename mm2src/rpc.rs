@@ -42,7 +42,7 @@ use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE, CONTE
 use hyper::{self, service::Service};
 use serde_json::{self as json, Value as Json};
 use std::future::{Future as Future03};
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 #[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
 
@@ -249,19 +249,8 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
 
 type RpcRes = Box<dyn Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send>;
 
-/*
-#[cfg(feature = "native")]
-fn hyres_into_rpcres<HR> (hyres: HR) -> impl Future<Item=Response<LiftBody<Vec<u8>>>, Error=String> + Send
-where HR: Future<Item=Response<Vec<u8>>, Error=String> + Send {
-    hyres.map (move |r| {
-        let (parts, body) = r.into_parts();
-        Response::from_parts (parts, LiftBody::from (body))
-    })
-}
-*/
-
-async fn rpc_serviceʹ (ctx: MmArc, req: Parts, reqᵇ: Box<dyn Stream<Item=Bytes,Error=String>+Send>, client: SocketAddr)
--> Result<Response<Vec<u8>>, String> {
+async fn rpc_serviceʹ (ctx: MmArc, req: Parts, reqᵇ: Box<dyn Stream<Item=Bytes, Error=String> + Send>,
+                       client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
     if req.method != Method::POST {return ERR! ("Only POST requests are supported!")}
 
     #[cfg(feature = "native")] {
@@ -406,3 +395,15 @@ pub extern fn spawn_rpc(ctx_h: u32) {
 
 #[cfg(not(feature = "native"))]
 pub extern fn spawn_rpc(_ctx_h: u32) {unimplemented!()}
+
+#[cfg(not(feature = "native"))]
+pub fn init_header_slots() {
+    use common::header::RPC_SERVICE;
+    use std::pin::Pin;
+
+    fn rpc_service_fn (
+        ctx: MmArc, req: Parts, reqᵇ: Box<dyn Stream<Item=Bytes, Error=String> + Send>, client: SocketAddr)
+        -> Pin<Box<dyn Future03<Output=Result<Response<Vec<u8>>, String>> + Send>> {
+            Box::pin (rpc_serviceʹ (ctx, req, reqᵇ, client))}
+    let _ = RPC_SERVICE.pin (rpc_service_fn);
+}
