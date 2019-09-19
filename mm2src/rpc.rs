@@ -48,8 +48,8 @@ use tokio_core::net::TcpListener;
 
 use crate::mm2::lp_network;
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
-use crate::mm2::lp_swap::{coins_needed_for_kick_start, my_swap_status, my_recent_swaps, recover_funds_of_swap,
-                          stats_swap_status};
+use crate::mm2::lp_swap::{coins_needed_for_kick_start, import_swaps,  my_swap_status, my_recent_swaps,
+                          recover_funds_of_swap, stats_swap_status};
 
 #[path = "rpc/lp_commands.rs"]
 pub mod lp_commands;
@@ -219,6 +219,12 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "get_trade_fee" => get_trade_fee (ctx, req),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
+        "import_swaps" => {
+            #[cfg(feature = "native")] {
+                Box::new(CPUPOOL.spawn_fn(move || { hyres(import_swaps (ctx, req)) }))
+            }
+            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
+        },
         // "inventory" => inventory (ctx, req),
         "my_orders" => my_orders (ctx),
         "my_balance" => my_balance (ctx, req),

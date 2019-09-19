@@ -72,7 +72,7 @@ use http::Response;
 use primitives::hash::{H160, H264};
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::ffi::OsStr;
 use std::fs::{File, DirEntry};
 use std::io::prelude::*;
@@ -313,7 +313,7 @@ fn my_swaps_dir(ctx: &MmArc) -> PathBuf {
     ctx.dbdir().join("SWAPS").join("MY")
 }
 
-fn my_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
+pub fn my_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
     my_swaps_dir(ctx).join(format!("{}.json", uuid))
 }
 
@@ -416,6 +416,16 @@ impl SavedSwap {
                 saved.is_recoverable()
             },
         }
+    }
+
+    fn save_to_db(&self, ctx: &MmArc) -> Result<(), String> {
+        let path = my_swap_file_path(ctx, self.uuid());
+        if path.exists() {
+            return ERR!("File already exists");
+        };
+        let content = try_s!(json::to_vec(self));
+        try_s!(std::fs::write(path, &content));
+        Ok(())
     }
 }
 
@@ -720,6 +730,25 @@ pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec
             "coin": recover_data.coin,
             "tx_hash": recover_data.transaction.tx_hash(),
             "tx_hex": BytesJson::from(recover_data.transaction.tx_hex()),
+        }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let swaps: Vec<SavedSwap> = try_s!(json::from_value(req["swaps"].clone()));
+    let mut imported = vec![];
+    let mut skipped = HashMap::new();
+    for swap in swaps {
+        match swap.save_to_db(&ctx) {
+            Ok(_) => imported.push(swap.uuid().to_owned()),
+            Err(e) => { skipped.insert(swap.uuid().to_owned(), e); },
+        }
+    };
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "imported": imported,
+            "skipped": skipped,
         }
     })));
     Ok(try_s!(Response::builder().body(res)))
