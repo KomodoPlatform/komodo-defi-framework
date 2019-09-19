@@ -129,6 +129,20 @@ impl TakerSavedSwap {
             None => None,
         }
     }
+
+    pub fn is_recoverable(&self) -> bool {
+        if !self.is_finished() { return false };
+        for event in self.events.iter() {
+            match event.event {
+                TakerSwapEvent::StartFailed(_) | TakerSwapEvent::NegotiateFailed(_) | TakerSwapEvent::TakerFeeSendFailed(_) |
+                TakerSwapEvent::MakerPaymentValidateFailed(_) | TakerSwapEvent::TakerPaymentRefunded(_) | TakerSwapEvent::MakerPaymentSpent(_) => {
+                    return false;
+                }
+                _ => (),
+            }
+        }
+        true
+    }
 }
 
 /// Starts the taker swap and drives it to completion (until None next command received).

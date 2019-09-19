@@ -406,6 +406,17 @@ impl SavedSwap {
             },
         }
     }
+
+    fn is_recoverable(&self) -> bool {
+        match self {
+            SavedSwap::Maker(saved) => {
+                saved.is_recoverable()
+            },
+            SavedSwap::Taker(saved) => {
+                saved.is_recoverable()
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -421,6 +432,24 @@ impl Into<SwapError> for String {
     }
 }
 
+#[derive(Serialize)]
+struct MySwapStatusResponse<'a> {
+    #[serde(flatten)]
+    swap: &'a SavedSwap,
+    my_info: Option<MySwapInfo>,
+    recoverable: bool,
+}
+
+impl<'a> From<&'a SavedSwap> for MySwapStatusResponse<'a> {
+    fn from(swap: &'a SavedSwap) -> MySwapStatusResponse {
+        MySwapStatusResponse {
+            swap,
+            my_info: swap.get_my_info(),
+            recoverable: swap.is_recoverable(),
+        }
+    }
+}
+
 /// Returns the status of swap performed on `my` node
 pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
     let uuid = try_h!(req["params"]["uuid"].as_str().ok_or("uuid parameter is not set or is not string"));
@@ -432,12 +461,9 @@ pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
         }).to_string());
     }
     let status: SavedSwap = try_h!(json::from_slice(&content));
-    let my_info = status.get_my_info();
-    let mut json = try_h!(json::to_value(status));
-    json["my_info"] = try_h!(json::to_value(my_info));
 
     rpc_response(200, json!({
-        "result": json
+        "result": MySwapStatusResponse::from(&status)
     }).to_string())
 }
 
@@ -548,12 +574,7 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     // iterate over file entries trying to parse the file contents and add to result vector
     let swaps: Vec<Json> = entries.iter().skip(skip).take(limit as usize).map(|(_, entry)|
         match json::from_slice::<SavedSwap>(&slurp(&entry.path())) {
-            Ok(swap) => {
-                let my_info = swap.get_my_info();
-                let mut json = unwrap!(json::to_value(swap));
-                json["my_info"] = unwrap!(json::to_value(my_info));
-                json
-            },
+            Ok(swap) => unwrap!(json::to_value(MySwapStatusResponse::from(&swap))),
             Err(e) => {
                 log!("Error " (e) " parsing JSON from " (entry.path().display()));
                 Json::Null

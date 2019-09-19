@@ -869,6 +869,20 @@ impl MakerSavedSwap {
             None => (),
         }
     }
+
+    pub fn is_recoverable(&self) -> bool {
+        if !self.is_finished() { return false };
+        for event in self.events.iter() {
+            match event.event {
+                MakerSwapEvent::StartFailed(_) | MakerSwapEvent::NegotiateFailed(_) | MakerSwapEvent::TakerFeeValidateFailed(_) |
+                MakerSwapEvent::TakerPaymentSpent(_) | MakerSwapEvent::MakerPaymentRefunded(_) => {
+                    return false;
+                }
+                _ => (),
+            }
+        }
+        true
+    }
 }
 
 /// Starts the maker swap and drives it to completion (until None next command received).
