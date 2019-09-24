@@ -64,9 +64,9 @@ pub fn from_dec_to_ratio(d: BigDecimal) -> BigRational {
     let (num, scale) = d.as_bigint_and_exponent();
     let ten = BigInt::from(10);
     if scale >= 0 {
-        BigRational::new_raw(num, ten.pow(scale as u64))
+        BigRational::new(num, ten.pow(scale as u64))
     } else {
-        BigRational::new_raw(num * ten.pow((-scale) as u64), 1.into())
+        BigRational::new(num * ten.pow((-scale) as u64), 1.into())
     }
 }
 
@@ -195,4 +195,22 @@ impl PartialEq for MmNumber {
             }
         }
     }
+}
+
+#[test]
+fn test_from_dec_to_ratio() {
+    let number: BigDecimal = "11.00000000000000000000000000000000000000".parse().unwrap();
+    let rational = from_dec_to_ratio(number);
+    assert_eq!(*rational.numer(), 11.into());
+    assert_eq!(*rational.denom(), 1.into());
+
+    let number: BigDecimal = "0.00000001".parse().unwrap();
+    let rational = from_dec_to_ratio(number);
+    assert_eq!(*rational.numer(), 1.into());
+    assert_eq!(*rational.denom(), 100000000.into());
+
+    let number: BigDecimal = 1.into();
+    let rational = from_dec_to_ratio(number);
+    assert_eq!(*rational.numer(), 1.into());
+    assert_eq!(*rational.denom(), 1.into());
 }

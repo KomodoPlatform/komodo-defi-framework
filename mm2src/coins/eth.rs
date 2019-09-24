@@ -20,7 +20,7 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{HyRes, rpc_response, slurp_url};
+use common::{rpc_response, slurp_url, small_rng, HyRes};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
@@ -33,6 +33,7 @@ use ethkey::{ KeyPair, Public, public_to_address };
 use futures01::Future;
 use futures01::future::{Either, join_all, loop_fn, Loop};
 use futures::compat::Future01CompatExt;
+use futures::executor::block_on;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::try_join;
 use futures_timer::Delay;
@@ -40,7 +41,6 @@ use gstuff::{now_ms, slurp};
 use http::StatusCode;
 #[cfg(test)]
 use mocktopus::macros::*;
-use rand::{thread_rng};
 use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
@@ -1262,7 +1262,8 @@ impl EthCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                if !unwrap!(coins_ctx.coins.lock()).contains_key(&self.ticker) {
+                let coins = block_on(coins_ctx.coins.lock());
+                if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break
                 };
@@ -1498,7 +1499,8 @@ impl EthCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                if !unwrap!(coins_ctx.coins.lock()).contains_key(&self.ticker) {
+                let coins = block_on(coins_ctx.coins.lock());
+                if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break;
                 };
@@ -2057,7 +2059,7 @@ pub fn eth_coin_from_conf_and_request(
     if urls.is_empty() {
         return ERR!("Enable request for ETH coin must have at least 1 node URL");
     }
-    let mut rng = thread_rng();
+    let mut rng = small_rng();
     urls.as_mut_slice().shuffle(&mut rng);
 
     let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));

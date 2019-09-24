@@ -14,6 +14,8 @@ use futures01::{Async, Future, Poll, Sink, Stream};
 use futures01::future::{Either, loop_fn, Loop, select_ok};
 use futures01::sync::{mpsc, oneshot};
 use futures::compat::{Future01CompatExt};
+#[cfg(not(feature = "native"))]
+use futures::channel::oneshot::Sender as ShotSender;
 use futures::future::{FutureExt, select as select_func, TryFutureExt};
 use futures::lock::{Mutex as AsyncMutex};
 use futures::select;
@@ -53,7 +55,6 @@ use tokio_rustls::webpki::DNSNameRef;
 use tokio_tcp::TcpStream;
 #[cfg(feature = "native")]
 use webpki_roots::TLS_SERVER_ROOTS;
-use futures::executor::block_on;
 
 /// Skips the server certificate verification on TLS connection
 pub struct NoCertificateVerification {}
@@ -450,9 +451,9 @@ impl NativeClientImpl {
         rpc_func!(self, "listreceivedbyaddress", min_conf, include_empty, include_watch_only)
     }
 
-    pub fn detect_fee_method(&self) -> impl Future<Item=EstimateFeeMethod, Error=String> {
+    pub fn detect_fee_method(&self) -> impl Future<Item=EstimateFeeMethod, Error=String> + Send {
         let estimate_fee_fut = self.estimate_fee();
-        self.estimate_smart_fee().then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String>> {
+        self.estimate_smart_fee().then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String> + Send> {
             match res {
                 Ok(smart_fee) => if smart_fee.fee_rate > 0. {
                     Box::new(futures01::future::ok(EstimateFeeMethod::SmartFee))
@@ -570,7 +571,7 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     result
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 /// Deserializable Electrum protocol representation for RPC
 pub enum ElectrumProtocol {
     /// TCP
@@ -579,7 +580,7 @@ pub enum ElectrumProtocol {
     SSL,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 /// Electrum request RPC representation
 pub struct ElectrumRpcRequest {
     pub url: String,
@@ -595,8 +596,8 @@ impl Default for ElectrumProtocol {
     }
 }
 
-#[derive(Clone, Debug)]
 /// Electrum client configuration
+#[derive(Clone, Debug, Serialize)]
 enum ElectrumConfig {
     TCP,
     SSL {dns_name: String, skip_validation: bool}
@@ -626,7 +627,7 @@ pub fn spawn_electrum(
                 DNSNameRef::try_from_ascii_str(host).map(|_|()).map_err(|e| fomat!([e]))
             }
             #[cfg(not(feature = "native"))]
-            fn check(host: &str) -> Result<(), String> {Ok(())}
+            fn check(_host: &str) -> Result<(), String> {Ok(())}
 
             try_s!(check(host));
 
@@ -638,6 +639,43 @@ pub fn spawn_electrum(
     };
 
     Ok(electrum_connect(addr, config))
+}
+
+#[cfg(not(feature = "native"))]
+pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, String> {
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::os::raw::c_char;
+
+    extern "C" {fn host_electrum_connect (ptr: *const c_char, len: i32) -> i32;}
+    let args = unwrap! (json::to_vec (req));
+    let rc = unsafe {host_electrum_connect (args.as_ptr() as *const c_char, args.len() as i32)};
+    if rc < 0 {panic! ("!host_electrum_connect: {}", rc)}
+    let ri = rc;  // Random ID assigned by the host to connection.
+
+    // TODO: Import the `addr` from the host?
+    let addr = SocketAddr::new (IpAddr::V4 (Ipv4Addr::new (0, 0, 0, 0)), 0);
+
+    let responses = Arc::new (Mutex::new (HashMap::new()));
+    let tx = Arc::new (AsyncMutex::new (None));
+
+    let config = match req.protocol {
+        ElectrumProtocol::TCP => ElectrumConfig::TCP,
+        ElectrumProtocol::SSL => {
+            let uri: Uri = try_s! (req.url.parse());
+            let host = try_s! (uri.host().ok_or ("!host"));
+            ElectrumConfig::SSL {
+                dns_name: host.into(),
+                skip_validation: req.disable_cert_verification
+    }   }   };
+
+    Ok (ElectrumConnection {
+        addr,
+        config,
+        tx,
+        shutdown_tx: None,
+        responses,
+        ri
+    })
 }
 
 #[derive(Debug)]
@@ -653,21 +691,32 @@ pub struct ElectrumConnection {
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Responses are stored here
     responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    /// [Random] connection ID assigned by the WASM host
+    ri: i32
 }
 
 impl ElectrumConnection {
+    #[cfg(feature = "native")]
     async fn is_connected(&self) -> bool {
         self.tx.lock().await.is_some()
+    }
+
+    #[cfg(not(feature = "native"))]
+    async fn is_connected (&self) -> bool {
+        extern "C" {fn host_electrum_is_connected (ri: i32) -> i32;}
+        let rc = unsafe {host_electrum_is_connected (self.ri)};
+        if rc < 0 {panic! ("!host_electrum_is_connected: {}", rc)}
+        //log! ("is_connected] host_electrum_is_connected (" [=self.ri] ") " [=rc]);
+        if rc == 1 {true} else {false}
     }
 }
 
 impl Drop for ElectrumConnection {
     fn drop(&mut self) {
-        if let Err(_) = unwrap!(self.shutdown_tx.take()).send(()) {
-            log! ("electrum_connection_drop] Warning, shutdown_tx already closed");
-        }
-    }
-}
+        if let Some (shutdown_tx) = self.shutdown_tx.take() {
+            if let Err(_) = shutdown_tx.send(()) {
+                log! ("electrum_connection_drop] Warning, shutdown_tx already closed");
+}   }   }   }
 
 #[derive(Debug)]
 pub struct ElectrumClientImpl {
@@ -675,6 +724,7 @@ pub struct ElectrumClientImpl {
     next_id: Mutex<u64>,
 }
 
+#[cfg(feature = "native")]
 async fn electrum_request_multi(
     client: ElectrumClient,
     request: JsonRpcRequest,
@@ -697,20 +747,72 @@ async fn electrum_request_multi(
     }
 }
 
+#[cfg(not(feature = "native"))]
+lazy_static! {
+    static ref ELECTRUM_REPLIES: Mutex<HashMap<(i32, i32), ShotSender<()>>> = Mutex::new (HashMap::new());
+}
+
+#[no_mangle]
+#[cfg(not(feature = "native"))]
+pub extern fn electrum_replied (ri: i32, id: i32) {
+    //log! ("electrum_replied] " [=ri] ", " [=id]);
+    let mut electrum_replies = unwrap! (ELECTRUM_REPLIES.lock());
+    if let Some (tx) = electrum_replies.remove (&(ri, id)) {let _ = tx.send(());}
+}
+
+#[cfg(not(feature = "native"))]
+async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest)
+-> Result<JsonRpcResponse, String> {
+    use std::mem::uninitialized;
+    use std::os::raw::c_char;
+    use std::str::from_utf8;
+
+    extern "C" {
+        fn host_electrum_request (ri: i32, ptr: *const c_char, len: i32) -> i32;
+        fn host_electrum_reply (ri: i32, id: i32, rbuf: *mut c_char, rcap: i32) -> i32;
+    }
+
+    let req = try_s! (json::to_string (&request));
+    let id: i32 = try_s! (request.id.parse());
+    let mut jres: Option<JsonRpcResponse> = None;
+
+    for connection in client.connections.iter() {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        try_s! (ELECTRUM_REPLIES.lock()) .insert ((connection.ri, id), tx);
+        let rc = unsafe {host_electrum_request (connection.ri, req.as_ptr() as *const c_char, req.len() as i32)};
+        if rc != 0 {return ERR! ("!host_electrum_request: {}", rc)}
+        let _ = rx.await;  // Wait for the host to invoke `fn electrum_replied`.
+        let mut buf: [u8; 131072] = unsafe {uninitialized()};
+        let rc = unsafe {host_electrum_reply (connection.ri, id, buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
+        if rc <= 0 {log! ("!host_electrum_reply: " (rc)); continue}  // Skip to the next connection.
+        let res = try_s! (from_utf8 (&buf[0 .. rc as usize]));
+        //log! ("electrum_request_multi] ri " (connection.ri) ", res: " (res));
+        let res: Json = try_s! (json::from_str (res));
+        // TODO: Detect errors and fill the `error` field somehow?
+        jres = Some (JsonRpcResponse {
+            jsonrpc: req.clone(),
+            id: request.id.clone(),
+            result: res,
+            error: Json::Null
+        });
+        // server.ping must be sent to all servers to keep all connections alive
+        if request.method != "server.ping" {break}
+    }
+    let jres = try_s! (jres.ok_or ("!jres"));
+    Ok (jres)
+}
+
 impl ElectrumClientImpl {
-    #[cfg(feature = "native")]
+    /// Create an Electrum connection and spawn a green thread actor to handle it.
     pub fn add_server(&mut self, req: &ElectrumRpcRequest) -> Result<(), String> {
         let connection = try_s!(spawn_electrum(req));
         self.connections.push(connection);
         Ok(())
     }
 
-    #[cfg(not(feature = "native"))]
-    pub fn add_server(&mut self, _req: &ElectrumRpcRequest) -> Result<(), String> {unimplemented!()}
-
-    pub fn is_connected(&self) -> bool {
+    pub async fn is_connected(&self) -> bool {
         for connection in self.connections.iter() {
-            if block_on(connection.is_connected()) {
+            if connection.is_connected().await {
                 return true;
             }
         }
@@ -1150,6 +1252,14 @@ async fn connect_loop(
     }
 }
 
+#[cfg(not(feature = "native"))]
+async fn connect_loop(
+    _config: ElectrumConfig,
+    _addr: SocketAddr,
+    _responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    _connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
+) -> Result<(), ()> {unimplemented!()}
+
 /// Builds up the electrum connection, spawns endless loop that attempts to reconnect to the server
 /// in case of connection errors
 #[cfg(feature = "native")]
@@ -1176,8 +1286,12 @@ fn electrum_connect(
         tx,
         shutdown_tx: Some(shutdown_tx),
         responses,
+        ri: -1
     }
 }
+
+#[cfg(not(feature = "native"))]
+fn electrum_connect (_addr: SocketAddr, _config: ElectrumConfig) -> ElectrumConnection {unimplemented!()}
 
 /// A simple `Codec` implementation that reads buffer until \n according to Electrum protocol specification:
 /// https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream

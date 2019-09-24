@@ -25,10 +25,12 @@ use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
 use coins::{lp_coinfind, MmCoinEnum, TradeInfo};
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
-use common::{bits256, HyRes, json_dir_entries, new_uuid, rpc_response, rpc_err_response};
+use common::{bits256, json_dir_entries, new_uuid, rpc_response, rpc_err_response, HyRes};
+use common::executor::spawn;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{from_dec_to_ratio, from_ratio_to_dec, MmNumber};
 use futures01::future::{Either, Future};
+use futures::compat::Future01CompatExt;
 use gstuff::{now_ms, slurp};
 use keys::{Public, Signature};
 #[cfg(test)]
@@ -947,9 +949,16 @@ pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
 
 fn lp_send_price_ping(req: &PricePingRequest, ctx: &MmArc) -> Result<(), String> {
     let req_string = try_s!(json::to_string(req));
+
     // TODO this is required to process the set price message on our own node, it's the easiest way now
     //      there might be a better way of doing this so we should consider refactoring
-    lp_post_price_recv(ctx, try_s!(json::to_value(req)));
+    let req_value = try_s!(json::to_value(req));
+    let ctxʹ = ctx.clone();
+    spawn(async move {
+        let rc = lp_post_price_recv(&ctxʹ, req_value).compat().await;
+        if let Err(err) = rc {log!("!lp_post_price_recv: "(err))}
+    });
+
     ctx.broadcast_p2p_msg(&req_string);
     Ok(())
 }

@@ -203,18 +203,8 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "disable_coin" => disable_coin(ctx, req),
         // TODO coin initialization performs blocking IO, i.e request.wait(), have to run it on CPUPOOL to avoid blocking shared CORE.
         //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
-        "enable" => {
-            #[cfg(feature = "native")] {
-                Box::new(CPUPOOL.spawn_fn(move || { enable (ctx, req) }))
-            }
-            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
-        },
-        "electrum" => {
-            #[cfg(feature = "native")] {
-                Box::new(CPUPOOL.spawn_fn(move || { electrum (ctx, req) }))
-            }
-            #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
-        },
+        "enable" => hyres(enable(ctx, req)),
+        "electrum" => hyres(electrum(ctx, req)),
         "get_enabled_coins" => get_enabled_coins (ctx),
         "get_trade_fee" => get_trade_fee (ctx, req),
         // "fundvalue" => lp_fundvalue (ctx, req, false),

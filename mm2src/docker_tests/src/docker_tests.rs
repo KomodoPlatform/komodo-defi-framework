@@ -16,6 +16,7 @@ mod docker_tests {
     use coins::utxo::{coin_daemon_data_dir, dhash160, utxo_coin_from_conf_and_request, zcash_params_path, UtxoCoin};
     use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
     use futures01::Future;
+    use futures::executor::block_on;
     use gstuff::now_ms;
     use secp256k1::SecretKey;
     use std::io::{BufRead, BufReader};
@@ -120,7 +121,7 @@ mod docker_tests {
             let conf = json!({"asset":"MYCOIN"});
             let req = json!({"method":"enable"});
             let priv_key = unwrap!(hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"));
-            let coin = unwrap!(utxo_coin_from_conf_and_request("MYCOIN", &conf, &req, &priv_key));
+            let coin = unwrap!(block_on(utxo_coin_from_conf_and_request("MYCOIN", &conf, &req, &priv_key)));
             let timeout = now_ms() + 30000;
             loop {
                 match coin.rpc_client().get_block_count().wait() {
@@ -176,7 +177,7 @@ mod docker_tests {
         let conf = json!({"asset":"MYCOIN","txversion":4,"overwintered":1});
         let req = json!({"method":"enable"});
         let priv_key = SecretKey::random(&mut rand::thread_rng());
-        let coin = unwrap!(utxo_coin_from_conf_and_request("MYCOIN", &conf, &req, &priv_key.serialize()));
+        let coin = unwrap!(block_on(utxo_coin_from_conf_and_request("MYCOIN", &conf, &req, &priv_key.serialize())));
         if let UtxoRpcClientEnum::Native(client) = &coin.rpc_client() {
             unwrap!(client.import_address(&coin.my_address(), &coin.my_address(), false).wait());
             let hash = client.send_to_address(&coin.my_address(), &1000.into()).wait().unwrap();

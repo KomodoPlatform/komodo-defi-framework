@@ -28,8 +28,9 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{first_char_to_upper, HyRes, rpc_response};
+use common::{first_char_to_upper, rpc_response, small_rng, HyRes};
 use common::custom_futures::join_all_sequential;
+use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
@@ -38,6 +39,7 @@ use dirs::home_dir;
 use futures01::{Future};
 use futures01::future::Either;
 use futures::compat::Future01CompatExt;
+use futures::executor::block_on;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::lock::{Mutex as AsyncMutex};
 use gstuff::{now_ms};
@@ -45,7 +47,6 @@ use keys::{KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
 use num_traits::cast::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
-use rand::{thread_rng};
 use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Opcode, Builder, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput, SignatureVersion};
@@ -1418,7 +1419,8 @@ impl MmCoin for UtxoCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                if !unwrap!(coins_ctx.coins.lock()).contains_key(&self.ticker) {
+                let coins = block_on(coins_ctx.coins.lock());
+                if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break
                 };
@@ -1772,7 +1774,7 @@ fn read_native_mode_conf(_filename: &dyn AsRef<Path>) -> Result<(Option<u16>, St
     unimplemented!()
 }
 
-pub fn utxo_coin_from_conf_and_request(
+pub async fn utxo_coin_from_conf_and_request(
     ticker: &str,
     conf: &Json,
     req: &Json,
@@ -1826,7 +1828,7 @@ pub fn utxo_coin_from_conf_and_request(
         },
         Some("electrum") => {
             let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
-            let mut rng = thread_rng();
+            let mut rng = small_rng();
             servers.as_mut_slice().shuffle(&mut rng);
             let mut client = ElectrumClientImpl::new();
             for server in servers.iter() {
@@ -1837,12 +1839,12 @@ pub fn utxo_coin_from_conf_and_request(
             }
 
             let mut attempts = 0;
-            while !client.is_connected() {
+            while !client.is_connected().await {
                 if attempts >= 10 {
                     return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
                 }
 
-                thread::sleep(Duration::from_millis(500));
+                Timer::sleep(0.5).await;
                 attempts += 1;
             }
 
@@ -1852,19 +1854,19 @@ pub fn utxo_coin_from_conf_and_request(
             // https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
             // weak reference will allow to stop the thread if client is dropped
             let weak_client = Arc::downgrade(&client);
-            try_s!(thread::Builder::new().name(format!("electrum_ping_{}", ticker)).spawn(move || {
+            spawn(async move {
                 loop {
                     if let Some(client) = weak_client.upgrade() {
-                        if let Err(e) = ElectrumClient(client).server_ping().wait() {
+                        if let Err(e) = ElectrumClient(client).server_ping().compat().await {
                             log!("Electrum servers " [servers] " ping error " [e]);
                         }
                     } else {
                         log!("Electrum servers " [servers] " ping loop stopped");
                         break;
                     }
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await
                 }
-            }));
+            });
             UtxoRpcClientEnum::Electrum(ElectrumClient(client))
         },
         _ => return ERR!("utxo_coin_from_conf_and_request should be called only by enable or electrum requests"),
@@ -1877,7 +1879,7 @@ pub fn utxo_coin_from_conf_and_request(
         None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {
             let fee_method = match &rpc_client {
                 UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
-                UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().wait())
+                UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await)
             };
             TxFee::Dynamic(fee_method)
         } else {

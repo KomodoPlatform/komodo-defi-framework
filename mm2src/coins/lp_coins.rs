@@ -35,7 +35,10 @@ use bigdecimal::BigDecimal;
 use common::{HyRes, rpc_response, rpc_err_response};
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_number::MmNumber;
-use futures01::{Future};
+use futures01::Future;
+use futures::compat::Future01CompatExt;
+use futures::executor::block_on;
+use futures::lock::Mutex as FutMutex;
 use gstuff::{slurp};
 use http::Response;
 use rpc::v1::types::{Bytes as BytesJson};
@@ -45,7 +48,7 @@ use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 // using custom copy of try_fus as futures crate was renamed to futures01
@@ -351,7 +354,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
             match json::from_slice(&content) {
                 Ok(c) => c,
                 Err(e) => {
-                    ctx.log.log("", &[&"tx_history", &self.ticker().to_string()], &ERRL!("Error {} on history deserialization, resetting the cache", e));
+                    ctx.log.log("🌋", &[&"tx_history", &self.ticker().to_string()],
+                        &ERRL!("Error {} on history deserialization, resetting the cache.", e));
                     unwrap!(std::fs::remove_file(&self.tx_history_path(&ctx)));
                     vec![]
                 }
@@ -417,14 +421,14 @@ impl Deref for MmCoinEnum {
 struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
-    coins: Mutex<HashMap<String, MmCoinEnum>>
+    coins: FutMutex<HashMap<String, MmCoinEnum>>
 }
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx (ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
         Ok (try_s! (from_ctx (&ctx.coins_ctx, move || {
             Ok (CoinsContext {
-                coins: Mutex::new (HashMap::new())
+                coins: FutMutex::new (HashMap::new())
             })
         })))
     }
@@ -437,14 +441,9 @@ impl CoinsContext {
 /// and should be fixed on the call site.
 ///
 /// * `req` - Payload of the corresponding "enable" or "electrum" RPC request.
-pub fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, String> {
+pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    {
-        let coins = try_s!(cctx.coins.lock());
-        if coins.get(ticker).is_some() {
-            return ERR!("Coin {} already initialized", ticker)
-        };
-    }
+    if cctx.coins.lock().await.get (ticker) .is_some() {return ERR! ("Coin {} already initialized", ticker)}
 
     let coins_en = if let Some (coins) = ctx.conf["coins"].as_array() {
         coins.iter().find (|coin| coin["coin"].as_str() == Some (ticker)) .unwrap_or (&Json::Null)
@@ -455,31 +454,36 @@ pub fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum,
             &fomat! ("Warning, coin " (ticker) " is used without a corresponding configuration."));
     }
 
-    if coins_en["mm2"].is_null() && req["mm2"].is_null() {
-        return ERR!("mm2 param is not set neither in coins config nor enable request, assuming that coin is not supported");
-    }
+    if coins_en["mm2"].is_null() && req["mm2"].is_null() {return ERR! (concat! (
+        "mm2 param is not set neither in coins config nor enable request, ",
+        "assuming that coin is not supported"
+    ))}
     let secret = &*ctx.secp256k1_key_pair().private().secret;
 
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
-        try_s! (utxo_coin_from_conf_and_request (ticker, coins_en, req, secret)) .into()
+        try_s! (utxo_coin_from_conf_and_request (ticker, coins_en, req, secret) .await) .into()
     } else {
         try_s! (eth_coin_from_conf_and_request (ctx, ticker, coins_en, req, secret)) .into()
     };
 
-    let block_count = try_s!(coin.current_block().wait());
+    let block_count = try_s! (coin.current_block().compat().await);
     // TODO, #156: Warn the user when we know that the wallet is under-initialized.
     log! ([=ticker] if !coins_en["etomic"].is_null() {", etomic"} ", " [=block_count]);
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    let mut coins = try_s! (cctx.coins.lock());
+    let mut coins = cctx.coins.lock().await;
     match coins.raw_entry_mut().from_key (ticker) {
         RawEntryMut::Occupied (_oe) => return ERR! ("Coin {} already initialized", ticker),
         RawEntryMut::Vacant (ve) => ve.insert (ticker.to_string(), coin.clone())
     };
     let history = req["tx_history"].as_bool().unwrap_or(false);
+    #[cfg(not(feature = "native"))] let history = {
+        if history {ctx.log.log ("🍼", &[&("tx_history" as &str), &ticker],
+            "Note that the WASM port does not include the history loading thread at the moment.")}
+        false
+    };
     if history {
         try_s!(thread::Builder::new().name(format!("tx_history_{}", ticker)).spawn({
             let coin = coin.clone();
@@ -494,7 +498,7 @@ pub fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum,
 /// NB: Returns only the enabled (aka active) coins.
 pub fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    let coins = try_s! (cctx.coins.lock());
+    let coins = block_on (cctx.coins.lock());
     Ok (coins.get (ticker) .map (|coin| coin.clone()))
 }
 
@@ -615,7 +619,8 @@ struct EnabledCoin {
 
 pub fn get_enabled_coins(ctx: MmArc) -> HyRes {
     let coins_ctx: Arc<CoinsContext> = try_h!(CoinsContext::from_ctx(&ctx));
-    let enabled_coins: Vec<_> = try_h!(coins_ctx.coins.lock()).iter().map(|(ticker, coin)| EnabledCoin {
+    let coins = block_on(coins_ctx.coins.lock());
+    let enabled_coins: Vec<_> = coins.iter().map(|(ticker, coin)| EnabledCoin {
         ticker: ticker.clone(),
         address: coin.my_address().to_string(),
     }).collect();
@@ -626,7 +631,7 @@ pub fn get_enabled_coins(ctx: MmArc) -> HyRes {
 
 pub fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
-    let mut coins = try_s!(coins_ctx.coins.lock());
+    let mut coins = block_on(coins_ctx.coins.lock());
     match coins.remove(ticker) {
         Some(_) => Ok(()),
         None => ERR!("{} is disabled already", ticker)

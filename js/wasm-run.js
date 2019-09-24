@@ -5,6 +5,7 @@
 const bencode = require('bencode')
 const { Buffer } = require('buffer');
 const crc32 = require('crc-32');  // TODO: Calculate the checksum in Rust instead.
+const ElectrumCli = require('electrum-client');  // https://www.npmjs.com/package/electrum-client
 const fs = require('fs');
 const http = require('http');  // https://nodejs.org/dist/latest-v12.x/docs/api/http.html
 const os = require('os');
@@ -55,7 +56,7 @@ const wasmShared = {};
 function registerCallback (f) {
   for (;;) {
     const ri = Math.ceil (Math.random() * 2147483647);
-    const ris = '' + ri;
+    const ris = '' + ri;  // TODO: Use a sparse array.
     if (wasmShared.callbacks[ris] != null) continue;
     wasmShared.callbacks[ris] = f;
     return ri}}
@@ -67,6 +68,7 @@ async function runWasm() {
   const wasmBytes = fs.readFileSync ('mm2.wasm');
   const httpRequests = {};
   wasmShared.callbacks = {};
+  wasmShared.electrums = {};
   const memory = new WebAssembly.Memory ({initial: 1, shared: true});
   const wasmEnv = {
     //memory: memory,
@@ -87,8 +89,72 @@ async function runWasm() {
       const v = process.env[name];
       if (v == null) return -1;
       return to_utf8 (wasmShared.memory, rbuf, rcap, v)},
+    host_electrum_connect: function (ptr, len) {
+      const args_s = from_utf8 (wasmShared.memory, ptr, len);
+      const args = JSON.parse (args_s);
+      const url = args.url;
+      const protocol = args.protocol.toLowerCase();
+      const disable_cert_verification = args.disable_cert_verification;
+      const caps = /^(.*?):(\d+)$/.exec (url);
+      if (caps == null) return -1;
+      const host = caps[1];
+      const port = Number (caps[2]);
+      if (protocol != 'tls' && protocol != 'tcp') return -2;
+      const ecl = new ElectrumCli (port, host, protocol);
+      var ri = 0, ris = '';
+      for (;;) {
+        ri = Math.ceil (Math.random() * 2147483647);
+        ris = '' + ri;  // TODO: Use a sparse array.
+        if (wasmShared.electrums[ris] == null) {
+          wasmShared.electrums[ris] = {
+            host: host,
+            port: port,
+            ecl: ecl,
+            connected: false,
+            replies: []};
+          break}}
+      ecl.connect().then (_ => {wasmShared.electrums[ris].connected = true});
+      // cf. https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
+      ecl.subscribe.on ('blockchain.headers.subscribe', (header) => {
+        console.log ('host_electrum_connect] TBD, Electrum header', header);
+        // TODO: Pass the header to Rust?
+      });
+      return ri},
+    host_electrum_is_connected: function (ri) {
+      const ris = '' + ri;  // TODO: Use a sparse array.
+      const en = wasmShared.electrums[ris];
+      if (en == null) return -1;
+      return en.connected ? 1 : 0},
+    host_electrum_request: function (ri, ptr, len) {
+      const ris = '' + ri;  // TODO: Use a sparse array.
+      const en = wasmShared.electrums[ris];
+      if (en == null) return -1;
+      const req_s = from_utf8 (wasmShared.memory, ptr, len);
+      const req = JSON.parse (req_s);  // JsonRpcRequest
+      const id = Number (req.id);
+      if (id > 2147483647) throw new Error ('Electrum JsonRpcRequest id is too large');
+      //console.log ('host_electrum_request] ri', ri, 'req:', req);
+
+      en.ecl.request (req.method, req.params)
+        .then (res => {
+          //console.log ('host_electrum_request] ri', ri, 'req', req, '⇒', res);
+          const res_s = JSON.stringify (res);
+          //console.log ('res_s', res_s);
+          en.replies[id] = res_s;
+          wasmShared.exports.electrum_replied (ri, id)})
+        .catch (err => {
+          console.log ('host_electrum_request] TBD, Electrum error', req, '⇒', err);
+          wasmShared.exports.electrum_replied (ri, id)});
+      return 0},
+    host_electrum_reply: function (ri, id, rbuf, rcap) {
+      const ris = '' + ri;  // TODO: Use a sparse array.
+      const en = wasmShared.electrums[ris];
+      if (en == null) return -2;
+      const res_s = en.replies[id];
+      if (res_s == null) return -3;
+      return to_utf8 (wasmShared.memory, rbuf, rcap, res_s)},
     http_helper_check: function (http_request_id, rbuf, rcap) {
-      let ris = '' + http_request_id;
+      let ris = '' + http_request_id;  // TODO: Use a sparse array.
       if (httpRequests[ris] == null) return -1;
       if (httpRequests[ris].buf == null) return -1;
       const ben = {
@@ -110,7 +176,7 @@ async function runWasm() {
       let ri, ris;
       for (;;) {
         ri = Math.ceil (Math.random() * 2147483647);
-        ris = '' + ri;
+        ris = '' + ri;  // TODO: Use a sparse array.
         if (httpRequests[ris] == null) {
           httpRequests[ris] = {};
           break}}

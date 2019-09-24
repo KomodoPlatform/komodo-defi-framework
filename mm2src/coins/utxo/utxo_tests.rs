@@ -17,7 +17,7 @@ fn electrum_client_for_test(servers: &[&str]) -> UtxoRpcClientEnum {
     }
 
     let mut attempts = 0;
-    while !client.is_connected() {
+    while !block_on(client.is_connected()) {
         if attempts >= 10 {
             panic!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
         }
