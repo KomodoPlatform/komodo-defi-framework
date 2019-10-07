@@ -463,7 +463,7 @@ pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoi
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
         try_s! (utxo_coin_from_conf_and_request (ticker, coins_en, req, secret) .await) .into()
     } else {
-        try_s! (eth_coin_from_conf_and_request (ctx, ticker, coins_en, req, secret)) .into()
+        try_s! (eth_coin_from_conf_and_request (ctx, ticker, coins_en, req, secret) .await) .into()
     };
 
     let block_count = try_s! (coin.current_block().compat().await);
@@ -496,15 +496,15 @@ pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoi
 }
 
 /// NB: Returns only the enabled (aka active) coins.
-pub fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
+pub async fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    let coins = block_on (cctx.coins.lock());
+    let coins = cctx.coins.lock().await;
     Ok (coins.get (ticker) .map (|coin| coin.clone()))
 }
 
 pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {
+    let coin = match block_on (lp_coinfind (&ctx, &ticker)) {
         Ok (Some (t)) => t,
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
@@ -518,7 +518,7 @@ pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
 
 pub fn send_raw_transaction (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {
+    let coin = match block_on (lp_coinfind (&ctx, &ticker)) {
         Ok (Some (t)) => t,
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
@@ -546,7 +546,7 @@ pub enum HistorySyncState {
 /// Transactions are sorted by number of confirmations in ascending order.
 pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker) {
+    let coin = match block_on(lp_coinfind(&ctx, &ticker)) {
         Ok(Some(t)) => t,
         Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
         Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
@@ -603,7 +603,7 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
 
 pub fn get_trade_fee(ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker) {
+    let coin = match block_on(lp_coinfind(&ctx, &ticker)) {
         Ok(Some(t)) => t,
         Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
         Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
@@ -646,7 +646,7 @@ pub struct ConfirmationsReq {
 
 pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ConfirmationsReq = try_s!(json::from_value(req));
-    let coin = match lp_coinfind(&ctx, &req.coin) {
+    let coin = match block_on(lp_coinfind(&ctx, &req.coin)) {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin {}", req.coin),
         Err(err) => return ERR!("!lp_coinfind ({}): {}", req.coin, err),

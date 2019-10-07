@@ -81,7 +81,6 @@ pub mod lift_body {
 
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
-use crossbeam::{channel};
 use futures01::{future, task::Task, Future};
 #[cfg(not(feature = "native"))]
 use futures::task::{Context, Poll as Poll03};
@@ -445,6 +444,21 @@ pub type SlurpFut = Box<dyn Future<Item=(StatusCode, HeaderMap, Vec<u8>), Error=
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
 pub type HyRes = Box<dyn Future<Item=Response<Vec<u8>>, Error=String> + Send>;
 
+#[derive(Debug, Deserialize, Serialize)]
+struct HostedHttpRequest {
+    method: String,
+    uri: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct HostedHttpResponse {
+    status: u16,
+    headers: HashMap<String, String>,
+    body: Vec<u8>
+}
+
 // To improve git history and ease of exploratory refactoring
 // we're splitting the code in place with conditional compilation.
 // wio stands for "web I/O" or "wasm I/O",
@@ -453,30 +467,75 @@ pub type HyRes = Box<dyn Future<Item=Response<Vec<u8>>, Error=String> + Send>;
 #[cfg(not(feature = "native"))]
 pub mod wio {
     use futures01::future::IntoFuture;
-    use http::Request;
+    use futures::compat::Compat;
+    use futures::future::FutureExt;
+    use futures::lock::Mutex;
+    use futures::channel::oneshot::{channel, Receiver, Sender};
+    use http::{HeaderMap, Method, Request, StatusCode};
+    use http::header::{HeaderName, HeaderValue};
+    use rand::Rng;
+    use serde_bencode::ser::to_bytes as bencode;
+    use serde_bencode::de::from_bytes as bdecode;
+    use std::collections::HashMap;
+    use std::os::raw::c_char;
+    use std::str::FromStr;
     use super::SlurpFut;
 
-    #[allow(dead_code)]
-    pub fn slurp_req (_request: Request<Vec<u8>>) -> SlurpFut {
-        unimplemented!()
+    pub async fn slurp_reqʹ (request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
+        let (parts, body) = request.into_parts();
+
+        let hhreq = super::HostedHttpRequest {
+            method: parts.method.as_str().to_owned(),
+            uri: fomat! ((parts.uri)),
+            headers: parts.headers.iter().filter_map (|(name, value)| {
+                let name = name.as_str().to_owned();
+                let v = match value.to_str() {
+                    Ok (ascii) => ascii,
+                    Err (err) => {log! ("!ascii '" (name) "': " (err)); return None}
+                };
+                Some ((name, v.to_owned()))
+            }) .collect(),
+            body
+        };
+
+        let hhreq = try_s! (bencode (&hhreq));
+        let hhres = try_s! (super::helperᶜ ("slurp_req", hhreq) .await);
+        let hhres: super::HostedHttpResponse = try_s! (bdecode (&hhres));
+        let status = try_s! (StatusCode::from_u16 (hhres.status));
+
+        let mut headers = HeaderMap::<HeaderValue>::with_capacity (hhres.headers.len());
+        for (n, v) in hhres.headers {headers.insert (
+            try_s! (HeaderName::from_str (&n[..])),
+            try_s! (HeaderValue::from_str (&v[..]))
+        );}
+
+        Ok ((status, headers, hhres.body))
+    }
+
+    pub fn slurp_req (request: Request<Vec<u8>>) -> SlurpFut {
+        Box::new (Compat::new (Box::pin (slurp_reqʹ (request))))
     }
 }
 
 #[cfg(feature = "native")]
 pub mod wio {
+    use bytes::Bytes;
     use crate::lift_body::LiftBody;
     use crate::SlurpFut;
     use futures01::{Async, Future, Poll};
     use futures01::sync::oneshot::{self, Receiver};
+    use futures::compat::Future01CompatExt;
     use futures::executor::ThreadPool;
     use futures_cpupool::CpuPool;
     use gstuff::{duration_to_float, now_float};
-    use http::{Request, StatusCode, HeaderMap};
+    use http::{Method, Request, StatusCode, HeaderMap};
     use hyper::Client;
     use hyper::client::HttpConnector;
     use hyper::rt::Stream;
     use hyper::server::conn::Http;
     use hyper_rustls::HttpsConnector;
+    use serde_bencode::ser::to_bytes as bencode;
+    use serde_bencode::de::from_bytes as bdecode;
     use std::fmt;
     use std::thread::JoinHandle;
     use std::time::Duration;
@@ -651,6 +710,40 @@ pub mod wio {
             Box::new (combined_f)
         });
         Box::new (drive_s (response_f))
+    }
+
+    pub async fn slurp_reqʹ (request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
+        slurp_req (request) .compat().await
+    }
+
+    pub async fn slurp_reqʰ (req: Bytes) -> Result<Vec<u8>, String> {
+        let hhreq: super::HostedHttpRequest = try_s! (bdecode (&req));
+        //log! ("slurp_reqʰ] " [=hhreq]);
+
+        let mut req = Request::builder();
+        req.method (try_s! (Method::from_bytes (hhreq.method.as_bytes())));
+        req.uri (hhreq.uri);
+        for (n, v) in hhreq.headers {req.header (&n[..], &v[..]);}
+        let req = try_s! (req.body (hhreq.body));
+
+        let (status, headers, body) = try_s! (slurp_reqʹ (req) .await);
+
+        let hhres = super::HostedHttpResponse {
+            status: status.as_u16(),
+            headers: headers.iter().filter_map (|(name, value)| {
+                let name = name.as_str().to_owned();
+                let v = match value.to_str() {
+                    Ok (ascii) => ascii,
+                    Err (err) => {log! ("!ascii '" (name) "': " (err)); return None}
+                };
+                Some ((name, v.to_owned()))
+            }) .collect(),
+            body
+        };
+        //log! ("HostedHttpResponse: " [=hhres]);
+
+        let hhres = try_s! (bencode (&hhres));
+        Ok (hhres)
     }
 }
 
@@ -984,11 +1077,6 @@ pub struct QueuedCommand {
     // retstrp: *mut *mut c_char,
 }
 
-lazy_static! {
-    // TODO: Move to `MmCtx`.
-    pub static ref COMMAND_QUEUE: (channel::Sender<QueuedCommand>, channel::Receiver<QueuedCommand>) = channel::unbounded();
-}
-
 /// Register an RPC command that came internally or from the peer-to-peer bus.
 #[no_mangle]
 #[cfg(feature = "native")]
@@ -1000,23 +1088,32 @@ pub extern "C" fn lp_queue_command_for_c (retstrp: *mut *mut c_char, buf: *mut c
 
     if buf == null_mut() {panic! ("!buf")}
     let msg = String::from (unwrap! (unsafe {CStr::from_ptr (buf)} .to_str()));
-    let cmd = QueuedCommand {
+    let _cmd = QueuedCommand {
         msg,
         queue_id,
         response_sock,
         stats_json_only
     };
-    unwrap! ((*COMMAND_QUEUE).0.send (cmd))
+    panic! ("We need a context ID");
+    //unwrap! ((*COMMAND_QUEUE).0.send (cmd))
 }
 
-pub fn lp_queue_command (msg: String) -> () {
+pub fn lp_queue_command (ctx: &mm_ctx::MmArc, msg: String) -> Result<(), String> {
+    // If we're helping a WASM then leave a copy of the broadcast for them.
+    if let Some (ref mut cq) = *try_s! (ctx.command_queueʰ.lock()) {
+        // Monotonic increment.
+        let now = if let Some (last) = cq.last() {(last.0 + 1) .max (now_ms())} else {now_ms()};
+        cq.push ((now, msg.clone()))
+    }
+
     let cmd = QueuedCommand {
         msg,
         queue_id: 0,
         response_sock: -1,
         stats_json_only: 0,
     };
-    unwrap! ((*COMMAND_QUEUE).0.send (cmd))
+    try_s! (ctx.command_queue.unbounded_send (cmd));
+    Ok(())
 }
 
 #[cfg(feature = "native")]
@@ -1050,6 +1147,28 @@ pub fn temp_dir() -> PathBuf {
     if rc <= 0 {panic! ("!temp_dir")}
     let path = unwrap! (std::str::from_utf8 (&buf[0 .. rc as usize]));
     Path::new (path) .into()
+}
+
+#[cfg(feature = "native")]
+pub fn write (path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
+    try_s! (fs::write (path, contents));
+    Ok(())
+}
+
+#[cfg(not(feature = "native"))]
+pub fn write (path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
+    use std::os::raw::c_char;
+
+    extern "C" {pub fn host_write(path_p: *const c_char, path_l: i32, ptr: *const c_char, len: i32) -> i32;}
+
+    let path = try_s! (path.as_ref().to_str().ok_or("Non-unicode path"));
+    let content = contents.as_ref();
+    let rc = unsafe {host_write (
+        path.as_ptr() as *const c_char, path.len() as i32,
+        content.as_ptr() as *const c_char, content.len() as i32
+    )};
+    if rc != 0 {return ERR! ("!host_write: {}", rc)}
+    Ok(())
 }
 
 /// If the `MM_LOG` variable is present then tries to open that file.  
@@ -1234,6 +1353,12 @@ pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, 
     Ok (rv.body.into_vec())
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct BroadcastP2pMessageArgs {
+    pub ctx: u32,
+    pub msg: String
+}
+
 /// Invokes callback `cb_id` in the WASM host, passing a `(ptr,len)` string to it.
 #[cfg(not(feature = "native"))]
 extern "C" {pub fn call_back (cb_id: i32, ptr: *const c_char, len: i32);}
@@ -1340,7 +1465,20 @@ fn test_round_to() {
 pub fn new_uuid() -> Uuid {Uuid::new_v4()}
 
 #[cfg(not(feature = "native"))]
-pub fn new_uuid() -> Uuid {unimplemented!()}
+pub fn new_uuid() -> Uuid {
+    use rand::RngCore;
+    use uuid::{Builder, Variant, Version};
+
+    let mut rng = small_rng();
+    let mut bytes = [0; 16];
+
+    rng.fill_bytes(&mut bytes);
+
+    Builder::from_bytes(bytes)
+        .set_variant(Variant::RFC4122)
+        .set_version(Version::Random)
+        .build()
+}
 
 pub fn first_char_to_upper(input: &str) -> String {
     let mut v: Vec<char> = input.chars().collect();

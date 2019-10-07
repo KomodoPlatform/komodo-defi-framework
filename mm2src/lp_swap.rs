@@ -60,7 +60,7 @@
 use bigdecimal::BigDecimal;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{lp_coinfind, MmCoinEnum, TradeInfo, TransactionDetails, TransactionEnum};
-use common::{bits256, HyRes, rpc_response};
+use common::{bits256, HyRes, MM_VERSION, rpc_response};
 use common::executor::Timer;
 use common::log::{TagParam};
 use common::mm_ctx::{from_ctx, MmArc};
@@ -383,14 +383,14 @@ impl SavedSwap {
 
     fn recover_funds(self, ctx: MmArc) -> Result<RecoveredSwap, String> {
         let maker_ticker = try_s!(self.maker_coin_ticker());
-        let maker_coin = match lp_coinfind(&ctx, &maker_ticker) {
+        let maker_coin = match block_on(lp_coinfind(&ctx, &maker_ticker)) {
             Ok(Some(c)) => c,
             Ok(None) => return ERR!("Coin {} is not activated", maker_ticker),
             Err(e) => return ERR!("Error {} on {} coin find attempt", e, maker_ticker),
         };
 
         let taker_ticker = try_s!(self.taker_coin_ticker());
-        let taker_coin = match lp_coinfind(&ctx, &taker_ticker) {
+        let taker_coin = match block_on(lp_coinfind(&ctx, &taker_ticker)) {
             Ok(Some(c)) => c,
             Ok(None) => return ERR!("Coin {} is not activated", taker_ticker),
             Err(e) => return ERR!("Error {} on {} coin find attempt", e, taker_ticker),
@@ -649,7 +649,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
                         move || {
                             let mut taker_coin;
                             loop {
-                                taker_coin = match lp_coinfind(&ctx, &taker_coin_ticker) {
+                                taker_coin = match block_on(lp_coinfind(&ctx, &taker_coin_ticker)) {
                                     Ok(c) => c,
                                     Err(e) => {
                                         log!("Error " (e) " on " (taker_coin_ticker) " find attempt");
@@ -665,7 +665,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
 
                             let mut maker_coin;
                             loop {
-                                maker_coin = match lp_coinfind(&ctx, &maker_coin_ticker) {
+                                maker_coin = match block_on(lp_coinfind(&ctx, &maker_coin_ticker)) {
                                     Ok(c) => c,
                                     Err(e) => {
                                         log!("Error " (e) " on " (maker_coin_ticker) " find attempt");

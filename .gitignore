@@ -278,6 +278,7 @@ iguana/exchanges/manychains
 /js/*.wasm
 /js/mm2
 /js/mm2.exe
+/js/.mm2.*
 
 # Rust artefacts
 /MM_VERSION

@@ -78,13 +78,15 @@ mod docker_tests {
 
         let stdout = ps.stdout.unwrap();
         let reader = BufReader::new(stdout);
-        let ids = reader.lines().map(|line| line.unwrap());
-        Command::new("docker")
-            .arg("rm")
-            .arg("-f")
-            .args(ids)
-            .spawn()
-            .expect("Failed to execute docker command");
+        let ids: Vec<_> = reader.lines().map(|line| line.unwrap()).collect();
+        if !ids.is_empty() {
+            Command::new("docker")
+                .arg("rm")
+                .arg("-f")
+                .args(ids)
+                .spawn()
+                .expect("Failed to execute docker command");
+        }
 
         let docker = Cli::default();
         let utxo_node = utxo_docker_node(&docker);

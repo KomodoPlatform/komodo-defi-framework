@@ -1,15 +1,15 @@
-use common::StringError;
-use common::wio::slurp_req;
-use common::custom_futures::select_ok_sequential;
+use common::executor::Timer;
+use common::wio::slurp_reqʹ;
 use futures01::Future;
-use futures_timer::{FutureExt};
+use futures::compat::Compat;
+use futures::future::{select, Either};
+use gstuff::binprint;
 use http::header::HeaderValue;
 use jsonrpc_core::{Call, Response};
 use serde_json::{Value as Json};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use web3::{RequestId, Transport};
 use web3::error::{Error, ErrorKind};
 use web3::helpers::{build_request, to_result_from_output, to_string};
@@ -55,26 +55,31 @@ impl Transport for Web3Transport {
     }
 
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        let mut futures = vec![];
-        for uri in self.uris.iter() {
-            let request = to_string(&request);
-            let mut req = http::Request::new(Vec::from(request.clone()));
-            *req.method_mut() = http::Method::POST;
-            *req.uri_mut() = uri.clone();
-            req.headers_mut().insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
-            let fut = slurp_req(req)
-                .map_err(|e| StringError(e))
-                .timeout(Duration::from_secs(60))
-                .map_err(move |e| {
-                    log!("Error " (e.0) " on request " (request));
-                    ERRL!("{}", e.0)
-                });
-            futures.push(fut);
-        }
-
-        Box::new(select_ok_sequential(futures)
-            .map_err(|errs| ErrorKind::Transport(ERRL!("{:?}", errs)).into())
-            .and_then(|(_, _, body)| single_response(body))
-        )
+        Box::new(Compat::new(Box::pin(sendʹ(request, self.uris.clone()))))
     }
+}
+
+async fn sendʹ(request: Call, uris: Vec<http::Uri>) -> Result<Json, Error> {
+    let mut errors = Vec::new();
+    for uri in uris.iter() {
+        let request = to_string(&request);
+        let mut req = http::Request::new(request.clone().into_bytes());
+        *req.method_mut() = http::Method::POST;
+        *req.uri_mut() = uri.clone();
+        req.headers_mut().insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        let timeout = Timer::sleep(60.);
+        let req = Box::pin(slurp_reqʹ(req));
+        let rc = select(req, timeout).await;
+        let res = match rc {
+            Either::Left((r, _t)) => r,
+            Either::Right((_t, _r)) => {errors.push(ERRL!("timeout")); continue}
+        };
+        let (status, _headers, body) = match res {Ok(r) => r, Err(err) => {errors.push(err); continue}};
+        if !status.is_success() {errors.push(ERRL!("!200: {}, {}", status, binprint(&body, b'.'))); continue}
+        return single_response(body)
+    }
+    Err(ErrorKind::Transport(fomat!(
+        "request " [request] " failed: "
+        for err in errors {(err)} sep {"; "}
+    )).into())
 }

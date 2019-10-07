@@ -11,12 +11,18 @@ pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
     ctx.dbdir().join("SWAPS").join("STATS").join("MAKER").join(format!("{}.json", uuid))
 }
 
-fn save_my_maker_swap_event(ctx: &MmArc, uuid: &str, event: MakerSavedEvent) -> Result<(), String> {
-    let path = my_swap_file_path(ctx, uuid);
+fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
+    let path = my_swap_file_path(ctx, &swap.uuid);
     let content = slurp(&path);
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Maker(MakerSavedSwap {
-            uuid: uuid.to_owned(),
+            uuid: swap.uuid.clone(),
+            maker_amount: Some(swap.maker_amount.clone()),
+            maker_coin: Some(swap.maker_coin.ticker().to_owned()),
+            taker_amount: Some(swap.taker_amount.clone()),
+            taker_coin: Some(swap.taker_coin.ticker().to_owned()),
+            gui: ctx.gui().map(|g| g.to_owned()),
+            mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
             success_events: vec!["Started".into(), "Negotiated".into(), "TakerFeeValidated".into(),
                                  "MakerPaymentSent".into(), "TakerPaymentReceived".into(),
@@ -812,6 +818,12 @@ impl MakerSavedEvent {
 pub struct MakerSavedSwap {
     pub uuid: String,
     events: Vec<MakerSavedEvent>,
+    maker_amount: Option<BigDecimal>,
+    maker_coin: Option<String>,
+    taker_amount: Option<BigDecimal>,
+    taker_coin: Option<String>,
+    gui: Option<String>,
+    mm_version: Option<String>,
     success_events: Vec<String>,
     error_events: Vec<String>,
 }
@@ -911,7 +923,7 @@ pub fn run_maker_swap(swap: MakerSwap, initial_command: Option<MakerSwapCommand>
                 timestamp: now_ms(),
                 event: event.clone(),
             };
-            unwrap!(save_my_maker_swap_event(&ctx, &uuid, to_save));
+            unwrap!(save_my_maker_swap_event(&ctx, &unwrap!(running_swap.read()), to_save));
             status.status(swap_tags, &event.status_str());
             unwrap!(running_swap.write().unwrap().apply_event(event));
         }

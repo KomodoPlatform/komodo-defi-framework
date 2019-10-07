@@ -760,9 +760,12 @@ pub extern fn electrum_replied (ri: i32, id: i32) {
     if let Some (tx) = electrum_replies.remove (&(ri, id)) {let _ = tx.send(());}
 }
 
+/// AG: As of now the pings tend to fail.
+///     I haven't looked into this because we'll probably use a websocket or Java implementation instead.
 #[cfg(not(feature = "native"))]
 async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest)
 -> Result<JsonRpcResponse, String> {
+    use futures::future::{select, Either};
     use std::mem::uninitialized;
     use std::os::raw::c_char;
     use std::str::from_utf8;
@@ -781,7 +784,15 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
         try_s! (ELECTRUM_REPLIES.lock()) .insert ((connection.ri, id), tx);
         let rc = unsafe {host_electrum_request (connection.ri, req.as_ptr() as *const c_char, req.len() as i32)};
         if rc != 0 {return ERR! ("!host_electrum_request: {}", rc)}
-        let _ = rx.await;  // Wait for the host to invoke `fn electrum_replied`.
+
+        // Wait for the host to invoke `fn electrum_replied`.
+        let timeout = Timer::sleep (10.);
+        let rc = select (rx, timeout).await;
+        match rc {
+            Either::Left ((_r, _t)) => (),
+            Either::Right ((_t, _r)) => {log! ("Electrum " (connection.ri) " timeout"); continue}
+        };
+
         let mut buf: [u8; 131072] = unsafe {uninitialized()};
         let rc = unsafe {host_electrum_reply (connection.ri, id, buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
         if rc <= 0 {log! ("!host_electrum_reply: " (rc)); continue}  // Skip to the next connection.

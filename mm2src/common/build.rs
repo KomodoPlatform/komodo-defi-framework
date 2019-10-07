@@ -33,20 +33,23 @@ use std::process::{ChildStdout, Command, Stdio};
 use std::str::from_utf8_unchecked;
 use std::sync::Arc;
 use std::thread;
+use sysinfo::{System, SystemExt};
 use tar::Archive;
 
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;
 
 /// Quote spaces, in case the project is on a path with them.
-fn escape_some (path: &str) -> String {
+fn escape_some(path: &str) -> String {
     // AG: I've tried using the shell_escape crate for this,
     // but it adds the single quotes, breaking the variable and argument assignments on Windows.
 
-    let mut esc = String::with_capacity (path.len());
+    let mut esc = String::with_capacity(path.len());
     for ch in path.chars() {
-        if ch == ' ' {esc.push ('\\')}
-        esc.push (ch)
+        if ch == ' ' {
+            esc.push('\\')
+        }
+        esc.push(ch)
     }
     esc
 }
@@ -167,22 +170,16 @@ fn generate_bindings() {
     assert!(c_headers.is_dir());
 
     bindgen(
-        vec![
-            "../../iguana/exchanges/LP_include.h".into(),
-        ],
-        c_headers.join("LP_include.rs"),
+        vec!["../../iguana/exchanges/LP_include.h".into()],
+        "c_headers/LP_include.rs",
         [
             // functions
-            "OS_ensure_directory"
+            "OS_ensure_directory",
         ]
         .iter(),
         // types
-        [
-        ]
-        .iter(),
-        [
-        ]
-        .iter(),
+        [].iter(),
+        [].iter(),
     );
 }
 
@@ -527,7 +524,8 @@ impl Target {
         let targetᴱ = unwrap!(var("TARGET"));
         match &targetᴱ[..] {
             "x86_64-unknown-linux-gnu" => Target::Unix,
-            "armv7-unknown-linux-gnueabihf" => Target::Unix,  // Raspbian is a modified Debian
+            "armv7-unknown-linux-gnueabihf" => Target::Unix, // Raspbian is a modified Debian
+            "arm-unknown-linux-gnueabihf" => Target::Unix,   // Raspbian under QEMU
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
             "wasm32-unknown-emscripten" => Target::Unix, // Pretend.
@@ -958,6 +956,17 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         return (existing_a, include);
     }
 
+    // When building on something like Raspberry Pi the RAM is limited.
+    let sys = System::new();
+    let totalᵐ = sys.get_total_memory() as usize;
+    let freeᵐ = sys.get_free_memory() as usize;
+    epintln! ([=totalᵐ] ", " [=freeᵐ]);
+    // NB: Under QEMU the logical is lower than the physical.
+    let processes = 4
+        .min(freeᵐ / 333 * 1024)
+        .min(num_cpus::get_physical())
+        .min(num_cpus::get());
+
     // This version of the build doesn't compile Boost separately
     // but rather allows the libtorrent to compile it
     // "you probably want to just build libtorrent and have it build boost
@@ -969,7 +978,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     // NB: The common compiler flags go to the "cxxflags=" here
     // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(
-        "b2 -j4 -d+2 release"
+        "b2 -j"(processes)" -d+2 release"
         " link=static deprecated-functions=off debug-symbols=off"
         " dht=on encryption=on crypto=built-in iconv=off i2p=off"
         " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
