@@ -171,7 +171,7 @@ fn generate_bindings() {
 
     bindgen(
         vec!["../../iguana/exchanges/LP_include.h".into()],
-        "c_headers/LP_include.rs",
+        c_headers.join("LP_include.rs"),
         [
             // functions
             "OS_ensure_directory",
