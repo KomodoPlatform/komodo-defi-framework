@@ -7,7 +7,7 @@
 // NB: We're using `bits256` to denote the official public ID (in the future - the public key) of a peer.
 // In contrast, derived keys are stored as `[u8; 32]`.
 
-#![feature(non_ascii_idents, vec_resize_default, ip, weak_counts, async_await, async_closure)]
+#![feature(non_ascii_idents, vec_resize_default, ip, weak_counts, async_closure)]
 #![feature(hash_raw_entry)]
 
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
@@ -86,6 +86,8 @@ use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
+#[cfg(feature = "w-bindgen")]
+use wasm_bindgen::prelude::*;
 
 lazy_static! {
     /// Any unprocessed libtorrent alers are logged if this knob is set to "true".
@@ -1503,6 +1505,7 @@ pub async fn peers_drop_send_handlerʰ (req: Bytes) -> Result<Vec<u8>, String> {
     Ok (Vec::new())}
 
 #[cfg(not(feature = "native"))]
+#[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]
 extern "C" {pub fn peers_drop_send_handler (shp1: i32, shp2: i32);}
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1597,7 +1600,7 @@ pub async fn peers_send (req: bytes::Bytes) -> Result<Vec<u8>, String> {
 }
 
 /// Returns the `Arc` address of the `SendHandler`.
-#[cfg(not(feature = "native"))]
+#[cfg(all(not(feature = "native"), not(feature = "w-bindgen")))]
 pub async fn send (ctx: MmArc, peer: bits256, subject: Vec<u8>, fallback: u8, payload: Vec<u8>)
 -> Result<SendHandlerRef, String> {
     let rv = try_s! (helperᶜ ("peers_send", try_s! (bencode (&ToPeersSend {
@@ -1608,6 +1611,15 @@ pub async fn send (ctx: MmArc, peer: bits256, subject: Vec<u8>, fallback: u8, pa
         payload: ByteBuf::from (payload)
     }))) .await);
     Ok (try_s! (json::from_slice (&rv)))
+}
+
+/// Returns the `Arc` address of the `SendHandler`.
+#[cfg(feature = "w-bindgen")]
+pub async fn send (ctx: MmArc, peer: bits256, subject: Vec<u8>, fallback: u8, payload: Vec<u8>)
+-> Result<SendHandlerRef, String> {
+    let mut msgs = SWAP_MESSAGES.lock().await;
+    msgs.insert(subject, payload);
+    Ok ( SendHandlerRef(0) )
 }
 
 struct RecvFuture {
@@ -1747,7 +1759,10 @@ pub extern fn start_helpers() -> i32 {
             return port as i32
 }   }   }
 
-#[cfg(not(feature = "native"))]
+use futures::lock::Mutex as FutMutex;
+use common::executor::Timer;
+
+#[cfg(all(not(feature = "native"), not(feature = "w-bindgen")))]
 pub async fn recv (ctx: MmArc, subject: Vec<u8>, fallback: u8, validator: FixedValidator)
 -> Result<Vec<u8>, String> {
     Ok (try_s! (helperᶜ ("peers_recv", try_s! (bencode (&ToPeersRecv {
@@ -1756,6 +1771,25 @@ pub async fn recv (ctx: MmArc, subject: Vec<u8>, fallback: u8, validator: FixedV
         fallback,
         validator
     }))) .await))
+}
+
+#[cfg(feature = "w-bindgen")]
+lazy_static! {
+    pub static ref SWAP_MESSAGES: FutMutex<HashMap<Vec<u8>, Vec<u8>>> = FutMutex::new(HashMap::new());
+}
+
+#[cfg(feature = "w-bindgen")]
+pub async fn recv (ctx: MmArc, subject: Vec<u8>, fallback: u8, validator: FixedValidator)
+-> Result<Vec<u8>, String> {
+    loop {
+        let msgs = SWAP_MESSAGES.lock().await;
+        match msgs.get(&subject) {
+            Some(msg) => return Ok(msg.clone()),
+            None => ()
+        }
+        drop(msgs);
+        Timer::sleep(1.).await
+    }
 }
 
 #[cfg(not(feature = "native"))]

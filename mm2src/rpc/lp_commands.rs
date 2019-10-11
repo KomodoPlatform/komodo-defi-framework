@@ -22,12 +22,11 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
-use common::{rpc_err_response, rpc_response, HyRes, MM_VERSION};
+use common::{block_on, rpc_err_response, rpc_response, HyRes, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use futures01::Future;
 use futures::compat::Future01CompatExt;
-use futures::executor::block_on;
 use http::Response;
 use serde_json::{self as json, Value as Json};
 

@@ -1,8 +1,10 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use coins::{FoundSwapTxSpend};
+use common::executor::Timer;
 use crc::crc32;
-use peers::FixedValidator;
+use futures::compat::Future01CompatExt;
+use peers::{FixedValidator};
 use super::*;
 
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
@@ -161,7 +163,7 @@ impl TakerSavedSwap {
 /// Panics in case of command or event apply fails, not sure yet how to handle such situations
 /// because it's usually means that swap is in invalid state which is possible only if there's developer error
 /// Every produced event is saved to local DB. Swap status is broadcasted to P2P network after completion.
-pub fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCommand>) {
+pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCommand>) {
     let mut command = initial_command.unwrap_or(TakerSwapCommand::Start);
     let mut events;
     let ctx = swap.ctx.clone();
@@ -174,22 +176,24 @@ pub fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCommand>
     unwrap!(swap_ctx.running_swaps.lock()).push(weak_ref);
 
     loop {
-        let res = unwrap!(unwrap!(running_swap.read()).handle_command(command));
+        let res = unwrap!(unwrap!(running_swap.read()).handle_command(command).await);
         events = res.1;
         for event in events {
             let to_save = TakerSavedEvent {
                 timestamp: now_ms(),
                 event: event.clone(),
             };
-            unwrap!(save_my_taker_swap_event(&ctx, &unwrap!(running_swap.read()), to_save));
+            #[cfg(feature = "native")] unwrap!(save_my_taker_swap_event(&ctx, &unwrap!(running_swap.read()), to_save));
             status.status(swap_tags, &event.status_str());
             unwrap!(unwrap!(running_swap.write()).apply_event(event));
         }
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
-                    log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                if cfg!(feature = "native") {
+                    if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
+                        log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                    }
                 }
                 break;
             },
@@ -354,18 +358,18 @@ impl TakerSwap {
         Ok(())
     }
 
-    fn handle_command(&self, command: TakerSwapCommand)
+    async fn handle_command(&self, command: TakerSwapCommand)
                       -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         match command {
-            TakerSwapCommand::Start => self.start(),
-            TakerSwapCommand::Negotiate => self.negotiate(),
-            TakerSwapCommand::SendTakerFee => self.send_taker_fee(),
-            TakerSwapCommand::WaitForMakerPayment => self.wait_for_maker_payment(),
-            TakerSwapCommand::ValidateMakerPayment => self.validate_maker_payment(),
-            TakerSwapCommand::SendTakerPayment => self.send_taker_payment(),
-            TakerSwapCommand::WaitForTakerPaymentSpend => self.wait_for_taker_payment_spend(),
-            TakerSwapCommand::SpendMakerPayment => self.spend_maker_payment(),
-            TakerSwapCommand::RefundTakerPayment => self.refund_taker_payment(),
+            TakerSwapCommand::Start => self.start().await,
+            TakerSwapCommand::Negotiate => self.negotiate().await,
+            TakerSwapCommand::SendTakerFee => self.send_taker_fee().await,
+            TakerSwapCommand::WaitForMakerPayment => self.wait_for_maker_payment().await,
+            TakerSwapCommand::ValidateMakerPayment => self.validate_maker_payment().await,
+            TakerSwapCommand::SendTakerPayment => self.send_taker_payment().await,
+            TakerSwapCommand::WaitForTakerPaymentSpend => self.wait_for_taker_payment_spend().await,
+            TakerSwapCommand::SpendMakerPayment => self.spend_maker_payment().await,
+            TakerSwapCommand::RefundTakerPayment => self.refund_taker_payment().await,
             TakerSwapCommand::Finish => Ok((None, vec![TakerSwapEvent::Finished])),
         }
     }
@@ -406,8 +410,8 @@ impl TakerSwap {
         }
     }
 
-    fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let my_balance = match self.taker_coin.my_balance().wait() {
+    async fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        let my_balance = match self.taker_coin.my_balance().compat().await {
             Ok(balance) => balance,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -427,14 +431,14 @@ impl TakerSwap {
         }
 
         let dex_fee_amount = dex_fee_amount(self.maker_coin.ticker(), self.taker_coin.ticker(), &self.taker_amount);
-        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount.clone().into(), &my_balance.clone().into(), TradeInfo::Taker(dex_fee_amount)).wait() {
+        if let Err(e) = self.taker_coin.check_i_have_enough_to_trade(&self.taker_amount.clone().into(), &my_balance.clone().into(), TradeInfo::Taker(dex_fee_amount)).compat().await {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::StartFailed(ERRL!("!check_i_have_enough_to_trade {}", e).into())],
             ))
         }
 
-        if let Err(e) = self.maker_coin.can_i_spend_other_payment().wait() {
+        if let Err(e) = self.maker_coin.can_i_spend_other_payment().compat().await {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::StartFailed(ERRL!("!can_i_spend_other_payment {}", e).into())],
@@ -444,7 +448,7 @@ impl TakerSwap {
         let lock_duration = lp_atomic_locktime(self.maker_coin.ticker(), self.taker_coin.ticker());
         let started_at = now_ms() / 1000;
 
-        let maker_coin_start_block = match self.maker_coin.current_block().wait() {
+        let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -452,7 +456,7 @@ impl TakerSwap {
             ))
         };
 
-        let taker_coin_start_block = match self.taker_coin.current_block().wait() {
+        let taker_coin_start_block = match self.taker_coin.current_block().compat().await {
             Ok(b) => b,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -481,7 +485,7 @@ impl TakerSwap {
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
     }
 
-    fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let data = match recv!(self, "negotiation", 90, -1000, FixedValidator::AnythingGoes) {
             Ok(d) => d,
             Err(e) => return Ok((
@@ -559,7 +563,7 @@ impl TakerSwap {
         ))
     }
 
-    fn send_taker_fee(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn send_taker_fee(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let timeout = self.data.started_at + self.data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
@@ -571,7 +575,7 @@ impl TakerSwap {
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
         let fee_amount = dex_fee_amount(&self.data.maker_coin, &self.data.taker_coin, &self.taker_amount);
-        let fee_tx = self.taker_coin.send_taker_fee(&fee_addr_pub_key, fee_amount).wait();
+        let fee_tx = self.taker_coin.send_taker_fee(&fee_addr_pub_key, fee_amount).compat().await;
         let transaction = match fee_tx {
             Ok (t) => t,
             Err (err) => return Ok((
@@ -584,11 +588,11 @@ impl TakerSwap {
         // we can attempt to get the details in loop here as transaction was already sent and
         // is present on blockchain so only transport errors are expected to happen
         let tx_details = loop {
-            match self.taker_coin.tx_details_by_hash(&hash) {
+            match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await;
                     continue;
                 }
             }
@@ -600,7 +604,7 @@ impl TakerSwap {
         ))
     }
 
-    fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.taker_fee.as_ref().unwrap().tx_hex.clone();
         let sending_f = match send!(self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), 60, tx_hex) {
             Ok(f) => f,
@@ -628,8 +632,9 @@ impl TakerSwap {
         let hash = maker_payment.tx_hash();
         log!({"Got maker payment {:02x}", hash});
         let mut attempts = 0;
+        log!({"Before tx details"});
         let tx_details = loop {
-            match self.maker_coin.tx_details_by_hash(&hash) {
+            match self.maker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => if attempts >= 3 {
                     return Ok((
@@ -638,10 +643,11 @@ impl TakerSwap {
                     ))
                 } else {
                     attempts += 1;
-                    thread::sleep(Duration::from_secs(10));
+                    Timer::sleep(10.).await;
                 },
             };
         };
+        log!({"After tx details"});
 
         Ok((
             Some(TakerSwapCommand::ValidateMakerPayment),
@@ -649,14 +655,14 @@ impl TakerSwap {
         ))
     }
 
-    fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let validated = self.maker_coin.validate_maker_payment(
             &unwrap!(self.maker_payment.clone()).tx_hex,
             self.maker_payment_lock as u32,
             &*self.other_persistent_pub,
             &self.secret_hash.0,
             self.maker_amount.clone(),
-        );
+        ).compat().await;
 
         if let Err(e) = validated {
             return Ok((
@@ -664,18 +670,20 @@ impl TakerSwap {
                 vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!validate maker payment: {}", e).into())]
             ));
         }
+        log!({"Before wait confirm"});
 
         if let Err(err) = self.maker_coin.wait_for_confirmations(
             &unwrap!(self.maker_payment.clone()).tx_hex,
             self.data.maker_payment_confirmations,
             self.data.maker_payment_wait,
-            15,
-        ) {
+            1,
+        ).compat().await {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!wait for maker payment confirmations: {}", err).into())]
             ));
         }
+        log!({"After wait confirm"});
 
         Ok((
             Some(TakerSwapCommand::SendTakerPayment),
@@ -684,7 +692,7 @@ impl TakerSwap {
     }
 
 
-    fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let timeout = self.data.started_at + self.data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
@@ -699,7 +707,7 @@ impl TakerSwap {
             &*self.other_persistent_pub,
             &self.secret_hash.0,
             self.data.taker_coin_start_block,
-        ) {
+        ).compat().await {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
@@ -710,7 +718,7 @@ impl TakerSwap {
                         self.taker_amount.clone(),
                     );
 
-                    match payment_fut.wait() {
+                    match payment_fut.compat().await {
                         Ok(t) => t,
                         Err(e) => return Ok((
                             Some(TakerSwapCommand::Finish),
@@ -730,11 +738,11 @@ impl TakerSwap {
         // we can attempt to get the details in loop here as transaction was already sent and
         // is present on blockchain so only transport errors are expected to happen
         let tx_details = loop {
-            match self.taker_coin.tx_details_by_hash(&hash) {
+            match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await;
                     continue;
                 }
             }
@@ -746,7 +754,7 @@ impl TakerSwap {
         ))
     }
 
-    fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.taker_payment.as_ref().unwrap().tx_hex.clone();
         let sending_f = match send!(self.ctx, self.maker, fomat!(("taker-payment") '@' (self.uuid)), 60, tx_hex) {
             Ok(f) => f,
@@ -756,7 +764,7 @@ impl TakerSwap {
             ))
         };
 
-        let tx = match self.taker_coin.wait_for_tx_spend(&self.taker_payment.clone().unwrap().tx_hex, self.data.taker_payment_lock, self.data.taker_coin_start_block) {
+        let tx = match self.taker_coin.wait_for_tx_spend(&self.taker_payment.clone().unwrap().tx_hex, self.data.taker_payment_lock, self.data.taker_coin_start_block).compat().await {
             Ok(t) => t,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),
@@ -769,11 +777,11 @@ impl TakerSwap {
         // we can attempt to get the details in loop here as transaction was already sent and
         // is present on blockchain so only transport errors are expected to happen
         let tx_details = loop {
-            match self.taker_coin.tx_details_by_hash(&hash) {
+            match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await;
                     continue;
                 }
             }
@@ -795,15 +803,14 @@ impl TakerSwap {
         ))
     }
 
-    fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
             &unwrap!(self.maker_payment.clone()).tx_hex,
             self.maker_payment_lock as u32,
             &*self.other_persistent_pub,
             &self.secret.0,
         );
-
-        let transaction = match spend_fut.wait() {
+        let transaction = match spend_fut.compat().await {
             Ok(t) => t,
             Err(err) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -816,11 +823,11 @@ impl TakerSwap {
         // we can attempt to get the details in loop here as transaction was already sent and
         // is present on blockchain so only transport errors are expected to happen
         let tx_details = loop {
-            match self.maker_coin.tx_details_by_hash(&hash) {
+            match self.maker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await;
                     continue;
                 }
             }
@@ -831,14 +838,14 @@ impl TakerSwap {
         ))
     }
 
-    fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+    async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         loop {
             // have to wait for 1 hour more because some coins have BIP113 activated so these will reject transactions with locktime == present time
             // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
             if now_ms() / 1000 > self.data.taker_payment_lock + 3700 {
                 break;
             }
-            std::thread::sleep(Duration::from_secs(10));
+            Timer::sleep(10.).await;
         }
         let refund_fut = self.taker_coin.send_taker_refunds_payment(
             &self.taker_payment.clone().unwrap().tx_hex.0,
@@ -847,7 +854,7 @@ impl TakerSwap {
             &self.secret_hash.0,
         );
 
-        let transaction = match refund_fut.wait() {
+        let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -860,11 +867,11 @@ impl TakerSwap {
         // we can attempt to get the details in loop here as transaction was already sent and
         // is present on blockchain so only transport errors are expected to happen
         let tx_details = loop {
-            match self.taker_coin.tx_details_by_hash(&hash) {
+            match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
                 Err(e) => {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
-                    thread::sleep(Duration::from_secs(30));
+                    Timer::sleep(30.).await;
                     continue;
                 }
             }
@@ -949,7 +956,7 @@ impl TakerSwap {
                     &*self.other_persistent_pub,
                     &self.secret_hash.0,
                     self.data.taker_coin_start_block,
-                ));
+                ).wait());
                 match maybe_sent {
                     Some(tx) => tx.tx_hex(),
                     None => return ERR!("Taker payment is not found, swap is not recoverable"),
@@ -1108,7 +1115,7 @@ mod taker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Ok(Some(eth_tx_for_test().into())))
+            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut TX_SPEND_CALLED: bool = false;
@@ -1149,7 +1156,7 @@ mod taker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Ok(Some(eth_tx_for_test().into())))
+            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;

@@ -18,6 +18,10 @@ native = [
   "hyper", "tokio-core", "dirs", "docker_tests",
   "common/native", "peers/native", "coins/native", # "portfolio/native"
 ]
+w-bindgen = [
+  "js-sys", "wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-test", "web-sys",
+  "coins/w-bindgen", "common/w-bindgen", "peers/w-bindgen"
+]
 
 [[bin]]
 name = "mm2"
@@ -108,6 +112,18 @@ unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 winapi = "0.3"
 
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
+js-sys = { version = "0.3.27", optional = true }
+wasm-bindgen-futures = { version = "0.4.1", optional = true }
+wasm-bindgen-test = { version = "0.3.1", optional = true }
+
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'console',
+]
+optional = true
+
 [dev-dependencies]
 mocktopus = "0.7.0"
 
@@ -125,3 +141,6 @@ members = [
 backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
 backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }
 num-rational = { git =  "https://github.com/artemii235/num-rational.git" }
+# Remove when the fix applied to upstream
+# https://github.com/CodeSandwich/Mocktopus/pull/50
+mocktopus_macros = { git = "https://github.com/artemii235/Mocktopus.git" }

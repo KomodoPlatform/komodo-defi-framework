@@ -212,10 +212,8 @@ impl MmCtx {
     pub fn broadcast_p2p_msg(&self, msg: &str) {
         let i_am_seed = self.conf["i_am_seed"].as_bool().unwrap_or(false);
         if i_am_seed {
-            // log! ("seed broadcast");
             unwrap!(self.seednode_p2p_channel.0.send(msg.to_owned().into_bytes()));
         } else {
-            log! ("client broadcast");
             unwrap!(self.client_p2p_channel.0.send(msg.to_owned().into_bytes()));
     }   }
 

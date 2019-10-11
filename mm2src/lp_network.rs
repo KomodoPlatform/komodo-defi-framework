@@ -242,15 +242,15 @@ pub fn seednode_loop(ctx: MmArc, listener: TcpListener) {
 }
 
 #[cfg(feature = "native")]
-pub async fn start_seednode_loop (ctx: &MmArc, myipaddr: IpAddr, mypubport: u16)
--> Result<Option<thread::JoinHandle<()>>, String> {
+pub async fn start_seednode_loop (ctx: &MmArc, myipaddr: IpAddr, mypubport: u16) -> Result<(), String> {
     log! ("i_am_seed at " (myipaddr) ":" (mypubport));
     let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
     try_s!(listener.set_nonblocking(true));
-    Ok (Some (try_s!(thread::Builder::new().name ("seednode_loop".into()) .spawn ({
+    try_s!(thread::Builder::new().name ("seednode_loop".into()) .spawn ({
         let ctx = ctx.clone();
         move || seednode_loop(ctx, listener)
-    }))))
+    }));
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -261,8 +261,7 @@ struct StartSeednodeLoopArgs {
 }
 
 #[cfg(not(feature = "native"))]
-pub async fn start_seednode_loop (ctx: &MmArc, myipaddr: IpAddr, mypubport: u16)
--> Result<Option<thread::JoinHandle<()>>, String> {
+pub async fn start_seednode_loop (ctx: &MmArc, myipaddr: IpAddr, mypubport: u16) -> Result<(), String> {
     let args = StartSeednodeLoopArgs {
         ctx: try_s! (ctx.ffi_handle()),
         myipaddr: fomat! ((myipaddr)),
@@ -271,7 +270,7 @@ pub async fn start_seednode_loop (ctx: &MmArc, myipaddr: IpAddr, mypubport: u16)
     let args = try_s! (bencode (&args));
     try_s! (helperᶜ ("start_seednode_loop", args) .await);
     try_s! (start_queue_tap (ctx.clone()));
-    Ok (None)
+    Ok(())
 }
 
 #[cfg(feature = "native")]
@@ -357,7 +356,6 @@ fn start_queue_tap (ctx: MmArc) -> Result<(), String> {
                     continue
                 }
             };
-            log! ("Got a packet from client_p2p_loop helper: " (gstuff::binprint (&res, b'.')));
             let commands: Vec<(u64, String)> = unwrap! (bdecode (&res));
             for (ms, msg) in commands {
                 //log! ("Received a broadcast command: " (msg));

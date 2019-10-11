@@ -1,7 +1,6 @@
 #![feature(non_ascii_idents)]
 #![feature(drain_filter)]
 #![feature(integer_atomics)]
-#![feature(async_await)]
 
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
@@ -9,7 +8,7 @@
 #[macro_use] extern crate enum_primitive_derive;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
-//#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serialization_derive;
@@ -18,11 +17,11 @@
 #[path = "mm2.rs"]
 mod mm2;
 
+use crate::common::block_on;
 use crate::common::mm_ctx::MmArc;
 #[cfg(feature = "native")]
 use crate::common::log::LOG_OUTPUT;
 use futures01::Future;
-use futures::executor::block_on;
 use gstuff::{any_to_str, now_float};
 #[cfg(feature = "native")]
 use libc::c_char;

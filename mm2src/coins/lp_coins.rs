@@ -20,7 +20,7 @@
 
 #![feature(integer_atomics)]
 #![feature(non_ascii_idents)]
-#![feature(async_await, async_closure)]
+#![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
 #[macro_use] extern crate common;
@@ -32,12 +32,11 @@
 #[macro_use] extern crate unwrap;
 
 use bigdecimal::BigDecimal;
-use common::{HyRes, rpc_response, rpc_err_response};
+use common::{block_on, rpc_response, rpc_err_response, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_number::MmNumber;
 use futures01::Future;
 use futures::compat::Future01CompatExt;
-use futures::executor::block_on;
 use futures::lock::Mutex as FutMutex;
 use gstuff::{slurp};
 use http::Response;
@@ -158,7 +157,7 @@ pub trait SwapOps {
         fee_tx: &TransactionEnum,
         fee_addr: &[u8],
         amount: &BigDecimal,
-    ) -> Result<(), String>;
+    ) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
     fn validate_maker_payment(
         &self,
@@ -167,7 +166,7 @@ pub trait SwapOps {
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), String>;
+    ) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
     fn validate_taker_payment(
         &self,
@@ -176,7 +175,7 @@ pub trait SwapOps {
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), String>;
+    ) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -184,7 +183,7 @@ pub trait SwapOps {
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
-    ) -> Result<Option<TransactionEnum>, String>;
+    ) -> Box<dyn Future<Item=Option<TransactionEnum>, Error=String> + Send>;
 
     fn search_for_swap_tx_spend_my(
         &self,
@@ -223,9 +222,9 @@ pub trait MarketCoinOps {
         confirmations: u64,
         wait_until: u64,
         check_every: u64,
-    ) -> Result<(), String>;
+    ) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
-    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> Result<TransactionEnum, String>;
+    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> TransactionFut;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
@@ -318,7 +317,7 @@ pub enum TradeInfo {
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
-pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
+pub trait MmCoin: SwapOps + MarketCoinOps + Debug + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;
@@ -371,7 +370,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + 'static {
     }
 
     /// Gets tx details by hash requesting the coin RPC if required
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String>;
+    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send>;
 
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;

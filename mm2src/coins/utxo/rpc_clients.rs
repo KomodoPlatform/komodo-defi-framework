@@ -86,6 +86,43 @@ impl Deref for UtxoRpcClientEnum {
     }
 }
 
+impl Clone for UtxoRpcClientEnum {
+    fn clone(&self) -> Self {
+        match self {
+            UtxoRpcClientEnum::Native(c) => UtxoRpcClientEnum::Native(c.clone()),
+            UtxoRpcClientEnum::Electrum(c) => UtxoRpcClientEnum::Electrum(c.clone()),
+        }
+    }
+}
+
+impl UtxoRpcClientEnum {
+    pub fn wait_for_confirmations(&self, tx: &UtxoTx, confirmations: u32, wait_until: u64, check_every: u64) -> Box<dyn Future<Item=(), Error=String> + Send> {
+        let tx = tx.clone();
+        let selfi = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return ERR!("Waited too long until {} for transaction {:?} to be confirmed {} times", wait_until, tx, confirmations);
+                }
+
+                match selfi.get_verbose_transaction(tx.hash().reversed().into()).compat().await {
+                    Ok(t) => {
+                        if t.confirmations >= confirmations {
+                            return Ok(());
+                        } else {
+                            log!({ "Waiting for tx {:?} confirmations, now {}, required {}", tx.hash().reversed(), t.confirmations, confirmations });
+                        }
+                    },
+                    Err(e) => log!("Error " [e] " getting the transaction " [tx.hash().reversed()] ", retrying in 10 seconds"),
+                }
+
+                Timer::sleep(check_every as f64).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
+    }
+}
+
 /// Generic unspent info required to build transactions, we need this separate type because native
 /// and Electrum provide different list_unspent format.
 #[derive(Debug)]
@@ -97,7 +134,7 @@ pub struct UnspentInfo {
 pub type UtxoRpcRes<T> = Box<dyn Future<Item=T, Error=String> + Send + 'static>;
 
 /// Common operations that both types of UTXO clients have but implement them differently
-pub trait UtxoRpcClientOps: Debug + 'static {
+pub trait UtxoRpcClientOps: Debug + Send + Sync + 'static {
     fn list_unspent_ordered(&self, address: &Address) -> UtxoRpcRes<Vec<UnspentInfo>>;
 
     fn send_transaction(&self, tx: &UtxoTx, my_addr: Address) -> UtxoRpcRes<H256Json>;
@@ -110,35 +147,12 @@ pub trait UtxoRpcClientOps: Debug + 'static {
 
     fn get_block_count(&self) -> RpcRes<u64>;
 
-    // TODO This operation is synchronous because it's currently simpler to do it this way.
-    // Might consider refactoring when async/await is released.
-    fn wait_for_confirmations(&self, tx: &UtxoTx, confirmations: u32, wait_until: u64, check_every: u64) -> Result<(), String> {
-        loop {
-            if now_ms() / 1000 > wait_until {
-                return ERR!("Waited too long until {} for transaction {:?} to be confirmed {} times", wait_until, tx, confirmations);
-            }
-
-            match self.get_verbose_transaction(tx.hash().reversed().into()).wait() {
-                Ok(t) => {
-                    if t.confirmations >= confirmations {
-                        return Ok(());
-                    } else {
-                        log!({"Waiting for tx {:?} confirmations, now {}, required {}", tx.hash().reversed(), t.confirmations, confirmations});
-                    }
-                },
-                Err(e) => log!("Error " [e] " getting the transaction " [tx.hash().reversed()] ", retrying in 10 seconds"),
-            }
-
-            thread::sleep(Duration::from_secs(check_every));
-        }
-    }
-
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
     fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64>;
 
-    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Result<Option<UtxoTx>, String>;
+    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send>;
 }
 
 #[derive(Clone, Deserialize, Debug, PartialEq)]
@@ -238,7 +252,7 @@ pub struct NativeClientImpl {
     pub auth: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NativeClient(pub Arc<NativeClientImpl>);
 impl Deref for NativeClient {type Target = NativeClientImpl; fn deref (&self) -> &NativeClientImpl {&*self.0}}
 
@@ -315,12 +329,17 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(self.send_raw_transaction(BytesJson::from(serialize(tx))).map_err(|e| ERRL!("{}", e)))
     }
 
-    fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
-        self.get_raw_transaction_verbose(txid)
+    /// https://bitcoin.org/en/developer-reference#sendrawtransaction
+    fn send_raw_transaction(&self, tx: BytesJson) -> RpcRes<H256Json> {
+        rpc_func!(self, "sendrawtransaction", tx)
     }
 
     fn get_transaction_bytes(&self, txid: H256Json) -> RpcRes<BytesJson> {
         self.get_raw_transaction_bytes(txid)
+    }
+
+    fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction> {
+        self.get_raw_transaction_verbose(txid)
     }
 
     fn get_block_count(&self) -> RpcRes<u64> {
@@ -352,25 +371,25 @@ impl UtxoRpcClientOps for NativeClient {
         }
     }
 
-    /// https://bitcoin.org/en/developer-reference#sendrawtransaction
-    fn send_raw_transaction(&self, tx: BytesJson) -> RpcRes<H256Json> {
-        rpc_func!(self, "sendrawtransaction", tx)
-    }
+    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send> {
+        let selfi = self.clone();
+        let tx = tx.clone();
+        let fut = async move {
+            let from_block_hash = try_s!(selfi.get_block_hash(from_block).compat().await);
+            let list_since_block: ListSinceBlockRes = try_s!(selfi.list_since_block(from_block_hash).compat().await);
+            for transaction in list_since_block.transactions {
+                let maybe_spend_tx_bytes = try_s!(selfi.get_raw_transaction_bytes(transaction.txid).compat().await);
+                let maybe_spend_tx: UtxoTx = try_s!(deserialize(maybe_spend_tx_bytes.as_slice()).map_err(|e| ERRL!("{:?}", e)));
 
-    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Result<Option<UtxoTx>, String> {
-        let from_block_hash = try_s!(self.get_block_hash(from_block).wait());
-        let list_since_block: ListSinceBlockRes = try_s!(self.list_since_block(from_block_hash).wait());
-        for transaction in list_since_block.transactions {
-            let maybe_spend_tx_bytes = try_s!(self.get_raw_transaction_bytes(transaction.txid).wait());
-            let maybe_spend_tx: UtxoTx = try_s!(deserialize(maybe_spend_tx_bytes.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-
-            for input in maybe_spend_tx.inputs.iter() {
-                if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
-                    return Ok(Some(maybe_spend_tx));
+                for input in maybe_spend_tx.inputs.iter() {
+                    if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
+                        return Ok(Some(maybe_spend_tx));
+                    }
                 }
             }
-        }
-        Ok(None)
+            Ok(None)
+        };
+        Box::new(fut.boxed().compat())
     }
 }
 
@@ -642,11 +661,21 @@ pub fn spawn_electrum(
 }
 
 #[cfg(not(feature = "native"))]
+#[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]
+extern "C" {
+    fn host_electrum_connect (ptr: *const c_char, len: i32) -> i32;
+    fn host_electrum_is_connected (ri: i32) -> i32;
+    fn host_electrum_request (ri: i32, ptr: *const c_char, len: i32) -> i32;
+    fn host_electrum_reply (ri: i32, id: i32, rbuf: *mut c_char, rcap: i32) -> i32;
+}
+
+use std::os::raw::c_char;
+use futures::task::SpawnExt;
+
+#[cfg(not(feature = "native"))]
 pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, String> {
     use std::net::{IpAddr, Ipv4Addr};
-    use std::os::raw::c_char;
 
-    extern "C" {fn host_electrum_connect (ptr: *const c_char, len: i32) -> i32;}
     let args = unwrap! (json::to_vec (req));
     let rc = unsafe {host_electrum_connect (args.as_ptr() as *const c_char, args.len() as i32)};
     if rc < 0 {panic! ("!host_electrum_connect: {}", rc)}
@@ -703,7 +732,6 @@ impl ElectrumConnection {
 
     #[cfg(not(feature = "native"))]
     async fn is_connected (&self) -> bool {
-        extern "C" {fn host_electrum_is_connected (ri: i32) -> i32;}
         let rc = unsafe {host_electrum_is_connected (self.ri)};
         if rc < 0 {panic! ("!host_electrum_is_connected: {}", rc)}
         //log! ("is_connected] host_electrum_is_connected (" [=self.ri] ") " [=rc]);
@@ -769,11 +797,6 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
     use std::mem::uninitialized;
     use std::os::raw::c_char;
     use std::str::from_utf8;
-
-    extern "C" {
-        fn host_electrum_request (ri: i32, ptr: *const c_char, len: i32) -> i32;
-        fn host_electrum_reply (ri: i32, id: i32, rbuf: *mut c_char, rcap: i32) -> i32;
-    }
 
     let req = try_s! (json::to_string (&request));
     let id: i32 = try_s! (request.id.parse());
@@ -1007,27 +1030,31 @@ impl UtxoRpcClientOps for ElectrumClient {
         self.blockchain_transaction_broadcast(tx)
     }
 
-    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, _from_block: u64) -> Result<Option<UtxoTx>, String> {
+    fn find_output_spend(&self, tx: &UtxoTx, vout: usize, _from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send> {
+        let selfi = self.clone();
         let script_hash = hex::encode(electrum_script_hash(&tx.outputs[vout].script_pubkey));
+        let tx = tx.clone();
+        let fut = async move {
+            let history = try_s!(selfi.scripthash_get_history(&script_hash).compat().await);
 
-        let history = try_s!(self.scripthash_get_history(&script_hash).wait());
+            if history.len() < 2 {
+                return Ok(None);
+            }
 
-        if history.len() < 2 {
-            return Ok(None);
-        }
+            for item in history.iter() {
+                let transaction = try_s!(selfi.get_transaction_bytes(item.tx_hash.clone()).compat().await);
 
-        for item in history.iter() {
-            let transaction = try_s!(self.get_transaction_bytes(item.tx_hash.clone()).wait());
+                let maybe_spend_tx: UtxoTx = try_s!(deserialize(transaction.as_slice()).map_err(|e| ERRL!("{:?}", e)));
 
-            let maybe_spend_tx: UtxoTx = try_s!(deserialize(transaction.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-
-            for input in maybe_spend_tx.inputs.iter() {
-                if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
-                    return Ok(Some(maybe_spend_tx));
+                for input in maybe_spend_tx.inputs.iter() {
+                    if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
+                        return Ok(Some(maybe_spend_tx));
+                    }
                 }
             }
-        }
-        Ok(None)
+            Ok(None)
+        };
+        Box::new(fut.boxed().compat())
     }
 }
 

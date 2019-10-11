@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 
 use bigdecimal::BigDecimal;
-use common::slurp;
+use common::{block_on, slurp};
 #[cfg(not(feature = "native"))]
 use common::call_back;
 use common::executor::Timer;
@@ -11,7 +11,6 @@ use common::for_tests::mm_dump;
 use common::privkey::key_pair_from_seed;
 #[cfg(not(feature = "native"))]
 use common::mm_ctx::MmArc;
-use futures::executor::block_on;
 use http::StatusCode;
 #[cfg(feature = "native")]
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
@@ -89,6 +88,7 @@ fn test_fundvalue() {portfolio::portfolio_tests::test_fundvalue (local_start())}
 /// Integration test for RPC server.
 /// Check that MM doesn't crash in case of invalid RPC requests
 #[test]
+#[cfg(feature = "native")]
 fn test_rpc() {
     let (_, mut mm, _dump_log, _dump_dashboard) = mm_spat (local_start(), &identity);
     unwrap! (block_on (mm.wait_for_log (19., |log| log.contains (">>>>>>>>> DEX stats "))));
@@ -235,6 +235,7 @@ fn test_notify() {
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]
+#[cfg(feature = "native")]
 fn alice_can_see_the_active_order_after_connection() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -356,6 +357,7 @@ fn peers_dht() {
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn peers_direct_send() {peers::peers_tests::peers_direct_send()}
 
 #[test]
@@ -365,6 +367,7 @@ fn peers_http_fallback_recv() {peers::peers_tests::peers_http_fallback_recv()}
 fn peers_http_fallback_kv() {peers::peers_tests::peers_http_fallback_kv()}
 
 #[test]
+#[cfg(feature = "native")]
 fn test_my_balance() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -441,6 +444,7 @@ fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn test_check_balance_on_order_post() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -500,6 +504,7 @@ fn test_check_balance_on_order_post() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn test_rpc_password_from_json() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -596,6 +601,7 @@ fn test_rpc_password_from_json() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn test_rpc_password_from_json_no_userpass() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -1072,52 +1078,61 @@ fn trade_base_rel_native(base: &str, rel: &str) {
 ///     cargo test --features native trade_etomic_pizza -- --nocapture --ignored
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_pizza_eth() {
     trade_base_rel_native("PIZZA", "ETH");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_eth_pizza() {
     trade_base_rel_native("ETH", "PIZZA");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_beer_eth() {
     trade_base_rel_native("BEER", "ETH");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_eth_beer() {
     trade_base_rel_native("ETH", "BEER");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_pizza_beer() {
     trade_base_rel_native("PIZZA", "BEER");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_beer_pizza() {
     trade_base_rel_native("BEER", "PIZZA");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_pizza_etomic() {
     trade_base_rel_native("PIZZA", "ETOMIC");
 }
 
 #[test]
 #[ignore]
+#[cfg(feature = "native")]
 fn trade_etomic_pizza() {
     trade_base_rel_native("ETOMIC", "PIZZA");
 }
 
+#[cfg(feature = "native")]
 fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &HashMap<&'static str, Json>, expected_bal_change: &str) {
     let addr = addr_from_enable(unwrap!(enable_res.get(coin)));
 
@@ -1147,6 +1162,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &Hash
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn test_withdraw_and_send() {
     let (alice_file_passphrase, _alice_file_userpass) = from_env_file (slurp (&".env.client"));
 
@@ -1219,6 +1235,7 @@ fn test_withdraw_and_send() {
 
 /// Ensure that swap status return the 404 status code if swap is not found
 #[test]
+#[cfg(feature = "native")]
 fn test_swap_status() {
     let coins = json! ([{"coin":"BEER","asset":"BEER"},]);
 
@@ -1263,6 +1280,7 @@ fn test_swap_status() {
 /// Ensure that setprice/buy/sell calls deny base == rel
 /// https://github.com/artemii235/SuperNET/issues/363
 #[test]
+#[cfg(feature = "native")]
 fn test_order_errors_when_base_equal_rel() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -1350,6 +1368,7 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
 /// MM2 should detect if passphrase is WIF or 0x-prefixed hex encoded privkey and parse it properly.
 /// https://github.com/artemii235/SuperNET/issues/396
 #[test]
+#[cfg(feature = "native")]
 fn test_startup_passphrase() {
     // seed phrase
     startup_passphrase("bob passphrase", "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
@@ -1372,6 +1391,7 @@ fn test_startup_passphrase() {
 /// MM2 should allow to issue several buy/sell calls in a row without delays.
 /// https://github.com/artemii235/SuperNET/issues/245
 #[test]
+#[cfg(feature = "native")]
 fn test_multiple_buy_sell_no_delay() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","txversion":4},
@@ -1463,6 +1483,7 @@ fn test_multiple_buy_sell_no_delay() {
 
 /// https://github.com/artemii235/SuperNET/issues/398
 #[test]
+#[cfg(feature = "native")]
 fn test_cancel_order() {
     let coins = json!([
         {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
@@ -1494,8 +1515,8 @@ fn test_cancel_order() {
     unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8545"]))});
-    // issue sell request on Bob side by setting base/rel price
-    log!("Issue bob sell request");
+
+    log!("Issue sell request on Bob side by setting base/rel price…");
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -1532,7 +1553,7 @@ fn test_cancel_order() {
     // Enable coins on Alice side. Print the replies in case we need the "address".
     log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"]))});
 
-    // give Alice 15 seconds to import the order
+    log!("Give Alice 15 seconds to import the order…");
     thread::sleep(Duration::from_secs(15));
 
     log!("Get BEER/PIZZA orderbook on Alice side");
@@ -1556,7 +1577,9 @@ fn test_cancel_order() {
     }))));
     assert!(cancel_rc.0.is_success(), "!cancel_order: {}", rc.1);
 
-    thread::sleep(Duration::from_secs(11));
+    let pause = 11;
+    log!("Waiting (" (pause) " seconds) for Bob to cancel the order…");
+    thread::sleep(Duration::from_secs(pause));
 
     // Bob orderbook must show no orders
     log!("Get BEER/PIZZA orderbook on Bob side");
@@ -1593,6 +1616,7 @@ fn test_cancel_order() {
 /// Electrum requests should success if at least 1 server successfully connected,
 /// all others might end up with DNS resolution errors, TCP connection errors, etc.
 #[test]
+#[cfg(feature = "native")]
 fn test_electrum_enable_conn_errors() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK"},
@@ -1637,6 +1661,7 @@ fn test_electrum_enable_conn_errors() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn test_order_should_not_be_displayed_when_node_is_down() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK"},
@@ -1756,6 +1781,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/511
 fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     let coins = json!([
@@ -1825,6 +1851,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 }
 
 #[test]
+#[cfg(feature = "native")]
 fn orderbook_should_display_rational_amounts() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK"},
@@ -1885,4 +1912,117 @@ fn orderbook_should_display_rational_amounts() {
     let volume_in_orderbook: BigRational = unwrap!(json::from_value(asks[0]["max_volume_rat"].clone()));
     assert_eq!(price, price_in_orderbook);
     assert_eq!(volume, volume_in_orderbook);
+}
+
+// HOWTO
+// 1. Install Firefox.
+// 2. Install forked version of wasm-bindgen-cli: cargo install wasm-bindgen-cli --git https://github.com/artemii235/wasm-bindgen.git
+// 3. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
+// 4. Run HEADLESS_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN cargo test --target wasm32-unknown-unknown --features w-bindgen
+#[cfg(feature = "w-bindgen")]
+mod wasm_bindgen_tests {
+    use futures01::Future;
+    use js_sys::Promise;
+    use lazy_static::lazy_static;
+    use wasm_bindgen_test::*;
+    use wasm_bindgen::prelude::*;
+    use web_sys::console;
+    use wasm_bindgen_futures::JsFuture;
+    use super::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen]
+    extern "C" {
+        fn setInterval(closure: &Closure<FnMut()>, millis: u32) -> f64;
+        fn cancelInterval(token: f64);
+    }
+
+    pub struct Interval {
+        closure: Closure<FnMut()>,
+    }
+
+    impl Interval {
+        fn new() -> Interval {
+            let closure = Closure::new({common::executor::run});
+            Interval {
+                closure,
+            }
+        }
+    }
+
+    unsafe impl Send for Interval {}
+    unsafe impl Sync for Interval {}
+
+    lazy_static! {
+        static ref EXECUTOR_INTERVAL: Interval = Interval::new();
+    }
+
+    #[wasm_bindgen(raw_module = "./js/defined-in-js.js")]
+    extern "C" {
+        fn sleep(ms: u32) -> Promise;
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_swap() {
+        use common::mm_ctx::MmCtxBuilder;
+        use coins::lp_coininit;
+        use futures::{Future, TryFutureExt};
+        use futures::future::join;
+        use crate::mm2::lp_swap::{run_maker_swap, run_taker_swap, MakerSwap, TakerSwap};
+
+        setInterval(&EXECUTOR_INTERVAL.closure, 200);
+        let key_pair_taker = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+        let key_pair_maker = key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
+        let conf = json!({
+            "coins": [{
+                "coin": "ETH",
+                "name": "ethereum",
+                "fname": "Ethereum",
+                "etomic": "0x0000000000000000000000000000000000000000",
+                "rpcport": 80,
+                "mm2": 1
+            }, {
+                "coin": "JST",
+                "name": "jst",
+                "fname": "jst",
+                "etomic": "0x2b294F029Fde858b2c62184e8390591755521d8E",
+                "rpcport": 80,
+                "mm2": 1
+            }]
+        });
+        let ctx_taker = MmCtxBuilder::new().with_conf(conf.clone()).with_secp256k1_key_pair(key_pair_taker).into_mm_arc();
+        let ctx_maker = MmCtxBuilder::new().with_conf(conf).with_secp256k1_key_pair(key_pair_maker).into_mm_arc();
+
+        let req = json!({
+            "urls":["http://195.201.0.6:8565"],
+            "swap_contract_address":"0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd"
+        });
+        let eth_taker = lp_coininit(&ctx_taker, "ETH", &req).await.unwrap();
+        let jst_taker = lp_coininit(&ctx_taker, "JST", &req).await.unwrap();
+        let eth_maker = lp_coininit(&ctx_maker, "ETH", &req).await.unwrap();
+        let jst_maker = lp_coininit(&ctx_maker, "JST", &req).await.unwrap();
+        let taker_swap = TakerSwap::new(
+            ctx_taker.clone(),
+            [0; 32].into(),
+            eth_taker.clone(),
+            jst_taker.clone(),
+            1.into(),
+            1.into(),
+            (**ctx_taker.secp256k1_key_pair().public()).into(),
+            "7c9319b2-866d-412f-bb82-a311b675fc52".to_owned(),
+        );
+
+        let maker_swap = MakerSwap::new(
+            ctx_maker.clone(),
+            [0; 32].into(),
+            eth_maker.clone(),
+            jst_maker.clone(),
+            1.into(),
+            1.into(),
+            (**ctx_maker.secp256k1_key_pair().public()).into(),
+            "7c9319b2-866d-412f-bb82-a311b675fc52".to_owned(),
+        );
+        join(run_taker_swap(taker_swap, None), run_maker_swap(maker_swap, None)).await;
+    }
 }

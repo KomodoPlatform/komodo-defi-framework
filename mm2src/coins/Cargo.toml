@@ -9,6 +9,8 @@ native = [
   "common/native"
 ]
 
+w-bindgen = ["common/w-bindgen", "js-sys", "wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-test", "web-sys"]
+
 [lib]
 name = "coins"
 path = "lp_coins.rs"
@@ -68,3 +70,21 @@ unwrap = "1.2"
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 webpki-roots = { version = "0.16.0", optional = true }
 winapi = "0.3"
+
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
+js-sys = { version = "0.3.27", optional = true }
+wasm-bindgen-futures = { version = "0.4.1", optional = true }
+wasm-bindgen-test = { version = "0.3.1", optional = true }
+
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'console',
+  'Headers',
+  'Request',
+  'RequestInit',
+  'RequestMode',
+  'Response',
+  'Window',
+]
+optional = true

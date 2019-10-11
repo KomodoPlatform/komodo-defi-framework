@@ -7,7 +7,6 @@ use chrono::{Local, TimeZone};
 #[cfg(feature = "native")]
 use futures01::Future;
 use futures::channel::oneshot::channel;
-//use futures::executor::block_on;
 use futures::task::SpawnExt;
 use gstuff::ISATTY;
 use http::{HeaderMap, Request, StatusCode};
@@ -16,7 +15,7 @@ use term;
 use rand::Rng;
 use regex::Regex;
 use std::collections::HashMap;
-use std::env::{self, var};
+use std::env;
 use std::fs;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
@@ -427,7 +426,7 @@ pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'st
             "rpc_password": "pass",
         })),
         "pass".into(),
-        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "1" => Some (local_start), _ => None}
+        match super::var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "1" => Some (local_start), _ => None}
     ));
     let (dump_log, dump_dashboard) = mm_dump (&mm.log_path);
     (passphrase, mm, dump_log, dump_dashboard)
@@ -472,34 +471,15 @@ pub fn from_env_file (env: Vec<u8>) -> (Option<String>, Option<String>) {
 #[cfg(not(feature = "native"))]
 use std::os::raw::c_char;
 
-/// Obtains the environment variable `name` from the host, copying it into `rbuf`.  
-/// Returns the length of the value copied to `rbuf` or -1 if there was an error.
-#[cfg(not(feature = "native"))]
-extern "C" {pub fn host_env (name: *const c_char, nameˡ: i32, rbuf: *mut c_char, rcap: i32) -> i32;}
-
 /// Reads passphrase from file or environment.
 pub fn get_passphrase (path: &dyn AsRef<Path>, env: &str) -> Result<String, String> {
     if let (Some (file_passphrase), _file_userpass) = from_env_file (slurp (path)) {
         return Ok (file_passphrase)
     }
 
-    #[cfg(feature = "native")] {
-        match var (env) {
-            Ok (v) => Ok (v),
-            Err (_err) => ERR! ("No {} or {}", env, path.as_ref().display())
-        }
-    }
-
-    #[cfg(not(feature = "native"))] {  // Get the environment variable from the host.
-        use std::mem::zeroed;
-        use std::str::from_utf8;
-
-        let mut buf: [u8; 4096] = unsafe {zeroed()};
-        let rc = unsafe {host_env (
-            env.as_ptr() as *const c_char, env.len() as i32,
-            buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
-        if rc <= 0 {return ERR! ("No {} or {}", env, path.as_ref().display())}
-        let s = try_s! (from_utf8 (&buf[0 .. rc as usize]));
-        Ok (String::from (s))
+    if let Ok (v) = super::var (env) {
+        Ok (v)
+    } else {
+        ERR! ("No {} or {}", env, path.as_ref().display())
     }
 }

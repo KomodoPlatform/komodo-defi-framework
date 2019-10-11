@@ -1,6 +1,7 @@
 /// Custom future combinators/implementations - some of standard do not match our requirements.
 
 use crate::executor::Timer;
+use crate::now_float;
 
 use futures01::{Async, AsyncSink, Future, Poll, Sink};
 use futures01::future::{self, Either as Either01, IntoFuture, Loop, loop_fn};
@@ -8,8 +9,6 @@ use futures01::stream::{Stream, Fuse};
 
 use futures::future::{select, Either};
 use futures::lock::{Mutex as AsyncMutex};
-
-use gstuff::now_float;
 
 /// The analogue of join_all combinator running futures `sequentially`.
 /// `join_all` runs futures `concurrently` which cause issues with native coins daemons RPC.
@@ -194,7 +193,7 @@ impl<T> TimedAsyncMutex<T> {
     /// `tick` returns a time till the next tick, or an error to abort the locking attempt.  
     /// `tick` parameters are the time when the locking attempt has started and the current time
     /// (they are equal on the first invocation of `tick`).
-    pub async fn lock<F> (&self, mut tick: F) -> Result<TimedMutexGuard<T>, String>
+    pub async fn lock<F> (&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, String>
     where F: FnMut (f64, f64) -> Result<f64, String> {
         let start = now_float();
         let mut now = start;

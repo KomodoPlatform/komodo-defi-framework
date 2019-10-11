@@ -22,10 +22,8 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use common::{double_panic_crash, MM_VERSION};
+use common::{block_on, double_panic_crash, MM_VERSION};
 use common::mm_ctx::MmCtxBuilder;
-
-use futures::executor::block_on;
 
 use gstuff::{slurp};
 

@@ -60,14 +60,13 @@
 use bigdecimal::BigDecimal;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use coins::{lp_coinfind, MmCoinEnum, TradeInfo, TransactionDetails, TransactionEnum};
-use common::{bits256, HyRes, MM_VERSION, rpc_response};
+use common::{block_on, bits256, HyRes, MM_VERSION, now_ms, now_float, rpc_response};
 use common::executor::Timer;
 use common::log::{TagParam};
 use common::mm_ctx::{from_ctx, MmArc};
 use futures01::Future;
-use futures::executor::block_on;
 use futures::future::Either;
-use gstuff::{now_float, now_ms, slurp};
+use gstuff::{slurp};
 use http::Response;
 use primitives::hash::{H160, H264};
 use serde_json::{self as json, Value as Json};
@@ -89,7 +88,7 @@ macro_rules! send {
         let crc = crc32::checksum_ieee (&$payload);
         log!("Sending '" ($subj) "' (" ($payload.len()) " bytes, crc " (crc) ")");
 
-        block_on (peers::send ($ctx.clone(), $to, Vec::from ($subj.as_bytes()), $fallback, $payload.into()))
+        peers::send ($ctx.clone(), $to, Vec::from ($subj.as_bytes()), $fallback, $payload.into()).await
     }}
 }
 
@@ -105,7 +104,7 @@ macro_rules! recv_ {
         let started = now_float();
         let timeout = (BASIC_COMM_TIMEOUT + $timeout_sec) as f64;
         let timeoutᶠ = Timer::till (started + timeout);
-        block_on (async move {
+        (async move {
             let r = match futures::future::select (Box::pin (recv_f), timeoutᶠ) .await {
                 Either::Left ((r, _)) => r,
                 Either::Right (_) => return ERR! ("timeout ({:.1} > {:.1})", now_float() - started, timeout)
@@ -116,7 +115,7 @@ macro_rules! recv_ {
                 log! ("Received '" (recv_subject) "' (" (payload.len()) " bytes, crc " (crc) ")");
             }
             r
-        })
+        }).await
     }}
 }
 
@@ -134,6 +133,7 @@ macro_rules! recv {
 
 #[path = "lp_swap/maker_swap.rs"]
 mod maker_swap;
+
 #[path = "lp_swap/taker_swap.rs"]
 mod taker_swap;
 
@@ -685,7 +685,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
                                     taker_coin.unwrap(),
                                     swap,
                                 ) {
-                                    Ok((maker, command)) => run_maker_swap(maker, command),
+                                    Ok((maker, command)) => block_on(run_maker_swap(maker, command)),
                                     Err(e) => log!([e]),
                                 },
                                 SavedSwap::Taker(swap) => match TakerSwap::load_from_saved(
@@ -694,7 +694,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
                                     taker_coin.unwrap(),
                                     swap,
                                 ) {
-                                    Ok((taker, command)) => run_taker_swap(taker, command),
+                                    Ok((taker, command)) => block_on(run_taker_swap(taker, command)),
                                     Err(e) => log!([e]),
                                 },
                             }

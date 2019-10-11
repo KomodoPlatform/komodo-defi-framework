@@ -1,8 +1,12 @@
+use common::StringError;
+use common::wio::slurp_req;
+use common::custom_futures::select_ok_sequential;
+use futures01::{Future, Poll};
+use futures_timer::{FutureExt};
 use common::executor::Timer;
 use common::wio::slurp_reqʹ;
-use futures01::Future;
-use futures::compat::Compat;
-use futures::future::{select, Either};
+use futures::compat::{Compat};
+use futures::future::{select, Either, TryFutureExt};
 use gstuff::binprint;
 use http::header::HeaderValue;
 use jsonrpc_core::{Call, Response};
@@ -44,6 +48,21 @@ impl Web3Transport {
     }
 }
 
+struct SendFuture<T>(T);
+
+impl<T: Future> Future for SendFuture<T> {
+    type Item = T::Item;
+
+    type Error = T::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.0.poll()
+    }
+}
+
+unsafe impl<T> Send for SendFuture<T> {}
+unsafe impl<T> Sync for SendFuture<T> {}
+
 impl Transport for Web3Transport {
     type Out = Box<dyn Future<Item=Json, Error=Error> + Send>;
 
@@ -54,8 +73,54 @@ impl Transport for Web3Transport {
         (id, request)
     }
 
+    #[cfg(not(feature="w-bindgen"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(Compat::new(Box::pin(sendʹ(request, self.uris.clone()))))
+    }
+
+    #[cfg(feature="w-bindgen")]
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
+        use js_sys;
+        use js_sys::Promise;
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
+
+        let mut opts = RequestInit::new();
+        opts.method("POST");
+        opts.mode(RequestMode::Cors);
+        opts.body(Some(&JsValue::from_str(&to_string(&request))));
+
+        let request = Request::new_with_str_and_init(
+            "http://195.201.0.6:8565",
+            &opts,
+        ).unwrap();
+
+        request
+            .headers()
+            .set("Accept", "application/json")
+            .unwrap();
+
+        request
+            .headers()
+            .set("Content-Type", "application/json")
+            .unwrap();
+
+        let window = web_sys::window().unwrap();
+        let request_promise = window.fetch_with_request(&request);
+        use web_sys::console;
+
+        let future = JsFuture::from(request_promise);
+        let res = async move {
+            let resp_value = future.await.unwrap();
+            assert!(resp_value.is_instance_of::<JsResponse>());
+            let resp: JsResponse = resp_value.dyn_into().unwrap();
+            let json_value = JsFuture::from(resp.json().unwrap()).await.unwrap();
+            let response: Json = json_value.into_serde().unwrap();
+            single_response(serde_json::to_vec(&response).unwrap())
+        };
+        Box::new(SendFuture(Box::pin(res).compat()))
     }
 }
 

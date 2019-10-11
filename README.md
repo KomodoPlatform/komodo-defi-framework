@@ -20,8 +20,8 @@ The current state can be considered as very early alpha.
 1. (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 1. Run
     ```
-    rustup install nightly-2019-08-05
-    rustup default nightly-2019-08-05
+    rustup install nightly-2019-10-06
+    rustup default nightly-2019-10-06
     rustup component add rustfmt-preview
     ```
 1. (Optional) Win: run `marketmaker_build_depends.cmd` to build dependencies.

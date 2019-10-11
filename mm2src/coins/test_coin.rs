@@ -38,11 +38,11 @@ impl MarketCoinOps for TestCoin {
         confirmations: u64,
         wait_until: u64,
         check_every: u64,
-    ) -> Result<(), String> {
+    ) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
 
-    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> Result<TransactionEnum, String> {
+    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> TransactionFut {
         unimplemented!()
     }
 
@@ -130,7 +130,7 @@ impl SwapOps for TestCoin {
         fee_tx: &TransactionEnum,
         fee_addr: &[u8],
         amount: &BigDecimal,
-    ) -> Result<(), String> {
+    ) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
 
@@ -141,7 +141,7 @@ impl SwapOps for TestCoin {
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), String> {
+    ) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
 
@@ -152,7 +152,7 @@ impl SwapOps for TestCoin {
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), String> {
+    ) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
 
@@ -162,7 +162,7 @@ impl SwapOps for TestCoin {
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
-    ) -> Result<Option<TransactionEnum>, String> {
+    ) -> Box<dyn Future<Item=Option<TransactionEnum>, Error=String> + Send> {
         unimplemented!()
     }
 
@@ -215,7 +215,7 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String> {
+    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item=TransactionDetails, Error=String> + Send> {
         unimplemented!()
     }
 

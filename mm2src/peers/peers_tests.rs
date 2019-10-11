@@ -1,4 +1,4 @@
-use common::{now_float, small_rng};
+use common::{block_on, now_float, small_rng};
 #[cfg(not(feature = "native"))]
 use common::call_back;
 use common::executor::Timer;
@@ -9,7 +9,6 @@ use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::privkey::key_pair_from_seed;
 use crdts::CmRDT;
 use futures01::Future;
-use futures::executor::block_on;
 use futures::future::{select, Either};
 use rand::{self, Rng, RngCore};
 use serde_bytes::ByteBuf;

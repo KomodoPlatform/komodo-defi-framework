@@ -10,6 +10,8 @@ native = [
   "common/native"
 ]
 
+w-bindgen = ["wasm-bindgen"]
+
 [lib]
 name = "peers"
 path = "peers.rs"
@@ -46,4 +48,5 @@ serde_bencode = "0.2"
 serde_bytes = "0.11"
 tokio-core = { version = "0.1", optional = true }
 unwrap = "1.2"
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
 zstd-sys = { version = "1.4", features = ["experimental"], optional = true }
