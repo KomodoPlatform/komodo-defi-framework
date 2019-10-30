@@ -5,7 +5,7 @@ use common::{block_on, slurp};
 #[cfg(not(feature = "native"))]
 use common::call_back;
 use common::executor::Timer;
-use common::for_tests::{enable_electrum, from_env_file, get_passphrase, mm_spat, LocalStart, MarketMakerIt};
+use common::for_tests::{enable_electrum, enable_native, from_env_file, get_passphrase, mm_spat, LocalStart, MarketMakerIt};
 #[cfg(feature = "native")]
 use common::for_tests::mm_dump;
 use common::privkey::key_pair_from_seed;
@@ -29,22 +29,6 @@ use super::lp_main;
 // "Tests in your src files should be unit tests, and tests in tests/ should be integration-style tests."
 // - https://doc.rust-lang.org/cargo/guide/tests.html
 
-/// Asks MM to enable the given currency in native mode.  
-/// Returns the RPC reply containing the corresponding wallet address.
-async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
-    let native = unwrap! (mm.rpc (json! ({
-        "userpass": mm.userpass,
-        "method": "enable",
-        "coin": coin,
-        "urls": urls,
-        // Dev chain swap contract address
-        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
-        "mm2": 1,
-    })) .await);
-    assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
-    unwrap!(json::from_str(&native.1))
-}
-
 /// Enables BEER, PIZZA, ETOMIC and ETH.
 /// Returns the RPC replies containing the corresponding wallet addresses.
 #[cfg(feature = "native")]
@@ -59,8 +43,8 @@ fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
 
 async fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap<&'static str, Json> {
     let mut replies = HashMap::new();
-    replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]) .await);
-    replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024","test3.cipig.net:10024"]) .await);
+    replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]) .await);
+    replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024"]) .await);
     replies.insert ("ETOMIC", enable_electrum (mm, "ETOMIC", vec!["test1.cipig.net:10025","test2.cipig.net:10025"]) .await);
     replies.insert ("ETH", enable_native (mm, "ETH", eth_urls.clone()) .await);
     replies.insert ("JST", enable_native (mm, "JST", eth_urls) .await);
@@ -294,8 +278,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log!("Bob orderbook " [bob_orderbook]);
     let asks = bob_orderbook["asks"].as_array().unwrap();
     assert!(asks.len() > 0, "Bob BEER/PIZZA asks are empty");
-    let vol = asks[0]["maxvolume"].as_f64().unwrap();
-    assert_eq!(vol, 0.9);
+    assert_eq!(Json::from("0.9"), asks[0]["maxvolume"]);
 
     let mut mm_alice = unwrap! (MarketMakerIt::start (
         json! ({
@@ -336,8 +319,7 @@ fn alice_can_see_the_active_order_after_connection() {
         log!("Alice orderbook " [alice_orderbook]);
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice BEER/PIZZA orderbook must have exactly 1 ask");
-        let vol = asks[0]["maxvolume"].as_f64().unwrap();
-        assert_eq!(vol, 0.9);
+        assert_eq!(Json::from("0.9"), asks[0]["maxvolume"]);
         // orderbook must display valid Bob address
         let address = asks[0]["address"].as_str().unwrap();
         assert_eq!("RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD", address);
@@ -391,7 +373,7 @@ fn test_my_balance() {
     log!({"log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     // Enable BEER.
-    let json = block_on(enable_electrum(&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]));
+    let json = block_on(enable_electrum(&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]));
     let balance_on_enable = unwrap!(json["balance"].as_str());
     assert_eq!(balance_on_enable, "1");
 
@@ -560,7 +542,7 @@ fn test_rpc_password_from_json() {
         "userpass": "password1",
         "method": "electrum",
         "coin": "BEER",
-        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":"test3.cipig.net:10022"}],
+        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":":10022"}],
         "mm2": 1,
     }))));
 
@@ -571,7 +553,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BEER",
-        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":"test3.cipig.net:10022"}],
+        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"}],
         "mm2": 1,
     }))));
 
@@ -582,7 +564,7 @@ fn test_rpc_password_from_json() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "PIZZA",
-        "servers": [{"url":"test1.cipig.net:10024"},{"url":"test2.cipig.net:10024"},{"url":"test3.cipig.net:10024"}],
+        "servers": [{"url":"test1.cipig.net:10024"},{"url":"test2.cipig.net:10024"}],
         "mm2": 1,
     }))));
 
@@ -840,6 +822,13 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
     for uuid in uuids.iter() {
         unwrap! (mm_bob.wait_for_log (600., |log| log.contains (&format!("[swap uuid={}] Finished", uuid))) .await);
         unwrap! (mm_alice.wait_for_log (600., |log| log.contains (&format!("[swap uuid={}] Finished", uuid))) .await);
+
+        #[cfg(not(feature = "native"))] {
+            log! ("Waiting a few second for the fresh swap status to be saved..");
+            Timer::sleep (7.77) .await;
+        }
+
+        log! ("Checking alice/taker status..");
         check_my_swap_status(
             &mm_alice,
             &uuid,
@@ -849,6 +838,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
             "0.1".parse().unwrap(),
         ).await;
 
+        log! ("Checking bob/maker status..");
         check_my_swap_status(
             &mm_bob,
             &uuid,
@@ -859,10 +849,11 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
         ).await;
     }
 
-    // give nodes 3 seconds to broadcast their swaps data
+    log! ("Waiting 3 seconds for nodes to broadcast their swaps data..");
     Timer::sleep (3.) .await;
 
     for uuid in uuids.iter() {
+        log! ("Checking alice status..");
         check_stats_swap_status(
             &mm_alice,
             &uuid,
@@ -870,6 +861,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
             &taker_success_events,
         ).await;
 
+        log! ("Checking bob status..");
         check_stats_swap_status(
             &mm_bob,
             &uuid,
@@ -878,7 +870,9 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
         ).await;
     }
 
+    log! ("Checking alice recent swaps..");
     check_recent_swaps(&mm_alice, uuids.len()).await;
+    log! ("Checking bob recent swaps..");
     check_recent_swaps(&mm_bob, uuids.len()).await;
     for (base, rel) in pairs.iter() {
         log!("Get " (base) "/" (rel) " orderbook");
@@ -924,8 +918,8 @@ pub extern fn trade_test_electrum_and_eth_coins (cb_id: i32) {
 
 #[cfg(feature = "native")]
 fn trade_base_rel_native(base: &str, rel: &str) {
-    let (bob_file_passphrase, bob_file_userpass) = from_env_file (slurp (&".env.seed"));
-    let (alice_file_passphrase, alice_file_userpass) = from_env_file (slurp (&".env.client"));
+    let (bob_file_passphrase, bob_file_userpass) = from_env_file (unwrap! (slurp (&".env.seed")));
+    let (alice_file_passphrase, alice_file_userpass) = from_env_file (unwrap! (slurp (&".env.client")));
 
     let bob_passphrase = unwrap! (var ("BOB_PASSPHRASE") .ok().or (bob_file_passphrase), "No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
     let bob_userpass = unwrap! (var ("BOB_USERPASS") .ok().or (bob_file_userpass), "No BOB_USERPASS or .env.seed/USERPASS");
@@ -1164,7 +1158,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, enable_res: &Hash
 #[test]
 #[cfg(feature = "native")]
 fn test_withdraw_and_send() {
-    let (alice_file_passphrase, _alice_file_userpass) = from_env_file (slurp (&".env.client"));
+    let (alice_file_passphrase, _alice_file_userpass) = from_env_file (unwrap! (slurp (&".env.client")));
 
     let alice_passphrase = unwrap! (var ("ALICE_PASSPHRASE") .ok().or (alice_file_passphrase), "No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
 
@@ -1304,7 +1298,7 @@ fn test_order_errors_when_base_equal_rel() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
-    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]));
+    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]));
 
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -1399,7 +1393,7 @@ fn test_multiple_buy_sell_no_delay() {
         {"coin":"ETOMIC","asset":"ETOMIC","txversion":4},
     ]);
 
-    let (bob_file_passphrase, _bob_file_userpass) = from_env_file (slurp (&".env.seed"));
+    let (bob_file_passphrase, _bob_file_userpass) = from_env_file (unwrap! (slurp (&".env.seed")));
     let bob_passphrase = unwrap! (var ("BOB_PASSPHRASE") .ok().or (bob_file_passphrase), "No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
 
     let mut mm = unwrap! (MarketMakerIt::start (
@@ -1420,9 +1414,9 @@ fn test_multiple_buy_sell_no_delay() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
-    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022", "test2.cipig.net:10022", "test3.cipig.net:10022"]));
-    block_on (enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024", "test2.cipig.net:10024", "test3.cipig.net:10024"]));
-    block_on (enable_electrum (&mm, "ETOMIC", vec!["test1.cipig.net:10025", "test2.cipig.net:10025", "test3.cipig.net:10025"]));
+    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022", "test2.cipig.net:10022"]));
+    block_on (enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024", "test2.cipig.net:10024"]));
+    block_on (enable_electrum (&mm, "ETOMIC", vec!["test1.cipig.net:10025", "test2.cipig.net:10025"]));
 
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
@@ -1460,8 +1454,7 @@ fn test_multiple_buy_sell_no_delay() {
     let asks = bob_orderbook["asks"].as_array().unwrap();
     assert!(bids.len() > 0, "BEER/PIZZA bids are empty");
     assert_eq!(0, asks.len(), "BEER/PIZZA asks are not empty");
-    let vol = bids[0]["maxvolume"].as_f64().unwrap();
-    assert_eq!(0.1, vol);
+    assert_eq!(Json::from("0.1"), bids[0]["maxvolume"]);
 
     log!("Get BEER/ETOMIC orderbook");
     let rc = unwrap! (block_on (mm.rpc (json! ({
@@ -1477,8 +1470,7 @@ fn test_multiple_buy_sell_no_delay() {
     let bids = bob_orderbook["bids"].as_array().unwrap();
     assert!(bids.len() > 0, "BEER/ETOMIC bids are empty");
     assert_eq!(asks.len(), 0, "BEER/ETOMIC asks are not empty");
-    let vol = bids[0]["maxvolume"].as_f64().unwrap();
-    assert_eq!(vol, 0.1);
+    assert_eq!(Json::from("0.1"), bids[0]["maxvolume"]);
 }
 
 /// https://github.com/artemii235/SuperNET/issues/398

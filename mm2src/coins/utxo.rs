@@ -28,7 +28,7 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{block_on, first_char_to_upper, rpc_response, small_rng, HyRes};
+use common::{block_on, first_char_to_upper, small_rng};
 use common::custom_futures::join_all_sequential;
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
@@ -65,10 +65,9 @@ use std::time::Duration;
 pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeInfo,
+use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TradeInfo,
             Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
-use futures::AsyncReadExt;
 
 #[cfg(test)]
 pub mod utxo_tests;
@@ -1650,21 +1649,18 @@ impl MmCoin for UtxoCoin {
         unwrap!(self.history_sync_state.lock()).clone()
     }
 
-    fn get_trade_fee(&self) -> HyRes {
+    fn get_trade_fee(&self) -> Box<dyn Future<Item=TradeFee, Error=String> + Send> {
         let ticker = self.ticker.clone();
         let decimals = self.decimals;
-        Box::new(self.get_tx_fee().then(move |fee| {
-            let fee = try_h!(fee);
+        Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).map(move |fee| {
             let amount = match fee {
                 ActualTxFee::Fixed(f) => f,
                 ActualTxFee::Dynamic(f) => f,
             };
-            rpc_response(200, json!({
-                "result": {
-                    "coin": ticker,
-                    "amount": big_decimal_from_sat(amount as i64, decimals)
-                }
-            }).to_string())
+            TradeFee {
+                coin: ticker,
+                amount: big_decimal_from_sat(amount as i64, decimals),
+            }
         }))
     }
 

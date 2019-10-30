@@ -58,7 +58,7 @@ pub mod rpc;
 mod mm2_tests;
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
+pub fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
             return ERR!("rpc_password must be string");
@@ -97,7 +97,6 @@ fn help() {
         "\n"
         "Some (but not all) of the JSON configuration parameters (* - required):\n"
         "\n"
-        "  canbind        ..  If > 1000 and < 65536, initializes the `LP_fixed_pairport`.\n"
         // We don't want to break the existing RPC API,
         // so the "refrel=coinmarketcap" designator will act as autoselect,
         // using the CoinGecko behind the scenes unless the "cmc_key" is given.
@@ -142,12 +141,19 @@ fn help() {
         "Environment variables:\n"
         "\n"
         // Per-process (we might have several MM instances running but they will share the same log).
+        "  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.\n"
+        "                     File must contain valid json with structure mentioned above.\n"
+        "                     Defaults to `MM2.json`\n"
+        "  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.\n"
+        "                     File must contain valid json.\n"
+        "                     Recommended: https://github.com/jl777/coins/blob/master/coins.\n"
+        "                     Defaults to `coins`.\n"
         "  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.\n"
         "\n"
         // Generated from https://github.com/KomodoPlatform/developer-docs/tree/sidd.
         // (SHossain, siddhartha-crypto).
         "See also the online documentation at\n"
-        "https://github.com/KomodoPlatform/developer-docs/blob/sidd/docs/basic-docs/atomicdex/atomicdex-api.md\n"
+        "https://developers.atomicdex.io\n"
     )
 }
 
@@ -190,12 +196,13 @@ pub fn mm2_main() {
 /// * `ctx_cb` - Invoked with the MM context handle,
 ///              allowing the `run_lp_main` caller to communicate with MM.
 pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
-    let conf_from_file = slurp(&"MM2.json");
+    let conf_path = env::var("MM_CONF_PATH").unwrap_or("MM2.json".into());
+    let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
         Some(s) => s,
         None => {
             if conf_from_file.is_empty() {
-                return ERR!("Config is not set from command line arg and MM2.json file doesn't exist.");
+                return ERR!("Config is not set from command line arg and {} file doesn't exist.", conf_path);
             }
             try_s!(std::str::from_utf8(&conf_from_file))
         }
@@ -207,9 +214,10 @@ pub fn run_lp_main (first_arg: Option<&str>, ctx_cb: &dyn Fn (u32)) -> Result<()
     };
 
     if conf["coins"].is_null() {
-        let coins_from_file = slurp(&std::path::Path::new("coins"));
+        let coins_path = env::var("MM_COINS_PATH").unwrap_or("coins".into());
+        let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {
-            return ERR!("No coins are set in JSON config and 'coins' file doesn't exist");
+            return ERR!("No coins are set in JSON config and '{}' file doesn't exist", coins_path);
         }
         conf["coins"] = match json::from_slice(&coins_from_file) {
             Ok(j) => j,

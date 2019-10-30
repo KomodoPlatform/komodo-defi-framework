@@ -18,7 +18,7 @@ use serde_json::{self as json, Value as Json};
 use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
 use std::io::{Cursor, Read, Write};
-use std::mem::uninitialized;
+use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
@@ -538,7 +538,7 @@ fn process_pulled_maps (ctx: &MmArc, status: StatusCode, _headers: HeaderMap, bo
 
     let compressed = &body[9..];
     // NB: We know the payload will not be bigger than this.
-    let mut buf: [u8; 65536] = unsafe {uninitialized()};
+    let mut buf: [u8; 65536] = unsafe {MaybeUninit::uninit().assume_init()};
     let dctx = unsafe {ZSTD_createDCtx()};  // TODO: Reuse a locked one.
     let len = unsafe {ZSTD_decompress_usingDDict (
         dctx,
@@ -607,9 +607,9 @@ pub fn hf_poll (ctx: &MmArc, hf_addr: &Option<SocketAddr>) -> Result<(), String>
         if let Some (ref mut hf_poll) = *hf_pollₒ {
             match hf_poll.poll() {
                 Err (err) => {
+                    *hf_pollₒ = None;
                     log! ("hf_poll error: " (err));
                     pctx.hf_skip_poll_till.store ((now + 10.) as u64, Ordering::Relaxed);
-                    *hf_pollₒ = None;
                     return Ok (true)
                 },
                 Ok (Async::NotReady) => {
@@ -617,13 +617,14 @@ pub fn hf_poll (ctx: &MmArc, hf_addr: &Option<SocketAddr>) -> Result<(), String>
                     return Ok (true)
                 },
                 Ok (Async::Ready ((status, headers, body))) => {
+                    *hf_pollₒ = None;
+                    if status.as_u16() == 500 {log! ("hf_poll 500 from " (hf_addr) ": " (binprint (&body, b'.')))}
                     let rc = process_pulled_maps (ctx, status, headers, body);
                     // Should reduce the pause when HTTP long polling is implemented server-side.
                     let pause = if rc.is_ok() {7.} else {10.};
                     let pctx = unwrap! (super::PeersContext::from_ctx (ctx));
                     pctx.hf_skip_poll_till.store ((now + pause) as u64, Ordering::Relaxed);
                     try_s! (rc);
-                    *hf_pollₒ = None;
                     return Ok (true)
                 }
             }

@@ -227,10 +227,15 @@ fn send_and_refund_eth_payment() {
 #[ignore]
 fn test_nonce_several_urls() {
     let key_pair = KeyPair::from_secret_slice(&hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap()).unwrap();
-    let my_transport = Web3Transport::new(vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()]).unwrap();
-    let infura_transport = Web3Transport::new(vec!["https://ropsten-rpc.linkpool.io".into()]).unwrap();
-    let web_infura = Web3::new(infura_transport);
-    let web3 = Web3::new(my_transport);
+    let infura_transport = Web3Transport::new(vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()]).unwrap();
+    let linkpool_transport = Web3Transport::new(vec!["https://ropsten-rpc.linkpool.io".into()]).unwrap();
+    // get nonce must succeed if some nodes are down at the moment for some reason
+    let failing_transport = Web3Transport::new(vec!["http://195.201.0.6:8989".into()]).unwrap();
+
+    let web3_infura = Web3::new(infura_transport);
+    let web3_linkpool = Web3::new(linkpool_transport);
+    let web3_failing = Web3::new(failing_transport);
+
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
         ticker: "ETH".into(),
@@ -238,8 +243,12 @@ fn test_nonce_several_urls() {
         my_address: key_pair.address(),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
-        web3_instances: vec![Web3Instance { web3: web_infura, is_parity: false }, Web3Instance { web3: web3.clone(), is_parity: false }],
-        web3,
+        web3_instances: vec![
+            Web3Instance { web3: web3_infura.clone(), is_parity: false },
+            Web3Instance { web3: web3_linkpool, is_parity: false },
+            Web3Instance { web3: web3_failing, is_parity: false },
+        ],
+        web3: web3_infura,
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),

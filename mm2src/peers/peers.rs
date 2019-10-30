@@ -41,6 +41,8 @@ use bytes::Bytes;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use common::{bits256, SlurpFut};
 #[cfg(not(feature = "native"))]
+use common::executor::Timer;
+#[cfg(not(feature = "native"))]
 use common::helperᶜ;
 #[cfg(feature = "native")]
 use common::{slice_to_malloc, is_a_test_drill, RaiiRm};
@@ -53,6 +55,8 @@ use either::Either;
 use futures01::{Async, Future, Poll};
 use futures01::task::Task;
 use futures::compat::Future01CompatExt;
+#[cfg(not(feature = "native"))]
+use futures::lock::Mutex as FutMutex;
 #[cfg(not(feature = "native"))]
 use futures::task::{Context, Poll as Poll03, Waker};
 use gstuff::{binprint, now_float, slurp};
@@ -75,7 +79,7 @@ use std::ffi::{CStr, CString};
 use std::fmt::Write as FmtWrite;
 use std::io::{Cursor, Write};
 use std::iter::{once, FromIterator};
-use std::mem::{uninitialized, zeroed};
+use std::mem::{zeroed, MaybeUninit};
 use std::net::{IpAddr, SocketAddr};
 use std::num::{NonZeroU8, NonZeroU64};
 use std::path::Path;
@@ -1143,9 +1147,9 @@ fn peers_thread (ctx: MmArc, _netid: u16, preferred_port: u16, read_only: bool, 
             // We don't want to hit the 1000 bytes limit
             // (in BEP 44 it's optional, but I guess a lot of implementations enforce it by default),
             // meaning that a limited-size buffer is enough to get the data from C.
-            let mut buf: [u8; 2048] = unsafe {uninitialized()};
+            let mut buf: [u8; 2048] = unsafe {MaybeUninit::uninit().assume_init()};
 
-            let mut ipbuf: [u8; 64] = unsafe {uninitialized()};
+            let mut ipbuf: [u8; 64] = unsafe {MaybeUninit::uninit().assume_init()};
             let mut direction: i8 = 1;  // Interested in incoming packets.
             let mut ipbuflen = ipbuf.len() as i32;
             let mut port: u16 = 0;
@@ -1172,8 +1176,8 @@ fn peers_thread (ctx: MmArc, _netid: u16, preferred_port: u16, read_only: bool, 
                 log! ("as_external_ip_alert error: " (rc));
             }
 
-            let mut keybuf: [u8; 32] = unsafe {uninitialized()};
-            let mut saltbuf: [c_char; 256] = unsafe {uninitialized()};
+            let mut keybuf: [u8; 32] = unsafe {MaybeUninit::uninit().assume_init()};
+            let mut saltbuf: [c_char; 256] = unsafe {MaybeUninit::uninit().assume_init()};
             let mut seq: i64 = 0;
             let mut auth: bool = false;
             let rc = unsafe {as_dht_mutable_item_alert (alert,
@@ -1758,9 +1762,6 @@ pub extern fn start_helpers() -> i32 {
             unwrap! (common::wio::CORE.lock()) .spawn (server);  // Keep running the server indefinitely. 
             return port as i32
 }   }   }
-
-use futures::lock::Mutex as FutMutex;
-use common::executor::Timer;
 
 #[cfg(all(not(feature = "native"), not(feature = "w-bindgen")))]
 pub async fn recv (ctx: MmArc, subject: Vec<u8>, fallback: u8, validator: FixedValidator)

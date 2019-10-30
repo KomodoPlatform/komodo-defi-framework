@@ -92,7 +92,7 @@ impl Deref for TransactionEnum {
             &TransactionEnum::SignedEthTx (ref t) => t,
 }   }   }
 
-pub type TransactionFut = Box<dyn Future<Item=TransactionEnum, Error=String>>;
+pub type TransactionFut = Box<dyn Future<Item=TransactionEnum, Error=String> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -316,6 +316,12 @@ pub enum TradeInfo {
     Taker(BigDecimal),
 }
 
+#[derive(Debug, Serialize)]
+pub struct TradeFee {
+    pub coin: String,
+    pub amount: BigDecimal,
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 pub trait MmCoin: SwapOps + MarketCoinOps + Debug + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
@@ -376,7 +382,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + Send + Sync + 'static {
     fn history_sync_status(&self) -> HistorySyncState;
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> HyRes;
+    fn get_trade_fee(&self) -> Box<dyn Future<Item=TradeFee, Error=String> + Send>;
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -600,14 +606,18 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
     }))
 }
 
-pub fn get_trade_fee(ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match block_on(lp_coinfind(&ctx, &ticker)) {
+pub async fn get_trade_fee(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
-        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
-        Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
-    coin.get_trade_fee()
+    let fee_info = try_s!(coin.get_trade_fee().compat().await);
+    let res = try_s!(json::to_vec(&json!({
+        "result": fee_info
+    })));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 #[derive(Serialize)]

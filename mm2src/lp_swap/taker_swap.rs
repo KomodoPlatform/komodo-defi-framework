@@ -1,11 +1,29 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
-use coins::{FoundSwapTxSpend};
+use atomic::Atomic;
+use bigdecimal::BigDecimal;
 use common::executor::Timer;
+use common::{bits256, now_ms, now_float, slurp, write, MM_VERSION};
+use common::mm_ctx::MmArc;
+use coins::{FoundSwapTxSpend, MmCoinEnum, TradeInfo, TransactionDetails};
 use crc::crc32;
 use futures::compat::Future01CompatExt;
-use peers::{FixedValidator};
-use super::*;
+use futures::future::Either;
+use futures01::Future;
+use parking_lot::Mutex as PaMutex;
+use peers::FixedValidator;
+use primitives::hash::H264;
+use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use serde_json::{self as json};
+use serialization::{deserialize, serialize};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::Ordering;
+use super::{broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
+  lp_atomic_locktime, my_swap_file_path,
+  AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
+  SavedSwap, SwapsContext, SwapError, SwapNegotiationData,
+  BASIC_COMM_TIMEOUT, WAIT_CONFIRM_INTERVAL};
 
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
     ctx.dbdir().join("SWAPS").join("STATS").join("TAKER").join(format!("{}.json", uuid))
@@ -13,7 +31,7 @@ pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
 
 fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
     let path = my_swap_file_path(ctx, &swap.uuid);
-    let content = slurp(&path);
+    let content = try_s!(slurp(&path));
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid.clone(),
@@ -42,8 +60,7 @@ fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEven
         taker_swap.events.push(event);
         let new_swap = SavedSwap::Taker(taker_swap);
         let new_content = try_s!(json::to_vec(&new_swap));
-        let mut file = try_s!(File::create(path));
-        try_s!(file.write_all(&new_content));
+        try_s!(write(&path, &new_content));
         Ok(())
     } else {
         ERR!("Expected SavedSwap::Taker at {}, got {:?}", path.display(), swap)
@@ -169,31 +186,28 @@ pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCo
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
-    let swap_tags: &[&dyn TagParam] = &[&"swap", &("uuid", &uuid[..])];
-    let running_swap = Arc::new(RwLock::new(swap));
+    let running_swap = Arc::new(swap);
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
     unwrap!(swap_ctx.running_swaps.lock()).push(weak_ref);
 
     loop {
-        let res = unwrap!(unwrap!(running_swap.read()).handle_command(command).await);
+        let res = unwrap!(running_swap.handle_command(command).await, "!handle_command");
         events = res.1;
         for event in events {
             let to_save = TakerSavedEvent {
                 timestamp: now_ms(),
                 event: event.clone(),
             };
-            #[cfg(feature = "native")] unwrap!(save_my_taker_swap_event(&ctx, &unwrap!(running_swap.read()), to_save));
-            status.status(swap_tags, &event.status_str());
-            unwrap!(unwrap!(running_swap.write()).apply_event(event));
+            unwrap!(save_my_taker_swap_event(&ctx, &running_swap, to_save), "!save_my_taker_swap_event");
+            status.status(&[&"swap", &("uuid", &uuid[..])], &event.status_str());
+            unwrap!(running_swap.apply_event(event), "!apply_event");
         }
         match res.0 {
             Some(c) => { command = c; },
             None => {
-                if cfg!(feature = "native") {
-                    if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
-                        log!("!broadcast_my_swap_status(" (uuid) "): " (e));
-                    }
+                if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
+                    log!("!broadcast_my_swap_status(" (uuid) "): " (e));
                 }
                 break;
             },
@@ -221,6 +235,19 @@ pub struct TakerSwapData {
     taker_coin_start_block: u64,
 }
 
+pub struct TakerSwapMut {
+    data: TakerSwapData,
+    other_persistent_pub: H264,
+    taker_fee: Option<TransactionDetails>,
+    maker_payment: Option<TransactionDetails>,
+    taker_payment: Option<TransactionDetails>,
+    taker_payment_spend: Option<TransactionDetails>,
+    maker_payment_spend: Option<TransactionDetails>,
+    taker_payment_refund: Option<TransactionDetails>,
+    secret_hash: H160Json,
+    secret: H256Json,
+}
+
 pub struct TakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
@@ -230,20 +257,11 @@ pub struct TakerSwap {
     my_persistent_pub: H264,
     maker: bits256,
     uuid: String,
-    data: TakerSwapData,
-    maker_payment_lock: u64,
-    other_persistent_pub: H264,
-    taker_fee: Option<TransactionDetails>,
-    maker_payment: Option<TransactionDetails>,
-    maker_payment_confirmed: bool,
-    taker_payment: Option<TransactionDetails>,
-    taker_payment_spend: Option<TransactionDetails>,
-    maker_payment_spend: Option<TransactionDetails>,
-    taker_payment_refund: Option<TransactionDetails>,
-    errors: Vec<SwapError>,
-    finished_at: u64,
-    secret_hash: H160Json,
-    secret: H256Json,
+    maker_payment_lock: Atomic<u64>,
+    maker_payment_confirmed: Atomic<bool>,
+    errors: PaMutex<Vec<SwapError>>,
+    finished_at: Atomic<u64>,
+    mutable: RwLock<TakerSwapMut>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -311,6 +329,7 @@ impl TakerSwapEvent {
     }
 }
 
+#[derive(Debug)]
 pub enum TakerSwapCommand {
     Start,
     Negotiate,
@@ -325,35 +344,38 @@ pub enum TakerSwapCommand {
 }
 
 impl TakerSwap {
-    fn apply_event(&mut self, event: TakerSwapEvent) -> Result<(), String> {
+    fn w(&self) -> RwLockWriteGuard<TakerSwapMut> {unwrap!(self.mutable.write())}
+    fn r(&self) -> RwLockReadGuard<TakerSwapMut> {unwrap!(self.mutable.read())}
+
+    fn apply_event(&self, event: TakerSwapEvent) -> Result<(), String> {
         match event {
-            TakerSwapEvent::Started(data) => self.data = data,
-            TakerSwapEvent::StartFailed(err) => self.errors.push(err),
+            TakerSwapEvent::Started(data) => self.w().data = data,
+            TakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::Negotiated(data) => {
-                self.maker_payment_lock = data.maker_payment_locktime;
-                self.other_persistent_pub = data.maker_pubkey.into();
-                self.secret_hash = data.secret_hash;
+                self.maker_payment_lock.store(data.maker_payment_locktime, Ordering::Relaxed);
+                self.w().other_persistent_pub = data.maker_pubkey.into();
+                self.w().secret_hash = data.secret_hash;
             },
-            TakerSwapEvent::NegotiateFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerFeeSent(tx) => self.taker_fee = Some(tx),
-            TakerSwapEvent::TakerFeeSendFailed(err) => self.errors.push(err),
-            TakerSwapEvent::MakerPaymentReceived(tx) => self.maker_payment = Some(tx),
+            TakerSwapEvent::NegotiateFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerFeeSent(tx) => self.w().taker_fee = Some(tx),
+            TakerSwapEvent::TakerFeeSendFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = Some(tx),
             TakerSwapEvent::MakerPaymentWaitConfirmStarted => (),
-            TakerSwapEvent::MakerPaymentValidatedAndConfirmed => self.maker_payment_confirmed = true,
-            TakerSwapEvent::MakerPaymentValidateFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerPaymentSent(tx) => self.taker_payment = Some(tx),
-            TakerSwapEvent::TakerPaymentTransactionFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerPaymentDataSendFailed(err) => self.errors.push(err),
+            TakerSwapEvent::MakerPaymentValidatedAndConfirmed => self.maker_payment_confirmed.store(true, Ordering::Relaxed),
+            TakerSwapEvent::MakerPaymentValidateFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerPaymentSent(tx) => self.w().taker_payment = Some(tx),
+            TakerSwapEvent::TakerPaymentTransactionFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerPaymentDataSendFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentSpent(data) => {
-                self.taker_payment_spend = Some(data.transaction);
-                self.secret = data.secret;
+                self.w().taker_payment_spend = Some(data.transaction);
+                self.w().secret = data.secret;
             },
-            TakerSwapEvent::TakerPaymentWaitForSpendFailed(err) => self.errors.push(err),
-            TakerSwapEvent::MakerPaymentSpent(tx) => self.maker_payment_spend = Some(tx),
-            TakerSwapEvent::MakerPaymentSpendFailed(err) => self.errors.push(err),
-            TakerSwapEvent::TakerPaymentRefunded(tx) => self.taker_payment_refund = Some(tx),
-            TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.push(err),
-            TakerSwapEvent::Finished => self.finished_at = now_ms() / 1000,
+            TakerSwapEvent::TakerPaymentWaitForSpendFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::MakerPaymentSpent(tx) => self.w().maker_payment_spend = Some(tx),
+            TakerSwapEvent::MakerPaymentSpendFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = Some(tx),
+            TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
         }
         Ok(())
     }
@@ -393,20 +415,22 @@ impl TakerSwap {
             my_persistent_pub,
             maker,
             uuid,
-            data: TakerSwapData::default(),
-            other_persistent_pub: H264::default(),
-            taker_fee: None,
-            maker_payment: None,
-            maker_payment_confirmed: false,
-            taker_payment: None,
-            taker_payment_spend: None,
-            maker_payment_spend: None,
-            taker_payment_refund: None,
-            finished_at: 0,
-            maker_payment_lock: 0,
-            errors: vec![],
-            secret_hash: H160Json::default(),
-            secret: H256Json::default(),
+            maker_payment_confirmed: Atomic::new(false),
+            finished_at: Atomic::new(0),
+            maker_payment_lock: Atomic::new(0),
+            errors: PaMutex::new(Vec::new()),
+            mutable: RwLock::new(TakerSwapMut {
+                data: TakerSwapData::default(),
+                other_persistent_pub: H264::default(),
+                taker_fee: None,
+                maker_payment: None,
+                taker_payment: None,
+                taker_payment_spend: None,
+                maker_payment_spend: None,
+                taker_payment_refund: None,
+                secret_hash: H160Json::default(),
+                secret: H256Json::default(),
+            })
         }
     }
 
@@ -501,7 +525,7 @@ impl TakerSwap {
             )),
         };
 
-        let time_dif = (self.data.started_at as i64 - maker_data.started_at as i64).abs();
+        let time_dif = (self.r().data.started_at as i64 - maker_data.started_at as i64).abs();
         if  time_dif > 60 {
             return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -509,7 +533,7 @@ impl TakerSwap {
             ))
         }
 
-        let expected_lock_time = maker_data.started_at + self.data.lock_duration * 2;
+        let expected_lock_time = maker_data.started_at + self.r().data.lock_duration * 2;
         if maker_data.payment_locktime != expected_lock_time {
             return Ok((
                 Some(TakerSwapCommand::Finish),
@@ -518,9 +542,9 @@ impl TakerSwap {
         }
 
         let taker_data = SwapNegotiationData {
-            started_at: self.data.started_at,
+            started_at: self.r().data.started_at,
             secret_hash: maker_data.secret_hash.clone(),
-            payment_locktime: self.data.taker_payment_lock,
+            payment_locktime: self.r().data.taker_payment_lock,
             persistent_pubkey: self.my_persistent_pub.clone(),
         };
         let bytes = serialize(&taker_data);
@@ -564,7 +588,7 @@ impl TakerSwap {
     }
 
     async fn send_taker_fee(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let timeout = self.data.started_at + self.data.lock_duration / 3;
+        let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
             return Ok((
@@ -574,7 +598,7 @@ impl TakerSwap {
         }
 
         let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
-        let fee_amount = dex_fee_amount(&self.data.maker_coin, &self.data.taker_coin, &self.taker_amount);
+        let fee_amount = dex_fee_amount(&self.r().data.maker_coin, &self.r().data.taker_coin, &self.taker_amount);
         let fee_tx = self.taker_coin.send_taker_fee(&fee_addr_pub_key, fee_amount).compat().await;
         let transaction = match fee_tx {
             Ok (t) => t,
@@ -605,7 +629,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let tx_hex = self.taker_fee.as_ref().unwrap().tx_hex.clone();
+        let tx_hex = self.r().taker_fee.as_ref().unwrap().tx_hex.clone();
         let sending_f = match send!(self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), 60, tx_hex) {
             Ok(f) => f,
             Err (err) => return Ok((
@@ -656,13 +680,14 @@ impl TakerSwap {
     }
 
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let validated = self.maker_coin.validate_maker_payment(
-            &unwrap!(self.maker_payment.clone()).tx_hex,
-            self.maker_payment_lock as u32,
-            &*self.other_persistent_pub,
-            &self.secret_hash.0,
+        let validated_f = self.maker_coin.validate_maker_payment(
+            &unwrap!(self.r().maker_payment.clone()).tx_hex,
+            self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+            &*self.r().other_persistent_pub,
+            &self.r().secret_hash.0,
             self.maker_amount.clone(),
-        ).compat().await;
+        );
+        let validated = validated_f.compat().await;
 
         if let Err(e) = validated {
             return Ok((
@@ -672,12 +697,13 @@ impl TakerSwap {
         }
         log!({"Before wait confirm"});
 
-        if let Err(err) = self.maker_coin.wait_for_confirmations(
-            &unwrap!(self.maker_payment.clone()).tx_hex,
-            self.data.maker_payment_confirmations,
-            self.data.maker_payment_wait,
-            1,
-        ).compat().await {
+        let f = self.maker_coin.wait_for_confirmations(
+            &unwrap!(self.r().maker_payment.clone()).tx_hex,
+            self.r().data.maker_payment_confirmations,
+            self.r().data.maker_payment_wait,
+            WAIT_CONFIRM_INTERVAL,
+        );
+        if let Err(err) = f.compat().await {
             return Ok((
                 Some(TakerSwapCommand::Finish),
                 vec![TakerSwapEvent::MakerPaymentValidateFailed(ERRL!("!wait for maker payment confirmations: {}", err).into())]
@@ -693,7 +719,7 @@ impl TakerSwap {
 
 
     async fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let timeout = self.data.started_at + self.data.lock_duration / 3;
+        let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
             return Ok((
@@ -702,19 +728,20 @@ impl TakerSwap {
             ));
         }
 
-        let transaction = match self.taker_coin.check_if_my_payment_sent(
-            self.data.taker_payment_lock as u32,
-            &*self.other_persistent_pub,
-            &self.secret_hash.0,
-            self.data.taker_coin_start_block,
-        ).compat().await {
+        let f = self.taker_coin.check_if_my_payment_sent(
+            self.r().data.taker_payment_lock as u32,
+            &*self.r().other_persistent_pub,
+            &self.r().secret_hash.0,
+            self.r().data.taker_coin_start_block,
+        );
+        let transaction = match f.compat().await {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
                     let payment_fut = self.taker_coin.send_taker_payment(
-                        self.data.taker_payment_lock as u32,
-                        &*self.other_persistent_pub,
-                        &self.secret_hash.0,
+                        self.r().data.taker_payment_lock as u32,
+                        &*self.r().other_persistent_pub,
+                        &self.r().secret_hash.0,
                         self.taker_amount.clone(),
                     );
 
@@ -755,7 +782,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let tx_hex = self.taker_payment.as_ref().unwrap().tx_hex.clone();
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let sending_f = match send!(self.ctx, self.maker, fomat!(("taker-payment") '@' (self.uuid)), 60, tx_hex) {
             Ok(f) => f,
             Err(e) => return Ok((
@@ -764,7 +791,11 @@ impl TakerSwap {
             ))
         };
 
-        let tx = match self.taker_coin.wait_for_tx_spend(&self.taker_payment.clone().unwrap().tx_hex, self.data.taker_payment_lock, self.data.taker_coin_start_block).compat().await {
+        let f = self.taker_coin.wait_for_tx_spend(
+            &self.r().taker_payment.clone().unwrap().tx_hex,
+            self.r().data.taker_payment_lock,
+            self.r().data.taker_coin_start_block);
+        let tx = match f.compat().await {
             Ok(t) => t,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),
@@ -805,10 +836,10 @@ impl TakerSwap {
 
     async fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
-            &unwrap!(self.maker_payment.clone()).tx_hex,
-            self.maker_payment_lock as u32,
-            &*self.other_persistent_pub,
-            &self.secret.0,
+            &unwrap!(self.r().maker_payment.clone()).tx_hex,
+            self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+            &*self.r().other_persistent_pub,
+            &self.r().secret.0,
         );
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
@@ -842,16 +873,16 @@ impl TakerSwap {
         loop {
             // have to wait for 1 hour more because some coins have BIP113 activated so these will reject transactions with locktime == present time
             // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
-            if now_ms() / 1000 > self.data.taker_payment_lock + 3700 {
+            if now_ms() / 1000 > self.r().data.taker_payment_lock + 3700 {
                 break;
             }
             Timer::sleep(10.).await;
         }
         let refund_fut = self.taker_coin.send_taker_refunds_payment(
-            &self.taker_payment.clone().unwrap().tx_hex.0,
-            self.data.taker_payment_lock as u32,
-            &*self.other_persistent_pub,
-            &self.secret_hash.0,
+            &self.r().taker_payment.clone().unwrap().tx_hex.0,
+            self.r().data.taker_payment_lock as u32,
+            &*self.r().other_persistent_pub,
+            &self.r().secret_hash.0,
         );
 
         let transaction = match refund_fut.compat().await {
@@ -898,7 +929,7 @@ impl TakerSwap {
                 maker.bytes = data.maker.0;
                 let my_persistent_pub = H264::from(&**ctx.secp256k1_key_pair().public());
 
-                let mut swap = TakerSwap::new(
+                let swap = TakerSwap::new(
                     ctx,
                     maker.into(),
                     maker_coin,
@@ -919,13 +950,13 @@ impl TakerSwap {
     }
 
     pub fn recover_funds(&self) -> Result<RecoveredSwap, String> {
-        if self.finished_at == 0 { return ERR!("Swap must be finished before recover funds attempt"); }
+        if self.finished_at.load(Ordering::Relaxed) == 0 { return ERR!("Swap must be finished before recover funds attempt"); }
 
-        if self.taker_payment_refund.is_some() { return ERR!("Taker payment is refunded, swap is not recoverable"); }
+        if self.r().taker_payment_refund.is_some() { return ERR!("Taker payment is refunded, swap is not recoverable"); }
 
-        if self.maker_payment_spend.is_some() { return ERR!("Maker payment is spent, swap is not recoverable"); }
+        if self.r().maker_payment_spend.is_some() { return ERR!("Maker payment is spent, swap is not recoverable"); }
 
-        let maker_payment = match &self.maker_payment {
+        let maker_payment = match &self.r().maker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
             None => return ERR!("No info about maker payment, swap is not recoverable"),
         };
@@ -934,11 +965,11 @@ impl TakerSwap {
             // validate that maker payment is not spent
             () => {
                 match self.maker_coin.search_for_swap_tx_spend_other(
-                    self.maker_payment_lock as u32,
-                    &*self.other_persistent_pub,
-                    &self.secret_hash.0,
+                    self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                    &*self.r().other_persistent_pub,
+                    &self.r().secret_hash.0,
                     &maker_payment,
-                    self.data.maker_coin_start_block,
+                    self.r().data.maker_coin_start_block,
                 ) {
                     Ok(Some(FoundSwapTxSpend::Spent(tx))) => return ERR!("Maker payment was already spent by {} tx {:02x}", self.maker_coin.ticker(), tx.tx_hash()),
                     Ok(Some(FoundSwapTxSpend::Refunded(tx))) => return ERR!("Maker payment was already refunded by {} tx {:02x}", self.maker_coin.ticker(), tx.tx_hash()),
@@ -948,14 +979,14 @@ impl TakerSwap {
             }
         }
 
-        let taker_payment = match &self.taker_payment {
+        let taker_payment = match &self.r().taker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
             None => {
                 let maybe_sent = try_s!(self.taker_coin.check_if_my_payment_sent(
-                    self.data.taker_payment_lock as u32,
-                    &*self.other_persistent_pub,
-                    &self.secret_hash.0,
-                    self.data.taker_coin_start_block,
+                    self.r().data.taker_payment_lock as u32,
+                    &*self.r().other_persistent_pub,
+                    &self.r().secret_hash.0,
+                    self.r().data.taker_coin_start_block,
                 ).wait());
                 match maybe_sent {
                     Some(tx) => tx.tx_hex(),
@@ -964,13 +995,13 @@ impl TakerSwap {
             }
         };
 
-        if self.taker_payment_spend.is_some() {
+        if self.r().taker_payment_spend.is_some() {
             check_maker_payment_is_not_spent!();
             let transaction = try_s!(self.maker_coin.send_taker_spends_maker_payment(
                 &maker_payment,
-                self.maker_payment_lock as u32,
-                &*self.other_persistent_pub,
-                &self.secret.0,
+                self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                &*self.r().other_persistent_pub,
+                &self.r().secret.0,
             ).wait());
 
             return Ok(RecoveredSwap {
@@ -981,11 +1012,11 @@ impl TakerSwap {
         }
 
         let taker_payment_spend = try_s!(self.taker_coin.search_for_swap_tx_spend_my(
-            self.data.taker_payment_lock as u32,
-            &*self.other_persistent_pub,
-            &self.secret_hash.0,
+            self.r().data.taker_payment_lock as u32,
+            &*self.r().other_persistent_pub,
+            &self.r().secret_hash.0,
             &taker_payment,
-            self.data.taker_coin_start_block,
+            self.r().data.taker_coin_start_block,
         ));
 
         match taker_payment_spend {
@@ -995,8 +1026,8 @@ impl TakerSwap {
                     let secret = try_s!(tx.extract_secret());
                     let transaction = try_s!(self.maker_coin.send_taker_spends_maker_payment(
                         &maker_payment,
-                        self.maker_payment_lock as u32,
-                        &*self.other_persistent_pub,
+                        self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                        &*self.r().other_persistent_pub,
                         &secret,
                     ).wait());
 
@@ -1011,15 +1042,15 @@ impl TakerSwap {
                 },
             },
             None => {
-                if now_ms() / 1000 < self.data.taker_payment_lock + 3700 {
-                    return ERR!("Too early to refund, wait until {}", self.data.taker_payment_lock + 3700);
+                if now_ms() / 1000 < self.r().data.taker_payment_lock + 3700 {
+                    return ERR!("Too early to refund, wait until {}", self.r().data.taker_payment_lock + 3700);
                 }
 
                 let transaction = try_s!(self.taker_coin.send_taker_refunds_payment(
                     &taker_payment,
-                    self.data.taker_payment_lock as u32,
-                    &*self.other_persistent_pub,
-                    &self.secret_hash.0,
+                    self.r().data.taker_payment_lock as u32,
+                    &*self.r().other_persistent_pub,
+                    &self.r().secret_hash.0,
                 ).wait());
 
                 Ok(RecoveredSwap {
@@ -1035,12 +1066,12 @@ impl TakerSwap {
 impl AtomicSwap for TakerSwap {
     fn locked_amount(&self) -> LockedAmount {
         // if taker payment is not sent yet the taker fee amount must be virtually locked
-        let fee_amount = match self.taker_fee {
+        let fee_amount = match self.r().taker_fee {
             Some(_) => 0.into(),
             None => dex_fee_amount(self.maker_coin.ticker(), self.taker_coin.ticker(), &self.taker_amount),
         };
 
-        let amount = match self.taker_payment {
+        let amount = match self.r().taker_payment {
             Some(_) => 0.into(),
             None => fee_amount + &self.taker_amount,
         };
@@ -1238,8 +1269,8 @@ mod taker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (mut taker_swap, _) = unwrap!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap));
-        taker_swap.data.taker_payment_lock = (now_ms() / 1000) - 3690;
+        let (taker_swap, _) = unwrap!(TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap));
+        taker_swap.w().data.taker_payment_lock = (now_ms() / 1000) - 3690;
         assert!(taker_swap.recover_funds().is_err());
         assert!(unsafe { SEARCH_TX_SPEND_CALLED });
     }

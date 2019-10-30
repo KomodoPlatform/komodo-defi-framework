@@ -163,10 +163,30 @@ async function runWasm() {
         // https://nodejs.org/docs/latest/api/fs.html#fs_fs_mkdirsync_path_options
         fs.mkdirSync (path, {recursive: true})}
       return 0},
+    host_read_dir: function (path_p, path_l, rbuf, rcap) {
+      const path = from_utf8 (wasmShared.memory, path_p, path_l);
+      const dir = fs.opendirSync (path);  // NB: Needs NodeJS >= 12.12.0
+      let entries = [];
+      for (;;) {
+        const en = dir.readSync();
+        if (en == null) break;
+        if (!en.isFile()) continue;
+        const name = en.name;
+        const stats = fs.statSync (path + '/' + name);
+        const lm = Math.floor (stats.mtimeMs);
+        entries.push ([lm, name])}
+      const jens = JSON.stringify (entries);
+      console.log ('host_read_dir:', jens);
+      return to_utf8 (wasmShared.memory, rbuf, rcap, jens)},
     host_rm: function (ptr, len) {
       const path = from_utf8 (wasmShared.memory, ptr, len);
       fs.unlinkSync (path);
       return 0},
+    host_slurp: function (path_p, path_l, rbuf, rcap) {
+      const path = from_utf8 (wasmShared.memory, path_p, path_l);
+      if (!fs.existsSync (path)) return 0;
+      const content = fs.readFileSync (path, {encoding: 'utf8'});
+      return to_utf8 (wasmShared.memory, rbuf, rcap, content)},
     host_write: function (path_p, path_l, ptr, len) {
       const path = from_utf8 (wasmShared.memory, path_p, path_l);
       const content = new Uint8Array (wasmShared.memory.buffer, ptr, len);

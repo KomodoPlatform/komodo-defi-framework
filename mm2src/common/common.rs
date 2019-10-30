@@ -92,6 +92,7 @@ use http::{Request, Response, StatusCode, HeaderMap};
 use http::header::{HeaderValue, CONTENT_TYPE};
 #[cfg(feature = "native")]
 use libc::{malloc, free};
+use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{SeedableRng, rngs::SmallRng};
 use serde::{ser, de};
 #[cfg(not(feature = "native"))]
@@ -107,15 +108,15 @@ use std::ffi::{CStr, OsStr};
 use std::future::Future as Future03;
 use std::intrinsics::copy;
 use std::io::{Write};
-use std::mem::{forget, size_of, uninitialized, zeroed};
+use std::mem::{forget, size_of, zeroed};
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
 #[cfg(not(feature = "native"))]
 use std::pin::Pin;
 use std::ptr::{null_mut, read_volatile};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::str;
+use std::time::UNIX_EPOCH;
 use uuid::Uuid;
 #[cfg(feature = "w-bindgen")]
 use wasm_bindgen::prelude::*;
@@ -291,14 +292,14 @@ impl<'a> Drop for RaiiRm<'a> {
 }
 
 /// Using a static buffer in order to minimize the chance of heap and stack allocations in the signal handler.
-fn trace_buf() -> MutexGuard<'static, [u8; 256]> {
-    lazy_static! {static ref TRACE_BUF: Mutex<[u8; 256]> = Mutex::new (unsafe {uninitialized()});}
-    unwrap! (TRACE_BUF.lock())
+fn trace_buf() -> PaMutexGuard<'static, [u8; 256]> {
+    static TRACE_BUF: PaMutex<[u8; 256]> = PaMutex::new ([0; 256]);
+    TRACE_BUF.lock()
 }
 
-fn trace_name_buf() -> MutexGuard<'static, [u8; 128]> {
-    lazy_static! {static ref TRACE_NAME_BUF: Mutex<[u8; 128]> = Mutex::new (unsafe {uninitialized()});}
-    unwrap! (TRACE_NAME_BUF.lock())
+fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
+    static TRACE_NAME_BUF: PaMutex<[u8; 128]> = PaMutex::new ([0; 128]);
+    TRACE_NAME_BUF.lock()
 }
 
 /// Formats a stack frame.
@@ -1170,10 +1171,20 @@ pub fn now_float() -> f64 {
 }
 
 #[cfg(feature = "native")]
-pub fn slurp (path: &dyn AsRef<Path>) -> Vec<u8> {gstuff::slurp (path)}
+pub fn slurp (path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {Ok (gstuff::slurp (path))}
 
 #[cfg(not(feature = "native"))]
-pub fn slurp (_path: &dyn AsRef<Path>) -> Vec<u8> {Vec::new()}
+pub fn slurp (path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {
+    use std::mem::MaybeUninit;
+
+    #[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]
+    extern "C" {pub fn host_slurp (path_p: *const c_char, path_l: i32, rbuf: *mut c_char, rcap: i32) -> i32;}
+
+    let path = try_s! (path.as_ref().to_str().ok_or ("slurp: path not unicode"));
+    let mut rbuf: [u8; 262144] = unsafe {MaybeUninit::uninit().assume_init()};
+    let rc = unsafe {host_slurp (path.as_ptr() as *const c_char, path.len() as i32, rbuf.as_mut_ptr() as *mut c_char, rbuf.len() as i32)};
+    if rc < 0 {return ERR! ("!host_slurp: {}", rc)}
+    Ok (Vec::from (&rbuf[.. rc as usize]))}
 
 #[cfg(feature = "native")]
 pub fn temp_dir() -> PathBuf {env::temp_dir()}
@@ -1229,6 +1240,71 @@ pub fn write (path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), 
     )};
     if rc != 0 {return ERR! ("!host_write: {}", rc)}
     Ok(())
+}
+
+/// Read a folder and return a list of files with their last-modified ms timestamps.
+#[cfg(feature = "native")]
+pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
+    let entries = try_s!(dir.as_ref().read_dir()).filter_map(|dir_entry| {
+        let entry = match dir_entry {
+            Ok(ent) => ent,
+            Err(e) => {
+                log!("Error " (e) " reading from dir " (dir.as_ref().display()));
+                return None;
+            }
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(e) => {
+                log!("Error " (e) " getting file " (entry.path().display()) " meta");
+                return None;
+            }
+        };
+
+        let m_time = match metadata.modified() {
+            Ok(time) => time,
+            Err(e) => {
+                log!("Error " (e) " getting file " (entry.path().display()) " m_time");
+                return None;
+            }
+        };
+
+        let lm = unwrap!(m_time.duration_since(UNIX_EPOCH), "!duration_since").as_millis();
+        assert!(lm < u64::max_value() as u128);
+        let lm = lm as u64;
+
+        let path = entry.path();
+        if path.extension() == Some(OsStr::new("json")) {
+            Some((lm, path))
+        } else {
+            None
+        }
+    }).collect();
+
+    Ok(entries)
+}
+
+#[cfg(not(feature = "native"))]
+pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
+    use std::mem::MaybeUninit;
+
+    #[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]
+    extern "C" {pub fn host_read_dir (path_p: *const c_char, path_l: i32, rbuf: *mut c_char, rcap: i32) -> i32;}
+
+    let path = try_s! (dir.as_ref().to_str().ok_or ("read_dir: dir path not unicode"));
+    let mut rbuf: [u8; 262144] = unsafe {MaybeUninit::uninit().assume_init()};
+    let rc = unsafe {host_read_dir (path.as_ptr() as *const c_char, path.len() as i32, rbuf.as_mut_ptr() as *mut c_char, rbuf.len() as i32)};
+    if rc <= 0 {return ERR! ("!host_read_dir: {}", rc)}
+    let jens: Vec<(u64, String)> = try_s! (json::from_slice (&rbuf[.. rc as usize]));
+
+    let mut entries: Vec<(u64, PathBuf)> = Vec::with_capacity (jens.len());
+    for (lm, name) in jens {
+        let path = dir.as_ref().join (name);
+        entries.push ((lm, path))
+    }
+
+    Ok (entries)
 }
 
 /// If the `MM_LOG` variable is present then tries to open that file.  
@@ -1391,7 +1467,7 @@ pub async fn helperᶜ (helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, 
     impl std::future::Future for HelperReply {
         type Output = Result<Vec<u8>, String>;
         fn poll (self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
-            let mut buf: [u8; 65535] = unsafe {uninitialized()};
+            let mut buf: [u8; 65535] = unsafe {std::mem::MaybeUninit::uninit().assume_init()};
             let rlen = unsafe {http_helper_check (self.helper_request_id, buf.as_mut_ptr(), buf.len() as i32)};
             if rlen < -1 {  // Response is larger than capacity.
                 return Poll03::Ready (ERR! ("Helper result is too large ({})", rlen))

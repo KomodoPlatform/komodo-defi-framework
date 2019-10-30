@@ -1,12 +1,11 @@
 use bigdecimal::BigDecimal;
-use common::{HyRes};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
 use crate::{TradeInfo, FoundSwapTxSpend, WithdrawRequest};
 use futures01::Future;
 use mocktopus::macros::*;
 use std::borrow::Cow;
-use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TransactionDetails, TransactionEnum, TransactionFut};
+use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionDetails, TransactionEnum, TransactionFut};
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behavior
@@ -224,7 +223,7 @@ impl MmCoin for TestCoin {
     }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> HyRes {
+    fn get_trade_fee(&self) -> Box<dyn Future<Item=TradeFee, Error=String> + Send> {
         unimplemented!()
     }
 

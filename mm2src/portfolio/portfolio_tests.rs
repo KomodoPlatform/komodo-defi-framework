@@ -34,8 +34,8 @@ pub fn test_autoprice_coingecko (local_start: LocalStart) {
     })));
     assert! (autoprice.0.is_server_error(), "autoprice should finish with error if BTC and KMD are not enabled, bot got: {:?}", autoprice);
 
-    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]);
-    enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024","test3.cipig.net:10024"]);
+    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]);
+    enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024"]);
 
     // Looks like we don't need enabling the coin to base the price on it.
     // let electrum_dash = unwrap! (mm.rpc (json! ({
@@ -99,8 +99,8 @@ pub fn test_autoprice_coinmarketcap (local_start: LocalStart) {
     });
     unwrap! (mm.wait_for_log (19., &mut |log| log.contains (">>>>>>>>> DEX stats ")));
 
-    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022","test3.cipig.net:10022"]);
-    enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024","test3.cipig.net:10024"]);
+    enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]);
+    enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024"]);
 
     let autoprice = unwrap! (mm.rpc (json! ({
         "userpass": mm.userpass,

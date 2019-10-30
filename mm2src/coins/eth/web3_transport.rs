@@ -1,12 +1,8 @@
-use common::StringError;
-use common::wio::slurp_req;
-use common::custom_futures::select_ok_sequential;
 use futures01::{Future, Poll};
-use futures_timer::{FutureExt};
 use common::executor::Timer;
 use common::wio::slurp_reqʹ;
 use futures::compat::{Compat};
-use futures::future::{select, Either, TryFutureExt};
+use futures::future::{select, Either};
 use gstuff::binprint;
 use http::header::HeaderValue;
 use jsonrpc_core::{Call, Response};

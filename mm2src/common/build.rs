@@ -297,13 +297,13 @@ macro_rules! run {
 #[cfg(windows)]
 fn windows_requirements() {
     use std::ffi::OsString;
-    use std::mem::uninitialized;
+    use std::mem::MaybeUninit;
     use std::os::windows::ffi::OsStringExt;
     // https://msdn.microsoft.com/en-us/library/windows/desktop/ms724373(v=vs.85).aspx
     use winapi::um::sysinfoapi::GetSystemDirectoryW;
 
     let system = {
-        let mut buf: [u16; 1024] = unsafe { uninitialized() };
+        let mut buf: [u16; 1024] = unsafe { MaybeUninit::uninit().assume_init() };
         let len = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), (buf.len() - 1) as u32) };
         if len <= 0 {
             panic!("!GetSystemDirectoryW")
@@ -509,6 +509,21 @@ struct IosClangOps {
 }
 
 #[allow(non_camel_case_types)]
+/// On Raspbian without `-latomic` we're getting
+///
+///     performance_counters.cpp:(.text+0x2c): undefined reference to `__atomic_store_8'
+///
+/// cf. https://github.com/KomodoPlatform/atomicDEX-API/issues/501#issuecomment-545666080
+/// https://stackoverflow.com/questions/28920489/how-come-stdatomicdouble-isnt-implemented-when-compiling-with-clang
+fn needs_l_atomic() -> bool {
+    let targetᴱ = unwrap!(var("TARGET"));
+    match &targetᴱ[..] {
+        "armv7-unknown-linux-gnueabihf" => true, // Raspbian
+        "arm-unknown-linux-gnueabihf" => true,   // Raspbian under QEMU
+        _ => false,
+    }
+}
+
 #[derive(PartialEq, Eq, Debug)]
 enum Target {
     Unix,
@@ -962,10 +977,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     let freeᵐ = sys.get_free_memory() as usize;
     epintln! ([=totalᵐ] ", " [=freeᵐ]);
     // NB: Under QEMU the logical is lower than the physical.
-    let processes = 4
-        .min(freeᵐ / 333 * 1024)
-        .min(num_cpus::get_physical())
-        .min(num_cpus::get());
+    let processes = 16.min(freeᵐ / 333 * 1024).min(num_cpus::get());
 
     // This version of the build doesn't compile Boost separately
     // but rather allows the libtorrent to compile it
@@ -1057,6 +1069,10 @@ fn libtorrent() {
 
     if cfg!(windows) {
         println!("cargo:rustc-link-lib=iphlpapi"); // NotifyAddrChange.
+    }
+
+    if needs_l_atomic() {
+        println!("cargo:rustc-link-lib=atomic");
     }
 
     epintln!("Building dht.cc …");
@@ -1284,9 +1300,9 @@ fn main() {
         return;
     }
 
-    rerun_if_changed("iguana/exchanges/*.c");
-    rerun_if_changed("crypto777/*.c");
-    rerun_if_changed("crypto777/jpeg/*.c");
+    rerun_if_changed("iguana/exchanges/CMakeLists.txt");
+    rerun_if_changed("iguana/exchanges/LP_include.h");
+    rerun_if_changed("iguana/exchanges/mm.c");
     println!("cargo:rerun-if-changed={}", path2s(rabs("CMakeLists.txt")));
 
     // NB: Using `rerun-if-env-changed` disables the default dependency heuristics.

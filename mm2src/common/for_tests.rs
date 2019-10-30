@@ -76,7 +76,7 @@ impl Drop for RaiiDump {
         // `term` bypasses the stdout capturing, we should only use it if the capturing was disabled.
         let nocapture = env::args().any (|a| a == "--nocapture");
 
-        let log = slurp (&self.log_path);
+        let log = unwrap! (slurp (&self.log_path));
 
         // Make sure the log is Unicode.
         // We'll get the "io error when listing tests: Custom { kind: InvalidData, error: StringError("text was not valid unicode") }" otherwise.
@@ -224,7 +224,7 @@ impl MarketMakerIt {
 
     #[cfg(feature = "native")]
     pub fn log_as_utf8 (&self) -> Result<String, String> {
-        let mm_log = slurp (&self.log_path);
+        let mm_log = try_s! (slurp (&self.log_path));
         let mm_log = unsafe {String::from_utf8_unchecked (mm_log)};
         Ok (mm_log)
     }
@@ -258,8 +258,9 @@ impl MarketMakerIt {
 
     /// Invokes the locally running MM and returns its reply.
     pub async fn rpc (&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
-        let payload = try_s! (json::to_vec (&payload));
         let uri = format! ("http://{}:7783", self.ip);
+        log!("sending rpc request " (unwrap!(json::to_string(&payload))) " to " (uri));
+        let payload = try_s! (json::to_vec (&payload));
         #[cfg(not(feature = "native"))] let payload = futures01::stream::once (Ok (Bytes::from (payload)));
         let request = try_s! (Request::builder().method ("POST") .uri (uri) .body (payload));
         #[cfg(feature = "native")] {
@@ -473,7 +474,7 @@ use std::os::raw::c_char;
 
 /// Reads passphrase from file or environment.
 pub fn get_passphrase (path: &dyn AsRef<Path>, env: &str) -> Result<String, String> {
-    if let (Some (file_passphrase), _file_userpass) = from_env_file (slurp (path)) {
+    if let (Some (file_passphrase), _file_userpass) = from_env_file (try_s! (slurp (path))) {
         return Ok (file_passphrase)
     }
 
@@ -482,4 +483,20 @@ pub fn get_passphrase (path: &dyn AsRef<Path>, env: &str) -> Result<String, Stri
     } else {
         ERR! ("No {} or {}", env, path.as_ref().display())
     }
+}
+
+/// Asks MM to enable the given currency in native mode.
+/// Returns the RPC reply containing the corresponding wallet address.
+pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) -> Json {
+    let native = unwrap! (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "enable",
+        "coin": coin,
+        "urls": urls,
+        // Dev chain swap contract address
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "mm2": 1,
+    })) .await);
+    assert_eq! (native.0, StatusCode::OK, "'enable' failed: {}", native.1);
+    unwrap!(json::from_str(&native.1))
 }

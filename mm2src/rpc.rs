@@ -205,12 +205,10 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "cancel_order" => cancel_order (ctx, req),
         "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         "disable_coin" => disable_coin(ctx, req),
-        // TODO coin initialization performs blocking IO, i.e request.wait(), have to run it on CPUPOOL to avoid blocking shared CORE.
-        //      at least until we refactor the functions like `utxo_coin_from_iguana_info` to async versions.
         "enable" => hyres(enable(ctx, req)),
         "electrum" => hyres(electrum(ctx, req)),
         "get_enabled_coins" => get_enabled_coins (ctx),
-        "get_trade_fee" => get_trade_fee (ctx, req),
+        "get_trade_fee" => hyres(get_trade_fee (ctx, req)),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
         "import_swaps" => {
@@ -224,12 +222,12 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "my_balance" => my_balance (ctx, req),
         "my_tx_history" => my_tx_history(ctx, req),
         "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
-        "orderbook" => orderbook (ctx, req),
+        "orderbook" => hyres(orderbook(ctx, req)),
         "order_status" => order_status (ctx, req),
         // "passphrase" => passphrase (ctx, req),
         "sell" => hyres(sell(ctx, req)),
         "send_raw_transaction" => send_raw_transaction (ctx, req),
-        "setprice" => set_price (ctx, req),
+        "setprice" => hyres(set_price (ctx, req)),
         "stop" => stop (ctx),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
         "my_swap_status" => my_swap_status(ctx, req),

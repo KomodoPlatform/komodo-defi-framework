@@ -35,11 +35,13 @@ use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
 use sha2::{Sha256, Digest};
 use std::collections::hash_map::{HashMap, Entry};
-use std::{io, thread};
+use std::io;
 use std::fmt::Debug;
 use std::cmp::Ordering;
 use std::net::{ToSocketAddrs, SocketAddr};
 use std::ops::Deref;
+#[cfg(not(feature = "native"))]
+use std::os::raw::c_char;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
@@ -188,7 +190,7 @@ pub struct ValidateAddressRes {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ListTransactionsItem {
-    pub account: String,
+    pub account: Option<String>,
     #[serde(default)]
     pub address: String,
     pub category: String,
@@ -669,9 +671,6 @@ extern "C" {
     fn host_electrum_reply (ri: i32, id: i32, rbuf: *mut c_char, rcap: i32) -> i32;
 }
 
-use std::os::raw::c_char;
-use futures::task::SpawnExt;
-
 #[cfg(not(feature = "native"))]
 pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, String> {
     use std::net::{IpAddr, Ipv4Addr};
@@ -794,7 +793,7 @@ pub extern fn electrum_replied (ri: i32, id: i32) {
 async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest)
 -> Result<JsonRpcResponse, String> {
     use futures::future::{select, Either};
-    use std::mem::uninitialized;
+    use std::mem::MaybeUninit;
     use std::os::raw::c_char;
     use std::str::from_utf8;
 
@@ -816,7 +815,7 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
             Either::Right ((_t, _r)) => {log! ("Electrum " (connection.ri) " timeout"); continue}
         };
 
-        let mut buf: [u8; 131072] = unsafe {uninitialized()};
+        let mut buf: [u8; 131072] = unsafe {MaybeUninit::uninit().assume_init()};
         let rc = unsafe {host_electrum_reply (connection.ri, id, buf.as_mut_ptr() as *mut c_char, buf.len() as i32)};
         if rc <= 0 {log! ("!host_electrum_reply: " (rc)); continue}  // Skip to the next connection.
         let res = try_s! (from_utf8 (&buf[0 .. rc as usize]));

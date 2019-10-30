@@ -20,7 +20,7 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{block_on,  HyRes, now_ms, rpc_response, slurp_url, small_rng};
+use common::{block_on, now_ms, slurp_url, small_rng};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
@@ -31,13 +31,12 @@ use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTrans
 use ethereum_types::{Address, U256, H160};
 use ethkey::{ KeyPair, Public, public_to_address };
 use futures01::Future;
-use futures01::future::{Either, join_all, loop_fn, Loop};
+use futures01::future::{Either};
 use futures::compat::Future01CompatExt;
-use futures::future::{FutureExt, TryFutureExt};
-use futures::try_join;
-use futures_timer::Delay;
+use futures::future::{FutureExt, join_all, TryFutureExt};
+use futures::{try_join};
 use gstuff::slurp;
-use http::{Response, StatusCode};
+use http::StatusCode;
 // #[cfg(test)]
 use mocktopus::macros::*;
 use rand::seq::SliceRandom;
@@ -57,7 +56,7 @@ use std::time::Duration;
 use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
-use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeInfo,
+use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TradeInfo,
             TransactionFut, TransactionEnum, Transaction, TransactionDetails, WithdrawFee, WithdrawRequest};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -1900,16 +1899,13 @@ impl MmCoin for EthCoin {
         unwrap!(self.history_sync_state.lock()).clone()
     }
 
-    fn get_trade_fee(&self) -> HyRes {
-        Box::new(self.get_gas_price().then(|res| {
-            let gas_price = try_h!(res);
+    fn get_trade_fee(&self) -> Box<dyn Future<Item=TradeFee, Error=String> + Send> {
+        Box::new(self.get_gas_price().and_then(|gas_price| {
             let fee = gas_price * U256::from(150000);
-            rpc_response(200, json!({
-                "result": {
-                    "coin": "ETH",
-                    "amount": try_h!(u256_to_big_decimal(fee, 18))
-                }
-            }).to_string())
+            Ok(TradeFee {
+                coin: "ETH".into(),
+                amount: try_s!(u256_to_big_decimal(fee, 18))
+            })
         }))
     }
 
@@ -2198,41 +2194,41 @@ fn is_valid_checksum_addr(addr: &str) -> bool {
 /// We need to be sure that nonce is updated on all of them before and after transaction is sent.
 #[mockable]
 fn get_addr_nonce(addr: Address, web3s: &Vec<Web3Instance>) -> Box<dyn Future<Item=U256, Error=String> + Send> {
-    Box::new(loop_fn((addr, web3s.clone(), true, 0), move |(addr, web3s, first_run, mut errors)| {
-        let futures: Vec<_> = web3s.iter().map(|web3| if web3.is_parity {
-                web3.web3.eth().parity_next_nonce(addr)
-            } else {
-                web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))
-            }
-        ).collect();
-        let fut = if first_run {
-            Either::A(join_all(futures).map_err(|e| ERRL!("{}", e)))
-        } else {
-            let delay_f = Delay::new(Duration::from_secs(1)).map_err(|e| ERRL!("{}", e));
-            Either::B(delay_f.and_then(|_| join_all(futures).map_err(|e| ERRL!("{}", e))))
-        };
-        fut.then(move |result| {
-            match result {
-                Ok(nonces) => {
-                    let max = nonces.iter().max().unwrap();
-                    let min = nonces.iter().min().unwrap();
-                    if max == min {
-                        Ok(Loop::Break(*max))
-                    } else {
-                        log!("Max nonce " (max) " != " (min) " min nonce");
-                        Ok(Loop::Continue((addr, web3s, false, errors)))
-                    }
-                },
+    let web3s = web3s.clone();
+    let fut = async move {
+        let mut errors: u32 = 0;
+        loop {
+            let futures: Vec<_> = web3s.iter().map(|web3| if web3.is_parity {
+                    web3.web3.eth().parity_next_nonce(addr).compat()
+                } else {
+                    web3.web3.eth().transaction_count(addr, Some(BlockNumber::Pending)).compat()
+                }
+            ).collect();
+
+            let nonces: Vec<_> = join_all(futures).await.into_iter().filter_map(|nonce_res| match nonce_res {
+                Ok(n) => Some(n),
                 Err(e) => {
                     log!("Error " (e) " when getting nonce for addr " [addr]);
-                    errors += 1;
-                    if errors > 5 {
-                        ERR!("Couldn't get nonce after 5 errored attempts, aborting")
-                    } else {
-                        Ok(Loop::Continue((addr, web3s, false, errors)))
-                    }
+                    None
+                }
+            }).collect();
+            if nonces.is_empty() {
+                // all requests errored
+                errors += 1;
+                if errors > 5 {
+                    return ERR!("Couldn't get nonce after 5 errored attempts, aborting");
+                }
+            } else {
+                let max = nonces.iter().max().unwrap();
+                let min = nonces.iter().min().unwrap();
+                if max == min {
+                    return Ok(*max);
+                } else {
+                    log!("Max nonce " (max) " != " (min) " min nonce");
                 }
             }
-        })
-    }))
+            Timer::sleep(1.).await
+        }
+    };
+    Box::new(Box::pin(fut).compat())
 }

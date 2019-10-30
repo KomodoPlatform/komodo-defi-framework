@@ -64,12 +64,12 @@ extern fn signal_handler (sig: c_int) {
 
 #[cfg(unix)]
 fn init_signal_handling() {
-    use std::mem::{uninitialized, zeroed};
+    use std::mem::{zeroed, MaybeUninit};
 
     let mut sa: libc::sigaction = unsafe {zeroed()};
     sa.sa_sigaction = signal_handler as *const extern fn (c_int) as usize;
     for &signal in [libc::SIGILL, libc::SIGFPE, libc::SIGSEGV, libc::SIGBUS, libc::SIGSYS].iter() {
-        let mut prev: libc::sigaction = unsafe {uninitialized()};
+        let mut prev: libc::sigaction = unsafe {MaybeUninit::uninit().assume_init()};
         let rc = unsafe {libc::sigaction (signal, &sa, &mut prev)};
         if rc != 0 {log! ("Error " (rc) " invoking sigaction on " (signal))}
 }   }

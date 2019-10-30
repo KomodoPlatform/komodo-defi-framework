@@ -1,7 +1,7 @@
 # Demo of driving the peers communication from the portable layer of the code.
 #
 #     docker build --file js/Dockerfile --tag mm2-peers-demo .
-#     docker run -ti mm2-peers-demo
+#     docker run -ti -e BOB_PASSPHRASE -e ALICE_PASSPHRASE mm2-peers-demo
 
 # -- Begins with parts copied from the MM Dockerfile in order to share those filesystem layers --
 
@@ -24,17 +24,18 @@ RUN \
     wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
     sh /tmp/rustup-init.sh -y --default-toolchain none &&\
     . /root/.cargo/env &&\
-    rustup install nightly-2019-08-05 &&\
-    rustup default nightly-2019-08-05 &&\
+    rustup set profile minimal &&\
+    rustup install nightly-2019-10-24 &&\
+    rustup default nightly-2019-10-24 &&\
     # It seems that bindgen won't prettify without it:
     rustup component add rustfmt-preview &&\
-    rm -rf /root/.rustup/toolchains/nightly-2019-08-05-x86_64-unknown-linux-gnu/share/doc &&\
+    rm -rf /root/.rustup/toolchains/nightly-2019-10-24-x86_64-unknown-linux-gnu/share/doc &&\
     rm -f /tmp/rustup-init.sh
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # First 7 characters of the commit ID.
-ENV MM_VERSION="f44ffec"
+ENV MM_VERSION="737ae6e"
 
 RUN cd /tmp &&\
     wget https://api.github.com/repos/KomodoPlatform/atomicDEX-API/tarball/$MM_VERSION &&\
@@ -49,9 +50,9 @@ RUN cd /mm2 && cargo fetch
 # -- End of the shared parts --
 
 RUN cd /tmp &&\
-    wget https://nodejs.org/dist/v12.6.0/node-v12.6.0-linux-x64.tar.xz &&\
-    tar -xJf node-v12.6.0-linux-x64.tar.xz &&\
-    cd /tmp/node-v12.6.0-linux-x64 &&\
+    wget https://nodejs.org/dist/v12.13.0/node-v12.13.0-linux-x64.tar.xz &&\
+    tar -xJf node-v12.13.0-linux-x64.tar.xz &&\
+    cd /tmp/node-v12.13.0-linux-x64 &&\
     cp -r * /usr/local/ &&\
     cd /tmp &&\
     rm -rf node* &&\
