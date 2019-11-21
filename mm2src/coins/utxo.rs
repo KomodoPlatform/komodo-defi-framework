@@ -28,7 +28,7 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{block_on, first_char_to_upper, small_rng};
+use common::{first_char_to_upper, small_rng};
 use common::custom_futures::join_all_sequential;
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
@@ -1434,7 +1434,10 @@ impl MmCoin for UtxoCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = block_on(coins_ctx.coins.lock());
+                let coins = match coins_ctx.coins.spinlock (22) {
+                    Ok (guard) => guard,
+                    Err (_err) => {thread::sleep (Duration::from_millis (99)); continue}
+                };
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break

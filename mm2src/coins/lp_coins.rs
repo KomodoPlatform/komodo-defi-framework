@@ -32,12 +32,12 @@
 #[macro_use] extern crate unwrap;
 
 use bigdecimal::BigDecimal;
-use common::{block_on, rpc_response, rpc_err_response, HyRes};
+use common::{rpc_response, rpc_err_response, HyRes};
+use common::duplex_mutex::DuplexMutex;
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_number::MmNumber;
 use futures01::Future;
 use futures::compat::Future01CompatExt;
-use futures::lock::Mutex as FutMutex;
 use gstuff::{slurp};
 use http::Response;
 use rpc::v1::types::{Bytes as BytesJson};
@@ -426,14 +426,14 @@ impl Deref for MmCoinEnum {
 struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
-    coins: FutMutex<HashMap<String, MmCoinEnum>>
+    coins: DuplexMutex<HashMap<String, MmCoinEnum>>
 }
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx (ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
         Ok (try_s! (from_ctx (&ctx.coins_ctx, move || {
             Ok (CoinsContext {
-                coins: FutMutex::new (HashMap::new())
+                coins: DuplexMutex::new (HashMap::new())
             })
         })))
     }
@@ -448,7 +448,8 @@ impl CoinsContext {
 /// * `req` - Payload of the corresponding "enable" or "electrum" RPC request.
 pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    if cctx.coins.lock().await.get (ticker) .is_some() {return ERR! ("Coin {} already initialized", ticker)}
+    {   let coins = try_s! (cctx.coins.sleeplock (77) .await);
+        if coins.get (ticker) .is_some() {return ERR! ("Coin {} already initialized", ticker)}   }
 
     let coins_en = if let Some (coins) = ctx.conf["coins"].as_array() {
         coins.iter().find (|coin| coin["coin"].as_str() == Some (ticker)) .unwrap_or (&Json::Null)
@@ -478,7 +479,7 @@ pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoi
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let mut coins = cctx.coins.lock().await;
+    let mut coins = try_s! (cctx.coins.sleeplock (77) .await);
     match coins.raw_entry_mut().from_key (ticker) {
         RawEntryMut::Occupied (_oe) => return ERR! ("Coin {} already initialized", ticker),
         RawEntryMut::Vacant (ve) => ve.insert (ticker.to_string(), coin.clone())
@@ -501,39 +502,43 @@ pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoi
 }
 
 /// NB: Returns only the enabled (aka active) coins.
-pub async fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
+pub fn lp_coinfind (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
     let cctx = try_s! (CoinsContext::from_ctx (ctx));
-    let coins = cctx.coins.lock().await;
+    let coins = try_s! (cctx.coins.spinlock (77));
     Ok (coins.get (ticker) .map (|coin| coin.clone()))
 }
 
-pub fn withdraw (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match block_on (lp_coinfind (&ctx, &ticker)) {
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
-    };
-    let withdraw_req: WithdrawRequest = try_h!(json::from_value(req));
-    Box::new(coin.withdraw(withdraw_req).and_then(|res| {
-        let body = try_h!(json::to_string(&res));
-        rpc_response(200, body)
-    }))
+/// NB: Returns only the enabled (aka active) coins.
+pub async fn lp_coinfindᵃ (ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>, String> {
+    let cctx = try_s! (CoinsContext::from_ctx (ctx));
+    let coins = try_s! (cctx.coins.sleeplock (77) .await);
+    Ok (coins.get (ticker) .map (|coin| coin.clone()))
 }
 
-pub fn send_raw_transaction (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match block_on (lp_coinfind (&ctx, &ticker)) {
+pub async fn withdraw (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")) .to_owned();
+    let coin = match lp_coinfindᵃ (&ctx, &ticker) .await {
         Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+        Ok (None) => return ERR! ("No such coin: {}", ticker),
+        Err (err) => return ERR! ("!lp_coinfind({}): {}", ticker, err)
     };
-    let bytes_string = try_h! (req["tx_hex"].as_str().ok_or ("No 'tx_hex' field"));
-    Box::new(coin.send_raw_tx(&bytes_string).and_then(|res| {
-        rpc_response(200, json!({
-            "tx_hash": res
-        }).to_string())
-    }))
+    let withdraw_req: WithdrawRequest = try_s! (json::from_value (req));
+    let res = try_s! (coin.withdraw (withdraw_req) .compat().await);
+    let body = try_s! (json::to_vec (&res));
+    Ok (try_s! (Response::builder().body (body)))
+}
+
+pub async fn send_raw_transaction (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")) .to_owned();
+    let coin = match lp_coinfindᵃ (&ctx, &ticker) .await {
+        Ok (Some (t)) => t,
+        Ok (None) => return ERR! ("No such coin: {}", ticker),
+        Err (err) => return ERR! ("!lp_coinfind({}): {}", ticker, err)
+    };
+    let bytes_string = try_s! (req["tx_hex"].as_str().ok_or ("No 'tx_hex' field"));
+    let res = try_s! (coin.send_raw_tx (&bytes_string) .compat().await);
+    let body = try_s! (json::to_vec (&json! ({"tx_hash": res})));
+    Ok (try_s! (Response::builder().body (body)))
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -551,7 +556,7 @@ pub enum HistorySyncState {
 /// Transactions are sorted by number of confirmations in ascending order.
 pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match block_on(lp_coinfind(&ctx, &ticker)) {
+    let coin = match lp_coinfind(&ctx, &ticker) {  // Should switch to lp_coinfindᵃ when my_tx_history is async.
         Ok(Some(t)) => t,
         Ok(None) => return rpc_err_response(500, &fomat!("No such coin: " (ticker))),
         Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (ticker) "): " (err)))
@@ -608,7 +613,7 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
 
 pub async fn get_trade_fee(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker).await {
+    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
@@ -626,21 +631,22 @@ struct EnabledCoin {
     address: String,
 }
 
-pub fn get_enabled_coins(ctx: MmArc) -> HyRes {
-    let coins_ctx: Arc<CoinsContext> = try_h!(CoinsContext::from_ctx(&ctx));
-    let coins = block_on(coins_ctx.coins.lock());
+pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    let coins_ctx: Arc<CoinsContext> = try_s!(CoinsContext::from_ctx(&ctx));
+    let coins = try_s!(coins_ctx.coins.sleeplock(77).await);
     let enabled_coins: Vec<_> = coins.iter().map(|(ticker, coin)| EnabledCoin {
         ticker: ticker.clone(),
         address: coin.my_address().to_string(),
     }).collect();
-    rpc_response(200, json!({
+    let res = try_s!(json::to_vec(&json!({
         "result": enabled_coins
-    }).to_string())
+    })));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 pub fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
-    let mut coins = block_on(coins_ctx.coins.lock());
+    let mut coins = try_s!(coins_ctx.coins.spinlock(77));
     match coins.remove(ticker) {
         Some(_) => Ok(()),
         None => ERR!("{} is disabled already", ticker)
@@ -655,7 +661,7 @@ pub struct ConfirmationsReq {
 
 pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: ConfirmationsReq = try_s!(json::from_value(req));
-    let coin = match block_on(lp_coinfind(&ctx, &req.coin)) {
+    let coin = match lp_coinfindᵃ(&ctx, &req.coin).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin {}", req.coin),
         Err(err) => return ERR!("!lp_coinfind ({}): {}", req.coin, err),

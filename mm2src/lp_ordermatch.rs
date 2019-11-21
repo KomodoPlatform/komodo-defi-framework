@@ -23,7 +23,7 @@
 
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use coins::{lp_coinfind, MmCoinEnum, TradeInfo};
+use coins::{lp_coinfindᵃ, MmCoinEnum, TradeInfo};
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
 use common::{bits256, json_dir_entries, now_ms, new_uuid,
   remove_file, rpc_response, rpc_err_response, write, HyRes};
@@ -303,13 +303,13 @@ impl OrdermatchContext {
 
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch) {
     spawn(async move {  // aka "maker_loop"
-        let taker_coin = match lp_coinfind(&ctx, &maker_match.reserved.rel).await {
+        let taker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {log!("Coin " (maker_match.reserved.rel) " is not found/enabled"); return},
             Err(e) => {log!("!lp_coinfind(" (maker_match.reserved.rel) "): " (e)); return}
         };
 
-        let maker_coin = match lp_coinfind(&ctx, &maker_match.reserved.base).await {
+        let maker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {log!("Coin " (maker_match.reserved.base) " is not found/enabled"); return},
             Err(e) => {log!("!lp_coinfind(" (maker_match.reserved.base) "): " (e)); return}
@@ -341,7 +341,7 @@ fn lp_connected_alice(ctx: MmArc, taker_match: TakerMatch) {
     spawn (async move {  // aka "taker_loop"
         let mut maker = bits256::default();
         maker.bytes = taker_match.reserved.sender_pubkey.0;
-        let taker_coin = match lp_coinfind (&ctx, &taker_match.reserved.rel) .await {
+        let taker_coin = match lp_coinfindᵃ (&ctx, &taker_match.reserved.rel) .await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log!("Coin " (taker_match.reserved.rel) " is not found/enabled");
@@ -353,7 +353,7 @@ fn lp_connected_alice(ctx: MmArc, taker_match: TakerMatch) {
             }
         };
 
-        let maker_coin = match lp_coinfind (&ctx, &taker_match.reserved.base) .await {
+        let maker_coin = match lp_coinfindᵃ (&ctx, &taker_match.reserved.base) .await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log!("Coin " (taker_match.reserved.base) " is not found/enabled");
@@ -657,9 +657,9 @@ pub struct AutoBuyInput {
 pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let input: AutoBuyInput = try_s!(json::from_value(req));
     if input.base == input.rel {return ERR!("Base and rel must be different coins")}
-    let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
+    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
+    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let my_amount = &input.volume * &input.price;
     let my_balance = try_s!(rel_coin.my_balance().compat().await);
@@ -675,9 +675,9 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
 pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let input: AutoBuyInput = try_s!(json::from_value(req));
     if input.base == input.rel {return ERR!("Base and rel must be different coins")}
-    let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
+    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &input.base).await);
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
+    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     let my_balance = try_s!(base_coin.my_balance().compat().await);
     try_s!(check_locked_coins(&ctx, &input.volume, &my_balance, base_coin.ticker()).await);
@@ -928,12 +928,12 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         return ERR!("Base and rel must be different coins");
     }
 
-    let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.base).await) {
+    let base_coin: MmCoinEnum = match try_s!(lp_coinfindᵃ(&ctx, &req.base).await) {
         Some(coin) => coin,
         None => return ERR!("Base coin {} is not found", req.base),
     };
 
-    let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.rel).await) {
+    let rel_coin: MmCoinEnum = match try_s!(lp_coinfindᵃ(&ctx, &req.rel).await) {
         Some(coin) => coin,
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
@@ -996,7 +996,7 @@ pub async fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let my_orders = try_s!(ordermatch_ctx.my_maker_orders.lock()).clone();
     for (_, order) in my_orders {
-        let base_coin = match try_s!(lp_coinfind(ctx, &order.base).await) {
+        let base_coin = match try_s!(lp_coinfindᵃ(ctx, &order.base).await) {
             Some(coin) => coin,
             None => {
                 ctx.log.log("", &[&"broadcast_my_maker_orders", &order.base, &order.rel], "base coin is not active yet");
@@ -1004,7 +1004,7 @@ pub async fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
             },
         };
 
-        let _rel_coin = match try_s!(lp_coinfind(ctx, &order.rel).await) {
+        let _rel_coin = match try_s!(lp_coinfindᵃ(ctx, &order.rel).await) {
             Some(coin) => coin,
             None => {
                 ctx.log.log("", &[&"broadcast_my_maker_orders", &order.base, &order.rel], "rel coin is not active yet");
@@ -1440,9 +1440,9 @@ struct OrderbookReq {
 pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: OrderbookReq = try_s!(json::from_value(req));
     if req.base == req.rel {return ERR!("Base and rel must be different coins")}
-    let rel_coin = try_s!(lp_coinfind(&ctx, &req.rel).await);
+    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &req.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    let base_coin = try_s!(lp_coinfind(&ctx, &req.base).await);
+    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &req.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let ordermatch_ctx: Arc<OrdermatchContext> = try_s!(OrdermatchContext::from_ctx(&ctx));
     let orderbook = try_s!(ordermatch_ctx.orderbook.lock());

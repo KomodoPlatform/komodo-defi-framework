@@ -5,8 +5,6 @@ use futures::future::join_all;
 use super::*;
 use mocktopus::mocking::*;
 
-use common::privkey::key_pair_from_seed;
-
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
@@ -507,6 +505,8 @@ mod wasm_bindgen_tests {
 
     #[wasm_bindgen_test(async)]
     fn test_init_eth_coin() -> impl Future<Item=(), Error=JsValue> {
+        use common::privkey::key_pair_from_seed;
+
         setInterval(&EXECUTOR_INTERVAL.closure, 200);
         Box::pin(async move {
             let key_pair = key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();

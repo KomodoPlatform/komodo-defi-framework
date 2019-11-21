@@ -20,7 +20,7 @@
 //
 use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
-use common::{block_on, now_ms, slurp_url, small_rng};
+use common::{now_ms, slurp_url, small_rng};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
@@ -714,6 +714,11 @@ impl MarketCoinOps for EthCoin {
         wait_until: u64,
         check_every: u64,
     ) -> Box<dyn Future<Item=(), Error=String> + Send> {
+        let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
+        let mut status = ctx.log.status_handle();
+        status.status (&[&self.ticker], "Waiting for confirmations…");
+        status.deadline (wait_until * 1000);
+
         let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(tx));
         let tx = try_fus!(SignedEthTx::new(unsigned));
 
@@ -721,7 +726,8 @@ impl MarketCoinOps for EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if now_ms() / 1000 > wait_until {
+                if unwrap! (status.ms2deadline()) < 0 {
+                    status.append (" Timed out.");
                     return ERR!("Waited too long until {} for transaction {:?} confirmation ", wait_until, tx);
                 }
 
@@ -735,6 +741,7 @@ impl MarketCoinOps for EthCoin {
                 };
                 if let Some(receipt) = web3_receipt {
                     if receipt.status != Some(1.into()) {
+                        status.append (" Failed.");
                         return ERR!("Tx receipt {:?} status of {} tx {:?} is failed", receipt, selfi.ticker(), tx.tx_hash());
                     }
 
@@ -748,11 +755,11 @@ impl MarketCoinOps for EthCoin {
                             }
                         };
                         if current_block - confirmed_at + 1 >= required_confirms {
+                            status.append (" Confirmed.");
                             return Ok(());
                         }
                     }
                 }
-                log!("Keep waiting");
                 Timer::sleep(check_every as f64).await;
             }
         };
@@ -1282,7 +1289,7 @@ impl EthCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = block_on(coins_ctx.coins.lock());
+                let coins = unwrap!(coins_ctx.coins.spinlock(77));
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break
@@ -1519,7 +1526,7 @@ impl EthCoin {
             if ctx.is_stopping() { break };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = block_on(coins_ctx.coins.lock());
+                let coins = unwrap!(coins_ctx.coins.spinlock(77));
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break;

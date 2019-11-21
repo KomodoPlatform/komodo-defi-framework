@@ -330,7 +330,10 @@ fn alice_can_see_the_active_order_after_connection() {
 }
 
 #[test]
-fn test_status() {common::log::tests::test_status()}
+fn log_test_status() {common::log::tests::test_status()}
+
+#[test]
+fn log_test_printed_dashboard() {common::log::tests::test_printed_dashboard()}
 
 #[test]
 fn peers_dht() {
@@ -778,7 +781,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
     }
 
     // Allow the order to be converted to maker after not being matched in 30 seconds.
-    log! ("Waiting 32 seconds...");
+    log! ("Waiting 32 seconds…");
     Timer::sleep (32.) .await;
 
     for (base, rel) in pairs.iter() {

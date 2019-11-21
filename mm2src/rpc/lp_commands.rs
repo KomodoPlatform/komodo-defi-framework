@@ -22,7 +22,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
-use common::{block_on, rpc_err_response, rpc_response, HyRes, MM_VERSION};
+use common::{rpc_err_response, rpc_response, HyRes, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use futures01::Future;
@@ -36,7 +36,7 @@ use crate::mm2::lp_swap::{get_locked_amount, active_swaps_using_coin};
 /// Attempts to disable the coin
 pub fn disable_coin (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let _coin = match block_on (lp_coinfind (&ctx, &ticker)) {
+    let _coin = match lp_coinfind (&ctx, &ticker) {  // Use lp_coinfindᵃ when async.
         Ok (Some (t)) => t,
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
@@ -123,7 +123,7 @@ pub fn help() -> HyRes {
 /// Get my_balance of a coin
 pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match block_on (lp_coinfind (&ctx, &ticker)) {
+    let coin = match lp_coinfind (&ctx, &ticker) {  // Use lp_coinfindᵃ when async.
         Ok (Some (t)) => t,
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))

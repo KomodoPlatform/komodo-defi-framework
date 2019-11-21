@@ -41,7 +41,6 @@ enum MainErr {
     AlreadyRuns = 1,
     ConfIsNull = 2,
     ConfNotUtf8 = 3,
-    NoOutputLock = 4,
     CantThread = 5
 }
 
@@ -70,7 +69,7 @@ pub extern fn mm2_main (
     let conf = conf.to_owned();
 
     #[cfg(feature = "native")] {
-        let mut log_output = match LOG_OUTPUT.lock() {Ok (l) => l, Err (e) => eret! (MainErr::NoOutputLock, (e))};
+        let mut log_output = LOG_OUTPUT.lock();
         *log_output = Some (log_cb);
     }
 
@@ -124,11 +123,7 @@ pub extern fn mm2_main_status() -> i8 {
 #[cfg(feature = "native")]
 pub extern fn mm2_test (torch: i32, log_cb: extern fn (line: *const c_char)) -> i32 {
     #[cfg(feature = "native")] {
-        if let Ok (mut log_output) = LOG_OUTPUT.lock() {
-            *log_output = Some (log_cb);
-        } else {
-            panic! ("Can't lock LOG_OUTPUT")
-        }
+        *LOG_OUTPUT.lock() = Some (log_cb);
     }
 
     static RUNNING: AtomicBool = AtomicBool::new (false);

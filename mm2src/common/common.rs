@@ -14,6 +14,7 @@
 #![feature(async_closure)]
 #![feature(weak_counts)]
 #![feature(hash_raw_entry)]
+#![feature(optin_builtin_traits)]
 
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
@@ -69,6 +70,7 @@ pub mod mm_ctx;
 pub mod mm_number;
 pub mod seri;
 pub mod header;
+pub mod duplex_mutex;
 
 #[cfg(feature = "native")]
 pub mod lift_body;

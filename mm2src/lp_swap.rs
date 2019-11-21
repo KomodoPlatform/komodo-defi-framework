@@ -375,14 +375,14 @@ impl SavedSwap {
 
     fn recover_funds(self, ctx: MmArc) -> Result<RecoveredSwap, String> {
         let maker_ticker = try_s!(self.maker_coin_ticker());
-        let maker_coin = match block_on(lp_coinfind(&ctx, &maker_ticker)) {
+        let maker_coin = match lp_coinfind(&ctx, &maker_ticker) {
             Ok(Some(c)) => c,
             Ok(None) => return ERR!("Coin {} is not activated", maker_ticker),
             Err(e) => return ERR!("Error {} on {} coin find attempt", e, maker_ticker),
         };
 
         let taker_ticker = try_s!(self.taker_coin_ticker());
-        let taker_coin = match block_on(lp_coinfind(&ctx, &taker_ticker)) {
+        let taker_coin = match lp_coinfind(&ctx, &taker_ticker) {
             Ok(Some(c)) => c,
             Ok(None) => return ERR!("Coin {} is not activated", taker_ticker),
             Err(e) => return ERR!("Error {} on {} coin find attempt", e, taker_ticker),
@@ -606,7 +606,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
                         move || {
                             let mut taker_coin;
                             loop {
-                                taker_coin = match block_on(lp_coinfind(&ctx, &taker_coin_ticker)) {
+                                taker_coin = match lp_coinfind(&ctx, &taker_coin_ticker) {
                                     Ok(c) => c,
                                     Err(e) => {
                                         log!("Error " (e) " on " (taker_coin_ticker) " find attempt");
@@ -622,7 +622,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
 
                             let mut maker_coin;
                             loop {
-                                maker_coin = match block_on(lp_coinfind(&ctx, &maker_coin_ticker)) {
+                                maker_coin = match lp_coinfind(&ctx, &maker_coin_ticker) {
                                     Ok(c) => c,
                                     Err(e) => {
                                         log!("Error " (e) " on " (maker_coin_ticker) " find attempt");

@@ -203,11 +203,11 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "buy" => hyres(buy(ctx, req)),
         "cancel_all_orders" => cancel_all_orders (ctx, req),
         "cancel_order" => cancel_order (ctx, req),
-        "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
+        "coins_needed_for_kick_start" => hyres (coins_needed_for_kick_start (ctx)),
         "disable_coin" => disable_coin(ctx, req),
-        "enable" => hyres(enable(ctx, req)),
-        "electrum" => hyres(electrum(ctx, req)),
-        "get_enabled_coins" => get_enabled_coins (ctx),
+        "enable" => hyres (enable (ctx, req)),
+        "electrum" => hyres (electrum (ctx, req)),
+        "get_enabled_coins" => hyres (get_enabled_coins (ctx)),
         "get_trade_fee" => hyres(get_trade_fee (ctx, req)),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
@@ -226,7 +226,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "order_status" => order_status (ctx, req),
         // "passphrase" => passphrase (ctx, req),
         "sell" => hyres(sell(ctx, req)),
-        "send_raw_transaction" => send_raw_transaction (ctx, req),
+        "send_raw_transaction" => hyres (send_raw_transaction (ctx, req)),
         "setprice" => hyres(set_price (ctx, req)),
         "stop" => stop (ctx),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
@@ -240,7 +240,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
         "stats_swap_status" => stats_swap_status(ctx, req),
         "version" => version(),
-        "withdraw" => withdraw(ctx, req),
+        "withdraw" => hyres (withdraw (ctx, req)),
         _ => return DispatcherRes::NoMatch (req)
     })
 }
