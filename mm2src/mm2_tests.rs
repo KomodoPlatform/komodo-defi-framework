@@ -694,9 +694,9 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
     let alice_passphrase = unwrap! (get_passphrase (&".env.client", "ALICE_PASSPHRASE"));
 
     let coins = json! ([
-        {"coin":"BEER","asset":"BEER"},
-        {"coin":"PIZZA","asset":"PIZZA"},
-        {"coin":"ETOMIC","asset":"ETOMIC"},
+        {"coin":"BEER","asset":"BEER","required_confirmations":0,"txversion":4,"overwintered":1},
+        {"coin":"PIZZA","asset":"PIZZA","required_confirmations":0,"txversion":4,"overwintered":1},
+        {"coin":"ETOMIC","asset":"ETOMIC","required_confirmations":0,"txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
         {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);

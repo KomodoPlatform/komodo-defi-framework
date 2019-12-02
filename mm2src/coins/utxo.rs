@@ -415,6 +415,7 @@ fn p2sh_spending_tx(
     signature_version: SignatureVersion,
     fork_id: u32,
     n_time: Option<u32>,
+    str_d_zeel: Option<String>,
 ) -> Result<UtxoTx, String> {
     // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
     // Implication for users: GetMedianTimePast() always trails behind the current time,
@@ -448,6 +449,7 @@ fn p2sh_spending_tx(
         value_balance: 0,
         version_group_id,
         zcash,
+        str_d_zeel: str_d_zeel.clone(),
     };
     let signed_input = try_s!(
         p2sh_spend(&unsigned, 0, key_pair, script_data, redeem_script.into(), signature_version, fork_id)
@@ -469,6 +471,7 @@ fn p2sh_spending_tx(
         join_split_sig: H512::default(),
         join_split_pubkey: H256::default(),
         zcash,
+        str_d_zeel,
     })
 }
 
@@ -511,6 +514,7 @@ fn sign_tx(
         join_split_sig: H512::default(),
         join_split_pubkey: H256::default(),
         zcash: unsigned.zcash,
+        str_d_zeel: unsigned.str_d_zeel,
     })
 }
 
@@ -644,7 +648,11 @@ impl UtxoCoin {
             }
 
             true_or_err!(sum_outputs_value > 0, "Sum of outputs {:?} is zero", outputs);
-
+            let str_d_zeel = if arc.ticker == "NAV" {
+                Some("".into())
+            } else {
+                None
+            };
             let mut tx = TransactionInputSigner {
                 inputs: vec![],
                 outputs,
@@ -659,6 +667,7 @@ impl UtxoCoin {
                 value_balance: 0,
                 version_group_id: arc.version_group_id,
                 zcash: arc.zcash,
+                str_d_zeel,
             };
             let mut value_to_spend = 0;
             let mut tx_fee = 0;
@@ -935,7 +944,8 @@ impl SwapOps for UtxoCoin {
                 &arc.ticker,
                 arc.signature_version,
                 arc.fork_id,
-                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None }
+                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None },
+                if arc.ticker == "NAV" { Some("".into()) } else { None },
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -982,7 +992,8 @@ impl SwapOps for UtxoCoin {
                 &arc.ticker,
                 arc.signature_version,
                 arc.fork_id,
-                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None }
+                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None },
+                if arc.ticker == "NAV" { Some("".into()) } else { None },
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -1028,7 +1039,8 @@ impl SwapOps for UtxoCoin {
                 &arc.ticker,
                 arc.signature_version,
                 arc.fork_id,
-                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None }
+                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None },
+                if arc.ticker == "NAV" { Some("".into()) } else { None },
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
@@ -1079,7 +1091,8 @@ impl SwapOps for UtxoCoin {
                 &arc.ticker,
                 arc.signature_version,
                 arc.fork_id,
-                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None }
+                if arc.is_pos { Some((now_ms() / 1000) as u32) } else { None },
+                if arc.ticker == "NAV" { Some("".into()) } else { None },
             ));
             Box::new(arc.rpc_client.send_transaction(&transaction, arc.my_address.clone()).map_err(|e| ERRL!("{}", e)).map(move |_res|
                 transaction.into()
