@@ -39,7 +39,7 @@ use mocktopus::macros::*;
 use num_rational::BigRational;
 use num_traits::cast::ToPrimitive;
 use num_traits::identities::Zero;
-use primitives::hash::H256;
+use primitives::hash::{H256};
 use rpc::v1::types::{H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashSet;
@@ -49,7 +49,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount, MakerSwap, run_maker_swap, run_taker_swap, TakerSwap};
+use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount, is_pubkey_banned, MakerSwap,
+                          run_maker_swap, run_taker_swap, TakerSwap};
 
 #[cfg(test)]
 #[cfg(feature = "native")]
@@ -470,6 +471,10 @@ pub fn lp_trade_command(
             Ok(r) => r,
             Err(_) => return 1,
         };
+        if is_pubkey_banned(&ctx, &reserved_msg.sender_pubkey.clone().into()) {
+            log!("Sender pubkey " [reserved_msg.sender_pubkey] " is banned");
+            return 1;
+        }
         if H256Json::from(our_public_id.bytes) != reserved_msg.dest_pub_key {
             // ignore the messages that do not target our node
             return 1;
@@ -548,6 +553,10 @@ pub fn lp_trade_command(
             Ok(r) => r,
             Err(_) => return 1,
         };
+        if is_pubkey_banned(&ctx, &taker_request.sender_pubkey.clone().into()) {
+            log!("Sender pubkey " [taker_request.sender_pubkey] " is banned");
+            return 1;
+        }
         if our_public_id.bytes == taker_request.dest_pub_key.0 {
             log!("Skip the request originating from our pubkey");
             return 1;
@@ -838,7 +847,11 @@ impl PricePingRequest {
 pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
     let req: PricePingRequest = try_h!(json::from_value(req));
     let signature: Signature = try_h!(req.sig.parse());
-    let pub_secp = try_h!(Public::from_slice(&try_h!(hex::decode(&req.pubsecp))));
+    let pubkey_bytes = try_h!(hex::decode(&req.pubsecp));
+    if is_pubkey_banned(ctx, &H256::from(&pubkey_bytes[1..])) {
+        return rpc_err_response(400, &ERRL!("sender pubkey {} is banned", req.pubsecp));
+    }
+    let pub_secp = try_h!(Public::from_slice(&pubkey_bytes));
     let pubkey = try_h!(hex::decode(&req.pubkey));
     let sig_hash = price_ping_sig_hash(
         req.timestamp as u32,

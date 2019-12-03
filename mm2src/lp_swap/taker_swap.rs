@@ -19,7 +19,7 @@ use serialization::{deserialize, serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::Ordering;
-use super::{broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
+use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
   lp_atomic_locktime, my_swap_file_path,
   AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
   SavedSwap, SwapsContext, SwapError, SwapNegotiationData,
@@ -200,6 +200,7 @@ pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCo
                 event: event.clone(),
             };
             unwrap!(save_my_taker_swap_event(&ctx, &running_swap, to_save), "!save_my_taker_swap_event");
+            if event.should_ban_maker() { ban_pubkey(&ctx, running_swap.maker.bytes.into()) }
             status.status(&[&"swap", &("uuid", &uuid[..])], &event.status_str());
             unwrap!(running_swap.apply_event(event), "!apply_event");
         }
@@ -325,6 +326,14 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
+        }
+    }
+
+    fn should_ban_maker(&self) -> bool {
+        match self {
+            TakerSwapEvent::NegotiateFailed(_) | TakerSwapEvent::MakerPaymentValidateFailed(_) |
+            TakerSwapEvent::TakerPaymentWaitForSpendFailed(_) => true,
+            _ => false,
         }
     }
 }
@@ -638,7 +647,7 @@ impl TakerSwap {
             )),
         };
 
-        let payload = match recv!(self, sending_f, "maker-payment", 600, -1005, FixedValidator::AnythingGoes) {
+        let payload = match recv!(self, sending_f, "maker-payment", 180, -1005, FixedValidator::AnythingGoes) {
             Ok(p) => p,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::Finish),

@@ -13,7 +13,7 @@ use futures::future::Either;
 use futures01::Future;
 use parking_lot::Mutex as PaMutex;
 use peers::FixedValidator;
-use primitives::hash::H264;
+use primitives::hash::{H264};
 use rand::Rng;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json};
@@ -21,7 +21,7 @@ use serialization::{deserialize, serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::Ordering;
-use super::{broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
+use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
   lp_atomic_locktime, my_swap_file_path,
   AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
   SavedSwap, SwapsContext, SwapError, SwapNegotiationData,
@@ -356,7 +356,7 @@ impl MakerSwap {
             )),
         };
 
-        let payload = match recv!(self, sending_f, "taker-fee", 600, -2003, FixedValidator::AnythingGoes) {
+        let payload = match recv!(self, sending_f, "taker-fee", 180, -2003, FixedValidator::AnythingGoes) {
             Ok(d) => d,
             Err(e) => return Ok((
                 Some(MakerSwapCommand::Finish),
@@ -819,6 +819,14 @@ impl MakerSwapEvent {
             MakerSwapEvent::Finished => "Finished".to_owned(),
         }
     }
+
+    fn should_ban_taker(&self) -> bool {
+        match self {
+            MakerSwapEvent::NegotiateFailed(_) | MakerSwapEvent::TakerFeeValidateFailed(_) |
+            MakerSwapEvent::TakerPaymentValidateFailed(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -963,6 +971,7 @@ pub async fn run_maker_swap(swap: MakerSwap, initial_command: Option<MakerSwapCo
                 event: event.clone(),
             };
             unwrap!(save_my_maker_swap_event(&ctx, &running_swap, to_save), "!save_my_maker_swap_event");
+            if event.should_ban_taker() { ban_pubkey(&ctx, running_swap.taker.bytes.into()) }
             status.status(swap_tags!(), &event.status_str());
             unwrap!(running_swap.apply_event(event), "!apply_event");
         }
