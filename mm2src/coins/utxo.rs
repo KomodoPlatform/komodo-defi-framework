@@ -53,6 +53,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
 use std::borrow::Cow;
 use std::collections::hash_map::{HashMap, Entry};
+use std::convert::TryInto;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -198,8 +199,11 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729160/What+is+a+Parallel+Chain+Asset+Chain
     asset_chain: bool,
     tx_fee: TxFee,
-    /// Version group id for Zcash transactions since Overwinter: https://github.com/zcash/zips/blob/master/zip-0202.rst
+    /// Transaction version group id for Zcash transactions since Overwinter: https://github.com/zcash/zips/blob/master/zip-0202.rst
     version_group_id: u32,
+    /// Consensus branch id for Zcash transactions since Overwinter: https://github.com/zcash/zcash/blob/master/src/consensus/upgrades.cpp#L11
+    /// used in transaction sig hash calculation
+    consensus_branch_id: u32,
     /// Defines if coin uses Zcash transaction format
     zcash: bool,
     /// Address and privkey checksum type
@@ -410,6 +414,7 @@ fn p2sh_spending_tx(
     overwintered: bool,
     sequence: u32,
     version_group_id: u32,
+    consensus_branch_id: u32,
     zcash: bool,
     ticker: &str,
     signature_version: SignatureVersion,
@@ -448,6 +453,7 @@ fn p2sh_spending_tx(
         shielded_outputs: vec![],
         value_balance: 0,
         version_group_id,
+        consensus_branch_id,
         zcash,
         str_d_zeel: str_d_zeel.clone(),
     };
@@ -466,7 +472,7 @@ fn p2sh_spending_tx(
         shielded_spends: vec![],
         shielded_outputs: vec![],
         value_balance: 0,
-        version_group_id: unsigned.version_group_id,
+        version_group_id,
         binding_sig: H512::default(),
         join_split_sig: H512::default(),
         join_split_pubkey: H256::default(),
@@ -666,6 +672,7 @@ impl UtxoCoin {
                 shielded_outputs: vec![],
                 value_balance: 0,
                 version_group_id: arc.version_group_id,
+                consensus_branch_id: arc.consensus_branch_id,
                 zcash: arc.zcash,
                 str_d_zeel,
             };
@@ -940,6 +947,7 @@ impl SwapOps for UtxoCoin {
                 arc.overwintered,
                 SEQUENCE_FINAL,
                 arc.version_group_id,
+                arc.consensus_branch_id,
                 arc.zcash,
                 &arc.ticker,
                 arc.signature_version,
@@ -988,6 +996,7 @@ impl SwapOps for UtxoCoin {
                 arc.overwintered,
                 SEQUENCE_FINAL,
                 arc.version_group_id,
+                arc.consensus_branch_id,
                 arc.zcash,
                 &arc.ticker,
                 arc.signature_version,
@@ -1035,6 +1044,7 @@ impl SwapOps for UtxoCoin {
                 arc.overwintered,
                 SEQUENCE_FINAL - 1,
                 arc.version_group_id,
+                arc.consensus_branch_id,
                 arc.zcash,
                 &arc.ticker,
                 arc.signature_version,
@@ -1087,6 +1097,7 @@ impl SwapOps for UtxoCoin {
                 arc.overwintered,
                 SEQUENCE_FINAL - 1,
                 arc.version_group_id,
+                arc.consensus_branch_id,
                 arc.zcash,
                 &arc.ticker,
                 arc.signature_version,
@@ -1919,12 +1930,38 @@ pub async fn utxo_coin_from_conf_and_request(
         },
         Some (fee) => TxFee::Fixed(fee),
     };
-    let version_group_id = if tx_version == 3 && overwintered {
-        0x03c48270
-    } else if tx_version == 4 && overwintered {
-        0x892f2085
-    } else {
-        0
+    let version_group_id = match conf["version_group_id"].as_str() {
+        Some(mut s) => {
+            if s.starts_with("0x") {
+                s = &s[2..];
+            }
+            let bytes = try_s!(hex::decode(s));
+            u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
+        },
+        None => if tx_version == 3 && overwintered {
+            0x03c48270
+        } else if tx_version == 4 && overwintered {
+            0x892f2085
+        } else {
+            0
+        }
+    };
+
+    let consensus_branch_id = match conf["consensus_branch_id"].as_str() {
+        Some(mut s) => {
+            if s.starts_with("0x") {
+                s = &s[2..];
+            }
+            let bytes = try_s!(hex::decode(s));
+            u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
+        },
+        None => {
+            match tx_version {
+                3 => 0x5ba81b19,
+                4 => 0x76b809bb,
+                _ => 0,
+            }
+        },
     };
 
     let decimals = conf["decimals"].as_u64().unwrap_or (8) as u8;
@@ -1962,6 +1999,7 @@ pub async fn utxo_coin_from_conf_and_request(
         asset_chain,
         tx_fee,
         version_group_id,
+        consensus_branch_id,
         zcash,
         checksum_type,
         signature_version,

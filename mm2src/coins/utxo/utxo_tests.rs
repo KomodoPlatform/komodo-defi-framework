@@ -70,6 +70,7 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
         wif_prefix: 0,
         tx_fee: TxFee::Fixed(1000),
         version_group_id: 0x892f2085,
+        consensus_branch_id: 0x76b809bb,
         zcash: true,
         checksum_type,
         fork_id: 0,
