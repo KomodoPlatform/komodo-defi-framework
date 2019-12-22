@@ -177,7 +177,9 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// Overwinter and then Sapling upgrades
     /// https://github.com/zcash/zips/blob/master/zip-0243.rst
     tx_version: i32,
-    /// If true - use Segwit protocol
+    /// If true - allow coins withdraw to P2SH addresses (Segwit).
+    /// the flag will also affect the address that MM2 generates by default in the future
+    /// will be the Segwit (starting from 3 for BTC case) instead of legacy
     /// https://en.bitcoin.it/wiki/Segregated_Witness
     segwit: bool,
     /// Default decimals amount is 8 (BTC and almost all other UTXO coins)
@@ -1351,13 +1353,16 @@ impl MarketCoinOps for UtxoCoin {
 
 async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
     let to = try_s!(Address::from_str(&req.to));
-    if to.prefix != coin.pub_addr_prefix || to.t_addr_prefix != coin.pub_t_addr_prefix {
-        return ERR!("Address {} has invalid format, it must start with {}", to, &coin.my_address()[..1]);
-    }
     if to.checksum_type != coin.checksum_type {
         return ERR!("Address {} has invalid checksum type, it must be {:?}", to, coin.checksum_type);
     }
-    let script_pubkey = Builder::build_p2pkh(&to.hash).to_bytes();
+    let script_pubkey = if to.prefix == coin.pub_addr_prefix && to.t_addr_prefix == coin.pub_t_addr_prefix {
+        Builder::build_p2pkh(&to.hash).to_bytes()
+    } else if to.prefix == coin.p2sh_addr_prefix && to.t_addr_prefix == coin.p2sh_t_addr_prefix && coin.segwit {
+        Builder::build_p2sh(&to.hash).to_bytes()
+    } else {
+        return ERR!("Address {} has invalid format", to);
+    };
     let _utxo_lock = UTXO_LOCK.lock().await;
     let unspents = try_s!(coin.rpc_client.list_unspent_ordered(&coin.my_address).map_err(|e| ERRL!("{}", e)).compat().await);
     let (value, fee_policy) = if req.max {
@@ -1992,7 +1997,7 @@ pub async fn utxo_coin_from_conf_and_request(
         p2sh_addr_prefix: conf["p2shtype"].as_u64().unwrap_or (if ticker == "BTC" {5} else {85}) as u8,
         pub_t_addr_prefix: conf["taddr"].as_u64().unwrap_or (0) as u8,
         p2sh_t_addr_prefix: conf["taddr"].as_u64().unwrap_or (0) as u8,
-        segwit: false,
+        segwit: conf["segwit"].as_bool().unwrap_or (false),
         wif_prefix,
         tx_version,
         my_address: my_address.clone(),

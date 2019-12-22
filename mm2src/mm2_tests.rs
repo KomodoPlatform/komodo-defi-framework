@@ -1168,6 +1168,7 @@ fn test_withdraw_and_send() {
     let coins = json! ([
         {"coin":"BEER","asset":"BEER","txversion":4,"overwintered":1},
         {"coin":"PIZZA","asset":"PIZZA","txversion":4,"overwintered":1},
+        {"coin":"PIZZA_SEGWIT","asset":"PIZZA_SEGWIT","txversion":4,"overwintered":1,"segwit":true},
         {"coin":"ETOMIC","asset":"ETOMIC","txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
         {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
@@ -1195,7 +1196,9 @@ fn test_withdraw_and_send() {
     unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
 
     // Enable coins. Print the replies in case we need the address.
-    let enable_res = block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"]));
+    let mut enable_res = block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"]));
+    enable_res.insert ("PIZZA_SEGWIT", block_on(enable_electrum (&mm_alice, "PIZZA_SEGWIT", vec!["test1.cipig.net:10024","test2.cipig.net:10024"])));
+
     log! ("enable_coins (alice): " [enable_res]);
     withdraw_and_send(&mm_alice, "PIZZA", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, "-0.00101");
     // dev chain gas price is 0 so ETH expected balance change doesn't include the fee
@@ -1213,7 +1216,10 @@ fn test_withdraw_and_send() {
 
     assert! (withdraw.0.is_server_error(), "PIZZA withdraw: {}", withdraw.1);
     let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
-    assert!(unwrap!(withdraw_json["error"].as_str()).contains("Address bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q has invalid format, it must start with R"));
+    assert!(unwrap!(withdraw_json["error"].as_str()).contains("Address bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q has invalid format"));
+
+    // but must allow to withdraw to P2SH addresses if Segwit flag is true
+    withdraw_and_send(&mm_alice, "PIZZA_SEGWIT", "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q", &enable_res, "-0.001");
 
     // must not allow to withdraw to invalid checksum address
     let withdraw = unwrap! (block_on (mm_alice.rpc (json! ({
