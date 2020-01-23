@@ -901,7 +901,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
             // should get a fresh Git version instead. Except we don't have "git" when building for Android,
             // so we're using the [tarball API](https://stackoverflow.com/a/8378458/257568) instead.
             hget(
-                "https://codeload.github.com/arvidn/libtorrent/legacy.tar.gz/RC_1_2",
+                "https://github.com/arvidn/libtorrent/releases/download/libtorrent-1_2_2/libtorrent-rasterbar-1.2.2.tar.gz",
                 tgz.clone(),
             );
             assert!(tgz.exists());

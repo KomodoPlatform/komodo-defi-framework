@@ -43,9 +43,8 @@ fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
 
 async fn enable_coins_eth_electrum(mm: &MarketMakerIt, eth_urls: Vec<&str>) -> HashMap<&'static str, Json> {
     let mut replies = HashMap::new();
-    replies.insert ("BEER", enable_electrum (mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]) .await);
-    replies.insert ("PIZZA", enable_electrum (mm, "PIZZA", vec!["test1.cipig.net:10024","test2.cipig.net:10024"]) .await);
-    replies.insert ("ETOMIC", enable_electrum (mm, "ETOMIC", vec!["test1.cipig.net:10025","test2.cipig.net:10025"]) .await);
+    replies.insert ("RICK", enable_electrum (mm, "RICK", vec!["electrum1.cipig.net:10017","electrum2.cipig.net:10017","electrum3.cipig.net:10017"]) .await);
+    replies.insert ("MORTY", enable_electrum (mm, "MORTY", vec!["electrum1.cipig.net:10018","electrum2.cipig.net:10018","electrum3.cipig.net:10018"]) .await);
     replies.insert ("ETH", enable_native (mm, "ETH", eth_urls.clone()) .await);
     replies.insert ("JST", enable_native (mm, "JST", eth_urls) .await);
     replies
@@ -222,9 +221,8 @@ fn test_notify() {
 #[cfg(feature = "native")]
 fn alice_can_see_the_active_order_after_connection() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
-        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
-        {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
         {"coin":"JST","name":"jst","etomic":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}
     ]);
@@ -255,8 +253,8 @@ fn alice_can_see_the_active_order_after_connection() {
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
         "price": 0.9,
         "volume": "0.9",
     }))));
@@ -265,19 +263,19 @@ fn alice_can_see_the_active_order_after_connection() {
     thread::sleep(Duration::from_secs(12));
 
     // Bob orderbook must show the new order
-    log!("Get BEER/PIZZA orderbook on Bob side");
+    log!("Get RICK/MORTY orderbook on Bob side");
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
     assert! (rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Bob orderbook " [bob_orderbook]);
     let asks = bob_orderbook["asks"].as_array().unwrap();
-    assert!(asks.len() > 0, "Bob BEER/PIZZA asks are empty");
+    assert!(asks.len() > 0, "Bob RICK/MORTY asks are empty");
     assert_eq!(Json::from("0.9"), asks[0]["maxvolume"]);
 
     let mut mm_alice = unwrap! (MarketMakerIt::start (
@@ -306,19 +304,19 @@ fn alice_can_see_the_active_order_after_connection() {
     for _ in 0..2 {
         // Alice should be able to see the order no later than 10 seconds after connecting to bob
         thread::sleep(Duration::from_secs(10));
-        log!("Get BEER/PIZZA orderbook on Alice side");
+        log!("Get RICK/MORTY orderbook on Alice side");
         let rc = unwrap! (block_on (mm_alice.rpc (json! ({
             "userpass": mm_alice.userpass,
             "method": "orderbook",
-            "base": "BEER",
-            "rel": "PIZZA",
+            "base": "RICK",
+            "rel": "MORTY",
         }))));
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
         log!("Alice orderbook " [alice_orderbook]);
         let asks = alice_orderbook["asks"].as_array().unwrap();
-        assert_eq!(asks.len(), 1, "Alice BEER/PIZZA orderbook must have exactly 1 ask");
+        assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
         assert_eq!(Json::from("0.9"), asks[0]["maxvolume"]);
         // orderbook must display valid Bob address
         let address = asks[0]["address"].as_str().unwrap();
@@ -355,7 +353,7 @@ fn peers_http_fallback_kv() {peers::peers_tests::peers_http_fallback_kv()}
 #[cfg(feature = "native")]
 fn test_my_balance() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
     ]);
 
     let mut mm = unwrap! (MarketMakerIt::start (
@@ -376,19 +374,19 @@ fn test_my_balance() {
     log!({"log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     // Enable BEER.
-    let json = block_on(enable_electrum(&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]));
+    let json = block_on(enable_electrum (&mm, "RICK", vec!["electrum1.cipig.net:10017","electrum2.cipig.net:10017","electrum3.cipig.net:10017"]));
     let balance_on_enable = unwrap!(json["balance"].as_str());
-    assert_eq!(balance_on_enable, "1");
+    assert_eq!(balance_on_enable, "7.777");
 
     let my_balance = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "my_balance",
-        "coin": "BEER",
+        "coin": "RICK",
     }))));
     assert_eq! (my_balance.0, StatusCode::OK, "RPC «my_balance» failed with status «{}»", my_balance.0);
     let json: Json = unwrap!(json::from_str(&my_balance.1));
     let my_balance = unwrap!(json["balance"].as_str());
-    assert_eq!(my_balance, "1");
+    assert_eq!(my_balance, "7.777");
     let my_address = unwrap!(json["address"].as_str());
     assert_eq!(my_address, "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
 }
@@ -399,7 +397,8 @@ fn check_set_price_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
         "method": "setprice",
         "base": base,
         "rel": rel,
-        "price": 0.9
+        "price": 0.9,
+        "volume": 1,
     }))));
     assert! (rc.0.is_server_error(), "!setprice success but should be error: {}", rc.1);
 }
@@ -410,7 +409,7 @@ fn check_buy_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
         "method": "buy",
         "base": base,
         "rel": rel,
-        "relvolume": vol,
+        "volume": vol,
         "price": 0.9
     }))));
     assert! (rc.0.is_server_error(), "!buy success but should be error: {}", rc.1);
@@ -422,7 +421,7 @@ fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
         "method": "sell",
         "base": base,
         "rel": rel,
-        "basevolume": vol,
+        "volume": vol,
         "price": 0.9
     }))));
     assert! (rc.0.is_server_error(), "!sell success but should be error: {}", rc.1);
@@ -432,9 +431,8 @@ fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
 #[cfg(feature = "native")]
 fn test_check_balance_on_order_post() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
-        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
-        {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
         {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);
@@ -447,7 +445,7 @@ fn test_check_balance_on_order_post() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
-            "passphrase": "bob passphrase",
+            "passphrase": "bob passphrase check balance on order post",
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
@@ -462,38 +460,38 @@ fn test_check_balance_on_order_post() {
     log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm, vec!["http://195.201.0.6:8565"]))});
     // issue sell request by setting base/rel price
 
-    // Expect error as PIZZA balance is 0
-    check_set_price_fails(&mm, "PIZZA", "BEER");
-    // Address has enough BEER, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ETH taker payment.
-    check_set_price_fails(&mm, "BEER", "ETH");
-    // Address has enough BEER, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ERC20 taker payment.
-    check_set_price_fails(&mm, "BEER", "JST");
+    // Expect error as MORTY balance is 0
+    check_set_price_fails(&mm, "MORTY", "RICK");
+    // Address has enough RICK, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ETH taker payment.
+    check_set_price_fails(&mm, "RICK", "ETH");
+    // Address has enough RICK, but doesn't have ETH, so setprice call should fail because maker will not have gas to spend ERC20 taker payment.
+    check_set_price_fails(&mm, "RICK", "JST");
 
-    // Expect error as PIZZA balance is 0
-    check_buy_fails(&mm, "BEER", "PIZZA", 0.1);
-    // BEER balance is sufficient, but amount is too small, the dex fee will result to dust error from RPC
-    check_buy_fails(&mm, "PIZZA", "BEER", 0.000770);
-    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
-    check_buy_fails(&mm, "ETH", "BEER", 0.1);
-    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
-    check_buy_fails(&mm, "JST", "BEER", 0.1);
+    // Expect error as MORTY balance is 0
+    check_buy_fails(&mm, "RICK", "MORTY", 0.1);
+    // RICK balance is sufficient, but amount is too small, it will result to dust error from RPC
+    check_buy_fails(&mm, "MORTY", "RICK", 0.000001);
+    // Address has enough RICK, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
+    check_buy_fails(&mm, "ETH", "RICK", 0.1);
+    // Address has enough RICK, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
+    check_buy_fails(&mm, "JST", "RICK", 0.1);
 
-    // Expect error as PIZZA balance is 0
-    check_sell_fails(&mm, "BEER", "PIZZA", 0.1);
-    // BEER balance is sufficient, but amount is too small, the dex fee will result to dust error from RPC
-    check_sell_fails(&mm, "PIZZA", "BEER", 0.000770);
-    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
-    check_sell_fails(&mm, "ETH", "BEER", 0.1);
-    // Address has enough BEER, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
-    check_sell_fails(&mm, "JST", "BEER", 0.1);
+    // Expect error as MORTY balance is 0
+    check_sell_fails(&mm, "MORTY", "RICK", 0.1);
+    // RICK balance is sufficient, but amount is too small, the dex fee will result to dust error from RPC
+    check_sell_fails(&mm, "RICK", "MORTY", 0.000001);
+    // Address has enough RICK, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ETH maker payment.
+    check_sell_fails(&mm, "RICK", "ETH", 0.1);
+    // Address has enough RICK, but doesn't have ETH, so buy call should fail because taker will not have gas to spend ERC20 maker payment.
+    check_sell_fails(&mm, "RICK", "JST", 0.1);
 }
 
 #[test]
 #[cfg(feature = "native")]
 fn test_rpc_password_from_json() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
-        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1},
     ]);
 
     // do not allow empty password
@@ -544,8 +542,8 @@ fn test_rpc_password_from_json() {
     let electrum_invalid = unwrap! (block_on (mm.rpc (json! ({
         "userpass": "password1",
         "method": "electrum",
-        "coin": "BEER",
-        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"},{"url":":10022"}],
+        "coin": "RICK",
+        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
         "mm2": 1,
     }))));
 
@@ -555,8 +553,8 @@ fn test_rpc_password_from_json() {
     let electrum = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "electrum",
-        "coin": "BEER",
-        "servers": [{"url":"test1.cipig.net:10022"},{"url":"test2.cipig.net:10022"}],
+        "coin": "RICK",
+        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
         "mm2": 1,
     }))));
 
@@ -566,8 +564,8 @@ fn test_rpc_password_from_json() {
     let electrum = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "electrum",
-        "coin": "PIZZA",
-        "servers": [{"url":"test1.cipig.net:10024"},{"url":"test2.cipig.net:10024"}],
+        "coin": "MORTY",
+        "servers": [{"url":"electrum1.cipig.net:10018"},{"url":"electrum2.cipig.net:10018"},{"url":"electrum3.cipig.net:10018"}],
         "mm2": 1,
     }))));
 
@@ -577,8 +575,8 @@ fn test_rpc_password_from_json() {
     let orderbook = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
 
     // orderbook call must be successful with RPC password from config
@@ -810,17 +808,20 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
                                     "TakerPaymentValidatedAndConfirmed", "TakerPaymentSpent", "Finished"];
 
     let maker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeValidateFailed",
-                                  "MakerPaymentTransactionFailed", "MakerPaymentDataSendFailed",
-                                  "TakerPaymentValidateFailed", "TakerPaymentSpendFailed", "MakerPaymentRefunded",
-                                  "MakerPaymentRefundFailed"];
+                                  "MakerPaymentTransactionFailed", "MakerPaymentDataSendFailed", "MakerPaymentWaitConfirmFailed",
+                                  "TakerPaymentValidateFailed", "TakerPaymentWaitConfirmFailed", "TakerPaymentSpendFailed",
+                                  "MakerPaymentRefunded", "MakerPaymentRefundFailed"];
 
     let taker_success_events = vec!["Started", "Negotiated", "TakerFeeSent", "MakerPaymentReceived",
                                     "MakerPaymentWaitConfirmStarted", "MakerPaymentValidatedAndConfirmed",
                                     "TakerPaymentSent", "TakerPaymentSpent", "MakerPaymentSpent", "Finished"];
 
-    let taker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeSendFailed", "MakerPaymentValidateFailed",
-                                  "TakerPaymentTransactionFailed", "TakerPaymentDataSendFailed", "TakerPaymentWaitForSpendFailed",
-                                  "MakerPaymentSpendFailed", "TakerPaymentRefunded", "TakerPaymentRefundFailed"];
+    let taker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeSendFailed",
+                                  "MakerPaymentValidateFailed", "MakerPaymentWaitConfirmFailed",
+                                  "TakerPaymentTransactionFailed", "TakerPaymentWaitConfirmFailed",
+                                  "TakerPaymentDataSendFailed", "TakerPaymentWaitForSpendFailed",
+                                  "MakerPaymentSpendFailed", "TakerPaymentRefunded",
+                                  "TakerPaymentRefundFailed"];
 
     for uuid in uuids.iter() {
         unwrap! (mm_bob.wait_for_log (600., |log| log.contains (&format!("[swap uuid={}] Finished", uuid))) .await);
@@ -1166,9 +1167,9 @@ fn test_withdraw_and_send() {
     let alice_passphrase = unwrap! (var ("ALICE_PASSPHRASE") .ok().or (alice_file_passphrase), "No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
 
     let coins = json! ([
-        {"coin":"BEER","asset":"BEER","txversion":4,"overwintered":1},
-        {"coin":"PIZZA","asset":"PIZZA","txversion":4,"overwintered":1},
-        {"coin":"PIZZA_SEGWIT","asset":"PIZZA_SEGWIT","txversion":4,"overwintered":1,"segwit":true},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true},
         {"coin":"ETOMIC","asset":"ETOMIC","txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
         {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
@@ -1197,10 +1198,10 @@ fn test_withdraw_and_send() {
 
     // Enable coins. Print the replies in case we need the address.
     let mut enable_res = block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8565"]));
-    enable_res.insert ("PIZZA_SEGWIT", block_on(enable_electrum (&mm_alice, "PIZZA_SEGWIT", vec!["test1.cipig.net:10024","test2.cipig.net:10024"])));
+    enable_res.insert ("MORTY_SEGWIT", block_on(enable_electrum (&mm_alice, "MORTY_SEGWIT", vec!["electrum1.cipig.net:10018","electrum2.cipig.net:10018","electrum3.cipig.net:10018"])));
 
     log! ("enable_coins (alice): " [enable_res]);
-    withdraw_and_send(&mm_alice, "PIZZA", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, "-0.00101");
+    withdraw_and_send(&mm_alice, "MORTY", "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh", &enable_res, "-0.00101");
     // dev chain gas price is 0 so ETH expected balance change doesn't include the fee
     withdraw_and_send(&mm_alice, "ETH", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, "-0.001");
     withdraw_and_send(&mm_alice, "JST", "0x657980d55733B41c0C64c06003864e1aAD917Ca7", &enable_res, "-0.001");
@@ -1209,17 +1210,25 @@ fn test_withdraw_and_send() {
     let withdraw = unwrap! (block_on (mm_alice.rpc (json! ({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
-        "coin": "PIZZA",
+        "coin": "MORTY",
         "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
         "amount": "0.001"
     }))));
 
-    assert! (withdraw.0.is_server_error(), "PIZZA withdraw: {}", withdraw.1);
+    assert! (withdraw.0.is_server_error(), "MORTY withdraw: {}", withdraw.1);
     let withdraw_json: Json = unwrap!(json::from_str(&withdraw.1));
     assert!(unwrap!(withdraw_json["error"].as_str()).contains("Address bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q has invalid format"));
 
     // but must allow to withdraw to P2SH addresses if Segwit flag is true
-    withdraw_and_send(&mm_alice, "PIZZA_SEGWIT", "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q", &enable_res, "-0.001");
+    let withdraw = unwrap! (block_on (mm_alice.rpc (json! ({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "MORTY_SEGWIT",
+        "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
+        "amount": "0.001"
+    }))));
+
+    assert! (withdraw.0.is_success(), "MORTY_SEGWIT withdraw: {}", withdraw.1);
 
     // must not allow to withdraw to invalid checksum address
     let withdraw = unwrap! (block_on (mm_alice.rpc (json! ({
@@ -1286,7 +1295,7 @@ fn test_swap_status() {
 #[cfg(feature = "native")]
 fn test_order_errors_when_base_equal_rel() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
     ]);
 
     let mut mm = unwrap! (MarketMakerIt::start (
@@ -1307,13 +1316,13 @@ fn test_order_errors_when_base_equal_rel() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
-    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022","test2.cipig.net:10022"]));
+    block_on(enable_electrum(&mm, "RICK", vec!["electrum3.cipig.net:10017","electrum2.cipig.net:10017","electrum1.cipig.net:10017"]));
 
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "setprice",
-        "base": "BEER",
-        "rel": "BEER",
+        "base": "RICK",
+        "rel": "RICK",
         "price": 0.9
     }))));
     assert! (rc.0.is_server_error(), "setprice should have failed, but got {:?}", rc);
@@ -1321,8 +1330,8 @@ fn test_order_errors_when_base_equal_rel() {
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "buy",
-        "base": "BEER",
-        "rel": "BEER",
+        "base": "RICK",
+        "rel": "RICK",
         "price": 0.9,
         "relvolume": 0.1,
     }))));
@@ -1331,8 +1340,8 @@ fn test_order_errors_when_base_equal_rel() {
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "sell",
-        "base": "BEER",
-        "rel": "BEER",
+        "base": "RICK",
+        "rel": "RICK",
         "price": 0.9,
         "basevolume": 0.1,
     }))));
@@ -1397,8 +1406,8 @@ fn test_startup_passphrase() {
 #[cfg(feature = "native")]
 fn test_multiple_buy_sell_no_delay() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","txversion":4},
-        {"coin":"PIZZA","asset":"PIZZA","txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
         {"coin":"ETOMIC","asset":"ETOMIC","txversion":4},
     ]);
 
@@ -1423,15 +1432,15 @@ fn test_multiple_buy_sell_no_delay() {
     let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
     log!({"Log path: {}", mm.log_path.display()});
     unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
-    block_on (enable_electrum (&mm, "BEER", vec!["test1.cipig.net:10022", "test2.cipig.net:10022"]));
-    block_on (enable_electrum (&mm, "PIZZA", vec!["test1.cipig.net:10024", "test2.cipig.net:10024"]));
-    block_on (enable_electrum (&mm, "ETOMIC", vec!["test1.cipig.net:10025", "test2.cipig.net:10025"]));
+    log!([block_on (enable_electrum (&mm, "RICK", vec!["electrum1.cipig.net:10017","electrum2.cipig.net:10017","electrum3.cipig.net:10017"]))]);
+    log!([block_on (enable_electrum (&mm, "MORTY", vec!["electrum1.cipig.net:10018","electrum2.cipig.net:10018","electrum3.cipig.net:10018"]))]);
+    log!([block_on (enable_electrum (&mm, "ETOMIC", vec!["test1.cipig.net:10025", "test2.cipig.net:10025"]))]);
 
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "buy",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
         "price": 1,
         "volume": 0.1,
     }))));
@@ -1440,7 +1449,7 @@ fn test_multiple_buy_sell_no_delay() {
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "buy",
-        "base": "BEER",
+        "base": "RICK",
         "rel": "ETOMIC",
         "price": 1,
         "volume": 0.1,
@@ -1448,37 +1457,37 @@ fn test_multiple_buy_sell_no_delay() {
     assert! (rc.0.is_success(), "buy should have succeed, but got {:?}", rc);
     thread::sleep(Duration::from_secs(40));
 
-    log!("Get BEER/PIZZA orderbook");
+    log!("Get RICK/MORTY orderbook");
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
     assert! (rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: Json = unwrap!(json::from_str(&rc.1));
-    log!("BEER/PIZZA orderbook " [bob_orderbook]);
+    log!("RICK/MORTY orderbook " [bob_orderbook]);
     let bids = bob_orderbook["bids"].as_array().unwrap();
     let asks = bob_orderbook["asks"].as_array().unwrap();
-    assert!(bids.len() > 0, "BEER/PIZZA bids are empty");
-    assert_eq!(0, asks.len(), "BEER/PIZZA asks are not empty");
+    assert!(bids.len() > 0, "RICK/MORTY bids are empty");
+    assert_eq!(0, asks.len(), "RICK/MORTY asks are not empty");
     assert_eq!(Json::from("0.1"), bids[0]["maxvolume"]);
 
-    log!("Get BEER/ETOMIC orderbook");
+    log!("Get RICK/ETOMIC orderbook");
     let rc = unwrap! (block_on (mm.rpc (json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
-        "base": "BEER",
+        "base": "RICK",
         "rel": "ETOMIC",
     }))));
     assert! (rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: Json = unwrap!(json::from_str(&rc.1));
-    log!("BEER/ETOMIC orderbook " [bob_orderbook]);
+    log!("RICK/ETOMIC orderbook " [bob_orderbook]);
     let bids = bob_orderbook["bids"].as_array().unwrap();
-    assert!(bids.len() > 0, "BEER/ETOMIC bids are empty");
-    assert_eq!(asks.len(), 0, "BEER/ETOMIC asks are not empty");
+    assert!(bids.len() > 0, "RICK/ETOMIC bids are empty");
+    assert_eq!(asks.len(), 0, "RICK/ETOMIC asks are not empty");
     assert_eq!(Json::from("0.1"), bids[0]["maxvolume"]);
 }
 
@@ -1487,9 +1496,8 @@ fn test_multiple_buy_sell_no_delay() {
 #[cfg(feature = "native")]
 fn test_cancel_order() {
     let coins = json!([
-        {"coin":"BEER","asset":"BEER","rpcport":8923,"txversion":4},
-        {"coin":"PIZZA","asset":"PIZZA","rpcport":11608,"txversion":4},
-        {"coin":"ETOMIC","asset":"ETOMIC","rpcport":10271,"txversion":4},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000","rpcport":80},
         {"coin":"JST","name":"jst","etomic":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}
     ]);
@@ -1521,8 +1529,8 @@ fn test_cancel_order() {
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
         "price": 0.9,
         "volume": "0.9",
     }))));
@@ -1561,15 +1569,15 @@ fn test_cancel_order() {
     let rc = unwrap! (block_on (mm_alice.rpc (json! ({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Alice orderbook " [alice_orderbook]);
     let asks = alice_orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 1, "Alice BEER/PIZZA orderbook must have exactly 1 ask");
+    assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
 
     let cancel_rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
@@ -1583,34 +1591,34 @@ fn test_cancel_order() {
     thread::sleep(Duration::from_secs(pause));
 
     // Bob orderbook must show no orders
-    log!("Get BEER/PIZZA orderbook on Bob side");
+    log!("Get RICK/MORTY orderbook on Bob side");
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
     assert! (rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Bob orderbook " [bob_orderbook]);
     let asks = bob_orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 0, "Bob BEER/PIZZA asks are not empty");
+    assert_eq!(asks.len(), 0, "Bob RICK/MORTY asks are not empty");
 
     // Alice orderbook must show no orders
-    log!("Get BEER/PIZZA orderbook on Alice side");
+    log!("Get RICK/MORTY orderbook on Alice side");
     let rc = unwrap! (block_on (mm_alice.rpc (json! ({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
-        "base": "BEER",
-        "rel": "PIZZA",
+        "base": "RICK",
+        "rel": "MORTY",
     }))));
     assert! (rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Alice orderbook " [alice_orderbook]);
     let asks = alice_orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 0, "Alice BEER/PIZZA asks are not empty");
+    assert_eq!(asks.len(), 0, "Alice RICK/MORTY asks are not empty");
 }
 
 /// https://github.com/artemii235/SuperNET/issues/367

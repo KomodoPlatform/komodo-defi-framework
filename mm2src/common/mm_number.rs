@@ -15,7 +15,7 @@ impl std::fmt::Display for MmNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             MmNumber::BigDecimal(d) => write!(f, "{}", d),
-            MmNumber::BigRational(r) => write!(f, "{}", r),
+            MmNumber::BigRational(r) => write!(f, "{}", from_ratio_to_dec(r)),
         }
     }
 }
