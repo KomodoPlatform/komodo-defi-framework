@@ -624,19 +624,22 @@ enum ElectrumConfig {
     SSL {dns_name: String, skip_validation: bool}
 }
 
+fn addr_to_socket_addr(input: &str) -> Result<SocketAddr, String> {
+    let mut addr = match input.to_socket_addrs() {
+        Ok(a) => a,
+        Err(e) => return ERR!("{} resolve error {:?}", input, e),
+    };
+    match addr.next() {
+        Some(a) => Ok(a),
+        None => ERR!("{} resolved to None.", input),
+    }
+}
+
 /// Attempts to process the request (parse url, etc), build up the config and create new electrum connection
 #[cfg(feature = "native")]
 pub fn spawn_electrum(
     req: &ElectrumRpcRequest
 ) -> Result<ElectrumConnection, String> {
-    let mut addr = match req.url.to_socket_addrs() {
-        Ok(a) => a,
-        Err(e) => return ERR!("{} error {:?}", req.url, e),
-    };
-    let addr = match addr.next() {
-        Some(a) => a,
-        None => return ERR!("Socket addr from addr {} is None.", req.url),
-    };
     let config = match req.protocol {
         ElectrumProtocol::TCP => ElectrumConfig::TCP,
         ElectrumProtocol::SSL => {
@@ -659,7 +662,7 @@ pub fn spawn_electrum(
         }
     };
 
-    Ok(electrum_connect(addr, config))
+    Ok(electrum_connect(req.url.clone(), config))
 }
 
 #[cfg(not(feature = "native"))]
@@ -710,12 +713,12 @@ pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, S
 /// Represents the active Electrum connection to selected address
 pub struct ElectrumConnection {
     /// The client connected to this SocketAddr
-    addr: SocketAddr,
+    addr: String,
     /// Configuration
     config: ElectrumConfig,
     /// The Sender forwarding requests to writing part of underlying stream
     tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
-    /// The Sender used to shutdown the connection when dropped
+    /// The Sender used to shutdown the background connection loop when ElectrumConnection is dropped
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Responses are stored here
     responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
@@ -1212,15 +1215,19 @@ async fn electrum_last_chunk_loop(last_chunk: Arc<AtomicU64>) -> Result<(), Stri
 #[cfg(feature = "native")]
 async fn connect_loop(
     config: ElectrumConfig,
-    addr: SocketAddr,
+    addr: String,
     responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
     connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
 ) -> Result<(), ()> {
     let mut delay: u64 = 0;
 
     loop {
+        if delay > 0 { Timer::sleep(delay as f64).await; };
+
+        let socket_addr = try_loop!(addr_to_socket_addr(&addr), addr, delay);
+
         let connect_f = match config.clone() {
-            ElectrumConfig::TCP => Either::A(TcpStream::connect(&addr).map(|stream| ElectrumStream::Tcp(stream))),
+            ElectrumConfig::TCP => Either::A(TcpStream::connect(&socket_addr).map(|stream| ElectrumStream::Tcp(stream))),
             ElectrumConfig::SSL { dns_name, skip_validation } => {
                 let mut ssl_config = ClientConfig::new();
                 ssl_config.root_store.add_server_trust_anchors(&TLS_SERVER_ROOTS);
@@ -1231,15 +1238,13 @@ async fn connect_loop(
                 }
                 let tls_connector = TlsConnector::from(Arc::new(ssl_config));
 
-                Either::B(TcpStream::connect(&addr).and_then(move |stream| {
+                Either::B(TcpStream::connect(&socket_addr).and_then(move |stream| {
                     // Can use `unwrap` cause `dns_name` is pre-checked.
                     let dns = unwrap!(DNSNameRef::try_from_ascii_str(&dns_name).map_err(|e| fomat!([e])));
                     tls_connector.connect(dns, stream).map(|stream| ElectrumStream::Tls(stream))
                 }))
             }
         };
-
-        if delay > 0 { Timer::sleep(delay as f64).await; };
 
         let stream = try_loop!(connect_f.compat().await, addr, delay);
         try_loop!(stream.as_ref().set_nodelay(true), addr, delay);
@@ -1301,7 +1306,7 @@ async fn connect_loop(
 /// in case of connection errors
 #[cfg(feature = "native")]
 fn electrum_connect(
-    addr: SocketAddr,
+    addr: String,
     config: ElectrumConfig
 ) -> ElectrumConnection {
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
