@@ -50,7 +50,7 @@ fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEven
                                "MakerPaymentValidateFailed".into(), "MakerPaymentWaitConfirmFailed".into(),
                                "TakerPaymentTransactionFailed".into(), "TakerPaymentWaitConfirmFailed".into(),
                                "TakerPaymentDataSendFailed".into(), "TakerPaymentWaitForSpendFailed".into(),
-                               "MakerPaymentSpendFailed".into(), "TakerPaymentRefunded".into(),
+                               "MakerPaymentSpendFailed".into(), "TakerPaymentWaitRefundStarted".into(), "TakerPaymentRefunded".into(),
                                "TakerPaymentRefundFailed".into()],
         })
     } else {
@@ -97,6 +97,7 @@ impl TakerSavedEvent {
             TakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
             TakerSwapEvent::MakerPaymentSpent(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::MakerPaymentSpendFailed(_) => Some(TakerSwapCommand::RefundTakerPayment),
+            TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: _ } => Some(TakerSwapCommand::RefundTakerPayment),
             TakerSwapEvent::TakerPaymentRefunded(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => Some(TakerSwapCommand::Finish),
             TakerSwapEvent::Finished => None,
@@ -303,6 +304,7 @@ enum TakerSwapEvent {
     TakerPaymentWaitForSpendFailed(SwapError),
     MakerPaymentSpent(TransactionDetails),
     MakerPaymentSpendFailed(SwapError),
+    TakerPaymentWaitRefundStarted { wait_until: u64 },
     TakerPaymentRefunded(TransactionDetails),
     TakerPaymentRefundFailed(SwapError),
     Finished,
@@ -330,6 +332,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::TakerPaymentWaitForSpendFailed(_) => "Taker payment wait for spend failed...".to_owned(),
             TakerSwapEvent::MakerPaymentSpent(_) => "Maker payment spent...".to_owned(),
             TakerSwapEvent::MakerPaymentSpendFailed(_) => "Maker payment spend failed...".to_owned(),
+            TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until } => format!("Taker payment wait refund till {} started...", wait_until),
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),
             TakerSwapEvent::TakerPaymentRefundFailed(_) => "Taker payment refund failed...".to_owned(),
             TakerSwapEvent::Finished => "Finished".to_owned(),
@@ -363,6 +366,10 @@ impl TakerSwap {
     fn w(&self) -> RwLockWriteGuard<TakerSwapMut> {unwrap!(self.mutable.write())}
     fn r(&self) -> RwLockReadGuard<TakerSwapMut> {unwrap!(self.mutable.read())}
 
+    fn wait_refund_until(&self) -> u64 {
+        self.r().data.taker_payment_lock + 3700
+    }
+
     fn apply_event(&self, event: TakerSwapEvent) -> Result<(), String> {
         match event {
             TakerSwapEvent::Started(data) => self.w().data = data,
@@ -391,6 +398,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentWaitForSpendFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::MakerPaymentSpent(tx) => self.w().maker_payment_spend = Some(tx),
             TakerSwapEvent::MakerPaymentSpendFailed(err) => self.errors.lock().push(err),
+            TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: _ } => (),
             TakerSwapEvent::TakerPaymentRefunded(tx) => self.w().taker_payment_refund = Some(tx),
             TakerSwapEvent::TakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
@@ -805,7 +813,10 @@ impl TakerSwap {
             Ok(f) => f,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),
-                vec![TakerSwapEvent::TakerPaymentDataSendFailed(e.into())]
+                vec![
+                    TakerSwapEvent::TakerPaymentDataSendFailed(e.into()),
+                    TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
+                ]
             ))
         };
 
@@ -821,7 +832,10 @@ impl TakerSwap {
         if let Err(err) = wait_f.await {
             return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),
-                vec![TakerSwapEvent::TakerPaymentWaitConfirmFailed(ERRL!("!taker_coin.wait_for_confirmations: {}", err).into())]
+                vec![
+                    TakerSwapEvent::TakerPaymentWaitConfirmFailed(ERRL!("!taker_coin.wait_for_confirmations: {}", err).into()),
+                    TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
+                ]
             ))
         }
 
@@ -833,7 +847,10 @@ impl TakerSwap {
             Ok(t) => t,
             Err(e) => return Ok((
                 Some(TakerSwapCommand::RefundTakerPayment),
-                vec![TakerSwapEvent::TakerPaymentWaitForSpendFailed(e.into())],
+                vec![
+                    TakerSwapEvent::TakerPaymentWaitForSpendFailed(e.into()),
+                    TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
+                ],
             ))
         };
         drop(sending_f);
@@ -907,7 +924,7 @@ impl TakerSwap {
         loop {
             // have to wait for 1 hour more because some coins have BIP113 activated so these will reject transactions with locktime == present time
             // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
-            if now_ms() / 1000 > self.r().data.taker_payment_lock + 3700 {
+            if now_ms() / 1000 > self.wait_refund_until() {
                 break;
             }
             Timer::sleep(10.).await;

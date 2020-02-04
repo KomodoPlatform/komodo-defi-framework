@@ -37,7 +37,7 @@ fn enable_coins(mm: &MarketMakerIt) -> Vec<(&'static str, Json)> {
     replies.push (("BEER", block_on (enable_native (mm, "BEER", vec![]))));
     replies.push (("PIZZA", block_on (enable_native (mm, "PIZZA", vec![]))));
     replies.push (("ETOMIC", block_on (enable_native (mm, "ETOMIC", vec![]))));
-    replies.push (("ETH", block_on (enable_native (mm, "ETH", vec!["http://195.201.0.6:8545"]))));
+    replies.push (("ETH", block_on (enable_native (mm, "ETH", vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))));
     replies
 }
 
@@ -247,7 +247,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8545"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
@@ -299,7 +299,7 @@ fn alice_can_see_the_active_order_after_connection() {
     unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
 
     for _ in 0..2 {
         // Alice should be able to see the order no later than 10 seconds after connecting to bob
@@ -810,7 +810,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
     let maker_error_events = vec!["StartFailed", "NegotiateFailed", "TakerFeeValidateFailed",
                                   "MakerPaymentTransactionFailed", "MakerPaymentDataSendFailed", "MakerPaymentWaitConfirmFailed",
                                   "TakerPaymentValidateFailed", "TakerPaymentWaitConfirmFailed", "TakerPaymentSpendFailed",
-                                  "MakerPaymentRefunded", "MakerPaymentRefundFailed"];
+                                  "MakerPaymentWaitRefundStarted", "MakerPaymentRefunded", "MakerPaymentRefundFailed"];
 
     let taker_success_events = vec!["Started", "Negotiated", "TakerFeeSent", "MakerPaymentReceived",
                                     "MakerPaymentWaitConfirmStarted", "MakerPaymentValidatedAndConfirmed",
@@ -820,7 +820,7 @@ async fn trade_base_rel_electrum (pairs: Vec<(&'static str, &'static str)>) {
                                   "MakerPaymentValidateFailed", "MakerPaymentWaitConfirmFailed",
                                   "TakerPaymentTransactionFailed", "TakerPaymentWaitConfirmFailed",
                                   "TakerPaymentDataSendFailed", "TakerPaymentWaitForSpendFailed",
-                                  "MakerPaymentSpendFailed", "TakerPaymentRefunded",
+                                  "MakerPaymentSpendFailed", "TakerPaymentWaitRefundStarted", "TakerPaymentRefunded",
                                   "TakerPaymentRefundFailed"];
 
     for uuid in uuids.iter() {
@@ -1523,7 +1523,7 @@ fn test_cancel_order() {
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8545"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
 
     log!("Issue sell request on Bob side by setting base/rel price…");
     let rc = unwrap! (block_on (mm_bob.rpc (json! ({
@@ -1560,7 +1560,7 @@ fn test_cancel_order() {
     unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, vec!["http://195.201.0.6:8545"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, vec!["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
 
     log!("Give Alice 15 seconds to import the order…");
     thread::sleep(Duration::from_secs(15));
