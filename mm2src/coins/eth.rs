@@ -839,6 +839,10 @@ impl MarketCoinOps for EthCoin {
         let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
         Ok(format!("{:#02x}", addr))
     }
+
+    fn display_priv_key(&self) -> String {
+        format!("{:#02x}", self.key_pair.secret())
+    }
 }
 
 pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {

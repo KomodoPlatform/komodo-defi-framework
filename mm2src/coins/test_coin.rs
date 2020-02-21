@@ -56,6 +56,10 @@ impl MarketCoinOps for TestCoin {
     fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
         unimplemented!()
     }
+
+    fn display_priv_key(&self) -> String {
+        unimplemented!()
+    }
 }
 
 #[mockable]

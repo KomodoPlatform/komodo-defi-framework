@@ -1350,6 +1350,10 @@ impl MarketCoinOps for UtxoCoin {
         let addr = try_s!(address_from_raw_pubkey(&pubkey_bytes, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
         Ok(addr.to_string())
     }
+
+    fn display_priv_key(&self) -> String {
+        format!("{}", self.key_pair.private())
+    }
 }
 
 async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {

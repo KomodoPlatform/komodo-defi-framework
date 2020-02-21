@@ -21,7 +21,8 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use bytes::Bytes;
-use coins::{get_enabled_coins, get_trade_fee, send_raw_transaction, set_required_confirmations, withdraw, my_tx_history};
+use coins::{get_enabled_coins, get_trade_fee, my_tx_history, send_raw_transaction, set_required_confirmations,
+            show_priv_key, withdraw};
 use common::{err_to_rpc_json_string, HyRes};
 #[cfg(feature = "native")]
 use common::wio::{slurp_reqʰ, CORE, CPUPOOL, HTTP};
@@ -61,8 +62,6 @@ pub mod lp_signatures;
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
 const PUBLIC_METHODS: &[Option<&str>] = &[  // Sorted alphanumerically (on the first letter) for readability.
-    Some("balance"),
-    Some("balances"),
     Some("fundvalue"),
     Some("getprice"),
     Some("getpeers"),
@@ -205,8 +204,8 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "cancel_order" => cancel_order (ctx, req),
         "coins_needed_for_kick_start" => hyres (coins_needed_for_kick_start (ctx)),
         "disable_coin" => disable_coin(ctx, req),
-        "enable" => hyres (enable (ctx, req)),
         "electrum" => hyres (electrum (ctx, req)),
+        "enable" => hyres (enable (ctx, req)),
         "get_enabled_coins" => hyres (get_enabled_coins (ctx)),
         "get_trade_fee" => hyres(get_trade_fee (ctx, req)),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
@@ -218,27 +217,28 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
             #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
         },
         // "inventory" => inventory (ctx, req),
-        "my_orders" => my_orders (ctx),
         "my_balance" => my_balance (ctx, req),
-        "my_tx_history" => my_tx_history(ctx, req),
-        "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
-        "orderbook" => hyres(orderbook(ctx, req)),
-        "order_status" => order_status (ctx, req),
-        // "passphrase" => passphrase (ctx, req),
-        "sell" => hyres(sell(ctx, req)),
-        "send_raw_transaction" => hyres (send_raw_transaction (ctx, req)),
-        "setprice" => hyres(set_price (ctx, req)),
-        "stop" => stop (ctx),
+        "my_orders" => my_orders (ctx),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
         "my_swap_status" => my_swap_status(ctx, req),
+        "my_tx_history" => my_tx_history(ctx, req),
+        "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
+        "order_status" => order_status (ctx, req),
+        "orderbook" => hyres(orderbook(ctx, req)),
         "recover_funds_of_swap" => {
             #[cfg(feature = "native")] {
                 Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) }))
             }
             #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
         },
+        // "passphrase" => passphrase (ctx, req),
+        "sell" => hyres(sell(ctx, req)),
+        "show_priv_key" => hyres(show_priv_key(ctx, req)),
+        "send_raw_transaction" => hyres (send_raw_transaction (ctx, req)),
         "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
+        "setprice" => hyres(set_price (ctx, req)),
         "stats_swap_status" => stats_swap_status(ctx, req),
+        "stop" => stop (ctx),
         "version" => version(),
         "withdraw" => hyres (withdraw (ctx, req)),
         _ => return DispatcherRes::NoMatch (req)

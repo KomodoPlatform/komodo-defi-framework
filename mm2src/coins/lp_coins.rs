@@ -233,6 +233,8 @@ pub trait MarketCoinOps {
     fn current_block(&self) -> Box<dyn Future<Item=u64, Error=String> + Send>;
 
     fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
+
+    fn display_priv_key(&self) -> String;
 }
 
 #[derive(Deserialize)]
@@ -673,6 +675,22 @@ pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Respons
         "result": {
             "coin": req.coin,
             "confirmations": req.confirmations,
+        }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
+    };
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "coin": ticker,
+            "priv_key": coin.display_priv_key(),
         }
     })));
     Ok(try_s!(Response::builder().body(res)))
