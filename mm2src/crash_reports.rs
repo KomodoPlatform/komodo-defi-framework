@@ -1,3 +1,4 @@
+#![allow(uncommon_codepoints)]
 #![allow(unused_imports)]
 use common::{self, set_panic_hook, stack_trace, stack_trace_frame, writeln};
 use std::env;

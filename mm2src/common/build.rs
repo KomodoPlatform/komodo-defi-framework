@@ -8,6 +8,7 @@
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
 #![feature(non_ascii_idents)]
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use]

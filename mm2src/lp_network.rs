@@ -17,6 +17,7 @@
 //  lp_network.rs
 //  marketmaker
 //
+#![allow(uncommon_codepoints)]
 
 use bytes::Bytes;
 use bitcrypto::ripemd160;

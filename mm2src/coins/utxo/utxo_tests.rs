@@ -56,7 +56,7 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
         rpc_client,
         key_pair,
         is_pos: false,
-        notarized: false,
+        requires_notarization: false,
         overwintered: true,
         segwit: false,
         tx_version: 4,

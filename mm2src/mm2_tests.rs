@@ -1,3 +1,4 @@
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 
 use bigdecimal::BigDecimal;
@@ -1167,10 +1168,10 @@ fn test_withdraw_and_send() {
     let alice_passphrase = unwrap! (var ("ALICE_PASSPHRASE") .ok().or (alice_file_passphrase), "No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
 
     let coins = json! ([
-        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
-        {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1},
-        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true},
-        {"coin":"ETOMIC","asset":"ETOMIC","txversion":4,"overwintered":1},
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000},
+        {"coin":"ETOMIC","asset":"ETOMIC","txversion":4,"overwintered":1,"txfee":1000},
         {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
         {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
     ]);

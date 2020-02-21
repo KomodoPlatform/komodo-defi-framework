@@ -11,27 +11,22 @@ FROM ubuntu:xenial
 RUN \
     apt-get update &&\
     apt-get install -y git build-essential libssl-dev wget &&\
+    apt-get install -y cmake &&\
     # https://github.com/rust-lang/rust-bindgen/blob/master/book/src/requirements.md#debian-based-linuxes
     apt-get install -y llvm-3.9-dev libclang-3.9-dev clang-3.9 &&\
     # openssl-sys requirements, cf. https://crates.io/crates/openssl-sys
     apt-get install -y pkg-config libssl-dev &&\
     apt-get clean
 
-#Cmake 3.12.0 supports multi-platform -j option, it allows to use all cores for concurrent build to speed up it
-RUN wget https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh && \
-    sh cmake-3.12.0-Linux-x86_64.sh --skip-license --exclude-subdir --prefix=/usr/local && \
-    rm -rf cmake-3.12.0-Linux-x86_64.sh
-
 RUN \
     wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
     sh /tmp/rustup-init.sh -y --default-toolchain none &&\
     . /root/.cargo/env &&\
     rustup set profile minimal &&\
-    rustup install nightly-2019-10-24 &&\
-    rustup default nightly-2019-10-24 &&\
+    rustup install nightly-2020-02-01 &&\
+    rustup default nightly-2020-02-01 &&\
     # It seems that bindgen won't prettify without it:
     rustup component add rustfmt-preview &&\
-    rm -rf /root/.rustup/toolchains/nightly-2019-10-24-x86_64-unknown-linux-gnu/share/doc &&\
     rm -f /tmp/rustup-init.sh
 
 ENV PATH="/root/.cargo/bin:${PATH}"

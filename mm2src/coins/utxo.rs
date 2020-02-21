@@ -188,9 +188,9 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// Emercoin has 6
     /// Bitcoin Diamond has 7
     decimals: u8,
-    /// Is coin protected by Komodo dPoW?
+    /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
-    notarized: bool,
+    requires_notarization: bool,
     /// RPC client
     rpc_client: UtxoRpcClientEnum,
     /// ECDSA key pair
@@ -1306,6 +1306,7 @@ impl MarketCoinOps for UtxoCoin {
         self.rpc_client.wait_for_confirmations(
             &tx,
             confirmations as u32,
+            self.requires_notarization,
             wait_until,
             check_every,
         )
@@ -1924,14 +1925,13 @@ pub async fn utxo_coin_from_conf_and_request(
     let overwintered = conf["overwintered"].as_u64().unwrap_or (0) == 1;
 
     let tx_fee = match conf["txfee"].as_u64() {
-        None | Some (0) => if ticker == "BTC" || ticker == "QTUM" {
+        None => TxFee::Fixed(1000),
+        Some (0) => {
             let fee_method = match &rpc_client {
                 UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
                 UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await)
             };
             TxFee::Dynamic(fee_method)
-        } else {
-            TxFee::Fixed(1000)
         },
         Some (fee) => TxFee::Fixed(fee),
     };
@@ -1991,7 +1991,7 @@ pub async fn utxo_coin_from_conf_and_request(
         rpc_client,
         key_pair,
         is_pos: conf["isPoS"].as_u64() == Some(1),
-        notarized: false,
+        requires_notarization: conf["requires_notarization"].as_bool().unwrap_or (false),
         overwintered,
         pub_addr_prefix,
         p2sh_addr_prefix: conf["p2shtype"].as_u64().unwrap_or (if ticker == "BTC" {5} else {85}) as u8,

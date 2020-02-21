@@ -1,0 +1,62 @@
+# Job template for MM2 Release stage build
+
+parameters:
+  name: ''  # defaults for any parameters that aren't specified
+  os: ''
+  bob_passphrase: ''
+  bob_userpass: ''
+  alice_passphrase: ''
+  alice_userpass: ''
+
+jobs:
+  - job: ${{ parameters.name }}
+    timeoutInMinutes: 0 # 0 means infinite for self-hosted agent
+    pool:
+      name: Default
+      demands: agent.os -equals ${{ parameters.os }}
+    steps:
+      # https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch#set-a-job-scoped-variable-from-a-script
+      - bash: |
+          export SHORT_HASH="$(git rev-parse --short=9 HEAD)"
+          echo "##vso[task.setvariable variable=COMMIT_HASH]${SHORT_HASH}"
+          export TAG="$(git tag -l --points-at HEAD)"
+          echo "##vso[task.setvariable variable=COMMIT_TAG]${TAG}"
+        displayName: Setup ENV
+      - powershell: |
+          .\marketmaker_build_depends.cmd
+        displayName: Build Windows deps
+        condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['COMMIT_TAG'], '' ) )
+      - bash: |
+          echo 2.0.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
+          cat MM_VERSION
+          touch mm2src/common/build.rs
+          cargo build --features native --release -vv
+        displayName: 'Build MM2 Release'
+        condition: eq( variables['COMMIT_TAG'], '' )
+      - bash: |
+          objcopy --only-keep-debug target/release/mm2 target/release/mm2.debug
+          strip -g target/release/mm2
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release-debuginfo.zip target/release/mm2.debug -j
+        displayName: 'Prepare release build upload Linux'
+        condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['COMMIT_TAG'], '' ) )
+      - bash: |
+          cd target/release
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip mm2
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.dSYM.zip mm2.dSYM -r
+        displayName: 'Prepare release build upload MacOS'
+        condition: and( eq( variables['Agent.OS'], 'Darwin' ), eq( variables['COMMIT_TAG'], '' ) )
+      - powershell: |
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+        displayName: 'Prepare release build upload Windows'
+        condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['COMMIT_TAG'], '' ) )
+      - task: GitHubRelease@0
+        inputs:
+          action: edit
+          gitHubConnection: artemii235
+          isPreRelease: true
+          assets: 'upload/*'
+          assetUploadMode: replace
+          tagSource: manual
+          tag: beta-2.0.$(Build.BuildId)
+        condition: eq( variables['COMMIT_TAG'], '' )

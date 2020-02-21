@@ -15,10 +15,10 @@
  ******************************************************************************/
 
 //
-//  ordermatch.rs
+//  lp_ordermatch.rs
 //  marketmaker
 //
-
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use bigdecimal::BigDecimal;

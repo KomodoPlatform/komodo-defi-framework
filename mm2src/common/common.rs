@@ -12,10 +12,10 @@
 
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
 #![feature(async_closure)]
-#![feature(weak_counts)]
 #![feature(hash_raw_entry)]
 #![feature(optin_builtin_traits)]
 
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -82,6 +82,8 @@ pub mod lift_body {
 
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
+#[cfg(all(feature = "native", not(windows)))]
+use findshlibs::{Segment, SharedLibrary, TargetSharedLibrary, IterationControl};
 use futures01::{future, task::Task, Future};
 #[cfg(not(feature = "native"))]
 use futures::task::{Context, Poll as Poll03};
@@ -306,11 +308,16 @@ fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
 
 /// Formats a stack frame.
 /// Some common and less than useful frames are skipped.
-pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
-    let filename = match symbol.filename() {Some (path) => path, None => return};
-    let filename = match filename.components().rev().next() {Some (c) => c.as_os_str().to_string_lossy(), None => return};
-    let lineno = match symbol.lineno() {Some (lineno) => lineno, None => return};
-    let name = match symbol.name() {Some (name) => name, None => return};
+pub fn stack_trace_frame (instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &backtrace::Symbol) {
+    let filename = match symbol.filename() {
+        Some (path) => match path.components().rev().next() {
+            Some (c) => c.as_os_str().to_string_lossy(),
+            None => "??".into(),
+        },
+        None => "??".into(),
+    };
+    let lineno = match symbol.lineno() {Some (lineno) => lineno, None => 0};
+    let name = match symbol.name() {Some (name) => name, None => SymbolName::new(&[])};
     let mut name_buf = trace_name_buf();
     let name = gstring! (name_buf, {
         let _ = write! (name_buf, "{}", name);  // NB: `fmt` is different from `SymbolName::as_str`.
@@ -346,7 +353,7 @@ pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
     if name.starts_with ("tokio_executor::") {return}
     if name.starts_with ("tokio_timer::") {return}
 
-    let _ = writeln! (buf, "  {}:{}] {}", filename, lineno, name);
+    let _ = writeln! (buf, "  {}:{}] {} {:?}", filename, lineno, name, instr_ptr);
 }
 
 /// Generates a string with the current stack trace.
@@ -359,18 +366,41 @@ pub fn stack_trace_frame (buf: &mut dyn Write, symbol: &backtrace::Symbol) {
 /// * `format` - Generates the string representation of a frame.
 /// * `output` - Function used to print the stack trace.
 ///              Printing immediately, without buffering, should make the tracing somewhat more reliable.
-pub fn stack_trace (format: &mut dyn FnMut (&mut dyn Write, &backtrace::Symbol), output: &mut dyn FnMut (&str)) {
+pub fn stack_trace (format: &mut dyn FnMut (*mut c_void, &mut dyn Write, &backtrace::Symbol), output: &mut dyn FnMut (&str)) {
     // cf. https://github.com/rust-lang/rust/pull/64154 (standard library backtrace)
 
     backtrace::trace (|frame| {
         backtrace::resolve (frame.ip(), |symbol| {
             let mut trace_buf = trace_buf();
             let trace = gstring! (trace_buf, {
-              format (trace_buf, symbol);
+            // frame.ip() is next instruction pointer typically so offset(-1) points to current instruction
+              format (frame.ip().wrapping_offset(-1), trace_buf, symbol);
             });
             output (trace);
         });
         true
+    });
+
+    #[cfg(all(feature = "native", not(windows)))]
+    output_pc_mem_addr(output)
+}
+
+#[cfg(all(feature = "native", not(windows)))]
+fn output_pc_mem_addr(output: &mut dyn FnMut (&str)) {
+    TargetSharedLibrary::each(|shlib| {
+        let mut trace_buf = trace_buf();
+        let name = gstring! (trace_buf, {
+            let _ = write! (trace_buf, "Virtual memory addresses of {}", shlib.name().to_string_lossy());
+        });
+        output(name);
+        for seg in shlib.segments() {
+            let segment = gstring! (trace_buf, {
+                let _ = write! (trace_buf, "  {}:{}", seg.name(), seg.actual_virtual_memory_address(shlib));
+            });
+            output(segment);
+        }
+        // First TargetSharedLibrary is initial executable, we are not interested in other libs
+        IterationControl::Break
     });
 }
 
@@ -429,7 +459,7 @@ pub fn is_a_test_drill() -> bool {
 
     let mut trace = String::with_capacity (1024);
     stack_trace (
-        &mut |mut fwr, sym| {if let Some (name) = sym.name() {let _ = witeln! (fwr, (name));}},
+        &mut |_ptr, mut fwr, sym| {if let Some (name) = sym.name() {let _ = witeln! (fwr, (name));}},
         &mut |tr| {trace.push_str (tr)});
 
     if trace.contains ("\nmm2::main\n") || trace.contains ("\nmm2::run_lp_main\n") {return false}
@@ -1159,6 +1189,8 @@ pub fn block_on<F> (f: F) -> F::Output where F: Future03 {
 
 #[cfg(feature = "native")]
 pub use gstuff::{now_ms, now_float};
+use backtrace::SymbolName;
+
 #[cfg(not(feature = "native"))]
 pub fn now_ms() -> u64 {
     #[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]

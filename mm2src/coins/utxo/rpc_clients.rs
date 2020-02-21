@@ -98,7 +98,7 @@ impl Clone for UtxoRpcClientEnum {
 }
 
 impl UtxoRpcClientEnum {
-    pub fn wait_for_confirmations(&self, tx: &UtxoTx, confirmations: u32, wait_until: u64, check_every: u64) -> Box<dyn Future<Item=(), Error=String> + Send> {
+    pub fn wait_for_confirmations(&self, tx: &UtxoTx, confirmations: u32, requires_notarization: bool, wait_until: u64, check_every: u64) -> Box<dyn Future<Item=(), Error=String> + Send> {
         let tx = tx.clone();
         let selfi = self.clone();
         let fut = async move {
@@ -109,10 +109,15 @@ impl UtxoRpcClientEnum {
 
                 match selfi.get_verbose_transaction(tx.hash().reversed().into()).compat().await {
                     Ok(t) => {
-                        if t.confirmations >= confirmations {
+                        let tx_confirmations = if requires_notarization {
+                            t.confirmations
+                        } else {
+                            t.rawconfirmations.unwrap_or(t.confirmations)
+                        };
+                        if tx_confirmations >= confirmations {
                             return Ok(());
                         } else {
-                            log!({ "Waiting for tx {:?} confirmations, now {}, required {}", tx.hash().reversed(), t.confirmations, confirmations });
+                            log!({ "Waiting for tx {:?} confirmations, now {}, required {}, requires_notarization {}", tx.hash().reversed(), tx_confirmations, confirmations, requires_notarization });
                         }
                     },
                     Err(e) => log!("Error " [e] " getting the transaction " [tx.hash().reversed()] ", retrying in 10 seconds"),

@@ -17,30 +17,52 @@ trigger:
       - etomic_build/*
       - iguana/Readme.md
 
-jobs:
-  - template: azure-pipelines-job.yml  # Template reference
-    parameters:
-      name: 'MM2_Linux'
-      os: 'Linux'
-      bob_passphrase: 'BOB_PASSPHRASE_LINUX'
-      bob_userpass: 'BOB_USERPASS_LINUX'
-      alice_passphrase: 'ALICE_PASSPHRASE_LINUX'
-      alice_userpass: 'ALICE_USERPASS_LINUX'
+stages:
+  - stage: Build
+    displayName: Build and test Debug
+    jobs:
+      - template: azure-pipelines-build-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Build_Linux'
+          os: 'Linux'
+          bob_passphrase: 'BOB_PASSPHRASE_LINUX'
+          bob_userpass: 'BOB_USERPASS_LINUX'
+          alice_passphrase: 'ALICE_PASSPHRASE_LINUX'
+          alice_userpass: 'ALICE_USERPASS_LINUX'
 
-  - template: azure-pipelines-job.yml  # Template reference
-    parameters:
-      name: 'MM2_MacOS'
-      os: 'Darwin'
-      bob_passphrase: 'BOB_PASSPHRASE_MAC'
-      bob_userpass: 'BOB_USERPASS_MAC'
-      alice_passphrase: 'ALICE_PASSPHRASE_MAC'
-      alice_userpass: 'ALICE_USERPASS_MAC'
+      - template: azure-pipelines-build-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Build_MacOS'
+          os: 'Darwin'
+          bob_passphrase: 'BOB_PASSPHRASE_MAC'
+          bob_userpass: 'BOB_USERPASS_MAC'
+          alice_passphrase: 'ALICE_PASSPHRASE_MAC'
+          alice_userpass: 'ALICE_USERPASS_MAC'
 
-  - template: azure-pipelines-job.yml  # Template reference
-    parameters:
-      name: 'MM2_Windows'
-      os: 'Windows_NT'
-      bob_passphrase: 'BOB_PASSPHRASE_WIN'
-      bob_userpass: 'BOB_USERPASS_WIN'
-      alice_passphrase: 'ALICE_PASSPHRASE_WIN'
-      alice_userpass: 'ALICE_USERPASS_WIN'
+      - template: azure-pipelines-build-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Build_Windows'
+          os: 'Windows_NT'
+          bob_passphrase: 'BOB_PASSPHRASE_WIN'
+          bob_userpass: 'BOB_USERPASS_WIN'
+          alice_passphrase: 'ALICE_PASSPHRASE_WIN'
+          alice_userpass: 'ALICE_USERPASS_WIN'
+
+  - stage: Release
+    displayName: Release
+    condition: and(eq(variables['build.sourceBranch'], 'refs/heads/mm2'), succeeded('Build'))
+    jobs:
+      - template: azure-pipelines-release-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Release_Linux'
+          os: 'Linux'
+
+      - template: azure-pipelines-release-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Release_MacOS'
+          os: 'Darwin'
+
+      - template: azure-pipelines-release-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Release_Windows'
+          os: 'Windows_NT'

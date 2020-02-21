@@ -23,6 +23,8 @@
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
+#![allow(uncommon_codepoints)]
+
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;

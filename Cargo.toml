@@ -4,9 +4,6 @@
 # We should use the "objcopy --only-keep-debug" and "add-symbol-file" meanwhile
 # and separating stack tracing into raw trace and symbolication parts.
 
-# https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#profile-overrides
-cargo-features = ["profile-overrides"]
-
 [package]
 name = "mm2"
 version = "0.1.0"

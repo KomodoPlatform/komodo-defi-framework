@@ -7,9 +7,10 @@
 // NB: We're using `bits256` to denote the official public ID (in the future - the public key) of a peer.
 // In contrast, derived keys are stored as `[u8; 32]`.
 
-#![feature(non_ascii_idents, vec_resize_default, ip, weak_counts, async_closure)]
+#![feature(non_ascii_idents, vec_resize_default, ip, async_closure)]
 #![feature(hash_raw_entry)]
 
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 #![cfg_attr(not(feature = "native"), allow(unused_macros))]

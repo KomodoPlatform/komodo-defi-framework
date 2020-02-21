@@ -16,7 +16,7 @@
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-
+#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
