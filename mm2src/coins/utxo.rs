@@ -931,8 +931,8 @@ impl SwapOps for UtxoCoin {
         Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_fee| -> TransactionFut {
             let fee = match coin_fee {
                 ActualTxFee::Fixed(fee) => fee,
-                // atomic swap payment spend transaction is ~300 bytes in average as of now
-                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+                // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 305) / 1024,
             };
 
             let output = TransactionOutput {
@@ -980,8 +980,8 @@ impl SwapOps for UtxoCoin {
         Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_fee| -> TransactionFut {
             let fee = match coin_fee {
                 ActualTxFee::Fixed(fee) => fee,
-                // atomic swap payment spend transaction is ~300 bytes in average as of now
-                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+                // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 305) / 1024,
             };
 
             let output = TransactionOutput {
@@ -1028,8 +1028,8 @@ impl SwapOps for UtxoCoin {
         Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_fee| -> TransactionFut {
             let fee = match coin_fee {
                 ActualTxFee::Fixed(fee) => fee,
-                // atomic swap payment spend transaction is ~300 bytes in average as of now
-                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+                // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 305) / 1024,
             };
 
             let output = TransactionOutput {
@@ -1081,8 +1081,8 @@ impl SwapOps for UtxoCoin {
         Box::new(self.get_tx_fee().map_err(|e| ERRL!("{}", e)).and_then(move |coin_fee| -> TransactionFut {
             let fee = match coin_fee {
                 ActualTxFee::Fixed(fee) => fee,
-                // atomic swap payment spend transaction is ~300 bytes in average as of now
-                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 300) / 1024,
+                // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
+                ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * 305) / 1024,
             };
 
             let output = TransactionOutput {
