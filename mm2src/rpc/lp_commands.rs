@@ -30,7 +30,9 @@ use futures::compat::Future01CompatExt;
 use http::Response;
 use serde_json::{self as json, Value as Json};
 
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{CancelBy, cancel_orders_by};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{get_locked_amount, active_swaps_using_coin};
 
 /// Attempts to disable the coin
@@ -41,23 +43,29 @@ pub fn disable_coin (ctx: MmArc, req: Json) -> HyRes {
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
     };
-    let swaps = try_h!(active_swaps_using_coin(&ctx, &ticker));
-    if !swaps.is_empty() {
-        return rpc_response (500, json!({
+    #[cfg(not(feature = "wallet-only"))]
+    let cancelled = {
+        let swaps = try_h!(active_swaps_using_coin(&ctx, &ticker));
+        if !swaps.is_empty() {
+            return rpc_response(500, json!({
             "error": fomat! ("There're active swaps using " (ticker)),
             "swaps": swaps,
         }).to_string());
-    }
-    let (cancelled, still_matching) = try_h!(cancel_orders_by(&ctx, CancelBy::Coin{ ticker: ticker.clone() }));
-    if !still_matching.is_empty() {
-        return rpc_response (500, json!({
-            "error": fomat! ("There're currently matching orders using " (ticker)),
-            "orders": {
-                "matching": still_matching,
-                "cancelled": cancelled,
-            }
-        }).to_string());
-    }
+        }
+        let (cancelled, still_matching) = try_h!(cancel_orders_by(&ctx, CancelBy::Coin{ ticker: ticker.clone() }));
+        if !still_matching.is_empty() {
+            return rpc_response(500, json!({
+                "error": fomat! ("There're currently matching orders using " (ticker)),
+                "orders": {
+                    "matching": still_matching,
+                    "cancelled": cancelled,
+                }
+            }).to_string());
+        }
+        cancelled
+    };
+    #[cfg(feature = "wallet-only")]
+    let cancelled: &[()] = &[];
 
     try_h!(disable_coin_impl(&ctx, &ticker));
     rpc_response(200, json!({
@@ -73,11 +81,16 @@ pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
     let balance = try_s! (coin.my_balance().compat().await);
+    #[cfg(not(feature = "wallet-only"))]
+    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
+    #[cfg(feature = "wallet-only")]
+    let locked_by_swaps = "0";
+
     let res = json! ({
         "result": "success",
         "address": coin.my_address(),
         "balance": balance,
-        "locked_by_swaps": get_locked_amount (&ctx, &ticker),
+        "locked_by_swaps": locked_by_swaps,
         "coin": coin.ticker(),
         "required_confirmations": coin.required_confirmations(),
     });
@@ -90,11 +103,16 @@ pub async fn enable (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String>
     let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
     let balance = try_s! (coin.my_balance().compat().await);
+    #[cfg(not(feature = "wallet-only"))]
+    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
+    #[cfg(feature = "wallet-only")]
+    let locked_by_swaps = "0";
+
     let res = json! ({
         "result": "success",
         "address": coin.my_address(),
         "balance": balance,
-        "locked_by_swaps": get_locked_amount (&ctx, &ticker),
+        "locked_by_swaps": locked_by_swaps,
         "coin": coin.ticker(),
         "required_confirmations": coin.required_confirmations(),
     });
@@ -128,10 +146,15 @@ pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
         Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
         Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
     };
+    #[cfg(not(feature = "wallet-only"))]
+    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
+    #[cfg(feature = "wallet-only")]
+    let locked_by_swaps = "0";
+
     Box::new(coin.my_balance().and_then(move |balance| rpc_response(200, json!({
         "coin": ticker,
         "balance": balance,
-        "locked_by_swaps": get_locked_amount(&ctx, &ticker),
+        "locked_by_swaps": locked_by_swaps,
         "address": coin.my_address(),
     }).to_string())))
 }

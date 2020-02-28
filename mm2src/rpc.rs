@@ -47,8 +47,11 @@ use std::net::SocketAddr;
 #[cfg(feature = "native")]
 use tokio_core::net::TcpListener;
 
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_network;
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{coins_needed_for_kick_start, import_swaps,  my_swap_status, my_recent_swaps,
                           recover_funds_of_swap, stats_swap_status};
 
@@ -127,7 +130,9 @@ async fn helpers (ctx: MmArc, client: SocketAddr, req: Parts,
     if crc32 != expected_checksum {return ERR! ("Damaged goods")}
 
     let res = match method {
+        #[cfg(not(feature = "wallet-only"))]
         "broadcast_p2p_msg" => try_s! (lp_network::broadcast_p2p_msgʰ (reqᵇ) .await),
+        #[cfg(not(feature = "wallet-only"))]
         "p2p_tap" => try_s! (lp_network::p2p_tapʰ (reqᵇ) .await),
         "common_wait_for_log_re" => try_s! (common_wait_for_log_re (reqᵇ) .await),
         "ctx2helpers" => try_s! (ctx2helpers (ctx, reqᵇ) .await),
@@ -135,7 +140,9 @@ async fn helpers (ctx: MmArc, client: SocketAddr, req: Parts,
         "peers_send" => try_s! (peers::peers_send (reqᵇ) .await),
         "peers_recv" => try_s! (peers::peers_recv (reqᵇ) .await),
         "peers_drop_send_handler" => try_s! (peers::peers_drop_send_handlerʰ (reqᵇ) .await),
+        #[cfg(not(feature = "wallet-only"))]
         "start_client_p2p_loop" => try_s! (lp_network::start_client_p2p_loopʰ (reqᵇ) .await),
+        #[cfg(not(feature = "wallet-only"))]
         "start_seednode_loop" => try_s! (lp_network::start_seednode_loopʰ (reqᵇ) .await),
         "slurp_req" => try_s! (slurp_reqʰ (reqᵇ) .await),
         _ => return ERR! ("Unknown helper: {}", method)
@@ -199,17 +206,23 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
     };
     DispatcherRes::Match (match &method[..] {  // Sorted alphanumerically (on the first latter) for readability.
         // "autoprice" => lp_autoprice (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "buy" => hyres(buy(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "cancel_all_orders" => cancel_all_orders (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "cancel_order" => cancel_order (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "coins_needed_for_kick_start" => hyres (coins_needed_for_kick_start (ctx)),
         "disable_coin" => disable_coin(ctx, req),
         "electrum" => hyres (electrum (ctx, req)),
         "enable" => hyres (enable (ctx, req)),
         "get_enabled_coins" => hyres (get_enabled_coins (ctx)),
+        #[cfg(not(feature = "wallet-only"))]
         "get_trade_fee" => hyres(get_trade_fee (ctx, req)),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
         "help" => help(),
+        #[cfg(not(feature = "wallet-only"))]
         "import_swaps" => {
             #[cfg(feature = "native")] {
                 Box::new(CPUPOOL.spawn_fn(move || { hyres(import_swaps (ctx, req)) }))
@@ -218,13 +231,20 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         },
         // "inventory" => inventory (ctx, req),
         "my_balance" => my_balance (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "my_orders" => my_orders (ctx),
+        #[cfg(not(feature = "wallet-only"))]
         "my_recent_swaps" => my_recent_swaps(ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "my_swap_status" => my_swap_status(ctx, req),
         "my_tx_history" => my_tx_history(ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "notify" => lp_signatures::lp_notify_recv (ctx, req),  // Invoked usually from the `lp_command_q_loop`
+        #[cfg(not(feature = "wallet-only"))]
         "order_status" => order_status (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "orderbook" => hyres(orderbook(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "recover_funds_of_swap" => {
             #[cfg(feature = "native")] {
                 Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) }))
@@ -232,11 +252,14 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
             #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
         },
         // "passphrase" => passphrase (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "sell" => hyres(sell(ctx, req)),
         "show_priv_key" => hyres(show_priv_key(ctx, req)),
         "send_raw_transaction" => hyres (send_raw_transaction (ctx, req)),
         "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "setprice" => hyres(set_price (ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "stats_swap_status" => stats_swap_status(ctx, req),
         "stop" => stop (ctx),
         "version" => version(),

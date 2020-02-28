@@ -19,6 +19,7 @@ w-bindgen = [
   "js-sys", "wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-test", "web-sys",
   "coins/w-bindgen", "common/w-bindgen", "peers/w-bindgen"
 ]
+wallet-only = []
 
 [[bin]]
 name = "mm2"

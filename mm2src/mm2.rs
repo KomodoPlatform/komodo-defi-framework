@@ -43,11 +43,14 @@ use self::crash_reports::init_crash_reports;
 mod lp_native_dex;
 use self::lp_native_dex::{lp_init, lp_ports};
 
+#[cfg(not(feature = "wallet-only"))]
 #[path = "lp_network.rs"]
 pub mod lp_network;
 
+#[cfg(not(feature = "wallet-only"))]
 #[path = "lp_ordermatch.rs"]
 pub mod lp_ordermatch;
+#[cfg(not(feature = "wallet-only"))]
 #[path = "lp_swap.rs"]
 pub mod lp_swap;
 #[path = "rpc.rs"]

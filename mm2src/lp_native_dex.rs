@@ -46,8 +46,11 @@ use crate::common::executor::{spawn, Timer};
 use crate::common::{slurp_url, MM_VERSION};
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::common::privkey::key_pair_from_seed;
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_network::{lp_command_q_loop, start_seednode_loop, start_client_p2p_loop};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, migrate_saved_orders, orders_kick_start};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::swap_kick_starts;
 use crate::mm2::rpc::{spawn_rpc};
 
@@ -67,6 +70,7 @@ pub fn lp_command_process(
         if std::env::var("LOG_COMMANDS").is_ok() {
             log!("Got command: " [json]);
         }
+        #[cfg(not(feature = "wallet-only"))]
         lp_trade_command(ctx.clone(), json);
     }
 }
@@ -808,6 +812,7 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
 }
 
 /// Setup the peer-to-peer network.
+#[cfg(not(feature = "wallet-only"))]
 pub async fn lp_initpeers (ctx: &MmArc, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
     // Pick our ports.
     let (_pullport, pubport, _busport) = try_s!(lp_ports(netid));
@@ -1064,7 +1069,7 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "wallet-only")))]
 fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     let migration_num_path = ctx.dbdir().join(".migration");
     let mut current_migration = match std::fs::read(&migration_num_path) {
@@ -1088,7 +1093,7 @@ fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "wallet-only")))]
 fn migration_1(ctx: &MmArc) -> Result<(), String> {
     try_s!(migrate_saved_orders(ctx));
     Ok(())
@@ -1200,7 +1205,7 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     unsafe {try_s! (lp_passphrase_init (&ctx))}
 
     try_s! (fix_directories (&ctx));
-    #[cfg(feature = "native")] {try_s! (migrate_db (&ctx));}
+    #[cfg(all(feature = "native", not(feature = "wallet-only")))] {try_s! (migrate_db (&ctx));}
 
     fn simple_ip_extractor (ip: &str) -> Result<IpAddr, String> {
         let ip = ip.trim();
@@ -1315,14 +1320,16 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     #[cfg(not(feature = "native"))] try_s! (ctx.send_to_helpers().await);
 
-    if i_am_seed {try_s! (start_seednode_loop (&ctx, myipaddr, mypubport) .await)}
+    #[cfg(not(feature = "wallet-only"))]
+    {
+        if i_am_seed { try_s!(start_seednode_loop (&ctx, myipaddr, mypubport) .await) }
 
-    let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
-    try_s! (lp_initpeers (&ctx, netid, seednodes) .await);
+        let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
+        try_s!(lp_initpeers (&ctx, netid, seednodes) .await);
+    }
+    try_s!(ctx.initialized.pin (true));
 
-    try_s! (ctx.initialized.pin (true));
-
-    #[cfg(feature = "native")] {
+    #[cfg(all(feature = "native", not(feature = "wallet-only")))] {
         // launch kickstart threads before RPC is available, this will prevent the API user to place
         // an order and start new swap that might get started 2 times because of kick-start
         let mut coins_needed_for_kick_start = swap_kick_starts (ctx.clone());
@@ -1330,12 +1337,13 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
         *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
     }
 
-    let ctxʹ = ctx.clone();
-    spawn (async move {lp_ordermatch_loop (ctxʹ) .await});
-
-    let ctxʹ = ctx.clone();
-    spawn (async move {lp_command_q_loop (ctxʹ) .await});
-
+    #[cfg(not(feature = "wallet-only"))]
+    {
+        let ctxʹ = ctx.clone();
+        spawn(async move { lp_ordermatch_loop(ctxʹ).await });
+        let ctxʹ = ctx.clone();
+        spawn(async move { lp_command_q_loop(ctxʹ).await });
+    }
     #[cfg(not(feature = "native"))] {if 1==1 {return Ok(())}}  // TODO: Gradually move this point further down.
 
     let ctx_id = try_s! (ctx.ffi_handle());
