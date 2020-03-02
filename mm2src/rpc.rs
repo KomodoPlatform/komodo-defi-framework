@@ -22,7 +22,7 @@
 
 use bytes::Bytes;
 use coins::{get_enabled_coins, get_trade_fee, my_tx_history, send_raw_transaction, set_required_confirmations,
-            show_priv_key, withdraw};
+            set_requires_notarization, show_priv_key, withdraw};
 use common::{err_to_rpc_json_string, HyRes};
 #[cfg(feature = "native")]
 use common::wio::{slurp_reqʰ, CORE, CPUPOOL, HTTP};
@@ -256,7 +256,10 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         "sell" => hyres(sell(ctx, req)),
         "show_priv_key" => hyres(show_priv_key(ctx, req)),
         "send_raw_transaction" => hyres (send_raw_transaction (ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
+        "set_requires_notarization" => hyres(set_requires_notarization(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "setprice" => hyres(set_price (ctx, req)),
         #[cfg(not(feature = "wallet-only"))]

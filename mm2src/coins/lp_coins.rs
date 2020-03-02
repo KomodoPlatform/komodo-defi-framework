@@ -391,8 +391,14 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Debug + Send + Sync + 'static {
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
 
+    /// whether coin requires notarization to ensure double-spend safety
+    fn requires_notarization(&self) -> bool;
+
     /// set required transaction confirmations number
     fn set_required_confirmations(&self, confirmations: u64);
+
+    /// set requires notarization
+    fn set_requires_notarization(&self, requires_nota: bool);
 }
 
 #[derive(Clone, Debug)]
@@ -674,7 +680,30 @@ pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Respons
     let res = try_s!(json::to_vec(&json!({
         "result": {
             "coin": req.coin,
-            "confirmations": req.confirmations,
+            "confirmations": coin.required_confirmations(),
+        }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+#[derive(Deserialize)]
+pub struct RequiresNotaReq {
+    coin: String,
+    requires_notarization: bool,
+}
+
+pub async fn set_requires_notarization(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: RequiresNotaReq = try_s!(json::from_value(req));
+    let coin = match lp_coinfindᵃ(&ctx, &req.coin).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin {}", req.coin),
+        Err(err) => return ERR!("!lp_coinfind ({}): {}", req.coin, err),
+    };
+    coin.set_requires_notarization(req.requires_notarization);
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "coin": req.coin,
+            "requires_notarization": coin.requires_notarization(),
         }
     })));
     Ok(try_s!(Response::builder().body(res)))

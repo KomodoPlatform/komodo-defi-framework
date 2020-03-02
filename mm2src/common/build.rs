@@ -660,7 +660,7 @@ fn fetch_boost(_target: &Target) -> PathBuf {
             let tmp = tbz.with_extension("bz2-tmp");
             let _ = fs::remove_file(&tmp);
             hget(
-                "https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.bz2",
+                "https://github.com/KomodoPlatform/boost/releases/download/boost-1.68.0/boost_1_68_0.tar.bz2",
                 tmp.clone(),
             );
             unwrap!(fs::rename(tmp, tbz));

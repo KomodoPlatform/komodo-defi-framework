@@ -56,7 +56,7 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
         rpc_client,
         key_pair,
         is_pos: false,
-        requires_notarization: false,
+        requires_notarization: false.into(),
         overwintered: true,
         segwit: false,
         tx_version: 4,
@@ -380,9 +380,9 @@ fn test_withdraw_impl_sat_per_kb_fee() {
     };
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
-    // 0.1 * 245 / 1024 ~ 0.02392577
+    // 0.1 * 245 / 1000 ~ 0.0245
     let expected = Some(UtxoFeeDetails {
-        amount: "0.02392577".parse().unwrap()
+        amount: "0.0245".parse().unwrap()
     }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
@@ -403,7 +403,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
     let withdraw_req = WithdrawRequest {
-        amount: "9.97939454".parse().unwrap(),
+        amount: "9.9789".parse().unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "ETOMIC".to_string(),
         max: false,
@@ -412,9 +412,9 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
-    // 0.1 * 211 / 1024 ~ 0.02060546
+    // 0.1 * 211 / 1000 = 0.0211
     let expected_fee = Some(UtxoFeeDetails {
-        amount: "0.02060546".parse().unwrap()
+        amount: "0.0211".parse().unwrap()
     }.into());
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
@@ -436,7 +436,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
     let withdraw_req = WithdrawRequest {
-        amount: "9.97939454".parse().unwrap(),
+        amount: "9.9789".parse().unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "ETOMIC".to_string(),
         max: false,
@@ -445,9 +445,9 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
-    // 0.1 * 211 / 1024 ~ 0.02060546
+    // 0.1 * 211 / 1000 = 0.0211
     let expected_fee = Some(UtxoFeeDetails {
-        amount: "0.02060546".parse().unwrap()
+        amount: "0.0211".parse().unwrap()
     }.into());
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
@@ -501,9 +501,9 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
     };
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
-    // 0.1 * 211 / 1024 ~ 0.02060546
+    // 0.1 * 211 / 1000 = 0.0211
     let expected = Some(UtxoFeeDetails {
-        amount: "0.02060546".parse().unwrap()
+        amount: "0.0211".parse().unwrap()
     }.into());
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);

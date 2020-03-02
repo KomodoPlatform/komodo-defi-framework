@@ -1924,8 +1924,14 @@ impl MmCoin for EthCoin {
         self.required_confirmations.load(AtomicOrderding::Relaxed)
     }
 
+    fn requires_notarization(&self) -> bool { false }
+
     fn set_required_confirmations(&self, confirmations: u64) {
         self.required_confirmations.store(confirmations, AtomicOrderding::Relaxed);
+    }
+
+    fn set_requires_notarization(&self, _requires_nota: bool) {
+       log!("Warning: set_requires_notarization doesn't take any effect on ETH/ERC20 coins");
     }
 }
 
@@ -2141,6 +2147,15 @@ pub async fn eth_coin_from_conf_and_request(
         (EthCoinType::Erc20(token_addr), decimals)
     };
 
+    // param from request should override the config
+    let required_confirmations = req["required_confirmations"].as_u64().unwrap_or(
+        conf["required_confirmations"].as_u64().unwrap_or(1)
+    ).into();
+
+    if req["requires_notarization"].as_bool().is_some() {
+        log!("Warning: requires_notarization doesn't take any effect on ETH/ERC20 coins");
+    }
+
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
     } else {
@@ -2158,7 +2173,7 @@ pub async fn eth_coin_from_conf_and_request(
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
-        required_confirmations: conf["required_confirmations"].as_u64().unwrap_or(1).into(),
+        required_confirmations,
     };
     Ok(EthCoin(Arc::new(coin)))
 }

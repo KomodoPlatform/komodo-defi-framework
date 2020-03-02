@@ -1970,6 +1970,79 @@ fn test_show_priv_key() {
     check_priv_key(&mm, "ETH", "0xb8c774f071de08c7fd8f62b97f1a5726f6ce9f1bcf141b70b86689254ed6714e");
 }
 
+#[test]
+#[cfg(feature = "native")]
+fn electrum_and_enable_required_confirmations_and_nota() {
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
+        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
+        {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
+    ]);
+
+    let mut mm = unwrap!(MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+    let electrum_rick = unwrap! (block_on(mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "RICK",
+        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "mm2": 1,
+        "required_confirmations": 10,
+        "requires_notarization": true
+    }))));
+    assert_eq! (electrum_rick.0, StatusCode::OK, "RPC «electrum» failed with {} {}", electrum_rick.0, electrum_rick.1);
+    let rick_response: Json = unwrap!(json::from_str(&electrum_rick.1));
+    assert_eq!(rick_response["required_confirmations"], Json::from(10));
+    assert_eq!(rick_response["requires_notarization"], Json::from(true));
+
+    // should change requires notarization at runtime
+    let requires_nota_rick = unwrap! (block_on(mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "set_requires_notarization",
+        "coin": "RICK",
+        "requires_notarization": false
+    }))));
+
+    assert_eq! (requires_nota_rick.0, StatusCode::OK, "RPC «set_requires_notarization» failed with {} {}", requires_nota_rick.0, requires_nota_rick.1);
+    let requires_nota_rick_response: Json = unwrap!(json::from_str(&requires_nota_rick.1));
+    assert_eq!(requires_nota_rick_response["result"]["requires_notarization"], Json::from(false));
+
+    let enable_eth = unwrap! (block_on(mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ["http://195.201.0.6:8565"],
+        "mm2": 1,
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "required_confirmations": 10,
+        "requires_notarization": true
+    }))));
+    assert_eq! (enable_eth.0, StatusCode::OK, "RPC «enable» failed with {} {}", enable_eth.0, enable_eth.1);
+    let eth_response: Json = unwrap!(json::from_str(&enable_eth.1));
+    assert_eq!(eth_response["required_confirmations"], Json::from(10));
+    // requires_notarization doesn't take any effect on ETH/ERC20 coins
+    assert_eq!(eth_response["requires_notarization"], Json::from(false));
+}
+
 // HOWTO
 // 1. Install Firefox.
 // 2. Install forked version of wasm-bindgen-cli: cargo install wasm-bindgen-cli --git https://github.com/artemii235/wasm-bindgen.git
