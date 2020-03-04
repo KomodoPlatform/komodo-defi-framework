@@ -79,7 +79,7 @@ fomat-macros = "0.3"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 glob = "0.3"
-gstuff = { version = "0.6", features = ["nightly"] }
+gstuff = { version = "0.6", features = ["nightly", "term"] }
 hyper = "0.12"
 hyper-rustls = "0.16"
 itertools = "0.8"

@@ -688,9 +688,6 @@ pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, S
     if rc < 0 {panic! ("!host_electrum_connect: {}", rc)}
     let ri = rc;  // Random ID assigned by the host to connection.
 
-    // TODO: Import the `addr` from the host?
-    let addr = SocketAddr::new (IpAddr::V4 (Ipv4Addr::new (0, 0, 0, 0)), 0);
-
     let responses = Arc::new (Mutex::new (HashMap::new()));
     let tx = Arc::new (AsyncMutex::new (None));
 
@@ -705,7 +702,7 @@ pub fn spawn_electrum (req: &ElectrumRpcRequest) -> Result<ElectrumConnection, S
     }   }   };
 
     Ok (ElectrumConnection {
-        addr,
+        addr: req.url.clone(),
         config,
         tx,
         shutdown_tx: None,
