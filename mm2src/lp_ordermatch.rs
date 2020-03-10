@@ -848,8 +848,11 @@ pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
     let req: PricePingRequest = try_h!(json::from_value(req));
     let signature: Signature = try_h!(req.sig.parse());
     let pubkey_bytes = try_h!(hex::decode(&req.pubsecp));
-    if is_pubkey_banned(ctx, &H256::from(&pubkey_bytes[1..])) {
-        return rpc_err_response(400, &ERRL!("sender pubkey {} is banned", req.pubsecp));
+    // return success response to avoid excessive logging of
+    // RPC error response: lp_ordermatch:852] sender pubkey 03eb26aab2e22fd2507042d1c472b3f973d629d295d391faf7b68ac5b85197ec80 is banned""
+    // messages
+    if is_pubkey_banned(ctx, &H256Json::from(&pubkey_bytes[1..])) {
+        return rpc_response(200, ERRL!("sender pubkey {} is banned", req.pubsecp));
     }
     let pub_secp = try_h!(Public::from_slice(&pubkey_bytes));
     let pubkey = try_h!(hex::decode(&req.pubkey));

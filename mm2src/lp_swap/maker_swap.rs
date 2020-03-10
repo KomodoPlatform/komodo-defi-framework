@@ -1032,7 +1032,7 @@ pub async fn run_maker_swap(swap: MakerSwap, initial_command: Option<MakerSwapCo
                 event: event.clone(),
             };
             unwrap!(save_my_maker_swap_event(&ctx, &running_swap, to_save), "!save_my_maker_swap_event");
-            if event.should_ban_taker() { ban_pubkey(&ctx, running_swap.taker.bytes.into()) }
+            if event.should_ban_taker() { ban_pubkey(&ctx, running_swap.taker.bytes.into(), &running_swap.uuid, event.clone().into()) }
             status.status(swap_tags!(), &event.status_str());
             unwrap!(running_swap.apply_event(event), "!apply_event");
         }

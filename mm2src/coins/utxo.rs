@@ -1620,7 +1620,7 @@ impl MmCoin for UtxoCoin {
         let hash = H256Json::from(hash);
         let selfi = self.clone();
         let fut = async move {
-            let verbose_tx = try_s!(selfi.rpc_client.get_verbose_transaction(hash).wait());
+            let verbose_tx = try_s!(selfi.rpc_client.get_verbose_transaction(hash).compat().await);
             let tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
             let mut input_transactions: HashMap<&H256, UtxoTx> = HashMap::new();
             let mut input_amount = 0;
@@ -1633,7 +1633,7 @@ impl MmCoin for UtxoCoin {
                 let input_tx = match input_transactions.entry(&input.previous_output.hash) {
                     Entry::Vacant(e) => {
                         let prev_hash = input.previous_output.hash.reversed();
-                        let prev: BytesJson = try_s!(selfi.rpc_client.get_transaction_bytes(prev_hash.clone().into()).wait());
+                        let prev: BytesJson = try_s!(selfi.rpc_client.get_transaction_bytes(prev_hash.clone().into()).compat().await);
                         let prev_tx: UtxoTx = try_s!(deserialize(prev.as_slice()).map_err(|e| ERRL!("{:?}, tx: {:?}", e, prev_hash)));
                         e.insert(prev_tx)
                     },

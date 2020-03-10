@@ -5,14 +5,15 @@
 use bigdecimal::BigDecimal;
 use bytes::{BytesMut};
 use chain::{OutPoint, Transaction as UtxoTx};
-use common::StringError;
-use common::wio::slurp_req;
+use common::{StringError};
+use common::wio::{slurp_req};
 use common::executor::{spawn, Timer};
 use common::custom_futures::{join_all_sequential, select_ok_sequential};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
-use futures01::{Async, Future, Poll, Sink, Stream};
+use futures01::{Future, Poll, Sink, Stream};
 use futures01::future::{Either, loop_fn, Loop, select_ok};
 use futures01::sync::{mpsc, oneshot};
+use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt};
 #[cfg(not(feature = "native"))]
 use futures::channel::oneshot::Sender as ShotSender;
@@ -42,7 +43,7 @@ use std::net::{ToSocketAddrs, SocketAddr};
 use std::ops::Deref;
 #[cfg(not(feature = "native"))]
 use std::os::raw::c_char;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration};
 #[cfg(feature = "native")]
@@ -723,7 +724,7 @@ pub struct ElectrumConnection {
     /// The Sender used to shutdown the background connection loop when ElectrumConnection is dropped
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Responses are stored here
-    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
     /// [Random] connection ID assigned by the WASM host
     ri: i32
 }
@@ -753,7 +754,7 @@ impl Drop for ElectrumConnection {
 #[derive(Debug)]
 pub struct ElectrumClientImpl {
     connections: Vec<ElectrumConnection>,
-    next_id: Mutex<u64>,
+    next_id: AtomicU64,
 }
 
 #[cfg(feature = "native")]
@@ -868,9 +869,7 @@ impl JsonRpcClient for ElectrumClient {
     fn version(&self) -> &'static str { "2.0" }
 
     fn next_id(&self) -> String {
-        let mut next = unwrap!(self.next_id.lock());
-        *next += 1;
-        next.to_string()
+        self.next_id.fetch_add(1, AtomicOrdering::Relaxed).to_string()
     }
 
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
@@ -1067,7 +1066,7 @@ impl ElectrumClientImpl {
     pub fn new() -> ElectrumClientImpl {
         ElectrumClientImpl {
             connections: vec![],
-            next_id: Mutex::new(0),
+            next_id: 0.into(),
         }
     }
 }
@@ -1077,10 +1076,9 @@ fn rx_to_stream(rx: mpsc::Receiver<Vec<u8>>) -> impl Stream<Item = Vec<u8>, Erro
     rx.map_err(|_| panic!("errors not possible on rx"))
 }
 
-fn electrum_process_chunk(chunk: &[u8], arc: Arc<Mutex<HashMap<String, JsonRpcResponse>>>) {
+async fn electrum_process_chunk(chunk: BytesMut, arc: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>) {
     // we should split the received chunk because we can get several responses in 1 chunk.
     let split = chunk.split(|item| *item == '\n' as u8);
-
     for chunk in split {
         // split returns empty slice if it ends with separator which is our case
         if chunk.len() > 0 {
@@ -1101,7 +1099,11 @@ fn electrum_process_chunk(chunk: &[u8], arc: Arc<Mutex<HashMap<String, JsonRpcRe
                         return;
                     }
                 };
-                (*arc.lock().unwrap()).insert(response.id.to_string(), response);
+                let mut resp = arc.lock().await;
+                // the corresponding sender may not exist, receiver may be dropped
+                // these situations are not considered as errors so we just silently skip them
+                resp.remove(&response.id.to_string()).map(|tx| tx.send(response).unwrap_or(()));
+                drop(resp);
             } else {
                 let request: JsonRpcRequest = match json::from_value(raw_json) {
                     Ok(res) => res,
@@ -1124,7 +1126,11 @@ fn electrum_process_chunk(chunk: &[u8], arc: Arc<Mutex<HashMap<String, JsonRpcRe
                     result: request.params[0].clone(),
                     error: Json::Null,
                 };
-                (*arc.lock().unwrap()).insert(id.into(), response);
+                let mut resp = arc.lock().await;
+                // the corresponding sender may not exist, receiver may be dropped
+                // these situations are not considered as errors so we just silently skip them
+                resp.remove(&response.id.to_string()).map(|tx| tx.send(response).unwrap_or(()));
+                drop(resp);
             }
         }
     }
@@ -1218,7 +1224,7 @@ async fn electrum_last_chunk_loop(last_chunk: Arc<AtomicU64>) -> Result<(), Stri
 async fn connect_loop(
     config: ElectrumConfig,
     addr: String,
-    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
+    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
     connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
 ) -> Result<(), ()> {
     let mut delay: u64 = 0;
@@ -1265,8 +1271,7 @@ async fn connect_loop(
         let mut recv_f = stream
             .for_each(move |chunk| {
                 last_chunk.store(now_ms(), AtomicOrdering::Relaxed);
-                electrum_process_chunk(&chunk, responsesʹ.clone());
-                futures01::future::ok(())
+                electrum_process_chunk(chunk, responsesʹ.clone()).unit_error().boxed().compat().then(|_| Ok(()))
             })
             .compat().fuse();
 
@@ -1312,7 +1317,7 @@ fn electrum_connect(
     config: ElectrumConfig
 ) -> ElectrumConnection {
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    let responses = Arc::new(Mutex::new(HashMap::new()));
+    let responses = Arc::new(AsyncMutex::new(HashMap::new()));
     let tx = Arc::new(AsyncMutex::new(None));
 
     let connect_loop = connect_loop(
@@ -1369,50 +1374,26 @@ impl Encoder for Bytes {
     }
 }
 
-struct ElectrumResponseFut {
-    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>,
-    request_id: String,
-}
-
-impl Future for ElectrumResponseFut {
-    type Item = JsonRpcResponse;
-    type Error = String;
-
-    fn poll(&mut self) -> Poll<JsonRpcResponse, String> {
-        loop {
-            let elem = try_s!(self.responses.lock()).remove(&self.request_id);
-            if let Some(res) = elem {
-                return Ok(Async::Ready(res))
-            } else {
-                let task = futures01::task::current();
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(200));
-                    task.notify();
-                });
-                return Ok(Async::NotReady)
-            }
-        }
-    }
-}
-
 fn electrum_request(
     request: JsonRpcRequest,
     tx: mpsc::Sender<Vec<u8>>,
-    responses: Arc<Mutex<HashMap<String, JsonRpcResponse>>>
+    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>
 ) -> JsonRpcResponseFut {
-    let mut json = try_fus!(json::to_string(&request));
-    // Electrum request and responses must end with \n
-    // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
-    json.push('\n');
-    let request_id = request.get_id().to_string();
-    let send_fut = tx.send(json.into_bytes())
-        .map_err(|e| ERRL!("{}", e))
-        .and_then(move |_res| {
-            ElectrumResponseFut {
-                request_id,
-                responses,
-            }
-        })
+    let send_fut = async move {
+        let mut json = try_s!(json::to_string(&request));
+        // Electrum request and responses must end with \n
+        // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
+        json.push('\n');
+        let request_id = request.get_id().to_string();
+        let (req_tx, resp_rx) = async_oneshot::channel();
+        responses.lock().await.insert(request_id, req_tx);
+        try_s!(tx.send(json.into_bytes()).compat().await);
+        let response = try_s!(resp_rx.await);
+        Ok(response)
+    };
+    let send_fut = send_fut
+        .boxed()
+        .compat()
         .map_err(|e| StringError(e))
         .timeout(Duration::from_secs(ELECTRUM_TIMEOUT));
 

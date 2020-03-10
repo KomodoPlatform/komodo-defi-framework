@@ -16,6 +16,7 @@ trigger:
       - mm2src/README.md
       - etomic_build/*
       - iguana/Readme.md
+      - .gitignore
 
 stages:
   - stage: Build

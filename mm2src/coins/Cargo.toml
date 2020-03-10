@@ -62,8 +62,7 @@ sha3 = "0.8"
 tokio = { version = "0.1", optional = true }
 tokio-io = { version = "0.1.10"  , optional = true }
 tokio-rustls = { version = "=0.9.1", optional = true }
-# Need try_clone to shutdown and reconnect the tcp connection when there's no data received from Electrum after some time.
-tokio-tcp = { version = "0.1.2" , optional = true }
+tokio-tcp = { version = "0.1.4" , optional = true }
 unwrap = "1.2"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.

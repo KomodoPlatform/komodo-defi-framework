@@ -204,7 +204,7 @@ pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCo
                 event: event.clone(),
             };
             unwrap!(save_my_taker_swap_event(&ctx, &running_swap, to_save), "!save_my_taker_swap_event");
-            if event.should_ban_maker() { ban_pubkey(&ctx, running_swap.maker.bytes.into()) }
+            if event.should_ban_maker() { ban_pubkey(&ctx, running_swap.maker.bytes.into(), &running_swap.uuid, event.clone().into()) }
             status.status(&[&"swap", &("uuid", &uuid[..])], &event.status_str());
             unwrap!(running_swap.apply_event(event), "!apply_event");
         }
@@ -278,7 +278,7 @@ pub struct TakerPaymentSpentData {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct MakerNegotiationData {
+pub struct MakerNegotiationData {
     maker_payment_locktime: u64,
     maker_pubkey: H264Json,
     secret_hash: H160Json,
@@ -286,7 +286,7 @@ struct MakerNegotiationData {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data")]
-enum TakerSwapEvent {
+pub enum TakerSwapEvent {
     Started(TakerSwapData),
     StartFailed(SwapError),
     Negotiated(MakerNegotiationData),

@@ -63,7 +63,7 @@ use common::{block_on, read_dir, rpc_response, slurp, write, HyRes};
 use common::mm_ctx::{from_ctx, MmArc};
 use http::Response;
 use primitives::hash::{H160, H256, H264};
-use rpc::v1::types::{Bytes as BytesJson};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashSet, HashMap};
 use std::ffi::OsStr;
@@ -129,8 +129,8 @@ mod maker_swap;
 #[path = "lp_swap/taker_swap.rs"]
 mod taker_swap;
 
-use maker_swap::{MakerSavedSwap, stats_maker_swap_file_path};
-use taker_swap::{TakerSavedSwap, stats_taker_swap_file_path};
+use maker_swap::{MakerSavedSwap, MakerSwapEvent, stats_maker_swap_file_path};
+use taker_swap::{TakerSavedSwap, TakerSwapEvent, stats_taker_swap_file_path};
 pub use maker_swap::{MakerSwap, run_maker_swap};
 pub use taker_swap::{TakerSwap, run_taker_swap};
 
@@ -176,9 +176,34 @@ pub trait AtomicSwap: Send + Sync {
     fn taker_coin(&self) -> &str;
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", content = "event")]
+pub enum SwapEvent {
+    Maker(MakerSwapEvent),
+    Taker(TakerSwapEvent),
+}
+
+impl Into<SwapEvent> for MakerSwapEvent {
+    fn into(self) -> SwapEvent {
+        SwapEvent::Maker(self)
+    }
+}
+
+impl Into<SwapEvent> for TakerSwapEvent {
+    fn into(self) -> SwapEvent {
+        SwapEvent::Taker(self)
+    }
+}
+
+#[derive(Serialize)]
+struct BanReason {
+    caused_by_swap: String,
+    caused_by_event: SwapEvent,
+}
+
 struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
-    banned_pubkeys: Mutex<HashSet<H256>>,
+    banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
 }
 
 impl SwapsContext {
@@ -187,22 +212,25 @@ impl SwapsContext {
         Ok (try_s! (from_ctx (&ctx.swaps_ctx, move || {
             Ok (SwapsContext {
                 running_swaps: Mutex::new(vec![]),
-                banned_pubkeys: Mutex::new(HashSet::new()),
+                banned_pubkeys: Mutex::new(HashMap::new()),
             })
         })))
     }
 }
 
-pub fn ban_pubkey(ctx: &MmArc, pubkey: H256) {
+pub fn ban_pubkey(ctx: &MmArc, pubkey: H256, swap_uuid: &str, event: SwapEvent) {
     let ctx = unwrap!(SwapsContext::from_ctx(ctx));
     let mut banned = unwrap!(ctx.banned_pubkeys.lock());
-    banned.insert(pubkey);
+    banned.insert(pubkey.into(), BanReason {
+        caused_by_swap: swap_uuid.into(),
+        caused_by_event: event,
+    });
 }
 
-pub fn is_pubkey_banned(ctx: &MmArc, pubkey: &H256) -> bool {
+pub fn is_pubkey_banned(ctx: &MmArc, pubkey: &H256Json) -> bool {
     let ctx = unwrap!(SwapsContext::from_ctx(ctx));
     let banned = unwrap!(ctx.banned_pubkeys.lock());
-    banned.contains(pubkey)
+    banned.contains_key(pubkey)
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps
@@ -729,6 +757,50 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             "imported": imported,
             "skipped": skipped,
         }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn list_banned_pubkeys(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    let ctx = try_s!(SwapsContext::from_ctx(&ctx));
+    let res = try_s!(json::to_vec(&json!({
+        "result": *try_s!(ctx.banned_pubkeys.lock()),
+    })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", content = "data")]
+enum UnbanPubkeysReq {
+    All,
+    Few(Vec<H256Json>),
+}
+
+pub async fn unban_pubkeys(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: UnbanPubkeysReq = try_s!(json::from_value(req["unban_by"].clone()));
+    let ctx = try_s!(SwapsContext::from_ctx(&ctx));
+    let mut banned_pubs = try_s!(ctx.banned_pubkeys.lock());
+    let mut unbanned = HashMap::new();
+    let mut were_not_banned = vec![];
+    match req {
+        UnbanPubkeysReq::All => {
+            unbanned = banned_pubs.drain().collect();
+        },
+        UnbanPubkeysReq::Few(pubkeys) => {
+            for pubkey in pubkeys {
+                match banned_pubs.remove(&pubkey) {
+                    Some(removed) => { unbanned.insert(pubkey, removed); },
+                    None => were_not_banned.push(pubkey),
+                }
+            }
+        }
+    }
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "still_banned": *banned_pubs,
+            "unbanned": unbanned,
+            "were_not_banned": were_not_banned,
+        },
     })));
     Ok(try_s!(Response::builder().body(res)))
 }
