@@ -230,6 +230,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
             #[cfg(not(feature = "native"))] {return DispatcherRes::NoMatch (req)}
         },
         // "inventory" => inventory (ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
         "list_banned_pubkeys" => hyres (list_banned_pubkeys (ctx)),
         "my_balance" => my_balance (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
@@ -266,6 +267,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "stats_swap_status" => stats_swap_status(ctx, req),
         "stop" => stop (ctx),
+        #[cfg(not(feature = "wallet-only"))]
         "unban_pubkeys" => hyres( unban_pubkeys (ctx, req)),
         "version" => version(),
         "withdraw" => hyres (withdraw (ctx, req)),
