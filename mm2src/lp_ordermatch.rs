@@ -57,6 +57,8 @@ use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount, is_pubkey_banned, M
 #[path = "ordermatch_tests.rs"]
 mod ordermatch_tests;
 
+const MIN_TRADING_VOL: &str = "0.00777";
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 enum TakerAction {
     Buy,
@@ -418,7 +420,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 save_my_maker_order(&ctx, order);
             });
             *my_maker_orders = my_maker_orders.drain().filter_map(|(uuid, order)| {
-                let min_amount: BigDecimal = "0.00777".parse().unwrap();
+                let min_amount: BigDecimal = MIN_TRADING_VOL.parse().unwrap();
                 let min_amount: MmNumber = min_amount.into();
                 if order.available_amount() <= min_amount && !order.has_ongoing_matches() {
                     delete_my_maker_order(&ctx, &order);
@@ -737,6 +739,13 @@ pub fn lp_auto_buy(ctx: &MmArc, input: AutoBuyInput) -> Result<String, String> {
     let uuid = new_uuid();
     let our_public_id = try_s!(ctx.public_id());
     let rel_volume = &input.volume * &input.price;
+    if input.volume < MmNumber::from(unwrap!(MIN_TRADING_VOL.parse::<BigDecimal>())) {
+        return ERR!("Base volume {} is too low, required at least {}", input.volume, MIN_TRADING_VOL);
+    }
+
+    if rel_volume < MmNumber::from(unwrap!(MIN_TRADING_VOL.parse::<BigDecimal>())) {
+        return ERR!("Rel volume {} is too low, required at least {}", rel_volume, MIN_TRADING_VOL);
+    }
 
     let request = TakerRequest {
         base: input.base,
@@ -939,7 +948,6 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     if req.price < MmNumber::from(BigRational::new(1.into(), 100000000.into())) {
         return ERR!("Price is too low, minimum is 0.00000001");
     }
-
     if req.base == req.rel {
         return ERR!("Base and rel must be different coins");
     }
@@ -969,6 +977,13 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         try_s!(base_coin.check_i_have_enough_to_trade(&req.volume, &my_balance.clone().into(), TradeInfo::Maker).compat().await);
         req.volume.clone()
     };
+    if volume < MmNumber::from(unwrap!(MIN_TRADING_VOL.parse::<BigDecimal>())) {
+        return ERR!("Base volume {} is too low, required at least {}", volume, MIN_TRADING_VOL);
+    }
+    let rel_volume = &volume * &req.price;
+    if rel_volume < MmNumber::from(unwrap!(MIN_TRADING_VOL.parse::<BigDecimal>())) {
+        return ERR!("Rel volume {} is too low, required at least {}", rel_volume, MIN_TRADING_VOL);
+    }
     try_s!(rel_coin.can_i_spend_other_payment().compat().await);
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
@@ -1036,7 +1051,7 @@ pub async fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
             }
         };
 
-        if balance >= "0.00777".parse().unwrap() {
+        if balance >= MIN_TRADING_VOL.parse().unwrap() {
             let ping = match PricePingRequest::new(ctx, &order, balance) {
                 Ok(p) => p,
                 Err(e) => {
@@ -1050,7 +1065,7 @@ pub async fn broadcast_my_maker_orders(ctx: &MmArc) -> Result<(), String> {
                 continue;
             }
         } else {
-            // cancel the order if available balance is lower than "0.00777"
+            // cancel the order if available balance is lower than MIN_TRADING_VOL
             try_s!(ordermatch_ctx.my_maker_orders.lock()).remove(&order.uuid);
             delete_my_maker_order(ctx, &order);
             try_s!(ordermatch_ctx.my_cancelled_orders.lock()).insert(order.uuid, order);

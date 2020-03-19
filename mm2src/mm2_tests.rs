@@ -1937,6 +1937,7 @@ fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
 
 #[test]
 #[cfg(feature = "native")]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/519#issuecomment-589149811
 fn test_show_priv_key() {
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
@@ -1972,6 +1973,7 @@ fn test_show_priv_key() {
 
 #[test]
 #[cfg(feature = "native")]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/586
 fn electrum_and_enable_required_confirmations_and_nota() {
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
@@ -2041,6 +2043,90 @@ fn electrum_and_enable_required_confirmations_and_nota() {
     assert_eq!(eth_response["required_confirmations"], Json::from(10));
     // requires_notarization doesn't take any effect on ETH/ERC20 coins
     assert_eq!(eth_response["requires_notarization"], Json::from(false));
+}
+
+fn check_too_low_volume_order_creation_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
+    let rc = unwrap! (block_on (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": base,
+        "rel": rel,
+        "price": "1",
+        "volume": "0.00776",
+        "cancel_previous": false,
+    }))));
+    assert! (!rc.0.is_success(), "setprice success, but should be error {}", rc.1);
+
+    let rc = unwrap! (block_on (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": base,
+        "rel": rel,
+        "price": "0.00776",
+        "volume": "1",
+        "cancel_previous": false,
+    }))));
+    assert! (!rc.0.is_success(), "setprice success, but should be error {}", rc.1);
+
+    let rc = unwrap! (block_on (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": base,
+        "rel": rel,
+        "price": "1",
+        "volume": "0.00776",
+    }))));
+    assert! (!rc.0.is_success(), "sell success, but should be error {}", rc.1);
+
+    let rc = unwrap! (block_on (mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "buy",
+        "base": base,
+        "rel": rel,
+        "price": "1",
+        "volume": "0.00776",
+    }))));
+    assert! (!rc.0.is_success(), "buy success, but should be error {}", rc.1);
+}
+
+#[test]
+#[cfg(feature = "native")]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/481
+fn setprice_buy_sell_min_volume() {
+    let bob_passphrase = unwrap! (get_passphrase (&".env.seed", "BOB_PASSPHRASE"));
+
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1},
+        {"coin":"ETH","name":"ethereum","etomic":"0x0000000000000000000000000000000000000000"},
+        {"coin":"JST","name":"jst","etomic":"0x2b294F029Fde858b2c62184e8390591755521d8E"}
+    ]);
+
+    let mut mm = unwrap!(MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var ("LOCAL_THREAD_MM") {Ok (ref e) if e == "bob" => Some (local_start()), _ => None}
+    ));
+
+    let (_dump_log, _dump_dashboard) = mm_dump (&mm.log_path);
+    log!({"Log path: {}", mm.log_path.display()});
+    unwrap! (block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+    log!([block_on(enable_coins_eth_electrum(&mm, vec!["http://195.201.0.6:8565"]))]);
+
+    check_too_low_volume_order_creation_fails(&mm, "MORTY", "ETH");
+    check_too_low_volume_order_creation_fails(&mm, "ETH", "MORTY");
+    check_too_low_volume_order_creation_fails(&mm, "JST", "MORTY");
 }
 
 // HOWTO

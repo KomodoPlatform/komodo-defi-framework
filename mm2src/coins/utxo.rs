@@ -1630,6 +1630,11 @@ impl MmCoin for UtxoCoin {
             let mut spent_by_me = 0;
             let mut received_by_me = 0;
             for input in tx.inputs.iter() {
+                // input transaction is zero if the tx is the coinbase transaction
+                if input.previous_output.hash.is_zero() {
+                    continue;
+                }
+
                 let input_tx = match input_transactions.entry(&input.previous_output.hash) {
                     Entry::Vacant(e) => {
                         let prev_hash = input.previous_output.hash.reversed();
