@@ -1,5 +1,6 @@
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use mocktopus::mocking::*;
+use std::collections::HashSet;
 use super::*;
 
 #[test]
@@ -31,6 +32,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: 20.into(),
         rel_amount_rat: Some(BigRational::from_integer(20.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -64,6 +66,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: 20.into(),
         rel_amount_rat: Some(BigRational::from_integer(20.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -97,6 +100,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -130,6 +134,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: 10.into(),
         rel_amount_rat: Some(BigRational::from_integer(10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -163,6 +168,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: 10.into(),
         rel_amount_rat: Some(BigRational::from_integer(10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -196,6 +202,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_amount: "0.9".parse().unwrap(),
         rel_amount_rat: Some(BigRational::new(9.into(), 10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let actual = match_order_and_request(&maker, &request);
@@ -232,6 +239,7 @@ fn test_maker_order_available_amount() {
             dest_pub_key: H256Json::default(),
             method: "request".into(),
             action: TakerAction::Buy,
+            match_by: MatchBy::Any,
         },
         reserved: MakerReserved {
             method: "reserved".into(),
@@ -263,6 +271,7 @@ fn test_maker_order_available_amount() {
             dest_pub_key: H256Json::default(),
             method: "request".into(),
             action: TakerAction::Buy,
+            match_by: MatchBy::Any,
         },
         reserved: MakerReserved {
             method: "reserved".into(),
@@ -303,12 +312,14 @@ fn test_taker_match_reserved() {
         rel_amount: 10.into(),
         rel_amount_rat: Some(BigRational::from_integer(10.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -340,12 +351,14 @@ fn test_taker_match_reserved() {
         rel_amount: 10.into(),
         rel_amount_rat: Some(BigRational::from_integer(10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -376,12 +389,14 @@ fn test_taker_match_reserved() {
         rel_amount: "0.9".parse().unwrap(),
         rel_amount_rat: Some(BigRational::new(9.into(), 10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -412,12 +427,14 @@ fn test_taker_match_reserved() {
         rel_amount: "0.9".parse().unwrap(),
         rel_amount_rat: Some(BigRational::new(9.into(), 10.into())),
         action: TakerAction::Sell,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -448,12 +465,14 @@ fn test_taker_match_reserved() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -484,12 +503,14 @@ fn test_taker_match_reserved() {
         rel_amount: 2.into(),
         rel_amount_rat: None,
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -520,12 +541,14 @@ fn test_taker_match_reserved() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -556,12 +579,14 @@ fn test_taker_match_reserved() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -594,8 +619,10 @@ fn test_taker_match_reserved() {
             method: "request".into(),
             sender_pubkey: H256Json::default(),
             dest_pub_key: H256Json::default(),
+            match_by: MatchBy::Any,
         },
         matches: HashMap::new(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     let reserved = MakerReserved {
@@ -629,12 +656,14 @@ fn test_taker_order_cancellable() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     assert!(order.is_cancellable());
@@ -651,12 +680,14 @@ fn test_taker_order_cancellable() {
         rel_amount: 2.into(),
         rel_amount_rat: Some(BigRational::from_integer(2.into())),
         action: TakerAction::Buy,
+        match_by: MatchBy::Any,
     };
 
     let mut order = TakerOrder {
         request,
         matches: HashMap::new(),
-        created_at: now_ms()
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
     };
 
     order.matches.insert(
@@ -752,7 +783,9 @@ fn prepare_for_cancel_by(ctx: &MmArc) {
             dest_pub_key: H256Json::default(),
             method: "request".into(),
             sender_pubkey: H256Json::default(),
-        }
+            match_by: MatchBy::Any,
+        },
+        order_type: OrderType::GoodTillCancelled,
     });
 }
 
@@ -814,4 +847,65 @@ fn test_cancel_by_all() {
     assert!(cancelled.contains(&Uuid::from_bytes([1; 16])));
     assert!(cancelled.contains(&Uuid::from_bytes([2; 16])));
     assert!(cancelled.contains(&Uuid::from_bytes([3; 16])));
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/607
+fn test_taker_order_match_by() {
+    let uuid = Uuid::new_v4();
+
+    let mut not_matching_uuids = HashSet::new();
+    not_matching_uuids.insert(Uuid::new_v4());
+    let request = TakerRequest {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        uuid,
+        method: "request".into(),
+        dest_pub_key: H256Json::default(),
+        sender_pubkey: H256Json::default(),
+        base_amount: 10.into(),
+        base_amount_rat: Some(BigRational::from_integer(10.into())),
+        rel_amount: 10.into(),
+        rel_amount_rat: Some(BigRational::from_integer(10.into())),
+        action: TakerAction::Buy,
+        match_by: MatchBy::Orders(not_matching_uuids),
+    };
+
+    let mut order = TakerOrder {
+        request,
+        matches: HashMap::new(),
+        created_at: now_ms(),
+        order_type: OrderType::GoodTillCancelled,
+    };
+
+    let reserved = MakerReserved {
+        method: "reserved".into(),
+        base: "BASE".into(),
+        rel: "REL".into(),
+        base_amount: 10.into(),
+        base_amount_rat: Some(BigRational::from_integer(10.into())),
+        rel_amount: 10.into(),
+        rel_amount_rat: Some(BigRational::from_integer(10.into())),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        maker_order_uuid: Uuid::new_v4(),
+        taker_order_uuid: uuid,
+    };
+
+    assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
+
+    let mut matching_uuids = HashSet::new();
+    matching_uuids.insert(reserved.maker_order_uuid);
+    order.request.match_by = MatchBy::Orders(matching_uuids);
+    assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
+
+    let mut not_matching_pubkeys = HashSet::new();
+    not_matching_pubkeys.insert([1; 32].into());
+    order.request.match_by = MatchBy::Pubkeys(not_matching_pubkeys);
+    assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
+
+    let mut matching_pubkeys = HashSet::new();
+    matching_pubkeys.insert(H256Json::default());
+    order.request.match_by = MatchBy::Pubkeys(matching_pubkeys);
+    assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
 }
