@@ -29,6 +29,7 @@ use futures01::Future;
 use futures::compat::Future01CompatExt;
 use http::Response;
 use serde_json::{self as json, Value as Json};
+use std::borrow::Cow;
 
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{CancelBy, cancel_orders_by};
@@ -226,6 +227,27 @@ pub fn stop (ctx: MmArc) -> HyRes {
         ctx.stop();
     });
     rpc_response (200, r#"{"result": "success"}"#)
+}
+
+pub async fn sim_panic (req: Json) -> Result<Response<Vec<u8>>, String> {
+    #[derive(Deserialize)] struct Req {#[serde(default)] mode: String}
+    let req: Req = try_s! (json::from_value (req));
+
+    #[derive(Serialize)] struct Ret<'a> {
+        /// Supported panic modes.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        modes: Vec<Cow<'a, str>>
+    }
+    let ret: Ret;
+
+    if req.mode.is_empty() {
+        ret = Ret {modes: vec! ["simple".into()]}
+    } else if req.mode == "simple" {
+        panic! ("sim_panic: simple")
+    } else {return ERR! ("No such mode: {}", req.mode)}
+
+    let js = try_s! (json::to_vec (&ret));
+    Ok (try_s! (Response::builder().body (js)))
 }
 
 pub fn version() -> HyRes { rpc_response(200, json!({"result": MM_VERSION}).to_string()) }

@@ -247,6 +247,8 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "orderbook" => hyres(orderbook(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
+        "sim_panic" => hyres(sim_panic(req)),
+        #[cfg(not(feature = "wallet-only"))]
         "recover_funds_of_swap" => {
             #[cfg(feature = "native")] {
                 Box::new(CPUPOOL.spawn_fn(move || { hyres(recover_funds_of_swap (ctx, req)) }))
