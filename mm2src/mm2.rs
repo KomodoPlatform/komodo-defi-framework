@@ -22,7 +22,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use common::{block_on, double_panic_crash, MM_VERSION};
+use common::{block_on, double_panic_crash, MM_DATETIME, MM_VERSION};
 use common::mm_ctx::MmCtxBuilder;
 
 use gstuff::{slurp};
@@ -166,7 +166,7 @@ pub fn mm2_main() {
     use libc::c_char;
 
     init_crash_reports();
-    log!({"AtomicDEX MarketMaker {}", MM_VERSION});
+    log!({"AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME});
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args().map (|mut arg| {arg.push ('\0'); arg}) .collect();

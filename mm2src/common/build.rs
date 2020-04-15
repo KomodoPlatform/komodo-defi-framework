@@ -19,19 +19,21 @@ extern crate lazy_static;
 extern crate unwrap;
 
 use bzip2::read::BzDecoder;
+use chrono::DateTime;
 use futures01::{Future, Stream};
 use futures_cpupool::CpuPool;
 use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, now_float, slurp};
 use hyper_rustls::HttpsConnector;
 use libflate::gzip::Decoder;
+use regex::Regex;
 use std::env::{self, var};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{ChildStdout, Command, Stdio};
-use std::str::from_utf8_unchecked;
+use std::str::{from_utf8, from_utf8_unchecked};
 use std::sync::Arc;
 use std::thread;
 use sysinfo::{System, SystemExt};
@@ -184,11 +186,19 @@ fn generate_bindings() {
     );
 }
 
-/// The build script will usually help us by putting the MarketMaker version into the "MM_VERSION" file
+/// This function ensures that we have the “MM_VERSION” and “MM_DATETIME” variables during the build.
+///
+/// The build script will usually help us by putting the MarketMaker version into the “MM_VERSION” file
+/// and the corresponding ISO 8601 time into the “MM_DATETIME” file
 /// (environment variable isn't as useful because we can't `rerun-if-changed` on it).
-/// We're using the "UNKNOWN" version designator if the file isn't there or is empty.
+///
 /// For the nightly builds the version contains the short commit hash.
-/// This function ensures that we have the "MM_VERSION" variable during the build.
+///
+/// We're also trying to get the hash and the time from Git.
+///
+/// Git information isn't always available during the build (for instance, when a build server is used,
+/// we might skip synchronizing the Git repository there),
+/// but if it is, then we're going to check if the “MM_DATETIME” and the Git data match.
 fn mm_version() -> String {
     // Try to load the variable from the file.
     let mm_versionᵖ = root().join("MM_VERSION");
@@ -199,24 +209,63 @@ fn mm_version() -> String {
             mm_versionᶠ.read_to_string(&mut buf),
             "Can't read from MM_VERSION"
         );
-        buf.trim()
+        buf.trim().to_string()
     } else {
-        // If the MM_VERSION file is absent then we should create it
+        // If the “MM_VERSION” file is absent then we should create it
         // in order for the Cargo dependency management to see it,
         // because Cargo will keep rebuilding the `common` crate otherwise.
         //
         // We should probably fetch the actual git version here,
         // with something like `git log '--pretty=format:%h' -n 1` for the nightlies,
         // and a release tag when building from some kind of a stable branch,
-        // though we should keep the ability for the tooling to provide the MM_VERSION
+        // though we should keep the ability for the tooling to provide the “MM_VERSION”
         // externally, because moving the entire ".git" around is not always practical.
-        if let Ok(mut mm_versionᶠ) = fs::File::create(&mm_versionᵖ) {
-            unwrap!(mm_versionᶠ.write_all(&b"UNKNOWN"[..]));
+
+        let mut version = "UNKNOWN".to_string();
+        let mut command = Command::new("git");
+        command.arg("log").arg("--pretty=format:%h").arg("-n1");
+        if let Ok(go) = command.output() {
+            if go.status.success() {
+                version = unwrap!(from_utf8(&go.stdout)).trim().to_string();
+                if !unwrap!(Regex::new(r"^\w+$")).is_match(&version) {
+                    panic!("{}", version)
+                }
+            }
         }
-        "UNKNOWN"
+
+        if let Ok(mut mm_versionᶠ) = fs::File::create(&mm_versionᵖ) {
+            unwrap!(mm_versionᶠ.write_all(version.as_bytes()));
+        }
+        version
     };
     println!("cargo:rustc-env=MM_VERSION={}", version);
-    version.into()
+
+    let mut dt_git = None;
+    let mut command = Command::new("git");
+    command.arg("log").arg("--pretty=format:%cI").arg("-n1"); // ISO 8601
+    if let Ok(go) = command.output() {
+        if go.status.success() {
+            let got = unwrap!(from_utf8(&go.stdout)).trim();
+            let _dt_check = unwrap!(DateTime::parse_from_rfc3339(got));
+            dt_git = Some(got.to_string());
+        }
+    }
+
+    let mm_datetimeᵖ = root().join("MM_DATETIME");
+    let dt_file = unwrap!(String::from_utf8(slurp(&mm_datetimeᵖ)));
+    let mut dt_file = dt_file.trim().to_string();
+    if let Some(ref dt_git) = dt_git {
+        if &dt_git[..] != &dt_file[..] {
+            // Create or update the “MM_DATETIME” file in order to appease the Cargo dependency management.
+            let mut mm_datetimeᶠ = unwrap!(fs::File::create(&mm_datetimeᵖ));
+            unwrap!(mm_datetimeᶠ.write_all(dt_git.as_bytes()));
+            dt_file = dt_git.clone();
+        }
+    }
+
+    println!("cargo:rustc-env=MM_DATETIME={}", dt_file);
+
+    version
 }
 
 /// Formats a vector of command-line arguments into a printable string, for the build log.
@@ -790,7 +839,7 @@ fn fetch_boost(_target: &Target) -> PathBuf {
 /// In-place modification of file contents. Like "sed -i" (or "perl -i") but with a Rust code instead of a sed pattern.
 /// Uses `String` instead of `Vec<u8>` simply because `str` has more helpers out of the box (`std::str::pattern` works with `str`).
 /// Returns `false` if the file is absent or empty. Panics on errors.
-fn with_file(path: &AsRef<Path>, visitor: &Fn(&mut String)) -> bool {
+fn with_file(path: &dyn AsRef<Path>, visitor: &dyn Fn(&mut String)) -> bool {
     let bulk = slurp(path);
     if bulk.is_empty() {
         return false;
@@ -1153,9 +1202,7 @@ fn cmake_path() -> String {
 }
 
 lazy_static! {
-    static ref LIBEXCHANGES_SRC: Vec<PathBuf> = vec![
-        rabs("iguana/exchanges/mm.c"),
-    ];
+    static ref LIBEXCHANGES_SRC: Vec<PathBuf> = vec![rabs("iguana/exchanges/mm.c"),];
 }
 
 /// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
@@ -1295,6 +1342,7 @@ fn main() {
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
 
     println!("cargo:rerun-if-changed={}", path2s(rabs("MM_VERSION")));
+    println!("cargo:rerun-if-changed={}", path2s(rabs("MM_DATETIME")));
     let mm_version = mm_version();
 
     if cfg!(not(feature = "native")) {

@@ -129,6 +129,7 @@ use wasm_bindgen::prelude::*;
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
 pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
 
+pub const MM_DATETIME: &'static str = env! ("MM_DATETIME");
 pub const MM_VERSION: &'static str = env! ("MM_VERSION");
 
 pub const SATOSHIS: u64 = 100000000;

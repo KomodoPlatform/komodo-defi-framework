@@ -27,6 +27,7 @@ The [Docker image](https://github.com/rust-embedded/cross/tree/master/docker/arm
     git clone --depth=1 git@gitlab.com:artemciy/supernet.git -b mm2-cross
     cd supernet
     git log --pretty=format:'%h' -n 1 > MM_VERSION
+    git log --pretty=format:'%cI' -n 1 > MM_DATETIME
 
 ### Setup the NDK_HOME variable
 

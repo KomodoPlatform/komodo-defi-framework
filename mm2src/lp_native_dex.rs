@@ -43,7 +43,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "native")]
 use crate::common::lp;
 use crate::common::executor::{spawn, Timer};
-use crate::common::{slurp_url, MM_VERSION};
+use crate::common::{slurp_url, MM_DATETIME, MM_VERSION};
 use crate::common::mm_ctx::{MmCtx, MmArc};
 use crate::common::privkey::key_pair_from_seed;
 #[cfg(not(feature = "wallet-only"))]
@@ -1201,7 +1201,7 @@ fn test_ip (_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     BITCOIND_RPC_INITIALIZING.store (true, Ordering::Relaxed);
-    log! ({"version: {}", MM_VERSION});
+    log! ({"lp_init] version: {} DT {}", MM_VERSION, MM_DATETIME});
     unsafe {try_s! (lp_passphrase_init (&ctx))}
 
     try_s! (fix_directories (&ctx));

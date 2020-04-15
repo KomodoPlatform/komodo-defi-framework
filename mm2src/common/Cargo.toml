@@ -75,6 +75,7 @@ optional = true
 bindgen = "0.43"
 bzip2 = "0.3"
 cc = "1.0"
+chrono = "0.4"
 fomat-macros = "0.3"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"

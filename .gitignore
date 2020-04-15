@@ -35,6 +35,8 @@ iguana/exchanges/manychains
 /js/.mm2.*
 
 # Rust artefacts
+/MM_DATETIME
+/MM_DATETIME.tmp
 /MM_VERSION
 /MM_VERSION.tmp
 /target

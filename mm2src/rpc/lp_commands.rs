@@ -22,7 +22,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
-use common::{rpc_err_response, rpc_response, HyRes, MM_VERSION};
+use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use futures01::Future;
@@ -250,7 +250,12 @@ pub async fn sim_panic (req: Json) -> Result<Response<Vec<u8>>, String> {
     Ok (try_s! (Response::builder().body (js)))
 }
 
-pub fn version() -> HyRes { rpc_response(200, json!({"result": MM_VERSION}).to_string()) }
+pub fn version() -> HyRes {
+    rpc_response (200, json! ({
+        "result": MM_VERSION,
+        "datetime": MM_DATETIME
+    }) .to_string())
+}
 
 // AP: Inventory is not documented and not used as of now, commented out
 /*
