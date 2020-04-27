@@ -1049,6 +1049,23 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         " include="(boostᵉ)
     );
 
+    if target.is_mac() {
+        // The latest Catalina/Xcode doesn't like unknown options.
+        // We tried different “-Wno-error” and friends to no avail.
+        with_file(&boost.join("tools/build/src/tools/darwin.jam"), &|jam| {
+            *jam = jam.replace(
+                "flags darwin.compile.c++ OPTIONS $(condition) : -fcoalesce-templates ;",
+                "#flags darwin.compile.c++ OPTIONS $(condition) : -fcoalesce-templates ;",
+            )
+        });
+        with_file(&boost.join("tools/build/src/tools/darwin.py"), &|py| {
+            *py = py.replace(
+                "toolset.flags ('darwin.compile.c++', 'OPTIONS', None, ['-fcoalesce-templates'])",
+                "#toolset.flags ('darwin.compile.c++', 'OPTIONS', None, ['-fcoalesce-templates'])",
+            )
+        });
+    }
+
     fn jam(boost: &Path, from: &str) {
         let user_config_jamˢ = slurp(&root().join(from));
         let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
