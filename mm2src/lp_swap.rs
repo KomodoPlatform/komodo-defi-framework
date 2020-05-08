@@ -57,17 +57,21 @@
 #![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
+use async_std::{sync as async_std_sync};
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, TransactionEnum};
-use common::{block_on, read_dir, rpc_response, slurp, write, HyRes};
-use common::mm_ctx::{from_ctx, MmArc};
+use common::{
+    block_on, HyRes, read_dir, rpc_response, slurp, write,
+    executor::spawn,
+    mm_ctx::{from_ctx, MmArc}
+};
 use http::Response;
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashSet, HashMap};
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
@@ -131,8 +135,8 @@ mod taker_swap;
 
 use maker_swap::{MakerSavedSwap, MakerSwapEvent, stats_maker_swap_file_path};
 use taker_swap::{TakerSavedSwap, TakerSwapEvent, stats_taker_swap_file_path};
-pub use maker_swap::{MakerSwap, run_maker_swap};
-pub use taker_swap::{TakerSwap, run_taker_swap};
+pub use maker_swap::{MakerSwap, RunMakerSwapInput, run_maker_swap};
+pub use taker_swap::{RunTakerSwapInput, TakerSwap, run_taker_swap};
 
 /// Includes the grace time we add to the "normal" timeouts
 /// in order to give different and/or heavy communication channels a chance.
@@ -204,15 +208,34 @@ struct BanReason {
 struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
+    /// The clonable receiver of multi-consumer async channel awaiting for shutdown_tx.send() to be
+    /// invoked to stop all running swaps.
+    /// MM2 is used as static lib on some platforms e.g. iOS so it doesn't run as separate process.
+    /// So when stop was invoked the swaps could stay running on shared executors causing
+    /// Very unpleasant consequences
+    shutdown_rx: async_std_sync::Receiver<()>,
 }
 
 impl SwapsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx (ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok (try_s! (from_ctx (&ctx.swaps_ctx, move || {
+            let (shutdown_tx, shutdown_rx) = async_std_sync::channel(1);
+            let mut shutdown_tx = Some(shutdown_tx);
+            ctx.on_stop (Box::new (move || {
+                if let Some (shutdown_tx) = shutdown_tx.take() {
+                    log! ("on_stop] firing shutdown_tx!");
+                    spawn(async move {
+                        shutdown_tx.send(()).await;
+                    });
+                    Ok(())
+                } else {ERR! ("on_stop callback called twice!")}
+            }));
+
             Ok (SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
+                shutdown_rx,
             })
         })))
     }
@@ -253,6 +276,21 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> BigDecimal {
                         total
                     }
                 },
+                None => total,
+            }
+        }
+    )
+}
+
+/// Get number of currently running swaps
+pub fn running_swaps_num(ctx: &MmArc) -> u64 {
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let swaps = unwrap!(swap_ctx.running_swaps.lock());
+    swaps.iter().fold(
+        0,
+        |total, swap| {
+            match swap.upgrade() {
+                Some(_) => total + 1,
                 None => total,
             }
         }
@@ -634,7 +672,7 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
         match json::from_slice::<SavedSwap>(&unwrap!(slurp(&path))) {
             Ok(swap) => {
                 if !swap.is_finished() {
-                    log!("Kick starting the swap " [swap.uuid()]);
+                    log!("Kick starting the swap " (swap.uuid()));
                     let maker_coin_ticker = match swap.maker_coin_ticker() {
                         Ok(t) => t,
                         Err(e) => {
@@ -654,55 +692,47 @@ pub fn swap_kick_starts(ctx: MmArc) -> HashSet<String> {
                     thread::spawn({
                         let ctx = ctx.clone();
                         move || {
-                            let mut taker_coin;
-                            loop {
-                                taker_coin = match lp_coinfind(&ctx, &taker_coin_ticker) {
-                                    Ok(c) => c,
+                            let taker_coin = loop {
+                                match lp_coinfind(&ctx, &taker_coin_ticker) {
+                                    Ok(Some(c)) => break c,
+                                    Ok(None) => {
+                                        log!("Can't kickstart the swap " (swap.uuid()) " until the coin " (taker_coin_ticker) " is activated");
+                                        thread::sleep(Duration::from_secs(5));
+                                    },
                                     Err(e) => {
                                         log!("Error " (e) " on " (taker_coin_ticker) " find attempt");
                                         return;
-                                    }
+                                    },
                                 };
-                                if taker_coin.is_some() {
-                                    break;
-                                }
-                                log!("Can't kickstart the swap " (swap.uuid()) " until the coin " (taker_coin_ticker) " is activated");
-                                thread::sleep(Duration::from_secs(5));
                             };
 
-                            let mut maker_coin;
-                            loop {
-                                maker_coin = match lp_coinfind(&ctx, &maker_coin_ticker) {
-                                    Ok(c) => c,
+                            let maker_coin = loop {
+                                match lp_coinfind(&ctx, &maker_coin_ticker) {
+                                    Ok(Some(c)) => break c,
+                                    Ok(None) => {
+                                        log!("Can't kickstart the swap " (swap.uuid()) " until the coin " (maker_coin_ticker) " is activated");
+                                        thread::sleep(Duration::from_secs(5));
+                                    }
                                     Err(e) => {
                                         log!("Error " (e) " on " (maker_coin_ticker) " find attempt");
                                         return;
                                     }
                                 };
-                                if maker_coin.is_some() {
-                                    break;
-                                }
-                                log!("Can't kickstart the swap " (swap.uuid()) " until the coin " (maker_coin_ticker) " is activated");
-                                thread::sleep(Duration::from_secs(5));
                             };
                             match swap {
-                                SavedSwap::Maker(swap) => match MakerSwap::load_from_saved(
-                                    ctx,
-                                    maker_coin.unwrap(),
-                                    taker_coin.unwrap(),
-                                    swap,
-                                ) {
-                                    Ok((maker, command)) => block_on(run_maker_swap(maker, command)),
-                                    Err(e) => log!([e]),
+                                SavedSwap::Maker(saved_swap) => {
+                                    block_on(run_maker_swap(RunMakerSwapInput::KickStart {
+                                        maker_coin,
+                                        taker_coin,
+                                        swap_uuid: saved_swap.uuid,
+                                    }, ctx));
                                 },
-                                SavedSwap::Taker(swap) => match TakerSwap::load_from_saved(
-                                    ctx,
-                                    maker_coin.unwrap(),
-                                    taker_coin.unwrap(),
-                                    swap,
-                                ) {
-                                    Ok((taker, command)) => block_on(run_taker_swap(taker, command)),
-                                    Err(e) => log!([e]),
+                                SavedSwap::Taker(saved_swap) => {
+                                    block_on(run_taker_swap(RunTakerSwapInput::KickStart {
+                                        maker_coin,
+                                        taker_coin,
+                                        swap_uuid: saved_swap.uuid,
+                                    }, ctx));
                                 },
                             }
                         }

@@ -1,13 +1,18 @@
 use common::block_on;
 use common::privkey::key_pair_from_seed;
-use crate::WithdrawFee;
-use crate::utxo::rpc_clients::{ElectrumProtocol, ListSinceBlockRes};
+use crate::{
+    WithdrawFee,
+    utxo::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo}
+};
 use futures::future::join_all;
 use mocktopus::mocking::*;
+use rpc::v1::types::H256 as H256Json;
 use super::*;
 
+const TEST_COIN_NAME: &'static str = "ETOMIC";
+
 fn electrum_client_for_test(servers: &[&str]) -> UtxoRpcClientEnum {
-    let mut client = ElectrumClientImpl::new();
+    let mut client = ElectrumClientImpl::new(TEST_COIN_NAME.into());
     for server in servers {
         client.add_server(&ElectrumRpcRequest {
             url: server.to_string(),
@@ -29,7 +34,7 @@ fn electrum_client_for_test(servers: &[&str]) -> UtxoRpcClientEnum {
     UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)))
 }
 
-fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -> UtxoCoin {
+fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -> UtxoCoinImpl {
     let checksum_type = ChecksumType::DSHA256;
     let default_seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
     let seed = match force_seed {
@@ -66,7 +71,7 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
         p2sh_t_addr_prefix: 0,
         pub_addr_prefix: 60,
         pub_t_addr_prefix: 0,
-        ticker: "ETOMIC".into(),
+        ticker: TEST_COIN_NAME.into(),
         wif_prefix: 0,
         tx_fee: TxFee::Fixed(1000),
         version_group_id: 0x892f2085,
@@ -77,9 +82,9 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
         signature_version: SignatureVersion::Base,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         required_confirmations: 1.into(),
+        force_min_relay_fee: false,
     };
-
-    UtxoCoin(Arc::new(coin))
+    coin
 }
 
 #[test]
@@ -93,7 +98,7 @@ fn test_extract_secret() {
 #[test]
 fn test_generate_transaction() {
     let client = electrum_client_for_test(&["test1.cipig.net:10025"]);
-    let coin = utxo_coin_for_test(client, None);
+    let coin: UtxoCoin = utxo_coin_for_test(client, None).into();
     let unspents = vec![UnspentInfo {
         value: 10000000000,
         outpoint: OutPoint::default(),
@@ -104,7 +109,7 @@ fn test_generate_transaction() {
         value: 999,
     }];
 
-    let generated = coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait();
+    let generated = block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None));
     // must not allow to use output with value < dust
     unwrap_err!(generated);
 
@@ -118,7 +123,7 @@ fn test_generate_transaction() {
         value: 98001,
     }];
 
-    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait());
+    let generated = unwrap!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None)));
     // the change that is less than dust must be included to miner fee
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
@@ -138,7 +143,7 @@ fn test_generate_transaction() {
     }];
 
     // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
-    let generated = unwrap!(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0), None).wait());
+    let generated = unwrap!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0), None)));
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
@@ -157,12 +162,12 @@ fn test_generate_transaction() {
     }];
 
     // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
-    unwrap_err!(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None).wait());
+    unwrap_err!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None)));
 }
 
 #[test]
 fn test_addresses_from_script() {
-    let client = electrum_client_for_test(&["test1.cipig.net:10025"]);
+    let client = electrum_client_for_test(&["test1.cipig.net:10025", "test2.cipig.net:10025"]);
     let coin = utxo_coin_for_test(client, None);
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
@@ -246,6 +251,7 @@ fn test_sat_from_big_decimal() {
 #[test]
 fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl {
+        coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     };
@@ -256,7 +262,7 @@ fn test_wait_for_payment_spend_timeout_native() {
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
-    let coin = utxo_coin_for_test(client, None);
+    let coin: UtxoCoin = utxo_coin_for_test(client, None).into();
     let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
@@ -273,9 +279,9 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
 
-    let client = ElectrumClientImpl::new();
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into());
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
-    let coin = utxo_coin_for_test(client, None);
+    let coin: UtxoCoin = utxo_coin_for_test(client, None).into();
     let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
@@ -337,16 +343,17 @@ fn test_withdraw_impl_set_fixed_fee() {
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: false,
         fee: Some(WithdrawFee::UtxoFixed { amount: "0.1".parse().unwrap() }),
     };
@@ -365,16 +372,17 @@ fn test_withdraw_impl_sat_per_kb_fee() {
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
     };
@@ -396,16 +404,17 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
     };
@@ -429,16 +438,17 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.09999999".parse().unwrap() }),
     };
@@ -462,16 +472,17 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: "9.97939455".parse().unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
     };
@@ -486,16 +497,17 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
+        coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
     }));
 
-    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+    let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
 
     let withdraw_req = WithdrawRequest {
         amount: 0.into(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
-        coin: "ETOMIC".to_string(),
+        coin: TEST_COIN_NAME.into(),
         max: true,
         fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
     };
@@ -513,7 +525,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
 fn test_utxo_lock() {
     // send several transactions concurrently to check that they are not using same inputs
     let client = electrum_client_for_test(&["test1.cipig.net:10025", "test2.cipig.net:10025"]);
-    let coin = utxo_coin_for_test(client, None);
+    let coin: UtxoCoin = utxo_coin_for_test(client, None).into();
     let output = TransactionOutput {
         value: 1000000,
         script_pubkey: Builder::build_p2pkh(&coin.my_address.hash).to_bytes(),
@@ -589,7 +601,7 @@ fn get_tx_details_doge() {
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/587
 fn get_tx_details_coinbase_transaction() {
     let client = electrum_client_for_test(&["el0.veruscoin.io:17485", "el1.veruscoin.io:17485"]);
-    let coin = utxo_coin_for_test(client, Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+    let coin: UtxoCoin = utxo_coin_for_test(client, Some("spice describe gravity federal blast come thank unfair canal monkey style afraid")).into();
 
     let fut = async move {
         // hash of coinbase transaction https://vrsc.explorer.dexstats.info/tx/0d95a7b11802621a65f9e7ca9da0bca6ee4956fd2328e5116a777285179dbd08
@@ -600,4 +612,194 @@ fn get_tx_details_coinbase_transaction() {
     };
 
     block_on(fut);
+}
+
+#[test]
+fn test_electrum_rpc_client_error() {
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10060"]);
+
+    let empty_hash = H256Json::default();
+    let err = unwrap_err!(client.get_verbose_transaction(empty_hash).wait());
+
+    // use the static string instead because the actual error message cannot be obtain
+    // by serde_json serialization
+    let expected = r#"JsonRpcError { client_info: "coin: ETOMIC", request: JsonRpcRequest { jsonrpc: "2.0", id: "0", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({\'code\': -5, \'message\': \'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.\'})")})) }"#;
+    let actual = format!("{}", err);
+
+    assert_eq!(expected, actual);
+}
+
+#[test]
+fn test_network_info_deserialization() {
+    let network_info_kmd = r#"{
+        "connections": 1,
+        "localaddresses": [],
+        "localservices": "0000000070000005",
+        "networks": [
+            {
+                "limited": false,
+                "name": "ipv4",
+                "proxy": "",
+                "proxy_randomize_credentials": false,
+                "reachable": true
+            },
+            {
+                "limited": false,
+                "name": "ipv6",
+                "proxy": "",
+                "proxy_randomize_credentials": false,
+                "reachable": true
+            },
+            {
+                "limited": true,
+                "name": "onion",
+                "proxy": "",
+                "proxy_randomize_credentials": false,
+                "reachable": false
+            }
+        ],
+        "protocolversion": 170007,
+        "relayfee": 1e-06,
+        "subversion": "/MagicBean:2.0.15-rc2/",
+        "timeoffset": 0,
+        "version": 2001526,
+        "warnings": ""
+    }"#;
+    json::from_str::<NetworkInfo>(network_info_kmd).unwrap();
+
+    let network_info_btc = r#"{
+        "version": 180000,
+        "subversion": "\/Satoshi:0.18.0\/",
+        "protocolversion": 70015,
+        "localservices": "000000000000040d",
+        "localrelay": true,
+        "timeoffset": 0,
+        "networkactive": true,
+        "connections": 124,
+        "networks": [
+            {
+                "name": "ipv4",
+                "limited": false,
+                "reachable": true,
+                "proxy": "",
+                "proxy_randomize_credentials": false
+            },
+            {
+                "name": "ipv6",
+                "limited": false,
+                "reachable": true,
+                "proxy": "",
+                "proxy_randomize_credentials": false
+            },
+            {
+                "name": "onion",
+                "limited": true,
+                "reachable": false,
+                "proxy": "",
+                "proxy_randomize_credentials": false
+            }
+        ],
+        "relayfee": 1.0e-5,
+        "incrementalfee": 1.0e-5,
+        "localaddresses": [
+            {
+                "address": "96.57.248.252",
+                "port": 8333,
+                "score": 618294
+            }
+        ],
+        "warnings": ""
+    }"#;
+    json::from_str::<NetworkInfo>(network_info_btc).unwrap();
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/617
+fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
+    let client = NativeClientImpl {
+        coin_ticker: "RICK".into(),
+        uri: "http://127.0.0.1:10271".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    };
+
+    static mut GET_RELAY_FEE_CALLED: bool = false;
+    NativeClient::get_relay_fee.mock_safe(|_| {
+        unsafe { GET_RELAY_FEE_CALLED = true };
+        MockResult::Return(Box::new(futures01::future::ok("1.0".parse().unwrap())))
+    });
+    let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
+    let mut coin = utxo_coin_for_test(client, None);
+    coin.force_min_relay_fee = true;
+    let coin: UtxoCoin = coin.into();
+    let unspents = vec![UnspentInfo {
+        value: 1000000000,
+        outpoint: OutPoint::default(),
+    }];
+
+    let outputs = vec![TransactionOutput {
+        script_pubkey: vec![].into(),
+        value: 900000000,
+    }];
+
+    let fut = coin.generate_transaction(
+        unspents,
+        outputs,
+        FeePolicy::SendExact,
+        Some(ActualTxFee::Dynamic(100))
+    );
+    let generated = unwrap!(block_on(fut));
+    assert_eq!(generated.0.outputs.len(), 1);
+
+    // generated transaction fee must be equal to relay fee if calculated dynamic fee is lower than relay
+    assert_eq!(generated.1.fee_amount, 100000000);
+    assert_eq!(generated.1.received_by_me, 0);
+    assert_eq!(generated.1.spent_by_me, 1000000000);
+    assert!(unsafe { GET_RELAY_FEE_CALLED });
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/617
+fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
+    let client = NativeClientImpl {
+        coin_ticker: "RICK".into(),
+        uri: "http://127.0.0.1:10271".to_owned(),
+        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+    };
+
+    static mut GET_RELAY_FEE_CALLED: bool = false;
+    NativeClient::get_relay_fee.mock_safe(|_| {
+        unsafe { GET_RELAY_FEE_CALLED = true };
+        MockResult::Return(Box::new(futures01::future::ok("0.00001".parse().unwrap())))
+    });
+    let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
+    let mut coin = utxo_coin_for_test(client, None);
+    coin.force_min_relay_fee = true;
+    let coin: UtxoCoin = coin.into();
+    let unspents = vec![
+        UnspentInfo {
+            value: 1000000000,
+            outpoint: OutPoint::default(),
+        };
+    20];
+
+    let outputs = vec![TransactionOutput {
+        script_pubkey: vec![].into(),
+        value: 19000000000,
+    }];
+
+    let fut = coin.generate_transaction(
+        unspents,
+        outputs,
+        FeePolicy::SendExact,
+        Some(ActualTxFee::Dynamic(1000))
+    );
+    let generated = unwrap!(block_on(fut));
+    assert_eq!(generated.0.outputs.len(), 2);
+    assert_eq!(generated.0.inputs.len(), 20);
+
+    // resulting signed transaction size would be 3032 bytes so fee is 3032 sat
+    assert_eq!(generated.1.fee_amount, 3032);
+    assert_eq!(generated.1.received_by_me, 999996968);
+    assert_eq!(generated.1.spent_by_me, 20000000000);
+    assert!(unsafe { GET_RELAY_FEE_CALLED });
 }

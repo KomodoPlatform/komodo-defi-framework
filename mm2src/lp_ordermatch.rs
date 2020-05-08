@@ -50,7 +50,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount, is_pubkey_banned, MakerSwap,
-                          run_maker_swap, run_taker_swap, TakerSwap};
+                          RunMakerSwapInput, RunTakerSwapInput, run_maker_swap, run_taker_swap, TakerSwap};
 
 #[cfg(test)]
 #[cfg(feature = "native")]
@@ -361,7 +361,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch) {
         let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256));
         let uuid = maker_match.request.uuid.to_string();
 
-        log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
+        log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()) " with uuid: " (uuid));
         let maker_swap = MakerSwap::new(
             ctx.clone(),
             alice.into(),
@@ -372,7 +372,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch) {
             my_persistent_pub,
             uuid,
         );
-        run_maker_swap(maker_swap, None).await;
+        run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
     });
 }
 
@@ -410,9 +410,9 @@ fn lp_connected_alice(ctx: MmArc, taker_match: TakerMatch) {
         let taker_amount = taker_match.reserved.get_rel_amount().into();
         let uuid = taker_match.reserved.taker_order_uuid.to_string();
 
-        log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()));
+        log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker())  " with uuid: " (uuid));
         let taker_swap = TakerSwap::new(
-            ctx,
+            ctx.clone(),
             maker.into(),
             maker_coin,
             taker_coin,
@@ -421,7 +421,7 @@ fn lp_connected_alice(ctx: MmArc, taker_match: TakerMatch) {
             my_persistent_pub,
             uuid,
         );
-        run_taker_swap(taker_swap, None).await
+        run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
     });
 }
 
@@ -1333,12 +1333,20 @@ fn save_my_taker_order(ctx: &MmArc, order: &TakerOrder) {
 
 #[cfg_attr(test, mockable)]
 fn delete_my_maker_order(ctx: &MmArc, order: &MakerOrder) {
-    unwrap!(remove_file(&my_maker_order_file_path(ctx, &order.uuid)));
+    let path = my_maker_order_file_path(ctx, &order.uuid);
+    match remove_file(&path) {
+        Ok(_) => (),
+        Err(e) => log!("Warning, could not remove order file " (path.display()) ", error " (e)),
+    }
 }
 
 #[cfg_attr(test, mockable)]
 fn delete_my_taker_order(ctx: &MmArc, order: &TakerOrder) {
-    unwrap!(remove_file(&my_taker_order_file_path(ctx, &order.request.uuid)));
+    let path = my_taker_order_file_path(ctx, &order.request.uuid);
+    match remove_file(&path) {
+        Ok(_) => (),
+        Err(e) => log!("Warning, could not remove order file " (path.display()) ", error " (e)),
+    }
 }
 
 pub fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {

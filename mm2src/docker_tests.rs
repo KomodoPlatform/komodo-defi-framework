@@ -25,13 +25,20 @@ fn main() {
 
 #[cfg(all(test, feature = "native"))]
 mod docker_tests {
+    mod swaps_file_lock_tests;
+
+    use bitcrypto::ChecksumType;
     use common::block_on;
-    use common::for_tests::{enable_native, MarketMakerIt, mm_dump};
+    use common::{
+        file_lock::FileLock,
+        for_tests::{enable_native, MarketMakerIt, new_mm2_temp_folder_path, mm_dump}
+    };
     use coins::{FoundSwapTxSpend, MarketCoinOps, SwapOps};
     use coins::utxo::{coin_daemon_data_dir, dhash160, utxo_coin_from_conf_and_request, zcash_params_path, UtxoCoin};
     use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
     use futures01::Future;
     use gstuff::now_ms;
+    use keys::{KeyPair, Private};
     use secp256k1::SecretKey;
     use serde_json::{self as json, Value as Json};
     use std::env;
@@ -209,7 +216,7 @@ mod docker_tests {
     }
 
     #[test]
-    fn test_search_for_swap_tx_spend_native_was_refunded() {
+    fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (coin, _) = generate_coin_with_random_privkey("MYCOIN", 1000);
 
@@ -243,7 +250,41 @@ mod docker_tests {
     }
 
     #[test]
-    fn test_search_for_swap_tx_spend_native_was_spent() {
+    fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (coin, _) = generate_coin_with_random_privkey("MYCOIN", 1000);
+
+        let time_lock = (now_ms() / 1000) as u32 - 3600;
+        let tx = coin.send_maker_payment(
+            time_lock,
+            &*coin.my_public_key(),
+            &[0; 20],
+            1.into(),
+        ).wait().unwrap();
+
+        unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
+
+        let refund_tx = coin.send_maker_refunds_payment(
+            &tx.tx_hex(),
+            time_lock,
+            &*coin.my_public_key(),
+            &[0; 20],
+        ).wait().unwrap();
+
+        unwrap!(coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1).wait());
+
+        let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
+            time_lock,
+            &*coin.my_public_key(),
+            &[0; 20],
+            &tx.tx_hex(),
+            0,
+        )));
+        assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
+    }
+
+    #[test]
+    fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (coin, _) = generate_coin_with_random_privkey("MYCOIN", 1000);
         let secret = [0; 32];
@@ -259,6 +300,41 @@ mod docker_tests {
         unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
 
         let spend_tx = coin.send_maker_spends_taker_payment(
+            &tx.tx_hex(),
+            time_lock,
+            &*coin.my_public_key(),
+            &secret,
+        ).wait().unwrap();
+
+        unwrap!(coin.wait_for_confirmations(&spend_tx.tx_hex(), 1, false, timeout, 1).wait());
+
+        let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
+            time_lock,
+            &*coin.my_public_key(),
+            &*dhash160(&secret),
+            &tx.tx_hex(),
+            0,
+        )));
+        assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
+    }
+
+    #[test]
+    fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (coin, _) = generate_coin_with_random_privkey("MYCOIN", 1000);
+        let secret = [0; 32];
+
+        let time_lock = (now_ms() / 1000) as u32 - 3600;
+        let tx = coin.send_maker_payment(
+            time_lock,
+            &*coin.my_public_key(),
+            &*dhash160(&secret),
+            1.into(),
+        ).wait().unwrap();
+
+        unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
+
+        let spend_tx = coin.send_taker_spends_maker_payment(
             &tx.tx_hex(),
             time_lock,
             &*coin.my_public_key(),
@@ -465,5 +541,89 @@ mod docker_tests {
         unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains ("Entering the taker_swap_loop MYCOIN/MYCOIN1"))));
         unwrap!(block_on(mm_bob.stop()));
         unwrap!(block_on(mm_alice.stop()));
+    }
+
+    #[test]
+    fn swaps_should_stop_on_stop_rpc() {
+        let (_, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
+        let (_, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        ]);
+        let mut mm_bob = unwrap! (MarketMakerIt::start (
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
+        unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+        let mut mm_alice = unwrap! (MarketMakerIt::start (
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
+        unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
+        log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
+        let rc = unwrap! (block_on (mm_bob.rpc (json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "max": true,
+        }))));
+        assert! (rc.0.is_success(), "!setprice: {}", rc.1);
+        let mut uuids = Vec::with_capacity(3);
+
+        for _ in 0..3 {
+            let rc = unwrap!(block_on (mm_alice.rpc (json! ({
+                "userpass": mm_alice.userpass,
+                "method": "buy",
+                "base": "MYCOIN",
+                "rel": "MYCOIN1",
+                "price": 1,
+                "volume": "1",
+            }))));
+            assert!(rc.0.is_success(), "!buy: {}", rc.1);
+            let buy: Json = json::from_str(&rc.1).unwrap();
+            uuids.push(buy["result"]["uuid"].as_str().unwrap().to_owned());
+        }
+        for uuid in uuids.iter() {
+            unwrap!(block_on (mm_bob.wait_for_log (22.,
+                |log| log.contains (&format!("Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}", uuid))
+            )));
+            unwrap!(block_on (mm_alice.wait_for_log (22.,
+                |log| log.contains (&format!("Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}", uuid))
+            )));
+        }
+        unwrap!(block_on(mm_bob.stop()));
+        unwrap!(block_on(mm_alice.stop()));
+        for uuid in uuids {
+            unwrap!(block_on (mm_bob.wait_for_log_after_stop (22., |log| log.contains (&format!("swap {} stopped", uuid)))));
+            unwrap!(block_on (mm_alice.wait_for_log_after_stop (22., |log| log.contains (&format!("swap {} stopped", uuid)))));
+        }
     }
 }

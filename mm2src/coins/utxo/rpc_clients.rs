@@ -9,7 +9,7 @@ use common::{StringError};
 use common::wio::{slurp_req};
 use common::executor::{spawn, Timer};
 use common::custom_futures::{join_all_sequential, select_ok_sequential};
-use common::jsonrpc_client::{JsonRpcClient, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
+use common::jsonrpc_client::{JsonRpcClient, JsonRpcRemoteAddr, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
 use futures01::{Future, Poll, Sink, Stream};
 use futures01::future::{Either, loop_fn, Loop, select_ok};
 use futures01::sync::{mpsc, oneshot};
@@ -133,7 +133,7 @@ impl UtxoRpcClientEnum {
 
 /// Generic unspent info required to build transactions, we need this separate type because native
 /// and Electrum provide different list_unspent format.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnspentInfo {
     pub outpoint: OutPoint,
     pub value: u64,
@@ -159,6 +159,8 @@ pub trait UtxoRpcClientOps: Debug + Send + Sync + 'static {
 
     /// returns fee estimation per KByte in satoshis
     fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64>;
+
+    fn get_relay_fee(&self) -> RpcRes<BigDecimal>;
 
     fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send>;
 }
@@ -240,6 +242,41 @@ pub struct ListSinceBlockRes {
     last_block: H256Json,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct NetworkInfoLocalAddress {
+    address: String,
+    port: u16,
+    score: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct NetworkInfoNetwork {
+    name: String,
+    limited: bool,
+    reachable: bool,
+    proxy: String,
+    proxy_randomize_credentials: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct NetworkInfo {
+    connections: u64,
+    #[serde(rename = "localaddresses")]
+    local_addresses: Vec<NetworkInfoLocalAddress>,
+    #[serde(rename = "localservices")]
+    local_services: String,
+    networks: Vec<NetworkInfoNetwork>,
+    #[serde(rename = "protocolversion")]
+    protocol_version: u64,
+    #[serde(rename = "relayfee")]
+    relay_fee: BigDecimal,
+    subversion: String,
+    #[serde(rename = "timeoffset")]
+    time_offset: u64,
+    version: u64,
+    warnings: String,
+}
+
 #[derive(Debug)]
 pub enum EstimateFeeMethod {
     /// estimatefee, deprecated in many coins: https://bitcoincore.org/en/doc/0.16.0/rpc/util/estimatefee/
@@ -254,6 +291,8 @@ pub enum EstimateFeeMethod {
 /// This description will be updated with more info
 #[derive(Clone, Debug)]
 pub struct NativeClientImpl {
+    /// Name of coin the rpc client is intended to work with
+    pub coin_ticker: String,
     /// The uri to send requests to
     pub uri: String,
     /// Value of Authorization header, e.g. "Basic base64(user:password)"
@@ -264,13 +303,33 @@ pub struct NativeClientImpl {
 pub struct NativeClient(pub Arc<NativeClientImpl>);
 impl Deref for NativeClient {type Target = NativeClientImpl; fn deref (&self) -> &NativeClientImpl {&*self.0}}
 
+/// The trait provides methods to generate the JsonRpcClient instance info such as name of coin.
+pub trait UtxoJsonRpcClientInfo: JsonRpcClient {
+    /// Name of coin the rpc client is intended to work with
+    fn coin_name(&self) -> &str;
+
+    /// Generate client info from coin name
+    fn client_info(&self) -> String {
+        format!("coin: {}", self.coin_name())
+    }
+}
+
+impl UtxoJsonRpcClientInfo for NativeClientImpl {
+    fn coin_name(&self) -> &str {
+        self.coin_ticker.as_str()
+    }
+}
+
 impl JsonRpcClient for NativeClientImpl {
     fn version(&self) -> &'static str { "1.0" }
 
     fn next_id(&self) -> String { "0".into() }
 
+    fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
+
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
         let request_body = try_fus!(json::to_string(&request));
+        let uri = self.uri.clone();
 
         let http_request = try_fus!(
             Request::builder()
@@ -279,17 +338,19 @@ impl JsonRpcClient for NativeClientImpl {
                         AUTHORIZATION,
                         self.auth.clone()
                     )
-                    .uri(self.uri.clone())
+                    .uri(uri.clone())
                     .body(Vec::from(request_body))
         );
-        Box::new(slurp_req(http_request).then(move |result| -> Result<JsonRpcResponse, String> {
+        Box::new(slurp_req(http_request).then(move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
             let res = try_s!(result);
             let body = try_s!(std::str::from_utf8(&res.2));
             if res.0 != StatusCode::OK {
                 return ERR!("Rpc request {:?} failed with HTTP status code {}, response body: {}",
                         request, res.0, body);
             }
-            Ok(try_s!(json::from_str(body)))
+
+            let response = try_s!(json::from_str(body));
+            Ok((uri.into(), response))
         }))
     }
 }
@@ -377,6 +438,10 @@ impl UtxoRpcClientOps for NativeClient {
                 }
             )),
         }
+    }
+
+    fn get_relay_fee(&self) -> RpcRes<BigDecimal> {
+        Box::new(self.get_network_info().map(|info| info.relay_fee))
     }
 
     fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send> {
@@ -520,6 +585,11 @@ impl NativeClientImpl {
     /// https://bitcoin.org/en/developer-reference#sendtoaddress
     pub fn send_to_address(&self, addr: &str, amount: &BigDecimal) -> RpcRes<H256Json> {
         rpc_func!(self, "sendtoaddress", addr, amount)
+    }
+
+    /// https://bitcoin.org/en/developer-reference#getnetworkinfo
+    pub fn get_network_info(&self) -> RpcRes<NetworkInfo> {
+        rpc_func!(self, "getnetworkinfo")
     }
 }
 
@@ -753,6 +823,7 @@ impl Drop for ElectrumConnection {
 
 #[derive(Debug)]
 pub struct ElectrumClientImpl {
+    coin_ticker: String,
     connections: Vec<ElectrumConnection>,
     next_id: AtomicU64,
 }
@@ -761,11 +832,16 @@ pub struct ElectrumClientImpl {
 async fn electrum_request_multi(
     client: ElectrumClient,
     request: JsonRpcRequest,
-) -> Result<JsonRpcResponse, String> {
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
     let mut futures = vec![];
     for connection in client.connections.iter() {
+        let connection_addr = connection.addr.clone();
         match &*connection.tx.lock().await {
-            Some(tx) => futures.push(electrum_request(request.clone(), tx.clone(), connection.responses.clone())),
+            Some(tx) => {
+                let fut = electrum_request(request.clone(), tx.clone(), connection.responses.clone())
+                    .map(|response| (JsonRpcRemoteAddr(connection_addr), response));
+                futures.push(fut)
+            },
             None => (),
         }
     }
@@ -797,7 +873,7 @@ pub extern fn electrum_replied (ri: i32, id: i32) {
 ///     I haven't looked into this because we'll probably use a websocket or Java implementation instead.
 #[cfg(not(feature = "native"))]
 async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest)
--> Result<JsonRpcResponse, String> {
+-> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
     use futures::future::{select, Either};
     use std::mem::MaybeUninit;
     use std::os::raw::c_char;
@@ -806,6 +882,8 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
     let req = try_s! (json::to_string (&request));
     let id: i32 = try_s! (request.id.parse());
     let mut jres: Option<JsonRpcResponse> = None;
+    // address of server from which an Rpc response was received
+    let mut remote_address = JsonRpcRemoteAddr::default();
 
     for connection in client.connections.iter() {
         let (tx, rx) = futures::channel::oneshot::channel();
@@ -834,11 +912,12 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
             result: res,
             error: Json::Null
         });
+        remote_address = JsonRpcRemoteAddr(connection.addr.clone());
         // server.ping must be sent to all servers to keep all connections alive
         if request.method != "server.ping" {break}
     }
     let jres = try_s! (jres.ok_or ("!jres"));
-    Ok (jres)
+    Ok ((remote_address, jres))
 }
 
 impl ElectrumClientImpl {
@@ -865,12 +944,20 @@ impl Deref for ElectrumClient {type Target = ElectrumClientImpl; fn deref (&self
 
 const BLOCKCHAIN_HEADERS_SUB_ID: &'static str = "blockchain.headers.subscribe";
 
+impl UtxoJsonRpcClientInfo for ElectrumClient {
+    fn coin_name(&self) -> &str {
+        self.coin_ticker.as_str()
+    }
+}
+
 impl JsonRpcClient for ElectrumClient {
     fn version(&self) -> &'static str { "2.0" }
 
     fn next_id(&self) -> String {
         self.next_id.fetch_add(1, AtomicOrdering::Relaxed).to_string()
     }
+
+    fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
         Box::new(electrum_request_multi(self.clone(), request).boxed().compat())
@@ -1033,6 +1120,10 @@ impl UtxoRpcClientOps for ElectrumClient {
         self.blockchain_transaction_broadcast(tx)
     }
 
+    fn get_relay_fee(&self) -> RpcRes<BigDecimal> {
+        rpc_func!(self, "blockchain.relayfee")
+    }
+
     fn find_output_spend(&self, tx: &UtxoTx, vout: usize, _from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send> {
         let selfi = self.clone();
         let script_hash = hex::encode(electrum_script_hash(&tx.outputs[vout].script_pubkey));
@@ -1063,8 +1154,9 @@ impl UtxoRpcClientOps for ElectrumClient {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
-    pub fn new() -> ElectrumClientImpl {
+    pub fn new(coin_ticker: String) -> ElectrumClientImpl {
         ElectrumClientImpl {
+            coin_ticker,
             connections: vec![],
             next_id: 0.into(),
         }
@@ -1378,7 +1470,7 @@ fn electrum_request(
     request: JsonRpcRequest,
     tx: mpsc::Sender<Vec<u8>>,
     responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>
-) -> JsonRpcResponseFut {
+) -> Box<dyn Future<Item=JsonRpcResponse, Error=String> + Send + 'static> {
     let send_fut = async move {
         let mut json = try_s!(json::to_string(&request));
         // Electrum request and responses must end with \n

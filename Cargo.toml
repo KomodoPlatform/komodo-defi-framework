@@ -66,6 +66,7 @@ debug = true
 debug = false
 
 [dependencies]
+async-std = {version = "1.5", features = ["unstable"]}
 atomic = "0.4"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }

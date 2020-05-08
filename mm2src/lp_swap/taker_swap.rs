@@ -2,13 +2,19 @@
 
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
-use common::executor::Timer;
-use common::{bits256, now_ms, now_float, slurp, write, MM_VERSION};
-use common::mm_ctx::MmArc;
+use common::{
+    bits256, now_ms, now_float, slurp, write, MM_VERSION,
+    executor::Timer,
+    file_lock::FileLock,
+    mm_ctx::MmArc,
+};
 use coins::{FoundSwapTxSpend, MmCoinEnum, TradeInfo, TransactionDetails};
 use crc::crc32;
-use futures::compat::Future01CompatExt;
-use futures::future::Either;
+use futures::{
+    FutureExt, select,
+    compat::Future01CompatExt,
+    future::Either,
+};
 use futures01::Future;
 use parking_lot::Mutex as PaMutex;
 use peers::FixedValidator;
@@ -20,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::Ordering;
 use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount_by_other_swaps,
-  lp_atomic_locktime, my_swap_file_path,
+  lp_atomic_locktime, my_swap_file_path, my_swaps_dir,
   AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
   SavedSwap, SwapsContext, SwapError, SwapNegotiationData,
   BASIC_COMM_TIMEOUT, WAIT_CONFIRM_INTERVAL};
@@ -180,13 +186,81 @@ impl TakerSavedSwap {
     }
 }
 
+pub enum RunTakerSwapInput {
+    StartNew(TakerSwap),
+    KickStart {
+        maker_coin: MmCoinEnum,
+        taker_coin: MmCoinEnum,
+        swap_uuid: String,
+    },
+}
+
+impl RunTakerSwapInput {
+    fn uuid(&self) -> &str {
+        match self {
+            RunTakerSwapInput::StartNew(swap) => &swap.uuid,
+            RunTakerSwapInput::KickStart { swap_uuid, .. } => &swap_uuid,
+        }
+    }
+}
+
 /// Starts the taker swap and drives it to completion (until None next command received).
 /// Panics in case of command or event apply fails, not sure yet how to handle such situations
 /// because it's usually means that swap is in invalid state which is possible only if there's developer error
 /// Every produced event is saved to local DB. Swap status is broadcasted to P2P network after completion.
-pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCommand>) {
-    let mut command = initial_command.unwrap_or(TakerSwapCommand::Start);
-    let mut events;
+pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
+    let uuid = swap.uuid().to_owned();
+    let lock_path = my_swaps_dir(&ctx).join(fomat!((uuid) ".lock"));
+    let mut attempts = 0;
+    let file_lock = loop {
+        match FileLock::lock(&lock_path, 40.) {
+            Ok(Some(l)) => break l,
+            Ok(None) => if attempts >= 1 {
+                log!("Swap " (uuid) " file lock is acquired by another process/thread, aborting");
+                return;
+            } else {
+                attempts += 1;
+                Timer::sleep(40.).await;
+            },
+            Err(e) => {
+                log!("Swap " (uuid) " file lock error " (e));
+                return;
+            }
+        };
+    };
+
+    let (swap, mut command) = match swap {
+        RunTakerSwapInput::StartNew(swap) => (swap, TakerSwapCommand::Start),
+        RunTakerSwapInput::KickStart {
+            maker_coin, taker_coin, swap_uuid
+        } => match TakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid) {
+            Ok((swap, command)) => match command {
+                Some(c) => {
+                    log!("Swap " (uuid) " kick started.");
+                    (swap, c)
+                },
+                None => {
+                    log!("Swap " (uuid) " has been finished already, aborting.");
+                    return
+                },
+            },
+            Err(e) => {
+                log!("Error " (e) " loading swap " (uuid));
+                return;
+            }
+        }
+    };
+
+    let mut touch_loop = Box::pin(async move {
+        loop {
+            match file_lock.touch() {
+                Ok(_) => (),
+                Err(e) => log!("Warning, touch error " (e) " for swap " (uuid)),
+            };
+            Timer::sleep(30.).await;
+        }
+    }.fuse());
+
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
@@ -194,30 +268,41 @@ pub async fn run_taker_swap(swap: TakerSwap, initial_command: Option<TakerSwapCo
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
     unwrap!(swap_ctx.running_swaps.lock()).push(weak_ref);
+    let shutdown_rx = swap_ctx.shutdown_rx.clone();
+    let swap_for_log = running_swap.clone();
 
-    loop {
-        let res = unwrap!(running_swap.handle_command(command).await, "!handle_command");
-        events = res.1;
-        for event in events {
-            let to_save = TakerSavedEvent {
-                timestamp: now_ms(),
-                event: event.clone(),
-            };
-            unwrap!(save_my_taker_swap_event(&ctx, &running_swap, to_save), "!save_my_taker_swap_event");
-            if event.should_ban_maker() { ban_pubkey(&ctx, running_swap.maker.bytes.into(), &running_swap.uuid, event.clone().into()) }
-            status.status(&[&"swap", &("uuid", &uuid[..])], &event.status_str());
-            unwrap!(running_swap.apply_event(event), "!apply_event");
+    let mut swap_fut = Box::pin(async move {
+        let mut events;
+        loop {
+            let res = unwrap!(running_swap.handle_command(command).await, "!handle_command");
+            events = res.1;
+            for event in events {
+                let to_save = TakerSavedEvent {
+                    timestamp: now_ms(),
+                    event: event.clone(),
+                };
+                unwrap!(save_my_taker_swap_event(&ctx, &running_swap, to_save), "!save_my_taker_swap_event");
+                if event.should_ban_maker() { ban_pubkey(&ctx, running_swap.maker.bytes.into(), &running_swap.uuid, event.clone().into()) }
+                status.status(&[&"swap", &("uuid", &uuid[..])], &event.status_str());
+                unwrap!(running_swap.apply_event(event), "!apply_event");
+            }
+            match res.0 {
+                Some(c) => { command = c; },
+                None => {
+                    if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
+                        log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                    }
+                    break;
+                },
+            }
         }
-        match res.0 {
-            Some(c) => { command = c; },
-            None => {
-                if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
-                    log!("!broadcast_my_swap_status(" (uuid) "): " (e));
-                }
-                break;
-            },
-        }
-    }
+    }.fuse());
+    let mut shutdown_fut = Box::pin(shutdown_rx.recv().fuse());
+    select! {
+        swap = swap_fut => (), // swap finished normally
+        shutdown = shutdown_fut => log!("on_stop] swap " (swap_for_log.uuid) " stopped!"),
+        touch = touch_loop => unreachable!("Touch loop can not stop!"),
+    };
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -970,11 +1055,26 @@ impl TakerSwap {
         ))
     }
 
+    pub fn load_from_db_by_uuid(
+        ctx: MmArc,
+        maker_coin: MmCoinEnum,
+        taker_coin: MmCoinEnum,
+        swap_uuid: &str,
+    ) -> Result<(Self, Option<TakerSwapCommand>), String> {
+        let path = my_swap_file_path(&ctx, swap_uuid);
+        let saved: SavedSwap = try_s!(json::from_slice(&try_s!(slurp(&path))));
+        let saved = match saved {
+            SavedSwap::Taker(swap) => swap,
+            SavedSwap::Maker(_) => return ERR!("Can not load TakerSwap from SavedSwap::Maker uuid: {}", swap_uuid),
+        };
+        Self::load_from_saved(ctx, maker_coin, taker_coin, saved)
+    }
+
     pub fn load_from_saved(
         ctx: MmArc,
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
-        saved: TakerSavedSwap
+        saved: TakerSavedSwap,
     ) -> Result<(Self, Option<TakerSwapCommand>), String> {
         if saved.events.is_empty() {
             return ERR!("Can't restore swap from empty events set");

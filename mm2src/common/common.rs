@@ -61,6 +61,7 @@ pub mod jsonrpc_client;
 #[macro_use]
 pub mod log;
 
+pub mod file_lock;
 #[cfg(feature = "native")]
 pub mod for_c;
 pub mod custom_futures;
