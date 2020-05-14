@@ -23,7 +23,7 @@
 use bytes::Bytes;
 use coins::{get_enabled_coins, get_trade_fee, my_tx_history, send_raw_transaction, set_required_confirmations,
             set_requires_notarization, show_priv_key, withdraw};
-use common::{err_to_rpc_json_string, HyRes};
+use common::{err_tp_rpc_json, err_to_rpc_json_string, HyRes};
 #[cfg(feature = "native")]
 use common::wio::{slurp_reqʰ, CORE, CPUPOOL, HTTP};
 use common::lift_body::LiftBody;
@@ -34,7 +34,7 @@ use common::mm_ctx::ctx2helpers;
 use common::for_tests::common_wait_for_log_re;
 use futures01::{self, Future, Stream};
 use futures::compat::{Compat, Future01CompatExt};
-use futures::future::{FutureExt, TryFutureExt};
+use futures::future::{FutureExt, join_all, TryFutureExt};
 use gstuff;
 use http::{Request, Response, Method};
 use http::request::Parts;
@@ -290,15 +290,39 @@ async fn rpc_serviceʹ (ctx: MmArc, req: Parts, reqᵇ: Box<dyn Stream<Item=Byte
 
     let reqᵇ = try_s! (reqᵇ.concat2().compat().await);
     let reqʲ: Json = try_s! (json::from_slice (&reqᵇ));
+    match reqʲ.as_array() {
+        Some(requests) => {
+            let mut futures = Vec::with_capacity(requests.len());
+            for request in requests {
+                futures.push(process_single_request(ctx.clone(), request.clone(), client));
+            }
+            let results = join_all(futures).await;
+            let responses: Vec<_> = results.into_iter().map(|resp| match resp {
+                Ok(r) => match json::from_slice(r.body()) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        log!("Response " [r] " is not a valid JSON, err " (e));
+                        Json::Null
+                    }
+                },
+                Err(e) => err_tp_rpc_json(e),
+            }).collect();
+            let res = try_s!(json::to_vec(&responses));
+            Ok(try_s!(Response::builder().body(res)))
+        },
+        None => process_single_request(ctx, reqʲ, client).await
+    }
+}
 
+async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
     // https://github.com/artemii235/SuperNET/issues/368
     let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
-    if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains (&reqʲ["method"].as_str()) {
+    if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains (&req["method"].as_str()) {
         return ERR! ("Selected method can be called from localhost only!")
     }
-    try_s! (auth (&reqʲ, &ctx));
+    try_s! (auth (&req, &ctx));
 
-    let handler = match dispatcher (reqʲ, ctx.clone()) {
+    let handler = match dispatcher (req, ctx.clone()) {
         DispatcherRes::Match (handler) => handler,
         DispatcherRes::NoMatch (req) => return ERR! ("No such method: {:?}", req["method"])
     };

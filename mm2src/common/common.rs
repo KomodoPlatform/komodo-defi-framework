@@ -947,20 +947,24 @@ pub fn rpc_response<T> (status: u16, body: T) -> HyRes where Vec<u8>: From<T> {
     Box::new (rf)
 }
 
+#[derive(Serialize)]
+struct ErrResponse {
+    error: String,
+}
+
 /// Converts the given `err` message into the `{error: $err}` JSON string.
 pub fn err_to_rpc_json_string(err: &str) -> String {
-    #[derive(Serialize)]
-    struct ErrResponse {
-        error: String,
-    }
-
     let err = ErrResponse {
         error: err.to_owned(),
     };
     json::to_string(&err).unwrap()
 }
 
-/// Returns the `{error: $msg}` JSON response with the given HTTP `status`.  
+pub fn err_tp_rpc_json(error: String) -> Json {
+    json::to_value(ErrResponse { error }).unwrap()
+}
+
+/// Returns the `{error: $msg}` JSON response with the given HTTP `status`.
 /// Also logs the error (if possible).
 pub fn rpc_err_response(status: u16, msg: &str) -> HyRes {
     // TODO: Like in most other places, we should check for a thread-local access to the proper log here.
