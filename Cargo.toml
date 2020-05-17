@@ -59,9 +59,7 @@ debug = true
 # For better or worse, might affect the stack traces in our portion of the code.
 #opt-level = 1
 
-# NB: With nightly-2019-10-24 we ought to rename `overrides` to `package`,
-# but this seems incompatible with `cross`, should further look into this.
-[profile.release.overrides."*"]
+[profile.release.package."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false
 
