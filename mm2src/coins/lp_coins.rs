@@ -1,4 +1,3 @@
-
 /******************************************************************************
  * Copyright © 2014-2018 The SuperNET Developers.                             *
  *                                                                            *
@@ -37,6 +36,7 @@ use bigdecimal::BigDecimal;
 use common::{rpc_response, rpc_err_response, HyRes};
 use common::duplex_mutex::DuplexMutex;
 use common::mm_ctx::{from_ctx, MmArc};
+use common::mm_metrics::{MetricsWeak};
 use common::mm_number::MmNumber;
 use futures01::Future;
 use futures::compat::Future01CompatExt;
@@ -46,7 +46,7 @@ use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::collections::hash_map::{HashMap, RawEntryMut};
-use std::fmt::Debug;
+use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -69,7 +69,7 @@ use self::utxo::{utxo_coin_from_conf_and_request, UtxoCoin, UtxoFeeDetails, Utxo
 pub mod test_coin;
 pub use self::test_coin::TestCoin;
 
-pub trait Transaction: Debug + 'static {
+pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
     fn tx_hex(&self) -> Vec<u8>;
     fn extract_secret(&self) -> Result<Vec<u8>, String>;
@@ -314,6 +314,22 @@ pub struct TransactionDetails {
     internal_id: BytesJson,
 }
 
+impl TransactionDetails {
+    /// Whether the transaction details block height should be updated (when tx is confirmed)
+    pub fn should_update_block_height(&self) -> bool {
+        // checking for std::u64::MAX because there was integer overflow
+        // in case of electrum returned -1 so there could be records with MAX confirmations
+        self.block_height == 0 || self.block_height == std::u64::MAX
+    }
+
+    /// Whether the transaction timestamp should be updated (when tx is confirmed)
+    pub fn should_update_timestamp(&self) -> bool {
+        // checking for std::u64::MAX because there was integer overflow
+        // in case of electrum returned -1 so there could be records with MAX confirmations
+        self.timestamp == 0
+    }
+}
+
 pub enum TradeInfo {
     // going to act as maker
     Maker,
@@ -328,7 +344,7 @@ pub struct TradeFee {
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
-pub trait MmCoin: SwapOps + MarketCoinOps + Debug + Send + Sync + 'static {
+pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;
@@ -450,6 +466,112 @@ impl CoinsContext {
     }
 }
 
+pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
+
+/// Common methods to measure the outgoing requests and incoming responses statistics.
+pub trait RpcTransportEventHandler {
+    fn debug_info(&self) -> String;
+
+    fn on_outgoing_request(&self, data: &[u8]);
+
+    fn on_incoming_response(&self, data: &[u8]);
+}
+
+impl fmt::Debug for dyn RpcTransportEventHandler + Send + Sync {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.debug_info())
+    }
+}
+
+impl RpcTransportEventHandler for RpcTransportEventHandlerShared {
+    fn debug_info(&self) -> String {
+        self.deref().debug_info()
+    }
+
+    fn on_outgoing_request(&self, data: &[u8]) {
+        self.as_ref().on_outgoing_request(data)
+    }
+
+    fn on_incoming_response(&self, data: &[u8]) {
+        self.as_ref().on_incoming_response(data)
+    }
+}
+
+impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
+    fn debug_info(&self) -> String {
+        let selfi: Vec<String> = self.iter().map(|x| x.debug_info()).collect();
+        format!("{:?}", selfi)
+    }
+
+    fn on_outgoing_request(&self, data: &[u8]) {
+        for handler in self {
+            handler.on_outgoing_request(data)
+        }
+    }
+
+    fn on_incoming_response(&self, data: &[u8]) {
+        for handler in self {
+            handler.on_incoming_response(data)
+        }
+    }
+}
+
+pub enum RpcClientType {
+    Native,
+    Electrum,
+    Ethereum,
+}
+
+impl ToString for RpcClientType {
+    fn to_string(&self) -> String {
+        match self {
+            RpcClientType::Native => "native".into(),
+            RpcClientType::Electrum => "electrum".into(),
+            RpcClientType::Ethereum => "ethereum".into(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CoinTransportMetrics {
+    /// Using a weak reference by default in order to avoid circular references and leaks.
+    metrics: MetricsWeak,
+    /// Name of coin the rpc client is intended to work with.
+    ticker: String,
+    /// RPC client type.
+    client: String,
+}
+
+impl CoinTransportMetrics {
+    fn new(metrics: MetricsWeak, ticker: String, client: RpcClientType) -> CoinTransportMetrics {
+        CoinTransportMetrics { metrics, ticker, client: client.to_string() }
+    }
+
+    fn into_shared(self) -> RpcTransportEventHandlerShared {
+        Arc::new(self)
+    }
+}
+
+impl RpcTransportEventHandler for CoinTransportMetrics {
+    fn debug_info(&self) -> String {
+        "CoinTransportMetrics".into()
+    }
+
+    fn on_outgoing_request(&self, data: &[u8]) {
+        mm_counter!(self.metrics, "rpc_client.traffic.out", data.len() as u64,
+            "coin" => self.ticker.clone(), "client" => self.client.clone());
+        mm_counter!(self.metrics, "rpc_client.request.count", 1,
+            "coin" => self.ticker.clone(), "client" => self.client.clone());
+    }
+
+    fn on_incoming_response(&self, data: &[u8]) {
+        mm_counter!(self.metrics, "rpc_client.traffic.in", data.len() as u64,
+            "coin" => self.ticker.clone(), "client" => self.client.clone());
+        mm_counter!(self.metrics, "rpc_client.response.count", 1,
+            "coin" => self.ticker.clone(), "client" => self.client.clone());
+    }
+}
+
 /// Adds a new currency into the list of currencies configured.
 ///
 /// Returns an error if the currency already exists. Initializing the same currency twice is a bad habit
@@ -478,7 +600,7 @@ pub async fn lp_coininit (ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoi
     let secret = &*ctx.secp256k1_key_pair().private().secret;
 
     let coin: MmCoinEnum = if coins_en["etomic"].is_null() {
-        try_s! (utxo_coin_from_conf_and_request (ticker, coins_en, req, secret) .await) .into()
+        try_s! (utxo_coin_from_conf_and_request (ctx, ticker, coins_en, req, secret) .await) .into()
     } else {
         try_s! (eth_coin_from_conf_and_request (ctx, ticker, coins_en, req, secret) .await) .into()
     };

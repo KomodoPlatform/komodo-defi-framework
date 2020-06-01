@@ -1,6 +1,6 @@
 FROM ubuntu:bionic
 WORKDIR /mm2
-COPY target/release/mm2 /app/mm2
+COPY target-xenial/release/mm2 /app/mm2
 EXPOSE 7783
 ENV PATH="/app:${PATH}"
 CMD mm2

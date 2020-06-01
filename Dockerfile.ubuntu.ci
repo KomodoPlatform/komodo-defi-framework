@@ -1,0 +1,26 @@
+FROM ubuntu:xenial-20151218.1
+
+RUN \
+    apt-get update &&\
+    apt-get install -y git build-essential libssl-dev wget &&\
+    apt-get install -y cmake &&\
+    # https://github.com/rust-lang/rust-bindgen/blob/master/book/src/requirements.md#debian-based-linuxes
+    apt-get install -y llvm-3.9-dev libclang-3.9-dev clang-3.9 &&\
+    # openssl-sys requirements, cf. https://crates.io/crates/openssl-sys
+    apt-get install -y pkg-config libssl-dev &&\
+    apt-get clean
+
+RUN \
+    wget -O- https://sh.rustup.rs > /tmp/rustup-init.sh &&\
+    sh /tmp/rustup-init.sh -y --default-toolchain none &&\
+    . /root/.cargo/env &&\
+    rustup set profile minimal &&\
+    rustup install nightly-2020-02-01 &&\
+    rustup default nightly-2020-02-01 &&\
+    # It seems that bindgen won't prettify without it:
+    rustup component add rustfmt-preview &&\
+    rm -f /tmp/rustup-init.sh &&\
+    chmod -R 777 /root
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+WORKDIR /mm2

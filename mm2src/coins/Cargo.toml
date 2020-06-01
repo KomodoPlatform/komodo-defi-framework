@@ -44,6 +44,7 @@ keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = "0.2"
 libsecp256k1 = "0.2.2"
+metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }

@@ -60,7 +60,10 @@ macro_rules! ifrom {
 pub mod jsonrpc_client;
 #[macro_use]
 pub mod log;
+#[macro_use]
+pub mod mm_metrics;
 
+pub mod big_int_str;
 pub mod file_lock;
 #[cfg(feature = "native")]
 pub mod for_c;
@@ -125,6 +128,8 @@ use std::time::UNIX_EPOCH;
 use uuid::Uuid;
 #[cfg(feature = "w-bindgen")]
 use wasm_bindgen::prelude::*;
+
+pub use num_bigint::BigInt;
 
 #[cfg(feature = "native")]
 #[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]

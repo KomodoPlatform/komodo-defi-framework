@@ -76,6 +76,11 @@ pub fn lp_main (conf: Json, ctx_cb: &dyn Fn (u32)) -> Result<(), String> {
         let netid = conf["netid"].as_u64().unwrap_or (0) as u16;
         let (_, pubport, _) = try_s!(lp_ports(netid));
         let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+
+        if let Err(err) = ctx.init_metrics() {
+            log!("Warning: couldn't initialize metricx system: "(err));
+        }
+
         ctx_cb (try_s! (ctx.ffi_handle()));
         try_s! (block_on (lp_init (pubport, ctx)));
         Ok(())

@@ -70,6 +70,7 @@ const PUBLIC_METHODS: &[Option<&str>] = &[  // Sorted alphanumerically (on the f
     Some("getpeers"),
     Some("getcoins"),
     Some("help"),
+    Some("metrics"),
     Some("notify"),  // Manually checks the peer's public key.
     Some("orderbook"),
     Some("passphrase"),  // Manually checks the "passphrase".
@@ -232,6 +233,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         // "inventory" => inventory (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
         "list_banned_pubkeys" => hyres (list_banned_pubkeys (ctx)),
+        "metrics" => metrics(ctx),
         "my_balance" => my_balance (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
         "my_orders" => my_orders (ctx),

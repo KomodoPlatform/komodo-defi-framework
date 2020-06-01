@@ -1,4 +1,6 @@
+use bigdecimal::BigDecimal;
 use common::block_on;
+use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
 use crate::{
     WithdrawFee,
@@ -9,10 +11,10 @@ use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use super::*;
 
-const TEST_COIN_NAME: &'static str = "ETOMIC";
+const TEST_COIN_NAME: &'static str = "RICK";
 
 fn electrum_client_for_test(servers: &[&str]) -> UtxoRpcClientEnum {
-    let mut client = ElectrumClientImpl::new(TEST_COIN_NAME.into());
+    let mut client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
     for server in servers {
         client.add_server(&ElectrumRpcRequest {
             url: server.to_string(),
@@ -254,6 +256,7 @@ fn test_wait_for_payment_spend_timeout_native() {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     };
 
     static mut OUTPUT_SPEND_CALLED: bool = false;
@@ -279,7 +282,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
 
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into());
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin: UtxoCoin = utxo_coin_for_test(client, None).into();
     let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
@@ -346,6 +349,7 @@ fn test_withdraw_impl_set_fixed_fee() {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -375,6 +379,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -407,6 +412,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -441,6 +447,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -475,6 +482,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -500,6 +508,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     }));
 
     let coin: UtxoCoin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None).into();
@@ -567,8 +576,11 @@ fn get_tx_details_doge() {
          "servers": [{"url":"electrum1.cipig.net:10060"},{"url":"electrum2.cipig.net:10060"},{"url":"electrum3.cipig.net:10060"}]
     });
 
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
     use common::executor::spawn;
-    let coin = unwrap!(block_on(utxo_coin_from_conf_and_request("DOGE", &conf, &req, &[1u8; 32])));
+    let coin = unwrap!(block_on(utxo_coin_from_conf_and_request(
+        &ctx, "DOGE", &conf, &req, &[1u8; 32])));
 
     let coin1 = coin.clone();
     let coin2 = coin.clone();
@@ -623,7 +635,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"JsonRpcError { client_info: "coin: ETOMIC", request: JsonRpcRequest { jsonrpc: "2.0", id: "0", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({\'code\': -5, \'message\': \'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.\'})")})) }"#;
+    let expected = r#"JsonRpcError { client_info: "coin: RICK", request: JsonRpcRequest { jsonrpc: "2.0", id: "0", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({\'code\': -5, \'message\': \'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.\'})")})) }"#;
     let actual = format!("{}", err);
 
     assert_eq!(expected, actual);
@@ -720,6 +732,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     };
 
     static mut GET_RELAY_FEE_CALLED: bool = false;
@@ -764,6 +777,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
         auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        event_handlers: Default::default(),
     };
 
     static mut GET_RELAY_FEE_CALLED: bool = false;

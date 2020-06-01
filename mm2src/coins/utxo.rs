@@ -64,9 +64,9 @@ use std::time::Duration;
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo };
-use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TradeInfo,
-            Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo};
+use super::{CoinsContext, CoinTransportMetrics, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandlerShared,
+            SwapOps, TradeFee, TradeInfo, Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 
 #[cfg(test)]
@@ -606,14 +606,16 @@ impl UtxoCoin {
         let mut sum_outputs_value = 0;
         let mut received_by_me = 0;
         for output in outputs.iter() {
-            true_or_err!(output.value >= DUST, "Output value {} is less than dust amount {}", output.value, DUST);
+            let script: Script = output.script_pubkey.clone().into();
+            if script.opcodes().nth(0) != Some(Ok(Opcode::OP_RETURN)) {
+                true_or_err!(output.value >= DUST, "Output value {} is less than dust amount {}", output.value, DUST);
+            }
             sum_outputs_value += output.value;
             if output.script_pubkey == change_script_pubkey {
                 received_by_me += output.value;
             }
         }
 
-        true_or_err!(sum_outputs_value > 0, "Sum of outputs {:?} is zero", outputs);
         let str_d_zeel = if self.ticker == "NAV" {
             Some("".into())
         } else {
@@ -894,12 +896,24 @@ impl SwapOps for UtxoCoin {
             &try_fus!(Public::from_slice(taker_pub)),
         );
         let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let output = TransactionOutput {
+        let htlc_out = TransactionOutput {
             value: amount,
             script_pubkey: Builder::build_p2sh(&dhash160(&redeem_script)).into(),
         };
+        // record secret hash to blockchain too making it impossible to lose
+        // lock time may be easily brute forced so it is not mandatory to record it
+        let secret_hash_op_return_script = Builder::default()
+            .push_opcode(Opcode::OP_RETURN)
+            .push_bytes(secret_hash)
+            .into_bytes();
+        let secret_hash_op_return_out = TransactionOutput {
+            value: 0,
+            script_pubkey: secret_hash_op_return_script,
+        };
         let send_fut = match &self.rpc_client {
-            UtxoRpcClientEnum::Electrum(_) => Either::A(self.send_outputs_from_my_address(vec![output]).map_err(|e| ERRL!("{}", e))),
+            UtxoRpcClientEnum::Electrum(_) => Either::A(self.send_outputs_from_my_address(
+                vec![htlc_out, secret_hash_op_return_out]
+            )),
             UtxoRpcClientEnum::Native(client) => {
                 let payment_addr = Address {
                     checksum_type: self.checksum_type,
@@ -910,7 +924,7 @@ impl SwapOps for UtxoCoin {
                 let arc = self.clone();
                 let addr_string = payment_addr.to_string();
                 Either::B(client.import_address(&addr_string, &addr_string, false).map_err(|e| ERRL!("{}", e)).and_then(move |_|
-                    arc.send_outputs_from_my_address(vec![output]).map_err(|e| ERRL!("{}", e))
+                    arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])
                 ))
             }
         };
@@ -921,24 +935,36 @@ impl SwapOps for UtxoCoin {
         &self,
         time_lock: u32,
         maker_pub: &[u8],
-        priv_bn_hash: &[u8],
+        secret_hash: &[u8],
         amount: BigDecimal,
     ) -> TransactionFut {
         let redeem_script = payment_script(
             time_lock,
-            priv_bn_hash,
+            secret_hash,
             self.key_pair.public(),
             &try_fus!(Public::from_slice(maker_pub)),
         );
 
         let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
 
-        let output = TransactionOutput {
+        let htlc_out = TransactionOutput {
             value: amount,
             script_pubkey: Builder::build_p2sh(&dhash160(&redeem_script)).into(),
         };
+        // record secret hash to blockchain too making it impossible to lose
+        // lock time may be easily brute forced so it is not mandatory to record it
+        let secret_hash_op_return_script = Builder::default()
+            .push_opcode(Opcode::OP_RETURN)
+            .push_bytes(secret_hash)
+            .into_bytes();
+        let secret_hash_op_return_out = TransactionOutput {
+            value: 0,
+            script_pubkey: secret_hash_op_return_script,
+        };
         let send_fut = match &self.rpc_client {
-            UtxoRpcClientEnum::Electrum(_) => Either::A(self.send_outputs_from_my_address(vec![output])),
+            UtxoRpcClientEnum::Electrum(_) => Either::A(self.send_outputs_from_my_address(
+                vec![htlc_out, secret_hash_op_return_out]
+            )),
             UtxoRpcClientEnum::Native(client) => {
                 let payment_addr = Address {
                     checksum_type: self.checksum_type,
@@ -949,7 +975,7 @@ impl SwapOps for UtxoCoin {
                 let arc = self.clone();
                 let addr_string = payment_addr.to_string();
                 Either::B(client.import_address(&addr_string, &addr_string, false).map_err(|e| ERRL!("{}", e)).and_then(move |_|
-                    arc.send_outputs_from_my_address(vec![output])
+                    arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])
                 ))
             }
         };
@@ -1444,8 +1470,12 @@ impl MmCoin for UtxoCoin {
             "code": 1,
             "message": "history too large"
         });
+
+        let mut my_balance: Option<BigDecimal> = None;
         let history = self.load_history_from_file(&ctx);
         let mut history_map: HashMap<H256Json, TransactionDetails> = history.into_iter().map(|tx| (H256Json::from(tx.tx_hash.as_slice()), tx)).collect();
+
+        let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() { break };
             {
@@ -1460,11 +1490,36 @@ impl MmCoin for UtxoCoin {
                 };
             }
 
+            let actual_balance = match self.my_balance().wait() {
+                Ok(actual_balance) => Some(actual_balance),
+                Err(err) => {
+                    ctx.log.log("", &[&"tx_history", &self.ticker], &ERRL!("Error {:?} on getting balance", err));
+                    None
+                },
+            };
+
+            let need_update = history_map
+                .iter()
+                .find(|(_, tx)| tx.should_update_timestamp() || tx.should_update_block_height())
+                .is_some();
+            match (&my_balance, &actual_balance) {
+                (Some(prev_balance), Some(actual_balance))
+                if prev_balance == actual_balance && !need_update => {
+                    // my balance hasn't been changed, there is no need to reload tx_history
+                    thread::sleep(Duration::from_secs(30));
+                    continue;
+                },
+                _ => ()
+            }
+
             let tx_ids: Vec<(H256Json, u64)> = match &self.rpc_client {
                 UtxoRpcClientEnum::Native(client) => {
                     let mut from = 0;
                     let mut all_transactions = vec![];
                     loop {
+                        mm_counter!(ctx.metrics, "tx.history.request.count", 1,
+                            "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
+
                         let transactions = match client.list_transactions(100, from).wait() {
                             Ok(value) => value,
                             Err(e) => {
@@ -1473,12 +1528,20 @@ impl MmCoin for UtxoCoin {
                                 continue;
                             }
                         };
+
+                        mm_counter!(ctx.metrics, "tx.history.response.count", 1,
+                            "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
+
                         if transactions.is_empty() {
                             break;
                         }
                         from += 100;
                         all_transactions.extend(transactions);
                     }
+
+                    mm_counter!(ctx.metrics, "tx.history.response.total_length", all_transactions.len() as u64,
+                        "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
+
                     all_transactions.into_iter().filter_map(|item| {
                         if item.address == self.my_address() {
                             Some((item.txid, item.blockindex))
@@ -1490,6 +1553,10 @@ impl MmCoin for UtxoCoin {
                 UtxoRpcClientEnum::Electrum(client) => {
                     let script = Builder::build_p2pkh(&self.my_address.hash);
                     let script_hash = electrum_script_hash(&script);
+
+                    mm_counter!(ctx.metrics, "tx.history.request.count", 1,
+                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
+
                     let electrum_history = match client.scripthash_get_history(&hex::encode(script_hash)).wait() {
                         Ok(value) => value,
                         Err(e) => {
@@ -1516,6 +1583,12 @@ impl MmCoin for UtxoCoin {
                             }
                         }
                     };
+                    mm_counter!(ctx.metrics, "tx.history.response.count", 1,
+                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
+
+                    mm_counter!(ctx.metrics, "tx.history.response.total_length", electrum_history.len() as u64,
+                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
+
                     // electrum returns the most recent transactions in the end but we need to
                     // process them first so rev is required
                     electrum_history.into_iter().rev().map(|item| {
@@ -1544,8 +1617,12 @@ impl MmCoin for UtxoCoin {
                 let mut updated = false;
                 match history_map.entry(txid.clone()) {
                     Entry::Vacant(e) => {
+                        mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
+
                         match self.tx_details_by_hash(&txid.0).wait() {
                             Ok(mut tx_details) => {
+                                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
+
                                 if tx_details.block_height == 0 && height > 0 {
                                     tx_details.block_height = height;
                                 }
@@ -1564,12 +1641,16 @@ impl MmCoin for UtxoCoin {
                     },
                     Entry::Occupied(mut e) => {
                         // update block height for previously unconfirmed transaction
-                        if (e.get().block_height == 0 || e.get().block_height == std::u64::MAX) && height > 0 {
+                        if e.get().should_update_block_height() && height > 0 {
                             e.get_mut().block_height = height;
                             updated = true;
                         }
-                        if e.get().timestamp == 0 {
+                        if e.get().should_update_timestamp() {
+                            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
+
                             if let Ok(tx_details) = self.tx_details_by_hash(&txid.0).wait() {
+                                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
+
                                 e.get_mut().timestamp = tx_details.timestamp;
                                 updated = true;
                             }
@@ -1590,6 +1671,13 @@ impl MmCoin for UtxoCoin {
                 }
             }
             *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
+
+            if success_iteration == 0 {
+                ctx.log.log("😅", &[&"tx_history", &("coin", self.ticker.clone().as_str())], "history has been loaded successfully");
+            }
+
+            my_balance = actual_balance;
+            success_iteration += 1;
             thread::sleep(Duration::from_secs(30));
         }
     }
@@ -1823,7 +1911,20 @@ fn read_native_mode_conf(_filename: &dyn AsRef<Path>) -> Result<(Option<u16>, St
     unimplemented!()
 }
 
+fn rpc_event_handlers_for_client_transport(
+    ctx: &MmArc,
+    ticker: String,
+    client: RpcClientType,
+)
+    -> Vec<RpcTransportEventHandlerShared> {
+    let metrics = ctx.metrics.weak();
+    vec![
+        CoinTransportMetrics::new(metrics, ticker, client).into_shared(),
+    ]
+}
+
 pub async fn utxo_coin_from_conf_and_request(
+    ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     req: &Json,
@@ -1865,10 +1966,12 @@ pub async fn utxo_coin_from_conf_and_request(
                     Some(p) => p,
                     None => try_s!(conf["rpcport"].as_u64().ok_or(ERRL!("Rpc port is not set neither in `coins` file nor in native daemon config"))) as u16,
                 };
+                let event_handlers = rpc_event_handlers_for_client_transport(ctx, ticker.to_string(), RpcClientType::Native);
                 let client = Arc::new(NativeClientImpl {
                     coin_ticker: ticker.to_string(),
                     uri: fomat!("http://127.0.0.1:"(rpc_port)),
                     auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
+                    event_handlers,
                 });
 
                 UtxoRpcClientEnum::Native(NativeClient(client))
@@ -1880,7 +1983,8 @@ pub async fn utxo_coin_from_conf_and_request(
             let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
             let mut rng = small_rng();
             servers.as_mut_slice().shuffle(&mut rng);
-            let mut client = ElectrumClientImpl::new(ticker.to_string());
+            let event_handlers = rpc_event_handlers_for_client_transport(ctx, ticker.to_string(), RpcClientType::Electrum);
+            let mut client = ElectrumClientImpl::new(ticker.to_string(), event_handlers);
             for server in servers.iter() {
                 match client.add_server(server) {
                     Ok(_) => (),

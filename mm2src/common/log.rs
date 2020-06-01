@@ -1,7 +1,5 @@
 //! Human-readable logging and statuses.
 
-// TODO: Sort the tags while converting `&[&TagParam]` to `Vec<Tag>`.
-
 use atomic::Atomic;
 use chrono::{Local, TimeZone, Utc};
 use chrono::format::DelayedFormat;
@@ -17,6 +15,7 @@ use std::fmt;
 use std::fmt::Write as WriteFmt;
 use std::hash::{Hash, Hasher};
 use std::mem::swap;
+use std::ops::Deref;
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
@@ -418,6 +417,44 @@ pub struct LogState {
     gravity: DuplexMutex<Option<Arc<Gravity>>>
 }
 
+#[derive(Clone)]
+pub struct LogArc(pub Arc<LogState>);
+
+impl Deref for LogArc {
+    type Target = LogState;
+    fn deref(&self) -> &LogState { &*self.0 }
+}
+
+impl LogArc {
+    /// Create LogArc from real `LogState`.
+    pub fn new(state: LogState) -> LogArc {
+        LogArc(Arc::new(state))
+    }
+
+    /// Try to obtain the `LogState` from the weak pointer.
+    pub fn from_weak(weak: &LogWeak) -> Option<LogArc> {
+        weak.0.upgrade().map(|arc| LogArc(arc))
+    }
+
+    /// Create a weak pointer to `LogState`.
+    pub fn weak(&self) -> LogWeak {
+        LogWeak(Arc::downgrade(&self.0))
+    }
+}
+
+pub struct LogWeak(pub Weak<LogState>);
+
+impl LogWeak {
+    /// Create a default MmWeak without allocating any memory.
+    pub fn new() -> LogWeak {
+        LogWeak(Default::default())
+    }
+
+    pub fn dropped(&self) -> bool {
+        self.0.strong_count() == 0
+    }
+}
+
 /// The state used to periodically log the dashboard.
 struct DashboardLogging {
     /// The time when the dashboard was last printed into the log.
@@ -574,6 +611,20 @@ impl LogState {
     }
 
     /// Creates a new human-readable log entry.
+    ///
+    /// The method is identical to `log_deref_tags` except the `tags` are `TagParam` trait objects.
+    pub fn log(&self, emotion: &str, tags: &[&dyn TagParam], line: &str) {
+        let entry = LogEntry {
+            time: now_ms(),
+            emotion: emotion.into(),
+            tags: tags.iter().map(|t| Tag { key: t.key(), val: t.val() }).collect(),
+            line: line.into(),
+        };
+
+        self.log_entry(entry)
+    }
+
+    /// Creates a new human-readable log entry.
     /// 
     /// This is a bit different from the `println!` logging
     /// (https://www.reddit.com/r/rust/comments/9hpk65/which_tools_are_you_using_to_debug_rust_projects/e6dkciz/)
@@ -593,26 +644,30 @@ impl LogState {
     ///   GUI might use it to get some useful information from the log.
     /// * `line` - The human-readable description of the event,
     ///   we have no intention to make it parsable.
-    pub fn log (&self, emotion: &str, tags: &[&dyn TagParam], line: &str) {
+    pub fn log_deref_tags(&self, emotion: &str, tags: Vec<Tag>, line: &str) {
         let entry = LogEntry {
             time: now_ms(),
             emotion: emotion.into(),
-            tags: tags.iter().map (|t| Tag {key: t.key(), val: t.val()}) .collect(),
-            line: line.into()
+            tags,
+            line: line.into(),
         };
 
-        let mut chunk = String::with_capacity (256);
-        if let Err (err) = entry.format (&mut chunk) {
-            log! ({"log] Error formatting log entry: {}", err});
+        self.log_entry(entry)
+    }
+
+    fn log_entry(&self, entry: LogEntry) {
+        let mut chunk = String::with_capacity(256);
+        if let Err(err) = entry.format(&mut chunk) {
+            log!({ "log] Error formatting log entry: {}", err });
             return
         }
 
-        let mut tail = unwrap! (self.tail.spinlock (77));
-        if tail.len() == tail.capacity() {let _ = tail.pop_front();}
-        tail.push_back (entry);
-        drop (tail);
+        let mut tail = unwrap!(self.tail.spinlock (77));
+        if tail.len() == tail.capacity() { let _ = tail.pop_front(); }
+        tail.push_back(entry);
+        drop(tail);
 
-        self.chunk2log (chunk)
+        self.chunk2log(chunk)
     }
 
     fn chunk2log (&self, chunk: String) {

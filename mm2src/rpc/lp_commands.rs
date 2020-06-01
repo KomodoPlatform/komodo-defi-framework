@@ -141,6 +141,15 @@ pub fn help() -> HyRes {
     ")
 }
 
+/// Get MarketMaker session metrics
+pub fn metrics(ctx: MmArc) -> HyRes {
+    match ctx.metrics.collect_json()
+        .map(|value| value.to_string()) {
+        Ok(response) => rpc_response(200, response),
+        Err(err) => rpc_err_response(500, &err),
+    }
+}
+
 /// Get my_balance of a coin
 pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
     let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();

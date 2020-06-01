@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use crossbeam::{channel, Sender, Receiver};
 use futures::channel::mpsc;
+use futures::compat::Compat;
 use gstuff::Constructible;
 #[cfg(not(feature = "native"))]
 use http::Response;
@@ -24,6 +25,11 @@ use std::sync::{Arc, Mutex, Weak};
 
 use crate::{bits256, small_rng, QueuedCommand};
 use crate::log::{self, LogState};
+use crate::mm_metrics::{MetricsArc, prometheus};
+use crate::executor::Timer;
+
+/// Default interval to export and record metrics to log.
+const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -48,7 +54,9 @@ pub struct MmCtx {
     /// MM command-line configuration.
     pub conf: Json,
     /// Human-readable log and status dashboard.
-    pub log: log::LogState,
+    pub log: log::LogArc,
+    /// Tools and methods and to collect and export the MM metrics.
+    pub metrics: MetricsArc,
     /// Set to true after `lp_passphrase_init`, indicating that we have a usable state.
     /// 
     /// Should be refactored away in the future. State should always be valid.
@@ -106,7 +114,8 @@ impl MmCtx {
         let (command_queue, command_queueʳ) = mpsc::unbounded();
         MmCtx {
             conf: Json::Object (json::Map::new()),
-            log,
+            log: log::LogArc::new(log),
+            metrics: MetricsArc::new(),
             initialized: Constructible::default(),
             rpc_started: Constructible::default(),
             stop: Constructible::default(),
@@ -280,6 +289,11 @@ unsafe impl Send for MmWeak {}
 unsafe impl Sync for MmWeak {}
 
 impl MmWeak {
+    /// Create a default MmWeak without allocating any memory.
+    pub fn new() -> MmWeak {
+        MmWeak(Default::default())
+    }
+
     pub fn dropped (&self) -> bool {
         self.0.strong_count() == 0
 }   }
@@ -382,9 +396,45 @@ impl MmArc {
         MmWeak (Arc::downgrade (&self.0))
     }
 
-    /// Tries to obtain the MM context from the weak link.  
+    /// Tries to obtain the MM context from the weak link.
     pub fn from_weak (weak: &MmWeak) -> Option<MmArc> {
         weak.0.upgrade().map (|arc| MmArc (arc))
+    }
+
+    /// Init metrics with dashboard.
+    pub fn init_metrics(&self) -> Result<(), String> {
+        let interval = self.conf["metrics_interval"].as_f64().unwrap_or(EXPORT_METRICS_INTERVAL);
+
+        if interval == 0.0 {
+            try_s!(self.metrics.init());
+        } else {
+            try_s!(self.metrics.init_with_dashboard(self.log.weak(), interval));
+        }
+
+        let prometheusport = match self.conf["prometheusport"].as_u64() {
+            Some(port) => port,
+            _ => return Ok(()),
+        };
+
+        let address: SocketAddr = try_s!(format!("127.0.0.1:{}", prometheusport).parse());
+
+        let credentials = self.conf["prometheus_credentials"]
+            .as_str()
+            .map(|userpass| prometheus::PrometheusCredentials { userpass: userpass.into() });
+
+        let ctx = self.weak();
+
+        // Make the callback. When the context will be dropped, the shutdown_detector will be executed.
+        let shutdown_detector = async move {
+            while !ctx.dropped() {
+                Timer::sleep(0.5).await
+            }
+
+            Ok::<_, ()>(())
+        };
+        let shutdown_detector = Compat::new(Box::pin(shutdown_detector));
+
+        prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }
 }
 

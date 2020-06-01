@@ -2,6 +2,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 
 use bigdecimal::BigDecimal;
+use common::BigInt;
 use common::{block_on, slurp};
 #[cfg(not(feature = "native"))]
 use common::call_back;
@@ -9,9 +10,11 @@ use common::executor::Timer;
 use common::for_tests::{enable_electrum, enable_native, from_env_file, get_passphrase, mm_spat, LocalStart, MarketMakerIt};
 #[cfg(feature = "native")]
 use common::for_tests::mm_dump;
+use common::mm_number::Fraction;
 use common::privkey::key_pair_from_seed;
 #[cfg(not(feature = "native"))]
 use common::mm_ctx::MmArc;
+use common::mm_metrics::{MetricsJson, MetricType};
 use http::StatusCode;
 #[cfg(feature = "native")]
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
@@ -1924,6 +1927,46 @@ fn orderbook_should_display_rational_amounts() {
     let volume_in_orderbook: BigRational = unwrap!(json::from_value(asks[0]["max_volume_rat"].clone()));
     assert_eq!(price, price_in_orderbook);
     assert_eq!(volume, volume_in_orderbook);
+
+    let nine = BigInt::from(9);
+    let ten = BigInt::from(10);
+    // should also display fraction
+    let price_in_orderbook: Fraction = unwrap!(json::from_value(asks[0]["price_fraction"].clone()));
+    let volume_in_orderbook: Fraction = unwrap!(json::from_value(asks[0]["max_volume_fraction"].clone()));
+    assert_eq!(nine, *price_in_orderbook.numer());
+    assert_eq!(ten, *price_in_orderbook.denom());
+
+    assert_eq!(nine, *volume_in_orderbook.numer());
+    assert_eq!(ten, *volume_in_orderbook.denom());
+
+    log!("Get MORTY/RICK orderbook");
+    let rc = unwrap! (block_on (mm.rpc (json! ({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "base": "MORTY",
+            "rel": "RICK",
+        }))));
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    let orderbook: Json = unwrap!(json::from_str(&rc.1));
+    log!("orderbook " [orderbook]);
+    let bids = orderbook["bids"].as_array().unwrap();
+    assert_eq!(bids.len(), 1, "MORTY/RICK orderbook must have exactly 1 bid");
+    let price_in_orderbook: BigRational = unwrap!(json::from_value(bids[0]["price_rat"].clone()));
+    let volume_in_orderbook: BigRational = unwrap!(json::from_value(bids[0]["max_volume_rat"].clone()));
+
+    let price = BigRational::new(10.into(), 9.into());
+    assert_eq!(price, price_in_orderbook);
+    assert_eq!(volume, volume_in_orderbook);
+
+    // should also display fraction
+    let price_in_orderbook: Fraction = unwrap!(json::from_value(bids[0]["price_fraction"].clone()));
+    let volume_in_orderbook: Fraction = unwrap!(json::from_value(bids[0]["max_volume_fraction"].clone()));
+    assert_eq!(ten, *price_in_orderbook.numer());
+    assert_eq!(nine, *price_in_orderbook.denom());
+
+    assert_eq!(nine, *volume_in_orderbook.numer());
+    assert_eq!(ten, *volume_in_orderbook.denom());
 }
 
 fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
@@ -2385,6 +2428,150 @@ fn test_batch_requests() {
     assert_eq!(responses[1]["address"], Json::from("RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD"));
 
     assert!(responses[2]["error"].as_str().unwrap().contains("Userpass is invalid!"));
+}
+
+fn request_metrics(mm: &MarketMakerIt) -> MetricsJson {
+    let (status, metrics, _headers) = unwrap!(block_on(mm.rpc(json!({ "method": "metrics"}))));
+    assert_eq!(status, StatusCode::OK, "RPC «metrics» failed with status «{}»", status);
+    unwrap!(json::from_str(&metrics))
+}
+
+fn find_metric(metrics: MetricsJson, search_key: &str, search_labels: &Vec<(&str, &str)>) -> Option<MetricType> {
+    metrics.metrics.into_iter()
+        .find(|metric| {
+            let (key, labels) = match metric {
+                MetricType::Counter { key, labels, .. } => (key, labels),
+                _ => return false,
+            };
+
+            if key != search_key {
+                return false;
+            }
+
+            for (s_label_key, s_label_value) in search_labels.iter() {
+                let label_value = match labels.get(&s_label_key.to_string()) {
+                    Some(x) => x,
+                    _ => return false,
+                };
+
+                if s_label_value != label_value {
+                    return false;
+                }
+            }
+
+            true
+        })
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn test_metrics_method() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "face pin block number add byte put seek mime test note password sin tab multiple",
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start! ("bob")
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
+    log!({ "log path: {}", mm.log_path.display() });
+    unwrap!(block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+    let _electrum = block_on(enable_electrum(&mm, "RICK", vec!["electrum1.cipig.net:10017", "electrum2.cipig.net:10017", "electrum3.cipig.net:10017"]));
+
+    let metrics = request_metrics(&mm);
+    assert!(!metrics.metrics.is_empty());
+
+    log!("Received metrics:");
+    log!([metrics]);
+
+    find_metric(metrics, "rpc_client.traffic.out", &vec![("coin", "RICK")])
+        .expect(r#"Couldn't find a metric with key = "traffic.out" and label: coin = "RICK" in received json"#);
+}
+
+#[test]
+#[ignore]
+#[cfg(feature = "native")]
+fn test_electrum_tx_history() {
+    fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
+        let metrics = request_metrics(&mm);
+        match find_metric(metrics,
+                          "tx.history.request.count",
+                          &vec![("coin", "RICK"), ("method", "blockchain.scripthash.get_history")])
+            .unwrap() {
+            MetricType::Counter { value, .. } => value,
+            _ => panic!("tx.history.request.count should be a counter")
+        }
+    }
+
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1},
+    ]);
+
+    let mut mm = unwrap! (MarketMakerIt::start (
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "face pin block number add byte put seek mime test note password sin tab multiple",
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+            "metrics_interval": 30.
+        }),
+        "pass".into(),
+        local_start! ("bob")
+    ));
+    let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
+    log!({ "log path: {}", mm.log_path.display() });
+    unwrap!(block_on (mm.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+
+    // Enable RICK electrum client with tx_history loop.
+    let electrum = unwrap!(block_on(mm.rpc (json! ({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "RICK",
+        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "mm2": 1,
+        "tx_history": true
+    }))));
+
+    assert_eq!(electrum.0, StatusCode::OK, "RPC «electrum» failed with {} {}", electrum.0, electrum.1);
+    let electrum: Json = unwrap!(json::from_str(&electrum.1));
+
+    // Wait till tx_history will not be loaded
+    unwrap!(block_on (mm.wait_for_log (500., |log| log.contains ("history has been loaded successfully"))));
+
+    // tx_history is requested every 30 seconds, wait another iteration
+    thread::sleep(Duration::from_secs(31));
+
+    // Balance is not changed, therefore tx_history shouldn't be reloaded.
+    // Request metrics and check if the MarketMaker has requested tx_history only once
+    assert_eq!(get_tx_history_request_count(&mm), 1);
+
+    // make a transaction to change balance
+    let mut enable_res: HashMap<&str, Json> = HashMap::new();
+    enable_res.insert("RICK", electrum);
+    log! ("enable_coins: " [enable_res]);
+    withdraw_and_send(&mm, "RICK", "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw", &enable_res, "-0.00001");
+
+    // Wait another iteration
+    thread::sleep(Duration::from_secs(31));
+
+    // tx_history should be reloaded on next loop iteration
+    assert_eq!(get_tx_history_request_count(&mm), 2);
 }
 
 // HOWTO

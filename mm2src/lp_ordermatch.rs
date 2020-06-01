@@ -29,7 +29,7 @@ use common::{bits256, json_dir_entries, now_ms, new_uuid,
   remove_file, rpc_response, rpc_err_response, write, HyRes};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
-use common::mm_number::{from_dec_to_ratio, from_ratio_to_dec, MmNumber};
+use common::mm_number::{from_dec_to_ratio, from_ratio_to_dec, Fraction, MmNumber};
 use futures::compat::Future01CompatExt;
 use gstuff::slurp;
 use http::Response;
@@ -840,7 +840,7 @@ struct PricePingRequest {
     base: String,
     rel: String,
     price: BigDecimal,
-    price_rat: Option<BigRational>,
+    price_rat: Option<MmNumber>,
     price64: String,
     timestamp: u64,
     pubsecp: String,
@@ -848,7 +848,7 @@ struct PricePingRequest {
     // TODO rename, it's called "balance", but it's actual meaning is max available volume to trade
     #[serde(rename="bal")]
     balance: BigDecimal,
-    balance_rat: Option<BigRational>,
+    balance_rat: Option<MmNumber>,
     uuid: Option<Uuid>,
 }
 
@@ -889,12 +889,12 @@ impl PricePingRequest {
             rel: order.rel.clone(),
             price64: price64.to_string(),
             price: order.price.clone(),
-            price_rat: Some(order.price_rat.clone()),
+            price_rat: Some(order.price_rat.clone().into()),
             timestamp,
             pubsecp: hex::encode(&**ctx.secp256k1_key_pair().public()),
             sig: hex::encode(&*sig),
             balance: from_ratio_to_dec(&max_volume),
-            balance_rat: Some(max_volume),
+            balance_rat: Some(max_volume.into()),
             uuid: Some(order.uuid),
         })
     }
@@ -1495,9 +1495,11 @@ pub struct OrderbookEntry {
     address: String,
     price: BigDecimal,
     price_rat: BigRational,
+    price_fraction: Fraction,
     #[serde(rename="maxvolume")]
     max_volume: BigDecimal,
     max_volume_rat: BigRational,
+    max_volume_fraction: Fraction,
     pubkey: String,
     age: i64,
     zcredits: u64,
@@ -1545,9 +1547,11 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
                     coin: req.base.clone(),
                     address: try_s!(base_coin.address_from_pubkey_str(&ask.pubsecp)),
                     price: ask.price.clone(),
-                    price_rat: ask.price_rat.as_ref().map(|p| p.clone()).unwrap_or(from_dec_to_ratio(ask.price.clone())),
+                    price_rat: ask.price_rat.as_ref().map(|p| p.to_ratio()).unwrap_or(from_dec_to_ratio(ask.price.clone())),
+                    price_fraction: ask.price_rat.as_ref().map(|p| p.to_fraction()).unwrap_or(ask.price.clone().into()),
                     max_volume: ask.balance.clone(),
-                    max_volume_rat: ask.balance_rat.as_ref().map(|p| p.clone()).unwrap_or(from_dec_to_ratio(ask.balance.clone())),
+                    max_volume_rat: ask.balance_rat.as_ref().map(|p| p.to_ratio()).unwrap_or(from_dec_to_ratio(ask.balance.clone())),
+                    max_volume_fraction: ask.balance_rat.as_ref().map(|p| p.to_fraction()).unwrap_or(ask.balance.clone().into()),
                     pubkey: ask.pubkey.clone(),
                     age: (now_ms() as i64 / 1000) - ask.timestamp as i64,
                     zcredits: 0,
@@ -1562,15 +1566,18 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         Some(asks) => {
             let mut orderbook_entries = vec![];
             for (uuid, ask) in asks.iter() {
+                let price_mm = MmNumber::from(1i32) / ask.price_rat.as_ref().map(|p| p.clone()).unwrap_or(from_dec_to_ratio(ask.price.clone()).into());
                 orderbook_entries.push(OrderbookEntry {
                     coin: req.rel.clone(),
                     address: try_s!(rel_coin.address_from_pubkey_str(&ask.pubsecp)),
                     // NB: 1/x can not be represented as a decimal and introduces a rounding error
                     // cf. https://github.com/KomodoPlatform/atomicDEX-API/issues/495#issuecomment-516365682
                     price: BigDecimal::from (1) / &ask.price,
-                    price_rat: BigRational::from_integer(1.into()) / ask.price_rat.as_ref().map(|p| p.clone()).unwrap_or(from_dec_to_ratio(ask.price.clone())),
+                    price_rat: price_mm.to_ratio(),
+                    price_fraction: price_mm.to_fraction(),
                     max_volume: ask.balance.clone(),
-                    max_volume_rat: ask.balance_rat.as_ref().map(|p| p.clone()).unwrap_or(from_dec_to_ratio(ask.balance.clone())),
+                    max_volume_rat: ask.balance_rat.as_ref().map(|p| p.to_ratio()).unwrap_or(from_dec_to_ratio(ask.balance.clone())),
+                    max_volume_fraction: ask.balance_rat.as_ref().map(|p| p.to_fraction()).unwrap_or(from_dec_to_ratio(ask.balance.clone()).into()),
                     pubkey: ask.pubkey.clone(),
                     age: (now_ms() as i64 / 1000) - ask.timestamp as i64,
                     zcredits: 0,

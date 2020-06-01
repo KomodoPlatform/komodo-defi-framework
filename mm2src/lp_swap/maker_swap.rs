@@ -763,13 +763,17 @@ impl MakerSwap {
 
         if self.r().taker_payment_spend.is_some() { return ERR!("Taker payment is spent, swap is not recoverable"); }
 
+        let secret_hash = self.r().data.secret_hash.clone().unwrap_or(
+            dhash160(&self.r().data.secret.0).into(),
+        );
+
         let maker_payment = match &self.r().maker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
             None => {
                 let maybe_maker_payment = try_s!(self.maker_coin.check_if_my_payment_sent(
                     self.r().data.maker_payment_lock as u32,
                     &*self.r().other_persistent_pub,
-                    &*dhash160(&self.r().data.secret.0),
+                    &secret_hash.0,
                     self.r().data.maker_coin_start_block,
                 ).wait());
                 match maybe_maker_payment {
@@ -782,7 +786,7 @@ impl MakerSwap {
         match self.maker_coin.search_for_swap_tx_spend_my(
             self.r().data.maker_payment_lock as u32,
             &*self.r().other_persistent_pub,
-            &*dhash160(&self.r().data.secret.0),
+            &secret_hash.0,
             &maker_payment,
             self.r().data.maker_coin_start_block,
         ) {
@@ -799,7 +803,7 @@ impl MakerSwap {
             &maker_payment,
             self.r().data.maker_payment_lock as u32,
             &*self.r().other_persistent_pub,
-            &*dhash160(&self.r().data.secret.0),
+            &secret_hash.0,
         ).wait());
 
         Ok(RecoveredSwap {

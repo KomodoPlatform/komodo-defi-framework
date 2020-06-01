@@ -31,10 +31,9 @@ use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTrans
 use ethereum_types::{Address, U256, H160};
 use ethkey::{ KeyPair, Public, public_to_address };
 use futures01::Future;
-use futures01::future::{Either};
+use futures01::future::{Either as Either01};
 use futures::compat::Future01CompatExt;
-use futures::future::{FutureExt, join_all, TryFutureExt};
-use futures::{try_join};
+use futures::future::{Either, FutureExt, join_all, select, TryFutureExt};
 use gstuff::slurp;
 use http::StatusCode;
 // #[cfg(test)]
@@ -56,8 +55,8 @@ use std::time::Duration;
 use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
-use super::{CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TradeInfo,
-            TransactionFut, TransactionEnum, Transaction, TransactionDetails, WithdrawFee, WithdrawRequest};
+use super::{CoinsContext, CoinTransportMetrics, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            SwapOps, TradeFee, TradeInfo, TransactionFut, TransactionEnum, Transaction, TransactionDetails, WithdrawFee, WithdrawRequest};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
@@ -258,9 +257,9 @@ impl EthCoinImpl {
     /// Get gas price
     fn get_gas_price(&self) -> impl Future<Item=U256, Error=String> {
         if let Some(url) = &self.gas_station_url {
-            Either::A(GasStationData::get_gas_price(&url))
+            Either01::A(GasStationData::get_gas_price(&url))
         } else {
-            Either::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
+            Either01::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
         }
     }
 
@@ -373,17 +372,19 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
         },
         Some(_) => return ERR!("Unsupported input fee type"),
         None => {
-            let gas_price_fut = coin.get_gas_price().compat();
+            let gas_price = try_s!(coin.get_gas_price().compat().await);
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value),
                 data: Some(data.clone().into()),
                 from: Some(coin.my_address),
                 to: call_addr,
                 gas: None,
-                gas_price: None,
+                // gas price must be supplied because some smart contracts base their
+                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
+                gas_price: Some(gas_price),
             };
             let gas_fut = coin.web3.eth().estimate_gas(estimate_gas_req, None).map_err(|e| ERRL!("{}", e)).compat();
-            try_s!(try_join!(gas_fut, gas_price_fut))
+            (try_s!(gas_fut.await), gas_price)
         }
     };
     let total_fee = gas * gas_price;
@@ -399,7 +400,11 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
         if ctx.is_stopping() {return ERR!("MM is stopping, aborting withdraw_impl in NONCE_LOCK")}
         Ok(0.5)
     }).await);
-    let nonce = try_s!(get_addr_nonce(coin.my_address, &coin.web3_instances).compat().await);
+    let nonce_fut = get_addr_nonce(coin.my_address, &coin.web3_instances).compat();
+    let nonce = match select(nonce_fut, Timer::sleep(30.)).await {
+        Either::Left((nonce_res, _)) => try_s!(nonce_res),
+        Either::Right(_) => return ERR!("Get address nonce timed out"),
+    };
     let tx = UnSignedEthTx { nonce, value: eth_value, action: Action::Call(call_addr), data, gas, gas_price };
 
     let signed = tx.sign(coin.key_pair.secret(), None);
@@ -1290,6 +1295,7 @@ impl EthCoin {
     fn process_erc20_history(&self, token_addr: H160, ctx: &MmArc) {
         let delta = U256::from(10000);
 
+        let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() { break };
             {
@@ -1364,6 +1370,10 @@ impl EthCoin {
                     }
                 };
 
+                let total_length = from_events_before_earliest.len() + to_events_before_earliest.len();
+                mm_counter!(ctx.metrics, "tx.history.response.total_length", total_length as u64,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "erc20_transfer_events");
+
                 saved_events.events.extend(from_events_before_earliest);
                 saved_events.events.extend(to_events_before_earliest);
                 saved_events.earliest_block = if before_earliest > 0.into() {
@@ -1407,6 +1417,10 @@ impl EthCoin {
                     }
                 };
 
+                let total_length = from_events_after_latest.len() + to_events_after_latest.len();
+                mm_counter!(ctx.metrics, "tx.history.response.total_length", total_length as u64,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "erc20_transfer_events");
+
                 saved_events.events.extend(from_events_after_latest);
                 saved_events.events.extend(to_events_after_latest);
                 saved_events.latest_block = current_block;
@@ -1443,6 +1457,9 @@ impl EthCoin {
                     received_by_me = total_amount.clone();
                 }
 
+                mm_counter!(ctx.metrics, "tx.history.request.count", 1,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "tx_detail_by_hash");
+
                 let web3_tx = match self.web3.eth().transaction(TransactionId::Hash(event.transaction_hash.unwrap())).wait() {
                     Ok(tx) => tx,
                     Err(e) => {
@@ -1450,6 +1467,10 @@ impl EthCoin {
                         continue;
                     }
                 };
+
+                mm_counter!(ctx.metrics, "tx.history.response.count", 1,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "tx_detail_by_hash");
+
                 let web3_tx = match web3_tx {
                     Some(t) => t,
                     None => {
@@ -1510,6 +1531,11 @@ impl EthCoin {
                 self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
             }
             if saved_events.earliest_block == 0.into() {
+                if success_iteration == 0 {
+                    ctx.log.log("😅", &[&"tx_history", &("coin", self.ticker.clone().as_str())], "history has been loaded successfully");
+                }
+
+                success_iteration += 1;
                 *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
                 thread::sleep(Duration::from_secs(15));
             } else {
@@ -1527,6 +1553,7 @@ impl EthCoin {
         // Also the Parity RPC server seem to get stuck while request in running (other requests performance is also lowered).
         let delta = U256::from(1000);
 
+        let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() { break };
             {
@@ -1599,6 +1626,11 @@ impl EthCoin {
                         continue;
                     }
                 };
+
+                let total_length = from_traces_before_earliest.len() + to_traces_before_earliest.len();
+                mm_counter!(ctx.metrics, "tx.history.response.total_length", total_length as u64,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "eth_traces");
+
                 saved_traces.traces.extend(from_traces_before_earliest);
                 saved_traces.traces.extend(to_traces_before_earliest);
                 saved_traces.earliest_block = if before_earliest > 0.into() {
@@ -1640,6 +1672,11 @@ impl EthCoin {
                         continue;
                     }
                 };
+
+                let total_length = from_traces_after_latest.len() + to_traces_after_latest.len();
+                mm_counter!(ctx.metrics, "tx.history.response.total_length", total_length as u64,
+                    "coin" => self.ticker.clone(), "client" => "ethereum", "method" => "eth_traces");
+
                 saved_traces.traces.extend(from_traces_after_latest);
                 saved_traces.traces.extend(to_traces_after_latest);
                 saved_traces.latest_block = current_block;
@@ -1661,6 +1698,8 @@ impl EthCoin {
                     _ => continue,
                 };
 
+                mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
+
                 let web3_tx = match self.web3.eth().transaction(TransactionId::Hash(trace.transaction_hash.unwrap())).wait() {
                     Ok(tx) => tx,
                     Err(e) => {
@@ -1675,6 +1714,8 @@ impl EthCoin {
                         continue;
                     }
                 };
+
+                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
 
                 let receipt = match self.web3.eth().transaction_receipt(trace.transaction_hash.unwrap()).wait() {
                     Ok(r) => r,
@@ -1745,6 +1786,11 @@ impl EthCoin {
                 self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
             }
             if saved_traces.earliest_block == 0.into() {
+                if success_iteration == 0 {
+                    ctx.log.log("😅", &[&"tx_history", &("coin", self.ticker.clone().as_str())], "history has been loaded successfully");
+                }
+
+                success_iteration += 1;
                 *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
                 thread::sleep(Duration::from_secs(15));
             } else {
@@ -2088,6 +2134,16 @@ fn addr_from_str(addr_str: &str) -> Result<Address, String> {
     Ok(addr)
 }
 
+fn rpc_event_handlers_for_eth_transport(
+    ctx: &MmArc,
+    ticker: String)
+    -> Vec<RpcTransportEventHandlerShared> {
+    let metrics = ctx.metrics.weak();
+    vec![
+        CoinTransportMetrics::new(metrics, ticker, RpcClientType::Ethereum).into_shared(),
+    ]
+}
+
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
@@ -2111,8 +2167,9 @@ pub async fn eth_coin_from_conf_and_request(
     let my_address = key_pair.address();
 
     let mut web3_instances = vec![];
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for url in urls.iter() {
-        let transport = try_s!(Web3Transport::new(vec![url.clone()]));
+        let transport = try_s!(Web3Transport::with_event_handlers(vec![url.clone()], event_handlers.clone()));
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
@@ -2133,7 +2190,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::new(urls));
+    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
     let web3 = Web3::new(transport);
 
     let etomic = try_s!(conf["etomic"].as_str().ok_or(ERRL!("Etomic field is not string")));
