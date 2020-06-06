@@ -1049,7 +1049,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         " include="(boostᵉ)
     );
 
-    if target.is_mac() {
+    if target.is_mac() || target.is_ios() {
         // The latest Catalina/Xcode doesn't like unknown options.
         // We tried different “-Wno-error” and friends to no avail.
         with_file(&boost.join("tools/build/src/tools/darwin.jam"), &|jam| {
