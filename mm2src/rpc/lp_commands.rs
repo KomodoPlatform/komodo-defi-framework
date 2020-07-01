@@ -81,10 +81,6 @@ pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
     let balance = try_s! (coin.my_balance().compat().await);
-    #[cfg(not(feature = "wallet-only"))]
-    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
-    #[cfg(feature = "wallet-only")]
-    let locked_by_swaps = "0";
 
     let res = json! ({
         "result": "success",
@@ -103,10 +99,6 @@ pub async fn enable (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String>
     let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
     let balance = try_s! (coin.my_balance().compat().await);
-    #[cfg(not(feature = "wallet-only"))]
-    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
-    #[cfg(feature = "wallet-only")]
-    let locked_by_swaps = "0";
 
     let res = json! ({
         "result": "success",

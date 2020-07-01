@@ -237,7 +237,7 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "max_taker_vol" => hyres (max_taker_vol (ctx, req)),
         "metrics" => metrics(ctx),
-        "my_balance" => my_balance (ctx, req),
+        "my_balance" => hyres(my_balance (ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "my_orders" => my_orders (ctx),
         #[cfg(not(feature = "wallet-only"))]

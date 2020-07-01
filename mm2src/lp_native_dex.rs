@@ -1354,6 +1354,7 @@ pub async fn lp_init (mypubport: u16, ctx: MmArc) -> Result<(), String> {
     loop {if ctx.is_stopping() {break}; Timer::sleep (0.2) .await}
 
     // wait for swaps to stop
+    #[cfg(not(feature = "wallet-only"))]
     loop { if running_swaps_num(&ctx) == 0 { break }; Timer::sleep (0.2) .await }
     Ok(())
 }
