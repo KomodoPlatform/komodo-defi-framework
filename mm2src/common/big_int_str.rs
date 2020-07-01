@@ -6,8 +6,14 @@ use serde::{
 use std::fmt;
 
 /// BigInt wrapper de/serializable from/to string representation
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BigIntStr(BigInt);
+
+impl fmt::Debug for BigIntStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string())
+    }
+}
 
 impl BigIntStr {
     pub fn inner(&self) -> &BigInt {
@@ -80,5 +86,12 @@ mod big_int_str_tests {
         let err_num = "abc";
         let res = json::from_str::<BigIntStr>(&err_num);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn check_big_int_str_debug() {
+        let num: BigInt = 1023.into();
+        let num: BigIntStr = num.into();
+        assert_eq!("1023", format!("{:?}", num));
     }
 }

@@ -4,11 +4,11 @@
 
 use bigdecimal::BigDecimal;
 use bytes::{BytesMut};
-use chain::{OutPoint, Transaction as UtxoTx};
-use common::{StringError};
+use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
+use common::{median, OrdRange, StringError};
 use common::custom_futures::{join_all_sequential, select_ok_sequential};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::{JsonRpcClient, JsonRpcRemoteAddr, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
+use common::jsonrpc_client::{JsonRpcClient, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcResponseFut, JsonRpcRequest, JsonRpcResponse, RpcRes};
 use common::wio::{slurp_req};
 use crate::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use futures01::{Future, Poll, Sink, Stream};
@@ -34,13 +34,14 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, Transaction as RpcTra
 use rustls::{self, ClientConfig, Session};
 use script::{Builder};
 use serde_json::{self as json, Value as Json};
-use serialization::{serialize, deserialize};
+use serialization::{serialize, deserialize, CompactInteger, Reader};
 use sha2::{Sha256, Digest};
 use std::collections::hash_map::{HashMap, Entry};
 use std::io;
 use std::fmt;
 use std::cmp::Ordering;
 use std::net::{ToSocketAddrs, SocketAddr};
+use std::num::NonZeroU64;
 use std::ops::Deref;
 #[cfg(not(feature = "native"))]
 use std::os::raw::c_char;
@@ -78,6 +79,12 @@ impl rustls::ServerCertVerifier for NoCertificateVerification {
 pub enum UtxoRpcClientEnum {
     Native(NativeClient),
     Electrum(ElectrumClient),
+}
+
+impl From<ElectrumClient> for UtxoRpcClientEnum {
+    fn from(client: ElectrumClient) -> UtxoRpcClientEnum {
+        UtxoRpcClientEnum::Electrum(client)
+    }
 }
 
 impl Deref for UtxoRpcClientEnum {
@@ -159,11 +166,14 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
-    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64>;
+    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod, mode: &Option<EstimateFeeMode>) -> RpcRes<u64>;
 
     fn get_relay_fee(&self) -> RpcRes<BigDecimal>;
 
     fn find_output_spend(&self, tx: &UtxoTx, vout: usize, from_block: u64) -> Box<dyn Future<Item=Option<UtxoTx>, Error=String> + Send>;
+
+    /// Get median time past for `count` blocks in the past including `starting_block`
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> Box<dyn Future<Item=u32, Error=String> + Send>;
 }
 
 #[derive(Clone, Deserialize, Debug, PartialEq)]
@@ -273,7 +283,7 @@ pub struct NetworkInfo {
     relay_fee: BigDecimal,
     subversion: String,
     #[serde(rename = "timeoffset")]
-    time_offset: u64,
+    time_offset: i64,
     version: u64,
     warnings: String,
 }
@@ -433,7 +443,7 @@ impl UtxoRpcClientOps for NativeClient {
         ))
     }
 
-    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod) -> RpcRes<u64> {
+    fn estimate_fee_sat(&self, decimals: u8, fee_method: &EstimateFeeMethod, mode: &Option<EstimateFeeMode>) -> RpcRes<u64> {
         match fee_method {
             EstimateFeeMethod::Standard => Box::new(self.estimate_fee().map(move |fee|
                 if fee > 0.00001 {
@@ -442,7 +452,7 @@ impl UtxoRpcClientOps for NativeClient {
                     1000
                 }
             )),
-            EstimateFeeMethod::SmartFee => Box::new(self.estimate_smart_fee().map(move |res|
+            EstimateFeeMethod::SmartFee => Box::new(self.estimate_smart_fee(mode).map(move |res|
                 if res.fee_rate > 0.00001 {
                     (res.fee_rate * 10.0_f64.powf(decimals as f64)) as u64
                 } else {
@@ -476,6 +486,30 @@ impl UtxoRpcClientOps for NativeClient {
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> Box<dyn Future<Item=u32, Error=String> + Send> {
+        let selfi = self.clone();
+        let fut = async move {
+            let starting_block_data = try_s!(selfi.get_block(starting_block.to_string()).compat().await);
+            if let Some(median) = starting_block_data.mediantime {
+                return Ok(median);
+            }
+
+            let mut block_timestamps = vec![starting_block_data.time];
+            let from = if starting_block <= count.get() {
+                0
+            } else {
+                starting_block - count.get() + 1
+            };
+            for block_n in from..starting_block {
+                let block_data = try_s!(selfi.get_block(block_n.to_string()).compat().await);
+                block_timestamps.push(block_data.time);
+            }
+            // can unwrap because count is non zero
+            Ok(median(block_timestamps.as_mut_slice()).unwrap())
+        };
+        Box::new(fut.boxed().compat())
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -503,7 +537,7 @@ impl NativeClientImpl {
         }))
     }
 
-    /// https://bitcoin.org/en/developer-reference#getblock
+    /// https://developer.bitcoin.org/reference/rpc/getblock.html
     /// Always returns verbose block
     pub fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient> {
         let verbose = true;
@@ -538,9 +572,12 @@ impl NativeClientImpl {
 
     /// https://bitcoincore.org/en/doc/0.18.0/rpc/util/estimatesmartfee/
     /// Always estimate fee for transaction to be confirmed in next block
-    pub fn estimate_smart_fee(&self) -> RpcRes<EstimateSmartFeeRes> {
+    pub fn estimate_smart_fee(&self, mode: &Option<EstimateFeeMode>) -> RpcRes<EstimateSmartFeeRes> {
         let n_blocks = 1;
-        rpc_func!(self, "estimatesmartfee", n_blocks)
+        match mode {
+            Some(m) => rpc_func!(self, "estimatesmartfee", n_blocks, m),
+            None => rpc_func!(self, "estimatesmartfee", n_blocks),
+        }
     }
 
     /// https://bitcoin.org/en/developer-reference#listtransactions
@@ -557,7 +594,7 @@ impl NativeClientImpl {
 
     pub fn detect_fee_method(&self) -> impl Future<Item=EstimateFeeMethod, Error=String> + Send {
         let estimate_fee_fut = self.estimate_fee();
-        self.estimate_smart_fee().then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String> + Send> {
+        self.estimate_smart_fee(&None).then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String> + Send> {
             match res {
                 Ok(smart_fee) => if smart_fee.fee_rate > 0. {
                     Box::new(futures01::future::ok(EstimateFeeMethod::SmartFee))
@@ -620,6 +657,13 @@ pub enum ElectrumNonce {
     Hash(H256Json),
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ElectrumBlockHeadersRes {
+    count: u64,
+    pub hex: BytesJson,
+    max: u64,
+}
+
 /// The block header compatible with Electrum 1.2
 #[derive(Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV12 {
@@ -644,6 +688,13 @@ pub struct ElectrumBlockHeaderV14 {
 pub enum ElectrumBlockHeader {
     V12(ElectrumBlockHeaderV12),
     V14(ElectrumBlockHeaderV14),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum EstimateFeeMode {
+    ECONOMICAL,
+    CONSERVATIVE,
+    UNSET,
 }
 
 impl ElectrumBlockHeader {
@@ -687,6 +738,14 @@ pub enum ElectrumProtocol {
     TCP,
     /// SSL/TLS
     SSL,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+/// Deserializable Electrum protocol version representation for RPC
+/// https://electrumx-spesmilo.readthedocs.io/en/latest/protocol-methods.html#server.version
+pub struct ElectrumProtocolVersion {
+    pub server_software_version: String,
+    pub protocol_version: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -792,7 +851,8 @@ pub fn spawn_electrum(req: &ElectrumRpcRequest, _event_handlers: Vec<RpcTranspor
         tx,
         shutdown_tx: None,
         responses,
-        ri
+        ri,
+        protocol_version: AsyncMutex::new(None),
     })
 }
 
@@ -810,7 +870,9 @@ pub struct ElectrumConnection {
     /// Responses are stored here
     responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
     /// [Random] connection ID assigned by the WASM host
-    ri: i32
+    ri: i32,
+    /// Selected protocol version. The value is initialized after the server.version RPC call.
+    protocol_version: AsyncMutex<Option<f32>>,
 }
 
 impl ElectrumConnection {
@@ -826,6 +888,10 @@ impl ElectrumConnection {
         //log! ("is_connected] host_electrum_is_connected (" [=self.ri] ") " [=rc]);
         if rc == 1 {true} else {false}
     }
+
+    async fn set_protocol_version(&self, version: f32) {
+        self.protocol_version.lock().await.replace(version);
+    }
 }
 
 impl Drop for ElectrumConnection {
@@ -838,9 +904,10 @@ impl Drop for ElectrumConnection {
 #[derive(Debug)]
 pub struct ElectrumClientImpl {
     coin_ticker: String,
-    connections: Vec<ElectrumConnection>,
+    connections: AsyncMutex<Vec<ElectrumConnection>>,
     next_id: AtomicU64,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    protocol_version: OrdRange<f32>,
 }
 
 #[cfg(feature = "native")]
@@ -849,7 +916,7 @@ async fn electrum_request_multi(
     request: JsonRpcRequest,
 ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
     let mut futures = vec![];
-    for connection in client.connections.iter() {
+    for connection in client.connections.lock().await.iter() {
         let connection_addr = connection.addr.clone();
         match &*connection.tx.lock().await {
             Some(tx) => {
@@ -869,6 +936,24 @@ async fn electrum_request_multi(
         // server.ping must be sent to all servers to keep all connections alive
         Ok(try_s!(select_ok(futures).map(|(result, _)| result).map_err(|e| ERRL!("{:?}", e)).compat().await))
     }
+}
+
+#[cfg(feature = "native")]
+async fn electrum_request_to(
+    client: ElectrumClient,
+    request: JsonRpcRequest,
+    to_addr: String,
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
+    let connections = client.connections.lock().await;
+    let connection = connections.iter().find(|c| c.addr == to_addr)
+        .ok_or(ERRL!("Unknown destination address {}", to_addr))?;
+
+    let response = match &*connection.tx.lock().await {
+        Some(tx) => try_s!(electrum_request(request.clone(), tx.clone(), connection.responses.clone()).compat().await),
+        None => return ERR!("Connection {} is not established yet", to_addr),
+    };
+
+    Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
 }
 
 #[cfg(not(feature = "native"))]
@@ -900,7 +985,7 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
     // address of server from which an Rpc response was received
     let mut remote_address = JsonRpcRemoteAddr::default();
 
-    for connection in client.connections.iter() {
+    for connection in client.connections.lock().await.iter() {
         let (tx, rx) = futures::channel::oneshot::channel();
         try_s! (ELECTRUM_REPLIES.lock()) .insert ((connection.ri, id), tx);
         let rc = unsafe {host_electrum_request (connection.ri, req.as_ptr() as *const c_char, req.len() as i32)};
@@ -937,19 +1022,60 @@ async fn electrum_request_multi (client: ElectrumClient, request: JsonRpcRequest
 
 impl ElectrumClientImpl {
     /// Create an Electrum connection and spawn a green thread actor to handle it.
-    pub fn add_server(&mut self, req: &ElectrumRpcRequest) -> Result<(), String> {
+    pub async fn add_server(&self, req: &ElectrumRpcRequest) -> Result<(), String> {
         let connection = try_s!(spawn_electrum(req, self.event_handlers.clone()));
-        self.connections.push(connection);
+        self.connections.lock().await.push(connection);
         Ok(())
     }
 
+    /// Remove an Electrum connection and stop corresponding spawned actor.
+    pub async fn remove_server(&self, server_addr: &str) -> Result<(), String> {
+        let mut connections = self.connections.lock().await;
+        // do not use retain, we would have to return an error if we did not find connection by the passd address
+        let pos = connections.iter()
+            .position(|con| &con.addr == server_addr)
+            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
+        // shutdown_tx will be closed immediately on the connection drop
+        connections.remove(pos);
+        Ok(())
+    }
+
+    /// Check if one of the spawned connections is connected.
     pub async fn is_connected(&self) -> bool {
-        for connection in self.connections.iter() {
+        for connection in self.connections.lock().await.iter() {
             if connection.is_connected().await {
                 return true;
             }
         }
         false
+    }
+
+    pub async fn count_connections(&self) -> usize {
+        self.connections.lock().await.len()
+    }
+
+    /// Check if the protocol version was checked for one of the spawned connections.
+    pub async fn is_protocol_version_checked(&self) -> bool {
+        for connection in self.connections.lock().await.iter() {
+            if connection.protocol_version.lock().await.is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Set the protocol version for the specified server.
+    pub async fn set_protocol_version(&self, server_addr: &str, version: f32) -> Result<(), String> {
+        let connections = self.connections.lock().await;
+        let con = connections.iter().find(|con| &con.addr == server_addr)
+            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
+        con.set_protocol_version(version).await;
+        Ok(())
+    }
+
+    /// Get available protocol versions.
+    pub fn protocol_version(&self) -> &OrdRange<f32> {
+        &self.protocol_version
     }
 }
 
@@ -979,10 +1105,22 @@ impl JsonRpcClient for ElectrumClient {
     }
 }
 
+impl JsonRpcMultiClient for ElectrumClient {
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequest) -> JsonRpcResponseFut {
+        Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
+    }
+}
+
 impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-ping
     pub fn server_ping(&self) -> RpcRes<()> {
         rpc_func!(self, "server.ping")
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-version
+    pub fn server_version(&self, server_address: &str, client_name: &str, version: &OrdRange<f32>) -> RpcRes<ElectrumProtocolVersion> {
+        let protocol_version: Vec<String> = version.flatten().into_iter().map(|v| format!("{}", v)).collect();
+        rpc_func_from!(self, server_address, "server.version", client_name, protocol_version)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
@@ -1026,9 +1164,18 @@ impl ElectrumClient {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-estimatefee
     /// Always estimate fee for transaction to be confirmed in next block
-    fn estimate_fee(&self) -> RpcRes<f64> {
+    fn estimate_fee(&self, mode: &Option<EstimateFeeMode>) -> RpcRes<f64> {
         let n_blocks = 1;
-        rpc_func!(self, "blockchain.estimatefee", n_blocks)
+        match mode {
+            Some(m) => rpc_func!(self, "blockchain.estimatefee", n_blocks, m),
+            None => rpc_func!(self, "blockchain.estimatefee", n_blocks),
+        }
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-block-headers
+    pub fn blockchain_block_headers(&self, start_height: u64, count: NonZeroU64)
+        -> RpcRes<ElectrumBlockHeadersRes> {
+        rpc_func!(self, "blockchain.block.headers", start_height, count)
     }
 }
 
@@ -1121,8 +1268,8 @@ impl UtxoRpcClientOps for ElectrumClient {
         }))
     }
 
-    fn estimate_fee_sat(&self, decimals: u8, _fee_method: &EstimateFeeMethod) -> RpcRes<u64> {
-        Box::new(self.estimate_fee().map(move |fee|
+    fn estimate_fee_sat(&self, decimals: u8, _fee_method: &EstimateFeeMethod, mode: &Option<EstimateFeeMode>) -> RpcRes<u64> {
+        Box::new(self.estimate_fee(mode).map(move |fee|
             if fee > 0.00001 {
                 (fee * 10.0_f64.powf(decimals as f64)) as u64
             } else {
@@ -1165,16 +1312,50 @@ impl UtxoRpcClientOps for ElectrumClient {
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> Box<dyn Future<Item=u32, Error=String> + Send> {
+        let from = if starting_block <= count.get() {
+            0
+        } else {
+            starting_block - count.get() + 1
+        };
+        Box::new(self.blockchain_block_headers(from, count)
+            .map_err(|e| ERRL!("{}", e))
+            .and_then(|res| {
+                if res.count == 0 {
+                    return ERR!("Server returned zero count");
+                }
+                let len = CompactInteger::from(res.count);
+                let mut serialized = serialize(&len).take();
+                serialized.extend(res.hex.0.into_iter());
+                let mut reader = Reader::new(serialized.as_slice());
+                let headers = try_s!(reader.read_list::<BlockHeader>().map_err(|e| ERRL!("{:?}", e)));
+                let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();
+                // can unwrap because count is non zero
+                Ok(median(timestamps.as_mut_slice()).unwrap())
+            })
+        )
+    }
 }
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
     pub fn new(coin_ticker: String, event_handlers: Vec<RpcTransportEventHandlerShared>) -> ElectrumClientImpl {
+        let protocol_version = OrdRange::new(1.2, 1.4).unwrap();
         ElectrumClientImpl {
             coin_ticker,
-            connections: vec![],
+            connections: AsyncMutex::new(vec![]),
             next_id: 0.into(),
             event_handlers,
+            protocol_version,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_protocol_version(coin_ticker: String, event_handlers: Vec<RpcTransportEventHandlerShared>, protocol_version: OrdRange<f32>) -> ElectrumClientImpl {
+        ElectrumClientImpl {
+            protocol_version,
+            ..ElectrumClientImpl::new(coin_ticker, event_handlers)
         }
     }
 }
@@ -1368,6 +1549,7 @@ async fn connect_loop(
         // reset the delay if we've connected successfully
         delay = 0;
         log!("Electrum client connected to " (addr));
+        try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
         let last_chunk = Arc::new(AtomicU64::new(now_ms()));
         let mut last_chunk_f = electrum_last_chunk_loop(last_chunk.clone()).boxed().fuse();
 
@@ -1452,7 +1634,8 @@ fn electrum_connect(
         tx,
         shutdown_tx: Some(shutdown_tx),
         responses,
-        ri: -1
+        ri: -1,
+        protocol_version: AsyncMutex::new(None),
     }
 }
 

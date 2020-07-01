@@ -446,8 +446,8 @@ pub fn mm_spat (local_start: LocalStart, conf_mod: &dyn Fn(Json)->Json) -> (&'st
             "passphrase": passphrase,
             "rpccors": "http://localhost:4000",
             "coins": [
-                {"coin": "BEER", "asset": "BEER", "rpcport": 8923},
-                {"coin": "PIZZA", "asset": "PIZZA", "rpcport": 11116}
+                {"coin":"RICK","asset":"RICK","rpcport":8923},
+                {"coin":"MORTY","asset":"MORTY","rpcport":11608},
             ],
             "i_am_seed": true,
             "rpc_password": "pass",

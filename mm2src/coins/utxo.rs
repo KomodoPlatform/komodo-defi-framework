@@ -28,18 +28,19 @@ use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, ChecksumType, sha256};
 use chain::{TransactionOutput, TransactionInput, OutPoint};
 use chain::constants::{SEQUENCE_FINAL};
-use common::{first_char_to_upper, small_rng};
+use common::{first_char_to_upper, small_rng, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
-use common::mm_number::MmNumber;
 #[cfg(feature = "native")]
 use dirs::home_dir;
 use futures01::{Future};
 use futures01::future::Either;
+use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::lock::{Mutex as AsyncMutex};
+use futures::stream::StreamExt;
 use gstuff::{now_ms};
 use keys::{KeyPair, Private, Public, Address, Secret, Type};
 use keys::bytes::Bytes;
@@ -50,23 +51,24 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Opcode, Builder, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput, SignatureVersion};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, deserialize};
-use std::borrow::Cow;
 use std::collections::hash_map::{HashMap, Entry};
 use std::convert::TryInto;
 use std::cmp::Ordering;
+use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrderding};
 use std::thread;
 use std::time::Duration;
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, NativeClient, UtxoRpcClientEnum, UnspentInfo};
-use super::{CoinsContext, CoinTransportMetrics, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandlerShared,
-            SwapOps, TradeFee, TradeInfo, Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl,
+                        EstimateFeeMethod, EstimateFeeMode, NativeClient, UtxoRpcClientEnum, UnspentInfo};
+use super::{CoinsContext, CoinTransportMetrics, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SwapOps, TradeFee, Transaction, TransactionEnum, TransactionFut, TransactionDetails, WithdrawFee, WithdrawRequest};
 use crate::utxo::rpc_clients::{NativeClientImpl, UtxoRpcClientOps, ElectrumRpcRequest};
 
 #[cfg(test)]
@@ -78,6 +80,11 @@ const KILO_BYTE: u64 = 1000;
 const MAX_DER_SIGNATURE_LEN: usize = 72;
 const COMPRESSED_PUBKEY_LEN: usize = 33;
 const P2PKH_OUTPUT_LEN: u64 = 34;
+/// Block count for KMD median time past calculation
+///
+/// # Safety
+/// 11 > 0
+const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64) };
 
 #[cfg(windows)]
 #[cfg(feature = "native")]
@@ -158,6 +165,25 @@ enum FeePolicy {
     DeductFromOutput(usize),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "format")]
+enum UtxoAddressFormat {
+    /// Standard UTXO address format.
+    /// In Bitcoin Cash context the standard format also known as 'legacy'.
+    #[serde(rename = "standard")]
+    Standard,
+    /// Bitcoin Cash specific address format.
+    /// https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/cashaddr.md
+    #[serde(rename = "cashaddress")]
+    CashAddress { network: String },
+}
+
+impl Default for UtxoAddressFormat {
+    fn default() -> Self {
+        UtxoAddressFormat::Standard
+    }
+}
+
 #[derive(Debug)]
 pub struct UtxoCoinImpl {  // pImpl idiom.
     ticker: String,
@@ -203,6 +229,8 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     key_pair: KeyPair,
     /// Lock the mutex when we deal with address utxos
     my_address: Address,
+    /// The address format indicates how to parse and display UTXO addresses over RPC calls
+    address_format: UtxoAddressFormat,
     /// Is current coin KMD asset chain?
     /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729160/What+is+a+Parallel+Chain+Asset+Chain
     asset_chain: bool,
@@ -226,6 +254,9 @@ pub struct UtxoCoinImpl {  // pImpl idiom.
     /// relay fee amount instead of calculated
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/617
     force_min_relay_fee: bool,
+    /// Block count for median time past calculation
+    mtp_block_count: NonZeroU64,
+    estimate_fee_mode: Option<EstimateFeeMode>,
 }
 
 impl UtxoCoinImpl {
@@ -233,7 +264,7 @@ impl UtxoCoinImpl {
         match &self.tx_fee {
             TxFee::Fixed(fee) => Ok(ActualTxFee::Fixed(*fee)),
             TxFee::Dynamic(method) => {
-                let fee = self.rpc_client.estimate_fee_sat(self.decimals, method).compat().await?;
+                let fee = self.rpc_client.estimate_fee_sat(self.decimals, method, &self.estimate_fee_mode).compat().await?;
                 Ok(ActualTxFee::Dynamic(fee))
             },
         }
@@ -329,6 +360,20 @@ impl UtxoCoinImpl {
 
     pub fn rpc_client(&self) -> &UtxoRpcClientEnum {
         &self.rpc_client
+    }
+
+    pub fn display_address(&self, address: &Address) -> Result<String, String> {
+        match &self.address_format {
+            UtxoAddressFormat::Standard => Ok(address.to_string()),
+            UtxoAddressFormat::CashAddress { network } =>
+                address.to_cashaddress(&network, self.pub_addr_prefix, self.p2sh_addr_prefix)
+                    .and_then(|cashaddress| cashaddress.encode()),
+        }
+    }
+
+    async fn get_current_mtp(&self) -> Result<u32, String> {
+        let current_block = try_s!(self.rpc_client.get_block_count().compat().await);
+        self.rpc_client.get_median_time_past(current_block, self.mtp_block_count).compat().await
     }
 }
 
@@ -753,7 +798,7 @@ impl UtxoCoin {
         if self.ticker != "KMD" {
             return Ok((unsigned, data));
         }
-        unsigned.lock_time = (now_ms() / 1000) as u32 - 777;
+        unsigned.lock_time = try_s!(self.get_current_mtp().await);
         let mut interest = 0;
         for input in unsigned.inputs.iter() {
             let prev_hash = input.previous_output.hash.reversed().into();
@@ -922,7 +967,7 @@ impl SwapOps for UtxoCoin {
                     t_addr_prefix: self.p2sh_t_addr_prefix,
                 };
                 let arc = self.clone();
-                let addr_string = payment_addr.to_string();
+                let addr_string = try_fus!(self.display_address(&payment_addr));
                 Either::B(client.import_address(&addr_string, &addr_string, false).map_err(|e| ERRL!("{}", e)).and_then(move |_|
                     arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])
                 ))
@@ -973,7 +1018,7 @@ impl SwapOps for UtxoCoin {
                     t_addr_prefix: self.p2sh_t_addr_prefix,
                 };
                 let arc = self.clone();
-                let addr_string = payment_addr.to_string();
+                let addr_string = try_fus!(self.display_address(&payment_addr));
                 Either::B(client.import_address(&addr_string, &addr_string, false).map_err(|e| ERRL!("{}", e)).and_then(move |_|
                     arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])
                 ))
@@ -1234,7 +1279,8 @@ impl SwapOps for UtxoCoin {
                         prefix: selfi.p2sh_addr_prefix,
                         hash,
                         checksum_type: selfi.checksum_type,
-                    }.to_string();
+                    };
+                    let target_addr = try_s!(selfi.display_address(&target_addr));
                     let received_by_addr = try_s!(client.list_received_by_address(0, true, true).compat().await);
                     for item in received_by_addr {
                         if item.address == target_addr && !item.txids.is_empty() {
@@ -1290,12 +1336,16 @@ impl SwapOps for UtxoCoin {
 impl MarketCoinOps for UtxoCoin {
     fn ticker (&self) -> &str {&self.ticker[..]}
 
-    fn my_address(&self) -> Cow<str> {
-        self.0.my_address.to_string().into()
+    fn my_address(&self) -> Result<String, String> {
+        self.display_address(&self.my_address)
     }
 
     fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
         Box::new(self.rpc_client.display_balance(self.my_address.clone(), self.decimals).map_err(|e| ERRL!("{}", e)))
+    }
+
+    fn base_coin_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
+        self.my_balance()
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item=String, Error=String> + Send> {
@@ -1357,7 +1407,7 @@ impl MarketCoinOps for UtxoCoin {
     fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
         let pubkey_bytes = try_s!(hex::decode(pubkey));
         let addr = try_s!(address_from_raw_pubkey(&pubkey_bytes, self.pub_addr_prefix, self.pub_t_addr_prefix, self.checksum_type));
-        Ok(addr.to_string())
+        self.display_address(&addr)
     }
 
     fn display_priv_key(&self) -> String {
@@ -1366,7 +1416,11 @@ impl MarketCoinOps for UtxoCoin {
 }
 
 async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
-    let to = try_s!(Address::from_str(&req.to));
+    let to = match &coin.address_format {
+        UtxoAddressFormat::Standard => try_s!(Address::from_str(&req.to)),
+        UtxoAddressFormat::CashAddress {..} => try_s!(Address::from_cashaddress(
+            &req.to, coin.checksum_type.clone(),coin.pub_addr_prefix, coin.p2sh_addr_prefix))
+    };
     if to.checksum_type != coin.checksum_type {
         return ERR!("Address {} has invalid checksum type, it must be {:?}", to, coin.checksum_type);
     }
@@ -1400,9 +1454,11 @@ async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<Transacti
     let fee_details = UtxoFeeDetails {
         amount: big_decimal_from_sat(data.fee_amount as i64, coin.decimals),
     };
+    let my_address = try_s!(coin.my_address());
+    let to_address = try_s!(coin.display_address(&to));
     Ok(TransactionDetails {
-        from: vec![coin.my_address().into()],
-        to: vec![format!("{}", to)],
+        from: vec![my_address],
+        to: vec![to_address],
         total_amount: big_decimal_from_sat(data.spent_by_me as i64, coin.decimals),
         spent_by_me: big_decimal_from_sat(data.spent_by_me as i64, coin.decimals),
         received_by_me: big_decimal_from_sat(data.received_by_me as i64, coin.decimals),
@@ -1424,32 +1480,6 @@ pub struct UtxoFeeDetails {
 
 impl MmCoin for UtxoCoin {
     fn is_asset_chain(&self) -> bool { self.asset_chain }
-
-    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
-        let arc = self.clone();
-        let amount = amount.clone();
-        let balance = balance.clone();
-        let fee_fut = async move {
-            let coin_fee = try_s!(arc.get_tx_fee().await);
-            let fee = match coin_fee {
-                ActualTxFee::Fixed(f) => f,
-                ActualTxFee::Dynamic(f) => f,
-            };
-            let fee_decimal = MmNumber::from(fee) / MmNumber::from(10u64.pow(arc.decimals as u32));
-            if &amount < &fee_decimal {
-                return ERR!("Amount {} is too low, it'll result to dust error, at least {} is required", amount, fee_decimal);
-            }
-            let required = match trade_info {
-                TradeInfo::Maker => amount + fee_decimal,
-                TradeInfo::Taker(dex_fee) => &amount + &MmNumber::from(dex_fee.clone()) + MmNumber::from(2) * fee_decimal,
-            };
-            if balance < required {
-                return ERR!("{} balance {} is too low, required {}", arc.ticker(), balance, required);
-            }
-            Ok(())
-        };
-        Box::new(fee_fut.boxed().compat())
-    }
 
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send> {
         Box::new(futures01::future::ok(()))
@@ -1474,6 +1504,13 @@ impl MmCoin for UtxoCoin {
         let mut my_balance: Option<BigDecimal> = None;
         let history = self.load_history_from_file(&ctx);
         let mut history_map: HashMap<H256Json, TransactionDetails> = history.into_iter().map(|tx| (H256Json::from(tx.tx_hash.as_slice()), tx)).collect();
+        let my_address = match self.my_address() {
+            Ok(addr) => addr,
+            Err(e) => {
+                log!("Error on getting self address: " [e] ". Stop tx history");
+                return;
+            }
+        };
 
         let mut success_iteration = 0i32;
         loop {
@@ -1543,7 +1580,7 @@ impl MmCoin for UtxoCoin {
                         "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
 
                     all_transactions.into_iter().filter_map(|item| {
-                        if item.address == self.my_address() {
+                        if item.address == my_address {
                             Some((item.txid, item.blockindex))
                         } else {
                             None
@@ -1728,10 +1765,12 @@ impl MmCoin for UtxoCoin {
             }
             // remove address duplicates in case several inputs were spent from same address
             // or several outputs are sent to same address
-            let mut from_addresses: Vec<String> = from_addresses.into_iter().flatten().map(|addr| addr.to_string()).collect();
+            let mut from_addresses: Vec<String> =
+                try_s!(from_addresses.into_iter().flatten().map(|addr| selfi.display_address(&addr)).collect());
             from_addresses.sort();
             from_addresses.dedup();
-            let mut to_addresses: Vec<String> = to_addresses.into_iter().flatten().map(|addr| addr.to_string()).collect();
+            let mut to_addresses: Vec<String> =
+                try_s!(to_addresses.into_iter().flatten().map(|addr| selfi.display_address(&addr)).collect());
             to_addresses.sort();
             to_addresses.dedup();
 
@@ -1748,7 +1787,7 @@ impl MmCoin for UtxoCoin {
                 fee_details: Some(UtxoFeeDetails {
                     amount: fee,
                 }.into()),
-                block_height: verbose_tx.height,
+                block_height: verbose_tx.height.unwrap_or(0),
                 coin: selfi.ticker.clone(),
                 internal_id: tx.hash().reversed().to_vec().into(),
                 timestamp: verbose_tx.time.into(),
@@ -1773,7 +1812,7 @@ impl MmCoin for UtxoCoin {
             };
             Ok(TradeFee {
                 coin: ticker,
-                amount: big_decimal_from_sat(amount as i64, decimals),
+                amount: big_decimal_from_sat(amount as i64, decimals).into(),
             })
         };
         Box::new(fut.boxed().compat())
@@ -1911,16 +1950,30 @@ fn read_native_mode_conf(_filename: &dyn AsRef<Path>) -> Result<(Option<u16>, St
     unimplemented!()
 }
 
-fn rpc_event_handlers_for_client_transport(
-    ctx: &MmArc,
-    ticker: String,
-    client: RpcClientType,
-)
-    -> Vec<RpcTransportEventHandlerShared> {
-    let metrics = ctx.metrics.weak();
-    vec![
-        CoinTransportMetrics::new(metrics, ticker, client).into_shared(),
-    ]
+/// Electrum protocol version verifier.
+/// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
+struct ElectrumProtoVerifier {
+    on_connect_tx: mpsc::UnboundedSender<String>,
+}
+
+impl ElectrumProtoVerifier {
+    fn into_shared(self) -> RpcTransportEventHandlerShared {
+        Arc::new(self)
+    }
+}
+
+impl RpcTransportEventHandler for ElectrumProtoVerifier {
+    fn debug_info(&self) -> String {
+        "ElectrumProtoVerifier".into()
+    }
+
+    fn on_outgoing_request(&self, _data: &[u8]) {}
+
+    fn on_incoming_response(&self, _data: &[u8]) {}
+
+    fn on_connected(&self, address: String) -> Result<(), String> {
+        Ok(try_s!(self.on_connect_tx.unbounded_send(address)))
+    }
 }
 
 pub async fn utxo_coin_from_conf_and_request(
@@ -1956,6 +2009,12 @@ pub async fn utxo_coin_from_conf_and_request(
         checksum_type,
     };
 
+    let address_format = if conf["address_format"].is_null() {
+        UtxoAddressFormat::Standard
+    } else {
+        try_s!(json::from_value(conf["address_format"].clone()))
+    };
+
     let rpc_client = match req["method"].as_str() {
         Some("enable") => {
             if cfg!(feature = "native") {
@@ -1966,7 +2025,7 @@ pub async fn utxo_coin_from_conf_and_request(
                     Some(p) => p,
                     None => try_s!(conf["rpcport"].as_u64().ok_or(ERRL!("Rpc port is not set neither in `coins` file nor in native daemon config"))) as u16,
                 };
-                let event_handlers = rpc_event_handlers_for_client_transport(ctx, ticker.to_string(), RpcClientType::Native);
+                let event_handlers = vec![CoinTransportMetrics::new(ctx.metrics.weak(), ticker.to_owned(), RpcClientType::Native).into_shared()];
                 let client = Arc::new(NativeClientImpl {
                     coin_ticker: ticker.to_string(),
                     uri: fomat!("http://127.0.0.1:"(rpc_port)),
@@ -1980,19 +2039,24 @@ pub async fn utxo_coin_from_conf_and_request(
             }
         },
         Some("electrum") => {
+            let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
+            let event_handlers = vec![
+                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.to_owned(), RpcClientType::Electrum).into_shared(),
+                ElectrumProtoVerifier { on_connect_tx }.into_shared(),
+            ];
+
             let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
             let mut rng = small_rng();
             servers.as_mut_slice().shuffle(&mut rng);
-            let event_handlers = rpc_event_handlers_for_client_transport(ctx, ticker.to_string(), RpcClientType::Electrum);
-            let mut client = ElectrumClientImpl::new(ticker.to_string(), event_handlers);
+            let client = ElectrumClientImpl::new(ticker.to_string(), event_handlers);
             for server in servers.iter() {
-                match client.add_server(server) {
+                match client.add_server(server).await {
                     Ok(_) => (),
                     Err(e) => log!("Error " (e) " connecting to " [server] ". Address won't be used")
                 };
             }
 
-            let mut attempts = 0;
+            let mut attempts = 0i32;
             while !client.is_connected().await {
                 if attempts >= 10 {
                     return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
@@ -2003,24 +2067,15 @@ pub async fn utxo_coin_from_conf_and_request(
             }
 
             let client = Arc::new(client);
-            // ping the electrum servers every 30 seconds to prevent them from disconnecting us.
-            // according to docs server can do it if there are no messages in ~10 minutes.
-            // https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
-            // weak reference will allow to stop the thread if client is dropped
+
             let weak_client = Arc::downgrade(&client);
-            spawn(async move {
-                loop {
-                    if let Some(client) = weak_client.upgrade() {
-                        if let Err(e) = ElectrumClient(client).server_ping().compat().await {
-                            log!("Electrum servers " [servers] " ping error " [e]);
-                        }
-                    } else {
-                        log!("Electrum servers " [servers] " ping loop stopped");
-                        break;
-                    }
-                    Timer::sleep(30.).await
-                }
-            });
+            spawn_electrum_ping_loop(weak_client, servers);
+
+            let weak_client = Arc::downgrade(&client);
+            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), MM_VERSION);
+            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+
+            try_s!(wait_for_protocol_version_checked(&client).await);
             UtxoRpcClientEnum::Electrum(ElectrumClient(client))
         },
         _ => return ERR!("utxo_coin_from_conf_and_request should be called only by enable or electrum requests"),
@@ -2114,6 +2169,7 @@ pub async fn utxo_coin_from_conf_and_request(
         wif_prefix,
         tx_version,
         my_address: my_address.clone(),
+        address_format,
         asset_chain,
         tx_fee,
         version_group_id,
@@ -2125,14 +2181,123 @@ pub async fn utxo_coin_from_conf_and_request(
         history_sync_state: Mutex::new(initial_history_state),
         required_confirmations: required_confirmations.into(),
         force_min_relay_fee: conf["force_min_relay_fee"].as_bool().unwrap_or (false),
+        mtp_block_count: json::from_value(conf["mtp_block_count"].clone()).unwrap_or (KMD_MTP_BLOCK_COUNT),
+        estimate_fee_mode: json::from_value(conf["estimate_fee_mode"].clone()).unwrap_or(None),
     };
     Ok(UtxoCoin(Arc::new(coin)))
+}
+
+/// Ping the electrum servers every 30 seconds to prevent them from disconnecting us.
+/// According to docs server can do it if there are no messages in ~10 minutes.
+/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
+/// Weak reference will allow to stop the thread if client is dropped.
+fn spawn_electrum_ping_loop(weak_client: Weak<ElectrumClientImpl>, servers: Vec<ElectrumRpcRequest>) {
+    spawn(async move {
+        loop {
+            if let Some(client) = weak_client.upgrade() {
+                if let Err(e) = ElectrumClient(client).server_ping().compat().await {
+                    log!("Electrum servers " [servers] " ping error " [e]);
+                }
+            } else {
+                log!("Electrum servers " [servers] " ping loop stopped");
+                break;
+            }
+            Timer::sleep(30.).await
+        }
+    });
+}
+
+/// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
+/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
+/// Weak reference will allow to stop the thread if client is dropped.
+fn spawn_electrum_version_loop(
+    weak_client: Weak<ElectrumClientImpl>,
+    mut on_connect_rx: mpsc::UnboundedReceiver<String>,
+    client_name: String,
+) {
+    // client.remove_server() is called too often
+    async fn remove_server(client: ElectrumClient, electrum_addr: &str) {
+        if let Err(e) = client.remove_server(electrum_addr).await {
+            log!("Error on remove server "[e]);
+        }
+    }
+
+    spawn(async move {
+        while let Some(electrum_addr) = on_connect_rx.next().await {
+            let client = match weak_client.upgrade() {
+                Some(c) => ElectrumClient(c),
+                _ => break,
+            };
+
+            let available_protocols = client.protocol_version();
+            let version = match client.server_version(&electrum_addr, &client_name, available_protocols).compat().await {
+                Ok(version) => version,
+                Err(e) => {
+                    log!("Electrum " (electrum_addr) " server.version error \"" [e] "\". Remove the connection");
+                    remove_server(client, &electrum_addr).await;
+                    continue
+                }
+            };
+
+            // check if the version is allowed
+            let actual_version = match version.protocol_version.parse::<f32>() {
+                Ok(v) => v,
+                Err(e) => {
+                    log!("Error on parse protocol_version "[e]);
+                    remove_server(client, &electrum_addr).await;
+                    continue
+                },
+            };
+
+            if !available_protocols.contains(&actual_version) {
+                log!("Received unsupported protocol version " [actual_version] " from " [electrum_addr] ". Remove the connection");
+                remove_server(client, &electrum_addr).await;
+                continue
+            }
+
+            if let Err(e) = client.set_protocol_version(&electrum_addr, actual_version).await {
+                log!("Error on set protocol_version "[e]);
+            };
+
+            log!("Use protocol version " [actual_version] " for Electrum " [electrum_addr]);
+        }
+
+        log!("Electrum server.version loop stopped");
+    });
+}
+
+/// Wait until the protocol version of at least one client's Electrum is checked.
+async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Result<(), String> {
+    let mut attempts = 0;
+    loop {
+        if attempts >= 10 {
+            return ERR!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds.");
+        }
+
+        if client.count_connections().await == 0 {
+            // All of the connections were removed because of server.version checking
+            return ERR!("There are no Electrums with the required protocol version {:?}", client.protocol_version());
+        }
+
+        if client.is_protocol_version_checked().await {
+            break;
+        }
+
+        Timer::sleep(0.5).await;
+        attempts += 1;
+    }
+
+    Ok(())
 }
 
 /// Function calculating KMD interest
 /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729215/What+is+the+5+Komodo+Stake+Reward
 /// https://github.com/KomodoPlatform/komodo/blob/master/src/komodo_interest.h
-fn kmd_interest(height: u64, value: u64, lock_time: u64, current_time: u64) -> u64 {
+fn kmd_interest(height: Option<u64>, value: u64, lock_time: u64, current_time: u64) -> u64 {
+    let height = match height {
+        Some(h) => h,
+        None => return 0, // return 0 if height is unknown
+    };
     const KOMODO_ENDOFERA: u64 = 7777777;
     const LOCKTIME_THRESHOLD: u64 = 500000000;
     // value must be at least 10 KMD

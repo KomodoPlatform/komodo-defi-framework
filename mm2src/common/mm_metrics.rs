@@ -805,7 +805,7 @@ mod tests {
         for expected in expected["metrics"].as_array().unwrap() {
             let index = actual.iter()
                 .position(|metric| metric == expected)
-                .expect(&format!("Couldn't find expected metric: {:?}", expected));
+                .expect(&format!("Couldn't find expected metric: {:?} in {:?}", expected, actual));
             actual.remove(index);
         }
 

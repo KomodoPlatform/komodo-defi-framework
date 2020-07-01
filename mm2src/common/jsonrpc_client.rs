@@ -23,6 +23,27 @@ macro_rules! rpc_func {
     }}
 }
 
+/// Macro generating functions for RPC requests.
+/// Send the RPC request to specified remote endpoint using the passed address.
+/// Args must implement/derive Serialize trait.
+/// Generates params vector from input args, builds the request and sends it.
+#[macro_export]
+macro_rules! rpc_func_from {
+    ($selff:ident, $address:expr, $method:expr $(, $arg_name:ident)*) => {{
+        let mut params = vec![];
+        $(
+            params.push(unwrap!(json::value::to_value($arg_name)));
+        )*
+        let request = JsonRpcRequest {
+            jsonrpc: $selff.version().into(),
+            id: $selff.next_id(),
+            method: $method.into(),
+            params
+        };
+        $selff.send_request_to($address, request)
+    }}
+}
+
 /// Address of server from which an Rpc response was received
 #[derive(Default)]
 pub struct JsonRpcRemoteAddr(pub String);
@@ -115,32 +136,48 @@ pub trait JsonRpcClient {
 
     fn send_request<T: DeserializeOwned + Send + 'static>(&self, request: JsonRpcRequest) -> RpcRes<T> {
         let client_info = self.client_info();
-        let request_f = self.transport(request.clone()).map_err({
-            let client_info = client_info.clone();
-            let request = request.clone();
-            move |e| JsonRpcError {
-                client_info,
-                request,
-                error: JsonRpcErrorType::Transport(e)
-            }
-        });
-        Box::new(request_f.and_then(move |(addr, response)| -> Result<T, JsonRpcError> {
-            if !response.error.is_null() {
-                return Err(JsonRpcError {
-                    client_info,
-                    request,
-                    error: JsonRpcErrorType::Response(addr, response.error),
-                });
-            }
-
-            match json::from_value(response.result.clone()) {
-                Ok(res) => Ok(res),
-                Err(e) => Err(JsonRpcError {
-                    client_info,
-                    request,
-                    error: JsonRpcErrorType::Parse(addr, ERRL!("error {:?} parsing result from response {:?}", e, response)),
-                }),
-            }
-        }))
+        Box::new(self.transport(request.clone())
+            .then(move |result| process_transport_result(result, client_info, request)))
     }
+}
+
+/// The trait is used when the rpc client instance has more than one remote endpoints.
+pub trait JsonRpcMultiClient: JsonRpcClient {
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequest) -> JsonRpcResponseFut;
+
+    fn send_request_to<T: DeserializeOwned + Send + 'static>(&self, to_addr: &str, request: JsonRpcRequest) -> RpcRes<T> {
+        let client_info = self.client_info();
+        Box::new(self.transport_exact(to_addr.to_owned(), request.clone())
+            .then(move |result| process_transport_result(result, client_info, request)))
+    }
+}
+
+fn process_transport_result<T: DeserializeOwned + Send + 'static>(
+    result: Result<(JsonRpcRemoteAddr, JsonRpcResponse), String>,
+    client_info: String,
+    request: JsonRpcRequest,
+) -> Result<T, JsonRpcError> {
+    let (remote_addr, response) = match result {
+        Ok(r) => r,
+        Err(e) => return Err(JsonRpcError {
+            client_info,
+            request,
+            error: JsonRpcErrorType::Transport(e),
+        })
+    };
+
+    if !response.error.is_null() {
+        return Err(JsonRpcError {
+            client_info,
+            request,
+            error: JsonRpcErrorType::Response(remote_addr, response.error),
+        });
+    }
+
+    json::from_value(response.result.clone())
+        .map_err(|e| JsonRpcError {
+            client_info,
+            request,
+            error: JsonRpcErrorType::Parse(remote_addr, ERRL!("error {:?} parsing result from response {:?}", e, response)),
+        })
 }

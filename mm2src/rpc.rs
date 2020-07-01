@@ -52,8 +52,9 @@ use crate::mm2::lp_network;
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell, set_price};
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{coins_needed_for_kick_start, import_swaps, list_banned_pubkeys, my_swap_status, my_recent_swaps,
-                          recover_funds_of_swap, stats_swap_status, unban_pubkeys};
+use crate::mm2::lp_swap::{coins_needed_for_kick_start, import_swaps, list_banned_pubkeys, max_taker_vol,
+                          my_swap_status, my_recent_swaps, recover_funds_of_swap, stats_swap_status,
+                          unban_pubkeys};
 
 #[path = "rpc/lp_commands.rs"]
 pub mod lp_commands;
@@ -233,6 +234,8 @@ pub fn dispatcher (req: Json, ctx: MmArc) -> DispatcherRes {
         // "inventory" => inventory (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
         "list_banned_pubkeys" => hyres (list_banned_pubkeys (ctx)),
+        #[cfg(not(feature = "wallet-only"))]
+        "max_taker_vol" => hyres (max_taker_vol (ctx, req)),
         "metrics" => metrics(ctx),
         "my_balance" => my_balance (ctx, req),
         #[cfg(not(feature = "wallet-only"))]

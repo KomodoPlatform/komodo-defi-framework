@@ -152,6 +152,12 @@ impl From<u64> for MmNumber {
     }
 }
 
+impl From<(u64, u64)> for MmNumber {
+    fn from(tuple: (u64, u64)) -> MmNumber {
+        BigRational::new(tuple.0.into(), tuple.1.into()).into()
+    }
+}
+
 impl Mul for MmNumber {
     type Output = MmNumber;
 
@@ -193,6 +199,14 @@ impl Sub for MmNumber {
 
     fn sub(self, rhs: Self) -> Self::Output {
         (self.0 - rhs.0).into()
+    }
+}
+
+impl Sub for &MmNumber {
+    type Output = MmNumber;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        (&self.0 - &rhs.0).into()
     }
 }
 
@@ -261,6 +275,11 @@ impl MmNumber {
     /// Clones the internal BigRational
     pub fn to_ratio(&self) -> BigRational {
         self.0.clone()
+    }
+
+    /// Get BigDecimal representation
+    pub fn to_decimal(&self) -> BigDecimal {
+        from_ratio_to_dec(&self.0)
     }
 }
 

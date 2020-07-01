@@ -24,7 +24,6 @@ use common::{now_ms, slurp_url, small_rng};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
-use common::mm_number::MmNumber;
 use secp256k1::PublicKey;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{ Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -42,7 +41,6 @@ use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
 use sha3::{Keccak256, Digest};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
@@ -56,7 +54,7 @@ use web3::{ self, Web3 };
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Transaction as Web3Transaction, TransactionId, H256, Trace, TraceFilterBuilder};
 
 use super::{CoinsContext, CoinTransportMetrics, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SwapOps, TradeFee, TradeInfo, TransactionFut, TransactionEnum, Transaction, TransactionDetails, WithdrawFee, WithdrawRequest};
+            SwapOps, TradeFee, TransactionFut, TransactionEnum, Transaction, TransactionDetails, WithdrawFee, WithdrawRequest};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
@@ -257,7 +255,7 @@ impl EthCoinImpl {
     /// Get gas price
     fn get_gas_price(&self) -> impl Future<Item=U256, Error=String> {
         if let Some(url) = &self.gas_station_url {
-            Either01::A(GasStationData::get_gas_price(&url))
+            Either01::A(GasStationData::get_gas_price(&url).map(|price| add_ten_pct_one_gwei(price)))
         } else {
             Either01::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
         }
@@ -421,7 +419,7 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
     }
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-        from: vec![coin.my_address().into()],
+        from: vec![try_s!(coin.my_address())],
         total_amount: amount_decimal,
         my_balance_change: &received_by_me - &spent_by_me,
         spent_by_me,
@@ -689,14 +687,20 @@ impl SwapOps for EthCoin {
 impl MarketCoinOps for EthCoin {
     fn ticker (&self) -> &str {&self.ticker[..]}
 
-    fn my_address(&self) -> Cow<str> {
-        checksum_address(&format!("{:#02x}", self.my_address)).into()
+    fn my_address(&self) -> Result<String, String> {
+        Ok(checksum_address(&format!("{:#02x}", self.my_address)))
     }
 
     fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
         let decimals = self.decimals;
         Box::new(self.my_balance().and_then(move |result| {
             Ok(try_s!(u256_to_big_decimal(result, decimals)))
+        }))
+    }
+
+    fn base_coin_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
+        Box::new(self.eth_balance().and_then(move |result| {
+            Ok(try_s!(u256_to_big_decimal(result, 18)))
         }))
     }
 
@@ -1828,39 +1832,6 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
-        let ticker = self.ticker.clone();
-        let required = match trade_info {
-            TradeInfo::Maker => amount.clone(),
-            TradeInfo::Taker(dex_fee) => amount + &MmNumber::from(dex_fee.clone()),
-        };
-        match self.coin_type {
-            EthCoinType::Eth => {
-                let required = required + BigDecimal::from_str("0.0002").unwrap().into();
-                if balance < &required {
-                    Box::new(futures01::future::err(ERRL!("{} balance {} too low, required {}", ticker, balance, required)))
-                } else {
-                    Box::new(futures01::future::ok(()))
-                }
-            },
-            EthCoinType::Erc20(_) => {
-                if balance < &required {
-                    Box::new(futures01::future::err(ERRL!("{} balance {} too low, required {}", ticker, balance, required)))
-                } else {
-                    // need to check ETH balance too, address should have some to cover gas fees
-                    Box::new(self.eth_balance().and_then(move |eth_balance| {
-                        let eth_balance_decimal = try_s!(u256_to_big_decimal(eth_balance, 18));
-                        if eth_balance_decimal < "0.0002".parse().unwrap() {
-                            ERR!("{} balance is enough, but base coin balance {} is too low to cover gas fee, required 0.0002", ticker, eth_balance_decimal)
-                        } else {
-                            Ok(())
-                        }
-                    }))
-                }
-            }
-        }
-    }
-
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send> {
         Box::new(self.eth_balance().and_then(move |eth_balance| {
             let eth_balance_f64: f64 = try_s!(display_u256_with_decimal_point(eth_balance, 18).parse());
@@ -1962,7 +1933,7 @@ impl MmCoin for EthCoin {
             let fee = gas_price * U256::from(150000);
             Ok(TradeFee {
                 coin: "ETH".into(),
-                amount: try_s!(u256_to_big_decimal(fee, 18))
+                amount: try_s!(u256_to_big_decimal(fee, 18)).into()
             })
         }))
     }
@@ -2084,7 +2055,7 @@ struct GasStationData {
 impl GasStationData {
     fn average_gwei(&self) -> U256 {
         // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
-        U256::from(self.average as u64 + 10) * U256::exp10(8)
+        U256::from(self.average as u64) * U256::exp10(8)
     }
 
     fn get_gas_price(uri: &str) -> Box<dyn Future<Item=U256, Error=String> + Send> {
@@ -2315,4 +2286,14 @@ fn get_addr_nonce(addr: Address, web3s: &Vec<Web3Instance>) -> Box<dyn Future<It
         }
     };
     Box::new(Box::pin(fut).compat())
+}
+
+fn add_ten_pct_one_gwei(num: U256) -> U256 {
+    let one_gwei = U256::from(10u64.pow(9));
+    let ten_pct = (num / U256::from(100)) * U256::from(10);
+    if ten_pct < one_gwei {
+        num + one_gwei
+    } else {
+        num + ten_pct
+    }
 }

@@ -21,11 +21,10 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
+use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coinfindᵃ, lp_coininit, MmCoinEnum};
 use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
-use futures01::Future;
 use futures::compat::Future01CompatExt;
 use http::Response;
 use serde_json::{self as json, Value as Json};
@@ -34,7 +33,7 @@ use std::borrow::Cow;
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{CancelBy, cancel_orders_by};
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{get_locked_amount, active_swaps_using_coin};
+use crate::mm2::lp_swap::{active_swaps_using_coin};
 
 /// Attempts to disable the coin
 pub fn disable_coin (ctx: MmArc, req: Json) -> HyRes {
@@ -89,9 +88,8 @@ pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
 
     let res = json! ({
         "result": "success",
-        "address": coin.my_address(),
+        "address": try_s!(coin.my_address()),
         "balance": balance,
-        "locked_by_swaps": locked_by_swaps,
         "coin": coin.ticker(),
         "required_confirmations": coin.required_confirmations(),
         "requires_notarization": coin.requires_notarization(),
@@ -112,9 +110,8 @@ pub async fn enable (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String>
 
     let res = json! ({
         "result": "success",
-        "address": coin.my_address(),
+        "address": try_s!(coin.my_address()),
         "balance": balance,
-        "locked_by_swaps": locked_by_swaps,
         "coin": coin.ticker(),
         "required_confirmations": coin.required_confirmations(),
         "requires_notarization": coin.requires_notarization(),
@@ -151,24 +148,21 @@ pub fn metrics(ctx: MmArc) -> HyRes {
 }
 
 /// Get my_balance of a coin
-pub fn my_balance (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind (&ctx, &ticker) {  // Use lp_coinfindᵃ when async.
+pub async fn my_balance (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
+    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {  // Use lp_coinfindᵃ when async.
         Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+        Ok (None) => return ERR!("No such coin: {}", ticker),
+        Err (err) => return ERR!("!lp_coinfind({}): {}", ticker, err)
     };
-    #[cfg(not(feature = "wallet-only"))]
-    let locked_by_swaps = get_locked_amount (&ctx, &ticker);
-    #[cfg(feature = "wallet-only")]
-    let locked_by_swaps = "0";
-
-    Box::new(coin.my_balance().and_then(move |balance| rpc_response(200, json!({
+    let my_balance = try_s!(coin.my_balance().compat().await);
+    let res = json!({
         "coin": ticker,
-        "balance": balance,
-        "locked_by_swaps": locked_by_swaps,
-        "address": coin.my_address(),
-    }).to_string())))
+        "balance": my_balance,
+        "address": try_s!(coin.my_address()),
+    });
+    let res = try_s! (json::to_vec (&res));
+    Ok (try_s! (Response::builder().body (res)))
 }
 
 /*

@@ -531,3 +531,21 @@ mod wasm_bindgen_tests {
         }).compat()
     }
 }
+
+#[test]
+fn test_add_ten_pct_one_gwei() {
+    let num = wei_from_big_decimal(&"0.1".parse().unwrap(), 9).unwrap();
+    let expected = wei_from_big_decimal(&"1.1".parse().unwrap(), 9).unwrap();
+    let actual = add_ten_pct_one_gwei(num);
+    assert_eq!(expected, actual);
+
+    let num = wei_from_big_decimal(&"9.9".parse().unwrap(), 9).unwrap();
+    let expected = wei_from_big_decimal(&"10.9".parse().unwrap(), 9).unwrap();
+    let actual = add_ten_pct_one_gwei(num);
+    assert_eq!(expected, actual);
+
+    let num = wei_from_big_decimal(&"30.1".parse().unwrap(), 9).unwrap();
+    let expected = wei_from_big_decimal(&"33.11".parse().unwrap(), 9).unwrap();
+    let actual = add_ten_pct_one_gwei(num);
+    assert_eq!(expected, actual);
+}

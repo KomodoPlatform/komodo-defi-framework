@@ -1,10 +1,8 @@
 use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
-use common::mm_number::MmNumber;
-use crate::{TradeInfo, FoundSwapTxSpend, WithdrawRequest};
+use crate::{FoundSwapTxSpend, WithdrawRequest};
 use futures01::Future;
 use mocktopus::macros::*;
-use std::borrow::Cow;
 use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionDetails, TransactionEnum, TransactionFut};
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
@@ -18,11 +16,15 @@ impl MarketCoinOps for TestCoin {
         unimplemented!()
     }
 
-    fn my_address(&self) -> Cow<str> {
+    fn my_address(&self) -> Result<String, String> {
         unimplemented!()
     }
 
     fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
+        unimplemented!()
+    }
+
+    fn base_coin_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send> {
         unimplemented!()
     }
 
@@ -199,10 +201,6 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send> {
-        unimplemented!()
-    }
-
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send> {
         unimplemented!()
     }
@@ -233,10 +231,10 @@ impl MmCoin for TestCoin {
     }
 
     fn required_confirmations(&self) -> u64 {
-        unimplemented!()
+        1
     }
 
-    fn requires_notarization(&self) -> bool { unimplemented!() }
+    fn requires_notarization(&self) -> bool { false }
 
     fn set_required_confirmations(&self, _confirmations: u64) {
         unimplemented!()

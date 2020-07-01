@@ -37,14 +37,12 @@ use common::{rpc_response, rpc_err_response, HyRes};
 use common::duplex_mutex::DuplexMutex;
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_metrics::{MetricsWeak};
-use common::mm_number::MmNumber;
 use futures01::Future;
 use futures::compat::Future01CompatExt;
 use gstuff::{slurp};
 use http::Response;
 use rpc::v1::types::{Bytes as BytesJson};
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
 use std::ops::Deref;
@@ -68,6 +66,7 @@ use self::utxo::{utxo_coin_from_conf_and_request, UtxoCoin, UtxoFeeDetails, Utxo
 #[allow(unused_variables)]
 pub mod test_coin;
 pub use self::test_coin::TestCoin;
+use common::mm_number::MmNumber;
 
 pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -211,9 +210,12 @@ pub trait SwapOps {
 pub trait MarketCoinOps {
     fn ticker (&self) -> &str;
 
-    fn my_address(&self) -> Cow<str>;
+    fn my_address(&self) -> Result<String, String>;
 
     fn my_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send>;
+
+    /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
+    fn base_coin_balance(&self) -> Box<dyn Future<Item=BigDecimal, Error=String> + Send>;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item=String, Error=String> + Send>;
@@ -340,7 +342,7 @@ pub enum TradeInfo {
 #[derive(Debug, Serialize)]
 pub struct TradeFee {
     pub coin: String,
-    pub amount: BigDecimal,
+    pub amount: MmNumber,
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
@@ -352,8 +354,6 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     // status/availability check: https://github.com/artemii235/SuperNET/issues/156#issuecomment-446501816
 
     fn is_asset_chain(&self) -> bool;
-
-    fn check_i_have_enough_to_trade(&self, amount: &MmNumber, balance: &MmNumber, trade_info: TradeInfo) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item=(), Error=String> + Send>;
 
@@ -367,7 +367,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// Path to tx history file
     fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
-        ctx.dbdir().join("TRANSACTIONS").join(format!("{}_{}.json", self.ticker(), self.my_address()))
+        let my_address = self.my_address().unwrap_or(Default::default());
+        ctx.dbdir().join("TRANSACTIONS").join(format!("{}_{}.json", self.ticker(), my_address))
     }
 
     /// Loads existing tx history from file, returns empty vector if file is not found
@@ -475,6 +476,8 @@ pub trait RpcTransportEventHandler {
     fn on_outgoing_request(&self, data: &[u8]);
 
     fn on_incoming_response(&self, data: &[u8]);
+
+    fn on_connected(&self, address: String) -> Result<(), String>;
 }
 
 impl fmt::Debug for dyn RpcTransportEventHandler + Send + Sync {
@@ -495,6 +498,10 @@ impl RpcTransportEventHandler for RpcTransportEventHandlerShared {
     fn on_incoming_response(&self, data: &[u8]) {
         self.as_ref().on_incoming_response(data)
     }
+
+    fn on_connected(&self, address: String) -> Result<(), String> {
+        self.as_ref().on_connected(address)
+    }
 }
 
 impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
@@ -513,6 +520,13 @@ impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
         for handler in self {
             handler.on_incoming_response(data)
         }
+    }
+
+    fn on_connected(&self, address: String) -> Result<(), String> {
+        for handler in self {
+            try_s!(handler.on_connected(address.clone()))
+        }
+        Ok(())
     }
 }
 
@@ -569,6 +583,12 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
             "coin" => self.ticker.clone(), "client" => self.client.clone());
         mm_counter!(self.metrics, "rpc_client.response.count", 1,
             "coin" => self.ticker.clone(), "client" => self.client.clone());
+    }
+
+    fn on_connected(&self, _address: String) -> Result<(), String> {
+        // Handle a new connected endpoint if necessary.
+        // Now just return the Ok
+        Ok(())
     }
 }
 
@@ -753,7 +773,12 @@ pub async fn get_trade_fee(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     };
     let fee_info = try_s!(coin.get_trade_fee().compat().await);
     let res = try_s!(json::to_vec(&json!({
-        "result": fee_info
+        "result": {
+            "coin": fee_info.coin,
+            "amount": fee_info.amount.to_decimal(),
+            "amount_fraction": fee_info.amount.to_fraction(),
+            "amount_rat": fee_info.amount.to_ratio(),
+        }
     })));
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -767,10 +792,14 @@ struct EnabledCoin {
 pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let coins_ctx: Arc<CoinsContext> = try_s!(CoinsContext::from_ctx(&ctx));
     let coins = try_s!(coins_ctx.coins.sleeplock(77).await);
-    let enabled_coins: Vec<_> = coins.iter().map(|(ticker, coin)| EnabledCoin {
-        ticker: ticker.clone(),
-        address: coin.my_address().to_string(),
-    }).collect();
+    let enabled_coins: Vec<_> = try_s!(coins.iter().map(|(ticker, coin)| {
+        let address = try_s!(coin.my_address());
+        Ok(EnabledCoin {
+            ticker: ticker.clone(),
+            address,
+        })
+    }).collect());
+
     let res = try_s!(json::to_vec(&json!({
         "result": enabled_coins
     })));
