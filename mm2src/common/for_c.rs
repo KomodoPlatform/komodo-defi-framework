@@ -1,4 +1,4 @@
-use libc::{c_char};
+use libc::c_char;
 use std::ffi::CStr;
 use std::net::IpAddr;
 
@@ -6,36 +6,38 @@ use std::net::IpAddr;
 //lazy_static! {pub static ref PEERS_SEND_COMPAT: Mutex<Option<fn (u32, i32, *const u8, i32) -> i32>> = Mutex::new (None);}
 
 #[no_mangle]
-pub extern fn log_stacktrace (desc: *const c_char) {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn log_stacktrace(desc: *const c_char) {
     let desc = if desc.is_null() {
         ""
     } else {
-        match unsafe {CStr::from_ptr (desc)} .to_str() {
-            Ok (s) => s,
-            Err (err) => {
+        match CStr::from_ptr(desc).to_str() {
+            Ok(s) => s,
+            Err(err) => {
                 log! ({"log_stacktrace] Bad trace description: {}", err});
                 ""
-            }
+            },
         }
     };
-    let mut trace = String::with_capacity (4096);
-    super::stack_trace (&mut super::stack_trace_frame, &mut |l| trace.push_str (l));
+    let mut trace = String::with_capacity(4096);
+    super::stack_trace(&mut super::stack_trace_frame, &mut |l| trace.push_str(l));
     log! ({"Stacktrace. {}\n{}", desc, trace});
 }
 
 #[no_mangle]
-pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn is_loopback_ip(ip: *mut c_char) -> u8 {
     if ip.is_null() {
         log!("received null ip");
         return 0;
     }
 
-    let ip_str = match unsafe { CStr::from_ptr(ip).to_str() } {
+    let ip_str = match CStr::from_ptr(ip).to_str() {
         Ok(s) => s,
         Err(e) => {
-            log!("Error creating CStr " [e]);
+            log!("Error creating CStr "[e]);
             return 0;
-        }
+        },
     };
 
     let ip: IpAddr = match ip_str.parse() {
@@ -43,7 +45,7 @@ pub extern fn is_loopback_ip (ip: *mut c_char) -> u8 {
         Err(e) => {
             log!("Error " [e] " parsing ip from str " (ip_str));
             return 0;
-        }
+        },
     };
 
     ip.is_loopback() as u8

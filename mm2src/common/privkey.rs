@@ -1,4 +1,3 @@
-
 /******************************************************************************
  * Copyright © 2014-2018 The SuperNET Developers.                             *
  *                                                                            *
@@ -18,17 +17,18 @@
 //  marketmaker
 //
 
-use bitcrypto::{ChecksumType, sha256};
+use bitcrypto::{sha256, ChecksumType};
 use keys::{Error as KeysError, KeyPair, Private};
 use primitives::hash::H256;
 
 fn private_from_seed(seed: &str) -> Result<Private, String> {
     match seed.parse() {
         Ok(private) => return Ok(private),
-        Err(e) => match e {
-            KeysError::InvalidChecksum => return ERR!("Provided WIF passphrase has invalid checksum!"),
-            _ => (), // ignore other errors, assume the passphrase is not WIF
-        },
+        Err(e) => {
+            if let KeysError::InvalidChecksum = e {
+                return ERR!("Provided WIF passphrase has invalid checksum!");
+            }
+        }, // else ignore other errors, assume the passphrase is not WIF
     }
 
     if seed.starts_with("0x") {
@@ -56,7 +56,9 @@ fn private_from_seed(seed: &str) -> Result<Private, String> {
 
 pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
     let private = try_s!(private_from_seed(seed));
-    if !private.compressed {return ERR!("We only support compressed keys at the moment")}
+    if !private.compressed {
+        return ERR!("We only support compressed keys at the moment");
+    }
     let pair = try_s!(KeyPair::from_private(private));
     // Just a sanity check. We rely on the public key being 33 bytes (aka compressed).
     assert_eq!(pair.public().len(), 33);

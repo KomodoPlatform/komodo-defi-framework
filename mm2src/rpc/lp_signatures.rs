@@ -1,4 +1,3 @@
-
 /******************************************************************************
  * Copyright © 2014-2018 The SuperNET Developers.                             *
  *                                                                            *
@@ -19,9 +18,9 @@
 //  marketmaker
 //
 
-use common::{rpc_response, HyRes};
 use common::mm_ctx::MmArc;
-use serde_json::{Value as Json};
+use common::{rpc_response, HyRes};
+use serde_json::Value as Json;
 
 /*
 struct basilisk_request *LP_requestinit(struct basilisk_request *rp,bits256 srchash,bits256 desthash,char *src,uint64_t srcsatoshis,char *dest,uint64_t destsatoshis,uint32_t timestamp,uint32_t quotetime,int32_t DEXselector,int32_t fillflag,int32_t gtcflag)
@@ -593,7 +592,7 @@ void LP_notify_pubkeys(void *ctx,int32_t pubsock)
 
 */
 
-pub fn lp_notify_recv (_ctx: MmArc, _req: Json) -> HyRes {
+pub fn lp_notify_recv(_ctx: MmArc, _req: Json) -> HyRes {
     // AP: we don't need to maintain list of peers for MM2 to work, so this function is doing nothing
     // until we have the necessity to store the peers list locally
 
@@ -636,7 +635,7 @@ pub fn lp_notify_recv (_ctx: MmArc, _req: Json) -> HyRes {
         }
     }
     */
-    rpc_response (200, r#"{"result": "success", "notify": "received"}"#)
+    rpc_response(200, r#"{"result": "success", "notify": "received"}"#)
 }
 
 /*

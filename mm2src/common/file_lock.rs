@@ -1,10 +1,11 @@
-use crate::{now_ms, now_float};
+use crate::{now_float, now_ms};
 use std::path::Path;
 
 pub struct FileLock<T: AsRef<Path>> {
     /// Filesystem path of the lock file.
     lock_path: T,
     /// The time in seconds after which an outdated lock file can be removed.
+    #[allow(dead_code)]
     ttl_sec: f64,
 }
 
@@ -17,13 +18,17 @@ fn touch(path: &dyn AsRef<Path>, timestamp: u64) -> Result<(), String> {
 fn read_timestamp(path: &dyn AsRef<Path>) -> Result<Option<u64>, String> {
     match std::fs::read_to_string(path) {
         Ok(content) => Ok(content.parse().ok()),
-        Err(e) => ERR!("{:?}", e)
+        Err(e) => ERR!("{:?}", e),
     }
 }
 
 impl<T: AsRef<Path>> FileLock<T> {
     pub fn lock(lock_path: T, ttl_sec: f64) -> Result<Option<FileLock<T>>, String> {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(lock_path.as_ref()) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(lock_path.as_ref())
+        {
             Ok(_) => {
                 let file_lock = FileLock { lock_path, ttl_sec };
                 try_s!(file_lock.touch());
@@ -32,43 +37,38 @@ impl<T: AsRef<Path>> FileLock<T> {
             Err(ref ie) if ie.kind() == std::io::ErrorKind::AlreadyExists => {
                 // See if the existing lock is old enough to be discarded.
                 match read_timestamp(&lock_path) {
-                    Ok(Some(lm)) => if now_float() - lm as f64 > ttl_sec {
-                        let file_lock = FileLock { lock_path, ttl_sec };
-                        try_s!(file_lock.touch());
-                        Ok(Some(file_lock))
-                    } else {
-                        Ok(None)
+                    Ok(Some(lm)) => {
+                        if now_float() - lm as f64 > ttl_sec {
+                            let file_lock = FileLock { lock_path, ttl_sec };
+                            try_s!(file_lock.touch());
+                            Ok(Some(file_lock))
+                        } else {
+                            Ok(None)
+                        }
                     },
                     Ok(None) => {
                         let file_lock = FileLock { lock_path, ttl_sec };
                         try_s!(file_lock.touch());
                         Ok(Some(file_lock))
                     },
-                    Err(ie) => ERR!("Error checking {:?}: {}", lock_path.as_ref(), ie)
+                    Err(ie) => ERR!("Error checking {:?}: {}", lock_path.as_ref(), ie),
                 }
             },
-            Err(ie) => ERR!("Error creating {:?}: {}", lock_path.as_ref(), ie)
+            Err(ie) => ERR!("Error creating {:?}: {}", lock_path.as_ref(), ie),
         }
     }
 
-    pub fn touch(&self) -> Result<(), String> {
-        touch(&self.lock_path, now_ms() / 1000)
-    }
+    pub fn touch(&self) -> Result<(), String> { touch(&self.lock_path, now_ms() / 1000) }
 }
 
 impl<T: AsRef<Path>> Drop for FileLock<T> {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.lock_path);
-    }
+    fn drop(&mut self) { let _ = std::fs::remove_file(&self.lock_path); }
 }
 
 #[cfg(test)]
 mod file_lock_tests {
-    use std::{
-        thread::sleep,
-        time::Duration,
-    };
     use super::*;
+    use std::{thread::sleep, time::Duration};
 
     #[test]
     fn test_file_lock_should_create_file_and_record_timestamp_and_then_delete_on_drop() {

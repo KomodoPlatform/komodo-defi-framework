@@ -1,14 +1,13 @@
 /// Custom future combinators/implementations - some of standard do not match our requirements.
-
 use crate::executor::Timer;
 use crate::now_float;
 
+use futures01::future::{self, loop_fn, Either as Either01, IntoFuture, Loop};
+use futures01::stream::{Fuse, Stream};
 use futures01::{Async, AsyncSink, Future, Poll, Sink};
-use futures01::future::{self, Either as Either01, IntoFuture, Loop, loop_fn};
-use futures01::stream::{Stream, Fuse};
 
 use futures::future::{select, Either};
-use futures::lock::{Mutex as AsyncMutex};
+use futures::lock::Mutex as AsyncMutex;
 
 /// The analogue of join_all combinator running futures `sequentially`.
 /// `join_all` runs futures `concurrently` which cause issues with native coins daemons RPC.
@@ -20,14 +19,14 @@ use futures::lock::{Mutex as AsyncMutex};
 pub fn join_all_sequential<I>(
     i: I,
 ) -> impl Future<Item = Vec<<I::Item as IntoFuture>::Item>, Error = <I::Item as IntoFuture>::Error>
-    where
-        I: IntoIterator,
-        I::Item: IntoFuture,
+where
+    I: IntoIterator,
+    I::Item: IntoFuture,
 {
     let iter = i.into_iter();
     loop_fn((vec![], iter), |(mut output, mut iter)| {
         let fut = if let Some(next) = iter.next() {
-            Either01::A(next.into_future().map(|v| Some(v)))
+            Either01::A(next.into_future().map(Some))
         } else {
             Either01::B(future::ok(None))
         };
@@ -53,12 +52,13 @@ pub fn join_all_sequential<I>(
 pub fn select_ok_sequential<I: IntoIterator>(
     i: I,
 ) -> impl Future<Item = <I::Item as IntoFuture>::Item, Error = Vec<<I::Item as IntoFuture>::Error>>
-    where I::Item: IntoFuture,
+where
+    I::Item: IntoFuture,
 {
     let futures = i.into_iter();
     loop_fn((vec![], futures), |(mut errors, mut futures)| {
         let fut = if let Some(next) = futures.next() {
-            Either01::A(next.into_future().map(|v| Some(v)))
+            Either01::A(next.into_future().map(Some))
         } else {
             Either01::B(future::ok(None))
         };
@@ -68,7 +68,7 @@ pub fn select_ok_sequential<I: IntoIterator>(
                 Ok(val) => val,
                 Err(e) => {
                     errors.push(e);
-                    return Ok(Loop::Continue((errors, futures)))
+                    return Ok(Loop::Continue((errors, futures)));
                 },
             };
 
@@ -96,12 +96,16 @@ pub struct SendAll<T, U: Stream> {
 }
 
 impl<T, U> SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     fn sink_mut(&mut self) -> &mut T {
-        self.sink.as_mut().take().expect("Attempted to poll SendAll after completion")
+        self.sink
+            .as_mut()
+            .take()
+            .expect("Attempted to poll SendAll after completion")
     }
 
     pub fn new(sink: T, stream: U) -> SendAll<T, U> {
@@ -113,21 +117,20 @@ impl<T, U> SendAll<T, U>
     }
 
     fn stream_mut(&mut self) -> &mut Fuse<U> {
-        self.stream.as_mut().take()
+        self.stream
+            .as_mut()
+            .take()
             .expect("Attempted to poll SendAll after completion")
     }
 
     fn take_stream(&mut self) -> U {
-        let fuse = self.stream.take()
-            .expect("Attempted to poll Forward after completion");
+        let fuse = self.stream.take().expect("Attempted to poll Forward after completion");
         fuse.into_inner()
     }
 
     fn take_result(&mut self) -> (T, U) {
-        let sink = self.sink.take()
-            .expect("Attempted to poll Forward after completion");
-        let fuse = self.stream.take()
-            .expect("Attempted to poll Forward after completion");
+        let sink = self.sink.take().expect("Attempted to poll Forward after completion");
+        let fuse = self.stream.take().expect("Attempted to poll Forward after completion");
         (sink, fuse.into_inner())
     }
 
@@ -135,24 +138,27 @@ impl<T, U> SendAll<T, U>
         debug_assert!(self.buffered.is_none());
         if let AsyncSink::NotReady(item) = self.sink_mut().start_send(item)? {
             self.buffered = Some(item);
-            return Ok(Async::NotReady)
+            return Ok(Async::NotReady);
         }
         Ok(Async::Ready(()))
     }
 }
 
 macro_rules! try_ready_send_all {
-    ($selff: ident, $e:expr) => (match $e {
-        Ok(Async::Ready(t)) => t,
-        Ok(Async::NotReady) => return Ok(Async::NotReady),
-        Err(e) => return Err(($selff.take_stream(), From::from(e))),
-    })
+    ($selff: ident, $e:expr) => {
+        match $e {
+            Ok(Async::Ready(t)) => t,
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Err(e) => return Err(($selff.take_stream(), From::from(e))),
+        }
+    };
 }
 
 impl<T, U> Future for SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     type Item = (T, U);
     type Error = (U, T::SinkError);
@@ -165,49 +171,57 @@ impl<T, U> Future for SendAll<T, U>
         }
 
         loop {
-            match self.stream_mut().poll().map_err(|e| (self.take_stream(), From::from(e)))? {
+            match self
+                .stream_mut()
+                .poll()
+                .map_err(|e| (self.take_stream(), From::from(e)))?
+            {
                 Async::Ready(Some(item)) => try_ready_send_all!(self, self.try_start_send(item)),
                 Async::Ready(None) => {
                     try_ready_send_all!(self, self.sink_mut().close());
-                    return Ok(Async::Ready(self.take_result()))
-                }
+                    return Ok(Async::Ready(self.take_result()));
+                },
                 Async::NotReady => {
                     try_ready_send_all!(self, self.sink_mut().poll_complete());
-                    return Ok(Async::NotReady)
-                }
+                    return Ok(Async::NotReady);
+                },
             }
         }
     }
 }
 
-pub struct TimedMutexGuard<'a, T> (futures::lock::MutexGuard<'a, T>);
+pub struct TimedMutexGuard<'a, T>(futures::lock::MutexGuard<'a, T>);
 //impl<'a, T> Drop for TimedMutexGuard<'a, T> {fn drop (&mut self) {}}
 
 /// Like `AsyncMutex` but periodically invokes a callback,
 /// allowing the application to implement timeouts, status updates and shutdowns.
-pub struct TimedAsyncMutex<T> (AsyncMutex<T>);
+pub struct TimedAsyncMutex<T>(AsyncMutex<T>);
 impl<T> TimedAsyncMutex<T> {
-    pub fn new (v: T) -> TimedAsyncMutex<T> {TimedAsyncMutex (AsyncMutex::new (v))}
+    pub fn new(v: T) -> TimedAsyncMutex<T> { TimedAsyncMutex(AsyncMutex::new(v)) }
 
     /// Like `AsyncMutex::lock` but invokes the `tick` callback periodically.  
     /// `tick` returns a time till the next tick, or an error to abort the locking attempt.  
     /// `tick` parameters are the time when the locking attempt has started and the current time
     /// (they are equal on the first invocation of `tick`).
-    pub async fn lock<F> (&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, String>
-    where F: FnMut (f64, f64) -> Result<f64, String> {
+    pub async fn lock<F>(&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, String>
+    where
+        F: FnMut(f64, f64) -> Result<f64, String>,
+    {
         let start = now_float();
         let mut now = start;
         let mut l = self.0.lock();
         let l = loop {
-            let tick_after = try_s! (tick (start, now));
-            let t = Timer::till (now + tick_after);
-            let rc = select (l, t) .await;
+            let tick_after = try_s!(tick(start, now));
+            let t = Timer::till(now + tick_after);
+            let rc = select(l, t).await;
             match rc {
-                Either::Left ((l, _t)) => break l,
-                Either::Right ((_t, lʹ)) => {
+                Either::Left((l, _t)) => break l,
+                Either::Right((_t, lʹ)) => {
                     now = now_float();
                     l = lʹ
-        }   }   };
-        Ok (TimedMutexGuard (l))
+                },
+            }
+        };
+        Ok(TimedMutexGuard(l))
     }
 }

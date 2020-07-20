@@ -3,9 +3,9 @@ use crate::log::{LogArc, LogWeak, Tag};
 use gstuff::Constructible;
 use hdrhistogram::Histogram;
 use itertools::Itertools;
-use metrics_core::{Key, Label, Drain, Observe, Observer, ScopedString, Builder};
-use metrics_runtime::{Receiver, observers::PrometheusBuilder};
+use metrics_core::{Builder, Drain, Key, Label, Observe, Observer, ScopedString};
 pub use metrics_runtime::Sink;
+use metrics_runtime::{observers::PrometheusBuilder, Receiver};
 use metrics_util::{parse_quantiles, Quantile};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -70,35 +70,34 @@ macro_rules! mm_timing {
 
 #[cfg(feature = "native")]
 pub mod prometheus {
+    use super::*;
     use crate::wio::CORE;
-    use futures01::{self, future, Future};
     use futures::compat::Future01CompatExt;
     use futures::future::FutureExt;
+    use futures01::{self, future, Future};
     use hyper::http::{self, header, Request, Response, StatusCode};
-    use hyper::{Body, Server};
     use hyper::service::{make_service_fn, service_fn};
+    use hyper::{Body, Server};
     use std::convert::Infallible;
     use std::net::SocketAddr;
-    use super::*;
 
     #[derive(Clone)]
     pub struct PrometheusCredentials {
         pub userpass: String,
     }
 
-    pub fn spawn_prometheus_exporter(metrics: MetricsWeak,
-                                     address: SocketAddr,
-                                     shutdown_detector: impl Future<Item=(), Error=()> + 'static + Send,
-                                     credentials: Option<PrometheusCredentials>)
-                                     -> Result<(), String> {
+    pub fn spawn_prometheus_exporter(
+        metrics: MetricsWeak,
+        address: SocketAddr,
+        shutdown_detector: impl Future<Item = (), Error = ()> + 'static + Send,
+        credentials: Option<PrometheusCredentials>,
+    ) -> Result<(), String> {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();
             let credentials = credentials.clone();
-            Ok::<_, Infallible>(
-                service_fn(move |req| {
-                    future::result(scrape_handle(req, metrics.clone(), credentials.clone()))
-                })
-            )
+            Ok::<_, Infallible>(service_fn(move |req| {
+                future::result(scrape_handle(req, metrics.clone(), credentials.clone()))
+            }))
         });
 
         let server = try_s!(Server::try_bind(&address))
@@ -118,23 +117,24 @@ pub mod prometheus {
         Ok(())
     }
 
-    fn scrape_handle(req: Request<Body>,
-                     metrics: MetricsWeak,
-                     credentials: Option<PrometheusCredentials>)
-                     -> Result<Response<Body>, http::Error> {
+    fn scrape_handle(
+        req: Request<Body>,
+        metrics: MetricsWeak,
+        credentials: Option<PrometheusCredentials>,
+    ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: String) -> Result<Response<Body>, http::Error> {
             log!((error));
-            Response::builder()
-                .status(status)
-                .body(Body::empty())
-                .map_err(|err| {
-                    log!((err));
-                    err
-                })
+            Response::builder().status(status).body(Body::empty()).map_err(|err| {
+                log!((err));
+                err
+            })
         }
 
         if req.uri() != "/metrics" {
-            return on_error(StatusCode::BAD_REQUEST, ERRL!("Warning Prometheus: unexpected URI {}", req.uri()));
+            return on_error(
+                StatusCode::BAD_REQUEST,
+                ERRL!("Warning Prometheus: unexpected URI {}", req.uri()),
+            );
         }
 
         if let Some(credentials) = credentials {
@@ -145,12 +145,22 @@ pub mod prometheus {
 
         let metrics = match MetricsArc::from_weak(&metrics) {
             Some(m) => m,
-            _ => return on_error(StatusCode::BAD_REQUEST, ERRL!("Warning Prometheus: metrics system unavailable")),
+            _ => {
+                return on_error(
+                    StatusCode::BAD_REQUEST,
+                    ERRL!("Warning Prometheus: metrics system unavailable"),
+                )
+            },
         };
 
         let body = match metrics.collect_prometheus_format() {
             Ok(body) => Body::from(body),
-            _ => return on_error(StatusCode::BAD_REQUEST, ERRL!("Warning Prometheus: metrics system is not initialized yet")),
+            _ => {
+                return on_error(
+                    StatusCode::BAD_REQUEST,
+                    ERRL!("Warning Prometheus: metrics system is not initialized yet"),
+                )
+            },
         };
 
         Response::builder()
@@ -164,11 +174,11 @@ pub mod prometheus {
     }
 
     fn check_auth_credentials(req: &Request<Body>, expected: PrometheusCredentials) -> Result<(), String> {
-        let header_value = req.headers()
+        let header_value = req
+            .headers()
             .get(header::AUTHORIZATION)
             .ok_or(ERRL!("Warning Prometheus: authorization required"))
-            .and_then(|header| Ok(try_s!(header.to_str())))
-            ?;
+            .and_then(|header| Ok(try_s!(header.to_str())))?;
 
         let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
 
@@ -214,7 +224,11 @@ impl Metrics {
         let controller = self.receiver.as_option().unwrap().controller();
 
         let observer = TagObserver::new(QUANTILES);
-        let exporter = TagExporter { log_state, controller, observer };
+        let exporter = TagExporter {
+            log_state,
+            controller,
+            observer,
+        };
 
         spawn(exporter.run(record_interval));
 
@@ -222,9 +236,7 @@ impl Metrics {
     }
 
     /// Handle for sending metric samples.
-    pub fn sink(&self) -> Result<Sink, String> {
-        Ok(try_s!(self.try_receiver()).sink())
-    }
+    pub fn sink(&self) -> Result<Sink, String> { Ok(try_s!(self.try_receiver()).sink()) }
 
     /// Collect the metrics as Json.
     pub fn collect_json(&self) -> Result<Json, String> {
@@ -282,40 +294,30 @@ pub enum MetricType {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MetricsArc(pub Arc<Metrics>);
 
 impl Deref for MetricsArc {
     type Target = Metrics;
-    fn deref(&self) -> &Metrics {
-        &*self.0
-    }
+    fn deref(&self) -> &Metrics { &*self.0 }
 }
 
 impl TrySink for MetricsArc {
-    fn try_sink(&self) -> Option<Sink> {
-        self.sink().ok()
-    }
+    fn try_sink(&self) -> Option<Sink> { self.sink().ok() }
 }
 
 impl MetricsArc {
     /// Create new `Metrics` instance
-    pub fn new() -> MetricsArc {
-        MetricsArc(Arc::new(Default::default()))
-    }
+    pub fn new() -> MetricsArc { MetricsArc(Arc::new(Default::default())) }
 
     /// Try to obtain the `Metrics` from the weak pointer.
-    pub fn from_weak(weak: &MetricsWeak) -> Option<MetricsArc> {
-        weak.0.upgrade().map(|arc| MetricsArc(arc))
-    }
+    pub fn from_weak(weak: &MetricsWeak) -> Option<MetricsArc> { weak.0.upgrade().map(MetricsArc) }
 
     /// Create a weak pointer from `MetricsWeak`.
-    pub fn weak(&self) -> MetricsWeak {
-        MetricsWeak(Arc::downgrade(&self.0))
-    }
+    pub fn weak(&self) -> MetricsWeak { MetricsWeak(Arc::downgrade(&self.0)) }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MetricsWeak(pub Weak<Metrics>);
 
 impl TrySink for MetricsWeak {
@@ -327,13 +329,9 @@ impl TrySink for MetricsWeak {
 
 impl MetricsWeak {
     /// Create a default MmWeak without allocating any memory.
-    pub fn new() -> MetricsWeak {
-        MetricsWeak(Default::default())
-    }
+    pub fn new() -> MetricsWeak { MetricsWeak::default() }
 
-    pub fn dropped(&self) -> bool {
-        self.0.strong_count() == 0
-    }
+    pub fn dropped(&self) -> bool { self.0.strong_count() == 0 }
 }
 
 type MetricName = ScopedString;
@@ -382,7 +380,8 @@ impl TagObserver {
     }
 
     fn prepare_metrics(&self) -> Vec<PreparedMetric> {
-        self.metrics.iter()
+        self.metrics
+            .iter()
             .map(|(labels, name_value_map)| {
                 let tags = labels_to_tags(labels.iter());
                 let message = name_value_map_to_message(name_value_map);
@@ -393,7 +392,8 @@ impl TagObserver {
     }
 
     fn prepare_histograms(&self) -> Vec<PreparedMetric> {
-        self.histograms.iter()
+        self.histograms
+            .iter()
             .map(|(key, hist)| {
                 let tags = labels_to_tags(key.labels());
                 let message = format!("{}: {}", key.name(), hist_to_message(hist, &self.quantiles));
@@ -405,7 +405,8 @@ impl TagObserver {
 
     fn insert_metric(&mut self, key: Key, value: Integer) {
         let (name, labels) = key.into_parts();
-        self.metrics.entry(labels)
+        self.metrics
+            .entry(labels)
             .and_modify(|name_value_map| {
                 name_value_map.insert(name.clone(), value.clone());
             })
@@ -426,30 +427,24 @@ impl TagObserver {
 }
 
 impl Observer for TagObserver {
-    fn observe_counter(&mut self, key: Key, value: u64) {
-        self.insert_metric(key, Integer::Unsigned(value))
-    }
+    fn observe_counter(&mut self, key: Key, value: u64) { self.insert_metric(key, Integer::Unsigned(value)) }
 
-    fn observe_gauge(&mut self, key: Key, value: i64) {
-        self.insert_metric(key, Integer::Signed(value))
-    }
+    fn observe_gauge(&mut self, key: Key, value: i64) { self.insert_metric(key, Integer::Signed(value)) }
 
     fn observe_histogram(&mut self, key: Key, values: &[u64]) {
-        let entry = self.histograms
-            .entry(key)
-            .or_insert({
-                // Use default significant figures value.
-                // For more info on `sigfig` see the Historgam::new_with_bounds().
-                let sigfig = 3;
-                match Histogram::new(sigfig) {
-                    Ok(x) => x,
-                    Err(err) => {
-                        log!("failed to create histogram: "(err));
-                        // do nothing on error
-                        return;
-                    }
-                }
-            });
+        let entry = self.histograms.entry(key).or_insert({
+            // Use default significant figures value.
+            // For more info on `sigfig` see the Historgam::new_with_bounds().
+            let sigfig = 3;
+            match Histogram::new(sigfig) {
+                Ok(x) => x,
+                Err(err) => {
+                    log!("failed to create histogram: "(err));
+                    // do nothing on error
+                    return;
+                },
+            }
+        });
 
         for value in values {
             if let Err(err) = entry.record(*value) {
@@ -504,7 +499,7 @@ impl Observer for JsonObserver {
                 log!("failed to create histogram: "(err));
                 // do nothing on error
                 return;
-            }
+            },
         };
 
         for value in values {
@@ -536,14 +531,11 @@ impl JsonObserver {
         }
     }
 
-    fn into_json(self) -> Result<Json, String> {
-        json::to_value(self.metrics).map_err(|err| ERRL!("{}", err))
-    }
+    fn into_json(self) -> Result<Json, String> { json::to_value(self.metrics).map_err(|err| ERRL!("{}", err)) }
 }
 
 /// Exports metrics by converting them to a Tag format and log them using log::Status.
-struct TagExporter<C>
-{
+struct TagExporter<C> {
     /// Using a weak reference by default in order to avoid circular references and leaks.
     log_state: LogWeak,
     /// Handle for acquiring metric snapshots.
@@ -553,7 +545,9 @@ struct TagExporter<C>
 }
 
 impl<C> TagExporter<C>
-    where C: Observe {
+where
+    C: Observe,
+{
     /// Run endless async loop
     async fn run(mut self, interval: f64) {
         loop {
@@ -567,7 +561,7 @@ impl<C> TagExporter<C>
         let log_state = match LogArc::from_weak(&self.log_state) {
             Some(x) => x,
             // MmCtx is dropped already
-            _ => return
+            _ => return,
         };
 
         log!(">>>>>>>>>> DEX metrics <<<<<<<<<");
@@ -604,18 +598,19 @@ fn labels_into_parts(labels: Iter<Label>) -> HashMap<String, String> {
 
 fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
     let mut message = String::with_capacity(256);
-    match wite!(message, for (key, value) in name_value_map.iter().sorted() { (key) "=" (value.to_string()) } separated {' '}) {
+    match wite!(message, for (key, value) in name_value_map.iter().sorted() { (key) "=" (value.to_string()) } separated {' '})
+    {
         Ok(_) => message,
         Err(err) => {
             log!("Error " (err) " on format hist to message");
             String::new()
-        }
+        },
     }
 }
 
 fn hist_at_quantiles(hist: Histogram<u64>, quantiles: &[Quantile]) -> HashMap<String, u64> {
     quantiles
-        .into_iter()
+        .iter()
         .map(|quantile| {
             let key = quantile.label().to_string();
             let val = hist.value_at_quantile(quantile.value());
@@ -626,13 +621,11 @@ fn hist_at_quantiles(hist: Histogram<u64>, quantiles: &[Quantile]) -> HashMap<St
 
 fn hist_to_message(hist: &Histogram<u64>, quantiles: &[Quantile]) -> String {
     let mut message = String::with_capacity(256);
-    let fmt_quantiles = quantiles
-        .iter()
-        .map(|quantile| {
-            let key = quantile.label().to_string();
-            let val = hist.value_at_quantile(quantile.value());
-            format!("{}={}", key, val)
-        });
+    let fmt_quantiles = quantiles.iter().map(|quantile| {
+        let key = quantile.label().to_string();
+        let val = hist.value_at_quantile(quantile.value());
+        format!("{}={}", key, val)
+    });
 
     match wite!(message,
                 "count=" (hist.len())
@@ -643,15 +636,15 @@ fn hist_to_message(hist: &Histogram<u64>, quantiles: &[Quantile]) -> String {
         Err(err) => {
             log!("Error " (err) " on format hist to message");
             String::new()
-        }
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{block_on, log::LogArc};
-    use crate::log::LogState;
     use super::*;
+    use crate::log::LogState;
+    use crate::{block_on, log::LogArc};
 
     #[test]
     fn test_initialization() {
@@ -760,41 +753,41 @@ mod tests {
             "metrics": [
                 {
                     "key": "rpc.traffic.tx",
-			        "labels": { "coin": "BTC" },
-			        "type": "counter",
-			        "value": 92
+                    "labels": { "coin": "BTC" },
+                    "type": "counter",
+                    "value": 92
                 },
                 {
                     "key": "rpc.traffic.rx",
-			        "labels": { "coin": "BTC" },
-			        "type": "counter",
-			        "value": 149
+                    "labels": { "coin": "BTC" },
+                    "type": "counter",
+                    "value": 149
                 },
                 {
                     "key": "rpc.traffic.tx",
-			        "labels": { "coin": "KMD" },
-			        "type": "counter",
-			        "value": 54
+                    "labels": { "coin": "KMD" },
+                    "type": "counter",
+                    "value": 54
                 },
                 {
                     "key": "rpc.traffic.rx",
-			        "labels": { "coin": "KMD" },
-			        "type": "counter",
-			        "value": 158
+                    "labels": { "coin": "KMD" },
+                    "type": "counter",
+                    "value": 158
                 },
                 {
                     "count": 2,
                     "key": "rpc.query.spent_time",
-			        "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
-			        "max": 2000683007,
-			        "min": 1002438656,
-			        "type": "histogram"
+                    "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
+                    "max": 2000683007,
+                    "min": 1002438656,
+                    "type": "histogram"
                 },
                 {
                     "key": "rpc.connection.count",
-			        "labels": { "coin": "KMD" },
-			        "type": "gauge",
-			        "value": 5
+                    "labels": { "coin": "KMD" },
+                    "type": "gauge",
+                    "value": 5
                 }
             ]
         });
@@ -803,12 +796,17 @@ mod tests {
 
         let actual = actual["metrics"].as_array_mut().unwrap();
         for expected in expected["metrics"].as_array().unwrap() {
-            let index = actual.iter()
-                .position(|metric| metric == expected)
-                .expect(&format!("Couldn't find expected metric: {:?} in {:?}", expected, actual));
+            let index = actual.iter().position(|metric| metric == expected).expect(&format!(
+                "Couldn't find expected metric: {:?} in {:?}",
+                expected, actual
+            ));
             actual.remove(index);
         }
 
-        assert!(actual.is_empty(), "More metrics collected than expected. Excess metrics: {:?}", actual);
+        assert!(
+            actual.is_empty(),
+            "More metrics collected than expected. Excess metrics: {:?}",
+            actual
+        );
     }
 }

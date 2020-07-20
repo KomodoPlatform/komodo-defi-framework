@@ -1,6 +1,6 @@
+use super::*;
 use crate::mm2::lp_ordermatch::OrderConfirmationsSettings;
 use crate::mm2::lp_swap::PAYMENT_LOCKTIME;
-use super::*;
 
 struct SwapConfirmationsSettings {
     maker_coin_confs: u64,
@@ -22,7 +22,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
     ]);
-    let mut mm_bob = unwrap! (MarketMakerIt::start (
+    let mut mm_bob = unwrap!(MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -35,10 +35,12 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "pass".to_string(),
         None,
     ));
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
 
-    let mut mm_alice = unwrap! (MarketMakerIt::start (
+    let mut mm_alice = unwrap!(MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -51,14 +53,16 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "pass".to_string(),
         None,
     ));
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
-    unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    unwrap!(block_on(
+        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
 
     log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap! (block_on (mm_bob.rpc (json! ({
+    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -70,10 +74,10 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "rel_confs": maker_settings.rel_confs,
         "rel_nota": maker_settings.rel_nota,
     }))));
-    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
-    log!("Maker order " (rc.1));
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    log!("Maker order "(rc.1));
 
-    let rc = unwrap! (block_on (mm_alice.rpc (json! ({
+    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -85,46 +89,90 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "rel_confs": taker_settings.rel_confs,
         "rel_nota": taker_settings.rel_nota,
     }))));
-    assert! (rc.0.is_success(), "!buy: {}", rc.1);
+    assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let rc_json: Json = json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains ("Entering the maker_swap_loop MYCOIN/MYCOIN1"))));
-    unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains ("Entering the taker_swap_loop MYCOIN/MYCOIN1"))));
+    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1")
+    })));
+    unwrap!(block_on(mm_alice.wait_for_log(22., |log| {
+        log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
+    })));
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = unwrap! (block_on(mm_bob.rpc (json! ({
+    let maker_status = unwrap!(block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
     }))));
-    assert!(maker_status.0.is_success(), "!maker_status of {}: {}", uuid, maker_status.1);
+    assert!(
+        maker_status.0.is_success(),
+        "!maker_status of {}: {}",
+        uuid,
+        maker_status.1
+    );
     let maker_status_json: Json = json::from_str(&maker_status.1).unwrap();
     let maker_started_event = maker_status_json["result"]["events"].as_array().unwrap()[0].clone();
-    assert_eq!(maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(), Some(expected_maker.maker_coin_confs));
-    assert_eq!(maker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(), Some(expected_maker.maker_coin_nota));
-    assert_eq!(maker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(), Some(expected_maker.taker_coin_confs));
-    assert_eq!(maker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(), Some(expected_maker.taker_coin_nota));
-    assert_eq!(maker_started_event["event"]["data"]["lock_duration"].as_u64(), Some(expected_lock_duration));
+    assert_eq!(
+        maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
+        Some(expected_maker.maker_coin_confs)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(),
+        Some(expected_maker.maker_coin_nota)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(),
+        Some(expected_maker.taker_coin_confs)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(),
+        Some(expected_maker.taker_coin_nota)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["lock_duration"].as_u64(),
+        Some(expected_lock_duration)
+    );
 
-    let taker_status = unwrap! (block_on(mm_alice.rpc (json! ({
+    let taker_status = unwrap!(block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
     }))));
-    assert!(taker_status.0.is_success(), "!taker_status of {}: {}", uuid, taker_status.1);
+    assert!(
+        taker_status.0.is_success(),
+        "!taker_status of {}: {}",
+        uuid,
+        taker_status.1
+    );
     let taker_status_json: Json = json::from_str(&taker_status.1).unwrap();
     let taker_started_event = taker_status_json["result"]["events"].as_array().unwrap()[0].clone();
-    assert_eq!(taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(), Some(expected_taker.maker_coin_confs));
-    assert_eq!(taker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(), Some(expected_taker.maker_coin_nota));
-    assert_eq!(taker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(), Some(expected_taker.taker_coin_confs));
-    assert_eq!(taker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(), Some(expected_taker.taker_coin_nota));
-    assert_eq!(taker_started_event["event"]["data"]["lock_duration"].as_u64(), Some(expected_lock_duration));
+    assert_eq!(
+        taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
+        Some(expected_taker.maker_coin_confs)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(),
+        Some(expected_taker.maker_coin_nota)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(),
+        Some(expected_taker.taker_coin_confs)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(),
+        Some(expected_taker.taker_coin_nota)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["lock_duration"].as_u64(),
+        Some(expected_lock_duration)
+    );
 
     unwrap!(block_on(mm_bob.stop()));
     unwrap!(block_on(mm_alice.stop()));
@@ -143,7 +191,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
     ]);
-    let mut mm_bob = unwrap! (MarketMakerIt::start (
+    let mut mm_bob = unwrap!(MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -156,10 +204,12 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "pass".to_string(),
         None,
     ));
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
 
-    let mut mm_alice = unwrap! (MarketMakerIt::start (
+    let mut mm_alice = unwrap!(MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -172,14 +222,16 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "pass".to_string(),
         None,
     ));
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
-    unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    unwrap!(block_on(
+        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
 
     log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap! (block_on (mm_bob.rpc (json! ({
+    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -191,10 +243,10 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "rel_confs": maker_settings.rel_confs,
         "rel_nota": maker_settings.rel_nota,
     }))));
-    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
-    log!("Maker order " (rc.1));
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    log!("Maker order "(rc.1));
 
-    let rc = unwrap! (block_on (mm_alice.rpc (json! ({
+    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "sell",
         "base": "MYCOIN1",
@@ -206,46 +258,90 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "rel_confs": taker_settings.rel_confs,
         "rel_nota": taker_settings.rel_nota,
     }))));
-    assert! (rc.0.is_success(), "!buy: {}", rc.1);
+    assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let rc_json: Json = json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains ("Entering the maker_swap_loop MYCOIN/MYCOIN1"))));
-    unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains ("Entering the taker_swap_loop MYCOIN/MYCOIN1"))));
+    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1")
+    })));
+    unwrap!(block_on(mm_alice.wait_for_log(22., |log| {
+        log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
+    })));
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = unwrap! (block_on(mm_bob.rpc (json! ({
+    let maker_status = unwrap!(block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
     }))));
-    assert!(maker_status.0.is_success(), "!maker_status of {}: {}", uuid, maker_status.1);
+    assert!(
+        maker_status.0.is_success(),
+        "!maker_status of {}: {}",
+        uuid,
+        maker_status.1
+    );
     let maker_status_json: Json = json::from_str(&maker_status.1).unwrap();
     let maker_started_event = maker_status_json["result"]["events"].as_array().unwrap()[0].clone();
-    assert_eq!(maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(), Some(expected_maker.maker_coin_confs));
-    assert_eq!(maker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(), Some(expected_maker.maker_coin_nota));
-    assert_eq!(maker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(), Some(expected_maker.taker_coin_confs));
-    assert_eq!(maker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(), Some(expected_maker.taker_coin_nota));
-    assert_eq!(maker_started_event["event"]["data"]["lock_duration"].as_u64(), Some(expected_lock_duration));
+    assert_eq!(
+        maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
+        Some(expected_maker.maker_coin_confs)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(),
+        Some(expected_maker.maker_coin_nota)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(),
+        Some(expected_maker.taker_coin_confs)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(),
+        Some(expected_maker.taker_coin_nota)
+    );
+    assert_eq!(
+        maker_started_event["event"]["data"]["lock_duration"].as_u64(),
+        Some(expected_lock_duration)
+    );
 
-    let taker_status = unwrap! (block_on(mm_alice.rpc (json! ({
+    let taker_status = unwrap!(block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
     }))));
-    assert!(taker_status.0.is_success(), "!taker_status of {}: {}", uuid, taker_status.1);
+    assert!(
+        taker_status.0.is_success(),
+        "!taker_status of {}: {}",
+        uuid,
+        taker_status.1
+    );
     let taker_status_json: Json = json::from_str(&taker_status.1).unwrap();
     let taker_started_event = taker_status_json["result"]["events"].as_array().unwrap()[0].clone();
-    assert_eq!(taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(), Some(expected_taker.maker_coin_confs));
-    assert_eq!(taker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(), Some(expected_taker.maker_coin_nota));
-    assert_eq!(taker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(), Some(expected_taker.taker_coin_confs));
-    assert_eq!(taker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(), Some(expected_taker.taker_coin_nota));
-    assert_eq!(taker_started_event["event"]["data"]["lock_duration"].as_u64(), Some(expected_lock_duration));
+    assert_eq!(
+        taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
+        Some(expected_taker.maker_coin_confs)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["maker_payment_requires_nota"].as_bool(),
+        Some(expected_taker.maker_coin_nota)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["taker_payment_confirmations"].as_u64(),
+        Some(expected_taker.taker_coin_confs)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["taker_payment_requires_nota"].as_bool(),
+        Some(expected_taker.taker_coin_nota)
+    );
+    assert_eq!(
+        taker_started_event["event"]["data"]["lock_duration"].as_u64(),
+        Some(expected_lock_duration)
+    );
 
     unwrap!(block_on(mm_bob.stop()));
     unwrap!(block_on(mm_alice.stop()));
@@ -598,7 +694,7 @@ fn test_sell_taker_should_not_use_maker_confs_and_notas_for_taker_payment_if_mak
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4
+        PAYMENT_LOCKTIME * 4,
     );
 }
 

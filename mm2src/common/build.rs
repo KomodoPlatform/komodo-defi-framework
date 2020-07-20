@@ -11,12 +11,9 @@
 #![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
-#[macro_use]
-extern crate fomat_macros;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate unwrap;
+#[macro_use] extern crate fomat_macros;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate unwrap;
 
 use bzip2::read::BzDecoder;
 use chrono::DateTime;
@@ -205,10 +202,7 @@ fn mm_version() -> String {
     let mut buf;
     let version = if let Ok(mut mm_versionᶠ) = fs::File::open(&mm_versionᵖ) {
         buf = String::new();
-        unwrap!(
-            mm_versionᶠ.read_to_string(&mut buf),
-            "Can't read from MM_VERSION"
-        );
+        unwrap!(mm_versionᶠ.read_to_string(&mut buf), "Can't read from MM_VERSION");
         buf.trim().to_string()
     } else {
         // If the “MM_VERSION” file is absent then we should create it
@@ -255,7 +249,7 @@ fn mm_version() -> String {
     let dt_file = unwrap!(String::from_utf8(slurp(&mm_datetimeᵖ)));
     let mut dt_file = dt_file.trim().to_string();
     if let Some(ref dt_git) = dt_git {
-        if &dt_git[..] != &dt_file[..] {
+        if dt_git[..] != dt_file[..] {
             // Create or update the “MM_DATETIME” file in order to appease the Cargo dependency management.
             let mut mm_datetimeᶠ = unwrap!(fs::File::create(&mm_datetimeᵖ));
             unwrap!(mm_datetimeᶠ.write_all(dt_git.as_bytes()));
@@ -284,31 +278,29 @@ fn show_args<'a, I: IntoIterator<Item = &'a String>>(args: I) -> String {
 }
 
 fn forward(stdout: ChildStdout) {
-    unwrap!(thread::Builder::new()
-        .name("forward".into())
-        .spawn(move || {
-            let mut buf = Vec::new();
-            for ch in stdout.bytes() {
-                let ch = match ch {
-                    Ok(k) => k,
-                    Err(_) => break,
-                };
-                if ch == b'\n' {
-                    eprintln!("{}", unsafe { from_utf8_unchecked(&buf) });
-                } else {
-                    buf.push(ch)
-                }
-            }
-            if !buf.is_empty() {
+    unwrap!(thread::Builder::new().name("forward".into()).spawn(move || {
+        let mut buf = Vec::new();
+        for ch in stdout.bytes() {
+            let ch = match ch {
+                Ok(k) => k,
+                Err(_) => break,
+            };
+            if ch == b'\n' {
                 eprintln!("{}", unsafe { from_utf8_unchecked(&buf) });
+            } else {
+                buf.push(ch)
             }
-        }));
+        }
+        if !buf.is_empty() {
+            eprintln!("{}", unsafe { from_utf8_unchecked(&buf) });
+        }
+    }));
 }
 
 /// Like the `duct` `cmd!` but also prints the command into the standard error stream.
 macro_rules! ecmd {
     ( $program:expr ) => {{
-        eprintln! ("$ {}", $program);
+        eprintln!("$ {}", $program);
         let mut command = Command::new ($program);
         command.stdout (Stdio::piped());  // Printed to `stderr` in `run!`
         command.stderr (Stdio::inherit());  // `stderr` is directly visible with "cargo build -vv".
@@ -387,8 +379,10 @@ fn windows_requirements() {
     // `msvcr100.dll` is required by `ftp://sourceware.org/pub/pthreads-win32/prebuilt-dll-2-9-1-release/dll/x64/pthreadVC2.dll`
     let msvcr100 = system.join("msvcr100.dll");
     if !msvcr100.exists() {
-        panic! ("msvcr100.dll is missing. \
-            You can install it from https://www.microsoft.com/en-us/download/details.aspx?id=14632.");
+        panic!(
+            "msvcr100.dll is missing. \
+            You can install it from https://www.microsoft.com/en-us/download/details.aspx?id=14632."
+        );
     }
 
     // I don't exactly know what DLLs this download installs. Probably "msvcp140...". Might prove useful later.
@@ -412,12 +406,7 @@ fn root() -> PathBuf {
     // On Windows we're getting these "\\?\" paths from canonicalize but they aren't any good for CMake.
     if cfg!(windows) {
         let s = path2s(super_net);
-        Path::new(if s.starts_with(r"\\?\") {
-            &s[4..]
-        } else {
-            &s[..]
-        })
-        .into()
+        Path::new(if s.starts_with(r"\\?\") { &s[4..] } else { &s[..] }).into()
     } else {
         super_net
     }
@@ -435,9 +424,7 @@ fn out_dir() -> PathBuf {
 }
 
 /// Absolute path taken from SuperNET's root + `path`.  
-fn rabs(rrel: &str) -> PathBuf {
-    root().join(rrel)
-}
+fn rabs(rrel: &str) -> PathBuf { root().join(rrel) }
 
 fn path2s<P>(path: P) -> String
 where
@@ -473,50 +460,64 @@ fn hget(url: &str, to: PathBuf) {
         request: Request<Body>,
         to: PathBuf,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        Box::new(client.request(request) .then(move |res| -> Box<dyn Future<Item=(), Error=()> + Send> {
-            let res = unwrap!(res);
-            let status = res.status();
-            if status == StatusCode::FOUND {
-                let location = unwrap!(res.headers()[LOCATION].to_str());
+        Box::new(
+            client
+                .request(request)
+                .then(move |res| -> Box<dyn Future<Item = (), Error = ()> + Send> {
+                    let res = unwrap!(res);
+                    let status = res.status();
+                    if status == StatusCode::FOUND {
+                        let location = unwrap!(res.headers()[LOCATION].to_str());
 
-                epintln!("hget] Redirected to "
-                    if location.len() < 99 {  // 99 here is a numerically convenient screen width.
-                        (location) " …"
-                    } else {
-                        (&location[0..33]) '…' (&location[location.len()-44..location.len()]) " …"
-                    }
-                );
-
-                let request = unwrap!(Request::builder().uri(location) .body(Body::empty()));
-                rec(client, request, to)
-            } else if status == StatusCode::OK {
-                let mut file = unwrap!(fs::File::create(&to), "hget] Can't create {:?}", to);
-                // "cargo build -vv" shares the stderr with the user but buffers it on a line by line basis,
-                // meaning that without some dirty terminal tricks we won't be able to share
-                // a download status one-liner.
-                // The alternative, then, is to share the status updates based on time:
-                // If the download was working for five-ten seconds we want to share the status
-                // with the user in order not to keep her in the dark.
-                let mut received = 0;
-                let mut last_status_update = now_float();
-                let len: Option<usize> = res.headers().get(CONTENT_LENGTH) .map(|hv| unwrap!(unwrap!(hv.to_str()).parse()));
-                Box::new(res.into_body().for_each(move |chunk| {
-                    received += chunk.len();
-                    if now_float() - last_status_update > 3. {
-                        last_status_update = now_float();
-                        epintln!(
-                            {"hget] Fetched {:.0} KiB", received as f64 / 1024.}
-                            if let Some(len) = len {{" out of {:.0}", len as f64 / 1024.}}
-                            " …"
+                        epintln!("hget] Redirected to "
+                            if location.len() < 99 {  // 99 here is a numerically convenient screen width.
+                                (location) " …"
+                            } else {
+                                (&location[0..33]) '…' (&location[location.len()-44..location.len()]) " …"
+                            }
                         );
+
+                        let request = unwrap!(Request::builder().uri(location).body(Body::empty()));
+                        rec(client, request, to)
+                    } else if status == StatusCode::OK {
+                        let mut file = unwrap!(fs::File::create(&to), "hget] Can't create {:?}", to);
+                        // "cargo build -vv" shares the stderr with the user but buffers it on a line by line basis,
+                        // meaning that without some dirty terminal tricks we won't be able to share
+                        // a download status one-liner.
+                        // The alternative, then, is to share the status updates based on time:
+                        // If the download was working for five-ten seconds we want to share the status
+                        // with the user in order not to keep her in the dark.
+                        let mut received = 0;
+                        let mut last_status_update = now_float();
+                        let len: Option<usize> = res
+                            .headers()
+                            .get(CONTENT_LENGTH)
+                            .map(|hv| unwrap!(unwrap!(hv.to_str()).parse()));
+                        Box::new(
+                            res.into_body()
+                                .for_each(move |chunk| {
+                                    received += chunk.len();
+                                    if now_float() - last_status_update > 3. {
+                                        last_status_update = now_float();
+                                        epintln!(
+                                            {"hget] Fetched {:.0} KiB", received as f64 / 1024.}
+                                            if let Some(len) = len {{" out of {:.0}", len as f64 / 1024.}}
+                                            " …"
+                                        );
+                                    }
+                                    unwrap!(file.write_all(&chunk));
+                                    Ok(())
+                                })
+                                .then(move |r| -> Result<(), ()> {
+                                    unwrap!(r);
+                                    Ok(())
+                                }),
+                        )
+                    } else {
+                        panic!("hget] Unknown status: {:?} (headers: {:?}", status, res.headers())
                     }
-                    unwrap!(file.write_all(&chunk));
-                    Ok(())
-                }).then(move |r| -> Result<(), ()> {unwrap!(r); Ok(())}))
-            } else {
-                panic!("hget] Unknown status: {:?} (headers: {:?}", status, res.headers())
-            }
-        }))
+                }),
+        )
     }
 
     let request = unwrap!(Request::builder().uri(url).body(Body::empty()));
@@ -997,18 +998,11 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         } else {
             "libtorrent.a"
         };
-        let mut lib_paths: Vec<_> = unwrap!(glob(unwrap!(search_from
-            .join("**")
-            .join(search_for)
-            .to_str())))
-        .collect();
+        let mut lib_paths: Vec<_> = unwrap!(glob(unwrap!(search_from.join("**").join(search_for).to_str()))).collect();
         if lib_paths.is_empty() {
             None
         } else if lib_paths.len() > 1 {
-            panic!(
-                "Multiple versions of {} found in {:?}",
-                search_for, search_from
-            )
+            panic!("Multiple versions of {} found in {:?}", search_for, search_from)
         } else {
             let a = unwrap!(lib_paths.remove(0));
             assert!(a.is_file());
@@ -1036,7 +1030,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
     //  - https://github.com/arvidn/libtorrent/issues/26#issuecomment-121478708
 
     let boostˢ = unwrap!(boost.to_str());
-    let boostᵉ = escape_some(boostˢ.into());
+    let boostᵉ = escape_some(boostˢ);
     // NB: The common compiler flags go to the "cxxflags=" here
     // and the platform-specific flags go to the jam files or to conditionals below.
     let mut b2 = fomat!(

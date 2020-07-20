@@ -1,8 +1,5 @@
 use num_bigint::BigInt;
-use serde::{
-    de,
-    Deserialize, Deserializer, Serialize, Serializer,
-};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
 /// BigInt wrapper de/serializable from/to string representation
@@ -10,27 +7,19 @@ use std::fmt;
 pub struct BigIntStr(BigInt);
 
 impl fmt::Debug for BigIntStr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.to_string())
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0.to_string()) }
 }
 
 impl BigIntStr {
-    pub fn inner(&self) -> &BigInt {
-        &self.0
-    }
+    pub fn inner(&self) -> &BigInt { &self.0 }
 }
 
 impl From<BigInt> for BigIntStr {
-    fn from(num: BigInt) -> BigIntStr {
-        BigIntStr(num)
-    }
+    fn from(num: BigInt) -> BigIntStr { BigIntStr(num) }
 }
 
 impl Into<BigInt> for BigIntStr {
-    fn into(self) -> BigInt {
-        self.0
-    }
+    fn into(self) -> BigInt { self.0 }
 }
 
 impl Serialize for BigIntStr {

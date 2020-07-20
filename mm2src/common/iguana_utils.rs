@@ -22,23 +22,23 @@ use hex::FromHex;
 
 int32_t smallprimes[168] =
 {
-	2,      3,      5,      7,     11,     13,     17,     19,     23,     29,
-	31,     37,     41,     43,     47,     53,     59,     61,     67,     71,
-	73,     79,     83,     89,     97,    101,    103,    107,    109,    113,
-	127,    131,    137,    139,    149,    151,    157,    163,    167,    173,
-	179,    181,    191,    193,    197,    199,    211,    223,    227,    229,
-	233,    239,    241,    251,    257,    263,    269,    271,    277,    281,
-	283,    293,    307,    311,    313,    317,    331,    337,    347,    349,
-	353,    359,    367,    373,    379,    383,    389,    397,    401,    409,
-	419,    421,    431,    433,    439,    443,    449,    457,    461,    463,
-	467,    479,    487,    491,    499,    503,    509,    521,    523,    541,
-	547,    557,    563,    569,    571,    577,    587,    593,    599,    601,
-	607,    613,    617,    619,    631,    641,    643,    647,    653,    659,
-	661,    673,    677,    683,    691,    701,    709,    719,    727,    733,
-	739,    743,    751,    757,    761,    769,    773,    787,    797,    809,
-	811,    821,    823,    827,    829,    839,    853,    857,    859,    863,
-	877,    881,    883,    887,    907,    911,    919,    929,    937,    941,
-	947,    953,    967,    971,    977,    983,    991,    997
+    2,      3,      5,      7,     11,     13,     17,     19,     23,     29,
+    31,     37,     41,     43,     47,     53,     59,     61,     67,     71,
+    73,     79,     83,     89,     97,    101,    103,    107,    109,    113,
+    127,    131,    137,    139,    149,    151,    157,    163,    167,    173,
+    179,    181,    191,    193,    197,    199,    211,    223,    227,    229,
+    233,    239,    241,    251,    257,    263,    269,    271,    277,    281,
+    283,    293,    307,    311,    313,    317,    331,    337,    347,    349,
+    353,    359,    367,    373,    379,    383,    389,    397,    401,    409,
+    419,    421,    431,    433,    439,    443,    449,    457,    461,    463,
+    467,    479,    487,    491,    499,    503,    509,    521,    523,    541,
+    547,    557,    563,    569,    571,    577,    587,    593,    599,    601,
+    607,    613,    617,    619,    631,    641,    643,    647,    653,    659,
+    661,    673,    677,    683,    691,    701,    709,    719,    727,    733,
+    739,    743,    751,    757,    761,    769,    773,    787,    797,    809,
+    811,    821,    823,    827,    829,    839,    853,    857,    859,    863,
+    877,    881,    883,    887,    907,    911,    919,    929,    937,    941,
+    947,    953,    967,    971,    977,    983,    991,    997
 };
 
 bits256 bits256_doublesha256(char *hashstr,uint8_t *data,int32_t datalen)
@@ -138,8 +138,7 @@ bits256 bits256_ave(bits256 a,bits256 b)
 
 bits256 bits256_from_compact(uint32_t c)
 {
-    
-	uint32_t nbytes,nbits,i; bits256 x;
+    uint32_t nbytes,nbits,i; bits256 x;
     memset(x.bytes,0,sizeof(x));
     nbytes = (c >> 24) & 0xFF;
     if ( nbytes >= 3 )
@@ -201,44 +200,44 @@ void calc_OP_HASH160(char hexstr[41],uint8_t rmd160[20],char *pubkey)
 double _xblend(float *destp,double val,double decay)
 {
     double oldval;
-	if ( (oldval = *destp) != 0. )
-		return((oldval * decay) + ((1. - decay) * val));
-	else return(val);
+    if ( (oldval = *destp) != 0. )
+        return((oldval * decay) + ((1. - decay) * val));
+    else return(val);
 }
 
 double _dxblend(double *destp,double val,double decay)
 {
     double oldval;
-	if ( (oldval = *destp) != 0. )
-		return((oldval * decay) + ((1. - decay) * val));
-	else return(val);
+    if ( (oldval = *destp) != 0. )
+        return((oldval * decay) + ((1. - decay) * val));
+    else return(val);
 }
 
 double dxblend(double *destp,double val,double decay)
 {
-	double newval,slope;
-	if ( isnan(*destp) != 0 )
-		*destp = 0.;
-	if ( isnan(val) != 0 )
-		return(0.);
-	if ( *destp == 0 )
-	{
-		*destp = val;
-		return(0);
-	}
-	newval = _dxblend(destp,val,decay);
-	if ( newval < SMALLVAL && newval > -SMALLVAL )
-	{
-		// non-zero marker for actual values close to or even equal to zero
-		if ( newval < 0. )
-			newval = -SMALLVAL;
-		else newval = SMALLVAL;
-	}
-	if ( *destp != 0. && newval != 0. )
-		slope = (newval - *destp);
-	else slope = 0.;
-	*destp = newval;
-	return(slope);
+    double newval,slope;
+    if ( isnan(*destp) != 0 )
+        *destp = 0.;
+    if ( isnan(val) != 0 )
+        return(0.);
+    if ( *destp == 0 )
+    {
+        *destp = val;
+        return(0);
+    }
+    newval = _dxblend(destp,val,decay);
+    if ( newval < SMALLVAL && newval > -SMALLVAL )
+    {
+        // non-zero marker for actual values close to or even equal to zero
+        if ( newval < 0. )
+            newval = -SMALLVAL;
+        else newval = SMALLVAL;
+    }
+    if ( *destp != 0. && newval != 0. )
+        slope = (newval - *destp);
+    else slope = 0.;
+    *destp = newval;
+    return(slope);
 }
 
 int32_t TerminateQ_queued; queue_t TerminateQ;
@@ -371,19 +370,21 @@ unsigned char _decode_hex(char *hex) { return((unhex(hex[0])<<4) | unhex(hex[1])
 */
 
 /// Unpacks a `hex` string into the corresponding array of `bytes`.
-pub fn decode_hex (bytes: &mut [u8], hex: &[u8]) -> Result<(), String> {
+pub fn decode_hex(bytes: &mut [u8], hex: &[u8]) -> Result<(), String> {
     if bytes.len() == 32 {
         // This length is often used (cf. bits256) and we decode it without a temporary vector.
         // Consider also using `from_hex` directly.
-        let buf: [u8; 32] = try_s! (FromHex::from_hex (hex));
-        bytes.copy_from_slice (&buf);
+        let buf: [u8; 32] = try_s!(FromHex::from_hex(hex));
+        bytes.copy_from_slice(&buf);
     } else {
         // Refactoring vector: Hex decoding shouldn't be more complex than a simple loop,
         // there's no need for temporary buffers,
         // should take some time eventually to reimplement and test this as such.
-        let vec: Vec<u8> = try_s! (FromHex::from_hex (hex));
-        if vec.len() != bytes.len() {return ERR! ("Unpacked hex length {} is not {}", vec.len(), bytes.len())}
-        bytes.copy_from_slice (&vec);
+        let vec: Vec<u8> = try_s!(FromHex::from_hex(hex));
+        if vec.len() != bytes.len() {
+            return ERR!("Unpacked hex length {} is not {}", vec.len(), bytes.len());
+        }
+        bytes.copy_from_slice(&vec);
     }
     Ok(())
 }
@@ -541,11 +542,11 @@ int _increasing_uint64(const void *a,const void *b)
 {
 #define uint64_a (*(uint64_t *)a)
 #define uint64_b (*(uint64_t *)b)
-	if ( uint64_b > uint64_a )
-		return(-1);
-	else if ( uint64_b < uint64_a )
-		return(1);
-	return(0);
+    if ( uint64_b > uint64_a )
+        return(-1);
+    else if ( uint64_b < uint64_a )
+        return(1);
+    return(0);
 #undef uint64_a
 #undef uint64_b
 }
@@ -554,11 +555,11 @@ int _decreasing_uint64(const void *a,const void *b)
 {
 #define uint64_a (*(uint64_t *)a)
 #define uint64_b (*(uint64_t *)b)
-	if ( uint64_b > uint64_a )
-		return(1);
-	else if ( uint64_b < uint64_a )
-		return(-1);
-	return(0);
+    if ( uint64_b > uint64_a )
+        return(1);
+    else if ( uint64_b < uint64_a )
+        return(-1);
+    return(0);
 #undef uint64_a
 #undef uint64_b
 }
@@ -567,11 +568,11 @@ int _decreasing_uint32(const void *a,const void *b)
 {
 #define uint32_a (*(uint32_t *)a)
 #define uint32_b (*(uint32_t *)b)
-	if ( uint32_b > uint32_a )
-		return(1);
-	else if ( uint32_b < uint32_a )
-		return(-1);
-	return(0);
+    if ( uint32_b > uint32_a )
+        return(1);
+    else if ( uint32_b < uint32_a )
+        return(-1);
+    return(0);
 #undef uint32_a
 #undef uint32_b
 }
@@ -590,20 +591,20 @@ int32_t revsortds(double *buf,uint32_t num,int32_t size)
 
 int32_t sort64s(uint64_t *buf,uint32_t num,int32_t size)
 {
-	qsort(buf,num,size,_increasing_uint64);
-	return(0);
+    qsort(buf,num,size,_increasing_uint64);
+    return(0);
 }
 
 int32_t revsort64s(uint64_t *buf,uint32_t num,int32_t size)
 {
-	qsort(buf,num,size,_decreasing_uint64);
-	return(0);
+    qsort(buf,num,size,_decreasing_uint64);
+    return(0);
 }
 
 int32_t revsort32(uint32_t *buf,uint32_t num,int32_t size)
 {
-	qsort(buf,num,size,_decreasing_uint32);
-	return(0);
+    qsort(buf,num,size,_decreasing_uint32);
+    return(0);
 }
 
 /*int32_t iguana_sortbignum(void *buf,int32_t size,uint32_t num,int32_t structsize,int32_t dir)
@@ -627,7 +628,7 @@ int32_t revsort32(uint32_t *buf,uint32_t num,int32_t size)
     }
     if ( retval < 0 )
         printf("iguana_sortbignum only does bits256 and rmd160 for now\n");
-	return(retval);
+    return(retval);
 }*/
 
 void touppercase(char *str)

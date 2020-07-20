@@ -1,4 +1,3 @@
-
 /******************************************************************************
  * Copyright © 2014-2018 The SuperNET Developers.                             *
  *                                                                            *
@@ -22,9 +21,9 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coinfindᵃ, lp_coininit, MmCoinEnum};
-use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
+use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
 use futures::compat::Future01CompatExt;
 use http::Response;
 use serde_json::{self as json, Value as Json};
@@ -36,12 +35,13 @@ use crate::mm2::lp_ordermatch::{CancelBy, cancel_orders_by};
 use crate::mm2::lp_swap::{active_swaps_using_coin};
 
 /// Attempts to disable the coin
-pub fn disable_coin (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h!(req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfind (&ctx, &ticker) {  // Use lp_coinfindᵃ when async.
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
+pub fn disable_coin(ctx: MmArc, req: Json) -> HyRes {
+    let ticker = try_h!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let _coin = match lp_coinfind(&ctx, &ticker) {
+        // Use lp_coinfindᵃ when async.
+        Ok(Some(t)) => t,
+        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: "(ticker))),
+        Err(err) => return rpc_err_response(500, &fomat! ("!lp_coinfind(" (ticker) "): " (err))),
     };
     #[cfg(not(feature = "wallet-only"))]
     let cancelled = {
@@ -68,12 +68,16 @@ pub fn disable_coin (ctx: MmArc, req: Json) -> HyRes {
     let cancelled: &[()] = &[];
 
     try_h!(disable_coin_impl(&ctx, &ticker));
-    rpc_response(200, json!({
-        "result": {
-            "coin": ticker,
-            "cancelled_orders": cancelled,
-        }
-    }).to_string())
+    rpc_response(
+        200,
+        json!({
+            "result": {
+                "coin": ticker,
+                "cancelled_orders": cancelled,
+            }
+        })
+        .to_string(),
+    )
 }
 
 /// Enable a coin in the Electrum mode.
@@ -90,8 +94,8 @@ pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         "required_confirmations": coin.required_confirmations(),
         "requires_notarization": coin.requires_notarization(),
     });
-    let res = try_s! (json::to_vec (&res));
-    Ok (try_s! (Response::builder().body (res)))
+    let res = try_s!(json::to_vec(&res));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 /// Enable a coin in the local wallet mode.
@@ -108,12 +112,14 @@ pub async fn enable (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String>
         "required_confirmations": coin.required_confirmations(),
         "requires_notarization": coin.requires_notarization(),
     });
-    let res = try_s! (json::to_vec (&res));
-    Ok (try_s! (Response::builder().body (res)))
+    let res = try_s!(json::to_vec(&res));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 pub fn help() -> HyRes {
-    rpc_response(200, "
+    rpc_response(
+        200,
+        "
         buy(base, rel, price, relvolume, timeout=10, duration=3600)
         electrum(coin, urls)
         enable(coin, urls, swap_contract_address)
@@ -127,25 +133,26 @@ pub fn help() -> HyRes {
         stop()
         version
         withdraw(coin, amount, to)
-    ")
+    ",
+    )
 }
 
 /// Get MarketMaker session metrics
 pub fn metrics(ctx: MmArc) -> HyRes {
-    match ctx.metrics.collect_json()
-        .map(|value| value.to_string()) {
+    match ctx.metrics.collect_json().map(|value| value.to_string()) {
         Ok(response) => rpc_response(200, response),
         Err(err) => rpc_err_response(500, &err),
     }
 }
 
 /// Get my_balance of a coin
-pub async fn my_balance (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {  // Use lp_coinfindᵃ when async.
-        Ok (Some (t)) => t,
-        Ok (None) => return ERR!("No such coin: {}", ticker),
-        Err (err) => return ERR!("!lp_coinfind({}): {}", ticker, err)
+pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {
+        // Use lp_coinfindᵃ when async.
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
     let my_balance = try_s!(coin.my_balance().compat().await);
     let res = json!({
@@ -153,14 +160,14 @@ pub async fn my_balance (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Str
         "balance": my_balance,
         "address": try_s!(coin.my_address()),
     });
-    let res = try_s! (json::to_vec (&res));
-    Ok (try_s! (Response::builder().body (res)))
+    let res = try_s!(json::to_vec(&res));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 /*
 AP: Passphrase call is not documented and not used as of now, commented out
 
-/// JSON structure passed to the "passphrase" RPC call.  
+/// JSON structure passed to the "passphrase" RPC call.
 /// cf. https://docs.komodoplatform.com/barterDEX/barterDEX-API.html#passphrase
 #[derive(Clone, Deserialize, Debug)]
 struct PassphraseReq {
@@ -214,42 +221,55 @@ pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
     rpc_response (200, try_h! (json::to_string (&retjson)))
 }
 */
-pub fn stop (ctx: MmArc) -> HyRes {
+pub fn stop(ctx: MmArc) -> HyRes {
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
-    spawn (async move {
-        Timer::sleep (0.05) .await;
+    spawn(async move {
+        Timer::sleep(0.05).await;
         ctx.stop();
     });
-    rpc_response (200, r#"{"result": "success"}"#)
+    rpc_response(200, r#"{"result": "success"}"#)
 }
 
-pub async fn sim_panic (req: Json) -> Result<Response<Vec<u8>>, String> {
-    #[derive(Deserialize)] struct Req {#[serde(default)] mode: String}
-    let req: Req = try_s! (json::from_value (req));
+pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
+    #[derive(Deserialize)]
+    struct Req {
+        #[serde(default)]
+        mode: String,
+    }
+    let req: Req = try_s!(json::from_value(req));
 
-    #[derive(Serialize)] struct Ret<'a> {
+    #[derive(Serialize)]
+    struct Ret<'a> {
         /// Supported panic modes.
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        modes: Vec<Cow<'a, str>>
+        modes: Vec<Cow<'a, str>>,
     }
     let ret: Ret;
 
     if req.mode.is_empty() {
-        ret = Ret {modes: vec! ["simple".into()]}
+        ret = Ret {
+            modes: vec!["simple".into()],
+        }
     } else if req.mode == "simple" {
-        panic! ("sim_panic: simple")
-    } else {return ERR! ("No such mode: {}", req.mode)}
+        panic!("sim_panic: simple")
+    } else {
+        return ERR!("No such mode: {}", req.mode);
+    }
 
-    let js = try_s! (json::to_vec (&ret));
-    Ok (try_s! (Response::builder().body (js)))
+    let js = try_s!(json::to_vec(&ret));
+    Ok(try_s!(Response::builder().body(js)))
 }
 
 pub fn version() -> HyRes {
-    rpc_response (200, json! ({
-        "result": MM_VERSION,
-        "datetime": MM_DATETIME
-    }) .to_string())
+    rpc_response(
+        200,
+        json! ({
+            "result": MM_VERSION,
+            "datetime": MM_DATETIME
+        })
+        .to_string(),
+    )
 }
 
 // AP: Inventory is not documented and not used as of now, commented out

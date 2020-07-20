@@ -30,6 +30,7 @@ crdts = {git = "https://github.com/rust-crdt/rust-crdt"}
 crossbeam = "0.7"
 dirs = { version = "1", optional = true }
 either = "1.5"
+float-cmp = "0.8"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }

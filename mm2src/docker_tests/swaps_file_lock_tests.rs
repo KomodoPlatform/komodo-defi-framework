@@ -27,26 +27,28 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
     ]);
     let bob_conf = json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-            "dbdir": db_folder.to_str().unwrap(),
-        });
-    let mut mm_bob = unwrap! (MarketMakerIt::start (
-        bob_conf,
-        "pass".to_string(),
-        None,
+        "gui": "nogui",
+        "netid": 9000,
+        "dht": "on",  // Enable DHT without delay.
+        "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+        "coins": coins,
+        "rpc_password": "pass",
+        "i_am_seed": true,
+        "dbdir": db_folder.to_str().unwrap(),
+    });
+    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains ("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15"))));
-    unwrap! (block_on (mm_bob.wait_for_log (50., |log| log.contains ("Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 file lock is acquired by another process/thread, aborting"))));
+    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
+    })));
+    unwrap!(block_on(mm_bob.wait_for_log(50., |log| log.contains(
+        "Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 file lock is acquired by another process/thread, aborting"
+    ))));
 }
 
 #[test]
@@ -76,13 +78,11 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "rpc_password": "pass",
         "i_am_seed": true,
     });
-    let mut mm_bob = unwrap! (MarketMakerIt::start (
-        bob_conf.clone(),
-        "pass".to_string(),
-        None,
+    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None,));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
 
     let mut alice_conf = json! ({
         "gui": "nogui",
@@ -93,19 +93,17 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "rpc_password": "pass",
         "seednodes": vec![format!("{}", mm_bob.ip)],
     });
-    let mut mm_alice = unwrap! (MarketMakerIt::start (
-        alice_conf.clone(),
-        "pass".to_string(),
-        None,
+    let mut mm_alice = unwrap!(MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None,));
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    unwrap!(block_on(
+        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump (&mm_alice.log_path);
-    unwrap! (block_on (mm_alice.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
 
     log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap! (block_on (mm_bob.rpc (json! ({
+    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -113,8 +111,8 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "price": 1,
         "max": true,
     }))));
-    assert! (rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc = unwrap!(block_on (mm_alice.rpc (json! ({
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -125,12 +123,14 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let buy: Json = json::from_str(&rc.1).unwrap();
     let uuid = buy["result"]["uuid"].as_str().unwrap().to_owned();
-    unwrap!(block_on (mm_bob.wait_for_log (22.,
-        |log| log.contains (&format!("Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}", uuid))
-    )));
-    unwrap!(block_on (mm_alice.wait_for_log (22.,
-        |log| log.contains (&format!("Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}", uuid))
-    )));
+    unwrap!(block_on(mm_bob.wait_for_log(22., |log| log.contains(&format!(
+        "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
+        uuid
+    )))));
+    unwrap!(block_on(mm_alice.wait_for_log(22., |log| log.contains(&format!(
+        "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
+        uuid
+    )))));
     log!("Give swaps some time to start and save the first event by sleeping for 4 seconds");
     thread::sleep(Duration::from_secs(4));
     // mm_bob using same DB dir that should kick start the swap
@@ -138,19 +138,17 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     bob_conf["log"] = mm_bob.folder.join("mm2_dup.log").to_str().unwrap().into();
     // dropping instead of graceful stop to retain swap file locks
     drop(mm_bob);
-    let mut mm_bob_dup = unwrap! (MarketMakerIt::start (
-        bob_conf,
-        "pass".to_string(),
-        None,
+    let mut mm_bob_dup = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
+    unwrap!(block_on(
+        mm_bob_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump (&mm_bob_dup.log_path);
-    unwrap! (block_on (mm_bob_dup.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", vec![]))]);
 
-    unwrap! (block_on (mm_bob_dup.wait_for_log (50.,
-        |log| log.contains (&format!("Swap {} kick started.", uuid))
-    )));
+    unwrap!(block_on(mm_bob_dup.wait_for_log(50., |log| {
+        log.contains(&format!("Swap {} kick started.", uuid))
+    })));
 
     // mm_alice using same DB dir that should kick start the swap
     alice_conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -158,19 +156,17 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     // dropping instead of graceful stop to retain swap file locks
     drop(mm_alice);
 
-    let mut mm_alice_dup = unwrap! (MarketMakerIt::start (
-        alice_conf,
-        "pass".to_string(),
-        None,
+    let mut mm_alice_dup = unwrap!(MarketMakerIt::start(alice_conf, "pass".to_string(), None,));
+    let (_alice_dup_dump_log, _alice_dup_dump_dashboard) = mm_dump(&mm_alice_dup.log_path);
+    unwrap!(block_on(
+        mm_alice_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_alice_dup_dump_log, _alice_dup_dump_dashboard) = mm_dump (&mm_alice_dup.log_path);
-    unwrap! (block_on (mm_alice_dup.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     log!([block_on(enable_native(&mm_alice_dup, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_alice_dup, "MYCOIN1", vec![]))]);
 
-    unwrap! (block_on (mm_alice_dup.wait_for_log (50.,
-        |log| log.contains (&format!("Swap {} kick started.", uuid))
-    )));
+    unwrap!(block_on(mm_alice_dup.wait_for_log(50., |log| {
+        log.contains(&format!("Swap {} kick started.", uuid))
+    })));
 }
 
 fn addr_hash_for_privkey(priv_key: [u8; 32]) -> String {
@@ -212,33 +208,29 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
         "i_am_seed": true,
         "dbdir": db_folder.to_str().unwrap(),
     });
-    let mut mm_bob = unwrap! (MarketMakerIt::start (
-        bob_conf,
-        "pass".to_string(),
-        None,
+    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump (&mm_bob.log_path);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains (">>>>>>>>> DEX stats "))));
     log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    unwrap! (block_on (mm_bob.wait_for_log (22., |log| log.contains ("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15"))));
+    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
+    })));
     thread::sleep(Duration::from_secs(10));
     std::fs::write(swap_path, finished_swap_json).unwrap();
-    unwrap! (block_on (mm_bob.wait_for_log (50., |log| log.contains ("Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 has been finished already, aborting."))));
+    unwrap!(block_on(mm_bob.wait_for_log(50., |log| log.contains(
+        "Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 has been finished already, aborting."
+    ))));
 }
 
 #[test]
 fn maker_swap_should_not_kick_start_if_finished_during_waiting_for_file_lock() {
-    swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
-        UNFINISHED_MAKER_SWAP,
-        FINISHED_MAKER_SWAP,
-    );
+    swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(UNFINISHED_MAKER_SWAP, FINISHED_MAKER_SWAP);
 }
 
 #[test]
 fn taker_swap_should_not_kick_start_if_finished_during_waiting_for_file_lock() {
-    swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
-        UNFINISHED_TAKER_SWAP,
-        FINISHED_TAKER_SWAP,
-    );
+    swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(UNFINISHED_TAKER_SWAP, FINISHED_TAKER_SWAP);
 }

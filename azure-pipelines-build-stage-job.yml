@@ -54,6 +54,14 @@ jobs:
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
       - bash: |
+          cargo clippy --features native -- -D warnings
+        displayName: 'Check Clippy warnings'
+        condition: eq( variables['Agent.OS'], 'Linux' )
+      - bash: |
+          cargo +nightly fmt -- --check
+        displayName: 'Check rustfmt warnings'
+        condition: eq( variables['Agent.OS'], 'Linux' )
+      - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Debug target/debug/mm2 -j
         displayName: 'Prepare debug build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )

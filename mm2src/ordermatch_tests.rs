@@ -1,11 +1,9 @@
+use super::*;
 use coins::{MmCoin, TestCoin};
-use common::{
-    mm_ctx::{MmArc, MmCtxBuilder},
-    privkey::key_pair_from_seed,
-};
+use common::{mm_ctx::{MmArc, MmCtxBuilder},
+             privkey::key_pair_from_seed};
 use mocktopus::mocking::*;
 use std::collections::HashSet;
-use super::*;
 
 #[test]
 fn test_match_maker_order_and_taker_request() {
@@ -361,7 +359,6 @@ fn test_taker_match_reserved() {
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
 
-
     let request = TakerRequest {
         base: "BASE".into(),
         rel: "REL".into(),
@@ -647,7 +644,10 @@ fn test_taker_match_reserved() {
         request: TakerRequest {
             base: "RICK".into(),
             rel: "MORTY".into(),
-            base_amount: "0.3333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".parse().unwrap(),
+            base_amount:
+                "0.3333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"
+                    .parse()
+                    .unwrap(),
             base_amount_rat: Some(BigRational::new(1.into(), 3.into())),
             rel_amount: 1.into(),
             rel_amount_rat: Some(BigRational::from_integer(1.into())),
@@ -731,34 +731,31 @@ fn test_taker_order_cancellable() {
         order_type: OrderType::GoodTillCancelled,
     };
 
-    order.matches.insert(
-        Uuid::new_v4(),
-        TakerMatch {
-            last_updated: now_ms(),
-            reserved: MakerReserved {
-                method: "reserved".into(),
-                base: "BASE".into(),
-                rel: "REL".into(),
-                base_amount: 1.into(),
-                base_amount_rat: Some(BigRational::from_integer(1.into())),
-                rel_amount: 3.into(),
-                rel_amount_rat: Some(BigRational::from_integer(3.into())),
-                sender_pubkey: H256Json::default(),
-                dest_pub_key: H256Json::default(),
-                maker_order_uuid: Uuid::new_v4(),
-                taker_order_uuid: Uuid::new_v4(),
-                conf_settings: None,
-            },
-            connect: TakerConnect {
-                method: "connect".into(),
-                sender_pubkey: H256Json::default(),
-                dest_pub_key: H256Json::default(),
-                maker_order_uuid: Uuid::new_v4(),
-                taker_order_uuid: Uuid::new_v4(),
-            },
-            connected: None,
-        }
-    );
+    order.matches.insert(Uuid::new_v4(), TakerMatch {
+        last_updated: now_ms(),
+        reserved: MakerReserved {
+            method: "reserved".into(),
+            base: "BASE".into(),
+            rel: "REL".into(),
+            base_amount: 1.into(),
+            base_amount_rat: Some(BigRational::from_integer(1.into())),
+            rel_amount: 3.into(),
+            rel_amount_rat: Some(BigRational::from_integer(3.into())),
+            sender_pubkey: H256Json::default(),
+            dest_pub_key: H256Json::default(),
+            maker_order_uuid: Uuid::new_v4(),
+            taker_order_uuid: Uuid::new_v4(),
+            conf_settings: None,
+        },
+        connect: TakerConnect {
+            method: "connect".into(),
+            sender_pubkey: H256Json::default(),
+            dest_pub_key: H256Json::default(),
+            maker_order_uuid: Uuid::new_v4(),
+            taker_order_uuid: Uuid::new_v4(),
+        },
+        connected: None,
+    });
 
     assert!(!order.is_cancellable());
 }
@@ -840,12 +837,8 @@ fn test_cancel_by_single_coin() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
-    delete_my_taker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
+    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
 
     let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "RICK".into() }));
     assert!(cancelled.contains(&Uuid::from_bytes([0; 16])));
@@ -859,14 +852,10 @@ fn test_cancel_by_pair() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
-    delete_my_taker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
+    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
 
-    let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::Pair{
+    let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::Pair {
         base: "RICK".into(),
         rel: "MORTY".into(),
     }));
@@ -881,12 +870,8 @@ fn test_cancel_by_all() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
-    delete_my_taker_order.mock_safe(|_, _| {
-        MockResult::Return(())
-    });
+    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
 
     let (cancelled, _) = unwrap!(cancel_orders_by(&ctx, CancelBy::All));
     assert!(cancelled.contains(&Uuid::from_bytes([0; 16])));
@@ -963,15 +948,23 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
     let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
     let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap())
+        .with_secp256k1_key_pair(
+            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap(),
+        )
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    ordermatch_ctx.my_maker_orders.lock().unwrap().insert(maker_order.uuid, maker_order);
+    ordermatch_ctx
+        .my_maker_orders
+        .lock()
+        .unwrap()
+        .insert(maker_order.uuid, maker_order);
 
     static mut CONNECT_START_CALLED: bool = false;
-    lp_connect_start_bob.mock_safe(|_, _, _| MockResult::Return(unsafe {
-        CONNECT_START_CALLED = true;
-    }));
+    lp_connect_start_bob.mock_safe(|_, _, _| {
+        MockResult::Return(unsafe {
+            CONNECT_START_CALLED = true;
+        })
+    });
 
     let connect_json: Json = json::from_str(r#"{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"}"#).unwrap();
     lp_trade_command(ctx, connect_json);
@@ -984,18 +977,34 @@ fn should_process_request_only_once() {
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
     let uuid = maker_order.uuid;
     let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap())
+        .with_secp256k1_key_pair(
+            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap(),
+        )
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    ordermatch_ctx.my_maker_orders.lock().unwrap().insert(maker_order.uuid, maker_order);
+    ordermatch_ctx
+        .my_maker_orders
+        .lock()
+        .unwrap()
+        .insert(maker_order.uuid, maker_order);
     let request_json = json!({"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}});
     lp_trade_command(ctx, request_json);
     let maker_orders = ordermatch_ctx.my_maker_orders.lock().unwrap();
     let order = maker_orders.get(&uuid).unwrap();
     // when new request is processed match is replaced with new instance resetting
     // connect and connected to None so by checking is_some we check that request message is ignored
-    assert!(order.matches.get(&"2f9afe84-7a89-4194-8947-45fba563118f".parse().unwrap()).unwrap().connect.is_some());
-    assert!(order.matches.get(&"2f9afe84-7a89-4194-8947-45fba563118f".parse().unwrap()).unwrap().connected.is_some());
+    assert!(order
+        .matches
+        .get(&"2f9afe84-7a89-4194-8947-45fba563118f".parse().unwrap())
+        .unwrap()
+        .connect
+        .is_some());
+    assert!(order
+        .matches
+        .get(&"2f9afe84-7a89-4194-8947-45fba563118f".parse().unwrap())
+        .unwrap()
+        .connected
+        .is_some());
 }
 
 #[test]

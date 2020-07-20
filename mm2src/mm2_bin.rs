@@ -9,11 +9,11 @@
 #[macro_use] extern crate serialization_derive;
 #[macro_use] extern crate unwrap;
 
-#[path = "mm2.rs"]
-mod mm2;
+#[path = "mm2.rs"] mod mm2;
 
 fn main() {
-    #[cfg(feature = "native")] {
+    #[cfg(feature = "native")]
+    {
         mm2::mm2_main()
     }
 }

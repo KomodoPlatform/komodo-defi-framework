@@ -1,41 +1,35 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
+use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount, get_locked_amount_by_other_swaps,
+            my_swap_file_path, my_swaps_dir, AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
+            SavedSwap, SwapConfirmationsSettings, SwapError, SwapNegotiationData, SwapsContext, BASIC_COMM_TIMEOUT,
+            WAIT_CONFIRM_INTERVAL};
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
-use common::{
-    bits256, now_ms, now_float, slurp, write, MM_VERSION,
-    executor::Timer,
-    file_lock::FileLock,
-    mm_ctx::MmArc,
-    mm_number::MmNumber,
-};
 use coins::{FoundSwapTxSpend, MmCoinEnum, TradeFee, TransactionDetails};
+use common::{bits256, executor::Timer, file_lock::FileLock, mm_ctx::MmArc, mm_number::MmNumber, now_float, now_ms,
+             slurp, write, MM_VERSION};
 use crc::crc32;
-use futures::{
-    FutureExt, select,
-    compat::Future01CompatExt,
-    future::Either,
-};
+use futures::{compat::Future01CompatExt, future::Either, select, FutureExt};
 use futures01::Future;
 use parking_lot::Mutex as PaMutex;
 use peers::FixedValidator;
-use primitives::hash::{H264};
+use primitives::hash::H264;
 use rand::Rng;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::Ordering;
-use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount,
-            get_locked_amount_by_other_swaps, my_swaps_dir, my_swap_file_path,
-            AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SwapConfirmationsSettings, SwapsContext, SwapError, SwapNegotiationData,
-            BASIC_COMM_TIMEOUT, WAIT_CONFIRM_INTERVAL};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
-    ctx.dbdir().join("SWAPS").join("STATS").join("MAKER").join(format!("{}.json", uuid))
+    ctx.dbdir()
+        .join("SWAPS")
+        .join("STATS")
+        .join("MAKER")
+        .join(format!("{}.json", uuid))
 }
 
 fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
@@ -51,14 +45,31 @@ fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEven
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
-            success_events: vec!["Started".into(), "Negotiated".into(), "TakerFeeValidated".into(),
-                                 "MakerPaymentSent".into(), "TakerPaymentReceived".into(),
-                                 "TakerPaymentWaitConfirmStarted".into(), "TakerPaymentValidatedAndConfirmed".into(),
-                                 "TakerPaymentSpent".into(), "Finished".into()],
-            error_events: vec!["StartFailed".into(), "NegotiateFailed".into(), "TakerFeeValidateFailed".into(),
-                               "MakerPaymentTransactionFailed".into(), "MakerPaymentDataSendFailed".into(), "MakerPaymentWaitConfirmFailed".into(),
-                               "TakerPaymentValidateFailed".into(), "TakerPaymentWaitConfirmFailed".into(), "TakerPaymentSpendFailed".into(),
-                               "MakerPaymentWaitRefundStarted".into(), "MakerPaymentRefunded".into(), "MakerPaymentRefundFailed".into()],
+            success_events: vec![
+                "Started".into(),
+                "Negotiated".into(),
+                "TakerFeeValidated".into(),
+                "MakerPaymentSent".into(),
+                "TakerPaymentReceived".into(),
+                "TakerPaymentWaitConfirmStarted".into(),
+                "TakerPaymentValidatedAndConfirmed".into(),
+                "TakerPaymentSpent".into(),
+                "Finished".into(),
+            ],
+            error_events: vec![
+                "StartFailed".into(),
+                "NegotiateFailed".into(),
+                "TakerFeeValidateFailed".into(),
+                "MakerPaymentTransactionFailed".into(),
+                "MakerPaymentDataSendFailed".into(),
+                "MakerPaymentWaitConfirmFailed".into(),
+                "TakerPaymentValidateFailed".into(),
+                "TakerPaymentWaitConfirmFailed".into(),
+                "TakerPaymentSpendFailed".into(),
+                "MakerPaymentWaitRefundStarted".into(),
+                "MakerPaymentRefunded".into(),
+                "MakerPaymentRefundFailed".into(),
+            ],
         })
     } else {
         try_s!(json::from_slice(&content))
@@ -133,19 +144,18 @@ pub struct MakerSwap {
 }
 
 impl MakerSwap {
-    fn w(&self) -> RwLockWriteGuard<MakerSwapMut> {unwrap!(self.mutable.write())}
-    fn r(&self) -> RwLockReadGuard<MakerSwapMut> {unwrap!(self.mutable.read())}
+    fn w(&self) -> RwLockWriteGuard<MakerSwapMut> { unwrap!(self.mutable.write()) }
+    fn r(&self) -> RwLockReadGuard<MakerSwapMut> { unwrap!(self.mutable.read()) }
 
-    fn wait_refund_until(&self) -> u64 {
-        self.r().data.maker_payment_lock + 3700
-    }
+    fn wait_refund_until(&self) -> u64 { self.r().data.maker_payment_lock + 3700 }
 
     fn apply_event(&self, event: MakerSwapEvent) -> Result<(), String> {
         match event {
             MakerSwapEvent::Started(data) => self.w().data = data,
             MakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::Negotiated(data) => {
-                self.taker_payment_lock.store(data.taker_payment_locktime, Ordering::Relaxed);
+                self.taker_payment_lock
+                    .store(data.taker_payment_locktime, Ordering::Relaxed);
                 self.w().other_persistent_pub = data.taker_pubkey.into();
             },
             MakerSwapEvent::NegotiateFailed(err) => self.errors.lock().push(err),
@@ -157,12 +167,14 @@ impl MakerSwap {
             MakerSwapEvent::MakerPaymentWaitConfirmFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::TakerPaymentReceived(tx) => self.w().taker_payment = Some(tx),
             MakerSwapEvent::TakerPaymentWaitConfirmStarted => (),
-            MakerSwapEvent::TakerPaymentValidatedAndConfirmed => self.taker_payment_confirmed.store(true, Ordering::Relaxed),
+            MakerSwapEvent::TakerPaymentValidatedAndConfirmed => {
+                self.taker_payment_confirmed.store(true, Ordering::Relaxed)
+            },
             MakerSwapEvent::TakerPaymentValidateFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::TakerPaymentWaitConfirmFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::TakerPaymentSpent(tx) => self.w().taker_payment_spend = Some(tx),
             MakerSwapEvent::TakerPaymentSpendFailed(err) => self.errors.lock().push(err),
-            MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: _ } => (),
+            MakerSwapEvent::MakerPaymentWaitRefundStarted { .. } => (),
             MakerSwapEvent::MakerPaymentRefunded(tx) => self.w().maker_payment_refund = Some(tx),
             MakerSwapEvent::MakerPaymentRefundFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::Finished => self.finished_at.store(now_ms() / 1000, Ordering::Relaxed),
@@ -170,8 +182,10 @@ impl MakerSwap {
         Ok(())
     }
 
-    async fn handle_command(&self, command: MakerSwapCommand)
-                      -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+    async fn handle_command(
+        &self,
+        command: MakerSwapCommand,
+    ) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         match command {
             MakerSwapCommand::Start => self.start().await,
             MakerSwapCommand::Negotiate => self.negotiate().await,
@@ -185,6 +199,7 @@ impl MakerSwap {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: MmArc,
         taker: bits256,
@@ -220,24 +235,31 @@ impl MakerSwap {
                 taker_payment: None,
                 taker_payment_spend: None,
                 maker_payment_refund: None,
-            })
+            }),
         }
     }
 
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        match check_balance_for_maker_swap(&self.ctx, &self.maker_coin, self.maker_amount.clone().into(), Some(&self.uuid)).await {
+        match check_balance_for_maker_swap(
+            &self.ctx,
+            &self.maker_coin,
+            self.maker_amount.clone().into(),
+            Some(&self.uuid),
+        )
+        .await
+        {
             Ok(_) => (),
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::StartFailed(ERRL!("!check_balance_for_maker_swap {}", e).into())],
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
+                    ERRL!("!check_balance_for_maker_swap {}", e).into(),
+                )]))
+            },
         };
 
         if let Err(e) = self.taker_coin.can_i_spend_other_payment().compat().await {
-            return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::StartFailed(ERRL!("!can_i_spend_other_payment {}", e).into())],
-            ));
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
+                ERRL!("!can_i_spend_other_payment {}", e).into(),
+            )]));
         };
 
         let secret: [u8; 32] = {
@@ -254,18 +276,20 @@ impl MakerSwap {
 
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::StartFailed(ERRL!("!maker_coin.current_block {}", e).into())],
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
+                    ERRL!("!maker_coin.current_block {}", e).into(),
+                )]))
+            },
         };
 
         let taker_coin_start_block = match self.taker_coin.current_block().compat().await {
             Ok(b) => b,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::StartFailed(ERRL!("!taker_coin.current_block {}", e).into())],
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
+                    ERRL!("!taker_coin.current_block {}", e).into(),
+                )]))
+            },
         };
 
         let data = MakerSwapData {
@@ -301,140 +325,181 @@ impl MakerSwap {
         };
 
         let bytes = serialize(&maker_negotiation_data);
-        let sending_f = match send!(self.ctx, self.taker, fomat!(("negotiation") '@' (self.uuid)), 30, bytes.as_slice()) {
+        let sending_f = match send!(
+            self.ctx,
+            self.taker,
+            fomat!(("negotiation") '@' (self.uuid)),
+            30,
+            bytes.as_slice()
+        ) {
             Ok(f) => f,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("{}", e).into())],
-            )),
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("{}", e).into(),
+                )]))
+            },
         };
 
-        let data = match recv!(self, sending_f, "negotiation-reply", 90, -2000, FixedValidator::AnythingGoes) {
+        let data = match recv!(
+            self,
+            sending_f,
+            "negotiation-reply",
+            90,
+            -2000,
+            FixedValidator::AnythingGoes
+        ) {
             Ok(d) => d,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("{:?}", e).into())],
-            )),
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("{:?}", e).into(),
+                )]))
+            },
         };
         let taker_data: SwapNegotiationData = match deserialize(data.as_slice()) {
             Ok(d) => d,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("{:?}", e).into())],
-            )),
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("{:?}", e).into(),
+                )]))
+            },
         };
         let time_dif = (self.r().data.started_at as i64 - taker_data.started_at as i64).abs();
-        if  time_dif > 60 {
-            return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("Started_at time_dif over 60 {}", time_dif).into())]
-            ))
+        if time_dif > 60 {
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                ERRL!("Started_at time_dif over 60 {}", time_dif).into(),
+            )]));
         }
 
         let expected_lock_time = taker_data.started_at + self.r().data.lock_duration;
         if taker_data.payment_locktime != expected_lock_time {
-            return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("taker_data.payment_locktime {} not equal to expected {}", taker_data.payment_locktime, expected_lock_time).into())]
-            ))
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                ERRL!(
+                    "taker_data.payment_locktime {} not equal to expected {}",
+                    taker_data.payment_locktime,
+                    expected_lock_time
+                )
+                .into(),
+            )]));
         }
 
-        Ok((
-            Some(MakerSwapCommand::WaitForTakerFee),
-            vec![MakerSwapEvent::Negotiated(
-                TakerNegotiationData {
-                    taker_payment_locktime: taker_data.payment_locktime,
-                    taker_pubkey: taker_data.persistent_pubkey.into(),
-                })
-            ],
-        ))
+        Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
+            MakerSwapEvent::Negotiated(TakerNegotiationData {
+                taker_payment_locktime: taker_data.payment_locktime,
+                taker_pubkey: taker_data.persistent_pubkey.into(),
+            }),
+        ]))
     }
 
     async fn wait_taker_fee(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let negotiated = serialize(&true);
-        let sending_f = match send!(self.ctx, self.taker, fomat!(("negotiated") '@' (self.uuid)), 30, negotiated.as_slice()) {
+        let sending_f = match send!(
+            self.ctx,
+            self.taker,
+            fomat!(("negotiated") '@' (self.uuid)),
+            30,
+            negotiated.as_slice()
+        ) {
             Ok(f) => f,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::NegotiateFailed(ERRL!("{}", e).into())],
-            )),
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("{}", e).into(),
+                )]))
+            },
         };
 
         let payload = match recv!(self, sending_f, "taker-fee", 180, -2003, FixedValidator::AnythingGoes) {
             Ok(d) => d,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into())]
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into()),
+                ]))
+            },
         };
         let taker_fee = match self.taker_coin.tx_enum_from_bytes(&payload) {
             Ok(tx) => tx,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into())]
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into()),
+                ]))
+            },
         };
 
         let hash = taker_fee.tx_hash();
         log!({ "Taker fee tx {:02x}", hash });
 
-        let fee_addr_pub_key = unwrap!(hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"));
-        let fee_amount = dex_fee_amount(&self.r().data.maker_coin, &self.r().data.taker_coin, &self.taker_amount.clone().into());
+        let fee_addr_pub_key = unwrap!(hex::decode(
+            "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"
+        ));
+        let fee_amount = dex_fee_amount(
+            &self.r().data.maker_coin,
+            &self.r().data.taker_coin,
+            &self.taker_amount.clone().into(),
+        );
 
         let mut attempts = 0;
         loop {
-            match self.taker_coin.validate_fee(&taker_fee, &fee_addr_pub_key, &fee_amount.clone().into()).compat().await {
+            match self
+                .taker_coin
+                .validate_fee(&taker_fee, &fee_addr_pub_key, &fee_amount.clone().into())
+                .compat()
+                .await
+            {
                 Ok(_) => break,
-                Err(err) => if attempts >= 3 {
-                    return Ok((
-                        Some(MakerSwapCommand::Finish),
-                        vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into())]
-                    ))
-                } else {
-                    attempts += 1;
-                    Timer::sleep(10.).await;
-                }
+                Err(err) => {
+                    if attempts >= 3 {
+                        return Ok((Some(MakerSwapCommand::Finish), vec![
+                            MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
+                        ]));
+                    } else {
+                        attempts += 1;
+                        Timer::sleep(10.).await;
+                    }
+                },
             };
-        };
+        }
 
         let mut attempts = 0;
         let fee_details = loop {
             match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
-                Err(err) => if attempts >= 3 {
-                    return Ok((
-                        Some(MakerSwapCommand::Finish),
-                        vec![MakerSwapEvent::TakerFeeValidateFailed(ERRL!("Taker fee tx_details_by_hash failed {}", err).into())]
-                    ))
-                } else {
-                    attempts += 1;
-                    Timer::sleep(10.).await;
-                }
+                Err(err) => {
+                    if attempts >= 3 {
+                        return Ok((Some(MakerSwapCommand::Finish), vec![
+                            MakerSwapEvent::TakerFeeValidateFailed(
+                                ERRL!("Taker fee tx_details_by_hash failed {}", err).into(),
+                            ),
+                        ]));
+                    } else {
+                        attempts += 1;
+                        Timer::sleep(10.).await;
+                    }
+                },
             };
         };
 
-        Ok((
-            Some(MakerSwapCommand::SendPayment),
-            vec![MakerSwapEvent::TakerFeeValidated(fee_details)]
-        ))
+        Ok((Some(MakerSwapCommand::SendPayment), vec![
+            MakerSwapEvent::TakerFeeValidated(fee_details),
+        ]))
     }
 
     async fn maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
-            return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("Timeout {} > {}", now, timeout).into())],
-            ));
+            return Ok((Some(MakerSwapCommand::Finish), vec![
+                MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("Timeout {} > {}", now, timeout).into()),
+            ]));
         }
 
-        let transaction_f = self.maker_coin.check_if_my_payment_sent(
-            self.r().data.maker_payment_lock as u32,
-            &*self.r().other_persistent_pub,
-            &*dhash160(&self.r().data.secret.0),
-            self.r().data.maker_coin_start_block,
-        ).compat();
+        let transaction_f = self
+            .maker_coin
+            .check_if_my_payment_sent(
+                self.r().data.maker_payment_lock as u32,
+                &*self.r().other_persistent_pub,
+                &*dhash160(&self.r().data.secret.0),
+                self.r().data.maker_coin_start_block,
+            )
+            .compat();
         let transaction = match transaction_f.await {
             Ok(res) => match res {
                 Some(tx) => tx,
@@ -448,17 +513,19 @@ impl MakerSwap {
 
                     match payment_fut.compat().await {
                         Ok(t) => t,
-                        Err(err) => return Ok((
-                            Some(MakerSwapCommand::Finish),
-                            vec![MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", err).into())],
-                        ))
+                        Err(err) => {
+                            return Ok((Some(MakerSwapCommand::Finish), vec![
+                                MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", err).into()),
+                            ]))
+                        },
                     }
-                }
+                },
             },
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", e).into())],
-            ))
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", e).into()),
+                ]))
+            },
         };
 
         let hash = transaction.tx_hash();
@@ -472,27 +539,33 @@ impl MakerSwap {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
                     Timer::sleep(30.).await;
                     continue;
-                }
+                },
             }
         };
 
-        Ok((
-            Some(MakerSwapCommand::WaitForTakerPayment),
-            vec![MakerSwapEvent::MakerPaymentSent(tx_details)]
-        ))
+        Ok((Some(MakerSwapCommand::WaitForTakerPayment), vec![
+            MakerSwapEvent::MakerPaymentSent(tx_details),
+        ]))
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let maker_payment_hex = self.r().maker_payment.as_ref().unwrap().tx_hex.clone();
-        let sending_f = match send!(self.ctx, self.taker, fomat!(("maker-payment") '@' (self.uuid)), 60, maker_payment_hex) {
+        let sending_f = match send!(
+            self.ctx,
+            self.taker,
+            fomat!(("maker-payment") '@' (self.uuid)),
+            60,
+            maker_payment_hex
+        ) {
             Ok(f) => f,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
                     MakerSwapEvent::MakerPaymentDataSendFailed(ERRL!("{}", e).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            ))
+                    MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
         };
 
         let maker_payment_wait_confirm = self.r().data.started_at + (self.r().data.lock_duration * 2) / 5;
@@ -504,37 +577,47 @@ impl MakerSwap {
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = f.compat().await {
-            return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
-                    MakerSwapEvent::MakerPaymentWaitConfirmFailed(ERRL!("!wait for maker payment confirmations: {}", err).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            ));
+            return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                MakerSwapEvent::MakerPaymentWaitConfirmFailed(
+                    ERRL!("!wait for maker payment confirmations: {}", err).into(),
+                ),
+                MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                    wait_until: self.wait_refund_until(),
+                },
+            ]));
         }
 
         // wait for 3/5, we need to leave some time space for transaction to be confirmed
         let wait_duration = (self.r().data.lock_duration * 3) / 5;
-        let payload = match recv!(self, sending_f, "taker-payment", wait_duration, -2006, FixedValidator::AnythingGoes) {
+        let payload = match recv!(
+            self,
+            sending_f,
+            "taker-payment",
+            wait_duration,
+            -2006,
+            FixedValidator::AnythingGoes
+        ) {
             Ok(p) => p,
-            Err(e) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
                     MakerSwapEvent::TakerPaymentValidateFailed(e.into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ],
-            ))
+                    MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
         };
 
         let taker_payment = match self.taker_coin.tx_enum_from_bytes(&payload) {
             Ok(tx) => tx,
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
+            Err(err) => {
+                return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
                     MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_enum_from_bytes: {}", err).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            )),
+                    MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
         };
 
         let hash = taker_payment.tx_hash();
@@ -543,71 +626,79 @@ impl MakerSwap {
         let tx_details = loop {
             match self.taker_coin.tx_details_by_hash(&hash).compat().await {
                 Ok(details) => break details,
-                Err(err) => if attempts >= 3 {
-                    return Ok((
-                        Some(MakerSwapCommand::RefundMakerPayment),
-                        vec![
-                            MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_details_by_hash: {}", err).into()),
-                            MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                        ]
-                    ))
-                } else {
-                    attempts += 1;
-                    Timer::sleep(10.).await;
-                }
+                Err(err) => {
+                    if attempts >= 3 {
+                        return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                            MakerSwapEvent::TakerPaymentValidateFailed(
+                                ERRL!("!taker_coin.tx_details_by_hash: {}", err).into(),
+                            ),
+                            MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                                wait_until: self.wait_refund_until(),
+                            },
+                        ]));
+                    } else {
+                        attempts += 1;
+                        Timer::sleep(10.).await;
+                    }
+                },
             };
         };
 
-        Ok((
-            Some(MakerSwapCommand::ValidateTakerPayment),
-            vec![MakerSwapEvent::TakerPaymentReceived(tx_details), MakerSwapEvent::TakerPaymentWaitConfirmStarted]
-        ))
+        Ok((Some(MakerSwapCommand::ValidateTakerPayment), vec![
+            MakerSwapEvent::TakerPaymentReceived(tx_details),
+            MakerSwapEvent::TakerPaymentWaitConfirmStarted,
+        ]))
     }
 
     async fn validate_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
 
-        let validated_f = self.taker_coin.validate_taker_payment(
-            &unwrap!(self.r().taker_payment.clone()).tx_hex,
-            self.taker_payment_lock.load(Ordering::Relaxed) as u32,
-            &*self.r().other_persistent_pub,
-            &*dhash160(&self.r().data.secret.0),
-            self.taker_amount.clone(),
-        ).compat();
+        let validated_f = self
+            .taker_coin
+            .validate_taker_payment(
+                &unwrap!(self.r().taker_payment.clone()).tx_hex,
+                self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+                &*self.r().other_persistent_pub,
+                &*dhash160(&self.r().data.secret.0),
+                self.taker_amount.clone(),
+            )
+            .compat();
 
         if let Err(e) = validated_f.await {
-            return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
-                    MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            ))
+            return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.validate_taker_payment: {}", e).into()),
+                MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                    wait_until: self.wait_refund_until(),
+                },
+            ]));
         }
 
-        let wait_f = self.taker_coin.wait_for_confirmations(
-            &unwrap!(self.r().taker_payment.clone()).tx_hex,
-            self.r().data.taker_payment_confirmations,
-            self.r().data.taker_payment_requires_nota.unwrap_or(false),
-            wait_taker_payment,
-            WAIT_CONFIRM_INTERVAL,
-        ).compat();
+        let wait_f = self
+            .taker_coin
+            .wait_for_confirmations(
+                &unwrap!(self.r().taker_payment.clone()).tx_hex,
+                self.r().data.taker_payment_confirmations,
+                self.r().data.taker_payment_requires_nota.unwrap_or(false),
+                wait_taker_payment,
+                WAIT_CONFIRM_INTERVAL,
+            )
+            .compat();
 
         if let Err(err) = wait_f.await {
-            return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
-                    MakerSwapEvent::TakerPaymentWaitConfirmFailed(ERRL!("!taker_coin.wait_for_confirmations: {}", err).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            ))
+            return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                MakerSwapEvent::TakerPaymentWaitConfirmFailed(
+                    ERRL!("!taker_coin.wait_for_confirmations: {}", err).into(),
+                ),
+                MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                    wait_until: self.wait_refund_until(),
+                },
+            ]));
         }
 
-        Ok((
-            Some(MakerSwapCommand::SpendTakerPayment),
-            vec![MakerSwapEvent::TakerPaymentValidatedAndConfirmed]
-        ))
+        Ok((Some(MakerSwapCommand::SpendTakerPayment), vec![
+            MakerSwapEvent::TakerPaymentValidatedAndConfirmed,
+        ]))
     }
 
     async fn spend_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
@@ -620,13 +711,16 @@ impl MakerSwap {
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::RefundMakerPayment),
-                vec![
-                    MakerSwapEvent::TakerPaymentSpendFailed(ERRL!("!taker_coin.send_maker_spends_taker_payment: {}", err).into()),
-                    MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: self.wait_refund_until() },
-                ]
-            ))
+            Err(err) => {
+                return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                    MakerSwapEvent::TakerPaymentSpendFailed(
+                        ERRL!("!taker_coin.send_maker_spends_taker_payment: {}", err).into(),
+                    ),
+                    MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
         };
 
         let hash = transaction.tx_hash();
@@ -641,13 +735,12 @@ impl MakerSwap {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
                     Timer::sleep(30.).await;
                     continue;
-                }
+                },
             }
         };
-        Ok((
-            Some(MakerSwapCommand::Finish),
-            vec![MakerSwapEvent::TakerPaymentSpent(tx_details)]
-        ))
+        Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::TakerPaymentSpent(
+            tx_details,
+        )]))
     }
 
     async fn refund_maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
@@ -666,10 +759,13 @@ impl MakerSwap {
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
-            Err(err) => return Ok((
-                Some(MakerSwapCommand::Finish),
-                vec![MakerSwapEvent::MakerPaymentRefundFailed(ERRL!("!maker_coin.send_maker_refunds_payment: {}", err).into())]
-            ))
+            Err(err) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    MakerSwapEvent::MakerPaymentRefundFailed(
+                        ERRL!("!maker_coin.send_maker_refunds_payment: {}", err).into(),
+                    ),
+                ]))
+            },
         };
         let hash = transaction.tx_hash();
         log!({ "Maker payment refund tx {:02x}", hash });
@@ -683,13 +779,12 @@ impl MakerSwap {
                     log!({"Error {} getting tx details of {:02x}", e, hash});
                     Timer::sleep(30.).await;
                     continue;
-                }
+                },
             }
         };
-        Ok((
-            Some(MakerSwapCommand::Finish),
-            vec![MakerSwapEvent::MakerPaymentRefunded(tx_details)],
-        ))
+        Ok((Some(MakerSwapCommand::Finish), vec![
+            MakerSwapEvent::MakerPaymentRefunded(tx_details),
+        ]))
     }
 
     pub fn load_from_db_by_uuid(
@@ -724,13 +819,17 @@ impl MakerSwap {
                 let my_persistent_pub = H264::from(&**ctx.secp256k1_key_pair().public());
                 let conf_settings = SwapConfirmationsSettings {
                     maker_coin_confs: data.maker_payment_confirmations,
-                    maker_coin_nota: data.maker_payment_requires_nota.unwrap_or(maker_coin.requires_notarization()),
+                    maker_coin_nota: data
+                        .maker_payment_requires_nota
+                        .unwrap_or_else(|| maker_coin.requires_notarization()),
                     taker_coin_confs: data.taker_payment_confirmations,
-                    taker_coin_nota: data.taker_payment_requires_nota.unwrap_or(taker_coin.requires_notarization()),
+                    taker_coin_nota: data
+                        .taker_payment_requires_nota
+                        .unwrap_or_else(|| taker_coin.requires_notarization()),
                 };
                 let swap = MakerSwap::new(
                     ctx,
-                    taker.into(),
+                    taker,
                     data.maker_amount.clone(),
                     data.taker_amount.clone(),
                     my_persistent_pub,
@@ -751,30 +850,42 @@ impl MakerSwap {
     }
 
     pub fn recover_funds(&self) -> Result<RecoveredSwap, String> {
-        if self.finished_at.load(Ordering::Relaxed) == 0 { return ERR!("Swap must be finished before recover funds attempt"); }
+        if self.finished_at.load(Ordering::Relaxed) == 0 {
+            return ERR!("Swap must be finished before recover funds attempt");
+        }
 
-        if self.r().maker_payment_refund.is_some() { return ERR!("Maker payment is refunded, swap is not recoverable"); }
+        if self.r().maker_payment_refund.is_some() {
+            return ERR!("Maker payment is refunded, swap is not recoverable");
+        }
 
-        if self.r().taker_payment_spend.is_some() { return ERR!("Taker payment is spent, swap is not recoverable"); }
+        if self.r().taker_payment_spend.is_some() {
+            return ERR!("Taker payment is spent, swap is not recoverable");
+        }
 
-        let secret_hash = self.r().data.secret_hash.clone().unwrap_or(
-            dhash160(&self.r().data.secret.0).into(),
-        );
+        let secret_hash = self
+            .r()
+            .data
+            .secret_hash
+            .clone()
+            .unwrap_or_else(|| dhash160(&self.r().data.secret.0).into());
 
         let maker_payment = match &self.r().maker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
             None => {
-                let maybe_maker_payment = try_s!(self.maker_coin.check_if_my_payment_sent(
-                    self.r().data.maker_payment_lock as u32,
-                    &*self.r().other_persistent_pub,
-                    &secret_hash.0,
-                    self.r().data.maker_coin_start_block,
-                ).wait());
+                let maybe_maker_payment = try_s!(self
+                    .maker_coin
+                    .check_if_my_payment_sent(
+                        self.r().data.maker_payment_lock as u32,
+                        &*self.r().other_persistent_pub,
+                        &secret_hash.0,
+                        self.r().data.maker_coin_start_block,
+                    )
+                    .wait());
                 match maybe_maker_payment {
                     Some(tx) => tx.tx_hex(),
                     None => return ERR!("Maker payment transaction was not found"),
                 }
-            }
+            },
         };
         // validate that maker payment is not spent
         match self.maker_coin.search_for_swap_tx_spend_my(
@@ -784,21 +895,39 @@ impl MakerSwap {
             &maker_payment,
             self.r().data.maker_coin_start_block,
         ) {
-            Ok(Some(FoundSwapTxSpend::Spent(tx))) => return ERR!("Maker payment was already spent by {} tx {:02x}", self.maker_coin.ticker(), tx.tx_hash()),
-            Ok(Some(FoundSwapTxSpend::Refunded(tx))) => return ERR!("Maker payment was already refunded by {} tx {:02x}", self.maker_coin.ticker(), tx.tx_hash()),
+            Ok(Some(FoundSwapTxSpend::Spent(tx))) => {
+                return ERR!(
+                    "Maker payment was already spent by {} tx {:02x}",
+                    self.maker_coin.ticker(),
+                    tx.tx_hash()
+                )
+            },
+            Ok(Some(FoundSwapTxSpend::Refunded(tx))) => {
+                return ERR!(
+                    "Maker payment was already refunded by {} tx {:02x}",
+                    self.maker_coin.ticker(),
+                    tx.tx_hash()
+                )
+            },
             Err(e) => return ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => (), // payment is not spent, continue
         }
 
         if now_ms() / 1000 < self.r().data.maker_payment_lock + 3700 {
-            return ERR!("Too early to refund, wait until {}", self.r().data.maker_payment_lock + 3700);
+            return ERR!(
+                "Too early to refund, wait until {}",
+                self.r().data.maker_payment_lock + 3700
+            );
         }
-        let transaction = try_s!(self.maker_coin.send_maker_refunds_payment(
-            &maker_payment,
-            self.r().data.maker_payment_lock as u32,
-            &*self.r().other_persistent_pub,
-            &secret_hash.0,
-        ).wait());
+        let transaction = try_s!(self
+            .maker_coin
+            .send_maker_refunds_payment(
+                &maker_payment,
+                self.r().data.maker_payment_lock as u32,
+                &*self.r().other_persistent_pub,
+                &secret_hash.0,
+            )
+            .wait());
 
         Ok(RecoveredSwap {
             action: RecoveredSwapAction::RefundedMyPayment,
@@ -824,9 +953,7 @@ impl AtomicSwap for MakerSwap {
         }
     }
 
-    fn uuid(&self) -> &str {
-        &self.uuid
-    }
+    fn uuid(&self) -> &str { &self.uuid }
 
     fn maker_coin(&self) -> &str { self.maker_coin.ticker() }
 
@@ -843,11 +970,12 @@ pub enum MakerSwapCommand {
     ValidateTakerPayment,
     SpendTakerPayment,
     RefundMakerPayment,
-    Finish
+    Finish,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data")]
+#[allow(clippy::large_enum_variant)]
 pub enum MakerSwapEvent {
     Started(MakerSwapData),
     StartFailed(SwapError),
@@ -884,15 +1012,21 @@ impl MakerSwapEvent {
             MakerSwapEvent::MakerPaymentSent(_) => "Maker payment sent...".to_owned(),
             MakerSwapEvent::MakerPaymentTransactionFailed(_) => "Maker payment failed...".to_owned(),
             MakerSwapEvent::MakerPaymentDataSendFailed(_) => "Maker payment failed...".to_owned(),
-            MakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => "Maker payment wait for confirmation failed...".to_owned(),
+            MakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => {
+                "Maker payment wait for confirmation failed...".to_owned()
+            },
             MakerSwapEvent::TakerPaymentReceived(_) => "Taker payment received...".to_owned(),
             MakerSwapEvent::TakerPaymentWaitConfirmStarted => "Taker payment wait confirm started...".to_owned(),
             MakerSwapEvent::TakerPaymentValidatedAndConfirmed => "Taker payment validated and confirmed...".to_owned(),
             MakerSwapEvent::TakerPaymentValidateFailed(_) => "Taker payment validate failed...".to_owned(),
-            MakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => "Taker payment wait for confirmation failed...".to_owned(),
+            MakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => {
+                "Taker payment wait for confirmation failed...".to_owned()
+            },
             MakerSwapEvent::TakerPaymentSpent(_) => "Taker payment spent...".to_owned(),
             MakerSwapEvent::TakerPaymentSpendFailed(_) => "Taker payment spend failed...".to_owned(),
-            MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until } => format!("Maker payment wait refund till {} started...", wait_until),
+            MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until } => {
+                format!("Maker payment wait refund till {} started...", wait_until)
+            },
             MakerSwapEvent::MakerPaymentRefunded(_) => "Maker payment refunded...".to_owned(),
             MakerSwapEvent::MakerPaymentRefundFailed(_) => "Maker payment refund failed...".to_owned(),
             MakerSwapEvent::Finished => "Finished".to_owned(),
@@ -901,8 +1035,9 @@ impl MakerSwapEvent {
 
     fn should_ban_taker(&self) -> bool {
         match self {
-            MakerSwapEvent::NegotiateFailed(_) | MakerSwapEvent::TakerFeeValidateFailed(_) |
-            MakerSwapEvent::TakerPaymentValidateFailed(_) => true,
+            MakerSwapEvent::NegotiateFailed(_)
+            | MakerSwapEvent::TakerFeeValidateFailed(_)
+            | MakerSwapEvent::TakerPaymentValidateFailed(_) => true,
             _ => false,
         }
     }
@@ -935,7 +1070,7 @@ impl MakerSavedEvent {
             MakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => Some(MakerSwapCommand::RefundMakerPayment),
             MakerSwapEvent::TakerPaymentSpent(_) => Some(MakerSwapCommand::Finish),
             MakerSwapEvent::TakerPaymentSpendFailed(_) => Some(MakerSwapCommand::RefundMakerPayment),
-            MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until: _ } => Some(MakerSwapCommand::RefundMakerPayment),
+            MakerSwapEvent::MakerPaymentWaitRefundStarted { .. } => Some(MakerSwapCommand::RefundMakerPayment),
             MakerSwapEvent::MakerPaymentRefunded(_) => Some(MakerSwapCommand::Finish),
             MakerSwapEvent::MakerPaymentRefundFailed(_) => Some(MakerSwapCommand::Finish),
             MakerSwapEvent::Finished => None,
@@ -988,15 +1123,13 @@ impl MakerSavedSwap {
     pub fn get_my_info(&self) -> Option<MySwapInfo> {
         match self.events.first() {
             Some(event) => match &event.event {
-                MakerSwapEvent::Started(data) => {
-                    Some(MySwapInfo {
-                        my_coin: data.maker_coin.clone(),
-                        other_coin: data.taker_coin.clone(),
-                        my_amount: data.maker_amount.clone(),
-                        other_amount: data.taker_amount.clone(),
-                        started_at: data.started_at,
-                    })
-                },
+                MakerSwapEvent::Started(data) => Some(MySwapInfo {
+                    my_coin: data.maker_coin.clone(),
+                    other_coin: data.taker_coin.clone(),
+                    my_amount: data.maker_amount.clone(),
+                    other_amount: data.taker_amount.clone(),
+                    started_at: data.started_at,
+                }),
                 _ => None,
             },
             None => None,
@@ -1004,23 +1137,26 @@ impl MakerSavedSwap {
     }
 
     pub fn hide_secret(&mut self) {
-        match self.events.first_mut() {
-            Some(ref mut event) => match &mut event.event {
-                MakerSwapEvent::Started(ref mut data) => data.secret = H256Json::default(),
-                _ => (),
+        if let Some(ref mut event) = self.events.first_mut() {
+            if let MakerSwapEvent::Started(ref mut data) = event.event {
+                data.secret = H256Json::default();
             }
-            None => (),
         }
     }
 
     pub fn is_recoverable(&self) -> bool {
-        if !self.is_finished() { return false };
+        if !self.is_finished() {
+            return false;
+        };
         for event in self.events.iter() {
             match event.event {
-                MakerSwapEvent::StartFailed(_) | MakerSwapEvent::NegotiateFailed(_) | MakerSwapEvent::TakerFeeValidateFailed(_) |
-                MakerSwapEvent::TakerPaymentSpent(_) | MakerSwapEvent::MakerPaymentRefunded(_) => {
+                MakerSwapEvent::StartFailed(_)
+                | MakerSwapEvent::NegotiateFailed(_)
+                | MakerSwapEvent::TakerFeeValidateFailed(_)
+                | MakerSwapEvent::TakerPaymentSpent(_)
+                | MakerSwapEvent::MakerPaymentRefunded(_) => {
                     return false;
-                }
+                },
                 _ => (),
             }
         }
@@ -1028,6 +1164,7 @@ impl MakerSavedSwap {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum RunMakerSwapInput {
     StartNew(MakerSwap),
     KickStart {
@@ -1057,24 +1194,28 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     let file_lock = loop {
         match FileLock::lock(&lock_path, 40.) {
             Ok(Some(l)) => break l,
-            Ok(None) => if attempts >= 1 {
-                log!("Swap " (uuid) " file lock is acquired by another process/thread, aborting");
-                return;
-            } else {
-                attempts += 1;
-                Timer::sleep(40.).await;
+            Ok(None) => {
+                if attempts >= 1 {
+                    log!("Swap " (uuid) " file lock is acquired by another process/thread, aborting");
+                    return;
+                } else {
+                    attempts += 1;
+                    Timer::sleep(40.).await;
+                }
             },
             Err(e) => {
                 log!("Swap " (uuid) " file lock error " (e));
                 return;
-            }
+            },
         };
     };
 
     let (swap, mut command) = match swap {
         RunMakerSwapInput::StartNew(swap) => (swap, MakerSwapCommand::Start),
         RunMakerSwapInput::KickStart {
-            maker_coin, taker_coin, swap_uuid
+            maker_coin,
+            taker_coin,
+            swap_uuid,
         } => match MakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid) {
             Ok((swap, command)) => match command {
                 Some(c) => {
@@ -1083,62 +1224,84 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                 },
                 None => {
                     log!("Swap " (uuid) " has been finished already, aborting.");
-                    return
+                    return;
                 },
             },
             Err(e) => {
                 log!("Error " (e) " loading swap " (uuid));
                 return;
-            }
-        }
+            },
+        },
     };
 
-    let mut touch_loop = Box::pin(async move {
-        loop {
-            match file_lock.touch() {
-                Ok(_) => (),
-                Err(e) => log!("Warning, touch error " (e) " for swap " (uuid)),
-            };
-            Timer::sleep(30.).await;
+    let mut touch_loop = Box::pin(
+        async move {
+            loop {
+                match file_lock.touch() {
+                    Ok(_) => (),
+                    Err(e) => log!("Warning, touch error " (e) " for swap " (uuid)),
+                };
+                Timer::sleep(30.).await;
+            }
         }
-    }.fuse());
+        .fuse(),
+    );
 
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
-    macro_rules! swap_tags {() => {&[&"swap", &("uuid", &uuid[..])]}}
+    macro_rules! swap_tags {
+        () => {
+            &[&"swap", &("uuid", &uuid[..])]
+        };
+    }
     let running_swap = Arc::new(swap);
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
     unwrap!(swap_ctx.running_swaps.lock()).push(weak_ref);
     let shutdown_rx = swap_ctx.shutdown_rx.clone();
     let swap_for_log = running_swap.clone();
-    let mut swap_fut = Box::pin(async move {
-        let mut events;
-        loop {
-            let res = unwrap!(running_swap.handle_command(command).await, "!handle_command");
-            events = res.1;
-            for event in events {
-                let to_save = MakerSavedEvent {
-                    timestamp: now_ms(),
-                    event: event.clone(),
-                };
-                unwrap!(save_my_maker_swap_event(&ctx, &running_swap, to_save), "!save_my_maker_swap_event");
-                if event.should_ban_taker() { ban_pubkey(&ctx, running_swap.taker.bytes.into(), &running_swap.uuid, event.clone().into()) }
-                status.status(swap_tags!(), &event.status_str());
-                unwrap!(running_swap.apply_event(event), "!apply_event");
-            }
-            match res.0 {
-                Some(c) => { command = c; },
-                None => {
-                    if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
-                        log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+    let mut swap_fut = Box::pin(
+        async move {
+            let mut events;
+            loop {
+                let res = unwrap!(running_swap.handle_command(command).await, "!handle_command");
+                events = res.1;
+                for event in events {
+                    let to_save = MakerSavedEvent {
+                        timestamp: now_ms(),
+                        event: event.clone(),
+                    };
+                    unwrap!(
+                        save_my_maker_swap_event(&ctx, &running_swap, to_save),
+                        "!save_my_maker_swap_event"
+                    );
+                    if event.should_ban_taker() {
+                        ban_pubkey(
+                            &ctx,
+                            running_swap.taker.bytes.into(),
+                            &running_swap.uuid,
+                            event.clone().into(),
+                        )
                     }
-                    break;
-                },
+                    status.status(swap_tags!(), &event.status_str());
+                    unwrap!(running_swap.apply_event(event), "!apply_event");
+                }
+                match res.0 {
+                    Some(c) => {
+                        command = c;
+                    },
+                    None => {
+                        if let Err(e) = broadcast_my_swap_status(&uuid, &ctx) {
+                            log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                        }
+                        break;
+                    },
+                }
             }
         }
-    }.fuse());
+        .fuse(),
+    );
     let mut shutdown_fut = Box::pin(shutdown_rx.recv().fuse());
     select! {
         swap = swap_fut => (), // swap finished normally
@@ -1154,21 +1317,25 @@ pub async fn check_balance_for_maker_swap(
     swap_uuid: Option<&str>,
 ) -> Result<(), String> {
     let miner_fee = try_s!(my_coin.get_trade_fee().compat().await);
-    log!("check_balance_for_maker_swap miner fee " [miner_fee.amount.to_fraction()]);
+    log!("check_balance_for_maker_swap miner fee "[miner_fee.amount.to_fraction()]);
     let locked = match swap_uuid {
         Some(u) => get_locked_amount_by_other_swaps(ctx, u, my_coin.ticker(), &miner_fee),
         None => get_locked_amount(&ctx, my_coin.ticker(), &miner_fee),
     };
-    log!("check_balance_for_maker_swap locked " [locked.to_fraction()]);
+    log!("check_balance_for_maker_swap locked "[locked.to_fraction()]);
     let my_balance = try_s!(my_coin.my_balance().compat().await).into();
-    log!("check_balance_for_maker_swap my_balance " (my_balance));
+    log!("check_balance_for_maker_swap my_balance "(my_balance));
     let total = if my_coin.ticker() == miner_fee.coin {
-        volume + miner_fee.amount.into()
+        volume + miner_fee.amount
     } else {
         let base_coin_balance = try_s!(my_coin.base_coin_balance().compat().await);
         if miner_fee.amount > base_coin_balance {
-            return ERR!("Base coin {} balance {} is not sufficient to pay total miner fees {}",
-                        miner_fee.coin, base_coin_balance, miner_fee.amount)
+            return ERR!(
+                "Base coin {} balance {} is not sufficient to pay total miner fees {}",
+                miner_fee.coin,
+                base_coin_balance,
+                miner_fee.amount
+            );
         }
         volume
     };
@@ -1176,23 +1343,40 @@ pub async fn check_balance_for_maker_swap(
     if total <= available {
         Ok(())
     } else {
-        ERR!("The total required {} amount {} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}",
-        my_coin.ticker(), total, available, my_balance, locked)
+        ERR!(
+            "The total required {} amount {} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}",
+            my_coin.ticker(),
+            total,
+            available,
+            my_balance,
+            locked
+        )
     }
 }
 
 #[cfg(test)]
 mod maker_swap_tests {
-    use coins::{MarketCoinOps, SwapOps, TestCoin};
-    use coins::eth::{signed_eth_tx_from_bytes, SignedEthTx};
-    use common::privkey::key_pair_from_seed;
-    use common::mm_ctx::MmCtxBuilder;
-    use mocktopus::mocking::*;
     use super::*;
+    use coins::eth::{signed_eth_tx_from_bytes, SignedEthTx};
+    use coins::{MarketCoinOps, SwapOps, TestCoin};
+    use common::mm_ctx::MmCtxBuilder;
+    use common::privkey::key_pair_from_seed;
+    use mocktopus::mocking::*;
 
     fn eth_tx_for_test() -> SignedEthTx {
         // raw transaction bytes of https://etherscan.io/tx/0x0869be3e5d4456a29d488a533ad6c118620fef450f36778aecf31d356ff8b41f
-        let tx_bytes = [248, 240, 3, 133, 1, 42, 5, 242, 0, 131, 2, 73, 240, 148, 133, 0, 175, 192, 188, 82, 20, 114, 128, 130, 22, 51, 38, 194, 255, 12, 115, 244, 168, 113, 135, 110, 205, 245, 24, 127, 34, 254, 184, 132, 21, 44, 243, 175, 73, 33, 143, 82, 117, 16, 110, 27, 133, 82, 200, 114, 233, 42, 140, 198, 35, 21, 201, 249, 187, 180, 20, 46, 148, 40, 9, 228, 193, 130, 71, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 152, 41, 132, 9, 201, 73, 19, 94, 237, 137, 35, 61, 4, 194, 207, 239, 152, 75, 175, 245, 157, 174, 10, 214, 161, 207, 67, 70, 87, 246, 231, 212, 47, 216, 119, 68, 237, 197, 125, 141, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 72, 125, 102, 28, 159, 180, 237, 198, 97, 87, 80, 82, 200, 104, 40, 245, 221, 7, 28, 122, 104, 91, 99, 1, 159, 140, 25, 131, 101, 74, 87, 50, 168, 146, 187, 90, 160, 51, 1, 123, 247, 6, 108, 165, 181, 188, 40, 56, 47, 211, 229, 221, 73, 5, 15, 89, 81, 117, 225, 216, 108, 98, 226, 119, 232, 94, 184, 42, 106];
+        let tx_bytes = [
+            248, 240, 3, 133, 1, 42, 5, 242, 0, 131, 2, 73, 240, 148, 133, 0, 175, 192, 188, 82, 20, 114, 128, 130, 22,
+            51, 38, 194, 255, 12, 115, 244, 168, 113, 135, 110, 205, 245, 24, 127, 34, 254, 184, 132, 21, 44, 243, 175,
+            73, 33, 143, 82, 117, 16, 110, 27, 133, 82, 200, 114, 233, 42, 140, 198, 35, 21, 201, 249, 187, 180, 20,
+            46, 148, 40, 9, 228, 193, 130, 71, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 152, 41, 132, 9, 201, 73, 19,
+            94, 237, 137, 35, 61, 4, 194, 207, 239, 152, 75, 175, 245, 157, 174, 10, 214, 161, 207, 67, 70, 87, 246,
+            231, 212, 47, 216, 119, 68, 237, 197, 125, 141, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 93, 72, 125, 102, 28, 159, 180, 237, 198, 97,
+            87, 80, 82, 200, 104, 40, 245, 221, 7, 28, 122, 104, 91, 99, 1, 159, 140, 25, 131, 101, 74, 87, 50, 168,
+            146, 187, 90, 160, 51, 1, 123, 247, 6, 108, 165, 181, 188, 40, 56, 47, 211, 229, 221, 73, 5, 15, 89, 81,
+            117, 225, 216, 108, 98, 226, 119, 232, 94, 184, 42, 106,
+        ];
         unwrap!(signed_eth_tx_from_bytes(&tx_bytes))
     }
 
@@ -1202,7 +1386,9 @@ mod maker_swap_tests {
         // sent, need to find it and refund
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"3.54932734","maker_coin":"KMD","maker_coin_start_block":1452970,"maker_payment_confirmations":1,"maker_payment_lock":1563759539,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563743939,"taker":"101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9","taker_amount":"0.02004833998671660000000000","taker_coin":"ETH","taker_coin_start_block":8196380,"taker_payment_confirmations":1,"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"},"type":"Started"},"timestamp":1563743939211},{"event":{"data":{"taker_payment_locktime":1563751737,"taker_pubkey":"03101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9"},"type":"Negotiated"},"timestamp":1563743979835},{"event":{"data":{"block_height":8196386,"coin":"ETH","fee_details":null,"from":["0x3D6a2f4Dd6085b34EeD6cBc2D3aaABd0D3B697C1"],"internal_id":"00","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":1563744052,"to":["0xD8997941Dd1346e9231118D5685d866294f59e5b"],"total_amount":0.0001,"tx_hash":"a59203eb2328827de00bed699a29389792906e4f39fdea145eb40dc6b3821bd6","tx_hex":"f8690284ee6b280082520894d8997941dd1346e9231118d5685d866294f59e5b865af3107a4000801ca0743d2b7c9fad65805d882179062012261be328d7628ae12ee08eff8d7657d993a07eecbd051f49d35279416778faa4664962726d516ce65e18755c9b9406a9c2fd"},"type":"TakerFeeValidated"},"timestamp":1563744052878},{"event":{"data":{"error":"lp_swap:1888] eth:654] RPC error: Error { code: ServerError(-32010), message: \"Transaction with the same hash was already imported.\", data: None }"},"type":"MakerPaymentTransactionFailed"},"timestamp":1563744118577},{"event":{"type":"Finished"},"timestamp":1563763243350}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
@@ -1220,7 +1406,12 @@ mod maker_swap_tests {
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _| MockResult::Return(Ok(None)));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         let actual = unwrap!(maker_swap.recover_funds());
         let expected = RecoveredSwap {
             action: RecoveredSwapAction::RefundedMyPayment,
@@ -1237,7 +1428,9 @@ mod maker_swap_tests {
         // the swap ends up with MakerPaymentRefundFailed error
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"0.58610590","maker_coin":"KMD","maker_coin_start_block":1450923,"maker_payment_confirmations":1,"maker_payment_lock":1563636475,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563620875,"taker":"14a96292bfcd7762ece8eb08ead915da927c2619277363853572f30880d5155e","taker_amount":"0.0077700000552410000000000","taker_coin":"LTC","taker_coin_start_block":1670837,"taker_payment_confirmations":1,"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"},"type":"Started"},"timestamp":1563620875062},{"event":{"data":{"taker_payment_locktime":1563628675,"taker_pubkey":"02713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91"},"type":"Negotiated"},"timestamp":1563620915497},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD","LdeeicEe3dYpjy36TPWrufiGToyaaEP2Zs"],"total_amount":0.0179204,"tx_hash":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","tx_hex":"0100000001a2586ea8294cedc55741bef625ba72c646399903391a7f6c604a58c6263135f2000000006b4830450221009c78c8ba4a7accab6b09f9a95da5bc59c81f4fc1e60b288ec3c5462b4d02ef01022056b63be1629cf17751d3cc5ffec51bcb1d7f9396e9ce9ca254d0f34104f7263a012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac78aa1900000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac5bf6325d"},"type":"TakerFeeValidated"},"timestamp":1563620976060},{"event":{"data":{"block_height":0,"coin":"KMD","fee_details":{"amount":1e-05},"from":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd"],"internal_id":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","my_balance_change":-0.5861159,"received_by_me":0.41387409,"spent_by_me":0.99998999,"timestamp":0,"to":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","bLVo4svJDxUF6C2fVivmV91HJqVjrkkAf4"],"total_amount":0.99998999,"tx_hash":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","tx_hex":"0400008085202f89019f1cbda354342cdf982046b331bbd3791f53b692efc6e4becc36be495b2977d9000000006b483045022100fa9d4557394141f6a8b9bfb8cd594a521fd8bcd1965dbf8bc4e04abc849ac66e0220589f521814c10a7561abfd5e432f7a2ee60d4875fe4604618af3207dae531ac00121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffff029e537e030000000017a9145534898009f1467191065f6890b96914b39a1c018791857702000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac72ee325d000000000000000000000000000000"},"type":"MakerPaymentSent"},"timestamp":1563620976189},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["3DgMcEEjxwXfnEVapgQSCBVy2tz9X41RmR","LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"total_amount":0.0168204,"tx_hash":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","tx_hex":"01000000011300166cc86fcd318d7a238939e559fcd099953a9e9631d2d915a6aa6e134067010000006a47304402206781d5f2db2ff13d2ec7e266f774ea5630cc2dba4019e18e9716131b8b026051022006ebb33857b6d180f13aa6be2fc532f9734abde9d00ae14757e7d7ba3741c08c012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0228db0b000000000017a91483818667161bf94adda3964a81a231cbf6f5338187b0480c00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac7cf7325d"},"type":"TakerPaymentReceived"},"timestamp":1563621268320},{"event":{"type":"TakerPaymentWaitConfirmStarted"},"timestamp":1563621268321},{"event":{"type":"TakerPaymentValidatedAndConfirmed"},"timestamp":1563621778471},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"TakerPaymentSpendFailed"},"timestamp":1563638060583},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"MakerPaymentRefundFailed"},"timestamp":1563638060583},{"event":{"type":"Finished"},"timestamp":1563621778483}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
@@ -1251,7 +1444,12 @@ mod maker_swap_tests {
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _| MockResult::Return(Ok(None)));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         let actual = unwrap!(maker_swap.recover_funds());
         let expected = RecoveredSwap {
             action: RecoveredSwapAction::RefundedMyPayment,
@@ -1267,16 +1465,23 @@ mod maker_swap_tests {
         // the swap ends up with MakerPaymentRefundFailed error
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"0.58610590","maker_coin":"KMD","maker_coin_start_block":1450923,"maker_payment_confirmations":1,"maker_payment_lock":1563636475,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563620875,"taker":"14a96292bfcd7762ece8eb08ead915da927c2619277363853572f30880d5155e","taker_amount":"0.0077700000552410000000000","taker_coin":"LTC","taker_coin_start_block":1670837,"taker_payment_confirmations":1,"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"},"type":"Started"},"timestamp":1563620875062},{"event":{"data":{"taker_payment_locktime":1563628675,"taker_pubkey":"02713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91"},"type":"Negotiated"},"timestamp":1563620915497},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD","LdeeicEe3dYpjy36TPWrufiGToyaaEP2Zs"],"total_amount":0.0179204,"tx_hash":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","tx_hex":"0100000001a2586ea8294cedc55741bef625ba72c646399903391a7f6c604a58c6263135f2000000006b4830450221009c78c8ba4a7accab6b09f9a95da5bc59c81f4fc1e60b288ec3c5462b4d02ef01022056b63be1629cf17751d3cc5ffec51bcb1d7f9396e9ce9ca254d0f34104f7263a012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac78aa1900000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac5bf6325d"},"type":"TakerFeeValidated"},"timestamp":1563620976060},{"event":{"data":{"block_height":0,"coin":"KMD","fee_details":{"amount":1e-05},"from":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd"],"internal_id":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","my_balance_change":-0.5861159,"received_by_me":0.41387409,"spent_by_me":0.99998999,"timestamp":0,"to":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","bLVo4svJDxUF6C2fVivmV91HJqVjrkkAf4"],"total_amount":0.99998999,"tx_hash":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","tx_hex":"0400008085202f89019f1cbda354342cdf982046b331bbd3791f53b692efc6e4becc36be495b2977d9000000006b483045022100fa9d4557394141f6a8b9bfb8cd594a521fd8bcd1965dbf8bc4e04abc849ac66e0220589f521814c10a7561abfd5e432f7a2ee60d4875fe4604618af3207dae531ac00121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffff029e537e030000000017a9145534898009f1467191065f6890b96914b39a1c018791857702000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac72ee325d000000000000000000000000000000"},"type":"MakerPaymentSent"},"timestamp":1563620976189},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["3DgMcEEjxwXfnEVapgQSCBVy2tz9X41RmR","LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"total_amount":0.0168204,"tx_hash":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","tx_hex":"01000000011300166cc86fcd318d7a238939e559fcd099953a9e9631d2d915a6aa6e134067010000006a47304402206781d5f2db2ff13d2ec7e266f774ea5630cc2dba4019e18e9716131b8b026051022006ebb33857b6d180f13aa6be2fc532f9734abde9d00ae14757e7d7ba3741c08c012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0228db0b000000000017a91483818667161bf94adda3964a81a231cbf6f5338187b0480c00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac7cf7325d"},"type":"TakerPaymentReceived"},"timestamp":1563621268320},{"event":{"type":"TakerPaymentWaitConfirmStarted"},"timestamp":1563621268321},{"event":{"type":"TakerPaymentValidatedAndConfirmed"},"timestamp":1563621778471},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"TakerPaymentSpendFailed"},"timestamp":1563638060583},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"MakerPaymentRefundFailed"},"timestamp":1563638060583},{"event":{"type":"Finished"},"timestamp":1563621778483}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _|
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _| {
             MockResult::Return(Ok(Some(FoundSwapTxSpend::Refunded(eth_tx_for_test().into()))))
-        );
+        });
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
     }
 
@@ -1285,16 +1490,23 @@ mod maker_swap_tests {
         // the swap ends up with MakerPaymentRefundFailed error
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"0.58610590","maker_coin":"KMD","maker_coin_start_block":1450923,"maker_payment_confirmations":1,"maker_payment_lock":1563636475,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563620875,"taker":"14a96292bfcd7762ece8eb08ead915da927c2619277363853572f30880d5155e","taker_amount":"0.0077700000552410000000000","taker_coin":"LTC","taker_coin_start_block":1670837,"taker_payment_confirmations":1,"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"},"type":"Started"},"timestamp":1563620875062},{"event":{"data":{"taker_payment_locktime":1563628675,"taker_pubkey":"02713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91"},"type":"Negotiated"},"timestamp":1563620915497},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD","LdeeicEe3dYpjy36TPWrufiGToyaaEP2Zs"],"total_amount":0.0179204,"tx_hash":"6740136eaaa615d9d231969e3a9599d0fc59e53989237a8d31cd6fc86c160013","tx_hex":"0100000001a2586ea8294cedc55741bef625ba72c646399903391a7f6c604a58c6263135f2000000006b4830450221009c78c8ba4a7accab6b09f9a95da5bc59c81f4fc1e60b288ec3c5462b4d02ef01022056b63be1629cf17751d3cc5ffec51bcb1d7f9396e9ce9ca254d0f34104f7263a012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac78aa1900000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac5bf6325d"},"type":"TakerFeeValidated"},"timestamp":1563620976060},{"event":{"data":{"block_height":0,"coin":"KMD","fee_details":{"amount":1e-05},"from":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd"],"internal_id":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","my_balance_change":-0.5861159,"received_by_me":0.41387409,"spent_by_me":0.99998999,"timestamp":0,"to":["RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","bLVo4svJDxUF6C2fVivmV91HJqVjrkkAf4"],"total_amount":0.99998999,"tx_hash":"d0f6e664cea9d89fe7b5cf8005fdca070d1ab1d05a482aaef95c08cdaecddf0a","tx_hex":"0400008085202f89019f1cbda354342cdf982046b331bbd3791f53b692efc6e4becc36be495b2977d9000000006b483045022100fa9d4557394141f6a8b9bfb8cd594a521fd8bcd1965dbf8bc4e04abc849ac66e0220589f521814c10a7561abfd5e432f7a2ee60d4875fe4604618af3207dae531ac00121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffff029e537e030000000017a9145534898009f1467191065f6890b96914b39a1c018791857702000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac72ee325d000000000000000000000000000000"},"type":"MakerPaymentSent"},"timestamp":1563620976189},{"event":{"data":{"block_height":0,"coin":"LTC","fee_details":{"amount":0.001},"from":["LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"internal_id":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["3DgMcEEjxwXfnEVapgQSCBVy2tz9X41RmR","LKquWDGkJHEcFn85Dzw4FV5XwYp8GT3WvD"],"total_amount":0.0168204,"tx_hash":"1e883eb2f3991e84ba27f53651f89b7dda708678a5b9813d043577f222b9ca30","tx_hex":"01000000011300166cc86fcd318d7a238939e559fcd099953a9e9631d2d915a6aa6e134067010000006a47304402206781d5f2db2ff13d2ec7e266f774ea5630cc2dba4019e18e9716131b8b026051022006ebb33857b6d180f13aa6be2fc532f9734abde9d00ae14757e7d7ba3741c08c012102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ffffffff0228db0b000000000017a91483818667161bf94adda3964a81a231cbf6f5338187b0480c00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac7cf7325d"},"type":"TakerPaymentReceived"},"timestamp":1563621268320},{"event":{"type":"TakerPaymentWaitConfirmStarted"},"timestamp":1563621268321},{"event":{"type":"TakerPaymentValidatedAndConfirmed"},"timestamp":1563621778471},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"TakerPaymentSpendFailed"},"timestamp":1563638060583},{"event":{"data":{"error":"lp_swap:2025] utxo:938] rpc_clients:719] JsonRpcError { request: JsonRpcRequest { jsonrpc: \"2.0\", id: \"9\", method: \"blockchain.transaction.broadcast\", params: [String(\"010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d\")] }, error: Response(Object({\"code\": Number(1), \"message\": String(\"the transaction was rejected by network rules.\\n\\nMissing inputs\\n[010000000130cab922f27735043d81b9a5788670da7d9bf85136f527ba841e99f3b23e881e00000000b6473044022058a0c1da6bcf8c1418899ff8475f3ab6dddbff918528451c1fe71c2f7dad176302204c2e0bcf8f9b5f09e02ccfeb9256e9b34fb355ea655a5704a8a3fa920079b91501514c6b63048314335db1752102713015d3fa4d30259e90be5f131beb593bf0131f3af2dcdb304e3322d8d52b91ac6782012088a9147ed38daab6085c1a1e4426e61dc87a3c2c081a958821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68feffffff0188540a00000000001976a91406ccabfd5f9075ecd5e8d0d31c0e973a54d51e8288ac1c2b335d]\")})) }"},"type":"MakerPaymentRefundFailed"},"timestamp":1563638060583},{"event":{"type":"Finished"},"timestamp":1563621778483}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"9db641f5-4300-4527-9fa6-f1c391d42c35"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _|
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _| {
             MockResult::Return(Ok(Some(FoundSwapTxSpend::Spent(eth_tx_for_test().into()))))
-        );
+        });
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
     }
 
@@ -1304,7 +1516,9 @@ mod maker_swap_tests {
         // sent, need to find it and refund, prevent refund if payment is not spendable due to locktime restrictions
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"3.54932734","maker_coin":"KMD","maker_coin_start_block":1452970,"maker_payment_confirmations":1,"maker_payment_lock":1563759539,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563743939,"taker":"101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9","taker_amount":"0.02004833998671660000000000","taker_coin":"ETH","taker_coin_start_block":8196380,"taker_payment_confirmations":1,"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"},"type":"Started"},"timestamp":1563743939211},{"event":{"data":{"taker_payment_locktime":1563751737,"taker_pubkey":"03101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9"},"type":"Negotiated"},"timestamp":1563743979835},{"event":{"data":{"block_height":8196386,"coin":"ETH","fee_details":null,"from":["0x3D6a2f4Dd6085b34EeD6cBc2D3aaABd0D3B697C1"],"internal_id":"00","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":1563744052,"to":["0xD8997941Dd1346e9231118D5685d866294f59e5b"],"total_amount":0.0001,"tx_hash":"a59203eb2328827de00bed699a29389792906e4f39fdea145eb40dc6b3821bd6","tx_hex":"f8690284ee6b280082520894d8997941dd1346e9231118d5685d866294f59e5b865af3107a4000801ca0743d2b7c9fad65805d882179062012261be328d7628ae12ee08eff8d7657d993a07eecbd051f49d35279416778faa4664962726d516ce65e18755c9b9406a9c2fd"},"type":"TakerFeeValidated"},"timestamp":1563744052878},{"event":{"data":{"error":"lp_swap:1888] eth:654] RPC error: Error { code: ServerError(-32010), message: \"Transaction with the same hash was already imported.\", data: None }"},"type":"MakerPaymentTransactionFailed"},"timestamp":1563744118577},{"event":{"type":"Finished"},"timestamp":1563763243350}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
@@ -1316,7 +1530,12 @@ mod maker_swap_tests {
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _| MockResult::Return(Ok(None)));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         maker_swap.w().data.maker_payment_lock = (now_ms() / 1000) - 3690;
         assert!(maker_swap.recover_funds().is_err());
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
@@ -1328,7 +1547,9 @@ mod maker_swap_tests {
         // recover must return error in this case
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"3.54932734","maker_coin":"KMD","maker_coin_start_block":1452970,"maker_payment_confirmations":1,"maker_payment_lock":1563759539,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563743939,"taker":"101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9","taker_amount":"0.02004833998671660000000000","taker_coin":"ETH","taker_coin_start_block":8196380,"taker_payment_confirmations":1,"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"},"type":"Started"},"timestamp":1563743939211},{"event":{"data":{"taker_payment_locktime":1563751737,"taker_pubkey":"03101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9"},"type":"Negotiated"},"timestamp":1563743979835},{"event":{"data":{"block_height":8196386,"coin":"ETH","fee_details":null,"from":["0x3D6a2f4Dd6085b34EeD6cBc2D3aaABd0D3B697C1"],"internal_id":"00","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":1563744052,"to":["0xD8997941Dd1346e9231118D5685d866294f59e5b"],"total_amount":0.0001,"tx_hash":"a59203eb2328827de00bed699a29389792906e4f39fdea145eb40dc6b3821bd6","tx_hex":"f8690284ee6b280082520894d8997941dd1346e9231118d5685d866294f59e5b865af3107a4000801ca0743d2b7c9fad65805d882179062012261be328d7628ae12ee08eff8d7657d993a07eecbd051f49d35279416778faa4664962726d516ce65e18755c9b9406a9c2fd"},"type":"TakerFeeValidated"},"timestamp":1563744052878},{"event":{"data":{"error":"lp_swap:1888] eth:654] RPC error: Error { code: ServerError(-32010), message: \"Transaction with the same hash was already imported.\", data: None }"},"type":"MakerPaymentTransactionFailed"},"timestamp":1563744118577},{"event":{"type":"Finished"},"timestamp":1563763243350}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
@@ -1339,7 +1560,12 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
     }
@@ -1349,13 +1575,20 @@ mod maker_swap_tests {
         // return error if swap is not finished
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"3.54932734","maker_coin":"KMD","maker_coin_start_block":1452970,"maker_payment_confirmations":1,"maker_payment_lock":1563759539,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563743939,"taker":"101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9","taker_amount":"0.02004833998671660000000000","taker_coin":"ETH","taker_coin_start_block":8196380,"taker_payment_confirmations":1,"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"},"type":"Started"},"timestamp":1563743939211},{"event":{"data":{"taker_payment_locktime":1563751737,"taker_pubkey":"03101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9"},"type":"Negotiated"},"timestamp":1563743979835},{"event":{"data":{"block_height":8196386,"coin":"ETH","fee_details":null,"from":["0x3D6a2f4Dd6085b34EeD6cBc2D3aaABd0D3B697C1"],"internal_id":"00","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":1563744052,"to":["0xD8997941Dd1346e9231118D5685d866294f59e5b"],"total_amount":0.0001,"tx_hash":"a59203eb2328827de00bed699a29389792906e4f39fdea145eb40dc6b3821bd6","tx_hex":"f8690284ee6b280082520894d8997941dd1346e9231118d5685d866294f59e5b865af3107a4000801ca0743d2b7c9fad65805d882179062012261be328d7628ae12ee08eff8d7657d993a07eecbd051f49d35279416778faa4664962726d516ce65e18755c9b9406a9c2fd"},"type":"TakerFeeValidated"},"timestamp":1563744052878}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
     }
 
@@ -1364,13 +1597,20 @@ mod maker_swap_tests {
         // return error if taker payment was spent
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"1","maker_coin":"BEER","maker_coin_start_block":154892,"maker_payment_confirmations":1,"maker_payment_lock":1563444026,"my_persistent_pub":"02631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640","secret":"e1c9bd12a83f810813dc078ac398069b63d56bf1e94657def995c43cd1975302","started_at":1563428426,"taker":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","taker_amount":"1","taker_coin":"ETOMIC","taker_coin_start_block":150282,"taker_payment_confirmations":1,"uuid":"983ce732-62a8-4a44-b4ac-7e4271adc977"},"type":"Started"},"timestamp":1563428426510},{"event":{"data":{"taker_payment_locktime":1563436226,"taker_pubkey":"02031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"type":"Negotiated"},"timestamp":1563428466880},{"event":{"data":{"block_height":150283,"coin":"ETOMIC","fee_details":{"amount":0.00001},"from":["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"],"internal_id":"32f5bec2106dd3778dc32e3d856398ed0fa10b71c688672906a4fa0345cc4135","my_balance_change":0.0,"received_by_me":0.0,"spent_by_me":0.0,"timestamp":1563428493,"to":["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW","RThtXup6Zo7LZAi8kRWgjAyi1s4u6U9Cpf"],"total_amount":71.81977626,"tx_hash":"32f5bec2106dd3778dc32e3d856398ed0fa10b71c688672906a4fa0345cc4135","tx_hex":"0400008085202f89015ba9c8f0aec5b409bc824bcddc1a5a40148d4bd065c10169249e44ec44d62db2010000006a473044022050a213db7486e34871b9e7ef850845d55e0d53431350c16fa14fb60b81b1858302204f1042761f84e5f8d22948358b3c4103861adf5293d1d9e7f58f3b7491470b19012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff02bcf60100000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac764d12ac010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac8806305d000000000000000000000000000000"},"type":"TakerFeeValidated"},"timestamp":1563428507723},{"event":{"data":{"block_height":0,"coin":"BEER","fee_details":{"amount":0.00001},"from":["RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh"],"internal_id":"1619d10a51925d2f3d0ef92d81cb6449b77d5dbe1f3ef5e7ae6c8bc19080cb5a","my_balance_change":-1.00001,"received_by_me":8250.37174399,"spent_by_me":8251.37175399,"timestamp":0,"to":["RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh","bEDXdMNnweUgfuvkNyEkM5qLn2zZWrp6y5"],"total_amount":8251.37175399,"tx_hash":"1619d10a51925d2f3d0ef92d81cb6449b77d5dbe1f3ef5e7ae6c8bc19080cb5a","tx_hex":"0400008085202f890176ead03820bc0c4e92dba39b5d7e7a1e176b165f6cfc7a5e2c000ed62e8a8134010000006b48304502210086ca9a6ea5e787f4c3001c4ddb7b2f4732d8bb2642e9e43d0f39df4b736a4aa402206dbd17753f728d70c9631b6c2d1bba125745a5bc9be6112febf0e0c8ada786b1012102631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640ffffffff0200e1f5050000000017a91410503cfea67f03f025c5e1eeb18524464adf77ee877f360c18c00000001976a91464ae8510aac9546d5e7704e31ce177451386455588ac9b06305d000000000000000000000000000000"},"type":"MakerPaymentSent"},"timestamp":1563428512925},{"event":{"data":{"block_height":150285,"coin":"ETOMIC","fee_details":{"amount":0.00001},"from":["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"],"internal_id":"ee8b904efdee0d3bf0215d14a236489cde0b0efa92f7fa49faaa5fd97ed38ac0","my_balance_change":0.0,"received_by_me":0.0,"spent_by_me":0.0,"timestamp":1563428548,"to":["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW","bG6qRgxfXGeBjXsKGSAVMJ5qMZ6oGm6UtX"],"total_amount":71.81847926,"tx_hash":"ee8b904efdee0d3bf0215d14a236489cde0b0efa92f7fa49faaa5fd97ed38ac0","tx_hex":"0400008085202f89013541cc4503faa406296788c6710ba10fed9863853d2ec38d77d36d10c2bef532010000006b483045022100a32e290d3a047ad75a512f9fd581c561c5153aa1b6be2b36915a9dd452cd0d4102204d1838b3cd15698ab424d15651d50983f0196e59b0b34abaad9cb792c97b527a012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0200e1f5050000000017a91424fc6f967eaa2751adbeb42a97c3497fbd9ddcce878e681ca6010000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acbf06305d000000000000000000000000000000"},"type":"TakerPaymentReceived"},"timestamp":1563428664418},{"event":{"type":"TakerPaymentWaitConfirmStarted"},"timestamp":1563428664420},{"event":{"type":"TakerPaymentValidatedAndConfirmed"},"timestamp":1563428664824},{"event":{"data":{"block_height":0,"coin":"ETOMIC","fee_details":{"amount":0.00001},"from":["bG6qRgxfXGeBjXsKGSAVMJ5qMZ6oGm6UtX"],"internal_id":"8b48d7452a2a1c6b1128aa83ab946e5a624037c5327b527b18c3dcadb404f139","my_balance_change":0.99999,"received_by_me":0.99999,"spent_by_me":0.0,"timestamp":0,"to":["RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh"],"total_amount":1.0,"tx_hash":"8b48d7452a2a1c6b1128aa83ab946e5a624037c5327b527b18c3dcadb404f139","tx_hex":"0400008085202f8901c08ad37ed95faafa49faf792fa0e0bde9c4836a2145d21f03b0deefd4e908bee00000000d747304402206ac1f2b5b856b86585b4d2147309e3a7ef9dd4c35ffd85a49c409a4acd11602902204be03e2114888fae460eaf99675bae0c834ff80be8531a5bd30ee14baf0a52e30120e1c9bd12a83f810813dc078ac398069b63d56bf1e94657def995c43cd1975302004c6b6304c224305db1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a9143501575fb9a12a689bb94adad33cc78c13b0688c882102631dcf1d4b1b693aa8c2751afc68e4794b1e5996566cfc701a663f8b7bbbe640ac68ffffffff0118ddf505000000001976a91464ae8510aac9546d5e7704e31ce177451386455588ac28f92f5d000000000000000000000000000000"},"type":"TakerPaymentSpent"},"timestamp":1563428666150},{"event":{"type":"Finished"},"timestamp":1563428666152}],"my_info":{"my_amount":"1","my_coin":"BEER","other_amount":"1","other_coin":"ETOMIC","started_at":1563428426},"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"type":"Maker","uuid":"983ce732-62a8-4a44-b4ac-7e4271adc977"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
     }
 
@@ -1379,13 +1619,20 @@ mod maker_swap_tests {
         // return error if maker payment was refunded
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"9.38455187130897","maker_coin":"VRSC","maker_coin_start_block":604407,"maker_payment_confirmations":1,"maker_payment_lock":1564317372,"my_persistent_pub":"03c2e08e48e6541b3265ccd430c5ecec7efc7d0d9fc4e310a9b052f9642673fb0a","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1564301772,"taker":"39c4bcdb1e6bbb29a3b131c2b82eba2552f4f8a804021b2064114ab857f00848","taker_amount":"0.999999999999999880468812552729","taker_coin":"KMD","taker_coin_start_block":1462209,"taker_payment_confirmations":1,"uuid":"8f5b267a-efa8-49d6-a92d-ec0523cca891"},"type":"Started"},"timestamp":1564301773193},{"event":{"data":{"taker_payment_locktime":1564309572,"taker_pubkey":"0339c4bcdb1e6bbb29a3b131c2b82eba2552f4f8a804021b2064114ab857f00848"},"type":"Negotiated"},"timestamp":1564301813664},{"event":{"data":{"block_height":0,"coin":"KMD","fee_details":{"amount":5.68e-05},"from":["RGPTERJVzcNK2n8xrW1yYHp9p715rLWxyn"],"internal_id":"cf54a5f5dfdf2eb404855eaba6a05b41f893a20327d43770c0138bb9ed2cf9eb","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":0,"to":["RGPTERJVzcNK2n8xrW1yYHp9p715rLWxyn","RThtXup6Zo7LZAi8kRWgjAyi1s4u6U9Cpf"],"total_amount":14.21857411,"tx_hash":"cf54a5f5dfdf2eb404855eaba6a05b41f893a20327d43770c0138bb9ed2cf9eb","tx_hex":"0400008085202f89018f03a4d46831ec541279d01998be6092a98ee0f103b69ab84697cdc3eea7e93c000000006a473044022046eb76ecf610832ef063a6d210b5d07bc90fd0f3b68550fd2945ce86b317252a02202d3438d2e83df49f1c8ab741553af65a0d97e6edccbb6c4d0c769b05426c637001210339c4bcdb1e6bbb29a3b131c2b82eba2552f4f8a804021b2064114ab857f00848ffffffff0276c40100000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88acddf7bd54000000001976a9144df806990ae0197402aeaa6d9b1ec60078d9eadf88ac01573d5d000000000000000000000000000000"},"type":"TakerFeeValidated"},"timestamp":1564301864738},{"event":{"data":{"block_height":0,"coin":"VRSC","fee_details":{"amount":1e-05},"from":["RXcUjam1KC8mA1hj33vXaX877jf7GgvKzt"],"internal_id":"2252c9929707995aff6dbb03d23b7e7eb786611d26b6ae748ca13007e71d1de6","my_balance_change":-9.38456187,"received_by_me":1243.91076118,"spent_by_me":1253.29532305,"timestamp":0,"to":["RXcUjam1KC8mA1hj33vXaX877jf7GgvKzt","bXAi6mfq2CzC4XvhVUgcTRhS1G5Y2pMf1R"],"total_amount":1253.29532305,"tx_hash":"2252c9929707995aff6dbb03d23b7e7eb786611d26b6ae748ca13007e71d1de6","tx_hex":"0400008085202f8901f63aed15c53b794df1a9446755f452e9fd9db250e1f608636f6172b7d795358c010000006b483045022100b5adb583fbb4b1a628b9c58ec292bb7b1319bb881c2cf018af6fe33b7a182854022020d89a2d6cbf15a117e2e1122046941f95466af7507883c4fa05955f0dfb81f2012103c2e08e48e6541b3265ccd430c5ecec7efc7d0d9fc4e310a9b052f9642673fb0affffffff0293b0ef370000000017a914ca41def369fc07d8aea10ba26cf3e64a12470d4087163149f61c0000001976a914f4f89313803d610fa472a5849d2389ca6df3b90088ac285a3d5d000000000000000000000000000000"},"type":"MakerPaymentSent"},"timestamp":1564301867675},{"event":{"data":{"error":"timeout (2690.6 > 2690.0)"},"type":"TakerPaymentValidateFailed"},"timestamp":1564304558269},{"event":{"data":{"block_height":0,"coin":"VRSC","fee_details":{"amount":1e-05},"from":["bXAi6mfq2CzC4XvhVUgcTRhS1G5Y2pMf1R"],"internal_id":"96d0b50bc2371ab88052bc4d656f1b91b3e3e64eba650eac28ebce9387d234cb","my_balance_change":9.38454187,"received_by_me":9.38454187,"spent_by_me":0,"timestamp":0,"to":["RXcUjam1KC8mA1hj33vXaX877jf7GgvKzt"],"total_amount":9.38455187,"tx_hash":"96d0b50bc2371ab88052bc4d656f1b91b3e3e64eba650eac28ebce9387d234cb","tx_hex":"0400008085202f8901e61d1de70730a18c74aeb6261d6186b77e7e3bd203bb6dff5a99079792c9522200000000b647304402207d36206295eee6c936d0204552cc5a001d4de4bbc0c5ae1c6218cf8548b4f08b02204c2a6470e06a6caf407ea8f2704fdc1b1dee39f89d145f8c0460130cb1875b2b01514c6b6304bc963d5db1752103c2e08e48e6541b3265ccd430c5ecec7efc7d0d9fc4e310a9b052f9642673fb0aac6782012088a9145f5598259da7c0c0beffcc3e9da35e553bac727388210339c4bcdb1e6bbb29a3b131c2b82eba2552f4f8a804021b2064114ab857f00848ac68feffffff01abacef37000000001976a914f4f89313803d610fa472a5849d2389ca6df3b90088ac26973d5d000000000000000000000000000000"},"type":"MakerPaymentRefunded"},"timestamp":1564321080407},{"event":{"type":"Finished"},"timestamp":1564321080409}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"8f5b267a-efa8-49d6-a92d-ec0523cca891"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap));
+        let (maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         assert!(maker_swap.recover_funds().is_err());
     }
 
@@ -1395,13 +1642,20 @@ mod maker_swap_tests {
 
         let maker_saved_json = r#"{"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","TakerPaymentValidateFailed","TakerPaymentSpendFailed","MakerPaymentRefunded","MakerPaymentRefundFailed"],"events":[{"event":{"data":{"lock_duration":7800,"maker_amount":"3.54932734","maker_coin":"KMD","maker_coin_start_block":1452970,"maker_payment_confirmations":1,"maker_payment_lock":1563759539,"my_persistent_pub":"031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8","secret":"0000000000000000000000000000000000000000000000000000000000000000","started_at":1563743939,"taker":"101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9","taker_amount":"0.02004833998671660000000000","taker_coin":"ETH","taker_coin_start_block":8196380,"taker_payment_confirmations":1,"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"},"type":"Started"},"timestamp":1563743939211},{"event":{"data":{"taker_payment_locktime":1563751737,"taker_pubkey":"03101ace6b08605b9424b0582b5cce044b70a3c8d8d10cb2965e039b0967ae92b9"},"type":"Negotiated"},"timestamp":1563743979835},{"event":{"data":{"block_height":8196386,"coin":"ETH","fee_details":null,"from":["0x3D6a2f4Dd6085b34EeD6cBc2D3aaABd0D3B697C1"],"internal_id":"00","my_balance_change":0,"received_by_me":0,"spent_by_me":0,"timestamp":1563744052,"to":["0xD8997941Dd1346e9231118D5685d866294f59e5b"],"total_amount":0.0001,"tx_hash":"a59203eb2328827de00bed699a29389792906e4f39fdea145eb40dc6b3821bd6","tx_hex":"f8690284ee6b280082520894d8997941dd1346e9231118d5685d866294f59e5b865af3107a4000801ca0743d2b7c9fad65805d882179062012261be328d7628ae12ee08eff8d7657d993a07eecbd051f49d35279416778faa4664962726d516ce65e18755c9b9406a9c2fd"},"type":"TakerFeeValidated"},"timestamp":1563744052878}],"success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","Finished"],"uuid":"3447b727-fe93-4357-8e5a-8cf2699b7e86"}"#;
         let maker_saved_swap: MakerSavedSwap = unwrap!(json::from_str(maker_saved_json));
-        let key_pair = unwrap!(key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid"));
+        let key_pair = unwrap!(key_pair_from_seed(
+            "spice describe gravity federal blast come thank unfair canal monkey style afraid"
+        ));
         let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         let maker_coin = MmCoinEnum::Test(TestCoin {});
         let taker_coin = MmCoinEnum::Test(TestCoin {});
-        let (_maker_swap, _) = unwrap!(MakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, maker_saved_swap));
+        let (_maker_swap, _) = unwrap!(MakerSwap::load_from_saved(
+            ctx.clone(),
+            maker_coin,
+            taker_coin,
+            maker_saved_swap
+        ));
         let trade_fee = TradeFee {
             amount: 0.into(),
             coin: "ticker".into(),

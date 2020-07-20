@@ -1,15 +1,13 @@
+use super::*;
+use crate::{utxo::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo},
+            WithdrawFee};
 use bigdecimal::BigDecimal;
-use common::{block_on, OrdRange};
 use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
-use crate::{
-    WithdrawFee,
-    utxo::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo}
-};
+use common::{block_on, OrdRange};
 use futures::future::join_all;
 use mocktopus::mocking::*;
-use rpc::v1::types::{H256 as H256Json, VerboseBlockClient};
-use super::*;
+use rpc::v1::types::{VerboseBlockClient, H256 as H256Json};
 
 const TEST_COIN_NAME: &'static str = "RICK";
 
@@ -20,7 +18,8 @@ fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
             url: server.to_string(),
             protocol: ElectrumProtocol::TCP,
             disable_cert_verification: false,
-        })).unwrap();
+        }))
+        .unwrap();
     }
 
     let mut attempts = 0;
@@ -42,7 +41,7 @@ fn native_client_for_test() -> NativeClient {
         coin_ticker: "TEST".into(),
         uri: "".into(),
         auth: "".into(),
-        event_handlers: vec![]
+        event_handlers: vec![],
     }))
 }
 
@@ -52,13 +51,15 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
     let seed = match force_seed {
         Some(s) => s.into(),
         None => match std::env::var("BOB_PASSPHRASE") {
-            Ok(p) => if p.is_empty() {
-                default_seed.into()
-            } else {
-                p
+            Ok(p) => {
+                if p.is_empty() {
+                    default_seed.into()
+                } else {
+                    p
+                }
             },
             Err(_) => default_seed.into(),
-        }
+        },
     };
     let key_pair = key_pair_from_seed(&seed).unwrap();
     let my_address = Address {
@@ -138,7 +139,12 @@ fn test_generate_transaction() {
         value: 98001,
     }];
 
-    let generated = unwrap!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None)));
+    let generated = unwrap!(block_on(coin.generate_transaction(
+        unspents,
+        outputs,
+        FeePolicy::SendExact,
+        None
+    )));
     // the change that is less than dust must be included to miner fee
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
@@ -158,7 +164,12 @@ fn test_generate_transaction() {
     }];
 
     // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
-    let generated = unwrap!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0), None)));
+    let generated = unwrap!(block_on(coin.generate_transaction(
+        unspents,
+        outputs,
+        FeePolicy::DeductFromOutput(0),
+        None
+    )));
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
@@ -177,7 +188,12 @@ fn test_generate_transaction() {
     }];
 
     // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
-    unwrap_err!(block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None)));
+    unwrap_err!(block_on(coin.generate_transaction(
+        unspents,
+        outputs,
+        FeePolicy::SendExact,
+        None
+    )));
 }
 
 #[test]
@@ -268,7 +284,10 @@ fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     };
 
@@ -283,7 +302,10 @@ fn test_wait_for_payment_spend_timeout_native() {
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
-    assert!(coin.wait_for_tx_spend(&transaction, wait_until, from_block).wait().is_err());
+    assert!(coin
+        .wait_for_tx_spend(&transaction, wait_until, from_block)
+        .wait()
+        .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });
 }
 
@@ -302,7 +324,10 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
-    assert!(coin.wait_for_tx_spend(&transaction, wait_until, from_block).wait().is_err());
+    assert!(coin
+        .wait_for_tx_spend(&transaction, wait_until, from_block)
+        .wait()
+        .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });
 }
 
@@ -310,7 +335,11 @@ fn test_wait_for_payment_spend_timeout_electrum() {
 fn test_search_for_swap_tx_spend_electrum_was_spent() {
     let secret = [0; 32];
     let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
-    let coin: UtxoCoin = utxo_coin_for_test(client.into(), Some("spice describe gravity federal blast come thank unfair canal monkey style afraid")).into();
+    let coin: UtxoCoin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+    )
+    .into();
 
     // raw tx bytes of https://rick.kmd.dev/tx/ba881ecca15b5d4593f14f25debbcdfe25f101fd2e9cf8d0b5d92d19813d4424
     let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8902e115acc1b9e26a82f8403c9f81785445cc1285093b63b6246cf45aabac5e0865000000006b483045022100ca578f2d6bae02f839f71619e2ced54538a18d7aa92bd95dcd86ac26479ec9f802206552b6c33b533dd6fc8985415a501ebec89d1f5c59d0c923d1de5280e9827858012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffb0721bf69163f7a5033fb3d18ba5768621d8c1347ebaa2fddab0d1f63978ea78020000006b483045022100a3309f99167982e97644dbb5cd7279b86630b35fc34855e843f2c5c0cafdc66d02202a8c3257c44e832476b2e2a723dad1bb4ec1903519502a49b936c155cae382ee012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a91443fde927a77b3c1d104b78155dc389078c4571b0870000000000000000166a14b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc64b8cd736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acba0ce35e000000000000000000000000000000"));
@@ -333,7 +362,11 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
 fn test_search_for_swap_tx_spend_electrum_was_refunded() {
     let secret = [0; 20];
     let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
-    let coin: UtxoCoin = utxo_coin_for_test(client.into(), Some("spice describe gravity federal blast come thank unfair canal monkey style afraid")).into();
+    let coin: UtxoCoin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+    )
+    .into();
 
     // raw tx bytes of https://rick.kmd.dev/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
     let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000"));
@@ -354,15 +387,24 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 
 #[test]
 fn test_withdraw_impl_set_fixed_fee() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -373,26 +415,40 @@ fn test_withdraw_impl_set_fixed_fee() {
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
-        fee: Some(WithdrawFee::UtxoFixed { amount: "0.1".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoFixed {
+            amount: "0.1".parse().unwrap(),
+        }),
     };
-    let expected = Some(UtxoFeeDetails {
-        amount: "0.1".parse().unwrap()
-    }.into());
+    let expected = Some(
+        UtxoFeeDetails {
+            amount: "0.1".parse().unwrap(),
+        }
+        .into(),
+    );
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -403,29 +459,43 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
-        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoPerKbyte {
+            amount: "0.1".parse().unwrap(),
+        }),
     };
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 245 / 1000 ~ 0.0245
-    let expected = Some(UtxoFeeDetails {
-        amount: "0.0245".parse().unwrap()
-    }.into());
+    let expected = Some(
+        UtxoFeeDetails {
+            amount: "0.0245".parse().unwrap(),
+        }
+        .into(),
+    );
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -436,15 +506,20 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
-        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoPerKbyte {
+            amount: "0.1".parse().unwrap(),
+        }),
     };
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1000 = 0.0211
-    let expected_fee = Some(UtxoFeeDetails {
-        amount: "0.0211".parse().unwrap()
-    }.into());
+    let expected_fee = Some(
+        UtxoFeeDetails {
+            amount: "0.0211".parse().unwrap(),
+        }
+        .into(),
+    );
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
     assert_eq!(expected_balance_change, tx_details.my_balance_change);
@@ -452,15 +527,24 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -471,15 +555,20 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
-        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.09999999".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoPerKbyte {
+            amount: "0.09999999".parse().unwrap(),
+        }),
     };
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1000 = 0.0211
-    let expected_fee = Some(UtxoFeeDetails {
-        amount: "0.0211".parse().unwrap()
-    }.into());
+    let expected_fee = Some(
+        UtxoFeeDetails {
+            amount: "0.0211".parse().unwrap(),
+        }
+        .into(),
+    );
     assert_eq!(expected_fee, tx_details.fee_details);
     let expected_balance_change = BigDecimal::from(-10);
     assert_eq!(expected_balance_change, tx_details.my_balance_change);
@@ -487,15 +576,24 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -506,22 +604,33 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
-        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoPerKbyte {
+            amount: "0.1".parse().unwrap(),
+        }),
     };
     unwrap_err!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
 }
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_max() {
-    NativeClient::list_unspent_ordered.mock_safe(|_,_| {
-        let unspents = vec![UnspentInfo { outpoint: OutPoint { hash: 1.into(), index: 0 }, value: 1000000000 }];
+    NativeClient::list_unspent_ordered.mock_safe(|_, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+        }];
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl {
         coin_ticker: TEST_COIN_NAME.into(),
         uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     }));
 
@@ -532,14 +641,19 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: true,
-        fee: Some(WithdrawFee::UtxoPerKbyte { amount: "0.1".parse().unwrap() }),
+        fee: Some(WithdrawFee::UtxoPerKbyte {
+            amount: "0.1".parse().unwrap(),
+        }),
     };
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1000 = 0.0211
-    let expected = Some(UtxoFeeDetails {
-        amount: "0.0211".parse().unwrap()
-    }.into());
+    let expected = Some(
+        UtxoFeeDetails {
+            amount: "0.0211".parse().unwrap(),
+        }
+        .into(),
+    );
     let tx_details = unwrap!(block_on(withdraw_impl(coin.clone(), withdraw_req)));
     assert_eq!(expected, tx_details.fee_details);
 }
@@ -573,8 +687,16 @@ fn list_since_block_btc_serde() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/587
 fn get_tx_details_coinbase_transaction() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10018","electrum2.cipig.net:10018","electrum3.cipig.net:10018"]);
-    let coin: UtxoCoin = utxo_coin_for_test(client.into(), Some("spice describe gravity federal blast come thank unfair canal monkey style afraid")).into();
+    let client = electrum_client_for_test(&[
+        "electrum1.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum3.cipig.net:10018",
+    ]);
+    let coin: UtxoCoin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+    )
+    .into();
 
     let fut = async move {
         // hash of coinbase transaction https://morty.explorer.dexstats.info/tx/b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5
@@ -692,7 +814,10 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     let client = NativeClientImpl {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     };
 
@@ -715,12 +840,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
         value: 900000000,
     }];
 
-    let fut = coin.generate_transaction(
-        unspents,
-        outputs,
-        FeePolicy::SendExact,
-        Some(ActualTxFee::Dynamic(100))
-    );
+    let fut = coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, Some(ActualTxFee::Dynamic(100)));
     let generated = unwrap!(block_on(fut));
     assert_eq!(generated.0.outputs.len(), 1);
 
@@ -737,7 +857,10 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     let client = NativeClientImpl {
         coin_ticker: "RICK".into(),
         uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic " (base64_encode("user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371", URL_SAFE))),
+        auth: fomat!("Basic "(base64_encode(
+            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
+            URL_SAFE
+        ))),
         event_handlers: Default::default(),
     };
 
@@ -755,7 +878,8 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
             value: 1000000000,
             outpoint: OutPoint::default(),
         };
-    20];
+        20
+    ];
 
     let outputs = vec![TransactionOutput {
         script_pubkey: vec![].into(),
@@ -766,7 +890,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
         unspents,
         outputs,
         FeePolicy::SendExact,
-        Some(ActualTxFee::Dynamic(1000))
+        Some(ActualTxFee::Dynamic(1000)),
     );
     let generated = unwrap!(block_on(fut));
     assert_eq!(generated.0.outputs.len(), 2);
@@ -784,10 +908,13 @@ fn test_get_median_time_past_from_electrum_kmd() {
     let client = electrum_client_for_test(&[
         "electrum1.cipig.net:10001",
         "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001"
+        "electrum3.cipig.net:10001",
     ]);
 
-    let mtp = client.get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT).wait().unwrap();
+    let mtp = client
+        .get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT)
+        .wait()
+        .unwrap();
     // the MTP is block time of 1773385 in this case
     assert_eq!(1583159915, mtp);
 }
@@ -797,7 +924,7 @@ fn test_get_median_time_past_from_electrum_btc() {
     let client = electrum_client_for_test(&[
         "electrum1.cipig.net:10000",
         "electrum2.cipig.net:10000",
-        "electrum3.cipig.net:10000"
+        "electrum3.cipig.net:10000",
     ]);
 
     let mtp = client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT).wait().unwrap();
@@ -839,13 +966,14 @@ fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
     "#;
 
     let blocks: Vec<VerboseBlockClient> = json::from_str(blocks_json_str).unwrap();
-    let mut blocks: HashMap<_, _> = blocks.into_iter().map(|block| (block.height.unwrap().to_string(), block)).collect();
+    let mut blocks: HashMap<_, _> = blocks
+        .into_iter()
+        .map(|block| (block.height.unwrap().to_string(), block))
+        .collect();
     let client = native_client_for_test();
     NativeClientImpl::get_block.mock_safe(move |_, block_num| {
         let block = blocks.remove(&block_num).unwrap();
-        MockResult::Return(
-            Box::new(futures01::future::ok(block))
-        )
+        MockResult::Return(Box::new(futures01::future::ok(block)))
     });
 
     let mtp = client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT).wait().unwrap();
@@ -869,18 +997,109 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let coin = unwrap!(block_on(utxo_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32])));
+        &ctx, "BCH", &conf, &req, &[1u8; 32]
+    )));
 
     let hash = hex::decode("0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751").unwrap();
     let fut = async {
         let tx_details = coin.tx_details_by_hash(&hash).compat().await.unwrap();
         log!([tx_details]);
 
-        assert!(tx_details.from.iter().any(|addr| addr == "bchtest:qze8g4gx3z428jjcxzpycpxl7ke7d947gca2a7n2la"));
-        assert!(tx_details.to.iter().any(|addr| addr == "bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"));
+        assert!(tx_details
+            .from
+            .iter()
+            .any(|addr| addr == "bchtest:qze8g4gx3z428jjcxzpycpxl7ke7d947gca2a7n2la"));
+        assert!(tx_details
+            .to
+            .iter()
+            .any(|addr| addr == "bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"));
     };
 
     block_on(fut);
+}
+
+#[test]
+fn test_address_from_str_with_cashaddress_activated() {
+    let conf = json!({
+        "coin": "BCH",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "mm2": 1,
+        "address_format":{"format":"cashaddress","network":"bitcoincash"},
+    });
+    let req = json!({
+         "method": "electrum",
+         "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = unwrap!(block_on(utxo_coin_from_conf_and_request(
+        &ctx, "BCH", &conf, &req, &[1u8; 32]
+    )));
+
+    assert_eq!(
+        coin.address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55"),
+        Ok("1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM".into())
+    );
+
+    let error = coin
+        .address_from_str("1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM")
+        .err()
+        .unwrap();
+    assert!(error.contains("Cashaddress address format activated for BCH, but legacy format used instead"));
+
+    // other error on parse
+    let error = coin
+        .address_from_str("bitcoincash:000000000000000000000000000000000000000000")
+        .err()
+        .unwrap();
+    assert!(error.contains("Checksum verification failed"));
+}
+
+#[test]
+fn test_address_from_str_with_legacy_address_activated() {
+    let conf = json!({
+        "coin": "BCH",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "mm2": 1,
+    });
+    let req = json!({
+         "method": "electrum",
+         "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = unwrap!(block_on(utxo_coin_from_conf_and_request(
+        &ctx, "BCH", &conf, &req, &[1u8; 32]
+    )));
+
+    let expected = Address::from_cashaddress(
+        "bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55",
+        coin.checksum_type,
+        coin.pub_addr_prefix,
+        coin.p2sh_addr_prefix,
+    )
+    .unwrap();
+    assert_eq!(
+        coin.address_from_str("1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM"),
+        Ok(expected)
+    );
+
+    let error = coin
+        .address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55")
+        .err()
+        .unwrap();
+    assert!(error.contains("Legacy address format activated for BCH, but cashaddress format used instead"));
+
+    // other error on parse
+    let error = coin
+        .address_from_str("0000000000000000000000000000000000")
+        .err()
+        .unwrap();
+    assert!(error.contains("Invalid Address"));
 }
 
 #[test]
@@ -893,9 +1112,11 @@ fn test_network_info_negative_time_offset() {
 #[test]
 fn test_unavailable_electrum_proto_version() {
     ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers| {
-        MockResult::Return(
-            ElectrumClientImpl::with_protocol_version(coin_ticker, event_handlers, OrdRange::new(1.8, 1.9).unwrap())
-        )
+        MockResult::Return(ElectrumClientImpl::with_protocol_version(
+            coin_ticker,
+            event_handlers,
+            OrdRange::new(1.8, 1.9).unwrap(),
+        ))
     });
 
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
@@ -905,8 +1126,7 @@ fn test_unavailable_electrum_proto_version() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let error = unwrap!(block_on(utxo_coin_from_conf_and_request(
-        &ctx, "RICK", &conf, &req, &[1u8; 32])).err());
+    let error = unwrap!(block_on(utxo_coin_from_conf_and_request(&ctx, "RICK", &conf, &req, &[1u8; 32])).err());
     log!("Error: "(error));
     assert!(error.contains("There are no Electrums with the required protocol version"));
 }
@@ -914,15 +1134,27 @@ fn test_unavailable_electrum_proto_version() {
 #[test]
 fn test_one_unavailable_electrum_proto_version() {
     ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers| {
-        MockResult::Return(
-            ElectrumClientImpl::with_protocol_version(coin_ticker, event_handlers, OrdRange::new(1.4, 1.4).unwrap())
-        )
+        MockResult::Return(ElectrumClientImpl::with_protocol_version(
+            coin_ticker,
+            event_handlers,
+            OrdRange::new(1.4, 1.4).unwrap(),
+        ))
     });
 
     // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
     let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
-    let result = client.server_version("electrum-mona.bitbank.cc:50001", "AtomicDEX", &OrdRange::new(1.4, 1.4).unwrap()).wait();
-    assert!(result.err().unwrap().to_string().contains("unsupported protocol version"));
+    let result = client
+        .server_version(
+            "electrum-mona.bitbank.cc:50001",
+            "AtomicDEX",
+            &OrdRange::new(1.4, 1.4).unwrap(),
+        )
+        .wait();
+    assert!(result
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("unsupported protocol version"));
 
     drop(client);
     log!("Run BTC coin to test the server.version loop");
@@ -936,9 +1168,22 @@ fn test_one_unavailable_electrum_proto_version() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = unwrap!(block_on(utxo_coin_from_conf_and_request(
-        &ctx, "BTC", &conf, &req, &[1u8; 32])));
+        &ctx, "BTC", &conf, &req, &[1u8; 32]
+    )));
 
     block_on(async { Timer::sleep(0.5).await });
 
     assert!(coin.rpc_client.get_block_count().wait().is_ok());
+}
+
+#[test]
+fn test_tx_history_path_colon_should_be_escaped_for_cash_address() {
+    let mut coin = utxo_coin_for_test(native_client_for_test().into(), None);
+    coin.address_format = UtxoAddressFormat::CashAddress {
+        network: "bitcoincash".into(),
+    };
+    let coin: UtxoCoin = coin.into();
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let path = coin.tx_history_path(&ctx);
+    assert!(!path.display().to_string().contains(":"));
 }
