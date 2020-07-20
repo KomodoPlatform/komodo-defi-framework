@@ -43,12 +43,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::common::executor::{spawn, Timer};
 #[cfg(feature = "native")] use crate::common::lp;
 use crate::common::mm_ctx::{MmArc, MmCtx};
+use crate::common::mm_ctx::{MmArc, MmCtx};
+use crate::common::privkey::key_pair_from_seed;
 use crate::common::privkey::key_pair_from_seed;
 use crate::common::{slurp_url, MM_DATETIME, MM_VERSION};
-use crate::common::mm_ctx::{MmCtx, MmArc};
-use crate::common::privkey::key_pair_from_seed;
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_network::{lp_command_q_loop, start_seednode_loop, start_client_p2p_loop};
+use crate::mm2::lp_network::{lp_command_q_loop, start_client_p2p_loop, start_seednode_loop};
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{lp_ordermatch_loop, lp_trade_command, migrate_saved_orders, orders_kick_start};
 #[cfg(not(feature = "wallet-only"))]
@@ -66,7 +66,7 @@ pub fn lp_command_process(ctx: MmArc, json: Json) {
         return;
     } else {
         if std::env::var("LOG_COMMANDS").is_ok() {
-            log!("Got command: " [json]);
+            log!("Got command: "[json]);
         }
         #[cfg(not(feature = "wallet-only"))]
         lp_trade_command(ctx.clone(), json);
@@ -808,7 +808,7 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
 
 /// Setup the peer-to-peer network.
 #[cfg(not(feature = "wallet-only"))]
-pub async fn lp_initpeers (ctx: &MmArc, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
+pub async fn lp_initpeers(ctx: &MmArc, netid: u16, seednodes: Option<Vec<String>>) -> Result<(), String> {
     // Pick our ports.
     let (_pullport, pubport, _busport) = try_s!(lp_ports(netid));
 
@@ -1253,8 +1253,11 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     log! ({"lp_init] version: {} DT {}", MM_VERSION, MM_DATETIME});
     unsafe { try_s!(lp_passphrase_init(&ctx)) }
 
-    try_s! (fix_directories (&ctx));
-    #[cfg(all(feature = "native", not(feature = "wallet-only")))] {try_s! (migrate_db (&ctx));}
+    try_s!(fix_directories(&ctx));
+    #[cfg(all(feature = "native", not(feature = "wallet-only")))]
+    {
+        try_s!(migrate_db(&ctx));
+    }
 
     fn simple_ip_extractor(ip: &str) -> Result<IpAddr, String> {
         let ip = ip.trim();
@@ -1401,14 +1404,17 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     #[cfg(not(feature = "wallet-only"))]
     {
-        if i_am_seed { try_s!(start_seednode_loop (&ctx, myipaddr, mypubport) .await) }
+        if i_am_seed {
+            try_s!(start_seednode_loop(&ctx, myipaddr, mypubport).await)
+        }
 
         let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
-        try_s!(lp_initpeers (&ctx, netid, seednodes) .await);
+        try_s!(lp_initpeers(&ctx, netid, seednodes).await);
     }
-    try_s!(ctx.initialized.pin (true));
+    try_s!(ctx.initialized.pin(true));
 
-    #[cfg(all(feature = "native", not(feature = "wallet-only")))] {
+    #[cfg(all(feature = "native", not(feature = "wallet-only")))]
+    {
         // launch kickstart threads before RPC is available, this will prevent the API user to place
         // an order and start new swap that might get started 2 times because of kick-start
         let mut coins_needed_for_kick_start = swap_kick_starts(ctx.clone());
@@ -1423,7 +1429,12 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
         let ctxʹ = ctx.clone();
         spawn(async move { lp_command_q_loop(ctxʹ).await });
     }
-    #[cfg(not(feature = "native"))] {if 1==1 {return Ok(())}}  // TODO: Gradually move this point further down.
+    #[cfg(not(feature = "native"))]
+    {
+        if 1 == 1 {
+            return Ok(());
+        }
+    } // TODO: Gradually move this point further down.
 
     let ctx_id = try_s!(ctx.ffi_handle());
 
@@ -1439,6 +1450,11 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     // wait for swaps to stop
     #[cfg(not(feature = "wallet-only"))]
-    loop { if running_swaps_num(&ctx) == 0 { break }; Timer::sleep (0.2) .await }
+    loop {
+        if running_swaps_num(&ctx) == 0 {
+            break;
+        };
+        Timer::sleep(0.2).await
+    }
     Ok(())
 }

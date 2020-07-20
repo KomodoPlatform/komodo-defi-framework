@@ -30,9 +30,9 @@ use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_ordermatch::{CancelBy, cancel_orders_by};
+use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{active_swaps_using_coin};
+use crate::mm2::lp_swap::active_swaps_using_coin;
 
 /// Attempts to disable the coin
 pub fn disable_coin(ctx: MmArc, req: Json) -> HyRes {
@@ -47,20 +47,28 @@ pub fn disable_coin(ctx: MmArc, req: Json) -> HyRes {
     let cancelled = {
         let swaps = try_h!(active_swaps_using_coin(&ctx, &ticker));
         if !swaps.is_empty() {
-            return rpc_response(500, json!({
-            "error": fomat! ("There're active swaps using " (ticker)),
-            "swaps": swaps,
-        }).to_string());
+            return rpc_response(
+                500,
+                json!({
+                    "error": fomat! ("There're active swaps using " (ticker)),
+                    "swaps": swaps,
+                })
+                .to_string(),
+            );
         }
-        let (cancelled, still_matching) = try_h!(cancel_orders_by(&ctx, CancelBy::Coin{ ticker: ticker.clone() }));
+        let (cancelled, still_matching) = try_h!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }));
         if !still_matching.is_empty() {
-            return rpc_response(500, json!({
-                "error": fomat! ("There're currently matching orders using " (ticker)),
-                "orders": {
-                    "matching": still_matching,
-                    "cancelled": cancelled,
-                }
-            }).to_string());
+            return rpc_response(
+                500,
+                json!({
+                    "error": fomat! ("There're currently matching orders using " (ticker)),
+                    "orders": {
+                        "matching": still_matching,
+                        "cancelled": cancelled,
+                    }
+                })
+                .to_string(),
+            );
         }
         cancelled
     };
@@ -81,10 +89,10 @@ pub fn disable_coin(ctx: MmArc, req: Json) -> HyRes {
 }
 
 /// Enable a coin in the Electrum mode.
-pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
-    let balance = try_s! (coin.my_balance().compat().await);
+pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
+    let balance = try_s!(coin.my_balance().compat().await);
 
     let res = json! ({
         "result": "success",
@@ -99,10 +107,10 @@ pub async fn electrum (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
 }
 
 /// Enable a coin in the local wallet mode.
-pub async fn enable (ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s! (req["coin"].as_str().ok_or ("No 'coin' field")).to_owned();
-    let coin: MmCoinEnum = try_s! (lp_coininit (&ctx, &ticker, &req) .await);
-    let balance = try_s! (coin.my_balance().compat().await);
+pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
+    let balance = try_s!(coin.my_balance().compat().await);
 
     let res = json! ({
         "result": "success",

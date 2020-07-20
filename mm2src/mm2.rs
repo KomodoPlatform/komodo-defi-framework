@@ -51,8 +51,7 @@ pub mod lp_ordermatch;
 #[cfg(not(feature = "wallet-only"))]
 #[path = "lp_swap.rs"]
 pub mod lp_swap;
-#[path = "rpc.rs"]
-pub mod rpc;
+#[path = "rpc.rs"] pub mod rpc;
 
 #[cfg(any(test, not(feature = "native")))]
 #[path = "mm2_tests.rs"]

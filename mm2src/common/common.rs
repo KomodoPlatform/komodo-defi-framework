@@ -131,8 +131,10 @@ use uuid::Uuid;
 pub use num_bigint::BigInt;
 
 #[cfg(feature = "native")]
-#[allow(dead_code,non_upper_case_globals,non_camel_case_types,non_snake_case)]
-pub mod lp {include! (concat! (env! ("OUT_DIR"), "/c_headers/LP_include.rs"));}
+#[allow(dead_code, non_upper_case_globals, non_camel_case_types, non_snake_case)]
+pub mod lp {
+    include!(concat!(env!("OUT_DIR"), "/c_headers/LP_include.rs"));
+}
 
 pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");

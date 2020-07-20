@@ -159,9 +159,7 @@ fn generate_bindings() {
             // clang is missing from japaric/armv7-linux-androideabi by default.
             // cf. https://github.com/rust-embedded/cross/issues/174
             // We should explain installing and committing clang into japaric/armv7-linux-androideabi when it does.
-            panic!(
-                "libclang-3.9-dev needs to be installed in order for the cross-compilation to work"
-            );
+            panic!("libclang-3.9-dev needs to be installed in order for the cross-compilation to work");
         }
     }
 
@@ -604,7 +602,7 @@ impl Target {
                          https://github.com/artemii235/SuperNET/blob/mm2-cross/docs/ANDROID.md"
                     )
                 }
-            }
+            },
             "aarch64-apple-ios" => Target::iOS(targetᴱ),
             "x86_64-apple-ios" => Target::iOS(targetᴱ),
             "armv7-apple-ios" => Target::iOS(targetᴱ),
@@ -614,18 +612,14 @@ impl Target {
     }
     /// True if building for ARM under https://github.com/rust-embedded/cross
     /// or a similar setup based on the "japaric/armv7-linux-androideabi" Docker image.
-    fn is_android_cross(&self) -> bool {
-        *self == Target::AndroidCross
-    }
+    fn is_android_cross(&self) -> bool { *self == Target::AndroidCross }
     fn is_ios(&self) -> bool {
         match self {
             &Target::iOS(_) => true,
             _ => false,
         }
     }
-    fn is_mac(&self) -> bool {
-        *self == Target::Mac
-    }
+    fn is_mac(&self) -> bool { *self == Target::Mac }
     /// The "-arch" parameter passed to Xcode clang++ when cross-building for iOS.
     fn ios_clang_ops(&self) -> Option<IosClangOps> {
         match self {
@@ -888,10 +882,7 @@ fn patch_libtorrent(rasterbar: &Path) {
 
         assert!(with_file(
             &rasterbar.join("include/libtorrent/broadcast_socket.hpp"),
-            &|hh| *hh = hh.replace(
-                "std::array<char, 1500> buffer{};",
-                "std::array<char, 1500> buffer;"
-            )
+            &|hh| *hh = hh.replace("std::array<char, 1500> buffer{};", "std::array<char, 1500> buffer;")
         ));
 
         let paths = &[
@@ -1208,9 +1199,7 @@ fn libtorrent() {
 }
 
 /// We often use a fresh version of CMake and it might be missing from the default PATH.
-fn cmake_path() -> String {
-    fomat!("/usr/local/bin:"(unwrap!(var("PATH"))))
-}
+fn cmake_path() -> String { fomat!("/usr/local/bin:"(unwrap!(var("PATH")))) }
 
 lazy_static! {
     static ref LIBEXCHANGES_SRC: Vec<PathBuf> = vec![rabs("iguana/exchanges/mm.c"),];
