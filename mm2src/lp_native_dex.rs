@@ -43,8 +43,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::common::executor::{spawn, Timer};
 #[cfg(feature = "native")] use crate::common::lp;
 use crate::common::mm_ctx::{MmArc, MmCtx};
-use crate::common::mm_ctx::{MmArc, MmCtx};
-use crate::common::privkey::key_pair_from_seed;
 use crate::common::privkey::key_pair_from_seed;
 use crate::common::{slurp_url, MM_DATETIME, MM_VERSION};
 #[cfg(not(feature = "wallet-only"))]
@@ -71,7 +69,6 @@ pub fn lp_command_process(ctx: MmArc, json: Json) {
         #[cfg(not(feature = "wallet-only"))]
         lp_trade_command(ctx.clone(), json);
     }
-    lp_trade_command(ctx, json);
 }
 
 /*
