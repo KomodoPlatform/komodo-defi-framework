@@ -1,5 +1,6 @@
 #![feature(non_ascii_idents)]
 #![feature(drain_filter)]
+#![recursion_limit = "512"]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;

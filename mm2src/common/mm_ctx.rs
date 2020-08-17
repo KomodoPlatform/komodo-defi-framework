@@ -24,12 +24,13 @@ use std::sync::{Arc, Mutex, Weak};
 use crate::executor::Timer;
 use crate::log::{self, LogState};
 use crate::mm_metrics::{prometheus, MetricsArc};
-use crate::{bits256, small_rng, QueuedCommand};
+use crate::{bits256, block_on, small_rng, P2PMessage, QueuedCommand};
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 
 type StopListenerCallback = Box<dyn FnMut() -> Result<(), String>>;
+use futures::SinkExt;
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -85,7 +86,7 @@ pub struct MmCtx {
     /// The context belonging to the `prices` mod: `PricesContext`.
     pub prices_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// Seednode P2P message bus channel.
-    pub seednode_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    pub seednode_p2p_channel: Mutex<Vec<mpsc::UnboundedSender<P2PMessage>>>,
     /// Standard node P2P message bus channel.
     pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     /// `lp_queue_command` shares messages with `lp_command_q_loop` via this channel.  
@@ -94,7 +95,7 @@ pub struct MmCtx {
     /// The end of the `command_queue` channel taken by `lp_command_q_loop`.
     pub command_queueʳ: Mutex<Option<mpsc::UnboundedReceiver<QueuedCommand>>>,
     /// Broadcast `lp_queue_command` messages saved for WASM.
-    pub command_queueʰ: Mutex<Option<Vec<(u64, String)>>>,
+    pub command_queueʰ: Mutex<Option<Vec<(u64, P2PMessage)>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     /// Replacement of `lp::G.LP_myrmd160`.
     pub rmd160: Constructible<H160>,
@@ -127,7 +128,7 @@ impl MmCtx {
             http_fallback_ctx: Mutex::new(None),
             coins_ctx: Mutex::new(None),
             prices_ctx: Mutex::new(None),
-            seednode_p2p_channel: channel::unbounded(),
+            seednode_p2p_channel: Mutex::new(Vec::with_capacity(1000)),
             client_p2p_channel: channel::unbounded(),
             command_queue,
             command_queueʳ: Mutex::new(Some(command_queueʳ)),
@@ -229,12 +230,15 @@ impl MmCtx {
 
     /// Sends the P2P message to a processing thread
     #[cfg(feature = "native")]
-    pub fn broadcast_p2p_msg(&self, msg: &str) {
+    pub fn broadcast_p2p_msg(&self, msg: P2PMessage) {
         let i_am_seed = self.conf["i_am_seed"].as_bool().unwrap_or(false);
         if i_am_seed {
-            unwrap!(self.seednode_p2p_channel.0.send(msg.to_owned().into_bytes()));
+            let mut txs = self.seednode_p2p_channel.lock().unwrap();
+            *txs = txs
+                .drain_filter(|sender| block_on(sender.send(msg.clone())).is_ok())
+                .collect();
         } else {
-            unwrap!(self.client_p2p_channel.0.send(msg.to_owned().into_bytes()));
+            unwrap!(self.client_p2p_channel.0.send(msg.content.into_bytes()));
         }
     }
 

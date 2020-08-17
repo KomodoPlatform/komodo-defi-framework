@@ -27,7 +27,8 @@ use coins::{lp_coinfind, lp_coinfindᵃ, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{from_dec_to_ratio, from_ratio_to_dec, Fraction, MmNumber};
-use common::{bits256, json_dir_entries, new_uuid, now_ms, remove_file, rpc_err_response, rpc_response, write, HyRes};
+use common::{bits256, json_dir_entries, new_uuid, now_ms, remove_file, rpc_err_response, rpc_response, write, HyRes,
+             P2PMessage};
 use futures::compat::Future01CompatExt;
 use gstuff::slurp;
 use http::Response;
@@ -1021,7 +1022,7 @@ pub fn lp_trade_command(ctx: MmArc, json: Json) -> i32 {
                 taker_order_uuid: reserved_msg.taker_order_uuid,
                 maker_order_uuid: reserved_msg.maker_order_uuid,
             };
-            ctx.broadcast_p2p_msg(&unwrap!(json::to_string(&connect)));
+            ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&connect));
             let taker_match = TakerMatch {
                 reserved: reserved_msg,
                 connect,
@@ -1119,7 +1120,7 @@ pub fn lp_trade_command(ctx: MmArc, json: Json) -> i32 {
                             })
                         }),
                     };
-                    ctx.broadcast_p2p_msg(&unwrap!(json::to_string(&reserved)));
+                    ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&reserved));
                     let maker_match = MakerMatch {
                         request: taker_request,
                         reserved,
@@ -1170,7 +1171,7 @@ pub fn lp_trade_command(ctx: MmArc, json: Json) -> i32 {
                     maker_order_uuid: connect_msg.maker_order_uuid,
                     method: "connected".into(),
                 };
-                ctx.broadcast_p2p_msg(&unwrap!(json::to_string(&connected)));
+                ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&connected));
                 order_match.connect = Some(connect_msg);
                 order_match.connected = Some(connected);
                 my_order.started_swaps.push(order_match.request.uuid);
@@ -1294,7 +1295,7 @@ pub fn lp_auto_buy(
         .with_conf_settings(conf_settings)
         .with_sender_pubkey(H256Json::from(our_public_id.bytes));
     let request = try_s!(request_builder.build());
-    ctx.broadcast_p2p_msg(&unwrap!(json::to_string(&request)));
+    ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&request));
     let result = json!({ "result": request }).to_string();
     let order = TakerOrder {
         created_at: now_ms(),
@@ -1445,20 +1446,19 @@ pub fn lp_post_price_recv(ctx: &MmArc, req: Json) -> HyRes {
 }
 
 fn lp_send_price_ping(req: &PricePingRequest, ctx: &MmArc) -> Result<(), String> {
-    let req_string = try_s!(json::to_string(req));
+    let msg = P2PMessage::from_serialize_with_default_addr(&req);
+    let req_value = try_s!(json::to_value(req));
+    let ctxʹ = ctx.clone();
 
     // TODO this is required to process the set price message on our own node, it's the easiest way now
     //      there might be a better way of doing this so we should consider refactoring
-    let req_value = try_s!(json::to_value(req));
-    let ctxʹ = ctx.clone();
     spawn(async move {
         let rc = lp_post_price_recv(&ctxʹ, req_value).compat().await;
         if let Err(err) = rc {
             log!("!lp_post_price_recv: "(err))
         }
     });
-
-    ctx.broadcast_p2p_msg(&req_string);
+    ctx.broadcast_p2p_msg(msg);
     Ok(())
 }
 

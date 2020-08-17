@@ -21,7 +21,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use bytes::Bytes;
-use coins::{convert_address, get_enabled_coins, get_trade_fee, my_tx_history, send_raw_transaction,
+use coins::{convert_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history, send_raw_transaction,
             set_required_confirmations, set_requires_notarization, show_priv_key, validate_address, withdraw};
 #[cfg(feature = "native")]
 use common::for_tests::common_wait_for_log_re;
@@ -141,10 +141,8 @@ async fn helpers(
     }
 
     let res = match method {
-        #[cfg(not(feature = "wallet-only"))]
-        "broadcast_p2p_msg" => try_s!(lp_network::broadcast_p2p_msgʰ(reqᵇ).await),
-        #[cfg(not(feature = "wallet-only"))]
-        "p2p_tap" => try_s!(lp_network::p2p_tapʰ(reqᵇ).await),
+        // "broadcast_p2p_msg" => try_s! (lp_network::broadcast_p2p_msgʰ (reqᵇ) .await),
+        // "p2p_tap" => try_s! (lp_network::p2p_tapʰ (reqᵇ) .await),
         "common_wait_for_log_re" => try_s!(common_wait_for_log_re(reqᵇ).await),
         "ctx2helpers" => try_s!(ctx2helpers(ctx, reqᵇ).await),
         "peers_initialize" => try_s!(peers::peers_initialize(reqᵇ).await),
@@ -246,6 +244,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
                 return DispatcherRes::NoMatch(req);
             }
         },
+        "kmd_rewards_info" => hyres(kmd_rewards_info(ctx)),
         // "inventory" => inventory (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
         "list_banned_pubkeys" => hyres(list_banned_pubkeys(ctx)),

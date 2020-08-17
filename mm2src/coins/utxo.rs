@@ -934,7 +934,11 @@ impl UtxoCoin {
         for input in unsigned.inputs.iter() {
             let prev_hash = input.previous_output.hash.reversed().into();
             let tx = try_s!(self.rpc_client.get_verbose_transaction(prev_hash).compat().await);
-            interest += kmd_interest(tx.height, input.amount, tx.locktime as u64, unsigned.lock_time as u64);
+            if let Ok(output_interest) =
+                kmd_interest(tx.height, input.amount, tx.locktime as u64, unsigned.lock_time as u64)
+            {
+                interest += output_interest;
+            };
         }
         if interest > 0 {
             data.received_by_me += interest;
@@ -2608,35 +2612,47 @@ async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Resul
 /// Function calculating KMD interest
 /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729215/What+is+the+5+Komodo+Stake+Reward
 /// https://github.com/KomodoPlatform/komodo/blob/master/src/komodo_interest.h
-fn kmd_interest(height: Option<u64>, value: u64, lock_time: u64, current_time: u64) -> u64 {
-    let height = match height {
-        Some(h) => h,
-        None => return 0, // return 0 if height is unknown
-    };
+fn kmd_interest(
+    height: Option<u64>,
+    value: u64,
+    lock_time: u64,
+    current_time: u64,
+) -> Result<u64, KmdRewardsNotAccruedReason> {
     const KOMODO_ENDOFERA: u64 = 7_777_777;
     const LOCKTIME_THRESHOLD: u64 = 500_000_000;
+
     // value must be at least 10 KMD
     if value < 1_000_000_000 {
-        return 0;
+        return Err(KmdRewardsNotAccruedReason::UtxoAmountLessThanTen);
     }
-    // interest will stop accrue after block 7_777_777
-    if height >= KOMODO_ENDOFERA {
-        return 0;
-    };
+    // locktime must be set
+    if lock_time == 0 {
+        return Err(KmdRewardsNotAccruedReason::LocktimeNotSet);
+    }
     // interest doesn't accrue for lock_time < 500_000_000
     if lock_time < LOCKTIME_THRESHOLD {
-        return 0;
+        return Err(KmdRewardsNotAccruedReason::LocktimeLessThanThreshold);
     }
+    let height = match height {
+        Some(h) => h,
+        None => return Err(KmdRewardsNotAccruedReason::TransactionInMempool), // consider that the transaction is not mined yet
+    };
+    // interest will stop accrue after block 7_777_777
+    if height >= KOMODO_ENDOFERA {
+        return Err(KmdRewardsNotAccruedReason::UtxoHeightGreaterThanEndOfEra);
+    };
     // current time must be greater than tx lock_time
     if current_time < lock_time {
-        return 0;
+        return Err(KmdRewardsNotAccruedReason::OneHourNotPassedYet);
     }
 
     let mut minutes = (current_time - lock_time) / 60;
+
     // at least 1 hour should pass
     if minutes < 60 {
-        return 0;
+        return Err(KmdRewardsNotAccruedReason::OneHourNotPassedYet);
     }
+
     // interest stop accruing after 1 year before block 1000000
     if minutes > 365 * 24 * 60 {
         minutes = 365 * 24 * 60
@@ -2647,5 +2663,117 @@ fn kmd_interest(height: Option<u64>, value: u64, lock_time: u64, current_time: u
     }
     // next 2 lines ported as is from Komodo codebase
     minutes -= 59;
-    (value / 10_512_000) * minutes
+    let accrued = (value / 10_512_000) * minutes;
+
+    Ok(accrued)
+}
+
+fn kmd_interest_accrue_stop_at(height: u64, lock_time: u64) -> u64 {
+    let seconds = if height < 1_000_000 {
+        // interest stop accruing after 1 year before block 1000000
+        365 * 24 * 60 * 60
+    } else {
+        // interest stop accruing after 1 month past 1000000 block
+        31 * 24 * 60 * 60
+    };
+
+    lock_time + seconds
+}
+
+fn kmd_interest_accrue_start_at(lock_time: u64) -> u64 {
+    let one_hour = 60 * 60;
+    lock_time + one_hour
+}
+
+#[derive(Debug, Serialize, Eq, PartialEq)]
+enum KmdRewardsNotAccruedReason {
+    LocktimeNotSet,
+    LocktimeLessThanThreshold,
+    UtxoHeightGreaterThanEndOfEra,
+    UtxoAmountLessThanTen,
+    OneHourNotPassedYet,
+    TransactionInMempool,
+}
+
+#[derive(Serialize)]
+enum KmdRewardsAccrueInfo {
+    Accrued(BigDecimal),
+    NotAccruedReason(KmdRewardsNotAccruedReason),
+}
+
+#[derive(Serialize)]
+pub struct KmdRewardsInfoElement {
+    tx_hash: H256Json,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    height: Option<u64>,
+    /// The zero-based index of the output in the transaction’s list of outputs.
+    output_index: u32,
+    amount: BigDecimal,
+    locktime: u64,
+    /// Amount of accrued rewards.
+    accrued_rewards: KmdRewardsAccrueInfo,
+    /// Rewards start to accrue at this time for the given transaction.
+    /// None if the rewards will not be accrued.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    accrue_start_at: Option<u64>,
+    /// Rewards stop to accrue at this time for the given transaction.
+    /// None if the rewards will not be accrued.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    accrue_stop_at: Option<u64>,
+}
+
+/// Get rewards info of unspent outputs.
+/// The list is ordered by the output value.
+pub async fn kmd_rewards_info(coin: &UtxoCoin) -> Result<Vec<KmdRewardsInfoElement>, String> {
+    if coin.ticker != "KMD" {
+        return ERR!("rewards info can be obtained for KMD only");
+    }
+
+    let rpc_client = coin.rpc_client();
+    let mut unspents = try_s!(rpc_client.list_unspent_ordered(&coin.my_address).compat().await);
+    // list_unspent_ordered() returns ordered from lowest to highest by value unspent outputs.
+    // reverse it to reorder from highest to lowest outputs.
+    unspents.reverse();
+
+    let mut result = Vec::with_capacity(unspents.len());
+    for unspent in unspents {
+        let tx_hash: H256Json = unspent.outpoint.hash.reversed().into();
+        let tx_info = try_s!(rpc_client.get_verbose_transaction(tx_hash.clone()).compat().await);
+
+        let value = unspent.value;
+        let locktime = tx_info.locktime as u64;
+        let current_time = try_s!(coin.get_current_mtp().await) as u64;
+        let accrued_rewards = match kmd_interest(tx_info.height, value, locktime, current_time) {
+            Ok(interest) => KmdRewardsAccrueInfo::Accrued(big_decimal_from_sat(interest as i64, coin.decimals)),
+            Err(reason) => KmdRewardsAccrueInfo::NotAccruedReason(reason),
+        };
+
+        // `accrue_start_at` and `accrue_stop_at` should be None if the rewards will never be obtained for the given transaction
+        let (accrue_start_at, accrue_stop_at) = match &accrued_rewards {
+            KmdRewardsAccrueInfo::Accrued(_)
+            | KmdRewardsAccrueInfo::NotAccruedReason(KmdRewardsNotAccruedReason::TransactionInMempool)
+            | KmdRewardsAccrueInfo::NotAccruedReason(KmdRewardsNotAccruedReason::OneHourNotPassedYet) => {
+                let start_at = Some(kmd_interest_accrue_start_at(locktime));
+                let stop_at = match tx_info.height {
+                    Some(height) => Some(kmd_interest_accrue_stop_at(height, locktime)),
+                    _ => None,
+                };
+                (start_at, stop_at)
+            },
+            _ => (None, None),
+        };
+
+        result.push(KmdRewardsInfoElement {
+            tx_hash,
+            height: tx_info.height,
+            output_index: unspent.outpoint.index,
+            amount: big_decimal_from_sat(value as i64, coin.decimals),
+            locktime,
+            accrued_rewards,
+            accrue_start_at,
+            accrue_stop_at,
+        });
+    }
+
+    Ok(result)
 }

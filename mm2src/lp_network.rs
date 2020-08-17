@@ -23,20 +23,23 @@ use bytes::Bytes;
 use common::executor::{spawn, Timer};
 #[cfg(not(feature = "native"))] use common::helperᶜ;
 use common::mm_ctx::MmArc;
-use common::{lp_queue_command, now_float, now_ms, HyRes, QueuedCommand};
+use common::{lp_queue_command, now_ms, HyRes, P2PMessage, QueuedCommand};
 use crossbeam::channel;
+use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
+use futures::StreamExt;
 use futures01::{future, Future};
 use primitives::hash::H160;
 use serde_bencode::de::from_bytes as bdecode;
-use serde_bencode::ser::to_bytes as bencode;
 use serde_json::{self as json, Value as Json};
 use std::collections::hash_map::{Entry, HashMap};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{IpAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpStream};
 use std::thread;
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::net::TcpListener as AsyncTcpListener;
 
 use crate::mm2::lp_native_dex::lp_command_process;
 use crate::mm2::lp_ordermatch::lp_post_price_recv;
@@ -121,7 +124,6 @@ fn rpc_reply_to_peer(handler: HyRes, cmd: QueuedCommand) {
 /// The thread processing the peer-to-peer messaging bus.
 pub async fn lp_command_q_loop(ctx: MmArc) {
     use futures::future::{select, Either};
-    use futures::StreamExt;
 
     let mut command_queueʳ = unwrap!(unwrap!(ctx.command_queueʳ.lock()).take().ok_or("!command_queueʳ"));
 
@@ -153,20 +155,21 @@ pub async fn lp_command_q_loop(ctx: MmArc) {
             .filter(|(_, timestamp)| timestamp + 60000 > now)
             .collect();
 
-        let msg_hash = ripemd160(cmd.msg.as_bytes());
+        let msg_hash = ripemd160(cmd.msg.content.as_bytes());
         match processed_messages.entry(msg_hash) {
             Entry::Vacant(e) => e.insert(now),
             Entry::Occupied(_) => continue, // skip the messages that we processed previously
         };
 
-        let json: Json = match json::from_str(&cmd.msg) {
+        let json: Json = match json::from_str(&cmd.msg.content) {
             Ok(j) => j,
-            Err(e) => {
-                log!("Error " (e) " parsing JSON from msg " (cmd.msg));
+            Err(_) => {
+                if cmd.msg.content.len() > 1 {
+                    log!("Invalid JSON " (cmd.msg.content) " from " (cmd.msg.from));
+                }
                 continue;
             },
         };
-
         let method = json["method"].as_str();
         if let Some(m) = method {
             if m == "swapstatus" {
@@ -180,7 +183,7 @@ pub async fn lp_command_q_loop(ctx: MmArc) {
         // swapstatus is excluded from rebroadcast as the message is big and other nodes might just not need it
         let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
         if i_am_seed {
-            ctx.broadcast_p2p_msg(&cmd.msg);
+            ctx.broadcast_p2p_msg(cmd.msg.clone());
         }
 
         let json = match dispatcher(json, ctx.clone()) {
@@ -197,92 +200,108 @@ pub async fn lp_command_q_loop(ctx: MmArc) {
 }
 
 /// The loop processing seednode activity as message relayer/rebroadcaster
-/// Non-blocking mode should be enabled on listener for this to work
-pub fn seednode_loop(ctx: MmArc, listener: TcpListener) {
-    let mut clients = vec![];
-    loop {
-        if ctx.is_stopping() {
-            break;
-        }
-
-        match listener.accept() {
-            Ok((stream, addr)) => {
-                ctx.log.log(
-                    "😀",
-                    &[&"incoming_connection", &addr.to_string().as_str()],
-                    "New connection...",
-                );
-                match stream.set_nonblocking(true) {
-                    Ok(_) => clients.push((BufReader::new(stream), addr, String::new())),
-                    Err(e) => ctx.log.log(
-                        "😟",
-                        &[&"incoming_connection", &addr.to_string().as_str()],
-                        &format!("Error {} setting nonblocking mode", e),
-                    ),
-                }
-            },
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
-            Err(e) => panic!("encountered IO error: {}", e),
-        }
-
-        let mut commands = Vec::new();
-        clients = clients
-            .drain_filter(|(client, addr, buf)| match client.read_line(buf) {
-                Ok(_) => {
-                    if !buf.is_empty() {
-                        let msgs = buf.split('\n');
-                        for msg in msgs {
-                            if !msg.is_empty() {
-                                commands.push(msg.to_string())
-                            }
-                        }
-                        buf.clear();
-                    }
-                    true
-                },
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => true,
+pub fn seednode_loop(ctx: MmArc, listener: std::net::TcpListener) {
+    let fut = async move {
+        let mut listener = AsyncTcpListener::from_std(listener).unwrap();
+        let mut incoming = listener.incoming();
+        while let Some(stream) = futures_util::StreamExt::next(&mut incoming).await {
+            let stream = match stream {
+                Ok(s) => s,
                 Err(e) => {
-                    ctx.log.log(
-                        "😟",
-                        &[&"incoming_connection", &addr.to_string().as_str()],
-                        &format!("Error {} reading from socket, dropping connection", e),
-                    );
-                    false
+                    log!("Error " (e) " on connection accept");
+                    continue;
                 },
-            })
-            .collect();
-        for msg in commands {
-            unwrap!(lp_queue_command(&ctx, msg));
-        }
-
-        clients = match ctx.seednode_p2p_channel.1.recv_timeout(Duration::from_millis(1)) {
-            Ok(mut msg) => clients
-                .drain_filter(|(client, addr, _)| {
-                    msg.push(b'\n');
-                    match client.get_mut().write(&msg) {
-                        Ok(_) => true,
+            };
+            let peer_addr = match stream.peer_addr() {
+                Ok(a) => a,
+                Err(e) => {
+                    log!("Could not get peer addr from stream " [stream] ", error " (e));
+                    continue;
+                },
+            };
+            ctx.log.log(
+                "😀",
+                &[&"incoming_connection", &peer_addr.to_string().as_str()],
+                "New connection...",
+            );
+            let ctx_read = ctx.clone();
+            let ctx_write = ctx.clone();
+            let (tx, mut rx) = mpsc::unbounded();
+            ctx.seednode_p2p_channel.lock().unwrap().push(tx);
+            let (read, mut write) = stream.into_split();
+            let read_loop = async move {
+                let mut read = tokio::io::BufReader::new(read);
+                let mut buffer = String::with_capacity(1024);
+                loop {
+                    match read.read_line(&mut buffer).await {
+                        Ok(read) => {
+                            if read > 0 && !buffer.is_empty() {
+                                unwrap!(lp_queue_command(&ctx_read, P2PMessage {
+                                    from: peer_addr,
+                                    content: buffer.clone(),
+                                }));
+                                buffer.clear();
+                            } else if read == 0 {
+                                ctx_read.log.log(
+                                    "😟",
+                                    &[&"incoming_connection", &peer_addr.to_string().as_str()],
+                                    "Reached EOF, dropping connection",
+                                );
+                                break;
+                            }
+                        },
                         Err(e) => {
-                            ctx.log.log(
+                            ctx_read.log.log(
                                 "😟",
-                                &[&"incoming_connection", &addr.to_string().as_str()],
-                                &format!("Error {} writing to socket, dropping connection", e),
+                                &[&"incoming_connection", &peer_addr.to_string().as_str()],
+                                &format!("Error {} reading from socket, dropping connection", e),
                             );
-                            false
+                            break;
                         },
                     }
-                })
-                .collect(),
-            Err(channel::RecvTimeoutError::Timeout) => clients,
-            Err(channel::RecvTimeoutError::Disconnected) => panic!("seednode_p2p_channel is disconnected"),
-        };
-    }
+                }
+            };
+            let write_loop = async move {
+                while let Some(mut msg) = rx.next().await {
+                    if msg.from != peer_addr {
+                        if !msg.content.ends_with('\n') {
+                            msg.content.push('\n');
+                        }
+                        match write.write_all(msg.content.as_bytes()).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                ctx_write.log.log(
+                                    "😟",
+                                    &[&"incoming_connection", &peer_addr.to_string().as_str()],
+                                    &format!("Error {} writing to socket, dropping connection", e),
+                                );
+                                break;
+                            },
+                        };
+                    }
+                }
+            };
+            tokio::spawn(async move {
+                // selecting over the read and write parts processing loops in order to
+                // drop both parts and close connection in case of errors
+                futures::select! {
+                    read = Box::pin(read_loop).fuse() => (),
+                    write = Box::pin(write_loop).fuse() => (),
+                };
+            });
+        }
+    };
+    // creating separate tokio 0.2 runtime as TcpListener requires it and doesn't work with
+    // shared tokio 0.1 core
+    let mut runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(fut);
 }
 
 #[cfg(feature = "native")]
 pub async fn start_seednode_loop(ctx: &MmArc, myipaddr: IpAddr, mypubport: u16) -> Result<(), String> {
     log! ("i_am_seed at " (myipaddr) ":" (mypubport));
-    let listener: TcpListener = try_s!(TcpListener::bind(&fomat!((myipaddr) ":" (mypubport))));
-    try_s!(listener.set_nonblocking(true));
+    let to_bind = std::net::SocketAddr::new(myipaddr, mypubport);
+    let listener = try_s!(std::net::TcpListener::bind(to_bind));
     try_s!(thread::Builder::new().name("seednode_loop".into()).spawn({
         let ctx = ctx.clone();
         move || seednode_loop(ctx, listener)
@@ -421,6 +440,7 @@ fn start_queue_tap(ctx: MmArc) -> Result<(), String> {
     Ok(())
 }
 
+/*
 /// Poll the native helpers for messages coming from the seed nodes.
 #[cfg(feature = "native")]
 pub async fn p2p_tapʰ(req: Bytes) -> Result<Vec<u8>, String> {
@@ -459,7 +479,7 @@ pub async fn broadcast_p2p_msgʰ(req: Bytes) -> Result<Vec<u8>, String> {
     ctx.broadcast_p2p_msg(&args.msg);
     Ok(Vec::new())
 }
-
+*/
 /// Tells the native helpers to start the client_p2p_loop, collecting messages from the seed nodes.
 #[cfg(feature = "native")]
 pub async fn start_client_p2p_loopʰ(req: Bytes) -> Result<Vec<u8>, String> {
@@ -528,8 +548,8 @@ fn client_p2p_loop(ctx: MmArc, addrs: Vec<String>) {
                     if !conn.buf.is_empty() {
                         let msgs = conn.buf.split('\n');
                         for msg in msgs {
-                            if !msg.is_empty() {
-                                commands.push(msg.to_string())
+                            if msg.len() > 1 {
+                                commands.push(P2PMessage::from_string_with_default_addr(msg.to_owned()));
                             }
                         }
                         conn.buf.clear();

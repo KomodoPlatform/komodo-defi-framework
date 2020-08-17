@@ -733,6 +733,22 @@ pub async fn convert_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     Ok(try_s!(Response::builder().body(body)))
 }
 
+pub async fn kmd_rewards_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    let coin = match lp_coinfindᵃ(&ctx, "KMD").await {
+        // Use lp_coinfindᵃ when async.
+        Ok(Some(MmCoinEnum::UtxoCoin(t))) => t,
+        Ok(Some(_)) => return ERR!("KMD was expected to be UTXO"),
+        Ok(None) => return ERR!("KMD is not activated"),
+        Err(err) => return ERR!("!lp_coinfind({}): KMD", err),
+    };
+
+    let res = json!({
+        "result": try_s!(utxo::kmd_rewards_info(&coin).await),
+    });
+    let res = try_s!(json::to_vec(&res));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
 #[derive(Deserialize)]
 struct ValidateAddressReq {
     coin: String,

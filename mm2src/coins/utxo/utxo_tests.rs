@@ -215,19 +215,57 @@ fn test_addresses_from_script() {
 
 #[test]
 fn test_kmd_interest() {
+    let height = Some(1000001);
     let value = 64605500822;
     let lock_time = 1556623906;
     let current_time = 1556623906 + 3600 + 300;
+
     let expected = 36870;
-    let actual = kmd_interest(Some(1000001), value, lock_time, current_time);
+    let actual = kmd_interest(height, value, lock_time, current_time).unwrap();
     assert_eq!(expected, actual);
 
     // UTXO amount must be at least 10 KMD to be eligible for interest
-    let value = 999999999;
-    let lock_time = 1556623906;
-    let current_time = 1556623906 + 3600 + 300;
-    let expected = 0;
-    let actual = kmd_interest(Some(1000001), value, lock_time, current_time);
+    let actual = kmd_interest(height, 999999999, lock_time, current_time);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::UtxoAmountLessThanTen));
+
+    // Transaction is not mined yet (height is None)
+    let actual = kmd_interest(None, value, lock_time, current_time);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::TransactionInMempool));
+
+    // Locktime is not set
+    let actual = kmd_interest(height, value, 0, current_time);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::LocktimeNotSet));
+
+    // interest will stop accrue after block 7_777_777
+    let actual = kmd_interest(Some(7_777_778), value, lock_time, current_time);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::UtxoHeightGreaterThanEndOfEra));
+
+    // interest doesn't accrue for lock_time < 500_000_000
+    let actual = kmd_interest(height, value, 499_999_999, current_time);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::LocktimeLessThanThreshold));
+
+    // current time must be greater than tx lock_time
+    let actual = kmd_interest(height, value, lock_time, lock_time - 1);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::OneHourNotPassedYet));
+
+    // at least 1 hour should pass
+    let actual = kmd_interest(height, value, lock_time, lock_time + 30);
+    assert_eq!(actual, Err(KmdRewardsNotAccruedReason::OneHourNotPassedYet));
+}
+
+#[test]
+fn test_kmd_interest_accrue_stop_at() {
+    let lock_time = 1595845640;
+    let height = 1000001;
+
+    let expected = lock_time + 31 * 24 * 60 * 60;
+    let actual = kmd_interest_accrue_stop_at(height, lock_time);
+    assert_eq!(expected, actual);
+
+    let height = 999999;
+
+    let expected = lock_time + 365 * 24 * 60 * 60;
+    let actual = kmd_interest_accrue_stop_at(height, lock_time);
     assert_eq!(expected, actual);
 }
 

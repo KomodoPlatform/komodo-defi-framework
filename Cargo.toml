@@ -56,6 +56,7 @@ opt-level = 1
 [profile.release]
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true
+debug-assertions = false
 # For better or worse, might affect the stack traces in our portion of the code.
 #opt-level = 1
 
@@ -83,6 +84,7 @@ futures-cpupool = "0.1"
 # whereas futures-timer works with any reactor and spawns one global timer thread (fits out load better).
 futures-timer = "0.1"
 futures = { version = ">=0.3.0-alpha.16, <0.4", package = "futures-preview", features = ["compat", "async-await", "nightly"] }
+futures-util = "0.3.4"
 gstuff = { version = "0.6", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.1"
@@ -115,6 +117,7 @@ serialization_derive = { git = "https://github.com/artemii235/parity-bitcoin.git
 term = "=0.5.1"
 
 tokio-core = { version = "0.1", optional = true }
+tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"] }
 unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 winapi = "0.3"

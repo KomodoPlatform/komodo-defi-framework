@@ -64,7 +64,7 @@ use common::{block_on,
              executor::spawn,
              mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber,
-             read_dir, rpc_response, slurp, write, HyRes};
+             read_dir, rpc_response, slurp, write, HyRes, P2PMessage};
 use http::Response;
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
@@ -640,12 +640,11 @@ fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
         SavedSwap::Maker(ref mut swap) => swap.hide_secret(),
     };
     try_s!(save_stats_swap(ctx, &status));
-    let status_string = json!({
+    let status = json!({
         "method": "swapstatus",
         "data": status,
-    })
-    .to_string();
-    ctx.broadcast_p2p_msg(&status_string);
+    });
+    ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&status));
     Ok(())
 }
 

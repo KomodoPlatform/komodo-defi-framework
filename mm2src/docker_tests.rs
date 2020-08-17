@@ -3,6 +3,7 @@
 #![test_runner(docker_tests_runner)]
 #![feature(drain_filter)]
 #![feature(non_ascii_idents)]
+#![recursion_limit = "512"]
 
 #[cfg(test)] use docker_tests::docker_tests_runner;
 #[cfg(test)]
