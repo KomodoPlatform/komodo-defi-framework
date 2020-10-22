@@ -803,7 +803,6 @@ dependencies = [
  "primitives",
  "rand 0.7.3",
  "regex",
- "ring",
  "serde",
  "serde_bencode",
  "serde_bytes 0.11.5",

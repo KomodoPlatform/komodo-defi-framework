@@ -592,18 +592,6 @@ impl Gossipsub {
             Some(peers) => {
                 debug!("Message already received, ignoring. Message: {:?}", msg_id);
                 peers.push(propagation_source.clone());
-
-                if self.relay_mesh_len() > self.config.mesh_n_low {
-                    if let Some(other_mesh_size) = self.relays_mesh.get(propagation_source) {
-                        if *other_mesh_size > self.config.mesh_n_low {
-                            info!(
-                                "Removing peer {:?} from relay mesh because it sent duplicated message",
-                                propagation_source
-                            );
-                            self.remove_peer_from_relay_mesh(propagation_source);
-                        }
-                    }
-                }
                 return;
             },
             None => {

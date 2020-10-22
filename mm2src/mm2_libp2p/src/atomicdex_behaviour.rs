@@ -578,7 +578,7 @@ pub fn start_gossipsub(
             MessageId(s.finish().to_string())
         };
 
-        let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (3, 6, 6) } else { (2, 3, 4) };
+        let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (3, 6, 8) } else { (2, 3, 4) };
 
         // set custom gossipsub
         let gossipsub_config = GossipsubConfigBuilder::new()

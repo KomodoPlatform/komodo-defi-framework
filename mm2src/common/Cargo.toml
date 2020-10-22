@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 native = [
-  "hyper", "hyper-rustls", "libc", "ring", "tokio"
+  "hyper", "hyper-rustls", "libc", "tokio"
 ]
 
 w-bindgen = ["wasm-bindgen", "web-sys"]
@@ -56,10 +56,6 @@ parking_lot_core = { version = "0.6", features = ["nightly"] }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
-# To build `ring` on Windows we might need `perl` and `yasm` in the PATH
-# (though I haven't checked this in a while).
-# Download http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win64.exe and rename to `yasm.exe`.
-ring = { version = "0.16", optional = true }
 serde = "1"
 serde_bencode = "0.2"
 serde_bytes = "0.11"
