@@ -138,6 +138,9 @@ features = [
 ]
 optional = true
 
+[target.armv7-linux-androideabi.dependencies]
+openssl = { version = "*", features = ["vendored"] }
+
 [dev-dependencies]
 libsecp256k1 = "0.2.2"
 mocktopus = "0.7.0"
