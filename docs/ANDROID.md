@@ -12,15 +12,7 @@ We need the Nightly revision of Rust, such as
 
 ### Install cross
 
-    git clone --depth=1 git@github.com:ArtemGr/cross.git
-    (cd cross && cargo install -f --path .) && rm -rf cross
-
-### Install extra packages into the Docker image
-
-The [Docker image](https://github.com/rust-embedded/cross/tree/master/docker/armv7-linux-androideabi) used by `cross` for the cross-compilation is [missing](https://github.com/rust-embedded/cross/issues/174) certain things that we need. So we're going to build a patched up image.
-
-    git clone git@github.com:ArtemGr/cross.git aga-cross || git clone https://github.com/ArtemGr/cross.git aga-cross
-    (cd aga-cross/docker && docker build --tag armv7-linux-androideabi-aga -f armv7-linux-androideabi/Dockerfile .)
+    cargo install cross
 
 ### Get the source code
 
@@ -28,6 +20,18 @@ The [Docker image](https://github.com/rust-embedded/cross/tree/master/docker/arm
     cd supernet
     git log --pretty=format:'%h' -n 1 > MM_VERSION
     git log --pretty=format:'%cI' -n 1 > MM_DATETIME
+
+### Install extra packages into the Docker image
+
+The [Android NDK installer](https://github.com/rust-embedded/cross/tree/master/docker/android-ndk.sh) used by the ['cross' docker image](https://github.com/rust-embedded/cross/tree/master/docker/armv7-linux-androideabi) for the cross-compilation uses out-of-date NDK version. So we're going to build a patched up image.
+
+#### armeabi-v7a ABI Docker image
+
+    (cd supernet && docker build --tag armv7-linux-androideabi-aga -f Dockerfile.armv7-linux-androideabi .)
+
+#### arm64-v8a ABI Docker image
+
+    (cd supernet && docker build --tag aarch64-linux-android-aga -f Dockerfile.aarch64-linux-android .)
 
 ### Setup the NDK_HOME variable
 
@@ -39,4 +43,10 @@ by setting the NDK_HOME variable.
 
 ### Build
 
+#### armeabi-v7a
+
     cross build --features native --target=armv7-linux-androideabi -vv --release
+
+#### arm64-v8a
+
+    cross build --features native --target=aarch64-linux-android -vv --release
