@@ -12,23 +12,165 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use] extern crate fomat_macros;
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate unwrap;
 
 use chrono::DateTime;
 use glob::{glob, Paths, PatternError};
 use gstuff::{last_modified_sec, slurp};
 use regex::Regex;
-use std::env::{self};
-use std::fs;
+use std::env::{self, var};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdout, Command, Stdio};
 use std::str::{from_utf8, from_utf8_unchecked};
 use std::thread;
+use std::{fmt, fs};
 
 /// Ongoing (RLS) builds might interfere with a precise time comparison.
 const SLIDE: f64 = 60.;
+
+#[derive(Debug)]
+struct IosClangOps {
+    /// iPhone SDK (iPhoneOS for arm64, iPhoneSimulator for x86_64)
+    sysroot: &'static str,
+    /// "arm64", "x86_64".
+    arch: &'static str,
+    /// Identifies the corresponding clang options defined in "user-config.jam".
+    b2_toolset: &'static str,
+    /// The minimal iOS version: 10 for 32-bit targets, 11 for 64-bit targets.
+    ios_min: f64,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+enum Target {
+    Unix,
+    Mac,
+    Windows,
+    /// https://github.com/rust-embedded/cross
+    AndroidCross(String),
+    /// https://github.com/TimNN/cargo-lipo
+    iOS(String),
+}
+impl Target {
+    fn load() -> Target {
+        let targetᴱ = unwrap!(var("TARGET"));
+        match &targetᴱ[..] {
+            "x86_64-unknown-linux-gnu" => Target::Unix,
+            "armv7-unknown-linux-gnueabihf" => Target::Unix, // Raspbian is a modified Debian
+            "arm-unknown-linux-gnueabihf" => Target::Unix,   // Raspbian under QEMU
+            "x86_64-apple-darwin" => Target::Mac,
+            "x86_64-pc-windows-msvc" => Target::Windows,
+            "wasm32-unknown-emscripten" => Target::Unix, // Pretend.
+            "armv7-linux-androideabi" | "aarch64-linux-android" => {
+                if Path::new("/android-ndk").exists() {
+                    Target::AndroidCross(targetᴱ)
+                } else {
+                    panic!(
+                        "/android-ndk not found. Please use the `cross` as described at \
+                         https://github.com/artemii235/SuperNET/blob/mm2-cross/docs/ANDROID.md"
+                    )
+                }
+            },
+            "aarch64-apple-ios" => Target::iOS(targetᴱ),
+            "x86_64-apple-ios" => Target::iOS(targetᴱ),
+            "armv7-apple-ios" => Target::iOS(targetᴱ),
+            "armv7s-apple-ios" => Target::iOS(targetᴱ),
+            t => panic!("Target not (yet) supported: {}", t),
+        }
+    }
+    /// True if building for ARM under https://github.com/rust-embedded/cross
+    /// or a similar setup based on the "japaric/armv7-linux-androideabi" Docker image.
+    fn is_android_cross(&self) -> bool {
+        match self {
+            Target::AndroidCross(_) => true,
+            _ => false,
+        }
+    }
+    fn is_ios(&self) -> bool {
+        match self {
+            &Target::iOS(_) => true,
+            _ => false,
+        }
+    }
+    fn is_mac(&self) -> bool { *self == Target::Mac }
+    /// The "-arch" parameter passed to Xcode clang++ when cross-building for iOS.
+    fn ios_clang_ops(&self) -> Option<IosClangOps> {
+        match self {
+            &Target::iOS(ref target) => match &target[..] {
+                "aarch64-apple-ios" => Some(IosClangOps {
+                    // cf. `xcrun --sdk iphoneos --show-sdk-path`
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "arm64",
+                    b2_toolset: "darwin-iphone",
+                    ios_min: 11.0,
+                }),
+                "x86_64-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk",
+                    arch: "x86_64",
+                    b2_toolset: "darwin-iphonesim",
+                    ios_min: 11.0,
+                }),
+                // armv7, 32-bit
+                "armv7-apple-ios" => Some(IosClangOps {
+                    sysroot: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk",
+                    arch: "armv7",
+                    b2_toolset: "darwin-iphone10v7",
+                    ios_min: 10.0,
+                }),
+                //"armv7s-apple-ios" => "armv7s", 32-bit
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn user_config_jam_path(&self) -> Option<&'static str> {
+        match self {
+            Target::iOS(_) => Some("mm2src/common/ios/user-config.jam"),
+            Target::AndroidCross(target) if target == "armv7-linux-androideabi" => {
+                Some("mm2src/common/android/user-config-armv7.jam")
+            },
+            Target::AndroidCross(target) if target == "aarch64-linux-android" => {
+                Some("mm2src/common/android/user-config-armv8.jam")
+            },
+            _ => None,
+        }
+    }
+    fn cc(&self, plus_plus: bool) -> cc::Build {
+        let mut cc = cc::Build::new();
+        if self.is_android_cross() {
+            cc.compiler(if plus_plus {
+                // NB: GCC is a link to Clang in the NDK.
+                "/android-ndk/bin/clang++"
+            } else {
+                "/android-ndk/bin/clang"
+            });
+            cc.archiver("/android-ndk/bin/arm-linux-androideabi-ar");
+        } else if self.is_ios() {
+            let cops = unwrap!(self.ios_clang_ops());
+            // cf. `xcode-select -print-path`
+            cc.compiler(if plus_plus {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+            } else {
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+            });
+            cc.flag(&fomat!("--sysroot="(cops.sysroot)));
+            cc.flag("-stdlib=libc++");
+            cc.flag(&fomat!("-miphoneos-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-mios-simulator-version-min="(cops.ios_min)));
+            cc.flag(&fomat!("-DIPHONEOS_DEPLOYMENT_TARGET="(cops.ios_min)));
+            cc.flag("-arch").flag(cops.arch);
+        }
+        cc
+    }
+}
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Target::iOS(ref target) => f.write_str(&target[..]),
+            _ => wite!(f, [self]),
+        }
+    }
+}
 
 fn bindgen<
     'a,
@@ -368,6 +510,57 @@ fn root() -> PathBuf {
     } else {
         super_net
     }
+}
+
+/// Returns `true` if the `target` is not as fresh as the `prerequisites`.
+fn make(target: &AsRef<Path>, prerequisites: &[PathBuf]) -> bool {
+    let target_lm = last_modified_sec(target).expect("!last_modified") as u64;
+    if target_lm == 0 {
+        return true;
+    }
+    let mut prerequisites_lm = 0;
+    for path in prerequisites {
+        prerequisites_lm = std::cmp::max(
+            prerequisites_lm,
+            last_modified_sec(&path).expect("!last_modified") as u64,
+        )
+    }
+    target_lm < prerequisites_lm
+}
+
+/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
+fn manual_mm1_build(target: Target) {
+    let (root, out_dir) = (root(), out_dir());
+    let libexchanges_src = vec![rabs("iguana/exchanges/mm.c")];
+
+    let exchanges_build = out_dir.join("exchanges_build");
+    epintln!("exchanges_build at "[exchanges_build]);
+
+    let libexchanges_a = out_dir.join("libexchanges.a");
+    if make(&libexchanges_a, &libexchanges_src[..]) {
+        let _ = fs::create_dir(&exchanges_build);
+        let mut cc = target.cc(false);
+        for p in libexchanges_src.iter() {
+            cc.file(p);
+        }
+        cc.compile("exchanges");
+        assert!(libexchanges_a.is_file());
+    }
+    println!("cargo:rustc-link-lib=static=exchanges");
+    println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
+
+    // TODO: Rebuild the libraries when the C source code is updated.
+}
+
+/// A folder cargo creates for our build.rs specifically.
+fn out_dir() -> PathBuf {
+    // cf. https://github.com/rust-lang/cargo/issues/3368#issuecomment-265900350
+    let out_dir = unwrap!(var("OUT_DIR"));
+    let out_dir = Path::new(&out_dir);
+    if !out_dir.is_dir() {
+        panic!("OUT_DIR !is_dir")
+    }
+    out_dir.to_path_buf()
 }
 
 /// Absolute path taken from SuperNET's root + `path`.  
