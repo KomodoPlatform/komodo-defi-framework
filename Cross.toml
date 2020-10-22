@@ -6,3 +6,6 @@ passthrough = [
 
 [target.armv7-linux-androideabi]
 image = "armv7-linux-androideabi-aga"
+
+[target.aarch64-linux-android]
+image = "aarch64-linux-android-aga"

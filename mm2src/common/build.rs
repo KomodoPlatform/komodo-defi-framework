@@ -579,7 +579,7 @@ enum Target {
     Mac,
     Windows,
     /// https://github.com/rust-embedded/cross
-    AndroidCross,
+    AndroidCross(String),
     /// https://github.com/TimNN/cargo-lipo
     iOS(String),
 }
@@ -593,9 +593,9 @@ impl Target {
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
             "wasm32-unknown-emscripten" => Target::Unix, // Pretend.
-            "armv7-linux-androideabi" => {
+            "armv7-linux-androideabi" | "aarch64-linux-android" => {
                 if Path::new("/android-ndk").exists() {
-                    Target::AndroidCross
+                    Target::AndroidCross(targetᴱ)
                 } else {
                     panic!(
                         "/android-ndk not found. Please use the `cross` as described at \
@@ -612,7 +612,12 @@ impl Target {
     }
     /// True if building for ARM under https://github.com/rust-embedded/cross
     /// or a similar setup based on the "japaric/armv7-linux-androideabi" Docker image.
-    fn is_android_cross(&self) -> bool { *self == Target::AndroidCross }
+    fn is_android_cross(&self) -> bool {
+        match self {
+            Target::AndroidCross(_) => true,
+            _ => false,
+        }
+    }
     fn is_ios(&self) -> bool {
         match self {
             &Target::iOS(_) => true,
@@ -646,6 +651,18 @@ impl Target {
                 }),
                 //"armv7s-apple-ios" => "armv7s", 32-bit
                 _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn user_config_jam_path(&self) -> Option<&'static str> {
+        match self {
+            Target::iOS(_) => Some("mm2src/common/ios/user-config.jam"),
+            Target::AndroidCross(target) if target == "armv7-linux-androideabi" => {
+                Some("mm2src/common/android/user-config-armv7.jam")
+            },
+            Target::AndroidCross(target) if target == "aarch64-linux-android" => {
+                Some("mm2src/common/android/user-config-armv8.jam")
             },
             _ => None,
         }
@@ -1029,7 +1046,7 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         " link=static deprecated-functions=off debug-symbols=off"
         " dht=on encryption=on crypto=built-in iconv=off i2p=off"
         " cxxflags=-DBOOST_ERROR_CODE_HEADER_ONLY=1"
-        " cxxflags=-std=c++11"
+        " cxxflags=-stdlib=libc++"
         " cxxflags=-fPIC"
         " include="(boostᵉ)
     );
@@ -1051,20 +1068,19 @@ fn build_libtorrent(boost: &Path, target: &Target) -> (PathBuf, PathBuf) {
         });
     }
 
-    fn jam(boost: &Path, from: &str) {
-        let user_config_jamˢ = slurp(&root().join(from));
+    // check if we should patch the boost's user-config.jam
+    if let Some(jam_path) = target.user_config_jam_path() {
+        let user_config_jamˢ = slurp(&root().join(jam_path));
         let user_config_jamᵖ = boost.join("tools/build/src/user-config.jam");
         epintln!("build_libtorrent] Creating "[user_config_jamᵖ]"…");
         let mut user_config_jamᶠ = unwrap!(fs::File::create(&user_config_jamᵖ));
         unwrap!(user_config_jamᶠ.write_all(&user_config_jamˢ));
     }
+
     if target.is_ios() {
-        // NB: The "darwin" toolset is defined in "tools/build/src/tools/darwin.jam":
-        jam(boost, "mm2src/common/ios/user-config.jam");
         let cops = unwrap!(target.ios_clang_ops());
         unwrap!(wite!(&mut b2, " toolset="(cops.b2_toolset)));
     } else if target.is_android_cross() {
-        jam(boost, "mm2src/common/android/user-config.jam");
         unwrap!(wite!(&mut b2, " toolset=gcc"));
         patch_libtorrent(&rasterbar);
     } else if cfg!(windows) {
@@ -1167,7 +1183,7 @@ fn libtorrent() {
             cc.flag("-fexceptions");
             cc.flag("-D_FILE_OFFSET_BITS=64");
             cc.flag("-D_WIN32_WINNT=0x0600");
-            cc.flag("-std=c++11");
+            cc.flag("-stdlib=libc++");
             cc.flag("-ftemplate-depth=512");
             cc.flag("-finline-functions");
             cc.flag("-fvisibility=hidden");
@@ -1194,7 +1210,7 @@ fn libtorrent() {
         println!("cargo:rustc-link-lib=framework=SystemConfiguration");
     } else if cfg!(windows) {
     } else {
-        println!("cargo:rustc-link-lib=stdc++");
+        println!("cargo:rustc-link-lib=c++");
     }
 }
 
