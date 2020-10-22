@@ -39,7 +39,6 @@ hex = "0.3.2"
 http = "0.2"
 http-body = "0.1"
 hyper = { version = "0.13", optional = true }
-hyper-tls = { version = "0.3" }
 hyper-rustls = { version = "0.20", optional = true }
 itertools = "0.8"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
