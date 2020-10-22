@@ -1,27 +1,25 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use super::{ban_pubkey, broadcast_my_swap_status, dex_fee_amount, get_locked_amount, get_locked_amount_by_other_swaps,
-            my_swap_file_path, my_swaps_dir, AtomicSwap, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SwapConfirmationsSettings, SwapError, SwapNegotiationData, SwapsContext, BASIC_COMM_TIMEOUT,
-            WAIT_CONFIRM_INTERVAL};
+            my_swap_file_path, my_swaps_dir, recv_swap_msg, swap_topic, AtomicSwap, LockedAmount, MySwapInfo,
+            RecoveredSwap, RecoveredSwapAction, SavedSwap, SwapConfirmationsSettings, SwapError, SwapMsg,
+            SwapsContext, WAIT_CONFIRM_INTERVAL};
+use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::lp_swap::{broadcast_swap_message_every, NegotiationDataMsg};
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfindᵃ, FoundSwapTxSpend, MmCoinEnum, TradeFee, TransactionDetails};
-use common::{bits256, executor::Timer, file_lock::FileLock, mm_ctx::MmArc, mm_number::MmNumber, now_float, now_ms,
-             slurp, write, MM_VERSION};
-use crc::crc32;
-use futures::{compat::Future01CompatExt, future::Either, select, FutureExt};
+use common::{bits256, executor::Timer, file_lock::FileLock, mm_ctx::MmArc, mm_number::MmNumber, now_ms, slurp, write,
+             MM_VERSION};
+use futures::{compat::Future01CompatExt, select, FutureExt};
 use futures01::Future;
 use http::Response;
 use parking_lot::Mutex as PaMutex;
-use peers::FixedValidator;
 use primitives::hash::H264;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{atomic::Ordering, Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf {
     ctx.dbdir()
@@ -288,11 +286,13 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     );
 
     let ctx = swap.ctx.clone();
+    subscribe_to_topic(&ctx, swap_topic(&swap.uuid)).await;
     let mut status = ctx.log.status_handle();
     let uuid = swap.uuid.clone();
     let running_swap = Arc::new(swap);
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    swap_ctx.init_msg_store(running_swap.uuid.clone(), running_swap.maker);
     unwrap!(swap_ctx.running_swaps.lock()).push(weak_ref);
     let shutdown_rx = swap_ctx.shutdown_rx.clone();
     let swap_for_log = running_swap.clone();
@@ -670,15 +670,15 @@ impl TakerSwap {
     }
 
     async fn negotiate(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let data = match recv!(self, "negotiation", 90, -1000, FixedValidator::AnythingGoes) {
-            Ok(d) => d,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("{:?}", e).into(),
-                )]))
-            },
-        };
-        let maker_data: SwapNegotiationData = match deserialize(data.as_slice()) {
+        const NEGOTIATE_TIMEOUT: u64 = 90;
+
+        let recv_fut = recv_swap_msg(
+            self.ctx.clone(),
+            |store| store.negotiation.take(),
+            &self.uuid,
+            NEGOTIATE_TIMEOUT,
+        );
+        let maker_data = match recv_fut.await {
             Ok(d) => d,
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
@@ -706,28 +706,25 @@ impl TakerSwap {
             )]));
         }
 
-        let taker_data = SwapNegotiationData {
+        let taker_data = SwapMsg::NegotiationReply(NegotiationDataMsg {
             started_at: self.r().data.started_at,
-            secret_hash: maker_data.secret_hash.clone(),
+            secret_hash: maker_data.secret_hash,
             payment_locktime: self.r().data.taker_payment_lock,
-            persistent_pubkey: self.my_persistent_pub.clone(),
-        };
-        let bytes = serialize(&taker_data);
-        let sending_f = match send!(
-            self.ctx,
-            self.maker,
-            fomat!(("negotiation-reply") '@' (self.uuid)),
-            30,
-            bytes.as_slice()
-        ) {
-            Ok(f) => f,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("{}", e).into(),
-                )]))
-            },
-        };
-        let data = match recv!(self, sending_f, "negotiated", 90, -1000, FixedValidator::AnythingGoes) {
+            persistent_pubkey: self.my_persistent_pub.to_vec(),
+        });
+        let send_abort_handle = broadcast_swap_message_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            taker_data,
+            NEGOTIATE_TIMEOUT as f64 / 6.,
+        );
+        let recv_fut = recv_swap_msg(
+            self.ctx.clone(),
+            |store| store.negotiated.take(),
+            &self.uuid,
+            NEGOTIATE_TIMEOUT,
+        );
+        let negotiated = match recv_fut.await {
             Ok(d) => d,
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
@@ -735,14 +732,7 @@ impl TakerSwap {
                 )]))
             },
         };
-        let negotiated: bool = match deserialize(data.as_slice()) {
-            Ok(n) => n,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("{:?}", e).into(),
-                )]))
-            },
-        };
+        drop(send_abort_handle);
 
         if !negotiated {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
@@ -753,7 +743,7 @@ impl TakerSwap {
         Ok((Some(TakerSwapCommand::SendTakerFee), vec![TakerSwapEvent::Negotiated(
             MakerNegotiationData {
                 maker_payment_locktime: maker_data.payment_locktime,
-                maker_pubkey: maker_data.persistent_pubkey.into(),
+                maker_pubkey: maker_data.persistent_pubkey.as_slice().into(),
                 secret_hash: maker_data.secret_hash.into(),
             },
         )]))
@@ -810,24 +800,23 @@ impl TakerSwap {
     }
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let tx_hex = self.r().taker_fee.as_ref().unwrap().tx_hex.clone();
-        let sending_f = match send!(self.ctx, self.maker, fomat!(("taker-fee") '@' (self.uuid)), 60, tx_hex) {
-            Ok(f) => f,
-            Err(err) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![
-                    TakerSwapEvent::TakerFeeSendFailed(ERRL!("{}", err).into()),
-                ]))
-            },
-        };
+        const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 180;
+        let tx_hex = self.r().taker_fee.as_ref().unwrap().tx_hex.0.clone();
+        let msg = SwapMsg::TakerFee(tx_hex);
+        let abort_send_handle = broadcast_swap_message_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            msg,
+            MAKER_PAYMENT_WAIT_TIMEOUT as f64 / 6.,
+        );
 
-        let payload = match recv!(
-            self,
-            sending_f,
-            "maker-payment",
-            180,
-            -1005,
-            FixedValidator::AnythingGoes
-        ) {
+        let recv_fut = recv_swap_msg(
+            self.ctx.clone(),
+            |store| store.maker_payment.take(),
+            &self.uuid,
+            MAKER_PAYMENT_WAIT_TIMEOUT,
+        );
+        let payload = match recv_fut.await {
             Ok(p) => p,
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -837,6 +826,7 @@ impl TakerSwap {
                 ]))
             },
         };
+        drop(abort_send_handle);
         let maker_payment = match self.maker_coin.tx_enum_from_bytes(&payload) {
             Ok(p) => p,
             Err(e) => {
@@ -979,24 +969,9 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
-        let sending_f = match send!(
-            self.ctx,
-            self.maker,
-            fomat!(("taker-payment") '@' (self.uuid)),
-            60,
-            tx_hex
-        ) {
-            Ok(f) => f,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
-                    TakerSwapEvent::TakerPaymentDataSendFailed(e.into()),
-                    TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                        wait_until: self.wait_refund_until(),
-                    },
-                ]))
-            },
-        };
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let msg = SwapMsg::TakerPayment(tx_hex);
+        let send_abort_handle = broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600.);
 
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
@@ -1038,7 +1013,7 @@ impl TakerSwap {
                 ]))
             },
         };
-        drop(sending_f);
+        drop(send_abort_handle);
         let hash = tx.tx_hash();
         log!({"Taker payment spend tx {:02x}", hash});
         // we can attempt to get the details in loop here as transaction was already sent and

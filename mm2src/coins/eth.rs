@@ -23,7 +23,7 @@ use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
-use common::{now_ms, slurp_url, small_rng};
+use common::{block_on, now_ms, slurp_url, small_rng};
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, U256};
@@ -62,6 +62,7 @@ pub use rlp;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
+use crate::CoinProtocol;
 
 #[cfg(test)] mod eth_tests;
 
@@ -81,7 +82,7 @@ const _PAYMENT_STATE_REFUNDED: u8 = 3;
 
 lazy_static! {
     static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
-    static ref ERC20_CONTRACT: Contract = unwrap!(Contract::load(ERC20_ABI.as_bytes()));
+    pub static ref ERC20_CONTRACT: Contract = unwrap!(Contract::load(ERC20_ABI.as_bytes()));
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1539,7 +1540,7 @@ impl EthCoin {
             };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = unwrap!(coins_ctx.coins.spinlock(77));
+                let coins = block_on(coins_ctx.coins.lock());
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break;
@@ -1888,7 +1889,7 @@ impl EthCoin {
             };
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = unwrap!(coins_ctx.coins.spinlock(77));
+                let coins = block_on(coins_ctx.coins.lock());
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
                     break;
@@ -2254,6 +2255,8 @@ impl MmCoin for EthCoin {
         }))
     }
 
+    fn wallet_only(&self) -> bool { false }
+
     fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
         let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("!ctx"));
         Box::new(Box::pin(withdraw_impl(ctx, self.clone(), req)).compat())
@@ -2369,6 +2372,11 @@ impl MmCoin for EthCoin {
     fn set_requires_notarization(&self, _requires_nota: bool) {
         log!("Warning: set_requires_notarization doesn't take any effect on ETH/ERC20 coins");
     }
+
+    fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
+        // Eth has not unspendable outputs
+        Box::new(futures01::future::ok(0.into()))
+    }
 }
 
 fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
@@ -2388,12 +2396,12 @@ fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {
     string.trim_end_matches('0').into()
 }
 
-fn u256_to_big_decimal(number: U256, decimals: u8) -> Result<BigDecimal, String> {
+pub fn u256_to_big_decimal(number: U256, decimals: u8) -> Result<BigDecimal, String> {
     let string = display_u256_with_decimal_point(number, decimals);
     Ok(try_s!(string.parse()))
 }
 
-fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, String> {
+pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, String> {
     let mut amount = amount.to_string();
     let dot = amount.find(|c| c == '.');
     let decimals = decimals as usize;
@@ -2480,7 +2488,9 @@ impl GasStationData {
     }
 
     fn get_gas_price(uri: &str) -> Box<dyn Future<Item = U256, Error = String> + Send> {
-        Box::new(slurp_url(uri).and_then(|res| -> Result<U256, String> {
+        let uri = uri.to_owned();
+        let fut = async move { slurp_url(&uri).await };
+        Box::new(fut.boxed().compat().and_then(|res| -> Result<U256, String> {
             if res.0 != StatusCode::OK {
                 return ERR!("Gas price request failed with status code {}", res.0);
             }
@@ -2543,6 +2553,7 @@ pub async fn eth_coin_from_conf_and_request(
     conf: &Json,
     req: &Json,
     priv_key: &[u8],
+    protocol: CoinProtocol,
 ) -> Result<EthCoin, String> {
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
@@ -2587,16 +2598,17 @@ pub async fn eth_coin_from_conf_and_request(
     let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
     let web3 = Web3::new(transport);
 
-    let etomic = try_s!(conf["etomic"].as_str().ok_or(ERRL!("Etomic field is not string")));
-    let (coin_type, decimals) = if etomic == "0x0000000000000000000000000000000000000000" {
-        (EthCoinType::Eth, 18)
-    } else {
-        let token_addr = try_s!(valid_addr_from_str(etomic));
-        let decimals = match conf["decimals"].as_u64() {
-            None | Some(0) => try_s!(get_token_decimals(&web3, token_addr).await),
-            Some(d) => d as u8,
-        };
-        (EthCoinType::Erc20(token_addr), decimals)
+    let (coin_type, decimals) = match protocol {
+        CoinProtocol::ETH => (EthCoinType::Eth, 18),
+        CoinProtocol::ERC20 { contract_address, .. } => {
+            let token_addr = try_s!(valid_addr_from_str(&contract_address));
+            let decimals = match conf["decimals"].as_u64() {
+                None | Some(0) => try_s!(get_token_decimals(&web3, token_addr).await),
+                Some(d) => d as u8,
+            };
+            (EthCoinType::Erc20(token_addr), decimals)
+        },
+        _ => return ERR!("Expect ETH or ERC20 protocol"),
     };
 
     // param from request should override the config

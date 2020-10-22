@@ -19,8 +19,8 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
     let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
     let coins = json! ([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
     let mut mm_bob = unwrap!(MarketMakerIt::start(
         json! ({
@@ -188,8 +188,8 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
     let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
     let coins = json! ([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
     let mut mm_bob = unwrap!(MarketMakerIt::start(
         json! ({

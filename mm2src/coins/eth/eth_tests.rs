@@ -692,7 +692,9 @@ mod wasm_bindgen_tests {
                     "coin": "ETH",
                     "name": "ethereum",
                     "fname": "Ethereum",
-                    "etomic": "0x0000000000000000000000000000000000000000",
+                    "protocol":{
+                        "type": "ETH"
+                    },
                     "rpcport": 80,
                     "mm2": 1
                 }]

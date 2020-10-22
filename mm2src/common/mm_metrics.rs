@@ -71,10 +71,7 @@ macro_rules! mm_timing {
 #[cfg(feature = "native")]
 pub mod prometheus {
     use super::*;
-    use crate::wio::CORE;
-    use futures::compat::Future01CompatExt;
-    use futures::future::FutureExt;
-    use futures01::{self, future, Future};
+    use futures::future::{Future, FutureExt};
     use hyper::http::{self, header, Request, Response, StatusCode};
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Server};
@@ -89,31 +86,30 @@ pub mod prometheus {
     pub fn spawn_prometheus_exporter(
         metrics: MetricsWeak,
         address: SocketAddr,
-        shutdown_detector: impl Future<Item = (), Error = ()> + 'static + Send,
+        shutdown_detector: impl Future<Output = ()> + 'static + Send,
         credentials: Option<PrometheusCredentials>,
     ) -> Result<(), String> {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();
             let credentials = credentials.clone();
-            Ok::<_, Infallible>(service_fn(move |req| {
-                future::result(scrape_handle(req, metrics.clone(), credentials.clone()))
-            }))
+            futures::future::ready(Ok::<_, Infallible>(service_fn(move |req| {
+                futures::future::ready(scrape_handle(req, metrics.clone(), credentials.clone()))
+            })))
         });
 
         let server = try_s!(Server::try_bind(&address))
             .http1_half_close(false) // https://github.com/hyperium/hyper/issues/1764
-            .executor(try_s!(CORE.lock()).executor())
             .serve(make_svc)
             .with_graceful_shutdown(shutdown_detector);
 
-        let server = server.then(|r| -> Result<_, ()> {
+        let server = server.then(|r| {
             if let Err(err) = r {
                 log!((err));
             };
-            Ok(())
+            futures::future::ready(())
         });
 
-        spawn(server.compat().map(|_| ()));
+        spawn(server);
         Ok(())
     }
 

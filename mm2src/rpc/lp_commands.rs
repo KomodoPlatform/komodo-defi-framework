@@ -20,7 +20,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coinfindᵃ, lp_coininit, MmCoinEnum};
+use coins::{disable_coin as disable_coin_impl, lp_coinfindᵃ, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
@@ -35,57 +35,50 @@ use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use crate::mm2::lp_swap::active_swaps_using_coin;
 
 /// Attempts to disable the coin
-pub fn disable_coin(ctx: MmArc, req: Json) -> HyRes {
-    let ticker = try_h!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfind(&ctx, &ticker) {
+pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let _coin = match lp_coinfindᵃ(&ctx, &ticker).await {
         // Use lp_coinfindᵃ when async.
         Ok(Some(t)) => t,
-        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: "(ticker))),
-        Err(err) => return rpc_err_response(500, &fomat! ("!lp_coinfind(" (ticker) "): " (err))),
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
-    #[cfg(not(feature = "wallet-only"))]
-    let cancelled = {
-        let swaps = try_h!(active_swaps_using_coin(&ctx, &ticker));
-        if !swaps.is_empty() {
-            return rpc_response(
-                500,
-                json!({
-                    "error": fomat! ("There're active swaps using " (ticker)),
-                    "swaps": swaps,
-                })
-                .to_string(),
-            );
-        }
-        let (cancelled, still_matching) = try_h!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }));
-        if !still_matching.is_empty() {
-            return rpc_response(
-                500,
-                json!({
-                    "error": fomat! ("There're currently matching orders using " (ticker)),
-                    "orders": {
-                        "matching": still_matching,
-                        "cancelled": cancelled,
-                    }
-                })
-                .to_string(),
-            );
-        }
-        cancelled
-    };
-    #[cfg(feature = "wallet-only")]
-    let cancelled: &[()] = &[];
-
-    try_h!(disable_coin_impl(&ctx, &ticker));
-    rpc_response(
-        200,
-        json!({
-            "result": {
-                "coin": ticker,
-                "cancelled_orders": cancelled,
+    let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
+    if !swaps.is_empty() {
+        let err = json!({
+            "error": fomat! ("There're active swaps using " (ticker)),
+            "swaps": swaps,
+        });
+        return Response::builder()
+            .status(500)
+            .body(json::to_vec(&err).unwrap())
+            .map_err(|e| ERRL!("{}", e));
+    }
+    let (cancelled, still_matching) = try_s!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }).await);
+    if !still_matching.is_empty() {
+        let err = json!({
+            "error": fomat! ("There're currently matching orders using " (ticker)),
+            "orders": {
+                "matching": still_matching,
+                "cancelled": cancelled,
             }
-        })
-        .to_string(),
-    )
+        });
+        return Response::builder()
+            .status(500)
+            .body(json::to_vec(&err).unwrap())
+            .map_err(|e| ERRL!("{}", e));
+    }
+
+    try_s!(disable_coin_impl(&ctx, &ticker).await);
+    let res = json!({
+        "result": {
+            "coin": ticker,
+            "cancelled_orders": cancelled,
+        }
+    });
+    Response::builder()
+        .body(json::to_vec(&res).unwrap())
+        .map_err(|e| ERRL!("{}", e))
 }
 
 /// Enable a coin in the Electrum mode.
@@ -172,63 +165,6 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
     Ok(try_s!(Response::builder().body(res)))
 }
 
-/*
-AP: Passphrase call is not documented and not used as of now, commented out
-
-/// JSON structure passed to the "passphrase" RPC call.
-/// cf. https://docs.komodoplatform.com/barterDEX/barterDEX-API.html#passphrase
-#[derive(Clone, Deserialize, Debug)]
-struct PassphraseReq {
-    passphrase: String,
-    /// Optional because we're checking the `passphrase` hash first.
-    userpass: Option<String>,
-    /// Defaults to "cli" (in `lp_passphrase_init`).
-    gui: Option<String>,
-    seednodes: Option<Vec<String>>
-}
-
-pub fn passphrase (ctx: MmArc, req: Json) -> HyRes {
-    let matching_userpass = super::auth (&req, &ctx) .is_ok();
-    let req: PassphraseReq = try_h! (json::from_value (req));
-
-    let mut passhash: bits256 = unsafe {zeroed()};
-    unsafe {lp::vcalc_sha256 (null_mut(), passhash.bytes.as_mut_ptr(), req.passphrase.as_ptr() as *mut u8, req.passphrase.len() as i32)};
-    let matching_passphrase = unsafe {passhash.bytes == lp::G.LP_passhash.bytes};
-    if !matching_passphrase {
-        log! ({"passphrase] passhash {} != G {}", passhash, unsafe {bits256::from (lp::G.LP_passhash)}});
-        if !matching_userpass {return rpc_err_response (500, "authentication error")}
-    }
-
-    unsafe {lp::G.USERPASS_COUNTER = 1}
-
-    unsafe {try_h! (lp_passphrase_init (Some (&req.passphrase), req.gui.as_ref().map (|s| &s[..])))};
-
-    let mut coins = Vec::new();
-    try_h! (unsafe {coins_iter (&mut |coin| {
-        let coin_json = lp::LP_coinjson (coin, lp::LP_showwif);
-        let cjs = lp::jprint (coin_json, 1);
-        let cjs_copy = Vec::from (CStr::from_ptr (cjs) .to_bytes());
-        free (cjs as *mut c_void);
-        lp::free_json (coin_json);
-        let rcjs: Json = try_s! (json::from_slice (&cjs_copy));
-        coins.push (rcjs);
-        Ok(())
-    })});
-
-    let retjson = json! ({
-        "result": "success",
-        "userpass": try_h! (unsafe {CStr::from_ptr (lp::G.USERPASS.as_ptr())} .to_str()),
-        "mypubkey": fomat! ((unsafe {bits256::from (lp::G.LP_mypub25519.bytes)})),
-        "pubsecp": hex::encode (unsafe {&lp::G.LP_pubsecp[..]}),
-        "KMD": try_h! (bitcoin_address ("KMD", 60, unsafe {lp::G.LP_myrmd160})),
-        "BTC": try_h! (bitcoin_address ("BTC", 0, unsafe {lp::G.LP_myrmd160})),
-        "NXT": try_h! (unsafe {CStr::from_ptr (lp::G.LP_NXTaddr.as_ptr())} .to_str()),
-        "coins": coins
-    });
-
-    rpc_response (200, try_h! (json::to_string (&retjson)))
-}
-*/
 pub fn stop(ctx: MmArc) -> HyRes {
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
@@ -278,6 +214,80 @@ pub fn version() -> HyRes {
         })
         .to_string(),
     )
+}
+
+pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::lp_network::P2PContext;
+    use mm2_libp2p::atomicdex_behaviour::get_peers_info;
+    let ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd_tx = ctx.cmd_tx.lock().await.clone();
+    let result = get_peers_info(cmd_tx).await;
+    let result = json!({
+        "result": result,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::lp_network::P2PContext;
+    use mm2_libp2p::atomicdex_behaviour::get_gossip_mesh;
+    let ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd_tx = ctx.cmd_tx.lock().await.clone();
+    let result = get_gossip_mesh(cmd_tx).await;
+    let result = json!({
+        "result": result,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::lp_network::P2PContext;
+    use mm2_libp2p::atomicdex_behaviour::get_gossip_peer_topics;
+    let ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd_tx = ctx.cmd_tx.lock().await.clone();
+    let result = get_gossip_peer_topics(cmd_tx).await;
+    let result = json!({
+        "result": result,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::lp_network::P2PContext;
+    use mm2_libp2p::atomicdex_behaviour::get_gossip_topic_peers;
+    let ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd_tx = ctx.cmd_tx.lock().await.clone();
+    let result = get_gossip_topic_peers(cmd_tx).await;
+    let result = json!({
+        "result": result,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::lp_network::P2PContext;
+    use mm2_libp2p::atomicdex_behaviour::get_relay_mesh;
+    let ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd_tx = ctx.cmd_tx.lock().await.clone();
+    let result = get_relay_mesh(cmd_tx).await;
+    let result = json!({
+        "result": result,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    let peer_id = try_s!(ctx.peer_id.ok_or("Peer ID is not initialized"));
+    let result = json!({
+        "result": peer_id,
+    });
+    let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 // AP: Inventory is not documented and not used as of now, commented out

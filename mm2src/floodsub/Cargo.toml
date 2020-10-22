@@ -1,0 +1,23 @@
+[package]
+name = "libp2p-floodsub"
+edition = "2018"
+description = "Floodsub protocol for libp2p"
+version = "0.22.0"
+authors = ["Parity Technologies <admin@parity.io>"]
+license = "MIT"
+repository = "https://github.com/libp2p/rust-libp2p"
+keywords = ["peer-to-peer", "libp2p", "networking"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+cuckoofilter = "0.3.2"
+futures = "0.3.1"
+libp2p-core = { git = "https://github.com/KomodoPlatform/rust-libp2p.git" }
+libp2p-swarm = { git = "https://github.com/KomodoPlatform/rust-libp2p.git" }
+prost = "0.6.1"
+rand = "0.7"
+smallvec = "1.0"
+
+[build-dependencies]
+prost-build = "0.6"
+

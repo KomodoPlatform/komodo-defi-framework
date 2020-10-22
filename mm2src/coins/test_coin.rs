@@ -8,12 +8,12 @@ use mocktopus::macros::*;
 use serde_json::Value as Json;
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
-/// in specific test to emulate the required behavior
+/// in specific test to emulate the required behaviour
 #[derive(Clone, Debug)]
 pub struct TestCoin {}
 
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy)]
+#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { unimplemented!() }
 
@@ -51,7 +51,7 @@ impl MarketCoinOps for TestCoin {
 }
 
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy)]
+#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl SwapOps for TestCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut { unimplemented!() }
 
@@ -180,11 +180,13 @@ impl SwapOps for TestCoin {
 }
 
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy)]
+#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
     fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item = (), Error = String> + Send> { unimplemented!() }
+
+    fn wallet_only(&self) -> bool { unimplemented!() }
 
     fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
         unimplemented!()
@@ -214,4 +216,6 @@ impl MmCoin for TestCoin {
     fn set_required_confirmations(&self, _confirmations: u64) { unimplemented!() }
 
     fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
+
+    fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
 }

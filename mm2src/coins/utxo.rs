@@ -21,56 +21,57 @@
 
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
+pub mod qrc20;
+pub mod qtum;
 pub mod rpc_clients;
+pub mod utxo_common;
+pub mod utxo_standard;
 
+#[cfg(feature = "native")] pub mod tx_cache;
+
+use async_trait::async_trait;
 use base64::{encode_config as base64_encode, URL_SAFE};
 use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use chain::constants::SEQUENCE_FINAL;
-use chain::{OutPoint, TransactionInput, TransactionOutput};
+use chain::{TransactionInput, TransactionOutput};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
+use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
-use common::{first_char_to_upper, small_rng, MM_VERSION};
+use common::mm_metrics::MetricsArc;
+use common::{first_char_to_upper, now_ms, small_rng, MM_VERSION};
 #[cfg(feature = "native")] use dirs::home_dir;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
-use futures::future::{FutureExt, TryFutureExt};
 use futures::lock::Mutex as AsyncMutex;
 use futures::stream::StreamExt;
-use futures01::future::Either;
 use futures01::Future;
-use gstuff::now_ms;
 use keys::bytes::Bytes;
-use keys::{Address, KeyPair, Private, Public, Secret, Type};
-use num_traits::cast::ToPrimitive;
+use keys::{Address, KeyPair, Private, Public, Secret};
+use mocktopus::macros::*;
+use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
 use rand::seq::SliceRandom;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use script::{Builder, Opcode, Script, ScriptAddress, SignatureVersion, TransactionInputSigner,
-             UnsignedTransactionInput};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
+use script::{Builder, Opcode, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize};
-use std::cmp::Ordering;
-use std::collections::hash_map::{Entry, HashMap};
+use serialization::serialize;
 use std::convert::TryInto;
 use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrderding};
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
-use std::thread;
-use std::time::Duration;
+use utxo_common::big_decimal_from_sat;
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, EstimateFeeMode,
-                        NativeClient, UnspentInfo, UtxoRpcClientEnum};
+use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, EstimateFeeMode, NativeClient,
+                        UnspentInfo, UtxoRpcClientEnum};
 use super::{CoinTransportMetrics, CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps, TradeFee, Transaction,
-            TransactionDetails, TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClientImpl, UtxoRpcClientOps};
+            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, Transaction,
+            TransactionDetails, TransactionEnum, TransactionFut, WithdrawFee, WithdrawRequest};
+use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClientImpl};
 
 #[cfg(test)] pub mod utxo_tests;
 
@@ -80,6 +81,7 @@ const KILO_BYTE: u64 = 1000;
 const MAX_DER_SIGNATURE_LEN: usize = 72;
 const COMPRESSED_PUBKEY_LEN: usize = 33;
 const P2PKH_OUTPUT_LEN: u64 = 34;
+const MATURE_CONFIRMATIONS_DEFAULT: u32 = 100;
 /// Block count for KMD median time past calculation
 ///
 /// # Safety
@@ -148,7 +150,7 @@ enum TxFee {
 
 /// The actual "runtime" fee that is received from RPC in case of dynamic calculation
 #[derive(Debug)]
-enum ActualTxFee {
+pub enum ActualTxFee {
     /// fixed tx fee not depending on transaction size
     Fixed(u64),
     /// fee amount per Kbyte received from coin RPC
@@ -156,7 +158,7 @@ enum ActualTxFee {
 }
 
 /// Fee policy applied on transaction creation
-enum FeePolicy {
+pub enum FeePolicy {
     /// Send the exact amount specified in output(s), fee is added to spent input amount
     SendExact,
     /// Contains the index of output from which fee should be deducted
@@ -180,9 +182,8 @@ impl Default for UtxoAddressFormat {
     fn default() -> Self { UtxoAddressFormat::Standard }
 }
 
-/// pImpl idiom.
 #[derive(Debug)]
-pub struct UtxoCoinImpl {
+pub struct UtxoCoinFields {
     ticker: String,
     /// https://en.bitcoin.it/wiki/List_of_address_prefixes
     /// https://github.com/jl777/coins/blob/master/coins
@@ -221,7 +222,7 @@ pub struct UtxoCoinImpl {
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
     requires_notarization: AtomicBool,
     /// RPC client
-    rpc_client: UtxoRpcClientEnum,
+    pub rpc_client: UtxoRpcClientEnum,
     /// ECDSA key pair
     key_pair: KeyPair,
     /// Lock the mutex when we deal with address utxos
@@ -254,65 +255,23 @@ pub struct UtxoCoinImpl {
     /// Block count for median time past calculation
     mtp_block_count: NonZeroU64,
     estimate_fee_mode: Option<EstimateFeeMode>,
+    /// Minimum transaction value at which the value is not less than fee
+    dust_amount: u64,
+    /// Minimum number of confirmations at which a transaction is considered mature
+    mature_confirmations: u32,
+    /// Path to the TX cache directory
+    tx_cache_directory: Option<PathBuf>,
 }
 
-impl UtxoCoinImpl {
-    async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> {
-        match &self.tx_fee {
-            TxFee::Fixed(fee) => Ok(ActualTxFee::Fixed(*fee)),
-            TxFee::Dynamic(method) => {
-                let fee = self
-                    .rpc_client
-                    .estimate_fee_sat(self.decimals, method, &self.estimate_fee_mode)
-                    .compat()
-                    .await?;
-                Ok(ActualTxFee::Dynamic(fee))
-            },
-        }
-    }
+#[async_trait]
+pub trait UtxoCoinCommonOps {
+    async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError>;
 
-    /// returns the fee required to be paid for HTLC spend transaction
-    async fn get_htlc_spend_fee(&self) -> Result<u64, String> {
-        let coin_fee = try_s!(self.get_tx_fee().await);
-        let mut fee = match coin_fee {
-            ActualTxFee::Fixed(fee) => fee,
-            // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
-            ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * SWAP_TX_SPEND_SIZE) / KILO_BYTE,
-        };
-        if self.force_min_relay_fee {
-            let relay_fee = try_s!(self.rpc_client.get_relay_fee().compat().await);
-            let relay_fee_sat = try_s!(sat_from_big_decimal(&relay_fee, self.decimals));
-            if fee < relay_fee_sat {
-                fee = relay_fee_sat;
-            }
-        }
-        Ok(fee)
-    }
+    async fn get_htlc_spend_fee(&self) -> Result<u64, String>;
 
-    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        let destinations: Vec<ScriptAddress> = try_s!(script.extract_destinations());
+    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
 
-        let addresses = destinations
-            .into_iter()
-            .map(|dst| {
-                let (prefix, t_addr_prefix) = match dst.kind {
-                    Type::P2PKH => (self.pub_addr_prefix, self.pub_t_addr_prefix),
-                    Type::P2SH => (self.p2sh_addr_prefix, self.p2sh_t_addr_prefix),
-                };
-
-                Address {
-                    hash: dst.hash,
-                    checksum_type: self.checksum_type,
-                    prefix,
-                    t_addr_prefix,
-                }
-            })
-            .collect();
-
-        Ok(addresses)
-    }
-
-    pub fn denominate_satoshis(&self, satoshi: i64) -> f64 { satoshi as f64 / 10f64.powf(self.decimals as f64) }
+    fn denominate_satoshis(&self, satoshi: i64) -> f64;
 
     fn search_for_swap_tx_spend(
         &self,
@@ -322,356 +281,46 @@ impl UtxoCoinImpl {
         secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
-        let script = payment_script(time_lock, secret_hash, first_pub, second_pub);
-        let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script)).to_bytes();
-        if tx.outputs[0].script_pubkey != expected_script_pubkey {
-            return ERR!(
-                "Transaction {:?} output 0 script_pubkey doesn't match expected {:?}",
-                tx,
-                expected_script_pubkey
-            );
-        }
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-        let spend = try_s!(self.rpc_client.find_output_spend(&tx, 0, search_from_block).wait());
-        match spend {
-            Some(tx) => {
-                let script: Script = tx.inputs[0].script_sig.clone().into();
-                if let Some(Ok(ref i)) = script.iter().nth(2) {
-                    if i.opcode == Opcode::OP_0 {
-                        return Ok(Some(FoundSwapTxSpend::Spent(tx.into())));
-                    }
-                }
+    fn my_public_key(&self) -> &Public;
 
-                if let Some(Ok(ref i)) = script.iter().nth(1) {
-                    if i.opcode == Opcode::OP_1 {
-                        return Ok(Some(FoundSwapTxSpend::Refunded(tx.into())));
-                    }
-                }
-
-                ERR!(
-                    "Couldn't find required instruction in script_sig of input 0 of tx {:?}",
-                    tx
-                )
-            },
-            None => Ok(None),
-        }
-    }
-
-    pub fn my_public_key(&self) -> &Public { self.key_pair.public() }
-
-    pub fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.rpc_client }
-
-    pub fn display_address(&self, address: &Address) -> Result<String, String> {
-        match &self.address_format {
-            UtxoAddressFormat::Standard => Ok(address.to_string()),
-            UtxoAddressFormat::CashAddress { network } => address
-                .to_cashaddress(&network, self.pub_addr_prefix, self.p2sh_addr_prefix)
-                .and_then(|cashaddress| cashaddress.encode()),
-        }
-    }
+    fn display_address(&self, address: &Address) -> Result<String, String>;
 
     /// Try to convert either standard address or cashaddress.
-    fn try_address_from_str(&self, from: &str) -> Result<Address, String> {
-        let standard_err = match Address::from_str(from) {
-            Ok(a) => return Ok(a),
-            Err(e) => e,
-        };
-
-        let cashaddress_err =
-            match Address::from_cashaddress(from, self.checksum_type, self.pub_addr_prefix, self.p2sh_addr_prefix) {
-                Ok(a) => return Ok(a),
-                Err(e) => e,
-            };
-
-        ERR!(
-            "error on parse standard address: {:?}, error on parse cashaddress: {:?}",
-            standard_err,
-            cashaddress_err,
-        )
-    }
+    fn try_address_from_str(&self, from: &str) -> Result<Address, String>;
 
     /// Try to parse address from string using specified format
     /// and if it failed inform user that he used a wrong format.
-    pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        match &self.address_format {
-            UtxoAddressFormat::Standard => Address::from_str(address)
-                .or_else(|e| match Address::from_cashaddress(
-                    &address,
-                    self.checksum_type,
-                    self.pub_addr_prefix,
-                    self.p2sh_addr_prefix) {
-                    Ok(_) => ERR!("Legacy address format activated for {}, but cashaddress format used instead. Try to call 'convertaddress'", self.ticker),
-                    Err(_) => ERR!("{}", e),
-                }),
-            UtxoAddressFormat::CashAddress { .. } => Address::from_cashaddress(
-                &address,
-                self.checksum_type,
-                self.pub_addr_prefix,
-                self.p2sh_addr_prefix)
-                .or_else(|e| match Address::from_str(&address) {
-                    Ok(_) => ERR!("Cashaddress address format activated for {}, but legacy format used instead. Try to call 'convertaddress'", self.ticker),
-                    Err(_) => ERR!("{}", e),
-                })
-        }
-    }
+    fn address_from_str(&self, address: &str) -> Result<Address, String>;
 
-    async fn get_current_mtp(&self) -> Result<u32, String> {
-        let current_block = try_s!(self.rpc_client.get_block_count().compat().await);
-        self.rpc_client
-            .get_median_time_past(current_block, self.mtp_block_count)
-            .compat()
-            .await
-    }
-}
+    async fn get_current_mtp(&self) -> Result<u32, String>;
 
-fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
-    let builder = Builder::default();
-    builder
-        .push_opcode(Opcode::OP_IF)
-        .push_bytes(&time_lock.to_le_bytes())
-        .push_opcode(Opcode::OP_CHECKLOCKTIMEVERIFY)
-        .push_opcode(Opcode::OP_DROP)
-        .push_bytes(pub_0)
-        .push_opcode(Opcode::OP_CHECKSIG)
-        .push_opcode(Opcode::OP_ELSE)
-        .push_opcode(Opcode::OP_SIZE)
-        .push_bytes(&[32])
-        .push_opcode(Opcode::OP_EQUALVERIFY)
-        .push_opcode(Opcode::OP_HASH160)
-        .push_bytes(secret_hash)
-        .push_opcode(Opcode::OP_EQUALVERIFY)
-        .push_bytes(pub_1)
-        .push_opcode(Opcode::OP_CHECKSIG)
-        .push_opcode(Opcode::OP_ENDIF)
-        .into_script()
-}
-
-fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
-    let signature = try_s!(key_pair.private().sign(message));
-
-    let mut sig_script = Bytes::default();
-    sig_script.append(&mut Bytes::from((*signature).to_vec()));
-    // Using SIGHASH_ALL only for now
-    sig_script.append(&mut Bytes::from(vec![1 | fork_id as u8]));
-
-    Ok(sig_script)
-}
-
-fn script_sig_with_pub(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
-    let sig_script = try_s!(script_sig(message, key_pair, fork_id));
-
-    let builder = Builder::default();
-
-    Ok(builder
-        .push_data(&sig_script)
-        .push_data(&key_pair.public().to_vec())
-        .into_bytes())
-}
-
-/// Creates signed input spending p2pkh output
-fn p2pkh_spend(
-    signer: &TransactionInputSigner,
-    input_index: usize,
-    key_pair: &KeyPair,
-    prev_script: &Script,
-    signature_version: SignatureVersion,
-    fork_id: u32,
-) -> Result<TransactionInput, String> {
-    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
-    if script != *prev_script {
-        return ERR!(
-            "p2pkh script {} built from input key pair doesn't match expected prev script {}",
-            script,
-            prev_script
-        );
-    }
-    let sighash_type = 1 | fork_id;
-    let sighash = signer.signature_hash(
-        input_index,
-        signer.inputs[input_index].amount,
-        &script,
-        signature_version,
-        sighash_type,
-    );
-
-    let script_sig = try_s!(script_sig_with_pub(&sighash, key_pair, fork_id));
-
-    Ok(TransactionInput {
-        script_sig,
-        sequence: signer.inputs[input_index].sequence,
-        script_witness: vec![],
-        previous_output: signer.inputs[input_index].previous_output.clone(),
-    })
-}
-
-/// Creates signed input spending hash time locked p2sh output
-fn p2sh_spend(
-    signer: &TransactionInputSigner,
-    input_index: usize,
-    key_pair: &KeyPair,
-    script_data: Script,
-    redeem_script: Script,
-    signature_version: SignatureVersion,
-    fork_id: u32,
-) -> Result<TransactionInput, String> {
-    let sighash = signer.signature_hash(
-        input_index,
-        signer.inputs[input_index].amount,
-        &redeem_script,
-        signature_version,
-        1 | fork_id,
-    );
-
-    let sig = try_s!(script_sig(&sighash, &key_pair, fork_id));
-
-    let mut resulting_script = Builder::default().push_data(&sig).into_bytes();
-    if !script_data.is_empty() {
-        resulting_script.extend_from_slice(&script_data);
-    }
-
-    let redeem_part = Builder::default().push_data(&redeem_script).into_bytes();
-    resulting_script.extend_from_slice(&redeem_part);
-
-    Ok(TransactionInput {
-        script_sig: resulting_script,
-        sequence: signer.inputs[input_index].sequence,
-        script_witness: vec![],
-        previous_output: signer.inputs[input_index].previous_output.clone(),
-    })
-}
-
-fn address_from_raw_pubkey(
-    pub_key: &[u8],
-    prefix: u8,
-    t_addr_prefix: u8,
-    checksum_type: ChecksumType,
-) -> Result<Address, String> {
-    Ok(Address {
-        t_addr_prefix,
-        prefix,
-        hash: try_s!(Public::from_slice(pub_key)).address_hash(),
-        checksum_type,
-    })
-}
-
-fn sign_tx(
-    unsigned: TransactionInputSigner,
-    key_pair: &KeyPair,
-    prev_script: Script,
-    signature_version: SignatureVersion,
-    fork_id: u32,
-) -> Result<UtxoTx, String> {
-    let mut signed_inputs = vec![];
-    for (i, _) in unsigned.inputs.iter().enumerate() {
-        signed_inputs.push(try_s!(p2pkh_spend(
-            &unsigned,
-            i,
-            key_pair,
-            &prev_script,
-            signature_version,
-            fork_id
-        )));
-    }
-    Ok(UtxoTx {
-        inputs: signed_inputs,
-        n_time: unsigned.n_time,
-        outputs: unsigned.outputs.clone(),
-        version: unsigned.version,
-        overwintered: unsigned.overwintered,
-        lock_time: unsigned.lock_time,
-        expiry_height: unsigned.expiry_height,
-        join_splits: vec![],
-        shielded_spends: vec![],
-        shielded_outputs: vec![],
-        value_balance: 0,
-        version_group_id: unsigned.version_group_id,
-        binding_sig: H512::default(),
-        join_split_sig: H512::default(),
-        join_split_pubkey: H256::default(),
-        zcash: unsigned.zcash,
-        str_d_zeel: unsigned.str_d_zeel,
-    })
-}
-
-/// Denominate BigDecimal amount of coin units to satoshis
-fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<u64, String> {
-    (amount * BigDecimal::from(10u64.pow(decimals as u32)))
-        .to_u64()
-        .ok_or(ERRL!(
-            "Could not get sat from amount {} with decimals {}",
-            amount,
-            decimals
-        ))
-}
-
-/// Convert satoshis to BigDecimal amount of coin units
-fn big_decimal_from_sat(satoshis: i64, decimals: u8) -> BigDecimal {
-    BigDecimal::from(satoshis) / BigDecimal::from(10u64.pow(decimals as u32))
+    /// Check if the output is spendable (is not coinbase or it has enough confirmations).
+    fn is_unspent_mature(&self, output: &RpcTransaction) -> bool;
 }
 
 #[derive(Clone, Debug)]
-pub struct UtxoCoin(Arc<UtxoCoinImpl>);
-impl Deref for UtxoCoin {
-    type Target = UtxoCoinImpl;
-    fn deref(&self) -> &UtxoCoinImpl { &*self.0 }
+pub struct UtxoArc(Arc<UtxoCoinFields>);
+impl Deref for UtxoArc {
+    type Target = UtxoCoinFields;
+    fn deref(&self) -> &UtxoCoinFields { &*self.0 }
 }
 
-impl From<UtxoCoinImpl> for UtxoCoin {
-    fn from(coin: UtxoCoinImpl) -> UtxoCoin { UtxoCoin(Arc::new(coin)) }
+impl From<UtxoCoinFields> for UtxoArc {
+    fn from(coin: UtxoCoinFields) -> UtxoArc { UtxoArc(Arc::new(coin)) }
 }
 
 // We can use a shared UTXO lock for all UTXO coins at 1 time.
 // It's highly likely that we won't experience any issues with it as we won't need to send "a lot" of transactions concurrently.
 lazy_static! {
-    static ref UTXO_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    pub static ref UTXO_LOCK: AsyncMutex<()> = AsyncMutex::new(());
 }
 
-macro_rules! true_or_err {
-    ($cond: expr, $msg: expr $(, $args:expr)*) => {
-        if !$cond {
-            return ERR!($msg $(, $args)*);
-        }
-    };
-}
-
-async fn send_outputs_from_my_address_impl(coin: UtxoCoin, outputs: Vec<TransactionOutput>) -> Result<UtxoTx, String> {
-    let _utxo_lock = UTXO_LOCK.lock().await;
-    let unspents = try_s!(
-        coin.rpc_client
-            .list_unspent_ordered(&coin.my_address)
-            .map_err(|e| ERRL!("{}", e))
-            .compat()
-            .await
-    );
-    let (unsigned, _) = try_s!(
-        coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None)
-            .await
-    );
-    let prev_script = Builder::build_p2pkh(&coin.my_address.hash);
-    let signed = try_s!(sign_tx(
-        unsigned,
-        &coin.key_pair,
-        prev_script,
-        coin.signature_version,
-        coin.fork_id
-    ));
-    try_s!(
-        coin.rpc_client
-            .send_transaction(&signed, coin.my_address.clone())
-            .map_err(|e| ERRL!("{}", e))
-            .compat()
-            .await
-    );
-    Ok(signed)
-}
-
-impl UtxoCoin {
-    fn send_outputs_from_my_address(&self, outputs: Vec<TransactionOutput>) -> TransactionFut {
-        let fut = send_outputs_from_my_address_impl(self.clone(), outputs);
-        Box::new(fut.boxed().compat().map(|tx| tx.into()))
-    }
+#[mockable]
+#[async_trait]
+pub trait UtxoArcCommonOps {
+    fn send_outputs_from_my_address(&self, outputs: Vec<TransactionOutput>) -> TransactionFut;
 
     fn validate_payment(
         &self,
@@ -681,66 +330,7 @@ impl UtxoCoin {
         second_pub0: &Public,
         priv_bn_hash: &[u8],
         amount: BigDecimal,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let tx: UtxoTx = try_fus!(deserialize(payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let selfi = self.clone();
-
-        let expected_redeem = payment_script(
-            time_lock,
-            priv_bn_hash,
-            &try_fus!(Public::from_slice(first_pub0)),
-            &try_fus!(Public::from_slice(second_pub0)),
-        );
-        let fut = async move {
-            let mut attempts = 0;
-            loop {
-                let tx_from_rpc = match selfi
-                    .rpc_client
-                    .get_transaction_bytes(tx.hash().reversed().into())
-                    .compat()
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        if attempts > 2 {
-                            return ERR!(
-                                "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
-                                e,
-                                tx.tx_hash()
-                            );
-                        };
-                        attempts += 1;
-                        log!("Error " [e] " getting the tx " [tx.tx_hash()] " from rpc");
-                        Timer::sleep(10.).await;
-                        continue;
-                    },
-                };
-                if serialize(&tx).take() != tx_from_rpc.0 {
-                    return ERR!(
-                        "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
-                        tx,
-                        tx_from_rpc
-                    );
-                }
-
-                let expected_output = TransactionOutput {
-                    value: amount,
-                    script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem)).into(),
-                };
-
-                if tx.outputs[0] != expected_output {
-                    return ERR!(
-                        "Provided payment tx output doesn't match expected {:?} {:?}",
-                        tx.outputs[0],
-                        expected_output
-                    );
-                }
-                return Ok(());
-            }
-        };
-        Box::new(fut.boxed().compat())
-    }
+    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
     /// This function expects that utxos are sorted by amounts in ascending order
@@ -753,169 +343,8 @@ impl UtxoCoin {
         outputs: Vec<TransactionOutput>,
         fee_policy: FeePolicy,
         fee: Option<ActualTxFee>,
-    ) -> Result<(TransactionInputSigner, AdditionalTxData), String> {
-        const DUST: u64 = 1000;
-        let lock_time = (now_ms() / 1000) as u32;
-        let change_script_pubkey = Builder::build_p2pkh(&self.my_address.hash).to_bytes();
-        let coin_tx_fee = match fee {
-            Some(f) => f,
-            None => try_s!(self.get_tx_fee().await),
-        };
-        true_or_err!(!utxos.is_empty(), "Couldn't generate tx from empty utxos set");
-        true_or_err!(!outputs.is_empty(), "Couldn't generate tx from empty outputs set");
-
-        let mut sum_outputs_value = 0;
-        let mut received_by_me = 0;
-        for output in outputs.iter() {
-            let script: Script = output.script_pubkey.clone().into();
-            if script.opcodes().next() != Some(Ok(Opcode::OP_RETURN)) {
-                true_or_err!(
-                    output.value >= DUST,
-                    "Output value {} is less than dust amount {}",
-                    output.value,
-                    DUST
-                );
-            }
-            sum_outputs_value += output.value;
-            if output.script_pubkey == change_script_pubkey {
-                received_by_me += output.value;
-            }
-        }
-
-        let str_d_zeel = if self.ticker == "NAV" { Some("".into()) } else { None };
-        let mut tx = TransactionInputSigner {
-            inputs: vec![],
-            outputs,
-            lock_time,
-            version: self.tx_version,
-            n_time: if self.is_pos {
-                Some((now_ms() / 1000) as u32)
-            } else {
-                None
-            },
-            overwintered: self.overwintered,
-            expiry_height: 0,
-            join_splits: vec![],
-            shielded_spends: vec![],
-            shielded_outputs: vec![],
-            value_balance: 0,
-            version_group_id: self.version_group_id,
-            consensus_branch_id: self.consensus_branch_id,
-            zcash: self.zcash,
-            str_d_zeel,
-        };
-        let mut sum_inputs = 0;
-        let mut tx_fee = 0;
-        let min_relay_fee = if self.force_min_relay_fee {
-            let fee_dec = try_s!(self.rpc_client.get_relay_fee().compat().await);
-            Some(try_s!(sat_from_big_decimal(&fee_dec, self.decimals)))
-        } else {
-            None
-        };
-        for utxo in utxos.iter() {
-            sum_inputs += utxo.value;
-            tx.inputs.push(UnsignedTransactionInput {
-                previous_output: utxo.outpoint.clone(),
-                sequence: SEQUENCE_FINAL,
-                amount: utxo.value,
-            });
-            tx_fee = match &coin_tx_fee {
-                ActualTxFee::Fixed(f) => *f,
-                ActualTxFee::Dynamic(f) => {
-                    let transaction = UtxoTx::from(tx.clone());
-                    let transaction_bytes = serialize(&transaction);
-                    // 2 bytes are used to indicate the length of signature and pubkey
-                    // total is 107
-                    let additional_len = 2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN;
-                    let tx_size = transaction_bytes.len() + transaction.inputs().len() * additional_len;
-                    (f * tx_size as u64) / KILO_BYTE
-                },
-            };
-            match fee_policy {
-                FeePolicy::SendExact => {
-                    let mut outputs_plus_fee = sum_outputs_value + tx_fee;
-                    if sum_inputs >= outputs_plus_fee {
-                        if sum_inputs - outputs_plus_fee > DUST {
-                            // there will be change output if sum_inputs - outputs_plus_fee > DUST
-                            if let ActualTxFee::Dynamic(ref f) = coin_tx_fee {
-                                tx_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
-                                outputs_plus_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
-                            }
-                        }
-                        if let Some(min_relay) = min_relay_fee {
-                            if tx_fee < min_relay {
-                                outputs_plus_fee -= tx_fee;
-                                outputs_plus_fee += min_relay;
-                                tx_fee = min_relay;
-                            }
-                        }
-                        if sum_inputs >= outputs_plus_fee {
-                            break;
-                        }
-                    }
-                },
-                FeePolicy::DeductFromOutput(_) => {
-                    if sum_inputs >= sum_outputs_value {
-                        if sum_inputs - sum_outputs_value > DUST {
-                            if let ActualTxFee::Dynamic(ref f) = coin_tx_fee {
-                                tx_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
-                            }
-                            if let Some(min_relay) = min_relay_fee {
-                                if tx_fee < min_relay {
-                                    tx_fee = min_relay;
-                                }
-                            }
-                        }
-                        break;
-                    }
-                },
-            };
-        }
-        match fee_policy {
-            FeePolicy::SendExact => sum_outputs_value += tx_fee,
-            FeePolicy::DeductFromOutput(i) => {
-                let min_output = tx_fee + DUST;
-                let val = tx.outputs[i].value;
-                true_or_err!(
-                    val >= min_output,
-                    "Output {} value {} is too small, required no less than {}",
-                    i,
-                    val,
-                    min_output
-                );
-                tx.outputs[i].value -= tx_fee;
-                if tx.outputs[i].script_pubkey == change_script_pubkey {
-                    received_by_me -= tx_fee;
-                }
-            },
-        };
-        true_or_err!(
-            sum_inputs >= sum_outputs_value,
-            "Not sufficient balance. Couldn't collect enough value from utxos {:?} to create tx with outputs {:?}",
-            utxos,
-            tx.outputs
-        );
-
-        let change = sum_inputs - sum_outputs_value;
-        if change >= DUST {
-            tx.outputs.push({
-                TransactionOutput {
-                    value: change,
-                    script_pubkey: change_script_pubkey.clone(),
-                }
-            });
-            received_by_me += change;
-        } else {
-            tx_fee += change;
-        }
-
-        let data = AdditionalTxData {
-            fee_amount: tx_fee,
-            received_by_me,
-            spent_by_me: sum_inputs,
-        };
-        self.calc_interest_if_required(tx, data, change_script_pubkey).await
-    }
+        gas_fee: Option<u64>,
+    ) -> Result<(TransactionInputSigner, AdditionalTxData), String>;
 
     /// Calculates interest if the coin is KMD
     /// Adds the value to existing output to my_script_pub or creates additional interest output
@@ -925,45 +354,7 @@ impl UtxoCoin {
         mut unsigned: TransactionInputSigner,
         mut data: AdditionalTxData,
         my_script_pub: Bytes,
-    ) -> Result<(TransactionInputSigner, AdditionalTxData), String> {
-        if self.ticker != "KMD" {
-            return Ok((unsigned, data));
-        }
-        unsigned.lock_time = try_s!(self.get_current_mtp().await);
-        let mut interest = 0;
-        for input in unsigned.inputs.iter() {
-            let prev_hash = input.previous_output.hash.reversed().into();
-            let tx = try_s!(self.rpc_client.get_verbose_transaction(prev_hash).compat().await);
-            if let Ok(output_interest) =
-                kmd_interest(tx.height, input.amount, tx.locktime as u64, unsigned.lock_time as u64)
-            {
-                interest += output_interest;
-            };
-        }
-        if interest > 0 {
-            data.received_by_me += interest;
-            let mut output_to_me = unsigned
-                .outputs
-                .iter_mut()
-                .find(|out| out.script_pubkey == my_script_pub);
-            // add calculated interest to existing output to my address
-            // or create the new one if it's not found
-            match output_to_me {
-                Some(ref mut output) => output.value += interest,
-                None => {
-                    let interest_output = TransactionOutput {
-                        script_pubkey: my_script_pub,
-                        value: interest,
-                    };
-                    unsigned.outputs.push(interest_output);
-                },
-            };
-        } else {
-            // if interest is zero attempt to set the lowest possible lock_time to claim it later
-            unsigned.lock_time = (now_ms() / 1000) as u32 - 3600 + 777 * 2;
-        }
-        Ok((unsigned, data))
-    }
+    ) -> Result<(TransactionInputSigner, AdditionalTxData), String>;
 
     fn p2sh_spending_tx(
         &self,
@@ -972,77 +363,33 @@ impl UtxoCoin {
         outputs: Vec<TransactionOutput>,
         script_data: Script,
         sequence: u32,
-    ) -> Result<UtxoTx, String> {
-        // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
-        // Implication for users: GetMedianTimePast() always trails behind the current time,
-        // so a transaction locktime set to the present time will be rejected by nodes running this
-        // release until the median time moves forward.
-        // To compensate, subtract one hour (3,600 seconds) from your locktimes to allow those
-        // transactions to be included in mempools at approximately the expected time.
-        let lock_time = if self.ticker == "KMD" {
-            (now_ms() / 1000) as u32 - 3600 + 2 * 777
-        } else {
-            (now_ms() / 1000) as u32 - 3600
-        };
-        let n_time = if self.is_pos {
-            Some((now_ms() / 1000) as u32)
-        } else {
-            None
-        };
-        let str_d_zeel = if self.ticker == "NAV" { Some("".into()) } else { None };
-        let unsigned = TransactionInputSigner {
-            lock_time,
-            version: self.tx_version,
-            n_time,
-            overwintered: self.overwintered,
-            inputs: vec![UnsignedTransactionInput {
-                sequence,
-                previous_output: OutPoint {
-                    hash: prev_transaction.hash(),
-                    index: 0,
-                },
-                amount: prev_transaction.outputs[0].value,
-            }],
-            outputs: outputs.clone(),
-            expiry_height: 0,
-            join_splits: vec![],
-            shielded_spends: vec![],
-            shielded_outputs: vec![],
-            value_balance: 0,
-            version_group_id: self.version_group_id,
-            consensus_branch_id: self.consensus_branch_id,
-            zcash: self.zcash,
-            str_d_zeel,
-        };
-        let signed_input = try_s!(p2sh_spend(
-            &unsigned,
-            0,
-            &self.key_pair,
-            script_data,
-            redeem_script.into(),
-            self.signature_version,
-            self.fork_id
-        ));
-        Ok(UtxoTx {
-            version: unsigned.version,
-            n_time: unsigned.n_time,
-            overwintered: unsigned.overwintered,
-            lock_time: unsigned.lock_time,
-            inputs: vec![signed_input],
-            outputs,
-            expiry_height: unsigned.expiry_height,
-            join_splits: vec![],
-            shielded_spends: vec![],
-            shielded_outputs: vec![],
-            value_balance: 0,
-            version_group_id: self.version_group_id,
-            binding_sig: H512::default(),
-            join_split_sig: H512::default(),
-            join_split_pubkey: H256::default(),
-            zcash: self.zcash,
-            str_d_zeel: unsigned.str_d_zeel,
-        })
-    }
+    ) -> Result<UtxoTx, String>;
+
+    /// Get transaction outputs available to spend.
+    fn ordered_mature_unspents(
+        &self,
+        address: &Address,
+    ) -> Box<dyn Future<Item = Vec<UnspentInfo>, Error = String> + Send>;
+
+    /// Try load verbose transaction from cache or try to request it from Rpc client.
+    fn get_verbose_transaction_from_cache_or_rpc(
+        &self,
+        txid: H256Json,
+    ) -> Box<dyn Future<Item = VerboseTransactionFrom, Error = String> + Send>;
+
+    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
+}
+
+pub enum RequestTxHistoryResult {
+    Ok(Vec<(H256Json, u64)>),
+    Retry { error: String },
+    HistoryTooLarge,
+    UnknownError(String),
+}
+
+pub enum VerboseTransactionFrom {
+    Cache(RpcTransaction),
+    Rpc(RpcTransaction),
 }
 
 pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
@@ -1064,1058 +411,9 @@ pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType)
     Ok(H264::from(&**key_pair.public()))
 }
 
-impl SwapOps for UtxoCoin {
-    fn send_taker_fee(&self, fee_pub_key: &[u8], amount: BigDecimal) -> TransactionFut {
-        let address = try_fus!(address_from_raw_pubkey(
-            fee_pub_key,
-            self.pub_addr_prefix,
-            self.pub_t_addr_prefix,
-            self.checksum_type
-        ));
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let output = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2pkh(&address.hash).to_bytes(),
-        };
-        self.send_outputs_from_my_address(vec![output])
-    }
-
-    fn send_maker_payment(
-        &self,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-    ) -> TransactionFut {
-        let redeem_script = payment_script(
-            time_lock,
-            secret_hash,
-            self.key_pair.public(),
-            &try_fus!(Public::from_slice(taker_pub)),
-        );
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let htlc_out = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2sh(&dhash160(&redeem_script)).into(),
-        };
-        // record secret hash to blockchain too making it impossible to lose
-        // lock time may be easily brute forced so it is not mandatory to record it
-        let secret_hash_op_return_script = Builder::default()
-            .push_opcode(Opcode::OP_RETURN)
-            .push_bytes(secret_hash)
-            .into_bytes();
-        let secret_hash_op_return_out = TransactionOutput {
-            value: 0,
-            script_pubkey: secret_hash_op_return_script,
-        };
-        let send_fut = match &self.rpc_client {
-            UtxoRpcClientEnum::Electrum(_) => {
-                Either::A(self.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out]))
-            },
-            UtxoRpcClientEnum::Native(client) => {
-                let payment_addr = Address {
-                    checksum_type: self.checksum_type,
-                    hash: dhash160(&redeem_script),
-                    prefix: self.p2sh_addr_prefix,
-                    t_addr_prefix: self.p2sh_t_addr_prefix,
-                };
-                let arc = self.clone();
-                let addr_string = try_fus!(self.display_address(&payment_addr));
-                Either::B(
-                    client
-                        .import_address(&addr_string, &addr_string, false)
-                        .map_err(|e| ERRL!("{}", e))
-                        .and_then(move |_| arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])),
-                )
-            },
-        };
-        Box::new(send_fut)
-    }
-
-    fn send_taker_payment(
-        &self,
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-    ) -> TransactionFut {
-        let redeem_script = payment_script(
-            time_lock,
-            secret_hash,
-            self.key_pair.public(),
-            &try_fus!(Public::from_slice(maker_pub)),
-        );
-
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals));
-
-        let htlc_out = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2sh(&dhash160(&redeem_script)).into(),
-        };
-        // record secret hash to blockchain too making it impossible to lose
-        // lock time may be easily brute forced so it is not mandatory to record it
-        let secret_hash_op_return_script = Builder::default()
-            .push_opcode(Opcode::OP_RETURN)
-            .push_bytes(secret_hash)
-            .into_bytes();
-        let secret_hash_op_return_out = TransactionOutput {
-            value: 0,
-            script_pubkey: secret_hash_op_return_script,
-        };
-        let send_fut = match &self.rpc_client {
-            UtxoRpcClientEnum::Electrum(_) => {
-                Either::A(self.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out]))
-            },
-            UtxoRpcClientEnum::Native(client) => {
-                let payment_addr = Address {
-                    checksum_type: self.checksum_type,
-                    hash: dhash160(&redeem_script),
-                    prefix: self.p2sh_addr_prefix,
-                    t_addr_prefix: self.p2sh_t_addr_prefix,
-                };
-                let arc = self.clone();
-                let addr_string = try_fus!(self.display_address(&payment_addr));
-                Either::B(
-                    client
-                        .import_address(&addr_string, &addr_string, false)
-                        .map_err(|e| ERRL!("{}", e))
-                        .and_then(move |_| arc.send_outputs_from_my_address(vec![htlc_out, secret_hash_op_return_out])),
-                )
-            },
-        };
-        Box::new(send_fut)
-    }
-
-    fn send_maker_spends_taker_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-    ) -> TransactionFut {
-        let prev_tx: UtxoTx = try_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let script_data = Builder::default()
-            .push_data(secret)
-            .push_opcode(Opcode::OP_0)
-            .into_script();
-        let redeem_script = payment_script(
-            time_lock,
-            &*dhash160(secret),
-            &try_fus!(Public::from_slice(taker_pub)),
-            self.key_pair.public(),
-        );
-        let arc = self.clone();
-        let fut = async move {
-            let fee = try_s!(arc.get_htlc_spend_fee().await);
-            let output = TransactionOutput {
-                value: prev_tx.outputs[0].value - fee,
-                script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes(),
-            };
-            let transaction =
-                try_s!(arc.p2sh_spending_tx(prev_tx, redeem_script.into(), vec![output], script_data, SEQUENCE_FINAL,));
-            let tx_fut = arc
-                .rpc_client
-                .send_transaction(&transaction, arc.my_address.clone())
-                .compat();
-            try_s!(tx_fut.await);
-            Ok(transaction.into())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn send_taker_spends_maker_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-    ) -> TransactionFut {
-        let prev_tx: UtxoTx = try_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let script_data = Builder::default()
-            .push_data(secret)
-            .push_opcode(Opcode::OP_0)
-            .into_script();
-        let redeem_script = payment_script(
-            time_lock,
-            &*dhash160(secret),
-            &try_fus!(Public::from_slice(maker_pub)),
-            self.key_pair.public(),
-        );
-        let arc = self.clone();
-        let fut = async move {
-            let fee = try_s!(arc.get_htlc_spend_fee().await);
-            let output = TransactionOutput {
-                value: prev_tx.outputs[0].value - fee,
-                script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes(),
-            };
-            let transaction =
-                try_s!(arc.p2sh_spending_tx(prev_tx, redeem_script.into(), vec![output], script_data, SEQUENCE_FINAL,));
-            let tx_fut = arc
-                .rpc_client
-                .send_transaction(&transaction, arc.my_address.clone())
-                .compat();
-            try_s!(tx_fut.await);
-            Ok(transaction.into())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn send_taker_refunds_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-    ) -> TransactionFut {
-        let prev_tx: UtxoTx = try_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
-        let redeem_script = payment_script(
-            time_lock,
-            secret_hash,
-            self.key_pair.public(),
-            &try_fus!(Public::from_slice(maker_pub)),
-        );
-        let arc = self.clone();
-        let fut = async move {
-            let fee = try_s!(arc.get_htlc_spend_fee().await);
-            let output = TransactionOutput {
-                value: prev_tx.outputs[0].value - fee,
-                script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes(),
-            };
-            let transaction = try_s!(arc.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL - 1,
-            ));
-            let tx_fut = arc
-                .rpc_client
-                .send_transaction(&transaction, arc.my_address.clone())
-                .compat();
-            try_s!(tx_fut.await);
-            Ok(transaction.into())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn send_maker_refunds_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-    ) -> TransactionFut {
-        let prev_tx: UtxoTx = try_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
-        let redeem_script = payment_script(
-            time_lock,
-            secret_hash,
-            self.key_pair.public(),
-            &try_fus!(Public::from_slice(taker_pub)),
-        );
-        let arc = self.clone();
-        let fut = async move {
-            let fee = try_s!(arc.get_htlc_spend_fee().await);
-            let output = TransactionOutput {
-                value: prev_tx.outputs[0].value - fee,
-                script_pubkey: Builder::build_p2pkh(&arc.key_pair.public().address_hash()).to_bytes(),
-            };
-            let transaction = try_s!(arc.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL - 1,
-            ));
-            let tx_fut = arc
-                .rpc_client
-                .send_transaction(&transaction, arc.my_address.clone())
-                .compat();
-            try_s!(tx_fut.await);
-            Ok(transaction.into())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn validate_fee(
-        &self,
-        fee_tx: &TransactionEnum,
-        fee_addr: &[u8],
-        amount: &BigDecimal,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let selfi = self.clone();
-        let tx = match fee_tx {
-            TransactionEnum::UtxoTx(tx) => tx.clone(),
-            _ => panic!(),
-        };
-        let amount = amount.clone();
-        let address = try_fus!(address_from_raw_pubkey(
-            fee_addr,
-            selfi.pub_addr_prefix,
-            selfi.pub_t_addr_prefix,
-            selfi.checksum_type
-        ));
-
-        let fut = async move {
-            let amount = try_s!(sat_from_big_decimal(&amount, selfi.decimals));
-            let tx_from_rpc = try_s!(
-                selfi
-                    .rpc_client
-                    .get_transaction_bytes(tx.hash().reversed().into())
-                    .compat()
-                    .await
-            );
-
-            if tx_from_rpc.0 != serialize(&tx).take() {
-                return ERR!(
-                    "Provided dex fee tx {:?} doesn't match tx data from rpc {:?}",
-                    tx,
-                    tx_from_rpc
-                );
-            }
-
-            match tx.outputs.first() {
-                Some(out) => {
-                    let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
-                    if out.script_pubkey != expected_script_pubkey {
-                        return ERR!(
-                            "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                            out.script_pubkey,
-                            expected_script_pubkey
-                        );
-                    }
-                    if out.value < amount {
-                        return ERR!(
-                            "Provided dex fee tx output value is less than expected {:?} {:?}",
-                            out.value,
-                            amount
-                        );
-                    }
-                },
-                None => {
-                    return ERR!("Provided dex fee tx {:?} has no outputs", tx);
-                },
-            }
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn validate_maker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        self.validate_payment(
-            payment_tx,
-            time_lock,
-            &try_fus!(Public::from_slice(maker_pub)),
-            self.key_pair.public(),
-            priv_bn_hash,
-            amount,
-        )
-    }
-
-    fn validate_taker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        self.validate_payment(
-            payment_tx,
-            time_lock,
-            &try_fus!(Public::from_slice(taker_pub)),
-            self.key_pair.public(),
-            priv_bn_hash,
-            amount,
-        )
-    }
-
-    fn check_if_my_payment_sent(
-        &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        _from_block: u64,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let script = payment_script(
-            time_lock,
-            secret_hash,
-            self.key_pair.public(),
-            &try_fus!(Public::from_slice(other_pub)),
-        );
-        let hash = dhash160(&script);
-        let p2sh = Builder::build_p2sh(&hash);
-        let script_hash = electrum_script_hash(&p2sh);
-        let selfi = self.clone();
-        let fut = async move {
-            match &selfi.rpc_client {
-                UtxoRpcClientEnum::Electrum(client) => {
-                    let history = try_s!(client.scripthash_get_history(&hex::encode(script_hash)).compat().await);
-                    match history.first() {
-                        Some(item) => {
-                            let tx_bytes = try_s!(client.get_transaction_bytes(item.tx_hash.clone()).compat().await);
-                            let tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-                            Ok(Some(tx.into()))
-                        },
-                        None => Ok(None),
-                    }
-                },
-                UtxoRpcClientEnum::Native(client) => {
-                    let target_addr = Address {
-                        t_addr_prefix: selfi.p2sh_t_addr_prefix,
-                        prefix: selfi.p2sh_addr_prefix,
-                        hash,
-                        checksum_type: selfi.checksum_type,
-                    };
-                    let target_addr = try_s!(selfi.display_address(&target_addr));
-                    let received_by_addr = try_s!(client.list_received_by_address(0, true, true).compat().await);
-                    for item in received_by_addr {
-                        if item.address == target_addr && !item.txids.is_empty() {
-                            let tx_bytes = try_s!(client.get_transaction_bytes(item.txids[0].clone()).compat().await);
-                            let tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-                            return Ok(Some(tx.into()));
-                        }
-                    }
-                    Ok(None)
-                },
-            }
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn search_for_swap_tx_spend_my(
-        &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        self.search_for_swap_tx_spend(
-            time_lock,
-            self.key_pair.public(),
-            &try_s!(Public::from_slice(other_pub)),
-            secret_hash,
-            tx,
-            search_from_block,
-        )
-    }
-
-    fn search_for_swap_tx_spend_other(
-        &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        self.search_for_swap_tx_spend(
-            time_lock,
-            &try_s!(Public::from_slice(other_pub)),
-            self.key_pair.public(),
-            secret_hash,
-            tx,
-            search_from_block,
-        )
-    }
-}
-
-impl MarketCoinOps for UtxoCoin {
-    fn ticker(&self) -> &str { &self.ticker[..] }
-
-    fn my_address(&self) -> Result<String, String> { self.display_address(&self.my_address) }
-
-    fn my_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
-        Box::new(
-            self.rpc_client
-                .display_balance(self.my_address.clone(), self.decimals)
-                .map_err(|e| ERRL!("{}", e)),
-        )
-    }
-
-    fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { self.my_balance() }
-
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let bytes = try_fus!(hex::decode(tx));
-        Box::new(
-            self.rpc_client
-                .send_raw_transaction(bytes.into())
-                .map_err(|e| ERRL!("{}", e))
-                .map(|hash| format!("{:?}", hash)),
-        )
-    }
-
-    fn wait_for_confirmations(
-        &self,
-        tx: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let tx: UtxoTx = try_fus!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
-        self.rpc_client
-            .wait_for_confirmations(&tx, confirmations as u32, requires_nota, wait_until, check_every)
-    }
-
-    fn wait_for_tx_spend(&self, tx_bytes: &[u8], wait_until: u64, from_block: u64) -> TransactionFut {
-        let tx: UtxoTx = try_fus!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
-        let vout = 0;
-        let client = self.rpc_client.clone();
-        let fut = async move {
-            loop {
-                match client.find_output_spend(&tx, vout, from_block).compat().await {
-                    Ok(Some(tx)) => return Ok(tx.into()),
-                    Ok(None) => (),
-                    Err(e) => {
-                        log!("Error " (e) " on find_output_spend of tx " [e]);
-                    },
-                };
-
-                if now_ms() / 1000 > wait_until {
-                    return ERR!(
-                        "Waited too long until {} for transaction {:?} {} to be spent ",
-                        wait_until,
-                        tx,
-                        vout
-                    );
-                }
-                Timer::sleep(10.).await;
-            }
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
-        let transaction: UtxoTx = try_s!(deserialize(bytes).map_err(|err| format!("{:?}", err)));
-        Ok(transaction.into())
-    }
-
-    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        Box::new(self.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
-    }
-
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        let pubkey_bytes = try_s!(hex::decode(pubkey));
-        let addr = try_s!(address_from_raw_pubkey(
-            &pubkey_bytes,
-            self.pub_addr_prefix,
-            self.pub_t_addr_prefix,
-            self.checksum_type
-        ));
-        self.display_address(&addr)
-    }
-
-    fn display_priv_key(&self) -> String { format!("{}", self.key_pair.private()) }
-}
-
-async fn withdraw_impl(coin: UtxoCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
-    let to = try_s!(coin.address_from_str(&req.to));
-    if to.checksum_type != coin.checksum_type {
-        return ERR!(
-            "Address {} has invalid checksum type, it must be {:?}",
-            to,
-            coin.checksum_type
-        );
-    }
-    let script_pubkey = if to.prefix == coin.pub_addr_prefix && to.t_addr_prefix == coin.pub_t_addr_prefix {
-        Builder::build_p2pkh(&to.hash).to_bytes()
-    } else if to.prefix == coin.p2sh_addr_prefix && to.t_addr_prefix == coin.p2sh_t_addr_prefix && coin.segwit {
-        Builder::build_p2sh(&to.hash).to_bytes()
-    } else {
-        return ERR!("Address {} has invalid format", to);
-    };
-    let _utxo_lock = UTXO_LOCK.lock().await;
-    let unspents = try_s!(
-        coin.rpc_client
-            .list_unspent_ordered(&coin.my_address)
-            .map_err(|e| ERRL!("{}", e))
-            .compat()
-            .await
-    );
-    let (value, fee_policy) = if req.max {
-        (
-            unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
-            FeePolicy::DeductFromOutput(0),
-        )
-    } else {
-        (
-            try_s!(sat_from_big_decimal(&req.amount, coin.decimals)),
-            FeePolicy::SendExact,
-        )
-    };
-    let outputs = vec![TransactionOutput { value, script_pubkey }];
-    let fee = match req.fee {
-        Some(WithdrawFee::UtxoFixed { amount }) => {
-            Some(ActualTxFee::Fixed(try_s!(sat_from_big_decimal(&amount, coin.decimals))))
-        },
-        Some(WithdrawFee::UtxoPerKbyte { amount }) => Some(ActualTxFee::Dynamic(try_s!(sat_from_big_decimal(
-            &amount,
-            coin.decimals
-        )))),
-        Some(_) => return ERR!("Unsupported input fee type"),
-        None => None,
-    };
-    let (unsigned, data) = try_s!(coin.generate_transaction(unspents, outputs, fee_policy, fee).await);
-    let prev_script = Builder::build_p2pkh(&coin.my_address.hash);
-    let signed = try_s!(sign_tx(
-        unsigned,
-        &coin.key_pair,
-        prev_script,
-        coin.signature_version,
-        coin.fork_id
-    ));
-    let fee_details = UtxoFeeDetails {
-        amount: big_decimal_from_sat(data.fee_amount as i64, coin.decimals),
-    };
-    let my_address = try_s!(coin.my_address());
-    let to_address = try_s!(coin.display_address(&to));
-    Ok(TransactionDetails {
-        from: vec![my_address],
-        to: vec![to_address],
-        total_amount: big_decimal_from_sat(data.spent_by_me as i64, coin.decimals),
-        spent_by_me: big_decimal_from_sat(data.spent_by_me as i64, coin.decimals),
-        received_by_me: big_decimal_from_sat(data.received_by_me as i64, coin.decimals),
-        my_balance_change: big_decimal_from_sat(data.received_by_me as i64 - data.spent_by_me as i64, coin.decimals),
-        tx_hash: signed.hash().reversed().to_vec().into(),
-        tx_hex: serialize(&signed).into(),
-        fee_details: Some(fee_details.into()),
-        block_height: 0,
-        coin: coin.ticker.clone(),
-        internal_id: vec![].into(),
-        timestamp: now_ms() / 1000,
-    })
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UtxoFeeDetails {
     amount: BigDecimal,
-}
-
-impl MmCoin for UtxoCoin {
-    fn is_asset_chain(&self) -> bool { self.asset_chain }
-
-    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        Box::new(futures01::future::ok(()))
-    }
-
-    fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        let fut = withdraw_impl(self.clone(), req);
-        Box::new(fut.boxed().compat())
-    }
-
-    fn decimals(&self) -> u8 { self.decimals }
-
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
-        let to_address_format: UtxoAddressFormat =
-            json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse UTXO address format {:?}", e))?;
-        let from_address = try_s!(self.try_address_from_str(from));
-        match to_address_format {
-            UtxoAddressFormat::Standard => Ok(from_address.to_string()),
-            UtxoAddressFormat::CashAddress { network } => Ok(try_s!(from_address
-                .to_cashaddress(&network, self.pub_addr_prefix, self.p2sh_addr_prefix)
-                .and_then(|cashaddress| cashaddress.encode()))),
-        }
-    }
-
-    fn validate_address(&self, address: &str) -> ValidateAddressResult { validate_address_impl!(self, address) }
-
-    #[allow(clippy::cognitive_complexity)]
-    fn process_history_loop(&self, ctx: MmArc) {
-        const HISTORY_TOO_LARGE_ERR_CODE: i64 = -1;
-        let history_too_large = json!({
-            "code": 1,
-            "message": "history too large"
-        });
-
-        let mut my_balance: Option<BigDecimal> = None;
-        let history = self.load_history_from_file(&ctx);
-        let mut history_map: HashMap<H256Json, TransactionDetails> = history
-            .into_iter()
-            .map(|tx| (H256Json::from(tx.tx_hash.as_slice()), tx))
-            .collect();
-        let my_address = match self.my_address() {
-            Ok(addr) => addr,
-            Err(e) => {
-                log!("Error on getting self address: " [e] ". Stop tx history");
-                return;
-            },
-        };
-
-        let mut success_iteration = 0i32;
-        loop {
-            if ctx.is_stopping() {
-                break;
-            };
-            {
-                let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
-                let coins = match coins_ctx.coins.spinlock(22) {
-                    Ok(guard) => guard,
-                    Err(_err) => {
-                        thread::sleep(Duration::from_millis(99));
-                        continue;
-                    },
-                };
-                if !coins.contains_key(&self.ticker) {
-                    ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
-                    break;
-                };
-            }
-
-            let actual_balance = match self.my_balance().wait() {
-                Ok(actual_balance) => Some(actual_balance),
-                Err(err) => {
-                    ctx.log.log(
-                        "",
-                        &[&"tx_history", &self.ticker],
-                        &ERRL!("Error {:?} on getting balance", err),
-                    );
-                    None
-                },
-            };
-
-            let need_update = history_map
-                .iter()
-                .any(|(_, tx)| tx.should_update_timestamp() || tx.should_update_block_height());
-            match (&my_balance, &actual_balance) {
-                (Some(prev_balance), Some(actual_balance)) if prev_balance == actual_balance && !need_update => {
-                    // my balance hasn't been changed, there is no need to reload tx_history
-                    thread::sleep(Duration::from_secs(30));
-                    continue;
-                },
-                _ => (),
-            }
-
-            let tx_ids: Vec<(H256Json, u64)> = match &self.rpc_client {
-                UtxoRpcClientEnum::Native(client) => {
-                    let mut from = 0;
-                    let mut all_transactions = vec![];
-                    loop {
-                        mm_counter!(ctx.metrics, "tx.history.request.count", 1,
-                            "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
-
-                        let transactions = match client.list_transactions(100, from).wait() {
-                            Ok(value) => value,
-                            Err(e) => {
-                                ctx.log.log(
-                                    "",
-                                    &[&"tx_history", &self.ticker],
-                                    &ERRL!("Error {} on list transactions, retrying", e),
-                                );
-                                thread::sleep(Duration::from_secs(10));
-                                continue;
-                            },
-                        };
-
-                        mm_counter!(ctx.metrics, "tx.history.response.count", 1,
-                            "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
-
-                        if transactions.is_empty() {
-                            break;
-                        }
-                        from += 100;
-                        all_transactions.extend(transactions);
-                    }
-
-                    mm_counter!(ctx.metrics, "tx.history.response.total_length", all_transactions.len() as u64,
-                        "coin" => self.ticker.clone(), "client" => "native", "method" => "listtransactions");
-
-                    all_transactions
-                        .into_iter()
-                        .filter_map(|item| {
-                            if item.address == my_address {
-                                Some((item.txid, item.blockindex))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                },
-                UtxoRpcClientEnum::Electrum(client) => {
-                    let script = Builder::build_p2pkh(&self.my_address.hash);
-                    let script_hash = electrum_script_hash(&script);
-
-                    mm_counter!(ctx.metrics, "tx.history.request.count", 1,
-                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
-
-                    let electrum_history = match client.scripthash_get_history(&hex::encode(script_hash)).wait() {
-                        Ok(value) => value,
-                        Err(e) => match &e.error {
-                            JsonRpcErrorType::Transport(e) | JsonRpcErrorType::Parse(_, e) => {
-                                ctx.log.log(
-                                    "",
-                                    &[&"tx_history", &self.ticker],
-                                    &ERRL!("Error {} on scripthash_get_history, retrying", e),
-                                );
-                                thread::sleep(Duration::from_secs(10));
-                                continue;
-                            },
-                            JsonRpcErrorType::Response(_addr, err) => {
-                                if *err == history_too_large {
-                                    ctx.log.log(
-                                        "",
-                                        &[&"tx_history", &self.ticker],
-                                        &ERRL!("Got `history too large`, stopping further attempts to retrieve it"),
-                                    );
-                                    *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Error(json!({
-                                        "code": HISTORY_TOO_LARGE_ERR_CODE,
-                                        "message": "Got `history too large` error from Electrum server. History is not available",
-                                    }));
-                                    break;
-                                } else {
-                                    ctx.log.log(
-                                        "",
-                                        &[&"tx_history", &self.ticker],
-                                        &ERRL!("Error {:?} on scripthash_get_history, retrying", e),
-                                    );
-                                    thread::sleep(Duration::from_secs(10));
-                                    continue;
-                                }
-                            },
-                        },
-                    };
-                    mm_counter!(ctx.metrics, "tx.history.response.count", 1,
-                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
-
-                    mm_counter!(ctx.metrics, "tx.history.response.total_length", electrum_history.len() as u64,
-                        "coin" => self.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
-
-                    // electrum returns the most recent transactions in the end but we need to
-                    // process them first so rev is required
-                    electrum_history
-                        .into_iter()
-                        .rev()
-                        .map(|item| {
-                            let height = if item.height < 0 { 0 } else { item.height as u64 };
-                            (item.tx_hash, height)
-                        })
-                        .collect()
-                },
-            };
-            let mut transactions_left = if tx_ids.len() > history_map.len() {
-                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
-                    "transactions_left": tx_ids.len() - history_map.len()
-                }));
-                tx_ids.len() - history_map.len()
-            } else {
-                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
-                    "transactions_left": 0
-                }));
-                0
-            };
-
-            for (txid, height) in tx_ids {
-                let mut updated = false;
-                match history_map.entry(txid.clone()) {
-                    Entry::Vacant(e) => {
-                        mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
-
-                        match self.tx_details_by_hash(&txid.0).wait() {
-                            Ok(mut tx_details) => {
-                                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
-
-                                if tx_details.block_height == 0 && height > 0 {
-                                    tx_details.block_height = height;
-                                }
-
-                                e.insert(tx_details);
-                                if transactions_left > 0 {
-                                    transactions_left -= 1;
-                                    *unwrap!(self.history_sync_state.lock()) =
-                                        HistorySyncState::InProgress(json!({ "transactions_left": transactions_left }));
-                                }
-                                updated = true;
-                            },
-                            Err(e) => ctx.log.log(
-                                "",
-                                &[&"tx_history", &self.ticker],
-                                &ERRL!("Error {:?} on getting the details of {:?}, skipping the tx", e, txid),
-                            ),
-                        }
-                    },
-                    Entry::Occupied(mut e) => {
-                        // update block height for previously unconfirmed transaction
-                        if e.get().should_update_block_height() && height > 0 {
-                            e.get_mut().block_height = height;
-                            updated = true;
-                        }
-                        if e.get().should_update_timestamp() {
-                            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
-
-                            if let Ok(tx_details) = self.tx_details_by_hash(&txid.0).wait() {
-                                mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.ticker.clone(), "method" => "tx_detail_by_hash");
-
-                                e.get_mut().timestamp = tx_details.timestamp;
-                                updated = true;
-                            }
-                        }
-                    },
-                }
-                if updated {
-                    let mut to_write: Vec<&TransactionDetails> = history_map.iter().map(|(_, value)| value).collect();
-                    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
-                    to_write.sort_unstable_by(|a, b| {
-                        if a.block_height == 0 {
-                            Ordering::Less
-                        } else if b.block_height == 0 {
-                            Ordering::Greater
-                        } else {
-                            b.block_height.cmp(&a.block_height)
-                        }
-                    });
-                    self.save_history_to_file(&unwrap!(json::to_vec(&to_write)), &ctx);
-                }
-            }
-            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
-
-            if success_iteration == 0 {
-                ctx.log.log(
-                    "😅",
-                    &[&"tx_history", &("coin", self.ticker.clone().as_str())],
-                    "history has been loaded successfully",
-                );
-            }
-
-            my_balance = actual_balance;
-            success_iteration += 1;
-            thread::sleep(Duration::from_secs(30));
-        }
-    }
-
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        let hash = H256Json::from(hash);
-        let selfi = self.clone();
-        let fut = async move {
-            let verbose_tx = try_s!(selfi.rpc_client.get_verbose_transaction(hash).compat().await);
-            let tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-            let mut input_transactions: HashMap<&H256, UtxoTx> = HashMap::new();
-            let mut input_amount = 0;
-            let mut output_amount = 0;
-            let mut from_addresses = vec![];
-            let mut to_addresses = vec![];
-            let mut spent_by_me = 0;
-            let mut received_by_me = 0;
-            for input in tx.inputs.iter() {
-                // input transaction is zero if the tx is the coinbase transaction
-                if input.previous_output.hash.is_zero() {
-                    continue;
-                }
-
-                let input_tx = match input_transactions.entry(&input.previous_output.hash) {
-                    Entry::Vacant(e) => {
-                        let prev_hash = input.previous_output.hash.reversed();
-                        let prev: BytesJson = try_s!(
-                            selfi
-                                .rpc_client
-                                .get_transaction_bytes(prev_hash.clone().into())
-                                .compat()
-                                .await
-                        );
-                        let prev_tx: UtxoTx =
-                            try_s!(deserialize(prev.as_slice()).map_err(|e| ERRL!("{:?}, tx: {:?}", e, prev_hash)));
-                        e.insert(prev_tx)
-                    },
-                    Entry::Occupied(e) => e.into_mut(),
-                };
-                input_amount += input_tx.outputs[input.previous_output.index as usize].value;
-                let from: Vec<Address> = try_s!(selfi.addresses_from_script(
-                    &input_tx.outputs[input.previous_output.index as usize]
-                        .script_pubkey
-                        .clone()
-                        .into()
-                ));
-                if from.contains(&selfi.my_address) {
-                    spent_by_me += input_tx.outputs[input.previous_output.index as usize].value;
-                }
-                from_addresses.push(from);
-            }
-
-            for output in tx.outputs.iter() {
-                output_amount += output.value;
-                let to = try_s!(selfi.addresses_from_script(&output.script_pubkey.clone().into()));
-                if to.contains(&selfi.my_address) {
-                    received_by_me += output.value;
-                }
-                to_addresses.push(to);
-            }
-            // remove address duplicates in case several inputs were spent from same address
-            // or several outputs are sent to same address
-            let mut from_addresses: Vec<String> = try_s!(from_addresses
-                .into_iter()
-                .flatten()
-                .map(|addr| selfi.display_address(&addr))
-                .collect());
-            from_addresses.sort();
-            from_addresses.dedup();
-            let mut to_addresses: Vec<String> = try_s!(to_addresses
-                .into_iter()
-                .flatten()
-                .map(|addr| selfi.display_address(&addr))
-                .collect());
-            to_addresses.sort();
-            to_addresses.dedup();
-
-            let fee = big_decimal_from_sat(input_amount as i64 - output_amount as i64, selfi.decimals);
-            Ok(TransactionDetails {
-                from: from_addresses,
-                to: to_addresses,
-                received_by_me: big_decimal_from_sat(received_by_me as i64, selfi.decimals),
-                spent_by_me: big_decimal_from_sat(spent_by_me as i64, selfi.decimals),
-                my_balance_change: big_decimal_from_sat(received_by_me as i64 - spent_by_me as i64, selfi.decimals),
-                total_amount: big_decimal_from_sat(input_amount as i64, selfi.decimals),
-                tx_hash: tx.hash().reversed().to_vec().into(),
-                tx_hex: verbose_tx.hex,
-                fee_details: Some(UtxoFeeDetails { amount: fee }.into()),
-                block_height: verbose_tx.height.unwrap_or(0),
-                coin: selfi.ticker.clone(),
-                internal_id: tx.hash().reversed().to_vec().into(),
-                timestamp: verbose_tx.time.into(),
-            })
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn history_sync_status(&self) -> HistorySyncState { unwrap!(self.history_sync_state.lock()).clone() }
-
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        let ticker = self.ticker.clone();
-        let decimals = self.decimals;
-        let arc = self.clone();
-        let fut = async move {
-            let fee = try_s!(arc.get_tx_fee().await);
-            let amount = match fee {
-                ActualTxFee::Fixed(f) => f,
-                ActualTxFee::Dynamic(f) => f,
-            };
-            Ok(TradeFee {
-                coin: ticker,
-                amount: big_decimal_from_sat(amount as i64, decimals).into(),
-            })
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrderding::Relaxed) }
-
-    fn requires_notarization(&self) -> bool { self.requires_notarization.load(AtomicOrderding::Relaxed) }
-
-    fn set_required_confirmations(&self, confirmations: u64) {
-        self.required_confirmations
-            .store(confirmations, AtomicOrderding::Relaxed);
-    }
-
-    fn set_requires_notarization(&self, requires_nota: bool) {
-        self.requires_notarization
-            .store(requires_nota, AtomicOrderding::Relaxed);
-    }
 }
 
 #[cfg(feature = "native")]
@@ -2135,6 +433,7 @@ pub fn zcash_params_path() -> PathBuf {
     }
 }
 
+#[cfg(feature = "native")]
 #[cfg(feature = "native")]
 pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     // komodo/util.cpp/GetDefaultDataDir
@@ -2277,13 +576,14 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
     }
 }
 
-pub async fn utxo_coin_from_conf_and_request(
+pub async fn utxo_arc_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     req: &Json,
     priv_key: &[u8],
-) -> Result<UtxoCoin, String> {
+    dust_amount: u64,
+) -> Result<UtxoArc, String> {
     let checksum_type = if ticker == "GRS" {
         ChecksumType::DGROESTL512
     } else if ticker == "SMART" {
@@ -2340,6 +640,7 @@ pub async fn utxo_coin_from_conf_and_request(
                     uri: fomat!("http://127.0.0.1:"(rpc_port)),
                     auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
                     event_handlers,
+                    request_id: 0u64.into(),
                 });
 
                 UtxoRpcClientEnum::Native(NativeClient(client))
@@ -2387,7 +688,7 @@ pub async fn utxo_coin_from_conf_and_request(
             try_s!(wait_for_protocol_version_checked(&client).await);
             UtxoRpcClientEnum::Electrum(ElectrumClient(client))
         },
-        _ => return ERR!("utxo_coin_from_conf_and_request should be called only by enable or electrum requests"),
+        _ => return ERR!("utxo_arc_from_conf_and_request should be called only by enable or electrum requests"),
     };
     let asset_chain = conf["asset"].as_str().is_some();
     let tx_version = conf["txversion"].as_i64().unwrap_or(1) as i32;
@@ -2463,7 +764,13 @@ pub async fn utxo_coin_from_conf_and_request(
         .unwrap_or_else(|| conf["requires_notarization"].as_bool().unwrap_or(false))
         .into();
 
-    let coin = UtxoCoinImpl {
+    let mature_confirmations = conf["mature_confirmations"]
+        .as_u64()
+        .map(|x| x as u32)
+        .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT);
+    let tx_cache_directory = Some(ctx.dbdir().join("TX_CACHE"));
+
+    let coin = UtxoCoinFields {
         ticker: ticker.into(),
         decimals,
         rpc_client,
@@ -2495,8 +802,11 @@ pub async fn utxo_coin_from_conf_and_request(
         force_min_relay_fee: conf["force_min_relay_fee"].as_bool().unwrap_or(false),
         mtp_block_count: json::from_value(conf["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT),
         estimate_fee_mode: json::from_value(conf["estimate_fee_mode"].clone()).unwrap_or(None),
+        dust_amount,
+        mature_confirmations,
+        tx_cache_directory,
     };
-    Ok(UtxoCoin(Arc::new(coin)))
+    Ok(UtxoArc(Arc::new(coin)))
 }
 
 /// Ping the electrum servers every 30 seconds to prevent them from disconnecting us.
@@ -2724,13 +1034,21 @@ pub struct KmdRewardsInfoElement {
 
 /// Get rewards info of unspent outputs.
 /// The list is ordered by the output value.
-pub async fn kmd_rewards_info(coin: &UtxoCoin) -> Result<Vec<KmdRewardsInfoElement>, String> {
-    if coin.ticker != "KMD" {
+pub async fn kmd_rewards_info<T>(coin: &T) -> Result<Vec<KmdRewardsInfoElement>, String>
+where
+    T: AsRef<UtxoArc> + UtxoCoinCommonOps,
+{
+    if coin.as_ref().ticker != "KMD" {
         return ERR!("rewards info can be obtained for KMD only");
     }
 
-    let rpc_client = coin.rpc_client();
-    let mut unspents = try_s!(rpc_client.list_unspent_ordered(&coin.my_address).compat().await);
+    let rpc_client = &coin.as_ref().rpc_client;
+    let mut unspents = try_s!(
+        rpc_client
+            .list_unspent_ordered(&coin.as_ref().my_address)
+            .compat()
+            .await
+    );
     // list_unspent_ordered() returns ordered from lowest to highest by value unspent outputs.
     // reverse it to reorder from highest to lowest outputs.
     unspents.reverse();
@@ -2744,7 +1062,9 @@ pub async fn kmd_rewards_info(coin: &UtxoCoin) -> Result<Vec<KmdRewardsInfoEleme
         let locktime = tx_info.locktime as u64;
         let current_time = try_s!(coin.get_current_mtp().await) as u64;
         let accrued_rewards = match kmd_interest(tx_info.height, value, locktime, current_time) {
-            Ok(interest) => KmdRewardsAccrueInfo::Accrued(big_decimal_from_sat(interest as i64, coin.decimals)),
+            Ok(interest) => {
+                KmdRewardsAccrueInfo::Accrued(big_decimal_from_sat(interest as i64, coin.as_ref().decimals))
+            },
             Err(reason) => KmdRewardsAccrueInfo::NotAccruedReason(reason),
         };
 
@@ -2767,7 +1087,7 @@ pub async fn kmd_rewards_info(coin: &UtxoCoin) -> Result<Vec<KmdRewardsInfoEleme
             tx_hash,
             height: tx_info.height,
             output_index: unspent.outpoint.index,
-            amount: big_decimal_from_sat(value as i64, coin.decimals),
+            amount: big_decimal_from_sat(value as i64, coin.as_ref().decimals),
             locktime,
             accrued_rewards,
             accrue_start_at,
@@ -2776,4 +1096,171 @@ pub async fn kmd_rewards_info(coin: &UtxoCoin) -> Result<Vec<KmdRewardsInfoEleme
     }
 
     Ok(result)
+}
+
+/// Denominate BigDecimal amount of coin units to satoshis
+pub fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<u64, String> {
+    (amount * BigDecimal::from(10u64.pow(decimals as u32)))
+        .to_u64()
+        .ok_or(ERRL!(
+            "Could not get sat from amount {} with decimals {}",
+            amount,
+            decimals
+        ))
+}
+
+pub(crate) fn sign_tx(
+    unsigned: TransactionInputSigner,
+    key_pair: &KeyPair,
+    prev_script: Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
+) -> Result<UtxoTx, String> {
+    let mut signed_inputs = vec![];
+    for (i, _) in unsigned.inputs.iter().enumerate() {
+        signed_inputs.push(try_s!(p2pkh_spend(
+            &unsigned,
+            i,
+            key_pair,
+            &prev_script,
+            signature_version,
+            fork_id
+        )));
+    }
+    Ok(UtxoTx {
+        inputs: signed_inputs,
+        n_time: unsigned.n_time,
+        outputs: unsigned.outputs.clone(),
+        version: unsigned.version,
+        overwintered: unsigned.overwintered,
+        lock_time: unsigned.lock_time,
+        expiry_height: unsigned.expiry_height,
+        join_splits: vec![],
+        shielded_spends: vec![],
+        shielded_outputs: vec![],
+        value_balance: 0,
+        version_group_id: unsigned.version_group_id,
+        binding_sig: H512::default(),
+        join_split_sig: H512::default(),
+        join_split_pubkey: H256::default(),
+        zcash: unsigned.zcash,
+        str_d_zeel: unsigned.str_d_zeel,
+    })
+}
+
+async fn send_outputs_from_my_address_impl<T>(coin: T, outputs: Vec<TransactionOutput>) -> Result<UtxoTx, String>
+where
+    T: AsRef<UtxoArc> + UtxoArcCommonOps,
+{
+    let before_lock = now_ms();
+    let _utxo_lock = UTXO_LOCK.lock().await;
+    let after_lock = now_ms();
+    log!("UTXO_LOCK took "(after_lock - before_lock));
+
+    let before_list_unspent_ordered = now_ms();
+    let unspents = try_s!(
+        coin.as_ref()
+            .rpc_client
+            .list_unspent_ordered(&coin.as_ref().my_address)
+            .map_err(|e| ERRL!("{}", e))
+            .compat()
+            .await
+    );
+    let after_list_unspent_ordered = now_ms();
+    log!("list_unspent_ordered took "(
+        after_list_unspent_ordered - before_list_unspent_ordered
+    ));
+
+    let before_generate_transaction = now_ms();
+    let (unsigned, _) = try_s!(
+        coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None, None)
+            .await
+    );
+    let after_generate_transaction = now_ms();
+    log!("generate_transaction took "(
+        after_generate_transaction - before_generate_transaction
+    ));
+
+    let prev_script = Builder::build_p2pkh(&coin.as_ref().my_address.hash);
+    let signed = try_s!(sign_tx(
+        unsigned,
+        &coin.as_ref().key_pair,
+        prev_script,
+        coin.as_ref().signature_version,
+        coin.as_ref().fork_id
+    ));
+
+    let before_send_transaction = now_ms();
+    try_s!(
+        coin.as_ref()
+            .rpc_client
+            .send_transaction(&signed, coin.as_ref().my_address.clone())
+            .map_err(|e| ERRL!("{}", e))
+            .compat()
+            .await
+    );
+    let after_send_transaction = now_ms();
+    log!("send_transaction took "(
+        after_send_transaction - before_send_transaction
+    ));
+
+    Ok(signed)
+}
+
+/// Creates signed input spending p2pkh output
+fn p2pkh_spend(
+    signer: &TransactionInputSigner,
+    input_index: usize,
+    key_pair: &KeyPair,
+    prev_script: &Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
+) -> Result<TransactionInput, String> {
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+    if script != *prev_script {
+        return ERR!(
+            "p2pkh script {} built from input key pair doesn't match expected prev script {}",
+            script,
+            prev_script
+        );
+    }
+    let sighash_type = 1 | fork_id;
+    let sighash = signer.signature_hash(
+        input_index,
+        signer.inputs[input_index].amount,
+        &script,
+        signature_version,
+        sighash_type,
+    );
+
+    let script_sig = try_s!(script_sig_with_pub(&sighash, key_pair, fork_id));
+
+    Ok(TransactionInput {
+        script_sig,
+        sequence: signer.inputs[input_index].sequence,
+        script_witness: vec![],
+        previous_output: signer.inputs[input_index].previous_output.clone(),
+    })
+}
+
+fn script_sig_with_pub(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
+    let sig_script = try_s!(script_sig(message, key_pair, fork_id));
+
+    let builder = Builder::default();
+
+    Ok(builder
+        .push_data(&sig_script)
+        .push_data(&key_pair.public().to_vec())
+        .into_bytes())
+}
+
+fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
+    let signature = try_s!(key_pair.private().sign(message));
+
+    let mut sig_script = Bytes::default();
+    sig_script.append(&mut Bytes::from((*signature).to_vec()));
+    // Using SIGHASH_ALL only for now
+    sig_script.append(&mut Bytes::from(vec![1 | fork_id as u8]));
+
+    Ok(sig_script)
 }

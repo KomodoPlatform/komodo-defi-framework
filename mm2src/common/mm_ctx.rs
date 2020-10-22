@@ -1,7 +1,4 @@
 use bytes::Bytes;
-use crossbeam::{channel, Receiver, Sender};
-use futures::channel::mpsc;
-use futures::compat::Compat;
 use gstuff::Constructible;
 #[cfg(not(feature = "native"))] use http::Response;
 use keys::{DisplayLayout, KeyPair, Private};
@@ -24,13 +21,12 @@ use std::sync::{Arc, Mutex, Weak};
 use crate::executor::Timer;
 use crate::log::{self, LogState};
 use crate::mm_metrics::{prometheus, MetricsArc};
-use crate::{bits256, block_on, small_rng, P2PMessage, QueuedCommand};
+use crate::{bits256, small_rng};
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 
 type StopListenerCallback = Box<dyn FnMut() -> Result<(), String>>;
-use futures::SinkExt;
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -79,23 +75,14 @@ pub struct MmCtx {
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `peers` crate: `PeersContext`.
     pub peers_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub p2p_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub peer_id: Constructible<String>,
     /// The context belonging to the `http_fallback` mod: `HttpFallbackContext`.
     pub http_fallback_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `prices` mod: `PricesContext`.
     pub prices_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// Seednode P2P message bus channel.
-    pub seednode_p2p_channel: Mutex<Vec<mpsc::UnboundedSender<P2PMessage>>>,
-    /// Standard node P2P message bus channel.
-    pub client_p2p_channel: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    /// `lp_queue_command` shares messages with `lp_command_q_loop` via this channel.  
-    /// The messages are usually the JSON broadcasts from the seed nodes.
-    pub command_queue: mpsc::UnboundedSender<QueuedCommand>,
-    /// The end of the `command_queue` channel taken by `lp_command_q_loop`.
-    pub command_queueʳ: Mutex<Option<mpsc::UnboundedReceiver<QueuedCommand>>>,
-    /// Broadcast `lp_queue_command` messages saved for WASM.
-    pub command_queueʰ: Mutex<Option<Vec<(u64, P2PMessage)>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     /// Replacement of `lp::G.LP_myrmd160`.
     pub rmd160: Constructible<H160>,
@@ -109,10 +96,10 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub gossipsub_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 impl MmCtx {
     pub fn with_log_state(log: LogState) -> MmCtx {
-        let (command_queue, command_queueʳ) = mpsc::unbounded();
         MmCtx {
             conf: Json::Object(json::Map::new()),
             log: log::LogArc::new(log),
@@ -125,19 +112,17 @@ impl MmCtx {
             portfolio_ctx: Mutex::new(None),
             ordermatch_ctx: Mutex::new(None),
             peers_ctx: Mutex::new(None),
+            p2p_ctx: Mutex::new(None),
+            peer_id: Constructible::default(),
             http_fallback_ctx: Mutex::new(None),
             coins_ctx: Mutex::new(None),
             prices_ctx: Mutex::new(None),
-            seednode_p2p_channel: Mutex::new(Vec::with_capacity(1000)),
-            client_p2p_channel: channel::unbounded(),
-            command_queue,
-            command_queueʳ: Mutex::new(Some(command_queueʳ)),
-            command_queueʰ: Mutex::new(None),
             rmd160: Constructible::default(),
             seeds: Mutex::new(Vec::new()),
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
+            gossipsub_ctx: Mutex::new(None),
         }
     }
 
@@ -230,17 +215,7 @@ impl MmCtx {
 
     /// Sends the P2P message to a processing thread
     #[cfg(feature = "native")]
-    pub fn broadcast_p2p_msg(&self, msg: P2PMessage) {
-        let i_am_seed = self.conf["i_am_seed"].as_bool().unwrap_or(false);
-        if i_am_seed {
-            let mut txs = self.seednode_p2p_channel.lock().unwrap();
-            *txs = txs
-                .drain_filter(|sender| block_on(sender.send(msg.clone())).is_ok())
-                .collect();
-        } else {
-            unwrap!(self.client_p2p_channel.0.send(msg.content.into_bytes()));
-        }
-    }
+    pub fn broadcast_p2p_msg(&self, _topic: String, _msg: Vec<u8>) { unimplemented!() }
 
     #[cfg(not(feature = "native"))]
     pub fn broadcast_p2p_msg(&self, msg: &str) {
@@ -290,7 +265,7 @@ impl Default for MmCtx {
 }
 
 // We don't want to send `MmCtx` across threads, it will only obstruct the normal use case
-// (and might result in undefined behavior if there's a C struct or value in the context that is aliased from the various MM threads).
+// (and might result in undefined behaviour if there's a C struct or value in the context that is aliased from the various MM threads).
 // Only the `MmArc` is `Send`.
 // Also, `MmCtx` not being `Send` allows us to easily keep various C pointers on the context,
 // which will likely come useful during the gradual port.
@@ -472,9 +447,8 @@ impl MmArc {
                 Timer::sleep(0.5).await
             }
 
-            Ok::<_, ()>(())
+            ()
         };
-        let shutdown_detector = Compat::new(Box::pin(shutdown_detector));
 
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }

@@ -57,15 +57,18 @@
 #![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
+use crate::mm2::lp_network::broadcast_p2p_msg;
 use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, TradeFee, TransactionEnum};
-use common::{block_on,
-             executor::spawn,
+use common::{bits256, block_on,
+             executor::{spawn, Timer},
              mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber,
-             read_dir, rpc_response, slurp, write, HyRes, P2PMessage};
+             now_ms, read_dir, rpc_response, slurp, write, HyRes};
+use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
+use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -77,24 +80,145 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
-// NB: Using a macro instead of a function in order to preserve the line numbers in the log.
-macro_rules! send {
-    ($ctx: expr, $to: expr, $subj: expr, $fallback: expr, $payload: expr) => {{
-        // Checksum here helps us visually verify the logistics between the Maker and Taker logs.
-        let crc = crc32::checksum_ieee (&$payload);
-        log!("Sending '" ($subj) "' (" ($payload.len()) " bytes, crc " (crc) ")");
+pub const SWAP_PREFIX: TopicPrefix = "swap";
 
-        peers::send ($ctx.clone(), $to, Vec::from ($subj.as_bytes()), $fallback, $payload.into()).await
-    }}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SwapMsg {
+    Negotiation(NegotiationDataMsg),
+    NegotiationReply(NegotiationDataMsg),
+    Negotiated(bool),
+    TakerFee(Vec<u8>),
+    MakerPayment(Vec<u8>),
+    TakerPayment(Vec<u8>),
 }
 
+#[derive(Debug, Default)]
+pub struct SwapMsgStore {
+    negotiation: Option<NegotiationDataMsg>,
+    negotiation_reply: Option<NegotiationDataMsg>,
+    negotiated: Option<bool>,
+    taker_fee: Option<Vec<u8>>,
+    maker_payment: Option<Vec<u8>>,
+    taker_payment: Option<Vec<u8>>,
+    accept_only_from: bits256,
+}
+
+impl SwapMsgStore {
+    pub fn new(accept_only_from: bits256) -> Self {
+        SwapMsgStore {
+            accept_only_from,
+            ..Default::default()
+        }
+    }
+}
+
+/// The AbortHandle that aborts on drop
+pub struct AbortOnDropHandle(AbortHandle);
+
+impl Drop for AbortOnDropHandle {
+    fn drop(&mut self) { self.0.abort(); }
+}
+
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it
+pub fn broadcast_swap_message_every(ctx: MmArc, topic: String, msg: SwapMsg, interval: f64) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            broadcast_swap_message(&ctx, topic.clone(), msg.clone());
+            Timer::sleep(interval).await;
+        }
+    };
+    let (abortable, abort_handle) = abortable(fut);
+    spawn(abortable.unwrap_or_else(|_| ()));
+    AbortOnDropHandle(abort_handle)
+}
+
+/// Broadcast the swap message once
+pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg) {
+    let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
+    let encoded_msg = encode_and_sign(&msg, &*key_pair.private().secret).unwrap();
+    broadcast_p2p_msg(ctx, topic, encoded_msg);
+}
+
+pub fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
+    let msg = match decode_signed::<SwapMsg>(msg) {
+        Ok(m) => m,
+        Err(swap_msg_err) => {
+            match json::from_slice::<SwapStatus>(msg) {
+                Ok(status) => save_stats_swap(&ctx, &status.data).unwrap(),
+                Err(swap_status_err) => {
+                    log!("Swap msg deserialize error "[swap_msg_err]);
+                    log!("Swap status deserialize error "[swap_status_err]);
+                },
+            };
+            return;
+        },
+    };
+    let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+    let mut msgs = unwrap!(swap_ctx.swap_msgs.lock());
+    if let Some(msg_store) = msgs.get_mut(&topic.to_string()) {
+        if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
+            match msg.0 {
+                SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
+                SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
+                SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
+                SwapMsg::TakerFee(taker_fee) => msg_store.taker_fee = Some(taker_fee),
+                SwapMsg::MakerPayment(maker_payment) => msg_store.maker_payment = Some(maker_payment),
+                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
+            }
+        }
+    }
+}
+
+pub fn swap_topic(uuid: &str) -> String { pub_sub_topic(SWAP_PREFIX, uuid) }
+
+/*
+// NB: Using a macro instead of a function in order to preserve the line numbers in the log.
+macro_rules! send {
+    ($ctx: expr, $subj: expr, $topic: expr, $payload: expr) => {{
+        // Checksum here helps us visually verify the logistics between the Maker and Taker logs.
+        // let crc = crc32::checksum_ieee (&$payload);
+        // log!("Sending '" ($subj) "' (" ($payload.len()) " bytes, crc " (crc) ")");
+        let msg = SwapMsg {
+            subject: $subj,
+            data: $payload,
+        };
+        $ctx.broadcast_p2p_msg($topic, serialize(&msg).take());
+    }};
+}
+*/
+
+async fn recv_swap_msg<T>(
+    ctx: MmArc,
+    mut getter: impl FnMut(&mut SwapMsgStore) -> Option<T>,
+    uuid: &str,
+    timeout: u64,
+) -> Result<T, String> {
+    let started = now_ms() / 1000;
+    let timeout = BASIC_COMM_TIMEOUT + timeout;
+    let wait_until = started + timeout;
+    loop {
+        Timer::sleep(1.).await;
+        let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
+        let mut msgs = unwrap!(swap_ctx.swap_msgs.lock());
+        if let Some(msg_store) = msgs.get_mut(uuid) {
+            if let Some(msg) = getter(msg_store) {
+                return Ok(msg);
+            }
+        }
+        let now = now_ms() / 1000;
+        if now > wait_until {
+            return ERR!("Timeout ({} > {})", now - started, timeout);
+        }
+    }
+}
+
+/*
 // NB: `$validator` is where we should put the decryption and verification in,
 // in order for the bogus DHT input to disrupt communication less.
 macro_rules! recv_ {
     ($swap: expr, $subj: expr, $timeout_sec: expr, $ec: expr, $validator: expr) => {{
-        let recv_subject = fomat! (($subj) '@' ($swap.uuid));
-        let recv_subjectᵇ = recv_subject.clone().into_bytes();
-        let fallback = ($timeout_sec / 3) .min (30) .max (60) as u8;
+        let recv_subject = $subj$swap.uuid;
         let recv_f = peers::recv ($swap.ctx.clone(), recv_subjectᵇ, fallback, $validator);
 
         let started = now_float();
@@ -126,12 +250,13 @@ macro_rules! recv {
         payload
     }};
 }
+*/
 
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
 
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
 
-pub use maker_swap::{check_balance_for_maker_swap, run_maker_swap, MakerSwap, RunMakerSwapInput};
+pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, run_maker_swap, MakerSwap, RunMakerSwapInput};
 use maker_swap::{stats_maker_swap_file_path, MakerSavedSwap, MakerSwapEvent};
 use num_rational::BigRational;
 pub use taker_swap::{check_balance_for_taker_swap, max_taker_vol, run_taker_swap, RunTakerSwapInput, TakerSwap};
@@ -209,6 +334,7 @@ struct SwapsContext {
     /// So when stop was invoked the swaps could stay running on shared executors causing
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
+    swap_msgs: Mutex<HashMap<String, SwapMsgStore>>,
 }
 
 impl SwapsContext {
@@ -232,9 +358,15 @@ impl SwapsContext {
             Ok(SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
+                swap_msgs: Mutex::new(HashMap::new()),
                 shutdown_rx,
             })
         })))
+    }
+
+    pub fn init_msg_store(&self, uuid: String, accept_only_from: bits256) {
+        let store = SwapMsgStore::new(accept_only_from);
+        self.swap_msgs.lock().unwrap().insert(uuid, store);
     }
 }
 
@@ -404,6 +536,14 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber) -> MmNumbe
     } else {
         fee_amount
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct NegotiationDataMsg {
+    started_at: u64,
+    payment_locktime: u64,
+    secret_hash: [u8; 20],
+    persistent_pubkey: Vec<u8>,
 }
 
 /// Data to be exchanged and validated on swap start, the replacement of LP_pubkeys_data, LP_choosei_data, etc.
@@ -630,6 +770,12 @@ pub fn stats_swap_status(ctx: MmArc, req: Json) -> HyRes {
     )
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct SwapStatus {
+    method: String,
+    data: SavedSwap,
+}
+
 /// Broadcasts `my` swap status to P2P network
 fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
     let path = my_swap_file_path(ctx, uuid);
@@ -640,25 +786,20 @@ fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
         SavedSwap::Maker(ref mut swap) => swap.hide_secret(),
     };
     try_s!(save_stats_swap(ctx, &status));
-    let status = json!({
-        "method": "swapstatus",
-        "data": status,
-    });
-    ctx.broadcast_p2p_msg(P2PMessage::from_serialize_with_default_addr(&status));
+    let status = SwapStatus {
+        method: "swapstatus".into(),
+        data: status,
+    };
+    let msg = json::to_vec(&status).expect("Swap status ser should never fail");
+    broadcast_p2p_msg(ctx, swap_topic(uuid), msg);
     Ok(())
 }
 
 /// Saves the swap status notification received from P2P network to local DB.
-pub fn save_stats_swap_status(ctx: &MmArc, data: Json) -> HyRes {
-    let swap: SavedSwap = try_h!(json::from_value(data));
-    try_h!(save_stats_swap(ctx, &swap));
-    rpc_response(
-        200,
-        json!({
-            "result": "success"
-        })
-        .to_string(),
-    )
+#[allow(dead_code)]
+pub fn save_stats_swap_status(ctx: &MmArc, data: Json) {
+    let swap: SavedSwap = unwrap!(json::from_value(data));
+    unwrap!(save_stats_swap(ctx, &swap));
 }
 
 /// Returns the data of recent swaps of `my` node. Returns no more than `limit` records (default: 10).

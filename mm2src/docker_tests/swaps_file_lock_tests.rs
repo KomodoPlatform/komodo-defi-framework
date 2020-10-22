@@ -23,8 +23,8 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
     });
 
     let coins = json! ([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
     let bob_conf = json! ({
         "gui": "nogui",
@@ -66,8 +66,8 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
     let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
     let coins = json! ([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
     let mut bob_conf = json! ({
         "gui": "nogui",
@@ -195,8 +195,8 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
     std::fs::write(&swap_path, unfinished_swap_json).unwrap();
 
     let coins = json! ([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
     let bob_conf = json! ({
         "gui": "nogui",

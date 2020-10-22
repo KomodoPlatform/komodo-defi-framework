@@ -1,10 +1,11 @@
 use crate::big_int_str::BigIntStr;
 use bigdecimal::BigDecimal;
 use core::ops::{Add, Div, Mul, Sub};
-use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::Pow;
 use serde::{de, Deserialize, Deserializer, Serialize};
+
+pub use num_bigint::{BigInt, Sign};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MmNumber(BigRational);
@@ -244,10 +245,22 @@ impl MmNumber {
 
     /// Get BigDecimal representation
     pub fn to_decimal(&self) -> BigDecimal { from_ratio_to_dec(&self.0) }
+
+    pub fn numer(&self) -> &BigInt { self.0.numer() }
+
+    pub fn denom(&self) -> &BigInt { self.0.denom() }
 }
 
 impl From<i32> for MmNumber {
     fn from(num: i32) -> MmNumber { MmNumber(BigRational::from_integer(num.into())) }
+}
+
+/// Useful for tests
+impl From<&'static str> for MmNumber {
+    fn from(str: &'static str) -> MmNumber {
+        let num: BigDecimal = str.parse().expect("Input should be string representing decimal num");
+        num.into()
+    }
 }
 
 #[cfg(test)]

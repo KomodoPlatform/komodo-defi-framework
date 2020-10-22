@@ -23,10 +23,11 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
 use common::mm_ctx::MmCtxBuilder;
-use common::{block_on, double_panic_crash, MM_DATETIME, MM_VERSION};
+use common::{block_on, double_panic_crash, safe_slurp, MM_DATETIME, MM_VERSION};
 
 use gstuff::slurp;
 
+use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
 
 use std::env;
@@ -40,6 +41,7 @@ use self::crash_reports::init_crash_reports;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
 use self::lp_native_dex::{lp_init, lp_ports};
+use coins::update_coins_config;
 
 #[cfg(not(feature = "wallet-only"))]
 #[path = "lp_network.rs"]
@@ -59,6 +61,8 @@ mod mm2_tests;
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub fn lp_main(conf: Json, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+    // std::env::set_var("RUST_LOG", "debug");
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
             return ERR!("rpc_password must be string");
@@ -95,12 +99,13 @@ fn help() {
             "Command-line options.\n"
             "The first command-line argument is special and designates the mode.\n"
             "\n"
-            "  help                  ..  Display this message.\n"
-            "  btc2kmd {WIF or BTC}  ..  Convert a BTC WIF into a KMD WIF.\n"
-            "  events                ..  Listen to a feed coming from a separate MM daemon and print it to stdout.\n"
-            "  vanity {substring}    ..  Tries to find an address with the given substring.\n"
-            "  nxt                   ..  Query the local NXT client (port 7876) regarding the SuperNET account in NXT.\n"
-            "  {JSON configuration}  ..  Run the MarketMaker daemon.\n"
+            "  help                       ..  Display this message.\n"
+            "  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.\n"
+            "  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.\n"
+            "  vanity {substring}         ..  Tries to find an address with the given substring.\n"
+            "  nxt                        ..  Query the local NXT client (port 7876) regarding the SuperNET account in NXT.\n"
+            "  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.\n"
+            "  {JSON configuration}       ..  Run the MarketMaker daemon.\n"
             "\n"
             "Some (but not all) of the JSON configuration parameters (* - required):\n"
             "\n"
@@ -199,6 +204,13 @@ pub fn mm2_main() {
         eprintln!("This goes to stderr");
         return;
     }
+    if first_arg == Some("update_config") {
+        match on_update_config(&args_os) {
+            Ok(_) => println!("Success"),
+            Err(e) => eprintln!("{}", e),
+        }
+        return;
+    }
 
     if first_arg == Some("--help") || first_arg == Some("-h") || first_arg == Some("help") {
         help();
@@ -262,5 +274,31 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
     }
 
     try_s!(lp_main(conf, ctx_cb));
+    Ok(())
+}
+
+fn on_update_config(args: &[OsString]) -> Result<(), String> {
+    let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
+    let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;
+
+    let config = try_s!(safe_slurp(src_path));
+    let mut config: Json = try_s!(json::from_slice(&config));
+
+    let result = if config.is_array() {
+        try_s!(update_coins_config(config))
+    } else {
+        // try to get config["coins"] as array
+        let conf_obj = config.as_object_mut().ok_or(ERRL!("Expected coin list"))?;
+        let coins = conf_obj.remove("coins").ok_or(ERRL!("Expected coin list"))?;
+        let updated_coins = try_s!(update_coins_config(coins));
+        conf_obj.insert("coins".into(), updated_coins);
+        config
+    };
+
+    let buf = Vec::new();
+    let formatter = json::ser::PrettyFormatter::with_indent(b"\t");
+    let mut ser = json::Serializer::with_formatter(buf, formatter);
+    try_s!(result.serialize(&mut ser));
+    try_s!(std::fs::write(&dst_path, ser.into_inner()));
     Ok(())
 }
