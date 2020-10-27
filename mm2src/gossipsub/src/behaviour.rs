@@ -122,7 +122,7 @@ impl Gossipsub {
                 gs_config.history_length,
                 gs_config.message_id_fn,
             ),
-            received: LruCache::new(1024), // keep track of the last 1024 messages
+            received: LruCache::new(8192), // keep track of the last 1024 messages
             heartbeat: Interval::new_at(
                 Instant::now() + gs_config.heartbeat_initial_delay,
                 gs_config.heartbeat_interval,

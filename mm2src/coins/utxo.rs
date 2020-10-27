@@ -55,6 +55,7 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Opcode, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::serialize;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::num::NonZeroU64;
 use std::ops::Deref;
@@ -641,6 +642,7 @@ pub async fn utxo_arc_from_conf_and_request(
                     auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
                     event_handlers,
                     request_id: 0u64.into(),
+                    recently_sent_txs: AsyncMutex::new(HashMap::new()),
                 });
 
                 UtxoRpcClientEnum::Native(NativeClient(client))

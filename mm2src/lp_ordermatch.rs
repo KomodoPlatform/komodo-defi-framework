@@ -2326,6 +2326,43 @@ struct SetPriceReq {
     rel_nota: Option<bool>,
 }
 
+#[derive(Serialize)]
+struct SetPriceResult<'a> {
+    base: &'a str,
+    rel: &'a str,
+    price: BigDecimal,
+    price_rat: &'a MmNumber,
+    max_base_vol: BigDecimal,
+    max_base_vol_rat: &'a MmNumber,
+    min_base_vol: BigDecimal,
+    min_base_vol_rat: &'a MmNumber,
+    created_at: u64,
+    matches: &'a HashMap<Uuid, MakerMatch>,
+    started_swaps: &'a [Uuid],
+    uuid: Uuid,
+    conf_settings: &'a Option<OrderConfirmationsSettings>,
+}
+
+impl<'a> From<&'a MakerOrder> for SetPriceResult<'a> {
+    fn from(order: &'a MakerOrder) -> SetPriceResult<'a> {
+        SetPriceResult {
+            base: &order.base,
+            rel: &order.rel,
+            price: order.price.to_decimal(),
+            price_rat: &order.price,
+            max_base_vol: order.max_base_vol.to_decimal(),
+            max_base_vol_rat: &order.max_base_vol,
+            min_base_vol: order.min_base_vol.to_decimal(),
+            min_base_vol_rat: &order.min_base_vol,
+            created_at: order.created_at,
+            matches: &order.matches,
+            started_swaps: &order.started_swaps,
+            uuid: order.uuid,
+            conf_settings: &order.conf_settings,
+        }
+    }
+}
+
 pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: SetPriceReq = try_s!(json::from_value(req));
 
@@ -2403,7 +2440,8 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
             maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
         }
     }
-    let res = try_s!(json::to_vec(&json!({ "result": new_order })));
+    let rpc_result = SetPriceResult::from(&new_order);
+    let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     my_orders.insert(new_order.uuid, new_order);
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -2516,7 +2554,7 @@ pub async fn cancel_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 #[derive(Serialize)]
 struct MakerOrderForRpc<'a> {
     #[serde(flatten)]
-    order: &'a MakerOrder,
+    order: SetPriceResult<'a>,
     cancellable: bool,
     available_amount: BigDecimal,
 }
@@ -2524,7 +2562,7 @@ struct MakerOrderForRpc<'a> {
 impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
     fn from(order: &'a MakerOrder) -> MakerOrderForRpc {
         MakerOrderForRpc {
-            order,
+            order: order.into(),
             cancellable: order.is_cancellable(),
             available_amount: order.available_amount().into(),
         }

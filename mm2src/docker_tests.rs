@@ -415,6 +415,19 @@ mod docker_tests {
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
 
+    #[test]
+    fn test_one_hundred_maker_payments_in_a_row_native() {
+        let (_ctx, coin, _) = generate_coin_with_random_privkey("MYCOIN", 1000);
+        let secret = [0; 32];
+
+        let time_lock = (now_ms() / 1000) as u32 - 3600;
+        for i in 0..100 {
+            coin.send_maker_payment(time_lock + i, &*coin.my_public_key(), &*dhash160(&secret), 1.into())
+                .wait()
+                .unwrap();
+        }
+    }
+
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/554
     #[test]
     fn order_should_be_cancelled_when_entire_balance_is_withdrawn() {

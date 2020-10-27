@@ -1,7 +1,9 @@
 use crate::update_coins_config;
 use crate::utxo::rpc_clients::NativeClientImpl;
 use base64::{encode_config as base64_encode, URL_SAFE};
+use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
+use std::collections::HashMap;
 
 pub fn test_list_unspent() {
     let client = NativeClientImpl {
@@ -13,6 +15,7 @@ pub fn test_list_unspent() {
         ))),
         event_handlers: Default::default(),
         request_id: 0u64.into(),
+        recently_sent_txs: AsyncMutex::new(HashMap::new()),
     };
     let unspents = client.list_unspent(0, std::i32::MAX, vec!["RBs52D7pVq7txo6SCz1Tuyw2WrPmdqU3qw".to_owned()]);
     let unspents = unwrap!(unspents.wait());
@@ -29,6 +32,7 @@ pub fn test_get_block_count() {
         ))),
         event_handlers: Default::default(),
         request_id: 0u64.into(),
+        recently_sent_txs: AsyncMutex::new(HashMap::new()),
     };
     let block_count = unwrap!(client
         .validate_address("RBs52D7pVq7txo6SCz1Tuyw2WrPmdqU3qw".to_owned())
@@ -46,6 +50,7 @@ pub fn test_import_address() {
         ))),
         event_handlers: Default::default(),
         request_id: 0u64.into(),
+        recently_sent_txs: AsyncMutex::new(HashMap::new()),
     };
     let import_addr = client.import_address(
         "bMjWGCinft5qEvsuf9Wg1fgz1CjpXBXbTB",
