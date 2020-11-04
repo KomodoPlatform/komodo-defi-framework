@@ -1,5 +1,0 @@
-using gcc : : /android-ndk/bin/aarch64-linux-android-g++ :
-<archiver>/android-ndk/bin/arm-linux-androideabi-ar
-<compileflags>-fexceptions
-<compileflags>-march=armv8-a
-;

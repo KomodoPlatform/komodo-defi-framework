@@ -1,0 +1,43 @@
+FROM ubuntu:16.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    cmake \
+    gcc \
+    libc6-dev \
+    make \
+    pkg-config \
+    git \
+    automake \
+    libtool \
+    m4 \
+    autoconf \
+    make \
+    file \
+    binutils \
+    # Clang is needed in order for the Rust bindgen to work.
+    # cf. https://github.com/rust-embedded/cross/issues/174
+    # Clang will be installed in android-ndk.sh, make sure this line is necessary.
+    llvm-3.9-dev libclang-3.9-dev clang-3.9 \
+    libc6-dev-i386 && \
+    apt-get clean
+
+COPY android-ndk.sh /
+RUN bash /android-ndk.sh x86_64 21
+ENV PATH=$PATH:/android-ndk/bin
+
+# Libz is distributed in the android ndk, but for some unknown reason it is not
+# found in the build process of some crates, so we explicit set the DEP_Z_ROOT
+ENV CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=x86_64-linux-android-clang \
+    CARGO_TARGET_X86_64_LINUX_ANDROID_RUNNER="qemu-x86_64 -cpu qemu64,+mmx,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt" \
+    CC_x86_64_linux_android=x86_64-linux-android-clang \
+    CXX_x86_64_linux_android=x86_64-linux-android-clang++ \
+    DEP_Z_INCLUDE=/android-ndk/sysroot/usr/include/ \
+    RUST_TEST_THREADS=1 \
+    HOME=/tmp/ \
+    TMPDIR=/tmp/ \
+    ANDROID_DATA=/ \
+    ANDROID_DNS_MODE=local \
+    ANDROID_ROOT=/system
+

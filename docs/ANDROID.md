@@ -33,6 +33,14 @@ The [Android NDK installer](https://github.com/rust-embedded/cross/tree/master/d
 
     (cd supernet && docker build --tag aarch64-linux-android-aga -f Dockerfile.aarch64-linux-android .)
 
+### x86 ABI Docker image
+
+    (cd supernet && docker build --tag i686-linux-android-aga -f Dockerfile.i686-linux-android .)
+
+### x86_64 ABI Docker image
+
+    (cd supernet && docker build --tag x86_64-linux-android-aga -f Dockerfile.x86_64-linux-android .)
+
 ### Setup the NDK_HOME variable
 
 The Docker image used by `cross` contains the NDK under /android-ndk,
@@ -50,3 +58,12 @@ by setting the NDK_HOME variable.
 #### arm64-v8a
 
     cross build --features native --target=aarch64-linux-android -vv --release
+
+#### x86
+
+    cross build --features native --target=i686-linux-android -vv --release
+
+#### x86_64
+
+    cross build --features native --target=x86_64-linux-android -vv --release
+
