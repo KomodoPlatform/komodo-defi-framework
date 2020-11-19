@@ -61,7 +61,7 @@ impl Target {
             "x86_64-apple-darwin" => Target::Mac,
             "x86_64-pc-windows-msvc" => Target::Windows,
             "wasm32-unknown-emscripten" => Target::Unix, // Pretend.
-            "armv7-linux-androideabi" | "aarch64-linux-android" => {
+            "armv7-linux-androideabi" | "aarch64-linux-android" | "i686-linux-android" | "x86_64-linux-android" => {
                 if Path::new("/android-ndk").exists() {
                     Target::AndroidCross(targetᴱ)
                 } else {
@@ -119,18 +119,6 @@ impl Target {
                 }),
                 //"armv7s-apple-ios" => "armv7s", 32-bit
                 _ => None,
-            },
-            _ => None,
-        }
-    }
-    fn user_config_jam_path(&self) -> Option<&'static str> {
-        match self {
-            Target::iOS(_) => Some("mm2src/common/ios/user-config.jam"),
-            Target::AndroidCross(target) if target == "armv7-linux-androideabi" => {
-                Some("mm2src/common/android/user-config-armv7.jam")
-            },
-            Target::AndroidCross(target) if target == "aarch64-linux-android" => {
-                Some("mm2src/common/android/user-config-armv8.jam")
             },
             _ => None,
         }
