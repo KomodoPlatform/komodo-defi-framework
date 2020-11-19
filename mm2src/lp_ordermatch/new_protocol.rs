@@ -27,10 +27,6 @@ impl From<MakerOrderUpdated> for OrdermatchMessage {
     fn from(message: MakerOrderUpdated) -> Self { OrdermatchMessage::MakerOrderUpdated(message) }
 }
 
-impl From<MakerOrderUpdated> for OrdermatchMessage {
-    fn from(message: MakerOrderUpdated) -> Self { OrdermatchMessage::MakerOrderUpdated(message) }
-}
-
 /// MsgPack compact representation does not work with tagged enums (encoding works, but decoding fails)
 /// This is untagged representation also using compact Uuid representation
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -175,40 +171,6 @@ impl MakerOrderUpdated {
     pub fn new_max_volume(&self) -> Option<MmNumber> { self.new_max_volume.as_ref().map(|num| num.clone().into()) }
 
     pub fn new_min_volume(&self) -> Option<MmNumber> { self.new_min_volume.as_ref().map(|num| num.clone().into()) }
-
-    pub fn uuid(&self) -> Uuid { self.uuid.into() }
-}
-
-impl MakerOrderUpdated {
-    pub fn new(uuid: Uuid) -> Self {
-        MakerOrderUpdated {
-            uuid: uuid.into(),
-            new_price: None,
-            new_max_volume: None,
-            new_min_volume: None,
-        }
-    }
-
-    pub fn with_new_price(mut self, new_price: MmNumber) -> Self {
-        self.new_price = Some(new_price);
-        self
-    }
-
-    pub fn with_new_max_volume(mut self, new_max_volume: MmNumber) -> Self {
-        self.new_max_volume = Some(new_max_volume);
-        self
-    }
-
-    pub fn with_new_min_volume(mut self, new_min_volume: MmNumber) -> Self {
-        self.new_min_volume = Some(new_min_volume);
-        self
-    }
-
-    pub fn new_price(&self) -> &Option<MmNumber> { &self.new_price }
-
-    pub fn new_max_volume(&self) -> &Option<MmNumber> { &self.new_max_volume }
-
-    pub fn new_min_volume(&self) -> &Option<MmNumber> { &self.new_min_volume }
 
     pub fn uuid(&self) -> Uuid { self.uuid.into() }
 }

@@ -523,8 +523,6 @@ impl MakerSwap {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
         };
-        let after_tx_details = now_ms();
-        log!("tx_details_by_hash took "(after_tx_details - before_tx_details));
 
         Ok((Some(MakerSwapCommand::WaitForTakerPayment), vec![
             MakerSwapEvent::MakerPaymentSent(tx_ident),

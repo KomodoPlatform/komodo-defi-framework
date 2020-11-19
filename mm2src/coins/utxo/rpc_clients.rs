@@ -31,7 +31,6 @@ use http::Uri;
 use http::{Request, StatusCode};
 use keys::Address;
 #[cfg(test)] use mocktopus::macros::*;
-use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, VerboseBlockClient, H256 as H256Json};
 #[cfg(feature = "native")] use rustls::{self};
 use script::Builder;
@@ -434,51 +433,6 @@ impl JsonRpcClient for NativeClientImpl {
             },
         ))
     }
-}
-
-fn replace_spent_outputs_with_cache(
-    mut outputs: Vec<UnspentInfo>,
-    recently_sent: &HashMap<H256Json, UtxoTx>,
-    addr_script_pubkey: Bytes,
-) -> Vec<UnspentInfo> {
-    let mut replacement_unspents = Vec::new();
-    outputs = outputs
-        .into_iter()
-        .filter(|unspent| {
-            let tx = recently_sent.iter().find(|(_, tx)| {
-                tx.inputs
-                    .iter()
-                    .find(|input| input.previous_output == unspent.outpoint)
-                    .is_some()
-            });
-            match tx {
-                Some(tx) => {
-                    for (index, output) in tx.1.outputs.iter().enumerate() {
-                        if output.script_pubkey == addr_script_pubkey {
-                            let unspent = UnspentInfo {
-                                outpoint: OutPoint {
-                                    hash: tx.0.reversed().into(),
-                                    index: index as u32,
-                                },
-                                value: output.value,
-                                height: None,
-                            };
-                            if !replacement_unspents.contains(&unspent) {
-                                replacement_unspents.push(unspent);
-                            }
-                        }
-                    }
-                    false
-                },
-                None => true,
-            }
-        })
-        .collect();
-    if replacement_unspents.is_empty() {
-        return outputs;
-    }
-    outputs.extend(replacement_unspents);
-    replace_spent_outputs_with_cache(outputs, recently_sent, addr_script_pubkey)
 }
 
 #[cfg_attr(test, mockable)]

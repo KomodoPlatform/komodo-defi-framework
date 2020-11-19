@@ -2,12 +2,11 @@ use super::*;
 use crate::mm2::lp_network::P2PContext;
 use crate::mm2::lp_ordermatch::new_protocol::PubkeyKeepAlive;
 use coins::{MmCoin, TestCoin};
-use common::{executor::spawn,
+use common::{block_on,
              mm_ctx::{MmArc, MmCtx, MmCtxBuilder},
              privkey::key_pair_from_seed};
 use futures::{channel::mpsc, lock::Mutex as AsyncMutex, StreamExt};
-use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexResponse};
-use mm2_libp2p::{decode_message, PeerId};
+use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::collections::HashSet;
@@ -1807,47 +1806,6 @@ fn test_subscribe_to_ordermatch_topic_subscribed_filled() {
     assert_eq!(actual, expected);
 }
 */
-#[test]
-fn test_taker_request_can_match_with_maker_pubkey() {
-    let maker_pubkey = H256Json::default();
-
-    // default has MatchBy::Any
-    let mut request = TakerRequestBuilder::default().build_unchecked();
-    assert!(request.can_match_with_maker_pubkey(&maker_pubkey));
-
-    // the uuids of orders is checked in another method
-    request.match_by = MatchBy::Orders(HashSet::new());
-    assert!(request.can_match_with_maker_pubkey(&maker_pubkey));
-
-    let mut set = HashSet::new();
-    set.insert(maker_pubkey.clone());
-    request.match_by = MatchBy::Pubkeys(set);
-    assert!(request.can_match_with_maker_pubkey(&maker_pubkey));
-
-    request.match_by = MatchBy::Pubkeys(HashSet::new());
-    assert!(!request.can_match_with_maker_pubkey(&maker_pubkey));
-}
-
-#[test]
-fn test_taker_request_can_match_with_uuid() {
-    let uuid = Uuid::new_v4();
-
-    // default has MatchBy::Any
-    let mut request = TakerRequestBuilder::default().build_unchecked();
-    assert!(request.can_match_with_uuid(&uuid));
-
-    // the uuids of orders is checked in another method
-    request.match_by = MatchBy::Pubkeys(HashSet::new());
-    assert!(request.can_match_with_uuid(&uuid));
-
-    let mut set = HashSet::new();
-    set.insert(uuid);
-    request.match_by = MatchBy::Orders(set);
-    assert!(request.can_match_with_uuid(&uuid));
-
-    request.match_by = MatchBy::Orders(HashSet::new());
-    assert!(!request.can_match_with_uuid(&uuid));
-}
 
 #[test]
 fn test_orderbook_insert_or_update_order() {
