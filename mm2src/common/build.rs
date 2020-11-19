@@ -7,8 +7,8 @@
 //              Windows: https://github.com/rust-lang-nursery/rustup.rs/issues/1003#issuecomment-289825927
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
-#![feature(non_ascii_idents)]
 #![allow(uncommon_codepoints)]
+#![feature(non_ascii_idents)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use] extern crate fomat_macros;
@@ -494,7 +494,11 @@ fn root() -> PathBuf {
     // On Windows we're getting these "\\?\" paths from canonicalize but they aren't any good for CMake.
     if cfg!(windows) {
         let s = path2s(super_net);
-        Path::new(if s.starts_with(r"\\?\") { &s[4..] } else { &s[..] }).into()
+        let stripped = match s.strip_prefix(r"\\?\") {
+            Some(stripped) => stripped,
+            None => &s,
+        };
+        Path::new(stripped).into()
     } else {
         super_net
     }

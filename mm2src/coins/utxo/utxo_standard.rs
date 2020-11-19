@@ -10,8 +10,8 @@ pub struct UtxoStandardCoin {
     utxo_arc: UtxoArc,
 }
 
-impl AsRef<UtxoArc> for UtxoStandardCoin {
-    fn as_ref(&self) -> &UtxoArc { &self.utxo_arc }
+impl AsRef<UtxoCoinFields> for UtxoStandardCoin {
+    fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
 impl From<UtxoArc> for UtxoStandardCoin {
@@ -33,8 +33,10 @@ pub async fn utxo_standard_coin_from_conf_and_request(
     Ok(inner.into())
 }
 
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
-impl UtxoCoinCommonOps for UtxoStandardCoin {
+#[cfg_attr(test, mockable)]
+impl UtxoCommonOps for UtxoStandardCoin {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
     async fn get_htlc_spend_fee(&self) -> Result<u64, String> { utxo_common::get_htlc_spend_fee(self).await }
@@ -45,34 +47,10 @@ impl UtxoCoinCommonOps for UtxoStandardCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn search_for_swap_tx_spend(
-        &self,
-        time_lock: u32,
-        first_pub: &Public,
-        second_pub: &Public,
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend(
-            &self.utxo_arc,
-            time_lock,
-            first_pub,
-            second_pub,
-            secret_hash,
-            tx,
-            search_from_block,
-        )
-    }
-
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
     fn display_address(&self, address: &Address) -> Result<String, String> {
         utxo_common::display_address(&self.utxo_arc, address)
-    }
-
-    fn try_address_from_str(&self, from: &str) -> Result<Address, String> {
-        utxo_common::try_address_from_str(&self.utxo_arc, from)
     }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
@@ -84,35 +62,6 @@ impl UtxoCoinCommonOps for UtxoStandardCoin {
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
         utxo_common::is_unspent_mature(self.utxo_arc.mature_confirmations, output)
     }
-}
-
-#[mockable]
-#[async_trait]
-#[allow(clippy::forget_ref, clippy::forget_copy)]
-impl UtxoArcCommonOps for UtxoStandardCoin {
-    fn send_outputs_from_my_address(&self, outputs: Vec<TransactionOutput>) -> TransactionFut {
-        utxo_common::send_outputs_from_my_address(self.clone(), outputs)
-    }
-
-    fn validate_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        first_pub0: &Public,
-        second_pub0: &Public,
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::validate_payment(
-            self.utxo_arc.clone(),
-            payment_tx,
-            time_lock,
-            first_pub0,
-            second_pub0,
-            priv_bn_hash,
-            amount,
-        )
-    }
 
     async fn generate_transaction(
         &self,
@@ -121,7 +70,7 @@ impl UtxoArcCommonOps for UtxoStandardCoin {
         fee_policy: FeePolicy,
         fee: Option<ActualTxFee>,
         gas_fee: Option<u64>,
-    ) -> Result<(TransactionInputSigner, AdditionalTxData), String> {
+    ) -> Result<(TransactionInputSigner, AdditionalTxData), GenerateTransactionError> {
         utxo_common::generate_transaction(self, utxos, outputs, fee_policy, fee, gas_fee).await
     }
 
@@ -167,11 +116,27 @@ impl UtxoArcCommonOps for UtxoStandardCoin {
         &self,
         txid: H256Json,
     ) -> Box<dyn Future<Item = VerboseTransactionFrom, Error = String> + Send> {
-        Box::new(
-            utxo_common::get_verbose_transaction_from_cache_or_rpc(self.clone(), txid)
-                .boxed()
-                .compat(),
-        )
+        let selfi = self.clone();
+        let fut = async move { utxo_common::get_verbose_transaction_from_cache_or_rpc(&selfi.utxo_arc, txid).await };
+        Box::new(fut.boxed().compat())
+    }
+
+    async fn cache_transaction_if_possible(&self, tx: &RpcTransaction) -> Result<(), String> {
+        utxo_common::cache_transaction_if_possible(&self.utxo_arc, tx).await
+    }
+
+    async fn list_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> Result<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>), String> {
+        utxo_common::list_unspent_ordered(self, address).await
+    }
+}
+
+#[async_trait]
+impl UtxoStandardOps for UtxoStandardCoin {
+    async fn tx_details_by_hash(&self, hash: &[u8]) -> Result<TransactionDetails, String> {
+        utxo_common::tx_details_by_hash(self, hash).await
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
@@ -181,7 +146,7 @@ impl UtxoArcCommonOps for UtxoStandardCoin {
 
 impl SwapOps for UtxoStandardCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut {
-        utxo_common::send_taker_fee(self, fee_addr, amount)
+        utxo_common::send_taker_fee(self.clone(), fee_addr, amount)
     }
 
     fn send_maker_payment(
@@ -250,7 +215,7 @@ impl SwapOps for UtxoStandardCoin {
         fee_addr: &[u8],
         amount: &BigDecimal,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::validate_fee(self.utxo_arc.clone(), fee_tx, fee_addr, amount)
+        utxo_common::validate_fee(self.clone(), fee_tx, fee_addr, amount)
     }
 
     fn validate_maker_payment(
@@ -280,9 +245,9 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
-        search_from_block: u64,
+        _search_from_block: u64,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, search_from_block)
+        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash)
     }
 
     fn search_for_swap_tx_spend_my(
@@ -293,7 +258,14 @@ impl SwapOps for UtxoStandardCoin {
         tx: &[u8],
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(self, time_lock, other_pub, secret_hash, tx, search_from_block)
+        utxo_common::search_for_swap_tx_spend_my(
+            &self.utxo_arc,
+            time_lock,
+            other_pub,
+            secret_hash,
+            tx,
+            search_from_block,
+        )
     }
 
     fn search_for_swap_tx_spend_other(
@@ -304,7 +276,18 @@ impl SwapOps for UtxoStandardCoin {
         tx: &[u8],
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(self, time_lock, other_pub, secret_hash, tx, search_from_block)
+        utxo_common::search_for_swap_tx_spend_other(
+            &self.utxo_arc,
+            time_lock,
+            other_pub,
+            secret_hash,
+            tx,
+            search_from_block,
+        )
+    }
+
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        utxo_common::extract_secret(secret_hash, spend_tx)
     }
 }
 
@@ -384,10 +367,6 @@ impl MmCoin for UtxoStandardCoin {
     fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
 
     fn process_history_loop(&self, ctx: MmArc) { utxo_common::process_history_loop(self, ctx) }
-
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        utxo_common::tx_details_by_hash(self.clone(), hash)
-    }
 
     fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo_arc) }
 

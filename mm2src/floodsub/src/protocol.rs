@@ -42,13 +42,15 @@ impl UpgradeInfo for FloodsubProtocol {
     fn protocol_info(&self) -> Self::InfoIter { iter::once(b"/floodsub/1.0.0") }
 }
 
+type PinBoxTryFut<R, E> = Pin<Box<dyn Future<Output = Result<R, E>> + Send>>;
+
 impl<TSocket> InboundUpgrade<TSocket> for FloodsubProtocol
 where
     TSocket: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     type Output = FloodsubRpc;
     type Error = FloodsubDecodeError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send>>;
+    type Future = PinBoxTryFut<Self::Output, Self::Error>;
 
     fn upgrade_inbound(self, mut socket: TSocket, _: Self::Info) -> Self::Future {
         Box::pin(async move {
@@ -146,7 +148,7 @@ where
 {
     type Output = ();
     type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send>>;
+    type Future = PinBoxTryFut<Self::Output, Self::Error>;
 
     fn upgrade_outbound(self, mut socket: TSocket, _: Self::Info) -> Self::Future {
         Box::pin(async move {

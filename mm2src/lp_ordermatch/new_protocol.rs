@@ -1,7 +1,8 @@
-use super::{MatchBy as SuperMatchBy, PricePingRequest, TakerAction};
+use super::{MatchBy as SuperMatchBy, TakerAction};
 use crate::mm2::lp_ordermatch::OrderConfirmationsSettings;
 use common::mm_number::MmNumber;
 use compact_uuid::CompactUuid;
+use num_rational::BigRational;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -10,7 +11,7 @@ use uuid::Uuid;
 pub enum OrdermatchMessage {
     MakerOrderCreated(MakerOrderCreated),
     MakerOrderUpdated(MakerOrderUpdated),
-    MakerOrderKeepAlive(MakerOrderKeepAlive),
+    PubkeyKeepAlive(PubkeyKeepAlive),
     MakerOrderCancelled(MakerOrderCancelled),
     TakerRequest(TakerRequest),
     MakerReserved(MakerReserved),
@@ -18,33 +19,12 @@ pub enum OrdermatchMessage {
     MakerConnected(MakerConnected),
 }
 
-/// Get an order using uuid and the order maker's pubkey.
-/// Actual we expect to receive [`OrdermatchMessage::MakerOrderCreated`] that will be parsed into [`PricePingRequest`].
-#[derive(Debug, Deserialize, Serialize)]
-pub struct OrderInitialMessage {
-    pub initial_message: Vec<u8>,
-    pub update_messages: Vec<Vec<u8>>,
-    pub from_peer: String,
+impl From<PubkeyKeepAlive> for OrdermatchMessage {
+    fn from(keep_alive: PubkeyKeepAlive) -> Self { OrdermatchMessage::PubkeyKeepAlive(keep_alive) }
 }
 
-impl From<PricePingRequest> for OrderInitialMessage {
-    fn from(order: PricePingRequest) -> Self {
-        OrderInitialMessage {
-            initial_message: order.initial_message,
-            update_messages: order.update_messages,
-            from_peer: order.peer_id,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Orderbook {
-    pub asks: Vec<OrderInitialMessage>,
-    pub bids: Vec<OrderInitialMessage>,
-}
-
-impl From<MakerOrderKeepAlive> for OrdermatchMessage {
-    fn from(keep_alive: MakerOrderKeepAlive) -> Self { OrdermatchMessage::MakerOrderKeepAlive(keep_alive) }
+impl From<MakerOrderUpdated> for OrdermatchMessage {
+    fn from(message: MakerOrderUpdated) -> Self { OrdermatchMessage::MakerOrderUpdated(message) }
 }
 
 impl From<MakerOrderUpdated> for OrdermatchMessage {
@@ -137,15 +117,16 @@ pub struct MakerOrderCreated {
     pub uuid: CompactUuid,
     pub base: String,
     pub rel: String,
-    pub price: MmNumber,
-    pub max_volume: MmNumber,
-    pub min_volume: MmNumber,
+    pub price: BigRational,
+    pub max_volume: BigRational,
+    pub min_volume: BigRational,
+    pub created_at: u64,
     pub conf_settings: OrderConfirmationsSettings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct MakerOrderKeepAlive {
-    pub uuid: CompactUuid,
+pub struct PubkeyKeepAlive {
+    pub orders_trie_root: [u8; 8],
     pub timestamp: u64,
 }
 
@@ -157,9 +138,45 @@ pub struct MakerOrderCancelled {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MakerOrderUpdated {
     uuid: CompactUuid,
-    new_price: Option<MmNumber>,
-    new_max_volume: Option<MmNumber>,
-    new_min_volume: Option<MmNumber>,
+    new_price: Option<BigRational>,
+    new_max_volume: Option<BigRational>,
+    new_min_volume: Option<BigRational>,
+}
+
+impl MakerOrderUpdated {
+    pub fn new(uuid: Uuid) -> Self {
+        MakerOrderUpdated {
+            uuid: uuid.into(),
+            new_price: None,
+            new_max_volume: None,
+            new_min_volume: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_new_price(mut self, new_price: BigRational) -> Self {
+        self.new_price = Some(new_price);
+        self
+    }
+
+    pub fn with_new_max_volume(mut self, new_max_volume: BigRational) -> Self {
+        self.new_max_volume = Some(new_max_volume);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_new_min_volume(mut self, new_min_volume: BigRational) -> Self {
+        self.new_min_volume = Some(new_min_volume);
+        self
+    }
+
+    pub fn new_price(&self) -> Option<MmNumber> { self.new_price.as_ref().map(|num| num.clone().into()) }
+
+    pub fn new_max_volume(&self) -> Option<MmNumber> { self.new_max_volume.as_ref().map(|num| num.clone().into()) }
+
+    pub fn new_min_volume(&self) -> Option<MmNumber> { self.new_min_volume.as_ref().map(|num| num.clone().into()) }
+
+    pub fn uuid(&self) -> Uuid { self.uuid.into() }
 }
 
 impl MakerOrderUpdated {
@@ -200,8 +217,8 @@ impl MakerOrderUpdated {
 pub struct TakerRequest {
     pub base: String,
     pub rel: String,
-    pub base_amount: MmNumber,
-    pub rel_amount: MmNumber,
+    pub base_amount: BigRational,
+    pub rel_amount: BigRational,
     pub action: TakerAction,
     pub uuid: CompactUuid,
     pub match_by: MatchBy,
@@ -212,8 +229,8 @@ pub struct TakerRequest {
 pub struct MakerReserved {
     pub base: String,
     pub rel: String,
-    pub base_amount: MmNumber,
-    pub rel_amount: MmNumber,
+    pub base_amount: BigRational,
+    pub rel_amount: BigRational,
     pub taker_order_uuid: CompactUuid,
     pub maker_order_uuid: CompactUuid,
     pub conf_settings: OrderConfirmationsSettings,

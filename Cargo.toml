@@ -70,7 +70,9 @@ async-trait = "0.1"
 atomic = "0.4"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+blake2 = "0.9.1"
 bytes = "0.4"
+chain = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 coins = { path = "mm2src/coins" }
 common = { path = "mm2src/common" }
 crc = "1.8"
@@ -88,7 +90,10 @@ futures-cpupool = "0.1"
 futures-timer = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.6", features = ["nightly"] }
+hash256-std-hasher = "0.15.2"
+hash-db = "0.15.2"
 hex = "0.3.2"
+hex-literal = "0.3.1"
 http = "0.2"
 hyper = { version = "0.13", optional = true }
 hyper-rustls = { version = "0.21", optional = true }
@@ -106,21 +111,26 @@ parking_lot = { version = "0.11", features = ["nightly"] }
 # portfolio = { path = "mm2src/portfolio" }
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
+rmp-serde = "0.14.3"
 # TODO: Reduce the size of regex by disabling the features we don't use.
 # cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
+script = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 serde = "1.0"
 serde_bencode = "0.2"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_derive = "1.0"
 serialization = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 serialization_derive = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+sp-trie = "2.0.0"
 
 # Pin `term` to 0.5.1 because `dirs` is not portable, cf.
 # https://github.com/Stebalien/term/commit/84cfdb51775b327fedf21784749d862fdffa10b4#diff-80398c5faae3c069e4e6aa2ed11b28c0
 term = "=0.5.1"
 
 tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"] }
+trie-db = "0.22.1"
+trie-root = "0.16.0"
 unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"

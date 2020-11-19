@@ -50,7 +50,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
-                  TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, H256};
+                  TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
 
 use super::{CoinTransportMetrics, CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
@@ -75,13 +75,13 @@ const SWAP_CONTRACT_ABI: &str = r#"[{"constant":false,"inputs":[{"name":"_id","t
 const ERC20_ABI: &str = r#"[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_from","type":"address"},{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_subtractedValue","type":"uint256"}],"name":"decreaseApproval","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_addedValue","type":"uint256"}],"name":"increaseApproval","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"name":"owner","type":"address"},{"indexed":true,"name":"spender","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]"#;
 
 /// Payment states from etomic swap smart contract: https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol#L5
-const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
-const PAYMENT_STATE_SENT: u8 = 1;
+pub const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
+pub const PAYMENT_STATE_SENT: u8 = 1;
 const _PAYMENT_STATE_SPENT: u8 = 2;
 const _PAYMENT_STATE_REFUNDED: u8 = 3;
 
 lazy_static! {
-    static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
+    pub static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
     pub static ref ERC20_CONTRACT: Contract = unwrap!(Contract::load(ERC20_ABI.as_bytes()));
 }
 
@@ -750,6 +750,22 @@ impl SwapOps for EthCoin {
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         self.search_for_swap_tx_spend(tx, search_from_block)
     }
+
+    fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
+        let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+        let tokens = try_s!(function.decode_input(&unverified.data));
+        if tokens.len() < 3 {
+            return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
+        }
+        match &tokens[2] {
+            Token::FixedBytes(secret) => Ok(secret.to_vec()),
+            _ => ERR!(
+                "Expected secret to be fixed bytes, decoded function data is {:?}",
+                tokens
+            ),
+        }
+    }
 }
 
 impl MarketCoinOps for EthCoin {
@@ -1388,6 +1404,12 @@ impl EthCoin {
         let selfi = self.clone();
         let secret_hash = secret_hash.to_vec();
         let fut = async move {
+            let swap_id = selfi.etomic_swap_id(time_lock, &secret_hash);
+            let status = try_s!(selfi.payment_status(Token::FixedBytes(swap_id.clone())).compat().await);
+            if status != PAYMENT_STATE_SENT.into() {
+                return ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            }
+
             let tx_from_rpc = try_s!(
                 selfi
                     .web3
@@ -1429,6 +1451,10 @@ impl EthCoin {
 
                     let function = try_s!(SWAP_CONTRACT.function("ethPayment"));
                     let decoded = try_s!(function.decode_input(&tx_from_rpc.input.0));
+                    if decoded[0] != Token::FixedBytes(swap_id.clone()) {
+                        return ERR!("Invalid 'swap_id' {:?}, expected {:?}", decoded, swap_id);
+                    }
+
                     if decoded[1] != Token::Address(selfi.my_address) {
                         return ERR!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
@@ -1464,6 +1490,10 @@ impl EthCoin {
 
                     let function = try_s!(SWAP_CONTRACT.function("erc20Payment"));
                     let decoded = try_s!(function.decode_input(&tx_from_rpc.input.0));
+                    if decoded[0] != Token::FixedBytes(swap_id.clone()) {
+                        return ERR!("Invalid 'swap_id' {:?}, expected {:?}", decoded, swap_id);
+                    }
+
                     if decoded[1] != Token::Uint(expected_value) {
                         return ERR!(
                             "Payment tx value arg {:?} is invalid, expected {:?}",
@@ -2276,76 +2306,19 @@ impl MmCoin for EthCoin {
         }
     }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult { validate_address_impl!(self, address) }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult {
+        let result = self.address_from_str(address);
+        ValidateAddressResult {
+            is_valid: result.is_ok(),
+            reason: result.err(),
+        }
+    }
 
     fn process_history_loop(&self, ctx: MmArc) {
         match self.coin_type {
             EthCoinType::Eth => self.process_eth_history(&ctx),
             EthCoinType::Erc20(token) => self.process_erc20_history(token, &ctx),
         }
-    }
-
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        let selfi = self.clone();
-        let hash = H256::from(hash);
-
-        let fut = async move {
-            let tx = try_s!(selfi.web3.eth().transaction(TransactionId::Hash(hash)).compat().await);
-            let tx: Web3Transaction = try_s!(tx.ok_or(format!("tx hash {:02x} is not found", hash)));
-            let raw = try_s!(signed_tx_from_web3_tx(tx.clone()));
-            let mut received_by_me = 0.into();
-            let mut spent_by_me = 0.into();
-
-            let to = match tx.to {
-                Some(addr) => vec![checksum_address(&format!("{:#02x}", addr))],
-                None => vec![],
-            };
-            let total_amount: BigDecimal = try_s!(display_u256_with_decimal_point(tx.value, selfi.decimals).parse());
-
-            match selfi.coin_type {
-                EthCoinType::Eth => {
-                    if tx.to == Some(selfi.my_address) {
-                        received_by_me = total_amount.clone();
-                    }
-
-                    if tx.from == selfi.my_address {
-                        spent_by_me = total_amount.clone();
-                    }
-
-                    Ok(TransactionDetails {
-                        my_balance_change: &received_by_me - &spent_by_me,
-                        from: vec![checksum_address(&format!("{:#02x}", tx.from))],
-                        to,
-                        coin: selfi.ticker.clone(),
-                        block_height: tx.block_number.unwrap_or_else(|| U256::from(0)).into(),
-                        tx_hex: rlp::encode(&raw).into(),
-                        tx_hash: tx.hash.0.to_vec().into(),
-                        received_by_me,
-                        spent_by_me,
-                        total_amount,
-                        fee_details: None,
-                        internal_id: vec![0].into(),
-                        timestamp: now_ms() / 1000,
-                    })
-                },
-                EthCoinType::Erc20(_addr) => Ok(TransactionDetails {
-                    my_balance_change: &received_by_me - &spent_by_me,
-                    from: vec![checksum_address(&format!("{:#02x}", tx.from))],
-                    to,
-                    coin: selfi.ticker.clone(),
-                    block_height: tx.block_number.unwrap_or_else(|| U256::from(0)).into(),
-                    tx_hex: rlp::encode(&raw).into(),
-                    tx_hash: tx.hash.0.to_vec().into(),
-                    received_by_me,
-                    spent_by_me,
-                    total_amount,
-                    fee_details: None,
-                    internal_id: vec![0].into(),
-                    timestamp: now_ms() / 1000,
-                }),
-            }
-        };
-        Box::new(fut.boxed().compat())
     }
 
     fn history_sync_status(&self) -> HistorySyncState { unwrap!(self.history_sync_state.lock()).clone() }
@@ -2422,18 +2395,6 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, S
 
 impl Transaction for SignedEthTx {
     fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
-
-    fn extract_secret(&self) -> Result<Vec<u8>, String> {
-        let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
-        let tokens = try_s!(function.decode_input(&self.data));
-        match &tokens[2] {
-            Token::FixedBytes(secret) => Ok(secret.to_vec()),
-            _ => ERR!(
-                "Expected secret to be fixed bytes, decoded function data is {:?}",
-                tokens
-            ),
-        }
-    }
 
     fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
 }
@@ -2534,7 +2495,7 @@ fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
     Ok(addr)
 }
 
-fn addr_from_str(addr_str: &str) -> Result<Address, String> {
+pub fn addr_from_str(addr_str: &str) -> Result<Address, String> {
     if !addr_str.starts_with("0x") {
         return ERR!("Address must be prefixed with 0x");
     };

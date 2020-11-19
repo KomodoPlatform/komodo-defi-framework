@@ -24,13 +24,13 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
-use term;
 
 use crate::executor::Timer;
 #[cfg(not(feature = "native"))] use crate::helperᶜ;
 use crate::log::{dashboard_path, LogState};
 #[cfg(not(feature = "native"))]
 use crate::mm_ctx::{MmArc, MmCtxBuilder};
+use crate::mm_metrics::{MetricType, MetricsJson};
 #[cfg(feature = "native")] use crate::wio::{slurp_req, POOL};
 use crate::{now_float, slurp};
 
@@ -174,7 +174,7 @@ impl MarketMakerIt {
                     attempts += 1;
                     continue;
                 }
-                mm_ips.insert(ip.clone(), true);
+                mm_ips.insert(ip, true);
                 conf["myipaddr"] = format!("{}", ip).into();
                 conf["rpcip"] = format!("{}", ip).into();
                 break ip;
@@ -186,7 +186,7 @@ impl MarketMakerIt {
             if mm_ips.contains_key(&ip) {
                 log! ({"MarketMakerIt] Warning, IP {} was already used.", ip})
             }
-            mm_ips.insert(ip.clone(), true);
+            mm_ips.insert(ip, true);
             ip
         };
 
@@ -582,6 +582,29 @@ pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, urls: Vec<&str>) ->
     unwrap!(json::from_str(&electrum.1))
 }
 
+pub async fn enable_qrc20(mm: &MarketMakerIt, coin: &str, urls: &[&str], swap_contract_address: &str) -> Json {
+    let servers: Vec<_> = urls.iter().map(|url| json!({ "url": url })).collect();
+    let electrum = unwrap!(
+        mm.rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "electrum",
+            "coin": coin,
+            "servers": servers,
+            "mm2": 1,
+            "swap_contract_address": swap_contract_address,
+        }))
+        .await
+    );
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    unwrap!(json::from_str(&electrum.1))
+}
+
 /// Reads passphrase and userpass from .env file
 pub fn from_env_file(env: Vec<u8>) -> (Option<String>, Option<String>) {
     use regex::bytes::Regex;
@@ -646,4 +669,34 @@ pub fn new_mm2_temp_folder_path(ip: Option<IpAddr>) -> PathBuf {
         None => format!("mm2_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f")),
     };
     super::temp_dir().join(folder)
+}
+
+pub fn find_metrics_in_json(
+    metrics: MetricsJson,
+    search_key: &str,
+    search_labels: &[(&str, &str)],
+) -> Option<MetricType> {
+    metrics.metrics.into_iter().find(|metric| {
+        let (key, labels) = match metric {
+            MetricType::Counter { key, labels, .. } => (key, labels),
+            _ => return false,
+        };
+
+        if key != search_key {
+            return false;
+        }
+
+        for (s_label_key, s_label_value) in search_labels.iter() {
+            let label_value = match labels.get(&(*s_label_key).to_string()) {
+                Some(x) => x,
+                _ => return false,
+            };
+
+            if s_label_value != label_value {
+                return false;
+            }
+        }
+
+        true
+    })
 }

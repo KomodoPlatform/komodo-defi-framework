@@ -81,7 +81,7 @@ impl RequestResponseBehaviour {
         response_tx: oneshot::Sender<PeerResponse>,
     ) -> RequestId {
         let request_id = self.inner.send_request(&peer_id, request);
-        assert!(self.pending_requests.insert(request_id.clone(), response_tx).is_none());
+        assert!(self.pending_requests.insert(request_id, response_tx).is_none());
         request_id
     }
 

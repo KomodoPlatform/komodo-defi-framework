@@ -16,7 +16,6 @@
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -27,7 +26,6 @@ use common::mm_ctx::MmArc;
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HyRes};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, FutureExt, TryFutureExt};
-use gstuff;
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
 use http::{Method, Request, Response};

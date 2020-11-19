@@ -4,10 +4,12 @@ use core::ops::{Add, Div, Mul, Sub};
 use num_rational::BigRational;
 use num_traits::Pow;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::value::RawValue;
+use std::str::FromStr;
 
 pub use num_bigint::{BigInt, Sign};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize)]
 pub struct MmNumber(BigRational);
 
 /// Rational number representation de/serializable in human readable form
@@ -43,7 +45,7 @@ impl Into<BigRational> for Fraction {
 }
 
 impl From<BigDecimal> for Fraction {
-    fn from(dec: BigDecimal) -> Fraction { from_dec_to_ratio(dec).into() }
+    fn from(dec: BigDecimal) -> Fraction { from_dec_to_ratio(&dec).into() }
 }
 
 impl<'de> Deserialize<'de> for Fraction {
@@ -73,7 +75,7 @@ pub fn from_ratio_to_dec(r: &BigRational) -> BigDecimal {
     BigDecimal::from(r.numer().clone()) / BigDecimal::from(r.denom().clone())
 }
 
-pub fn from_dec_to_ratio(d: BigDecimal) -> BigRational {
+pub fn from_dec_to_ratio(d: &BigDecimal) -> BigRational {
     let (num, scale) = d.as_bigint_and_exponent();
     let ten = BigInt::from(10);
     if scale >= 0 {
@@ -87,26 +89,31 @@ pub fn from_dec_to_ratio(d: BigDecimal) -> BigRational {
 /// 1. big rational representation,
 /// 2. decimal string e.g. "0.1"
 /// 3. fraction object e.g. { "numer":"2", "denom":"3" }
+/// IMPORTANT: the deserialization implementation works properly from JSON only!
+/// Consider using BigRational type directly for other serde implementations
 impl<'de> Deserialize<'de> for MmNumber {
     fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum MmNumberHelper {
-            BigDecimal(BigDecimal),
-            BigRational(BigRational),
-            Fraction(Fraction),
-        }
+        let raw: Box<RawValue> = Deserialize::deserialize(deserializer)?;
 
-        let ratio = match Deserialize::deserialize(deserializer)? {
-            MmNumberHelper::BigDecimal(x) => from_dec_to_ratio(x),
-            MmNumberHelper::BigRational(x) => x,
-            MmNumberHelper::Fraction(x) => x.into(),
+        if let Ok(dec) = BigDecimal::from_str(&raw.get().trim_matches('"')) {
+            return Ok(MmNumber(from_dec_to_ratio(&dec)));
         };
 
-        Ok(MmNumber(ratio))
+        if let Ok(rat) = serde_json::from_str::<BigRational>(raw.get()) {
+            return Ok(MmNumber(rat));
+        };
+
+        if let Ok(fraction) = serde_json::from_str::<Fraction>(raw.get()) {
+            return Ok(MmNumber(fraction.into()));
+        };
+
+        Err(de::Error::custom(format!(
+            "Could not deserialize any variant of MmNumber from {}",
+            raw.get()
+        )))
     }
 }
 
@@ -115,7 +122,7 @@ impl std::fmt::Display for MmNumber {
 }
 
 impl From<BigDecimal> for MmNumber {
-    fn from(n: BigDecimal) -> MmNumber { from_dec_to_ratio(n).into() }
+    fn from(n: BigDecimal) -> MmNumber { from_dec_to_ratio(&n).into() }
 }
 
 impl From<BigRational> for MmNumber {
@@ -198,33 +205,14 @@ impl Div for &MmNumber {
     }
 }
 
-impl PartialOrd<MmNumber> for MmNumber {
-    fn partial_cmp(&self, rhs: &MmNumber) -> Option<std::cmp::Ordering> {
-        let lhs = from_ratio_to_dec(&self.0);
-        let rhs = from_ratio_to_dec(&rhs.0);
-        Some(lhs.cmp(&rhs))
-    }
-}
-
 impl PartialOrd<BigDecimal> for MmNumber {
     fn partial_cmp(&self, other: &BigDecimal) -> Option<std::cmp::Ordering> {
-        Some(from_ratio_to_dec(&self.0).cmp(other))
-    }
-}
-
-impl PartialEq for MmNumber {
-    fn eq(&self, rhs: &MmNumber) -> bool {
-        let lhs = from_ratio_to_dec(&self.0);
-        let rhs = from_ratio_to_dec(&rhs.0);
-        lhs == rhs
+        Some(self.0.cmp(&from_dec_to_ratio(other)))
     }
 }
 
 impl PartialEq<BigDecimal> for MmNumber {
-    fn eq(&self, rhs: &BigDecimal) -> bool {
-        let dec = from_ratio_to_dec(&self.0);
-        &dec == rhs
-    }
+    fn eq(&self, rhs: &BigDecimal) -> bool { self.0 == from_dec_to_ratio(rhs) }
 }
 
 impl Default for MmNumber {
@@ -272,17 +260,17 @@ mod tests {
     #[test]
     fn test_from_dec_to_ratio() {
         let number: BigDecimal = "11.00000000000000000000000000000000000000".parse().unwrap();
-        let rational = from_dec_to_ratio(number);
+        let rational = from_dec_to_ratio(&number);
         assert_eq!(*rational.numer(), 11.into());
         assert_eq!(*rational.denom(), 1.into());
 
         let number: BigDecimal = "0.00000001".parse().unwrap();
-        let rational = from_dec_to_ratio(number);
+        let rational = from_dec_to_ratio(&number);
         assert_eq!(*rational.numer(), 1.into());
         assert_eq!(*rational.denom(), 100000000.into());
 
         let number: BigDecimal = 1.into();
-        let rational = from_dec_to_ratio(number);
+        let rational = from_dec_to_ratio(&number);
         assert_eq!(*rational.numer(), 1.into());
         assert_eq!(*rational.denom(), 1.into());
     }
@@ -302,7 +290,7 @@ mod tests {
 
         for num in vals {
             let decimal: BigDecimal = BigDecimal::from_str(num).unwrap();
-            let expected: MmNumber = from_dec_to_ratio(decimal).into();
+            let expected: MmNumber = from_dec_to_ratio(&decimal).into();
             let actual: MmNumber = json::from_str(&num).unwrap();
             assert_eq!(expected, actual);
         }

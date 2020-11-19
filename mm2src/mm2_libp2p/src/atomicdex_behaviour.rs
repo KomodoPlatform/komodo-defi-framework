@@ -41,7 +41,7 @@ pub const PEERS_TOPIC: &str = "PEERS";
 const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
-const CHANNEL_BUF_SIZE: usize = 1024;
+const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
 impl libp2p::core::Executor for &SwarmRuntime {
     fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.0.spawn(future); }
@@ -106,7 +106,7 @@ pub enum AdexBehaviourCmd {
         topic: String,
     },
     PublishMsg {
-        topic: String,
+        topics: Vec<String>,
         msg: Vec<u8>,
     },
     /// Request relays sequential until a response is received.
@@ -259,8 +259,8 @@ impl AtomicDexBehaviour {
                 let topic = Topic::new(topic);
                 self.gossipsub.subscribe(topic);
             },
-            AdexBehaviourCmd::PublishMsg { topic, msg } => {
-                self.gossipsub.publish(&Topic::new(topic), msg);
+            AdexBehaviourCmd::PublishMsg { topics, msg } => {
+                self.gossipsub.publish_many(topics.into_iter().map(Topic::new), msg);
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
                 let relays = self.gossipsub.get_relay_mesh();
@@ -530,7 +530,7 @@ pub fn start_gossipsub(
     to_dial: Option<Vec<String>>,
     my_privkey: &mut [u8],
     i_am_relay: bool,
-    on_poll: impl Fn(&AtomicDexSwarm) -> () + Send + 'static,
+    on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId) {
     let privkey = identity::secp256k1::SecretKey::from_bytes(my_privkey).unwrap();
     let local_key = identity::Keypair::Secp256k1(privkey.into());

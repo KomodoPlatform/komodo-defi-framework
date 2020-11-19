@@ -31,26 +31,29 @@ fn private_from_seed(seed: &str) -> Result<Private, String> {
         }, // else ignore other errors, assume the passphrase is not WIF
     }
 
-    if seed.starts_with("0x") {
-        let hash: H256 = try_s!((&seed[2..]).parse());
-        Ok(Private {
-            prefix: 0,
-            secret: hash,
-            compressed: true,
-            checksum_type: ChecksumType::DSHA256,
-        })
-    } else {
-        let mut hash = sha256(seed.as_bytes());
-        hash[0] &= 248;
-        hash[31] &= 127;
-        hash[31] |= 64;
+    match seed.strip_prefix("0x") {
+        Some(stripped) => {
+            let hash: H256 = try_s!(stripped.parse());
+            Ok(Private {
+                prefix: 0,
+                secret: hash,
+                compressed: true,
+                checksum_type: ChecksumType::DSHA256,
+            })
+        },
+        None => {
+            let mut hash = sha256(seed.as_bytes());
+            hash[0] &= 248;
+            hash[31] &= 127;
+            hash[31] |= 64;
 
-        Ok(Private {
-            prefix: 0,
-            secret: hash,
-            compressed: true,
-            checksum_type: ChecksumType::DSHA256,
-        })
+            Ok(Private {
+                prefix: 0,
+                secret: hash,
+                compressed: true,
+                checksum_type: ChecksumType::DSHA256,
+            })
+        },
     }
 }
 

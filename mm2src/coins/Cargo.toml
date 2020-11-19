@@ -40,6 +40,7 @@ futures-timer = "0.1"
 gstuff = { version = "0.6", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.2"
+itertools = "0.9"
 jsonrpc-core = "8.0.1"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"

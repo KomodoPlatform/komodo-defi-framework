@@ -1,3 +1,4 @@
+#![allow(uncommon_codepoints)]
 #![feature(async_closure)]
 #![feature(drain_filter)]
 #![feature(hash_raw_entry)]

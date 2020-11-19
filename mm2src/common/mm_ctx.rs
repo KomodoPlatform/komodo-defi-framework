@@ -213,28 +213,6 @@ impl MmCtx {
         }
     }
 
-    /// Sends the P2P message to a processing thread
-    #[cfg(feature = "native")]
-    pub fn broadcast_p2p_msg(&self, _topic: String, _msg: Vec<u8>) { unimplemented!() }
-
-    #[cfg(not(feature = "native"))]
-    pub fn broadcast_p2p_msg(&self, msg: &str) {
-        use crate::executor::spawn;
-        use crate::{helperᶜ, BroadcastP2pMessageArgs};
-
-        let args = BroadcastP2pMessageArgs {
-            ctx: self.ffi_handle.copy_or(0),
-            msg: msg.into(),
-        };
-        let args = unwrap!(bencode(&args));
-        spawn(async move {
-            let rc = helperᶜ("broadcast_p2p_msg", args).await;
-            if let Err(err) = rc {
-                log!("!broadcast_p2p_msg: "(err))
-            }
-        });
-    }
-
     /// Get a reference to the secp256k1 key pair.
     /// Panics if the key pair is not available.
     pub fn secp256k1_key_pair(&self) -> &KeyPair {
@@ -446,8 +424,6 @@ impl MmArc {
             while !ctx.dropped() {
                 Timer::sleep(0.5).await
             }
-
-            ()
         };
 
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)

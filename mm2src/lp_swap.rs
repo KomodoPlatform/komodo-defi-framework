@@ -54,7 +54,6 @@
 //  lp_swap.rs
 //  marketmaker
 //
-#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use crate::mm2::lp_network::broadcast_p2p_msg;
@@ -75,6 +74,7 @@ use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
@@ -137,10 +137,14 @@ pub fn broadcast_swap_message_every(ctx: MmArc, topic: String, msg: SwapMsg, int
 pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg) {
     let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
     let encoded_msg = encode_and_sign(&msg, &*key_pair.private().secret).unwrap();
-    broadcast_p2p_msg(ctx, topic, encoded_msg);
+    broadcast_p2p_msg(ctx, vec![topic], encoded_msg);
 }
 
 pub fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
+    let uuid = match Uuid::from_str(topic) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
@@ -156,7 +160,7 @@ pub fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
     };
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
     let mut msgs = unwrap!(swap_ctx.swap_msgs.lock());
-    if let Some(msg_store) = msgs.get_mut(&topic.to_string()) {
+    if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
             match msg.0 {
                 SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
@@ -170,7 +174,7 @@ pub fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
     }
 }
 
-pub fn swap_topic(uuid: &str) -> String { pub_sub_topic(SWAP_PREFIX, uuid) }
+pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
 
 /*
 // NB: Using a macro instead of a function in order to preserve the line numbers in the log.
@@ -191,7 +195,7 @@ macro_rules! send {
 async fn recv_swap_msg<T>(
     ctx: MmArc,
     mut getter: impl FnMut(&mut SwapMsgStore) -> Option<T>,
-    uuid: &str,
+    uuid: &Uuid,
     timeout: u64,
 ) -> Result<T, String> {
     let started = now_ms() / 1000;
@@ -297,7 +301,7 @@ pub struct LockedAmount {
 pub trait AtomicSwap: Send + Sync {
     fn locked_amount(&self, trade_fee: &TradeFee) -> LockedAmount;
 
-    fn uuid(&self) -> &str;
+    fn uuid(&self) -> &Uuid;
 
     fn maker_coin(&self) -> &str;
 
@@ -321,7 +325,7 @@ impl Into<SwapEvent> for TakerSwapEvent {
 
 #[derive(Serialize)]
 struct BanReason {
-    caused_by_swap: String,
+    caused_by_swap: Uuid,
     caused_by_event: SwapEvent,
 }
 
@@ -334,7 +338,7 @@ struct SwapsContext {
     /// So when stop was invoked the swaps could stay running on shared executors causing
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
-    swap_msgs: Mutex<HashMap<String, SwapMsgStore>>,
+    swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
 }
 
 impl SwapsContext {
@@ -364,17 +368,17 @@ impl SwapsContext {
         })))
     }
 
-    pub fn init_msg_store(&self, uuid: String, accept_only_from: bits256) {
+    pub fn init_msg_store(&self, uuid: Uuid, accept_only_from: bits256) {
         let store = SwapMsgStore::new(accept_only_from);
         self.swap_msgs.lock().unwrap().insert(uuid, store);
     }
 }
 
-pub fn ban_pubkey(ctx: &MmArc, pubkey: H256, swap_uuid: &str, event: SwapEvent) {
+pub fn ban_pubkey(ctx: &MmArc, pubkey: H256, swap_uuid: &Uuid, event: SwapEvent) {
     let ctx = unwrap!(SwapsContext::from_ctx(ctx));
     let mut banned = unwrap!(ctx.banned_pubkeys.lock());
     banned.insert(pubkey.into(), BanReason {
-        caused_by_swap: swap_uuid.into(),
+        caused_by_swap: *swap_uuid,
         caused_by_event: event,
     });
 }
@@ -414,7 +418,7 @@ pub fn running_swaps_num(ctx: &MmArc) -> u64 {
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps except the one with selected uuid
-fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &str, coin: &str, trade_fee: &TradeFee) -> MmNumber {
+fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str, trade_fee: &TradeFee) -> MmNumber {
     let swap_ctx = unwrap!(SwapsContext::from_ctx(&ctx));
     let mut swaps = unwrap!(swap_ctx.running_swaps.lock());
     *swaps = swaps.drain_filter(|swap| swap.upgrade().is_some()).collect();
@@ -438,7 +442,7 @@ pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, Str
     for swap in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
             if swap.maker_coin() == coin || swap.taker_coin() == coin {
-                uuids.push(try_s!(swap.uuid().parse()))
+                uuids.push(*swap.uuid())
             }
         }
     }
@@ -555,9 +559,17 @@ struct SwapNegotiationData {
     persistent_pubkey: H264,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct TransactionIdentifier {
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    tx_hex: BytesJson,
+    /// Transaction hash in hexadecimal format
+    tx_hash: BytesJson,
+}
+
 fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
 
-pub fn my_swap_file_path(ctx: &MmArc, uuid: &str) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
+pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
 
 fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     let (path, content) = match &swap {
@@ -600,7 +612,7 @@ impl SavedSwap {
         }
     }
 
-    fn uuid(&self) -> &str {
+    fn uuid(&self) -> &Uuid {
         match self {
             SavedSwap::Maker(swap) => &swap.uuid,
             SavedSwap::Taker(swap) => &swap.uuid,
@@ -705,10 +717,8 @@ impl<'a> From<&'a SavedSwap> for MySwapStatusResponse<'a> {
 
 /// Returns the status of swap performed on `my` node
 pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
-    let uuid = try_h!(req["params"]["uuid"]
-        .as_str()
-        .ok_or("uuid parameter is not set or is not string"));
-    let path = my_swap_file_path(&ctx, uuid);
+    let uuid: Uuid = try_h!(json::from_value(req["params"]["uuid"].clone()));
+    let path = my_swap_file_path(&ctx, &uuid);
     let content = try_h!(slurp(&path));
     if content.is_empty() {
         return rpc_response(
@@ -729,11 +739,9 @@ pub fn my_swap_status(ctx: MmArc, req: Json) -> HyRes {
 
 /// Returns the status of requested swap, typically performed by other nodes and saved by `save_stats_swap_status`
 pub fn stats_swap_status(ctx: MmArc, req: Json) -> HyRes {
-    let uuid = try_h!(req["params"]["uuid"]
-        .as_str()
-        .ok_or("uuid parameter is not set or is not string"));
-    let maker_path = stats_maker_swap_file_path(&ctx, uuid);
-    let taker_path = stats_taker_swap_file_path(&ctx, uuid);
+    let uuid: Uuid = try_h!(json::from_value(req["params"]["uuid"].clone()));
+    let maker_path = stats_maker_swap_file_path(&ctx, &uuid);
+    let taker_path = stats_taker_swap_file_path(&ctx, &uuid);
     let maker_content = try_h!(slurp(&maker_path));
     let taker_content = try_h!(slurp(&taker_path));
     let maker_status: Option<MakerSavedSwap> = if maker_content.is_empty() {
@@ -777,7 +785,7 @@ struct SwapStatus {
 }
 
 /// Broadcasts `my` swap status to P2P network
-fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
+fn broadcast_my_swap_status(uuid: &Uuid, ctx: &MmArc) -> Result<(), String> {
     let path = my_swap_file_path(ctx, uuid);
     let content = try_s!(slurp(&path));
     let mut status: SavedSwap = try_s!(json::from_slice(&content));
@@ -791,7 +799,7 @@ fn broadcast_my_swap_status(uuid: &str, ctx: &MmArc) -> Result<(), String> {
         data: status,
     };
     let msg = json::to_vec(&status).expect("Swap status ser should never fail");
-    broadcast_p2p_msg(ctx, swap_topic(uuid), msg);
+    broadcast_p2p_msg(ctx, vec![swap_topic(uuid)], msg);
     Ok(())
 }
 
@@ -802,16 +810,24 @@ pub fn save_stats_swap_status(ctx: &MmArc, data: Json) {
     unwrap!(save_stats_swap(ctx, &swap));
 }
 
+fn ten() -> u64 { 10 }
+
+#[derive(Debug, Deserialize)]
+struct MyRecentSwapsReq {
+    #[serde(default = "ten")]
+    limit: u64,
+    from_uuid: Option<Uuid>,
+}
+
 /// Returns the data of recent swaps of `my` node. Returns no more than `limit` records (default: 10).
 /// Skips the first `skip` records (default: 0).
 pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
-    let limit = req["limit"].as_u64().unwrap_or(10);
-    let from_uuid = req["from_uuid"].as_str();
+    let req: MyRecentSwapsReq = try_h!(json::from_value(req));
     let mut entries: Vec<(u64, PathBuf)> = try_h!(read_dir(&my_swaps_dir(&ctx)));
     // sort by m_time in descending order
     entries.sort_by(|(a, _), (b, _)| b.cmp(&a));
 
-    let skip = match from_uuid {
+    let skip = match &req.from_uuid {
         Some(uuid) => {
             let swap_path = my_swap_file_path(&ctx, uuid);
             try_h!(entries
@@ -827,7 +843,7 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     let swaps: Vec<Json> = entries
         .iter()
         .skip(skip)
-        .take(limit as usize)
+        .take(req.limit as usize)
         .map(
             |(_, path)| match json::from_slice::<SavedSwap>(&unwrap!(slurp(&path))) {
                 Ok(swap) => unwrap!(json::to_value(MySwapStatusResponse::from(&swap))),
@@ -844,9 +860,9 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
         json!({
             "result": {
                 "swaps": swaps,
-                "from_uuid": from_uuid,
+                "from_uuid": req.from_uuid,
                 "skipped": skip,
-                "limit": limit,
+                "limit": req.limit,
                 "total": entries.len(),
             },
         })
@@ -951,10 +967,8 @@ pub async fn coins_needed_for_kick_start(ctx: MmArc) -> Result<Response<Vec<u8>>
 }
 
 pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let uuid = try_s!(req["params"]["uuid"]
-        .as_str()
-        .ok_or("uuid parameter is not set or is not string"));
-    let path = my_swap_file_path(&ctx, uuid);
+    let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
+    let path = my_swap_file_path(&ctx, &uuid);
     let content = try_s!(slurp(&path));
     if content.is_empty() {
         return ERR!("swap data is not found");

@@ -1,9 +1,8 @@
 use super::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
-use crate::utxo::rpc_clients::{NativeUnspent, UtxoRpcClientOps};
+use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin, UTXO_STANDARD_DUST};
-use crate::{SwapOps, TxFeeDetails, WithdrawFee};
+use crate::{SwapOps, WithdrawFee};
 use bigdecimal::BigDecimal;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
@@ -46,16 +45,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
-fn native_client_for_test() -> NativeClient {
-    NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: "TEST".into(),
-        uri: "".into(),
-        auth: "".into(),
-        event_handlers: vec![],
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }))
-}
+fn native_client_for_test() -> NativeClient { NativeClient(Arc::new(NativeClientImpl::default())) }
 
 fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -> UtxoCoinFields {
     let checksum_type = ChecksumType::DSHA256;
@@ -80,6 +70,7 @@ fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&
         t_addr_prefix: 0,
         checksum_type,
     };
+    let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
     UtxoCoinFields {
         decimals: 8,
@@ -114,6 +105,7 @@ fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&
         dust_amount: UTXO_STANDARD_DUST,
         mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
         tx_cache_directory: None,
+        recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
     }
 }
 
@@ -128,10 +120,14 @@ fn utxo_coin_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -
 
 #[test]
 fn test_extract_secret() {
-    let tx: UtxoTx = "0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c".into();
-    let secret = tx.extract_secret().unwrap();
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10017"]);
+    let coin = utxo_coin_for_test(client.into(), None);
+
+    let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let expected_secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
-    assert_eq!(expected_secret, secret);
+    let secret_hash = &*dhash160(&expected_secret);
+    let secret = unwrap!(coin.extract_secret(secret_hash, &tx_hex));
+    assert_eq!(secret, expected_secret);
 }
 
 #[test]
@@ -349,17 +345,7 @@ fn test_sat_from_big_decimal() {
 
 #[test]
 fn test_wait_for_payment_spend_timeout_native() {
-    let client = NativeClientImpl {
-        coin_ticker: "RICK".into(),
-        uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    };
+    let client = NativeClientImpl::default();
 
     static mut OUTPUT_SPEND_CALLED: bool = false;
     NativeClient::find_output_spend.mock_safe(|_, _, _, _| {
@@ -467,17 +453,7 @@ fn test_withdraw_impl_set_fixed_fee() {
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -514,17 +490,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -564,17 +530,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -616,17 +572,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -668,17 +614,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -708,17 +644,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
 
-    let client = NativeClient(Arc::new(NativeClientImpl {
-        coin_ticker: TEST_COIN_NAME.into(),
-        uri: "http://127.0.0.1".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    }));
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
 
@@ -742,78 +668,6 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
     );
     let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
     assert_eq!(expected, tx_details.fee_details);
-}
-
-#[test]
-fn test_qrc20_withdraw_impl_fee_details() {
-    Qrc20Coin::ordered_mature_unspents.mock_safe(|_, _| {
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-        }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
-    });
-
-    let conf = json!({
-        "coin":"QRC20",
-        "required_confirmations":0,
-        "pubtype":120,
-        "p2shtype":50,
-        "wiftype":128,
-        "segwit":true,
-        "mm2":1,
-        "mature_confirmations":500,
-    });
-    let req = json!({
-        "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
-    });
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let contract_address = "0xd362e096e873eb7907e205fadc6175c6fec7bc44".into();
-
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let coin = unwrap!(block_on(qrc20_coin_from_conf_and_request(
-        &ctx,
-        "QRC20",
-        "QTUM",
-        &conf,
-        &req,
-        &priv_key,
-        contract_address
-    )));
-
-    let withdraw_req = WithdrawRequest {
-        amount: 10.into(),
-        to: "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into(),
-        coin: "QRC20".into(),
-        max: false,
-        fee: Some(WithdrawFee::Qrc20Gas {
-            gas_limit: 2_500_000,
-            gas_price: 40,
-        }),
-    };
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
-
-    let expected: Qrc20FeeDetails = unwrap!(json::from_value(json!({
-        "coin": "QTUM",
-        // (1000 + total_gas_fee) from satoshi,
-        // where decimals = 8,
-        //       1000 is fixed fee
-        "miner_fee": "1.00001",
-        "gas_limit": 2_500_000,
-        "gas_price": 40,
-        // (gas_limit * gas_price) from satoshi in Qtum
-        "total_gas_fee": "1",
-    })));
-    assert_eq!(Some(TxFeeDetails::Qrc20(expected)), tx_details.fee_details);
 }
 
 #[test]
@@ -895,7 +749,7 @@ fn get_tx_details_doge() {
         log!((block));
         let hash = hex::decode("99caab76bd025d189f10856dc649aad1a191b1cfd9b139ece457c5fedac58132").unwrap();
         loop {
-            let tx_details = coin1.tx_details_by_hash(&hash).compat().await.unwrap();
+            let tx_details = coin1.tx_details_by_hash(&hash).await.unwrap();
             log!([tx_details]);
             Timer::sleep(1.).await;
         }
@@ -905,7 +759,7 @@ fn get_tx_details_doge() {
         log!((block));
         let hash = hex::decode("99caab76bd025d189f10856dc649aad1a191b1cfd9b139ece457c5fedac58132").unwrap();
         loop {
-            let tx_details = coin2.tx_details_by_hash(&hash).compat().await.unwrap();
+            let tx_details = coin2.tx_details_by_hash(&hash).await.unwrap();
             log!([tx_details]);
             Timer::sleep(1.).await;
         }
@@ -932,7 +786,7 @@ fn get_tx_details_coinbase_transaction() {
         // hash of coinbase transaction https://morty.explorer.dexstats.info/tx/b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5
         let hash = hex::decode("b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5").unwrap();
 
-        let tx_details = coin.tx_details_by_hash(&hash).compat().await.unwrap();
+        let tx_details = coin.tx_details_by_hash(&hash).await.unwrap();
         assert!(tx_details.from.is_empty());
     };
 
@@ -1041,17 +895,7 @@ fn test_network_info_deserialization() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/617
 fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
-    let client = NativeClientImpl {
-        coin_ticker: "RICK".into(),
-        uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    };
+    let client = NativeClientImpl::default();
 
     static mut GET_RELAY_FEE_CALLED: bool = false;
     NativeClient::get_relay_fee.mock_safe(|_| {
@@ -1093,17 +937,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/617
 fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
-    let client = NativeClientImpl {
-        coin_ticker: "RICK".into(),
-        uri: "http://127.0.0.1:10271".to_owned(),
-        auth: fomat!("Basic "(base64_encode(
-            "user481805103:pass97a61c8d048bcf468c6c39a314970e557f57afd1d8a5edee917fb29bafb3a43371",
-            URL_SAFE
-        ))),
-        event_handlers: Default::default(),
-        request_id: 0u64.into(),
-        recently_sent_txs: AsyncMutex::new(HashMap::new()),
-    };
+    let client = NativeClientImpl::default();
 
     static mut GET_RELAY_FEE_CALLED: bool = false;
     NativeClient::get_relay_fee.mock_safe(|_| {
@@ -1245,7 +1079,7 @@ fn test_cashaddresses_in_tx_details_by_hash() {
 
     let hash = hex::decode("0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751").unwrap();
     let fut = async {
-        let tx_details = coin.tx_details_by_hash(&hash).compat().await.unwrap();
+        let tx_details = coin.tx_details_by_hash(&hash).await.unwrap();
         log!([tx_details]);
 
         assert!(tx_details
@@ -1375,6 +1209,41 @@ fn test_unavailable_electrum_proto_version() {
     .err());
     log!("Error: "(error));
     assert!(error.contains("There are no Electrums with the required protocol version"));
+}
+
+#[test]
+#[ignore]
+// The test provided to dimxy to recreate "stuck mempool" problem of komodod on RICK chain.
+// Leaving this test here for a while because it might be still useful
+fn test_spam_rick() {
+    let conf = json!({"coin":"RICK","asset":"RICK","fname":"RICK (TESTCOIN)","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"required_confirmations":1,"avg_blocktime":1,"protocol":{"type":"UTXO"}});
+    let req = json!({
+         "method": "enable",
+         "coin": "RICK",
+    });
+
+    let key_pair = key_pair_from_seed("my_seed").unwrap();
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx,
+        "RICK",
+        &conf,
+        &req,
+        &*key_pair.private().secret
+    )));
+
+    let output = TransactionOutput {
+        value: 1000000,
+        script_pubkey: Builder::build_p2pkh(&coin.as_ref().my_address.hash).to_bytes(),
+    };
+    let mut futures = vec![];
+    for _ in 0..5 {
+        futures.push(send_outputs_from_my_address_impl(coin.clone(), vec![output.clone()]));
+    }
+    let results = block_on(join_all(futures));
+    for result in results {
+        unwrap!(result);
+    }
 }
 
 #[test]
@@ -1554,74 +1423,328 @@ fn test_tx_history_path_colon_should_be_escaped_for_cash_address() {
     assert!(!path.display().to_string().contains(":"));
 }
 
+fn test_ordered_mature_unspents_from_cache_impl(
+    unspent_height: Option<u64>,
+    cached_height: Option<u64>,
+    cached_confs: u32,
+    block_count: u64,
+    expected_height: Option<u64>,
+    expected_confs: u32,
+) {
+    const TX_HASH: &str = "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f";
+    let tx_hash: H256Json = hex::decode(TX_HASH).unwrap().as_slice().into();
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10017"]);
+    let mut verbose = client.get_verbose_transaction(tx_hash.clone()).wait().unwrap();
+    verbose.confirmations = cached_confs;
+    verbose.height = cached_height;
+
+    // prepare mocks
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(move |coin, _| {
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: H256::from_reversed_str(TX_HASH),
+                index: 0,
+            },
+            value: 1000000000,
+            height: unspent_height,
+        }];
+        MockResult::Return(Box::pin(futures::future::ok((
+            unspents,
+            block_on(coin.as_ref().recently_spent_outpoints.lock()),
+        ))))
+    });
+    ElectrumClient::get_block_count
+        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(block_count))));
+    UtxoStandardCoin::get_verbose_transaction_from_cache_or_rpc.mock_safe(move |_, txid| {
+        assert_eq!(txid, tx_hash);
+        MockResult::Return(Box::new(futures01::future::ok(VerboseTransactionFrom::Cache(
+            verbose.clone(),
+        ))))
+    });
+    static mut IS_UNSPENT_MATURE_CALLED: bool = false;
+    UtxoStandardCoin::is_unspent_mature.mock_safe(move |_, tx: &RpcTransaction| {
+        // check if the transaction height and confirmations are expected
+        assert_eq!(tx.height, expected_height);
+        assert_eq!(tx.confirmations, expected_confs);
+        unsafe { IS_UNSPENT_MATURE_CALLED = true }
+        MockResult::Return(false)
+    });
+
+    // run test
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(client), None);
+    let unspents = coin
+        .ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))
+        .wait()
+        .expect("Expected an empty unspent list");
+    // unspents should be empty because `is_unspent_mature()` always returns false
+    assert!(unspents.is_empty());
+    assert!(unsafe { IS_UNSPENT_MATURE_CALLED == true });
+}
+
 #[test]
-fn test_qrc20_tx_details_by_hash() {
-    let conf = json!({
-        "coin":"QRC20",
-        "required_confirmations":0,
-        "pubtype":120,
-        "p2shtype":50,
-        "wiftype":128,
-        "segwit":true,
-        "mm2":1,
-        "mature_confirmations":500,
-    });
-    let req = json!({
-        "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
-    });
-    let priv_key = [
-        192, 240, 176, 226, 14, 170, 226, 96, 107, 47, 166, 243, 154, 48, 28, 243, 18, 144, 240, 1, 79, 103, 178, 42,
-        32, 161, 106, 119, 241, 227, 42, 102,
-    ];
-    let contract_address = "0xd362e096e873eb7907e205fadc6175c6fec7bc44".into();
+fn test_ordered_mature_unspents_from_cache() {
+    let unspent_height = None;
+    let cached_height = None;
+    let cached_confs = 0;
+    let block_count = 1000;
+    let expected_height = None; // is unknown
+    let expected_confs = 0; // is not changed because height is unknown
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
 
-    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let unspent_height = None;
+    let cached_height = None;
+    let cached_confs = 5;
+    let block_count = 1000;
+    let expected_height = None; // is unknown
+    let expected_confs = 5; // is not changed because height is unknown
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
 
-    let coin = unwrap!(block_on(qrc20_coin_from_conf_and_request(
-        &ctx,
-        "QRC20",
-        "QTUM",
-        &conf,
-        &req,
-        &priv_key,
-        contract_address
-    )));
+    let unspent_height = Some(998);
+    let cached_height = None;
+    let cached_confs = 0;
+    let block_count = 1000;
+    let expected_height = Some(998); // as the unspent_height
+    let expected_confs = 3; // 1000 - 998 + 1
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
 
-    let expected = json!({
-        "tx_hex":"0100000001fcaaf1343a392cc96c93ac6f5e84399a69cf52c29ac70254f17ac484169110b7000000006a47304402201b31345c1f377b2a19603d922796726940e4c8068e64e21d551534799ffacaf002207d382f49c9c069dcdd18c90a51687a346a99857ce8b82b91a6cb1ee391811aee012102cd7745ea1c03c9a1ebbcdb7ab9ee19d4e4d306f44665295d996db7c38527da6bffffffff020000000000000000625403a02526012844a9059cbb0000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb0000000000000000000000000000000000000000000000000000000011e1a30014d362e096e873eb7907e205fadc6175c6fec7bc44c23540a753010000001976a914f36e14131c70e5f15a3f92b1d7e8622a62e570d888ac13f9ff5e",
-        "tx_hash":"39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a",
-        "from":[
-            "qfkXE2cNFEwPFQqvBcqs8m9KrkNa9KV4xi"
-        ],
-        "to":[
-            "qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG"
-        ],
-        "total_amount":"3",
-        "spent_by_me":"3",
-        "received_by_me":"0",
-        "my_balance_change":"-3",
-        "block_height":628164,
-        "timestamp":1593833808,
-        "fee_details":{
-            "coin":"QTUM",
-            "miner_fee":"1.01526596",
-            "gas_limit":2_500_000,
-            "gas_price":40,
-            "total_gas_fee":"0.00036231",
+    let unspent_height = None;
+    let cached_height = Some(998);
+    let cached_confs = 0;
+    let block_count = 1000;
+    let expected_height = Some(998); // as the cached_height
+    let expected_confs = 3; // 1000 - 998 + 1
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
+
+    let unspent_height = Some(998);
+    let cached_height = Some(997);
+    let cached_confs = 0;
+    let block_count = 1000;
+    let expected_height = Some(998); // as the unspent_height
+    let expected_confs = 3; // 1000 - 998 + 1
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
+
+    // block_count < tx_height
+    let unspent_height = None;
+    let cached_height = Some(1000);
+    let cached_confs = 1;
+    let block_count = 999;
+    let expected_height = Some(1000); // as the cached_height
+    let expected_confs = 1; // is not changed because height cannot be calculated
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
+
+    // block_count == tx_height
+    let unspent_height = None;
+    let cached_height = Some(1000);
+    let cached_confs = 1;
+    let block_count = 1000;
+    let expected_height = Some(1000); // as the cached_height
+    let expected_confs = 1; // 1000 - 1000 + 1
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
+
+    // tx_height == 0
+    let unspent_height = Some(0);
+    let cached_height = None;
+    let cached_confs = 1;
+    let block_count = 1000;
+    let expected_height = Some(0); // as the cached_height
+    let expected_confs = 1; // is not changed because tx_height is expected to be not zero
+    test_ordered_mature_unspents_from_cache_impl(
+        unspent_height,
+        cached_height,
+        cached_confs,
+        block_count,
+        expected_height,
+        expected_confs,
+    );
+}
+
+#[test]
+fn test_native_client_unspents_filtered_using_tx_cache_single_tx_in_cache() {
+    let client = native_client_for_test();
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
+
+    let address: Address = "RGfFZaaNV68uVe1uMf6Y37Y8E1i2SyYZBN".into();
+    block_on(coin.as_ref().recently_spent_outpoints.lock()).for_script_pubkey =
+        Builder::build_p2pkh(&address.hash).to_bytes();
+
+    // https://morty.explorer.dexstats.info/tx/31c7aaae89ab1c39febae164a3190a86ed7c6c6f8c9dc98ec28d508b7929d347
+    let tx: UtxoTx = "0400008085202f89027f57730fcbbc2c72fb18bcc3766a713044831a117bb1cade3ed88644864f7333020000006a47304402206e3737b2fcf078b61b16fa67340cc3e79c5d5e2dc9ffda09608371552a3887450220460a332aa1b8ad8f2de92d319666f70751078b221199951f80265b4f7cef8543012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff42b916a80430b80a77e114445b08cf120735447a524de10742fac8f6a9d4170f000000006a473044022004aa053edafb9d161ea8146e0c21ed1593aa6b9404dd44294bcdf920a1695fd902202365eac15dbcc5e9f83e2eed56a8f2f0e5aded36206f9c3fabc668fd4665fa2d012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff03547b16000000000017a9143e8ad0e2bf573d32cb0b3d3a304d9ebcd0c2023b870000000000000000166a144e2b3c0323ab3c2dc6f86dc5ec0729f11e42f56103970400000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac89c5925f000000000000000000000000000000".into();
+    let spent_by_tx = vec![
+        UnspentInfo {
+            outpoint: tx.inputs[0].previous_output.clone(),
+            value: 886737,
+            height: Some(642293),
         },
-        "coin":"QRC20",
-        "internal_id":""
-    });
-    let expected = json::from_value(expected).unwrap();
+        UnspentInfo {
+            outpoint: tx.inputs[1].previous_output.clone(),
+            value: 88843,
+            height: Some(642293),
+        },
+    ];
 
-    let hash = hex::decode("39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a").unwrap();
-    let actual = unwrap!(coin.tx_details_by_hash(&hash).wait());
+    block_on(coin.as_ref().recently_spent_outpoints.lock()).add_spent(
+        spent_by_tx.clone(),
+        tx.hash(),
+        tx.outputs.clone(),
+    );
+    NativeClient::list_unspent
+        .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(spent_by_tx.clone()))));
 
-    let st = json::to_string(&actual).unwrap();
-    println!("{}", st);
+    let address: Address = "RGfFZaaNV68uVe1uMf6Y37Y8E1i2SyYZBN".into();
+    let (unspents_ordered, _) = block_on(coin.list_unspent_ordered(&address)).unwrap();
+    // output 2 is change so it must be returned
+    let expected_unspent = UnspentInfo {
+        outpoint: OutPoint {
+            hash: tx.hash(),
+            index: 2,
+        },
+        value: tx.outputs[2].value,
+        height: None,
+    };
+    assert_eq!(vec![expected_unspent], unspents_ordered);
+}
 
-    assert_eq!(actual, expected);
+#[test]
+fn test_native_client_unspents_filtered_using_tx_cache_single_several_chained_txs_in_cache() {
+    let client = native_client_for_test();
+    let coin = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None);
+
+    let address: Address = "RGfFZaaNV68uVe1uMf6Y37Y8E1i2SyYZBN".into();
+    block_on(coin.recently_spent_outpoints.lock()).for_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
+    let coin = utxo_coin_from_fields(coin);
+
+    // https://morty.explorer.dexstats.info/tx/31c7aaae89ab1c39febae164a3190a86ed7c6c6f8c9dc98ec28d508b7929d347
+    let tx_0: UtxoTx = "0400008085202f89027f57730fcbbc2c72fb18bcc3766a713044831a117bb1cade3ed88644864f7333020000006a47304402206e3737b2fcf078b61b16fa67340cc3e79c5d5e2dc9ffda09608371552a3887450220460a332aa1b8ad8f2de92d319666f70751078b221199951f80265b4f7cef8543012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff42b916a80430b80a77e114445b08cf120735447a524de10742fac8f6a9d4170f000000006a473044022004aa053edafb9d161ea8146e0c21ed1593aa6b9404dd44294bcdf920a1695fd902202365eac15dbcc5e9f83e2eed56a8f2f0e5aded36206f9c3fabc668fd4665fa2d012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff03547b16000000000017a9143e8ad0e2bf573d32cb0b3d3a304d9ebcd0c2023b870000000000000000166a144e2b3c0323ab3c2dc6f86dc5ec0729f11e42f56103970400000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac89c5925f000000000000000000000000000000".into();
+    let spent_by_tx_0 = vec![
+        UnspentInfo {
+            outpoint: tx_0.inputs[0].previous_output.clone(),
+            value: 886737,
+            height: Some(642293),
+        },
+        UnspentInfo {
+            outpoint: tx_0.inputs[1].previous_output.clone(),
+            value: 88843,
+            height: Some(642293),
+        },
+    ];
+    block_on(coin.as_ref().recently_spent_outpoints.lock()).add_spent(
+        spent_by_tx_0.clone(),
+        tx_0.hash(),
+        tx_0.outputs.clone(),
+    );
+
+    // https://morty.explorer.dexstats.info/tx/dbfc821e482747a3512ee6d5734f9df2aa73dab07e2fcd86abeadb462e795bf9
+    let tx_1: UtxoTx = "0400008085202f890347d329798b508dc28ec99d8c6f6c7ced860a19a364e1bafe391cab89aeaac731020000006a47304402203ea8b380d0a7e64348869ef7c4c2bfa966fc7b148633003332fa8d0ab0c1bc5602202cc63fabdd2a6578c52d8f4f549069b16505f2ead48edc2b8de299be15aadf9a012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff1d1fd3a6b01710647a7f4a08c6de6075cb8e78d5069fa50f10c4a2a10ded2a95000000006a47304402203868945edc0f6dc2ee43d70a69ee4ec46ca188dc493173ce58924ba9bf6ee7a50220648ff99ce458ca72800758f6a1bd3800cd05ff9c3122f23f3653c25e09d22c79012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff7932150df8b4a1852b8b84b89b0d5322bf74665fb7f76a728369fd6895d3fd48000000006a4730440220127918c6f79c11f7f2376a6f3b750ed4c7103183181ad1218afcb2625ece9599022028c05e88d3a2f97cebd84a718cda33b62b48b18f16278fa8e531fd2155e61ee8012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff0329fd12000000000017a914cafb62e3e8bdb8db3735c39b92743ac6ebc9ef20870000000000000000166a14a7416b070c9bb98f4bafae55616f005a2a30bd6014b40c00000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac8cc5925f000000000000000000000000000000".into();
+    let spent_by_tx_1 = vec![
+        UnspentInfo {
+            outpoint: tx_1.inputs[0].previous_output.clone(),
+            value: 300803,
+            height: Some(642293),
+        },
+        UnspentInfo {
+            outpoint: tx_1.inputs[1].previous_output.clone(),
+            value: 888544,
+            height: Some(642293),
+        },
+        UnspentInfo {
+            outpoint: tx_1.inputs[2].previous_output.clone(),
+            value: 888642,
+            height: Some(642293),
+        },
+    ];
+    block_on(coin.as_ref().recently_spent_outpoints.lock()).add_spent(
+        spent_by_tx_1.clone(),
+        tx_1.hash(),
+        tx_1.outputs.clone(),
+    );
+    // https://morty.explorer.dexstats.info/tx/12ea22a7cde9efb66b76f9b84345ddfc4c34870e293bfa8eac68d7df83dffa4b
+    let tx_2: UtxoTx = "0400008085202f8902f95b792e46dbeaab86cd2f7eb0da73aaf29d4f73d5e62e51a34727481e82fcdb020000006a4730440220347adefe33ed5afbbb8e5d453afd527319f9a50ab790023296a981da095ca4a2022029a68ef6fd5a4decf3793d4c33994eb8658408f3b14a6d439c4753b2dde954ee012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff75bd4348594f8ff2a216e5ad7533b37d47d2a2767b0b88d43972ad51895355e2000000006a473044022069b36c0f65d56e02bc179f7442806374c4163d07939090aba1da736abad9a77d022006dc39adf48e02033ae9d4a48540752ae3b3841e3ec60d2e86dececb88b9e518012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff03414111000000000017a914a153024c826a3a42c2e501eca5d7dacd3fc59976870000000000000000166a14db0e6f4d418d68dce8e5beb26cc5078e01e2e3ace2fe0800000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac8fc5925f000000000000000000000000000000".into();
+    let spent_by_tx_2 = vec![
+        UnspentInfo {
+            outpoint: tx_2.inputs[0].previous_output.clone(),
+            value: 832532,
+            height: Some(642293),
+        },
+        UnspentInfo {
+            outpoint: tx_2.inputs[1].previous_output.clone(),
+            value: 888823,
+            height: Some(642293),
+        },
+    ];
+    block_on(coin.as_ref().recently_spent_outpoints.lock()).add_spent(
+        spent_by_tx_2.clone(),
+        tx_2.hash(),
+        tx_2.outputs.clone(),
+    );
+
+    let mut unspents_to_return = spent_by_tx_0;
+    unspents_to_return.extend(spent_by_tx_1);
+    unspents_to_return.extend(spent_by_tx_2);
+
+    NativeClient::list_unspent
+        .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(unspents_to_return.clone()))));
+
+    let (unspents_ordered, _) = block_on(coin.list_unspent_ordered(&address)).unwrap();
+
+    // output 2 is change so it must be returned
+    let expected_unspent = UnspentInfo {
+        outpoint: OutPoint {
+            hash: tx_2.hash(),
+            index: 2,
+        },
+        value: tx_2.outputs[2].value,
+        height: None,
+    };
+    assert_eq!(vec![expected_unspent], unspents_ordered);
 }
 
 #[test]

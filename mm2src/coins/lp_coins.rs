@@ -17,11 +17,11 @@
 //  marketmaker
 //
 
+#![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
 #![feature(non_ascii_idents)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
-#![allow(uncommon_codepoints)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
@@ -65,23 +65,13 @@ macro_rules! try_fus {
 #[cfg(test)]
 pub mod coins_tests;
 
-// validate_address implementation for coin that has address_from_str method
-macro_rules! validate_address_impl {
-    ($self: ident, $address: expr) => {{
-        let result = $self.address_from_str($address);
-        $crate::ValidateAddressResult {
-            is_valid: result.is_ok(),
-            reason: result.err(),
-        }
-    }};
-}
-
 pub mod eth;
 use self::eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 pub mod utxo;
-use self::utxo::qrc20::{qrc20_addr_from_str, qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
 use self::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
 use self::utxo::{UtxoFeeDetails, UtxoTx};
+pub mod qrc20;
+use qrc20::{qrc20_addr_from_str, qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
@@ -91,7 +81,6 @@ use common::mm_number::MmNumber;
 pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
     fn tx_hex(&self) -> Vec<u8>;
-    fn extract_secret(&self) -> Result<Vec<u8>, String>;
     /// Serializable representation of tx hash for displaying purpose
     fn tx_hash(&self) -> BytesJson;
 }
@@ -225,6 +214,8 @@ pub trait SwapOps {
         tx: &[u8],
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
+
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -371,7 +362,7 @@ pub enum TradeInfo {
     Taker(BigDecimal),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct TradeFee {
     pub coin: String,
     pub amount: MmNumber,
@@ -448,9 +439,6 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
             log!("Error " (e) " renaming file " (tmp_file) " to " [self.tx_history_path(&ctx)]);
         }
     }
-
-    /// Gets tx details by hash requesting the coin RPC if required
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send>;
 
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
@@ -695,6 +683,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     if coins_en.is_null() {
         ctx.log.log(
             "😅",
+            #[allow(clippy::unnecessary_cast)]
             &[&("coin" as &str), &ticker, &("no-conf" as &str)],
             &fomat! ("Warning, coin " (ticker) " is used without a corresponding configuration."),
         );

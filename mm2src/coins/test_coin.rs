@@ -177,6 +177,8 @@ impl SwapOps for TestCoin {
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
+
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 }
 
 #[mockable]
@@ -199,10 +201,6 @@ impl MmCoin for TestCoin {
     fn validate_address(&self, address: &str) -> ValidateAddressResult { unimplemented!() }
 
     fn process_history_loop(&self, ctx: MmArc) { unimplemented!() }
-
-    fn tx_details_by_hash(&self, hash: &[u8]) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        unimplemented!()
-    }
 
     fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 

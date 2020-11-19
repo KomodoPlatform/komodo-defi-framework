@@ -10,13 +10,13 @@
 //!                     |
 //!                   binary
 
+#![allow(uncommon_codepoints)]
 #![feature(non_ascii_idents, integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(optin_builtin_traits)]
 #![feature(drain_filter)]
 #![feature(const_fn)]
-#![allow(uncommon_codepoints)]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
@@ -709,7 +709,7 @@ pub mod wio {
         let (sx, rx) = futures::channel::oneshot::channel();
         CORE.0.spawn(async move {
             let res = f.await;
-            if let Err(_) = sx.send(res) {
+            if sx.send(res).is_err() {
                 log!("drive03 receiver is dropped");
             };
         });
@@ -842,6 +842,174 @@ pub mod wio {
 
     pub async fn slurp_reqʹ(request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
         slurp_req(request).await
+    }
+}
+
+pub mod lazy {
+    #[cfg(test)] use super::block_on;
+    use async_trait::async_trait;
+    use std::future::Future;
+
+    /// Wrapper of lazily evaluated variables.
+    /// A `LazyLocal` object initializes the [`LazyLocal::inner`] value once
+    /// on [`LazyLocal::get()`] or [`LazyLocal::get_mut()`] calls using [`LazyLocal::constructor`] callback.
+    pub struct LazyLocal<'a, T> {
+        inner: Option<T>,
+        constructor: Option<Box<dyn FnOnce() -> T + 'a>>,
+    }
+
+    impl<'a, T> LazyLocal<'a, T> {
+        pub fn with_constructor(constructor: impl FnOnce() -> T + 'a) -> Self {
+            Self {
+                inner: None,
+                constructor: Some(Box::new(constructor)),
+            }
+        }
+
+        pub fn is_initialized(&self) -> bool { self.inner.is_some() }
+
+        /// Initialize the [`LazyLocal::inner`] value if it is not yet and get the immutable reference on it.
+        pub fn get(&mut self) -> &T { self.get_mut() }
+
+        /// Initialize the [`LazyLocal::inner`] value if it is not yet and get the mutable reference on it.
+        pub fn get_mut(&mut self) -> &mut T {
+            match self.inner {
+                Some(ref mut inner) => inner,
+                None => {
+                    let mut constructor = None;
+                    std::mem::swap(&mut self.constructor, &mut constructor);
+                    let constructor = constructor.expect("constructor is used already");
+                    self.inner = Some(constructor());
+                    self.inner.as_mut().unwrap()
+                },
+            }
+        }
+    }
+
+    /// Searches for an element of an iterator that satisfies a predicate function.
+    /// `find_lazy()` takes a closure that returns `true` or `false`.
+    /// It applies this closure to each execution result of the futures stored within iterator, and if any of them return
+    /// `true`, then `find_lazy()` returns [`Some(element)`]. If they all return
+    /// `false`, it returns [`None`].
+    #[async_trait]
+    pub trait FindLazy: Iterator {
+        type FutureOutput;
+
+        async fn find_lazy<F>(self, f: F) -> Option<Self::FutureOutput>
+        where
+            F: FnMut(&Self::FutureOutput) -> bool + Send;
+    }
+
+    /// Is equivalent to `FindLazy` except a predicate function can modify a return element.
+    #[async_trait]
+    pub trait FindMapLazy: Iterator {
+        type FutureOutput;
+
+        async fn find_map_lazy<M, F>(self, f: F) -> Option<M>
+        where
+            F: FnMut(Self::FutureOutput) -> Option<M> + Send;
+    }
+
+    /// Implement the `FindLazy` for iterator of futures.
+    #[async_trait]
+    impl<T, I> FindLazy for I
+    where
+        T: Future + Send + 'static,
+        I: Iterator<Item = T> + Send,
+    {
+        type FutureOutput = T::Output;
+
+        async fn find_lazy<F>(mut self, mut f: F) -> Option<Self::FutureOutput>
+        where
+            F: FnMut(&Self::FutureOutput) -> bool + Send,
+        {
+            for item in self {
+                let result = item.await;
+                if f(&result) {
+                    return Some(result);
+                }
+            }
+            None
+        }
+    }
+
+    /// Implement the `FindMapLazy` for iterators of futures.
+    #[async_trait]
+    impl<T, I> FindMapLazy for I
+    where
+        T: Future + Send + 'static,
+        I: Iterator<Item = T> + Send,
+    {
+        type FutureOutput = T::Output;
+
+        async fn find_map_lazy<M, F>(mut self, mut f: F) -> Option<M>
+        where
+            F: FnMut(Self::FutureOutput) -> Option<M> + Send,
+        {
+            for item in self {
+                let mres = f(item.await);
+                if mres.is_some() {
+                    return mres;
+                }
+            }
+            None
+        }
+    }
+
+    #[cfg(test)]
+    async fn future_helper(msg: &str, panic: bool) -> String {
+        if panic {
+            panic!("This future must not be executed");
+        }
+
+        msg.into()
+    }
+
+    #[test]
+    fn test_lazy_local() {
+        let template = "Default".to_string();
+        let mut local = LazyLocal::with_constructor(|| template.clone());
+
+        assert!(!local.is_initialized());
+        assert!(local.constructor.is_some());
+        assert_eq!(local.inner, None);
+
+        assert_eq!(local.get(), &template);
+        assert!(local.is_initialized());
+        assert!(local.constructor.is_none());
+        assert_eq!(local.get_mut(), &template);
+
+        *local.get_mut() = "Another string".into();
+        assert_eq!(local.get(), "Another string");
+    }
+
+    #[test]
+    fn test_find_lazy() {
+        let futures = vec![
+            future_helper("say", false),
+            future_helper("hello", false),
+            future_helper("world", true), // this future must not be executed
+        ];
+
+        let actual = block_on(futures.into_iter().find_lazy(|x| x == "hello"));
+        assert_eq!(actual, Some("hello".into()));
+    }
+
+    #[test]
+    fn test_find_map_lazy() {
+        let futures = vec![
+            future_helper("say", false),
+            future_helper("hello", false),
+            future_helper("world", true), // this future must not be executed
+        ];
+
+        let actual =
+            block_on(
+                futures
+                    .into_iter()
+                    .find_map_lazy(|x| if x == "hello" { Some(x.to_uppercase()) } else { None }),
+            );
+        assert_eq!(actual, Some("HELLO".into()));
     }
 }
 

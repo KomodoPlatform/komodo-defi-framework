@@ -16,16 +16,14 @@
 //  lp_network.rs
 //  marketmaker
 //
-#![allow(uncommon_codepoints)]
-
 use common::executor::spawn;
 #[cfg(not(feature = "native"))] use common::helperᶜ;
 use common::mm_ctx::MmArc;
 use common::HyRes;
 use futures::{channel::oneshot, lock::Mutex as AsyncMutex, StreamExt};
-use mm2_libp2p::{atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
-                                       AdexResponseChannel},
-                 decode_signed, encode_and_sign, GossipsubMessage, MessageId, PeerId, PublicKey, TOPIC_SEPARATOR};
+use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
+                                      AdexResponseChannel};
+use mm2_libp2p::{decode_message, encode_message, GossipsubMessage, MessageId, PeerId, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use serde::de;
 use std::sync::Arc;
@@ -99,12 +97,14 @@ async fn process_p2p_message(
     i_am_relay: bool,
 ) {
     let mut to_propagate = false;
+    let mut orderbook_pairs = vec![];
+
     for topic in message.topics {
         let mut split = topic.as_str().split(TOPIC_SEPARATOR);
         match split.next() {
             Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
-                if lp_ordermatch::process_msg(ctx.clone(), topic.as_str(), peer_id.to_string(), &message.data).await {
-                    to_propagate = true;
+                if let Some(pair) = split.next() {
+                    orderbook_pairs.push(pair.to_string());
                 }
             },
             Some(lp_swap::SWAP_PREFIX) => {
@@ -114,6 +114,14 @@ async fn process_p2p_message(
             None | Some(_) => (),
         }
     }
+
+    if !orderbook_pairs.is_empty() {
+        let process_fut = lp_ordermatch::process_msg(ctx.clone(), orderbook_pairs, peer_id.to_string(), &message.data);
+        if process_fut.await {
+            to_propagate = true;
+        }
+    }
+
     if to_propagate && i_am_relay {
         propagate_message(&ctx, message_id, peer_id);
     }
@@ -125,9 +133,9 @@ async fn process_p2p_request(
     request: Vec<u8>,
     response_channel: AdexResponseChannel,
 ) -> Result<(), String> {
-    let (request, _sig, pubkey) = try_s!(decode_signed::<P2PRequest>(&request));
+    let request = try_s!(decode_message::<P2PRequest>(&request));
     let result = match request {
-        P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req, pubkey).await,
+        P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req).await,
     };
 
     let res = match result {
@@ -143,10 +151,10 @@ async fn process_p2p_request(
 }
 
 #[cfg(feature = "native")]
-pub fn broadcast_p2p_msg(ctx: &MmArc, topic: String, msg: Vec<u8>) {
+pub fn broadcast_p2p_msg(ctx: &MmArc, topics: Vec<String>, msg: Vec<u8>) {
     let ctx = ctx.clone();
     spawn(async move {
-        let cmd = AdexBehaviourCmd::PublishMsg { topic, msg };
+        let cmd = AdexBehaviourCmd::PublishMsg { topics, msg };
         let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
         if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
             log!("broadcast_p2p_msg cmd_tx.send error "[e]);
@@ -173,10 +181,8 @@ pub async fn subscribe_to_topic(ctx: &MmArc, topic: String) {
 pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
-) -> Result<Option<(T, PeerId, PublicKey)>, String> {
-    let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-    let secret = &*key_pair.private().secret;
-    let encoded = try_s!(encode_and_sign(&req, secret));
+) -> Result<Option<(T, PeerId)>, String> {
+    let encoded = try_s!(encode_message(&req));
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -187,27 +193,26 @@ pub async fn request_any_relay<T: de::DeserializeOwned>(
     try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
     match try_s!(response_rx.await) {
         Some((from_peer, response)) => {
-            let (response, _sig, pubkey) = try_s!(decode_signed::<T>(&response));
-            Ok(Some((response, from_peer, pubkey)))
+            let response = try_s!(decode_message::<T>(&response));
+            Ok(Some((response, from_peer)))
         },
         None => Ok(None),
     }
 }
 
-pub enum RelayDecodedResponse<T> {
-    Ok((T, PublicKey)),
+pub enum PeerDecodedResponse<T> {
+    Ok(T),
     None,
     Err(String),
 }
 
+#[allow(dead_code)]
 #[cfg(feature = "native")]
 pub async fn request_relays<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
-) -> Result<Vec<(PeerId, RelayDecodedResponse<T>)>, String> {
-    let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-    let secret = &*key_pair.private().secret;
-    let encoded = try_s!(encode_and_sign(&req, secret));
+) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
+    let encoded = try_s!(encode_message(&req));
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -225,10 +230,8 @@ pub async fn request_peers<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
     peers: Vec<String>,
-) -> Result<Vec<(PeerId, RelayDecodedResponse<T>)>, String> {
-    let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-    let secret = &*key_pair.private().secret;
-    let encoded = try_s!(encode_and_sign(&req, secret));
+) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
+    let encoded = try_s!(encode_message(&req));
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -247,7 +250,7 @@ pub async fn request_one_peer<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
     peer: String,
-) -> Result<Option<(T, PublicKey)>, String> {
+) -> Result<Option<T>, String> {
     let metrics_sink = ctx.metrics.sink().expect("Metrics sink is not available");
     let start = metrics_sink.now();
     let mut responses = try_s!(request_peers::<T>(ctx.clone(), req, vec![peer.clone()]).await);
@@ -258,25 +261,25 @@ pub async fn request_one_peer<T: de::DeserializeOwned>(
     }
     let (_, response) = responses.remove(0);
     match response {
-        RelayDecodedResponse::Ok((response, pubkey)) => Ok(Some((response, pubkey))),
-        RelayDecodedResponse::None => Ok(None),
-        RelayDecodedResponse::Err(e) => ERR!("{}", e),
+        PeerDecodedResponse::Ok(response) => Ok(Some(response)),
+        PeerDecodedResponse::None => Ok(None),
+        PeerDecodedResponse::Err(e) => ERR!("{}", e),
     }
 }
 
 fn parse_peers_responses<T: de::DeserializeOwned>(
     responses: Vec<(PeerId, AdexResponse)>,
-) -> Vec<(PeerId, RelayDecodedResponse<T>)> {
+) -> Vec<(PeerId, PeerDecodedResponse<T>)> {
     responses
         .into_iter()
         .map(|(peer_id, res)| {
             let res = match res {
-                AdexResponse::Ok { response } => match decode_signed::<T>(&response) {
-                    Ok((res, _sig, pubkey)) => RelayDecodedResponse::Ok((res, pubkey)),
-                    Err(e) => RelayDecodedResponse::Err(ERRL!("{}", e)),
+                AdexResponse::Ok { response } => match decode_message::<T>(&response) {
+                    Ok(res) => PeerDecodedResponse::Ok(res),
+                    Err(e) => PeerDecodedResponse::Err(ERRL!("{}", e)),
                 },
-                AdexResponse::None => RelayDecodedResponse::None,
-                AdexResponse::Err { error } => RelayDecodedResponse::Err(error),
+                AdexResponse::None => PeerDecodedResponse::None,
+                AdexResponse::Err { error } => PeerDecodedResponse::Err(error),
             };
             (peer_id, res)
         })
