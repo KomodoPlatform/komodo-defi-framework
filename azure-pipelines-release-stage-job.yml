@@ -23,7 +23,7 @@ jobs:
           echo "##vso[task.setvariable variable=COMMIT_TAG]${TAG}"
           if [ -z $TAG ]; then
             echo "Commit tag is empty"
-            export RELEASE_TAG=beta-2.0.$(Build.BuildId)
+            export RELEASE_TAG=beta-2.1.$(Build.BuildId)
           else
             export DEBUG_UPLOADED="$(curl -s https://api.github.com/repos/KomodoPlatform/atomicDEX-API/releases/tags/$TAG | grep $(Agent.OS)-Debug)"
             export RELEASE_UPLOADED="$(curl -s https://api.github.com/repos/KomodoPlatform/atomicDEX-API/releases/tags/$TAG | grep $(Agent.OS)-Release)"
@@ -45,7 +45,7 @@ jobs:
           mkdir upload
         displayName: 'Recreate upload dir'
       - bash: |
-          echo 2.0.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug > MM_VERSION
+          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug > MM_VERSION
           cat MM_VERSION
           touch mm2src/common/build.rs
           if [ $AGENT_OS = "Linux" ]
@@ -82,7 +82,7 @@ jobs:
         condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['DEBUG_UPLOADED'], '' ) )
       - bash: |
           rm -f MM_VERSION
-          echo 2.0.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
+          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
           cat MM_VERSION
           touch mm2src/common/build.rs
           if [ $AGENT_OS = "Linux" ]

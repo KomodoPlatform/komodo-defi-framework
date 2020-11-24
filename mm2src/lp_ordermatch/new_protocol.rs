@@ -1,9 +1,9 @@
 use super::{MatchBy as SuperMatchBy, TakerAction};
-use crate::mm2::lp_ordermatch::OrderConfirmationsSettings;
-use common::mm_number::MmNumber;
+use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, OrderConfirmationsSettings, H64};
+use common::{mm_number::MmNumber, now_ms};
 use compact_uuid::CompactUuid;
 use num_rational::BigRational;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -116,19 +116,25 @@ pub struct MakerOrderCreated {
     pub price: BigRational,
     pub max_volume: BigRational,
     pub min_volume: BigRational,
+    /// This is timestamp of order creation
     pub created_at: u64,
     pub conf_settings: OrderConfirmationsSettings,
+    /// This is timestamp of message
+    pub timestamp: u64,
+    pub pair_trie_root: H64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PubkeyKeepAlive {
-    pub orders_trie_root: [u8; 8],
+    pub trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
     pub timestamp: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MakerOrderCancelled {
     pub uuid: CompactUuid,
+    pub timestamp: u64,
+    pub pair_trie_root: H64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -137,6 +143,8 @@ pub struct MakerOrderUpdated {
     new_price: Option<BigRational>,
     new_max_volume: Option<BigRational>,
     new_min_volume: Option<BigRational>,
+    timestamp: u64,
+    pair_trie_root: H64,
 }
 
 impl MakerOrderUpdated {
@@ -146,6 +154,8 @@ impl MakerOrderUpdated {
             new_price: None,
             new_max_volume: None,
             new_min_volume: None,
+            timestamp: now_ms() / 1000,
+            pair_trie_root: H64::default(),
         }
     }
 

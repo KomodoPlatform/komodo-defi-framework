@@ -62,7 +62,9 @@ mod mm2_tests;
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub fn lp_main(conf: Json, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     // std::env::set_var("RUST_LOG", "debug");
-    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    if let Err(e) = env_logger::from_env(env_logger::Env::default().default_filter_or("info")).try_init() {
+        log!("Env logger initialization failed: "(e))
+    }
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
             return ERR!("rpc_password must be string");
@@ -77,11 +79,9 @@ pub fn lp_main(conf: Json, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
         let netid = conf["netid"].as_u64().unwrap_or(0) as u16;
         let (_, pubport, _) = try_s!(lp_ports(netid));
         let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-
         if let Err(err) = ctx.init_metrics() {
             log!("Warning: couldn't initialize metricx system: "(err));
         }
-
         ctx_cb(try_s!(ctx.ffi_handle()));
         try_s!(block_on(lp_init(pubport, ctx)));
         Ok(())

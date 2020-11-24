@@ -116,7 +116,13 @@ async fn process_p2p_message(
     }
 
     if !orderbook_pairs.is_empty() {
-        let process_fut = lp_ordermatch::process_msg(ctx.clone(), orderbook_pairs, peer_id.to_string(), &message.data);
+        let process_fut = lp_ordermatch::process_msg(
+            ctx.clone(),
+            orderbook_pairs,
+            peer_id.to_string(),
+            &message.data,
+            i_am_relay,
+        );
         if process_fut.await {
             to_propagate = true;
         }
@@ -177,7 +183,6 @@ pub async fn subscribe_to_topic(ctx: &MmArc, topic: String) {
 }
 
 #[cfg(feature = "native")]
-#[allow(dead_code)]
 pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
@@ -208,6 +213,7 @@ pub enum PeerDecodedResponse<T> {
 
 #[allow(dead_code)]
 #[cfg(feature = "native")]
+#[allow(dead_code)]
 pub async fn request_relays<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,

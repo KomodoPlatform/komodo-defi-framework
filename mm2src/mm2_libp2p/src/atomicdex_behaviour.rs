@@ -527,7 +527,7 @@ pub fn start_gossipsub(
     ip: IpAddr,
     port: u16,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
-    to_dial: Option<Vec<String>>,
+    to_dial: Vec<String>,
     my_privkey: &mut [u8],
     i_am_relay: bool,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
@@ -560,10 +560,11 @@ pub fn start_gossipsub(
     let (event_tx, event_rx) = channel(CHANNEL_BUF_SIZE);
 
     let bootstrap: Vec<Multiaddr> = to_dial
-        .unwrap_or_default()
         .into_iter()
         .map(|addr| parse_relay_address(addr, port))
         .collect();
+
+    let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (3, 6, 8) } else { (2, 3, 4) };
 
     // Create a Swarm to manage peers and events
     let mut swarm = {
@@ -577,8 +578,6 @@ pub fn start_gossipsub(
             message.sequence_number.hash(&mut s);
             MessageId(s.finish().to_string())
         };
-
-        let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (3, 6, 8) } else { (2, 3, 4) };
 
         // set custom gossipsub
         let gossipsub_config = GossipsubConfigBuilder::new()
@@ -618,7 +617,7 @@ pub fn start_gossipsub(
     swarm.floodsub.subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
     let addr = format!("/ip4/{}/tcp/{}", ip, port);
     libp2p::Swarm::listen_on(&mut swarm, addr.parse().unwrap()).unwrap();
-    for relay in &bootstrap {
+    for relay in bootstrap.choose_multiple(&mut thread_rng(), mesh_n) {
         match libp2p::Swarm::dial_addr(&mut swarm, relay.clone()) {
             Ok(_) => println!("Dialed {}", relay),
             Err(e) => println!("Dial {:?} failed: {:?}", relay, e),

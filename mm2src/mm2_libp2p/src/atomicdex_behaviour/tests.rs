@@ -19,7 +19,7 @@ struct Node {
 }
 
 impl Node {
-    fn spawn<F>(ip: String, port: u16, seednodes: Option<Vec<String>>, on_event: F) -> Node
+    fn spawn<F>(ip: String, port: u16, seednodes: Vec<String>, on_event: F) -> Node
     where
         F: Fn(mpsc::Sender<AdexBehaviourCmd>, AdexBehaviourEvent) + Send + 'static,
     {
@@ -82,7 +82,7 @@ fn test_request_response_ok() {
 
     let request_received = Arc::new(AtomicBool::new(false));
     let request_received_cpy = request_received.clone();
-    let node1 = Node::spawn("127.0.0.1".into(), 57783, None, move |mut cmd_tx, event| {
+    let node1 = Node::spawn("127.0.0.1".into(), 57783, vec![], move |mut cmd_tx, event| {
         let (request, response_channel) = match event {
             AdexBehaviourEvent::PeerRequest {
                 request,
@@ -106,7 +106,7 @@ fn test_request_response_ok() {
     let mut node2 = Node::spawn(
         "127.0.0.1".into(),
         57784,
-        Some(vec!["/ip4/127.0.0.1/tcp/57783".into()]),
+        vec!["/ip4/127.0.0.1/tcp/57783".into()],
         |_, _| (),
     );
 
@@ -190,19 +190,19 @@ fn test_request_response_ok_three_peers() {
     let request_handler = Arc::new(Mutex::new(RequestHandler::default()));
 
     let handler = request_handler.clone();
-    let _receiver1 = Node::spawn("127.0.0.1".into(), 57790, None, move |cmd_tx, event| {
+    let _receiver1 = Node::spawn("127.0.0.1".into(), 57790, vec![], move |cmd_tx, event| {
         let mut handler = handler.lock().unwrap();
         handler.handle(cmd_tx, event)
     });
 
     let handler = request_handler.clone();
-    let _receiver2 = Node::spawn("127.0.0.1".into(), 57791, None, move |cmd_tx, event| {
+    let _receiver2 = Node::spawn("127.0.0.1".into(), 57791, vec![], move |cmd_tx, event| {
         let mut handler = handler.lock().unwrap();
         handler.handle(cmd_tx, event)
     });
 
     let handler = request_handler.clone();
-    let _receiver3 = Node::spawn("127.0.0.1".into(), 57792, None, move |cmd_tx, event| {
+    let _receiver3 = Node::spawn("127.0.0.1".into(), 57792, vec![], move |cmd_tx, event| {
         let mut handler = handler.lock().unwrap();
         handler.handle(cmd_tx, event)
     });
@@ -210,11 +210,11 @@ fn test_request_response_ok_three_peers() {
     let mut sender = Node::spawn(
         "127.0.0.1".into(),
         57784,
-        Some(vec![
+        vec![
             "/ip4/127.0.0.1/tcp/57790".into(),
             "/ip4/127.0.0.1/tcp/57791".into(),
             "/ip4/127.0.0.1/tcp/57792".into(),
-        ]),
+        ],
         |_, _| (),
     );
 
@@ -240,7 +240,7 @@ fn test_request_response_none() {
 
     let request_received = Arc::new(AtomicBool::new(false));
     let request_received_cpy = request_received.clone();
-    let _node1 = Node::spawn("127.0.0.1".into(), 57786, None, move |mut cmd_tx, event| {
+    let _node1 = Node::spawn("127.0.0.1".into(), 57786, vec![], move |mut cmd_tx, event| {
         let (request, response_channel) = match event {
             AdexBehaviourEvent::PeerRequest {
                 request,
@@ -262,7 +262,7 @@ fn test_request_response_none() {
     let mut node2 = Node::spawn(
         "127.0.0.1".into(),
         57785,
-        Some(vec!["/ip4/127.0.0.1/tcp/57786".into()]),
+        vec!["/ip4/127.0.0.1/tcp/57786".into()],
         |_, _| (),
     );
 
@@ -287,7 +287,7 @@ fn test_request_response_none() {
 fn test_request_peers_ok_three_peers() {
     let _ = env_logger::try_init();
 
-    let receiver1 = Node::spawn("127.0.0.1".into(), 57800, None, move |mut cmd_tx, event| {
+    let receiver1 = Node::spawn("127.0.0.1".into(), 57800, vec![], move |mut cmd_tx, event| {
         let (request, response_channel) = match event {
             AdexBehaviourEvent::PeerRequest {
                 request,
@@ -305,7 +305,7 @@ fn test_request_peers_ok_three_peers() {
             .unwrap();
     });
 
-    let receiver2 = Node::spawn("127.0.0.1".into(), 57801, None, move |mut cmd_tx, event| {
+    let receiver2 = Node::spawn("127.0.0.1".into(), 57801, vec![], move |mut cmd_tx, event| {
         let (request, response_channel) = match event {
             AdexBehaviourEvent::PeerRequest {
                 request,
@@ -325,7 +325,7 @@ fn test_request_peers_ok_three_peers() {
             .unwrap();
     });
 
-    let receiver3 = Node::spawn("127.0.0.1".into(), 57802, None, move |mut cmd_tx, event| {
+    let receiver3 = Node::spawn("127.0.0.1".into(), 57802, vec![], move |mut cmd_tx, event| {
         let (request, response_channel) = match event {
             AdexBehaviourEvent::PeerRequest {
                 request,
@@ -347,11 +347,11 @@ fn test_request_peers_ok_three_peers() {
     let mut sender = Node::spawn(
         "127.0.0.1".into(),
         57784,
-        Some(vec![
+        vec![
             "/ip4/127.0.0.1/tcp/57800".into(),
             "/ip4/127.0.0.1/tcp/57801".into(),
             "/ip4/127.0.0.1/tcp/57802".into(),
-        ]),
+        ],
         |_, _| (),
     );
 

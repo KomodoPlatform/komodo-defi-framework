@@ -28,7 +28,7 @@ use serde_json::{self as json};
 use std::ffi::CString;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::path::Path;
 use std::str;
@@ -314,6 +314,29 @@ fn test_ip(_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {
     Ok((shutdown_tx, 80))
 }
 
+fn seed_to_ipv4_string(seed: &str) -> Option<String> {
+    match seed.to_socket_addrs() {
+        Ok(mut iter) => match iter.next() {
+            Some(addr) => {
+                if addr.is_ipv4() {
+                    Some(addr.ip().to_string())
+                } else {
+                    log!("Seed " (seed) " resolved to IPv6 " (addr) " which is not supported");
+                    None
+                }
+            },
+            None => {
+                log!("Seed " (seed) " to_socket_addrs empty iter");
+                None
+            },
+        },
+        Err(e) => {
+            log!("Error " (e) " resolving " (seed));
+            None
+        },
+    }
+}
+
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     log! ({"lp_init] version: {} DT {}", MM_VERSION, MM_DATETIME});
@@ -441,7 +464,21 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     #[cfg(not(feature = "native"))]
     try_s!(ctx.send_to_helpers().await);
+    const NETID_7777_SEEDNODES: &[&str] = &["seed1.kmd.io:0", "seed2.kmd.io:0", "seed3.kmd.io:0"];
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
+    let seednodes = match seednodes {
+        Some(s) => s,
+        None => {
+            if ctx.netid() == 7777 {
+                NETID_7777_SEEDNODES
+                    .iter()
+                    .filter_map(|seed| seed_to_ipv4_string(*seed))
+                    .collect()
+            } else {
+                vec![]
+            }
+        },
+    };
 
     let key_pair = ctx.secp256k1_key_pair.as_option().unwrap();
 
@@ -466,17 +503,7 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
     spawn(p2p_event_process_loop(ctx.clone(), event_rx, i_am_seed));
-    /*
-    if i_am_seed {
-        log!("Before relay node");
-        let (tx, peer_id) = relay_node(ctx.clone(), myipaddr, mypubport, seednodes.clone());
-        log!("After relay node");
-        try_s!(ctx.gossip_sub_cmd_queue.pin(tx));
-        try_s!(ctx.peer_id.pin(peer_id));
-    }
-    */
 
-    // try_s!(lp_initpeers(&ctx, netid, seednodes).await);
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
     register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
 

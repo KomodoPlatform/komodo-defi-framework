@@ -1102,21 +1102,23 @@ async fn electrum_request_to(
     request: JsonRpcRequest,
     to_addr: String,
 ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
-    let connections = client.connections.lock().await;
-    let connection = connections
-        .iter()
-        .find(|c| c.addr == to_addr)
-        .ok_or(ERRL!("Unknown destination address {}", to_addr))?;
-
-    let response = match &*connection.tx.lock().await {
-        Some(tx) => try_s!(
-            electrum_request(request.clone(), tx.clone(), connection.responses.clone())
-                .compat()
-                .await
-        ),
-        None => return ERR!("Connection {} is not established yet", to_addr),
+    let (tx, responses) = {
+        let connections = client.connections.lock().await;
+        let connection = connections
+            .iter()
+            .find(|c| c.addr == to_addr)
+            .ok_or(ERRL!("Unknown destination address {}", to_addr))?;
+        let responses = connection.responses.clone();
+        let tx = {
+            match &*connection.tx.lock().await {
+                Some(tx) => tx.clone(),
+                None => return ERR!("Connection {} is not established yet", to_addr),
+            }
+        };
+        (tx, responses)
     };
 
+    let response = try_s!(electrum_request(request.clone(), tx, responses).compat().await);
     Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
 }
 

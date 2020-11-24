@@ -3,10 +3,12 @@ use crate::mm2::lp_network::P2PContext;
 use crate::mm2::lp_ordermatch::new_protocol::PubkeyKeepAlive;
 use coins::{MmCoin, TestCoin};
 use common::{block_on,
+             executor::spawn,
              mm_ctx::{MmArc, MmCtx, MmCtxBuilder},
              privkey::key_pair_from_seed};
 use futures::{channel::mpsc, lock::Mutex as AsyncMutex, StreamExt};
 use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
+use mm2_libp2p::{decode_message, PeerId};
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::collections::HashSet;
@@ -1278,7 +1280,7 @@ fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     (ctx, pubkey, secret)
 }
 
-fn make_random_orders(pubkey: String, secret: &[u8; 32], base: String, rel: String, n: usize) -> Vec<OrderbookItem> {
+fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: String, n: usize) -> Vec<OrderbookItem> {
     let mut rng = rand::thread_rng();
     let mut orders = Vec::with_capacity(n);
     for _i in 0..n {
@@ -1292,19 +1294,21 @@ fn make_random_orders(pubkey: String, secret: &[u8; 32], base: String, rel: Stri
             min_volume: BigRational::from_integer(0.into()),
             conf_settings: OrderConfirmationsSettings::default(),
             created_at: now_ms() / 1000,
+            timestamp: now_ms() / 1000,
+            pair_trie_root: H64::default(),
         };
-
-        // create an initial_message and encode it with the secret
-        let initial_message = encode_and_sign(
-            &new_protocol::OrdermatchMessage::MakerOrderCreated(order.clone()),
-            &secret,
-        )
-        .unwrap();
 
         orders.push((order, pubkey.clone()).into());
     }
 
     orders
+}
+
+fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
+    let key_pair = key_pair_from_seed(passphrase).unwrap();
+    let pubkey = hex::encode(&**key_pair.public());
+    let secret = (&*key_pair.private().secret).clone();
+    (pubkey, secret)
 }
 
 fn p2p_context_mock() -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBehaviourCmd>) {
@@ -1318,168 +1322,113 @@ fn p2p_context_mock() -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBeh
     (cmd_tx, cmd_rx)
 }
 
-/*
 #[test]
 fn test_process_get_orderbook_request() {
-    let (ctx, pubkey, secret) = make_ctx_for_tests();
+    const PUBKEYS_NUMBER: usize = 5;
+    const ORDERS_NUMBER: usize = 10;
+
+    let (ctx, _pubkey, _secret) = make_ctx_for_tests();
+    let other_pubkeys: Vec<(String, [u8; 32])> = (0..PUBKEYS_NUMBER)
+        .map(|idx| {
+            let passphrase = format!("passphrase-{}", idx);
+            pubkey_and_secret_for_test(&passphrase)
+        })
+        .collect();
+
     let ordermatch_ctx = Arc::new(OrdermatchContext::default());
     let ordermatch_ctx_clone = ordermatch_ctx.clone();
     OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
 
     let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
-    let peer = PeerId::random().to_string();
 
-    let order1 = new_protocol::MakerOrderCreated {
-        uuid: Uuid::new_v4().into(),
-        base: "RICK".into(),
-        rel: "MORTY".into(),
-        price: BigRational::from_integer(1000000.into()),
-        max_volume: BigRational::from_integer(2000000.into()),
-        min_volume: BigRational::from_integer(2000000.into()),
-        conf_settings: OrderConfirmationsSettings::default(),
-    };
-    let order2 = new_protocol::MakerOrderCreated {
-        uuid: Uuid::new_v4().into(),
-        base: "RICK".into(),
-        rel: "MORTY".into(),
-        price: BigRational::from_integer(500000.into()),
-        max_volume: BigRational::from_integer(2000000.into()),
-        min_volume: BigRational::from_integer(2000000.into()),
-        conf_settings: OrderConfirmationsSettings::default(),
-    };
+    let orders: Vec<OrderbookItem> = other_pubkeys
+        .iter()
+        .map(|(pubkey, secret)| {
+            make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), ORDERS_NUMBER)
+        })
+        .flatten()
+        .collect();
 
-    // create an initial_message and encode it with the secret
-    let initial_message1 = encode_and_sign(
-        &new_protocol::OrdermatchMessage::MakerOrderCreated(order1.clone()),
-        &secret,
-    )
-    .unwrap();
+    let mut orders_by_pubkeys = HashMap::new();
+    for order in orders.iter() {
+        orderbook.insert_or_update_order_update_trie(order.clone());
 
-    let initial_message2 = encode_and_sign(
-        &new_protocol::OrdermatchMessage::MakerOrderCreated(order2.clone()),
-        &secret,
-    )
-    .unwrap();
+        let pubkey_orders = orders_by_pubkeys.entry(order.pubkey.clone()).or_insert_with(Vec::new);
+        pubkey_orders.push(order.clone());
+    }
 
-    // the first ping request has best MORTY:RICK price (1000000 highest price), therefore is the best bid
-    let price_ping_request1: OrderbookItem = (order1, pubkey.clone()).into();
-    // the second ping request has best RICK:MORTY price (500000 lowest price), therefore is the best ask
-    let price_ping_request2: OrderbookItem = (order2, pubkey.clone()).into();
-
-    orderbook.insert_or_update_order(price_ping_request1.clone());
-    orderbook.insert_or_update_order(price_ping_request2.clone());
+    // sort by uuids
+    for (_pubkey, orders) in orders_by_pubkeys.iter_mut() {
+        orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+    }
 
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
     drop(orderbook);
-
-    // test RICK:MORTY orderbook
 
     let encoded = block_on(process_get_orderbook_request(
         ctx.clone(),
         "RICK".into(),
         "MORTY".into(),
-        // get one best ask
-        Some(1),
-        // get one best bid
-        Some(1),
     ))
     .unwrap()
     .unwrap();
 
-    let orderbook = decode_message::<new_protocol::Orderbook>(&encoded).unwrap();
-    assert!(orderbook.bids.is_empty());
-    let asks: Vec<OrderbookItem> = orderbook
-        .asks
-        .into_iter()
-        .map(|order| OrderbookItem::from_initial_msg(order.initial_message, order.from_peer).unwrap())
-        .collect();
-    assert_eq!(asks, vec![price_ping_request2]);
+    let orderbook = decode_message::<GetOrderbookRes>(&encoded).unwrap();
+    for (pubkey, item) in orderbook.pubkey_orders {
+        let expected = orders_by_pubkeys
+            .get(&pubkey)
+            .expect(&format!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
 
-    // test MORTY:RICK orderbook
-
-    let encoded = block_on(process_get_orderbook_request(
-        ctx,
-        "MORTY".into(),
-        "RICK".into(),
-        // get one best ask
-        Some(1),
-        // get one best bid
-        Some(1),
-    ))
-    .unwrap()
-    .unwrap();
-    let orderbook = decode_message::<new_protocol::Orderbook>(&encoded).unwrap();
-    assert!(orderbook.asks.is_empty());
-
-    let bids: Vec<OrderbookItem> = orderbook
-        .bids
-        .into_iter()
-        .map(|order| OrderbookItem::from_initial_msg(order.initial_message, order.from_peer).unwrap())
-        .collect();
-    assert_eq!(bids, vec![price_ping_request1]);
+        let mut actual: Vec<OrderbookItem> = item.orders.iter().map(|(_uuid, order)| order.clone()).collect();
+        actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+        log!([pubkey]"-"[actual.len()]);
+        assert_eq!(actual, *expected);
+    }
 }
 
 #[test]
 fn test_request_and_fill_orderbook() {
-    let (ctx, pubkey, secret) = make_ctx_for_tests();
+    const PUBKEYS_NUMBER: usize = 3;
+    const ORDERS_NUMBER: usize = 10;
+
+    let (ctx, _pubkey, _secret) = make_ctx_for_tests();
     let (_, mut cmd_rx) = p2p_context_mock();
 
-    let peer1 = PeerId::random();
-    let peer2 = PeerId::random();
-    let asks1 = make_random_orders(
-        pubkey.clone(),
-        &secret,
-        peer1.to_string(),
-        "RICK".into(),
-        "MORTY".into(),
-        2,
-    );
-    let asks2 = make_random_orders(
-        pubkey.clone(),
-        &secret,
-        peer2.to_string(),
-        "RICK".into(),
-        "MORTY".into(),
-        2,
-    );
-    let bids1 = make_random_orders(
-        pubkey.clone(),
-        &secret,
-        peer1.to_string(),
-        "MORTY".into(),
-        "RICK".into(),
-        2,
-    );
-    let bids2 = make_random_orders(
-        pubkey.clone(),
-        &secret,
-        peer2.to_string(),
-        "MORTY".into(),
-        "RICK".into(),
-        2,
-    );
+    let other_pubkeys: Vec<(String, [u8; 32])> = (0..PUBKEYS_NUMBER)
+        .map(|idx| {
+            let passphrase = format!("passphrase-{}", idx);
+            pubkey_and_secret_for_test(&passphrase)
+        })
+        .collect();
+    let expected_orders: HashMap<String, Vec<(Uuid, OrderbookItem)>> = other_pubkeys
+        .iter()
+        .map(|(pubkey, secret)| {
+            let orders: Vec<_> =
+                make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), ORDERS_NUMBER)
+                    .into_iter()
+                    .map(|order| (order.uuid, order))
+                    .collect();
+            (pubkey.clone(), orders)
+        })
+        .collect();
+
+    // insert extra (RICK, MORTY) orders that must be removed from our trie before the orderbook is filled
+    {
+        let (pubkey, secret) = &other_pubkeys[0];
+        for extra_order in make_random_orders(pubkey.clone(), secret, "RICK".into(), "MORTY".into(), 2) {
+            block_on(insert_or_update_order(&ctx, extra_order));
+        }
+    }
 
     let expected_request = P2PRequest::Ordermatch(OrdermatchRequest::GetOrderbook {
         base: "RICK".into(),
         rel: "MORTY".into(),
-        asks_num: Some(3),
-        bids_num: None,
     });
 
-    let mut expected_asks = asks1.clone();
-    expected_asks.extend(asks2.clone().into_iter());
-    expected_asks.sort_by(|x, y| x.price.cmp(&y.price));
-    // must be the same as asks_num
-    expected_asks.truncate(3);
-
-    let mut expected_bids = bids1.clone();
-    expected_bids.extend(bids2.clone().into_iter());
-    expected_bids.sort_by(|x, y| y.price.cmp(&x.price));
-    // keep all of the bids, because bids_num is None
-
+    let orders = expected_orders.clone();
     spawn(async move {
         let cmd = cmd_rx.next().await.unwrap();
-        let (req, response_tx) = if let AdexBehaviourCmd::RequestRelays { req, response_tx } = cmd {
+        let (req, response_tx) = if let AdexBehaviourCmd::RequestAnyRelay { req, response_tx } = cmd {
             (req, response_tx)
         } else {
             panic!("Unexpected cmd");
@@ -1489,71 +1438,103 @@ fn test_request_and_fill_orderbook() {
         let actual = decode_message::<P2PRequest>(&req).unwrap();
         assert_eq!(actual, expected_request);
 
-        let mut responses = Vec::new();
-
-        // make, encode and push a response from peer1
-        let orderbook = new_protocol::Orderbook {
-            asks: asks1.into_iter().map(|ask| ask.into()).collect(),
-            bids: bids1.into_iter().map(|bid| bid.into()).collect(),
-        };
+        let result = orders
+            .into_iter()
+            .map(|(pubkey, orders)| {
+                let item = GetOrderbookPubkeyItem {
+                    orders,
+                    last_keep_alive: now_ms() / 1000,
+                    last_signed_pubkey_payload: vec![],
+                };
+                (pubkey, item)
+            })
+            .collect();
+        let orderbook = GetOrderbookRes { pubkey_orders: result };
         let encoded = encode_message(&orderbook).unwrap();
-        let response = AdexResponse::Ok { response: encoded };
 
-        responses.push((peer1, response));
-
-        // make, encode and push a response from peer2
-        let orderbook = new_protocol::Orderbook {
-            asks: asks2.into_iter().map(|ask| ask.into()).collect(),
-            bids: bids2.into_iter().map(|bid| bid.into()).collect(),
-        };
-        let encoded = encode_message(&orderbook).unwrap();
-        let response = AdexResponse::Ok { response: encoded };
-
-        responses.push((peer2, response));
-
-        // send the responses through the response channel
-        response_tx.send(responses).unwrap();
+        // send the response through the response channel
+        response_tx.send(Some((PeerId::random(), encoded))).unwrap();
     });
 
-    block_on(request_and_fill_orderbook(&ctx, "RICK", "MORTY", Some(3), None)).unwrap();
+    block_on(request_and_fill_orderbook(&ctx, "RICK", "MORTY")).unwrap();
 
     // check if the best asks and bids are in the orderbook
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = block_on(ordermatch_ctx.orderbook.lock());
-    let asks: Vec<OrderbookItem> = orderbook
-        .ordered
-        .get(&("RICK".into(), "MORTY".into()))
-        .unwrap()
-        .iter()
-        // the best asks are with the lowest prices (from lowest to highest prices)
-        .map(|OrderedByPriceOrder { uuid, .. }| {
-            orderbook
-                .order_set
-                .get(uuid)
-                .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set")
-                .clone()
-        })
-        .collect();
-    let bids: Vec<OrderbookItem> = orderbook
-        .ordered
-        .get(&("MORTY".into(), "RICK".into()))
-        .unwrap()
-        .iter()
-        // the best bids are with the highest prices (from highest to lowest prices)
-        .rev()
-        .map(|OrderedByPriceOrder { uuid, .. }| {
-            orderbook
-                .order_set
-                .get(uuid)
-                .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set")
-                .clone()
-        })
-        .collect();
 
-    assert_eq!(asks, expected_asks);
-    assert_eq!(bids, expected_bids);
+    let expected = expected_orders
+        .iter()
+        .map(|(_pubkey, orders)| orders.clone())
+        .flatten()
+        .collect();
+    assert_eq!(orderbook.order_set, expected);
+
+    let expected = expected_orders
+        .iter()
+        .map(|(_pubkey, orders)| orders)
+        .flatten()
+        .map(|(uuid, _order)| *uuid)
+        .collect();
+    let unordered = orderbook
+        .unordered
+        .get(&("RICK".to_owned(), "MORTY".to_owned()))
+        .expect("No (RICK, MORTY) in unordered container");
+    assert_eq!(*unordered, expected);
+
+    let expected = expected_orders
+        .iter()
+        .map(|(_pubkey, orders)| orders)
+        .flatten()
+        .map(|(uuid, order)| OrderedByPriceOrder {
+            uuid: *uuid,
+            price: order.price.clone().into(),
+        })
+        .collect();
+    let ordered = orderbook
+        .ordered
+        .get(&("RICK".to_owned(), "MORTY".to_owned()))
+        .expect("No (RICK, MORTY) in unordered container");
+    assert_eq!(*ordered, expected);
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+    for (pubkey, orders) in expected_orders {
+        let pubkey_state = orderbook
+            .pubkeys_state
+            .get(&pubkey)
+            .expect(&format!("!pubkey_state.get() {} pubkey", pubkey));
+
+        let expected = orders
+            .iter()
+            .map(|(uuid, _order)| (*uuid, rick_morty_pair.clone()))
+            .collect();
+        assert_eq!(pubkey_state.orders_uuids, expected);
+
+        let root = pubkey_state
+            .trie_roots
+            .get(&rick_morty_pair)
+            .expect(&format!("!pubkey_state.trie_roots.get() {}", rick_morty_pair));
+
+        // check if the root contains only expected orders
+        let trie = TrieDB::<Layout>::new(&orderbook.memory_db, root).expect("!TrieDB::new()");
+        let mut in_trie: Vec<(Uuid, OrderbookItem)> = trie
+            .iter()
+            .expect("!TrieDB::iter()")
+            .map(|key_value| {
+                let (key, value) = key_value.expect("Iterator returned an error");
+                let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
+                let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                (key, value)
+            })
+            .collect();
+
+        in_trie.sort_by(|x, y| x.0.cmp(&y.0));
+        let mut expected = orders;
+        expected.sort_by(|x, y| x.0.cmp(&y.0));
+        assert_eq!(in_trie, expected);
+    }
 }
 
+/*
 #[test]
 fn test_process_order_keep_alive_requested_from_peer() {
     let ordermatch_ctx = Arc::new(OrdermatchContext::default());
@@ -1815,12 +1796,6 @@ fn test_orderbook_insert_or_update_order() {
     orderbook.insert_or_update_order_update_trie(order.clone());
 }
 
-fn all_orders_trie_root_by_pub(ctx: &MmArc, pubkey: &str) -> H64 {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let orderbook = block_on(ordermatch_ctx.orderbook.lock());
-    orderbook.pubkeys_state.get(pubkey).unwrap().all_orders_trie_root
-}
-
 fn pair_trie_root_by_pub(ctx: &MmArc, pubkey: &str, pair: &str) -> H64 {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let orderbook = block_on(ordermatch_ctx.orderbook.lock());
@@ -1828,7 +1803,7 @@ fn pair_trie_root_by_pub(ctx: &MmArc, pubkey: &str, pair: &str) -> H64 {
         .pubkeys_state
         .get(pubkey)
         .unwrap()
-        .order_pairs_trie_roots
+        .trie_roots
         .get(pair)
         .unwrap()
 }
@@ -1855,7 +1830,6 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
     }
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
-    let current_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
 
     let prev_pairs_state = HashMap::from_iter(iter::once((alb_ordered_pair.clone(), pair_trie_root)));
@@ -1867,30 +1841,13 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
         block_on(insert_or_update_order(&ctx, order.clone()));
     }
 
-    let expected_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let mut result = block_on(process_sync_pubkey_orderbook_state(
         ctx.clone(),
         pubkey.clone(),
-        current_root_hash,
-        expected_root_hash,
         prev_pairs_state,
     ))
     .unwrap()
     .unwrap();
-
-    // check all orders trie root first
-    let delta = match result.all_orders_diff {
-        DeltaOrFullTrie::Delta(delta) => delta,
-        DeltaOrFullTrie::FullTrie(_) => panic!("Must be DeltaOrFullTrie::Delta"),
-    };
-
-    let actual_root_hash = delta_trie_root::<Layout, _, _, _, _, _>(
-        &mut old_mem_db,
-        current_root_hash,
-        delta.into_iter().map(|(pair, hash)| (pair.into_bytes(), hash)),
-    )
-    .unwrap();
-    assert_eq!(expected_root_hash, actual_root_hash);
 
     // check pair trie root
     let expected_root_hash = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
@@ -1921,7 +1878,6 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_insert() {
     }
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
-    let current_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
     for order in orders.clone() {
         block_on(insert_or_update_order(&ctx, order));
@@ -1932,9 +1888,8 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_insert() {
     let pubkey_state = orderbook.pubkeys_state.get(&pubkey).unwrap();
     assert!(!pubkey_state
         .order_pairs_trie_state_history
-        .contains_key(&current_root_hash));
-    assert!(!pubkey_state
-        .order_pairs_trie_state_history
+        .get(&alb_ordered_pair)
+        .expect("Must contain C1:C2 pair")
         .contains_key(&pair_trie_root));
 }
 
@@ -1948,7 +1903,6 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
     }
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
-    let current_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
 
     let prev_pairs_state = HashMap::from_iter(iter::once((alb_ordered_pair.clone(), pair_trie_root)));
@@ -1962,30 +1916,13 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
         remove_order(&ctx, order.uuid);
     }
 
-    let expected_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let mut result = block_on(process_sync_pubkey_orderbook_state(
         ctx.clone(),
         pubkey.clone(),
-        current_root_hash,
-        expected_root_hash,
         prev_pairs_state,
     ))
     .unwrap()
     .unwrap();
-
-    // check all orders trie root first
-    let delta = match result.all_orders_diff {
-        DeltaOrFullTrie::Delta(delta) => delta,
-        DeltaOrFullTrie::FullTrie(_) => panic!("Must be DeltaOrFullTrie::Delta"),
-    };
-
-    let actual_root_hash = delta_trie_root::<Layout, _, _, _, _, _>(
-        &mut old_mem_db,
-        current_root_hash,
-        delta.into_iter().map(|(pair, hash)| (pair.into_bytes(), hash)),
-    )
-    .unwrap();
-    assert_eq!(expected_root_hash, actual_root_hash);
 
     // check pair trie root
     let expected_root_hash = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
@@ -2027,7 +1964,6 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_remove() {
     }
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
-    let current_root_hash = all_orders_trie_root_by_pub(&ctx, &pubkey);
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
@@ -2035,9 +1971,8 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_remove() {
     let pubkey_state = orderbook.pubkeys_state.get(&pubkey).unwrap();
     assert!(!pubkey_state
         .order_pairs_trie_state_history
-        .contains_key(&current_root_hash));
-    assert!(!pubkey_state
-        .order_pairs_trie_state_history
+        .get(&alb_ordered_pair)
+        .expect("Must contain C1:C2 pair")
         .contains_key(&pair_trie_root));
 }
 
@@ -2048,18 +1983,56 @@ fn test_orderbook_pubkey_sync_request() {
         orderbook_topic_from_base_rel("C1", "C2"),
         OrderbookRequestingState::Requested,
     );
-    let pairs = vec!["C1:C2".into(), "C2:C3".into()];
     let pubkey = "pubkey";
+
+    let mut trie_roots = HashMap::new();
+    trie_roots.insert("C1:C2".to_owned(), [1; 8]);
+    trie_roots.insert("C2:C3".to_owned(), [1; 8]);
+
     let message = PubkeyKeepAlive {
-        orders_trie_root: [1; 8],
+        trie_roots,
         timestamp: now_ms() / 1000,
     };
 
-    let request = orderbook.process_keep_alive(pubkey, pairs, message).unwrap();
+    let request = orderbook.process_keep_alive(pubkey, message, false).unwrap();
     match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState { pairs_trie_roots, .. } => {
+        OrdermatchRequest::SyncPubkeyOrderbookState {
+            trie_roots: pairs_trie_roots,
+            ..
+        } => {
             assert!(pairs_trie_roots.contains_key("C1:C2"));
             assert!(!pairs_trie_roots.contains_key("C2:C3"));
+        },
+        _ => panic!("Invalid request {:?}", request),
+    }
+}
+
+#[test]
+fn test_orderbook_pubkey_sync_request_relay() {
+    let mut orderbook = Orderbook::default();
+    orderbook.topics_subscribed_to.insert(
+        orderbook_topic_from_base_rel("C1", "C2"),
+        OrderbookRequestingState::Requested,
+    );
+    let pubkey = "pubkey";
+
+    let mut trie_roots = HashMap::new();
+    trie_roots.insert("C1:C2".to_owned(), [1; 8]);
+    trie_roots.insert("C2:C3".to_owned(), [1; 8]);
+
+    let message = PubkeyKeepAlive {
+        trie_roots,
+        timestamp: now_ms() / 1000,
+    };
+
+    let request = orderbook.process_keep_alive(pubkey, message, true).unwrap();
+    match request {
+        OrdermatchRequest::SyncPubkeyOrderbookState {
+            trie_roots: pairs_trie_roots,
+            ..
+        } => {
+            assert!(pairs_trie_roots.contains_key("C1:C2"));
+            assert!(pairs_trie_roots.contains_key("C2:C3"));
         },
         _ => panic!("Invalid request {:?}", request),
     }
@@ -2101,6 +2074,75 @@ fn test_trie_diff_avoid_cycle_on_insertion() {
     };
 
     assert_eq!(expected, history);
+}
+
+#[test]
+fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
+    let (ctx, pubkey, secret) = make_ctx_for_tests();
+    let orders = make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), 10);
+    let new_order = make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), 1)
+        .pop()
+        .expect("Expected one order");
+
+    for order in orders.iter() {
+        block_on(insert_or_update_order(&ctx, order.clone()));
+    }
+
+    let alb_pair = alb_ordered_pair("RICK", "MORTY");
+
+    // update trie root by adding a new order and do not update history
+    let (old_root, new_root) = {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
+
+        log!([pubkey]", found "[orderbook.pubkeys_state.keys()]);
+        let old_root = *orderbook
+            .pubkeys_state
+            .get_mut(&pubkey)
+            .expect("!pubkeys_state")
+            .trie_roots
+            .get(&alb_pair)
+            .expect("MORTY:RICK must be in trie_roots");
+
+        let order_bytes = rmp_serde::to_vec(&new_order).expect("Serialization should never fail");
+        let mut new_root = old_root;
+        let mut trie = get_trie_mut(&mut orderbook.memory_db, &mut new_root).expect("!get_trie_mut");
+        trie.insert(new_order.uuid.as_bytes(), &order_bytes)
+            .expect("Error on order insertion");
+        drop(trie);
+
+        // update root in orderbook trie_roots
+        orderbook
+            .pubkeys_state
+            .get_mut(&pubkey)
+            .expect("!pubkeys_state")
+            .trie_roots
+            .insert(alb_pair.clone(), new_root);
+
+        (old_root, new_root)
+    };
+
+    let mut roots = HashMap::new();
+    roots.insert(alb_pair.clone(), old_root);
+
+    let propagated_from_peer = String::default();
+    let SyncPubkeyOrderbookStateRes {
+        mut pair_orders_diff, ..
+    } = block_on(process_sync_pubkey_orderbook_state(ctx.clone(), pubkey, roots))
+        .expect("!process_sync_pubkey_orderbook_state")
+        .expect("Expected MORTY:RICK delta, returned None");
+
+    let delta = pair_orders_diff.remove(&alb_pair).expect("Expected MORTY:RICK delta");
+    let mut full_trie = match delta {
+        DeltaOrFullTrie::Delta(_) => panic!("Expected FullTrie, found Delta"),
+        DeltaOrFullTrie::FullTrie(full_trie) => full_trie,
+    };
+
+    let mut expected: Vec<_> = orders.into_iter().map(|order| (order.uuid, order)).collect();
+    expected.push((new_order.uuid, new_order));
+    full_trie.sort_by(|x, y| x.0.cmp(&y.0));
+    expected.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(full_trie, expected);
 }
 
 #[test]

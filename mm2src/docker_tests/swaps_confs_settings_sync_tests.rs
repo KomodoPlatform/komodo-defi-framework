@@ -16,8 +16,8 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     expected_taker: SwapConfirmationsSettings,
     expected_lock_duration: u64,
 ) {
-    let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
-    let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
+    let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000.into());
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -185,8 +185,8 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     expected_taker: SwapConfirmationsSettings,
     expected_lock_duration: u64,
 ) {
-    let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000);
-    let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000);
+    let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000.into());
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},

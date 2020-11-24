@@ -532,7 +532,7 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
 
 pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber) -> MmNumber {
     let rate = dex_fee_rate(base, rel);
-    // 0.00001
+    // 0.0001
     let min_fee = BigRational::new(1.into(), 10000.into()).into();
     let fee_amount = trade_amount * &rate;
     if fee_amount < min_fee {
