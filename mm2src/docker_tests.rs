@@ -1732,4 +1732,116 @@ mod docker_tests {
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 asks");
     }
+
+    #[test]
+    fn test_orders_should_match_on_both_nodes_with_same_priv() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000.into());
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm_bob = unwrap!(MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        unwrap!(block_on(
+            mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        ));
+
+        let mut mm_alice_1 = unwrap!(MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_alice_1_dump_log, _alice_1_dump_dashboard) = mm_dump(&mm_alice_1.log_path);
+        unwrap!(block_on(
+            mm_alice_1.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        ));
+
+        let mut mm_alice_2 = unwrap!(MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_alice_2_dump_log, _alice_2_dump_dashboard) = mm_dump(&mm_alice_2.log_path);
+        unwrap!(block_on(
+            mm_alice_2.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        ));
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
+        log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
+        log!([block_on(enable_native(&mm_alice_1, "MYCOIN", vec![]))]);
+        log!([block_on(enable_native(&mm_alice_1, "MYCOIN1", vec![]))]);
+        log!([block_on(enable_native(&mm_alice_2, "MYCOIN", vec![]))]);
+        log!([block_on(enable_native(&mm_alice_2, "MYCOIN1", vec![]))]);
+
+        let rc = unwrap!(block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "max": true,
+        }))));
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        let rc = unwrap!(block_on(mm_alice_1.rpc(json! ({
+            "userpass": mm_alice_1.userpass,
+            "method": "buy",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "volume": "1",
+        }))));
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+        unwrap!(block_on(mm_alice_1.wait_for_log(22., |log| {
+            log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
+        })));
+
+        let rc = unwrap!(block_on(mm_alice_2.rpc(json! ({
+            "userpass": mm_alice_2.userpass,
+            "method": "buy",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "volume": "1",
+        }))));
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+        unwrap!(block_on(mm_alice_2.wait_for_log(22., |log| {
+            log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
+        })));
+
+        unwrap!(block_on(mm_bob.stop()));
+        unwrap!(block_on(mm_alice_1.stop()));
+        unwrap!(block_on(mm_alice_2.stop()));
+    }
 }

@@ -309,6 +309,17 @@ fn alice_can_see_the_active_order_after_connection() {
         "volume": "0.9",
     }))));
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    // issue sell request on Eve side by setting base/rel price
+    log!("Issue eve sell request");
+    let rc = unwrap!(block_on(mm_eve.rpc(json! ({
+        "userpass": mm_eve.userpass,
+        "method": "setprice",
+        "base": "MORTY",
+        "rel": "RICK",
+        "price": "1",
+        "volume": "0.9",
+    }))));
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Get RICK/MORTY orderbook on Eve side");
     let rc = unwrap!(block_on(mm_eve.rpc(json! ({
@@ -322,7 +333,9 @@ fn alice_can_see_the_active_order_after_connection() {
     let eve_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Eve orderbook "[eve_orderbook]);
     let asks = eve_orderbook["asks"].as_array().unwrap();
+    let bids = eve_orderbook["bids"].as_array().unwrap();
     assert_eq!(asks.len(), 2, "Eve RICK/MORTY orderbook must have exactly 2 asks");
+    assert_eq!(bids.len(), 1, "Eve RICK/MORTY orderbook must have exactly 1 bid");
 
     log!("Give Bob 2 seconds to import Eve order");
     thread::sleep(Duration::from_secs(2));
@@ -338,7 +351,9 @@ fn alice_can_see_the_active_order_after_connection() {
     let bob_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Bob orderbook "[bob_orderbook]);
     let asks = bob_orderbook["asks"].as_array().unwrap();
+    let bids = bob_orderbook["bids"].as_array().unwrap();
     assert_eq!(asks.len(), 2, "Bob RICK/MORTY orderbook must have exactly 2 asks");
+    assert_eq!(bids.len(), 1, "Bob RICK/MORTY orderbook must have exactly 1 bid");
 
     let mut mm_alice = unwrap!(MarketMakerIt::start(
         json! ({
@@ -377,7 +392,9 @@ fn alice_can_see_the_active_order_after_connection() {
     let alice_orderbook: Json = unwrap!(json::from_str(&rc.1));
     log!("Alice orderbook "[alice_orderbook]);
     let asks = alice_orderbook["asks"].as_array().unwrap();
+    let bids = alice_orderbook["bids"].as_array().unwrap();
     assert_eq!(asks.len(), 2, "Alice RICK/MORTY orderbook must have exactly 2 asks");
+    assert_eq!(bids.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 bid");
 
     unwrap!(block_on(mm_bob.stop()));
     unwrap!(block_on(mm_alice.stop()));

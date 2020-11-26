@@ -528,12 +528,10 @@ pub fn start_gossipsub(
     port: u16,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
     to_dial: Vec<String>,
-    my_privkey: &mut [u8],
     i_am_relay: bool,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId) {
-    let privkey = identity::secp256k1::SecretKey::from_bytes(my_privkey).unwrap();
-    let local_key = identity::Keypair::Secp256k1(privkey.into());
+    let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
     println!("Local peer id: {:?}", local_peer_id);
 
