@@ -1324,16 +1324,35 @@ fn p2p_context_mock() -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBeh
 
 #[test]
 fn test_process_get_orderbook_request() {
-    const PUBKEYS_NUMBER: usize = 5;
     const ORDERS_NUMBER: usize = 10;
 
     let (ctx, _pubkey, _secret) = make_ctx_for_tests();
-    let other_pubkeys: Vec<(String, [u8; 32])> = (0..PUBKEYS_NUMBER)
-        .map(|idx| {
-            let passphrase = format!("passphrase-{}", idx);
-            pubkey_and_secret_for_test(&passphrase)
-        })
-        .collect();
+    let (pubkey1, secret1) = pubkey_and_secret_for_test("passphrase-1");
+    let (pubkey2, secret2) = pubkey_and_secret_for_test("passphrase-2");
+    let (pubkey3, secret3) = pubkey_and_secret_for_test("passphrase-3");
+
+    let mut pubkey1_orders =
+        make_random_orders(pubkey1.clone(), &secret1, "RICK".into(), "MORTY".into(), ORDERS_NUMBER);
+    let mut pubkey2_orders =
+        make_random_orders(pubkey2.clone(), &secret2, "MORTY".into(), "RICK".into(), ORDERS_NUMBER);
+    let mut pubkey3_orders =
+        make_random_orders(pubkey3.clone(), &secret3, "RICK".into(), "MORTY".into(), ORDERS_NUMBER);
+    pubkey3_orders.extend_from_slice(&make_random_orders(
+        pubkey3.clone(),
+        &secret3,
+        "MORTY".into(),
+        "RICK".into(),
+        ORDERS_NUMBER,
+    ));
+
+    pubkey1_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+    pubkey2_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+    pubkey3_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+
+    let mut orders_by_pubkeys = HashMap::new();
+    orders_by_pubkeys.insert(pubkey1, pubkey1_orders);
+    orders_by_pubkeys.insert(pubkey2, pubkey2_orders);
+    orders_by_pubkeys.insert(pubkey3, pubkey3_orders);
 
     let ordermatch_ctx = Arc::new(OrdermatchContext::default());
     let ordermatch_ctx_clone = ordermatch_ctx.clone();
@@ -1341,25 +1360,8 @@ fn test_process_get_orderbook_request() {
 
     let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
 
-    let orders: Vec<OrderbookItem> = other_pubkeys
-        .iter()
-        .map(|(pubkey, secret)| {
-            make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), ORDERS_NUMBER)
-        })
-        .flatten()
-        .collect();
-
-    let mut orders_by_pubkeys = HashMap::new();
-    for order in orders.iter() {
+    for order in orders_by_pubkeys.iter().map(|(_pubkey, orders)| orders).flatten() {
         orderbook.insert_or_update_order_update_trie(order.clone());
-
-        let pubkey_orders = orders_by_pubkeys.entry(order.pubkey.clone()).or_insert_with(Vec::new);
-        pubkey_orders.push(order.clone());
-    }
-
-    // sort by uuids
-    for (_pubkey, orders) in orders_by_pubkeys.iter_mut() {
-        orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
     }
 
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
@@ -1384,6 +1386,43 @@ fn test_process_get_orderbook_request() {
         log!([pubkey]"-"[actual.len()]);
         assert_eq!(actual, *expected);
     }
+}
+
+#[test]
+fn test_process_get_orderbook_request_limit() {
+    let (ctx, pubkey, secret) = make_ctx_for_tests();
+
+    let ordermatch_ctx = Arc::new(OrdermatchContext::default());
+    let ordermatch_ctx_clone = ordermatch_ctx.clone();
+    OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
+
+    let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
+
+    let orders = make_random_orders(
+        pubkey.clone(),
+        &secret,
+        "RICK".into(),
+        "MORTY".into(),
+        MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE + 1,
+    );
+
+    for order in orders {
+        orderbook.insert_or_update_order_update_trie(order);
+    }
+
+    // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
+    drop(orderbook);
+
+    let err = block_on(process_get_orderbook_request(
+        ctx.clone(),
+        "RICK".into(),
+        "MORTY".into(),
+    ))
+    .err()
+    .expect("Expected an error");
+
+    log!("error: "(err));
+    assert!(err.contains("Orderbook too large"));
 }
 
 #[test]
@@ -2143,6 +2182,105 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     full_trie.sort_by(|x, y| x.0.cmp(&y.0));
     expected.sort_by(|x, y| x.0.cmp(&y.0));
     assert_eq!(full_trie, expected);
+}
+
+fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders: &Vec<OrderbookItem>) {
+    let pubkey_state = orderbook.pubkeys_state.get(pubkey).expect("!pubkeys_state");
+
+    // order_set
+    let expected_set: HashMap<_, _> = orders.iter().map(|order| (order.uuid, order.clone())).collect();
+    assert_eq!(orderbook.order_set, expected_set);
+
+    // ordered
+    let mut expected_ordered = HashMap::new();
+    for order in orders.iter() {
+        let item = OrderedByPriceOrder {
+            uuid: order.uuid,
+            price: order.price.clone().into(),
+        };
+        let set = expected_ordered
+            .entry((order.base.clone(), order.rel.clone()))
+            .or_insert_with(BTreeSet::default);
+        set.insert(item);
+    }
+    assert_eq!(orderbook.ordered, expected_ordered);
+
+    // unordered
+    let mut expected_unordered = HashMap::new();
+    for order in orders.iter() {
+        let set = expected_unordered
+            .entry((order.base.clone(), order.rel.clone()))
+            .or_insert_with(HashSet::default);
+        set.insert(order.uuid);
+    }
+    assert_eq!(orderbook.unordered, expected_unordered);
+
+    // history
+    let actual_keys: HashSet<_> = pubkey_state.order_pairs_trie_state_history.keys().cloned().collect();
+    let expected_keys: HashSet<_> = orders
+        .iter()
+        .map(|order| alb_ordered_pair(&order.base, &order.rel))
+        .collect();
+    assert_eq!(actual_keys, expected_keys);
+
+    // orders_uuids
+    let expected_uuids: HashSet<_> = orders
+        .iter()
+        .map(|order| (order.uuid, alb_ordered_pair(&order.base, &order.rel)))
+        .collect();
+    assert_eq!(pubkey_state.orders_uuids, expected_uuids);
+
+    // trie_roots
+    let actual_trie_orders: HashMap<_, _> = pubkey_state
+        .trie_roots
+        .iter()
+        .map(|(alb_pair, trie_root)| {
+            let trie = TrieDB::<Layout>::new(&orderbook.memory_db, trie_root).expect("!TrieDB::new");
+            let mut trie: Vec<(Uuid, OrderbookItem)> = trie
+                .iter()
+                .expect("!TrieDB::iter")
+                .map(|key_value| {
+                    let (key, value) = key_value.expect("Iterator returned an error");
+                    let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
+                    let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                    (key, value)
+                })
+                .collect();
+            trie.sort_by(|(uuid_x, _), (uuid_y, _)| uuid_x.cmp(uuid_y));
+            (alb_pair.clone(), trie)
+        })
+        .collect();
+    let mut expected_trie_orders = HashMap::new();
+    for order in orders.iter() {
+        let trie = expected_trie_orders
+            .entry(alb_ordered_pair(&order.base, &order.rel))
+            .or_insert_with(Vec::default);
+        trie.push((order.uuid, order.clone()));
+    }
+    for (_alb_pair, trie) in expected_trie_orders.iter_mut() {
+        trie.sort_by(|(uuid_x, _), (uuid_y, _)| uuid_x.cmp(uuid_y));
+    }
+    assert_eq!(actual_trie_orders, expected_trie_orders);
+}
+
+#[test]
+fn test_remove_and_purge_pubkey_pair_orders() {
+    let (ctx, pubkey, secret) = make_ctx_for_tests();
+    let rick_morty_orders = make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), 10);
+    let rick_kmd_orders = make_random_orders(pubkey.clone(), &secret, "RICK".into(), "KMD".into(), 10);
+
+    for order in rick_morty_orders.iter().chain(rick_kmd_orders.iter()) {
+        block_on(insert_or_update_order(&ctx, order.clone()));
+    }
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+    let rick_kmd_pair = alb_ordered_pair("RICK", "KMD");
+
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
+
+    remove_and_purge_pubkey_pair_orders(&mut orderbook, &pubkey, &rick_morty_pair);
+    check_if_orderbook_contains_only(&orderbook, &pubkey, &rick_kmd_orders);
 }
 
 #[test]

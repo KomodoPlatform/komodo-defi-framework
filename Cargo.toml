@@ -97,6 +97,7 @@ hex-literal = "0.3.1"
 http = "0.2"
 hyper = { version = "0.13", optional = true }
 hyper-rustls = { version = "0.21", optional = true }
+itertools = "0.9"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = "0.2"
@@ -106,6 +107,7 @@ num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
 rpc = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 parking_lot = { version = "0.11", features = ["nightly"] }
+parity-util-mem = "0.7"
 # AP: portfolio RPCs are not documented and not used as of now
 # so the crate is disabled to speed up the entire removal of C code
 # portfolio = { path = "mm2src/portfolio" }
