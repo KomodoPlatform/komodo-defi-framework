@@ -480,8 +480,6 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
         },
     };
 
-    let key_pair = ctx.secp256k1_key_pair.as_option().unwrap();
-
     let ctx_on_poll = ctx.clone();
     let (cmd_tx, event_rx, peer_id) =
         start_gossipsub(myipaddr, mypubport, spawn_boxed, seednodes, i_am_seed, move |swarm| {

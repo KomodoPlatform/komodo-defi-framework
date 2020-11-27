@@ -470,13 +470,15 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .choose_multiple(&mut thread_rng(), connect_bootstrap_num)
             {
                 if let Err(e) = libp2p::Swarm::dial_addr(swarm, (*addr).clone()) {
-                    error!("Addr {} dial error {}", addr, e);
+                    error!("Bootstrap addr {} dial error {}", addr, e);
                 }
             }
         }
-        for peer in to_connect {
-            if let Err(e) = libp2p::Swarm::dial(swarm, &peer) {
-                error!("Peer {} dial error {}", peer, e);
+        for (peer, addresses) in to_connect {
+            for addr in addresses {
+                if let Err(e) = libp2p::Swarm::dial_addr(swarm, addr.clone()) {
+                    error!("Peer {} address {} dial error {}", peer, addr, e);
+                }
             }
         }
     }

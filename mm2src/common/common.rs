@@ -353,10 +353,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
         },
         None => "??".into(),
     };
-    let lineno = match symbol.lineno() {
-        Some(lineno) => lineno,
-        None => 0,
-    };
+    let lineno = symbol.lineno().unwrap_or(0);
     let name = match symbol.name() {
         Some(name) => name,
         None => SymbolName::new(&[]),

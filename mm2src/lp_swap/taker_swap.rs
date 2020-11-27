@@ -37,9 +37,9 @@ fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEven
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
-            maker_amount: Some(swap.maker_amount.clone()),
+            maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
-            taker_amount: Some(swap.taker_amount.clone()),
+            taker_amount: Some(swap.taker_amount.to_decimal()),
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
@@ -387,8 +387,8 @@ pub struct TakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
     taker_coin: MmCoinEnum,
-    maker_amount: BigDecimal,
-    taker_amount: BigDecimal,
+    maker_amount: MmNumber,
+    taker_amount: MmNumber,
     my_persistent_pub: H264,
     maker: bits256,
     uuid: Uuid,
@@ -567,8 +567,8 @@ impl TakerSwap {
     pub fn new(
         ctx: MmArc,
         maker: bits256,
-        maker_amount: BigDecimal,
-        taker_amount: BigDecimal,
+        maker_amount: MmNumber,
+        taker_amount: MmNumber,
         my_persistent_pub: H264,
         uuid: Uuid,
         conf_settings: SwapConfirmationsSettings,
@@ -652,8 +652,8 @@ impl TakerSwap {
             maker: self.maker.bytes.into(),
             started_at,
             lock_duration: self.payment_locktime,
-            maker_amount: self.maker_amount.clone(),
-            taker_amount: self.taker_amount.clone(),
+            maker_amount: self.maker_amount.to_decimal(),
+            taker_amount: self.taker_amount.to_decimal(),
             maker_payment_confirmations: self.conf_settings.maker_coin_confs,
             maker_payment_requires_nota: Some(self.conf_settings.maker_coin_nota),
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
@@ -867,7 +867,7 @@ impl TakerSwap {
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_persistent_pub,
             &self.r().secret_hash.0,
-            self.maker_amount.clone(),
+            self.maker_amount.to_decimal(),
         );
         let validated = validated_f.compat().await;
 
@@ -905,7 +905,7 @@ impl TakerSwap {
                         self.r().data.taker_payment_lock as u32,
                         &*self.r().other_persistent_pub,
                         &self.r().secret_hash.0,
-                        self.taker_amount.clone(),
+                        self.taker_amount.to_decimal(),
                     );
 
                     match payment_fut.compat().await {
@@ -1117,8 +1117,8 @@ impl TakerSwap {
                 let swap = TakerSwap::new(
                     ctx,
                     maker,
-                    data.maker_amount.clone(),
-                    data.taker_amount.clone(),
+                    data.maker_amount.clone().into(),
+                    data.taker_amount.clone().into(),
                     my_persistent_pub,
                     saved.uuid,
                     conf_settings,

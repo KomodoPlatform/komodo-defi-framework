@@ -340,12 +340,12 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
             },
             new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
                 let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
-                process_taker_request(ctx, msg).await;
+                process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
                 true
             },
             new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                 let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
-                process_maker_reserved(ctx, msg).await;
+                process_maker_reserved(ctx, pubkey.unprefixed().into(), msg).await;
                 true
             },
             new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -1427,7 +1427,7 @@ impl Into<MakerOrder> for TakerOrder {
             TakerAction::Sell => MakerOrder {
                 price: (self.request.get_rel_amount() / self.request.get_base_amount()),
                 max_base_vol: self.request.get_base_amount().clone(),
-                min_base_vol: 0.into(),
+                min_base_vol: MIN_TRADING_VOL.into(),
                 created_at: now_ms(),
                 base: self.request.base,
                 rel: self.request.rel,
@@ -1440,7 +1440,7 @@ impl Into<MakerOrder> for TakerOrder {
             TakerAction::Buy => MakerOrder {
                 price: (self.request.get_base_amount() / self.request.get_rel_amount()),
                 max_base_vol: self.request.get_rel_amount().clone(),
-                min_base_vol: 0.into(),
+                min_base_vol: MIN_TRADING_VOL.into(),
                 created_at: now_ms(),
                 base: self.request.rel,
                 rel: self.request.base,
@@ -2105,8 +2105,8 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
 
         let privkey = &ctx.secp256k1_key_pair().private().secret;
         let my_persistent_pub = unwrap!(compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256));
-        let maker_amount = taker_match.reserved.get_base_amount().to_decimal();
-        let taker_amount = taker_match.reserved.get_rel_amount().to_decimal();
+        let maker_amount = taker_match.reserved.get_base_amount().clone();
+        let taker_amount = taker_match.reserved.get_rel_amount().clone();
         let uuid = taker_match.reserved.taker_order_uuid;
 
         let my_conf_settings =
@@ -2240,6 +2240,15 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 if !ordermatch_ctx.orderbook.lock().await.order_set.contains_key(uuid) {
                     if let Ok(Some(_)) = lp_coinfindᵃ(&ctx, &order.base).await {
                         if let Ok(Some(_)) = lp_coinfindᵃ(&ctx, &order.rel).await {
+                            let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
+                            if !ordermatch_ctx.orderbook.lock().await.is_subscribed_to(&topic) {
+                                let request_orderbook = false;
+                                if let Err(e) =
+                                    subscribe_to_orderbook_topic(&ctx, &order.base, &order.rel, request_orderbook).await
+                                {
+                                    log!("Error " (e) " on subscribing to orderbook topic " (topic));
+                                }
+                            }
                             maker_order_created_p2p_notify(ctx.clone(), order).await;
                         }
                     }
@@ -2251,9 +2260,13 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
     }
 }
 
-async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
+async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
     let our_public_id = unwrap!(ctx.public_id());
+    if our_public_id.bytes == from_pubkey.0 {
+        log!("Skip maker reserved from our pubkey");
+        return;
+    }
 
     if is_pubkey_banned(&ctx, &reserved_msg.sender_pubkey) {
         log!("Sender pubkey " [reserved_msg.sender_pubkey] " is banned");
@@ -2297,7 +2310,11 @@ async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
 
 async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: MakerConnected) {
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
-    let _our_public_id = unwrap!(ctx.public_id());
+    let our_public_id = unwrap!(ctx.public_id());
+    if our_public_id.bytes == from_pubkey.0 {
+        log!("Skip maker connected from our pubkey");
+        return;
+    }
 
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
@@ -2326,17 +2343,16 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     my_order_entry.remove();
 }
 
-async fn process_taker_request(ctx: MmArc, taker_request: TakerRequest) {
+async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
+    let our_public_id: H256Json = unwrap!(ctx.public_id()).bytes.into();
+    if our_public_id == from_pubkey {
+        log!("Skip the request originating from our pubkey");
+        return;
+    }
     log!({"Processing request {:?}", taker_request});
 
     if is_pubkey_banned(&ctx, &taker_request.sender_pubkey) {
         log!("Sender pubkey " [taker_request.sender_pubkey] " is banned");
-        return;
-    }
-
-    let our_public_id: H256Json = unwrap!(ctx.public_id()).bytes.into();
-    if our_public_id == taker_request.dest_pub_key {
-        log!("Skip the request originating from our pubkey");
         return;
     }
 
@@ -2401,6 +2417,10 @@ async fn process_taker_request(ctx: MmArc, taker_request: TakerRequest) {
 async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg: TakerConnect) {
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
     let our_public_id = unwrap!(ctx.public_id());
+    if our_public_id.bytes == sender_pubkey.0 {
+        log!("Skip taker connect from our pubkey");
+        return;
+    }
 
     let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
     let my_order = match maker_orders.get_mut(&connect_msg.maker_order_uuid) {

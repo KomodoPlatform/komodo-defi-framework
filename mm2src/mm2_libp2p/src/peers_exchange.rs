@@ -156,15 +156,19 @@ impl PeersExchange {
         }
     }
 
-    pub fn get_random_peers(&self, num: usize, mut filter: impl FnMut(&PeerId) -> bool) -> Vec<PeerId> {
+    pub fn get_random_peers(
+        &mut self,
+        num: usize,
+        mut filter: impl FnMut(&PeerId) -> bool,
+    ) -> HashMap<PeerId, Vec<Multiaddr>> {
+        let mut result = HashMap::with_capacity(num);
         let mut rng = thread_rng();
-        self.known_peers
-            .iter()
-            .filter(|peer| filter(*peer))
-            .collect::<Vec<_>>()
-            .choose_multiple(&mut rng, num)
-            .map(|peer| (*peer).clone())
-            .collect()
+        let peer_ids = self.known_peers.iter().filter(|peer| filter(*peer)).collect::<Vec<_>>();
+        for peer_id in peer_ids.choose_multiple(&mut rng, num) {
+            let addresses = self.request_response.addresses_of_peer(*peer_id);
+            result.insert((*peer_id).clone(), addresses);
+        }
+        result
     }
 
     pub fn is_known_peer(&self, peer: &PeerId) -> bool { self.known_peers.contains(peer) }
