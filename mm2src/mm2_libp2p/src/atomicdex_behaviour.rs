@@ -313,7 +313,7 @@ impl AtomicDexBehaviour {
                     })
                     .collect();
                 if result_tx.send(result).is_err() {
-                    println!("Result rx is dropped");
+                    debug!("Result rx is dropped");
                 }
             },
             AdexBehaviourCmd::GetGossipMesh { result_tx } => {
@@ -328,7 +328,7 @@ impl AtomicDexBehaviour {
                     })
                     .collect();
                 if result_tx.send(result).is_err() {
-                    println!("Result rx is dropped");
+                    debug!("Result rx is dropped");
                 }
             },
             AdexBehaviourCmd::GetGossipPeerTopics { result_tx } => {
@@ -535,7 +535,7 @@ pub fn start_gossipsub(
 ) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId) {
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-    println!("Local peer id: {:?}", local_peer_id);
+    info!("Local peer id: {:?}", local_peer_id);
 
     // Set up an encrypted TCP Transport over the Mplex protocol
     let transport = {
@@ -619,8 +619,8 @@ pub fn start_gossipsub(
     libp2p::Swarm::listen_on(&mut swarm, addr.parse().unwrap()).unwrap();
     for relay in bootstrap.choose_multiple(&mut thread_rng(), mesh_n) {
         match libp2p::Swarm::dial_addr(&mut swarm, relay.clone()) {
-            Ok(_) => println!("Dialed {}", relay),
-            Err(e) => println!("Dial {:?} failed: {:?}", relay, e),
+            Ok(_) => info!("Dialed {}", relay),
+            Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
     }
 
@@ -640,7 +640,7 @@ pub fn start_gossipsub(
 
         loop {
             match swarm.poll_next_unpin(cx) {
-                Poll::Ready(Some(event)) => println!("Swarm event {:?}", event),
+                Poll::Ready(Some(event)) => debug!("Swarm event {:?}", event),
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Pending => break,
             }

@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 native = [
-  "hyper", "hyper-rustls", "libc", "tokio"
+    "hyper", "hyper-rustls", "libc", "tokio"
 ]
 
 w-bindgen = ["wasm-bindgen", "web-sys"]
@@ -18,7 +18,7 @@ doctest = false
 
 [dependencies]
 arrayref = "0.3"
-async-std = {version = "1.5", features = ["unstable"]}
+async-std = { version = "1.5", features = ["unstable"] }
 atomic = "^0.4.6"
 async-trait = "0.1"
 backtrace = "0.3"
@@ -45,8 +45,10 @@ itertools = "0.8"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 lazy_static = "1.3"
 libc = { version = "0.2", optional = true }
+log = "0.4.8"
+log4rs = "0.13"
 metrics = "0.12"
-metrics-runtime = {version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }
+metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }
 metrics-core = "0.5"
 metrics-util = "0.3"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
@@ -67,11 +69,12 @@ tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "t
 unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
+winapi = "0.3"
 
 [dependencies.web-sys]
 version = "0.3.4"
 features = [
-  'console',
+    'console',
 ]
 optional = true
 

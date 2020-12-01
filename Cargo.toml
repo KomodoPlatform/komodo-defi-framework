@@ -136,7 +136,6 @@ trie-root = "0.16.0"
 unwrap = "1.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
-winapi = "0.3"
 
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
 js-sys = { version = "0.3.27", optional = true }
@@ -155,6 +154,7 @@ libsecp256k1 = "0.2.2"
 mocktopus = "0.7.0"
 rand4 = { version = "0.4", package = "rand" }
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
+winapi = "0.3"
 
 [workspace]
 members = [

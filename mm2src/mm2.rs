@@ -22,6 +22,8 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
+use common::crash_reports::init_crash_reports;
+use common::log::unified_log::{LevelFilter, UnifiedLoggerBuilder};
 use common::mm_ctx::MmCtxBuilder;
 use common::{block_on, double_panic_crash, safe_slurp, MM_DATETIME, MM_VERSION};
 
@@ -35,9 +37,6 @@ use std::ffi::OsString;
 use std::process::exit;
 use std::ptr::null;
 use std::str;
-
-#[path = "crash_reports.rs"] pub mod crash_reports;
-use self::crash_reports::init_crash_reports;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
 use self::lp_native_dex::{lp_init, lp_ports};
@@ -62,9 +61,16 @@ mod mm2_tests;
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub fn lp_main(conf: Json, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     // std::env::set_var("RUST_LOG", "debug");
-    if let Err(e) = env_logger::from_env(env_logger::Env::default().default_filter_or("info")).try_init() {
-        log!("Env logger initialization failed: "(e))
+    if let Err(e) = UnifiedLoggerBuilder::default()
+        .level_filter_from_env_or_default(LevelFilter::Info)
+        .console(false)
+        .mm_log(true)
+        .try_init()
+    {
+        log!("Unified logger initialization failed: "(e))
     }
+
+    // std::env::set_var("RUST_LOG", "debug");
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
             return ERR!("rpc_password must be string");

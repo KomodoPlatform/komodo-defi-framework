@@ -365,7 +365,7 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
             },
         },
         Err(e) => {
-            println!("Error {} while decoding signed message", e);
+            log!("Error "(e)" while decoding signed message");
             false
         },
     }
@@ -421,7 +421,7 @@ impl TryFromBytes for Uuid {
 }
 
 pub async fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
-    println!("Got ordermatch request {:?}", request);
+    log!("Got ordermatch request "[request]);
     match request {
         OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel).await,
         OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
@@ -727,7 +727,7 @@ async fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         pair_trie_root: H64::default(),
     });
     delete_my_order(&ctx, order.uuid).await;
-    println!("maker_order_cancelled_p2p_notify called, message {:?}", message);
+    log!("maker_order_cancelled_p2p_notify called, message "[message]);
     broadcast_ordermatch_message(
         &ctx,
         vec![orderbook_topic_from_base_rel(&order.base, &order.rel)],

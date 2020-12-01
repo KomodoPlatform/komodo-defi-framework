@@ -47,7 +47,6 @@ jobs:
       - bash: |
           echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug > MM_VERSION
           cat MM_VERSION
-          touch mm2src/common/build.rs
           if [ $AGENT_OS = "Linux" ]
           then
             docker build -f Dockerfile.ubuntu.ci -t mm2_builder .
@@ -63,7 +62,7 @@ jobs:
             mm2_builder \
             /bin/bash -c "source /root/.cargo/env && cargo build --features native -vv --target-dir target-xenial"
           else
-            cargo build --features native -vv
+            cargo +nightly build --features native -vv
           fi
         displayName: 'Build MM2 Debug'
         condition: eq( variables['DEBUG_UPLOADED'], '' )
@@ -100,7 +99,7 @@ jobs:
             mm2_builder \
             /bin/bash -c "source /root/.cargo/env && cargo build --features native --release -vv --target-dir target-xenial"
           else
-            cargo build --features native --release -vv
+            cargo +nightly build --features native --release -vv
           fi
         displayName: 'Build MM2 Release'
         condition: eq( variables['RELEASE_UPLOADED'], '' )

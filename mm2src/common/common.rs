@@ -58,6 +58,7 @@ macro_rules! ifrom {
     };
 }
 
+pub mod crash_reports;
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]

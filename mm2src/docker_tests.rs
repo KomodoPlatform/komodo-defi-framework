@@ -1181,7 +1181,7 @@ mod docker_tests {
             },
         }))));
         assert!(!rc.0.is_success(), "buy success, but should fail: {}", rc.1);
-        assert!(rc.1.contains("is larger than available 1"));
+        assert!(rc.1.contains("is larger than available"), rc.1);
         unwrap!(block_on(mm_bob.stop()));
         unwrap!(block_on(mm_alice.stop()));
     }
@@ -1282,7 +1282,7 @@ mod docker_tests {
             },
         }))));
         assert!(!rc.0.is_success(), "sell success, but should fail: {}", rc.1);
-        assert!(rc.1.contains("is larger than available 1"));
+        assert!(rc.1.contains("is larger than available"), rc.1);
         unwrap!(block_on(mm_bob.stop()));
         unwrap!(block_on(mm_alice.stop()));
     }

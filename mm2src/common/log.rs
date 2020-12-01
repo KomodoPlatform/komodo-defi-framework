@@ -854,6 +854,144 @@ impl Drop for LogState {
     }
 }
 
+pub mod unified_log {
+    use super::chunk2log;
+    pub use log::LevelFilter;
+    use log::Record;
+    use log4rs::{append, config,
+                 encode::{pattern, writer::simple}};
+
+    const MM_FORMAT: &str = "{d(%d %H:%M:%S)(utc)}, {f}:{L}] {l} {m}";
+    const DEFAULT_FORMAT: &str = "[{d(%Y-%m-%d %H:%M:%S %Z)(utc)} {h({l})} {M}:{f}:{L}] {m}";
+    const DEFAULT_LEVEL_FILTER: LevelFilter = LevelFilter::Info;
+
+    pub struct UnifiedLoggerBuilder {
+        console_format: String,
+        mm_format: String,
+        filter: LevelPolicy,
+        console: bool,
+        mm_log: bool,
+    }
+
+    impl Default for UnifiedLoggerBuilder {
+        fn default() -> UnifiedLoggerBuilder {
+            UnifiedLoggerBuilder {
+                console_format: DEFAULT_FORMAT.to_owned(),
+                mm_format: MM_FORMAT.to_owned(),
+                filter: LevelPolicy::Exact(DEFAULT_LEVEL_FILTER),
+                console: true,
+                mm_log: false,
+            }
+        }
+    }
+
+    impl UnifiedLoggerBuilder {
+        pub fn new() -> UnifiedLoggerBuilder { UnifiedLoggerBuilder::default() }
+
+        pub fn console_format(mut self, console_format: &str) -> UnifiedLoggerBuilder {
+            self.console_format = console_format.to_owned();
+            self
+        }
+
+        pub fn mm_format(mut self, mm_format: &str) -> UnifiedLoggerBuilder {
+            self.mm_format = mm_format.to_owned();
+            self
+        }
+
+        pub fn level_filter(mut self, filter: LevelFilter) -> UnifiedLoggerBuilder {
+            self.filter = LevelPolicy::Exact(filter);
+            self
+        }
+
+        pub fn level_filter_from_env_or_default(mut self, default: LevelFilter) -> UnifiedLoggerBuilder {
+            self.filter = LevelPolicy::FromEnvOrDefault(default);
+            self
+        }
+
+        pub fn console(mut self, console: bool) -> UnifiedLoggerBuilder {
+            self.console = console;
+            self
+        }
+
+        pub fn mm_log(mut self, mm_log: bool) -> UnifiedLoggerBuilder {
+            self.mm_log = mm_log;
+            self
+        }
+
+        pub fn try_init(self) -> Result<(), String> {
+            let mut appenders = Vec::new();
+            let level_filter = match self.filter {
+                LevelPolicy::Exact(l) => l,
+                LevelPolicy::FromEnvOrDefault(default) => Self::get_level_filter_from_env().unwrap_or(default),
+            };
+
+            if self.mm_log {
+                let appender = MmLogAppender::new(&self.mm_format);
+                appenders.push(config::Appender::builder().build("mm_log", Box::new(appender)));
+            }
+
+            // TODO console appender prints without '/n'
+            if self.console {
+                let encoder = Box::new(pattern::PatternEncoder::new(&self.console_format));
+                let appender = append::console::ConsoleAppender::builder()
+                    .encoder(encoder)
+                    .target(append::console::Target::Stdout)
+                    .build();
+                appenders.push(config::Appender::builder().build("console", Box::new(appender)));
+            }
+
+            let app_names: Vec<_> = appenders.iter().map(|app| app.name()).collect();
+            let root = config::Root::builder().appenders(app_names).build(level_filter);
+            let config = try_s!(config::Config::builder().appenders(appenders).build(root));
+
+            try_s!(log4rs::init_config(config));
+            Ok(())
+        }
+
+        fn get_level_filter_from_env() -> Option<LevelFilter> {
+            match std::env::var("RUST_LOG").ok()?.to_lowercase().as_str() {
+                "off" => Some(LevelFilter::Off),
+                "error" => Some(LevelFilter::Error),
+                "warn" => Some(LevelFilter::Warn),
+                "info" => Some(LevelFilter::Info),
+                "debug" => Some(LevelFilter::Debug),
+                "trace" => Some(LevelFilter::Trace),
+                _ => None,
+            }
+        }
+    }
+
+    enum LevelPolicy {
+        Exact(LevelFilter),
+        FromEnvOrDefault(LevelFilter),
+    }
+
+    #[derive(Debug)]
+    struct MmLogAppender {
+        pattern: Box<dyn log4rs::encode::Encode>,
+    }
+
+    impl MmLogAppender {
+        fn new(pattern: &str) -> MmLogAppender {
+            MmLogAppender {
+                pattern: Box::new(pattern::PatternEncoder::new(pattern)),
+            }
+        }
+    }
+
+    impl append::Append for MmLogAppender {
+        fn append(&self, record: &Record) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+            let mut buf = Vec::new();
+            self.pattern.encode(&mut simple::SimpleWriter(&mut buf), record)?;
+            let as_string = String::from_utf8(buf).map_err(Box::new)?;
+            chunk2log(as_string);
+            Ok(())
+        }
+
+        fn flush(&self) {}
+    }
+}
+
 #[doc(hidden)]
 pub mod tests {
     use super::LogState;

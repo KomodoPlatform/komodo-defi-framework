@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use common::{self, set_panic_hook, stack_trace, stack_trace_frame, writeln};
+use crate::{log, set_panic_hook, stack_trace, stack_trace_frame, writeln};
 use std::env;
 use std::io::stderr;
 use std::io::Write;
@@ -134,7 +134,7 @@ fn test_crash_handling() {
 pub fn init_crash_reports() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        common::wio::init();
+        crate::wio::init();
 
         set_panic_hook();
 

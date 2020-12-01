@@ -611,7 +611,7 @@ impl TakerSwap {
             &self.ctx,
             &self.taker_coin,
             &self.maker_coin,
-            self.taker_amount.clone().into(),
+            self.taker_amount.clone(),
             Some(&self.uuid),
         );
         if let Err(e) = check_balance_f.await {
@@ -764,7 +764,7 @@ impl TakerSwap {
         let fee_amount = dex_fee_amount(
             &self.r().data.maker_coin,
             &self.r().data.taker_coin,
-            &self.taker_amount.clone().into(),
+            &self.taker_amount.clone(),
         );
         let fee_tx = self
             .taker_coin
@@ -1293,7 +1293,7 @@ impl AtomicSwap for TakerSwap {
                 let amount = dex_fee_amount(
                     self.maker_coin.ticker(),
                     self.taker_coin.ticker(),
-                    &self.taker_amount.clone().into(),
+                    &self.taker_amount.clone(),
                 );
                 if self.taker_coin.ticker() == trade_fee.coin {
                     &amount + &trade_fee.amount
@@ -1305,7 +1305,7 @@ impl AtomicSwap for TakerSwap {
         let amount = match self.r().taker_payment {
             Some(_) => 0.into(),
             None => {
-                let amount = &dex_fee_amount + &MmNumber::from(self.taker_amount.clone());
+                let amount = &dex_fee_amount + &self.taker_amount;
                 if self.taker_coin.ticker() == trade_fee.coin {
                     &amount + &trade_fee.amount
                 } else {
