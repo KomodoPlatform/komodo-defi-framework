@@ -639,6 +639,7 @@ fn test_validate_fee() {
 }
 
 #[test]
+#[ignore]
 fn test_search_for_swap_tx_spend() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [

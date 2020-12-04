@@ -1083,7 +1083,10 @@ pub async fn check_balance_update_loop(ctx: MmArc, ticker: String) {
                     Err(_) => continue,
                 };
                 if Some(&balance) != current_balance.as_ref() {
-                    let trade_fee = coin.get_trade_fee().compat().await.unwrap();
+                    let trade_fee = match coin.get_trade_fee().compat().await {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
                     let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
                     coins_ctx.balance_updated(&ticker, &balance, &trade_fee).await;
                     current_balance = Some(balance);

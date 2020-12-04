@@ -9,11 +9,14 @@ use libp2p::{multiaddr::Multiaddr,
 use log::{error, info};
 use rand::{seq::SliceRandom, thread_rng};
 use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
+use std::collections::HashSet;
 use std::{collections::{HashMap, VecDeque},
           iter,
           task::{Context, Poll},
           time::Duration};
 use wasm_timer::{Instant, Interval};
+
+pub type PeerAddresses = HashSet<Multiaddr>;
 
 #[derive(Debug, Clone)]
 pub enum PeersExchangeProtocol {
@@ -62,9 +65,7 @@ pub enum PeersExchangeRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum PeersExchangeResponse {
-    KnownPeers {
-        peers: HashMap<PeerIdSerde, Vec<Multiaddr>>,
-    },
+    KnownPeers { peers: HashMap<PeerIdSerde, PeerAddresses> },
 }
 
 /// Behaviour that requests known peers list from other peers at random
@@ -98,12 +99,12 @@ impl PeersExchange {
         }
     }
 
-    fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, Vec<Multiaddr>> {
+    fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = thread_rng();
         let peer_ids = self.known_peers.choose_multiple(&mut rng, num).cloned();
         for peer_id in peer_ids {
-            let addresses = self.request_response.addresses_of_peer(&peer_id);
+            let addresses = self.request_response.addresses_of_peer(&peer_id).into_iter().collect();
             result.insert(peer_id.into(), addresses);
         }
         result
@@ -121,7 +122,7 @@ impl PeersExchange {
         }
     }
 
-    pub fn add_peer_addresses(&mut self, peer: &PeerId, addresses: Vec<Multiaddr>) {
+    pub fn add_peer_addresses(&mut self, peer: &PeerId, addresses: PeerAddresses) {
         if !self.known_peers.contains(&peer) && !addresses.is_empty() {
             self.known_peers.push(peer.clone());
         }
@@ -160,12 +161,12 @@ impl PeersExchange {
         &mut self,
         num: usize,
         mut filter: impl FnMut(&PeerId) -> bool,
-    ) -> HashMap<PeerId, Vec<Multiaddr>> {
+    ) -> HashMap<PeerId, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = thread_rng();
         let peer_ids = self.known_peers.iter().filter(|peer| filter(*peer)).collect::<Vec<_>>();
         for peer_id in peer_ids.choose_multiple(&mut rng, num) {
-            let addresses = self.request_response.addresses_of_peer(*peer_id);
+            let addresses = self.request_response.addresses_of_peer(*peer_id).into_iter().collect();
             result.insert((*peer_id).clone(), addresses);
         }
         result
