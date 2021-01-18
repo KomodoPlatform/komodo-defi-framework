@@ -46,13 +46,16 @@ pub struct FloodsubConfig {
     /// `true` if messages published by local node should be propagated as messages received from
     /// the network, `false` by default.
     pub subscribe_local_messages: bool,
+
+    pub forward_messages: bool,
 }
 
 impl FloodsubConfig {
-    pub fn new(local_peer_id: PeerId) -> Self {
+    pub fn new(local_peer_id: PeerId, forward_messages: bool) -> Self {
         Self {
             local_peer_id,
             subscribe_local_messages: false,
+            forward_messages,
         }
     }
 }

@@ -2130,7 +2130,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     let alb_pair = alb_ordered_pair("RICK", "MORTY");
 
     // update trie root by adding a new order and do not update history
-    let (old_root, new_root) = {
+    let (old_root, _new_root) = {
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
         let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
 

@@ -5,6 +5,7 @@ use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
 use futures01::Future;
 use mocktopus::macros::*;
+use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
@@ -37,7 +38,13 @@ impl MarketCoinOps for TestCoin {
         unimplemented!()
     }
 
-    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> TransactionFut {
+    fn wait_for_tx_spend(
+        &self,
+        transaction: &[u8],
+        wait_until: u64,
+        from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
+    ) -> TransactionFut {
         unimplemented!()
     }
 
@@ -61,6 +68,7 @@ impl SwapOps for TestCoin {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -71,6 +79,7 @@ impl SwapOps for TestCoin {
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -81,6 +90,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -91,6 +101,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -101,6 +112,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -111,6 +123,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -131,6 +144,7 @@ impl SwapOps for TestCoin {
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
@@ -142,6 +156,7 @@ impl SwapOps for TestCoin {
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
@@ -152,6 +167,7 @@ impl SwapOps for TestCoin {
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }
@@ -163,6 +179,7 @@ impl SwapOps for TestCoin {
         secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -174,6 +191,7 @@ impl SwapOps for TestCoin {
         secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -216,4 +234,6 @@ impl MmCoin for TestCoin {
     fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
 
     fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
+
+    fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
 }

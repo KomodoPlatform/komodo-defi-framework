@@ -25,6 +25,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::thread;
 
+pub use log::{debug, error, info, trace, warn};
+
 #[cfg(feature = "native")]
 lazy_static! {
     static ref PRINTF_LOCK: Mutex<()> = Mutex::new(());

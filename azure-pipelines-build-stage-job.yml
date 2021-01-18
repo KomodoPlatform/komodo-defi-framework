@@ -30,10 +30,6 @@ jobs:
           export TAG="$(git rev-parse --short=9 HEAD)"
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
-      - powershell: |
-          .\marketmaker_build_depends.cmd
-        displayName: Build Windows deps
-        condition: eq( variables['Agent.OS'], 'Windows_NT' )
       - bash: |
           rm -rf upload
           mkdir upload

@@ -274,32 +274,44 @@ impl EthCoinImpl {
         }
     }
 
-    /// Gets `ReceiverSpent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn spend_events(&self, from_block: u64) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
+    /// Gets `ReceiverSpent` events from etomic swap smart contract since `from_block`
+    fn spend_events(
+        &self,
+        swap_contract_address: Address,
+        from_block: u64,
+    ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("ReceiverSpent"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
             .from_block(BlockNumber::Number(from_block))
-            .address(vec![self.swap_contract_address])
+            .address(vec![swap_contract_address])
             .build();
 
         Box::new(self.web3.eth().logs(filter).map_err(|e| ERRL!("{}", e)))
     }
 
-    /// Gets `SenderRefunded` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn refund_events(&self, from_block: u64) -> Box<dyn Future<Item = Vec<Log>, Error = String>> {
+    /// Gets `SenderRefunded` events from etomic swap smart contract since `from_block`
+    fn refund_events(
+        &self,
+        swap_contract_address: Address,
+        from_block: u64,
+    ) -> Box<dyn Future<Item = Vec<Log>, Error = String>> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("SenderRefunded"));
-        log!([contract_event.signature()]);
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
             .from_block(BlockNumber::Number(from_block))
-            .address(vec![self.swap_contract_address])
+            .address(vec![swap_contract_address])
             .build();
 
         Box::new(self.web3.eth().logs(filter).map_err(|e| ERRL!("{}", e)))
     }
 
-    fn search_for_swap_tx_spend(&self, tx: &[u8], search_from_block: u64) -> Result<Option<FoundSwapTxSpend>, String> {
+    fn search_for_swap_tx_spend(
+        &self,
+        tx: &[u8],
+        swap_contract_address: Address,
+        search_from_block: u64,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unverified));
 
@@ -315,7 +327,7 @@ impl EthCoinImpl {
             _ => panic!(),
         };
 
-        let spend_events = try_s!(self.spend_events(search_from_block).wait());
+        let spend_events = try_s!(self.spend_events(swap_contract_address, search_from_block).wait());
         let found = spend_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
         if let Some(event) = found {
@@ -334,7 +346,7 @@ impl EthCoinImpl {
             }
         }
 
-        let refund_events = try_s!(self.refund_events(search_from_block).wait());
+        let refund_events = try_s!(self.refund_events(swap_contract_address, search_from_block).wait());
         let found = refund_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
         if let Some(event) = found {
@@ -492,8 +504,10 @@ impl SwapOps for EthCoin {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let taker_addr = try_fus!(addr_from_raw_pubkey(taker_pub));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
         Box::new(
             self.send_hash_time_locked_payment(
@@ -502,6 +516,7 @@ impl SwapOps for EthCoin {
                 time_lock,
                 secret_hash,
                 taker_addr,
+                swap_contract_address,
             )
             .map(TransactionEnum::from),
         )
@@ -513,8 +528,10 @@ impl SwapOps for EthCoin {
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let maker_addr = try_fus!(addr_from_raw_pubkey(maker_pub));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
         Box::new(
             self.send_hash_time_locked_payment(
@@ -523,6 +540,7 @@ impl SwapOps for EthCoin {
                 time_lock,
                 secret_hash,
                 maker_addr,
+                swap_contract_address,
             )
             .map(TransactionEnum::from),
         )
@@ -534,12 +552,14 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         secret: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_fus!(rlp::decode(taker_payment_tx));
         let signed = try_fus!(SignedEthTx::new(tx));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
         Box::new(
-            self.spend_hash_time_locked_payment(signed, secret)
+            self.spend_hash_time_locked_payment(signed, swap_contract_address, secret)
                 .map(TransactionEnum::from),
         )
     }
@@ -550,11 +570,13 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         secret: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_fus!(rlp::decode(maker_payment_tx));
         let signed = try_fus!(SignedEthTx::new(tx));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
         Box::new(
-            self.spend_hash_time_locked_payment(signed, secret)
+            self.spend_hash_time_locked_payment(signed, swap_contract_address, secret)
                 .map(TransactionEnum::from),
         )
     }
@@ -565,11 +587,16 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_fus!(rlp::decode(taker_payment_tx));
         let signed = try_fus!(SignedEthTx::new(tx));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
-        Box::new(self.refund_hash_time_locked_payment(signed).map(TransactionEnum::from))
+        Box::new(
+            self.refund_hash_time_locked_payment(swap_contract_address, signed)
+                .map(TransactionEnum::from),
+        )
     }
 
     fn send_maker_refunds_payment(
@@ -578,11 +605,16 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
+        swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_fus!(rlp::decode(maker_payment_tx));
         let signed = try_fus!(SignedEthTx::new(tx));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
-        Box::new(self.refund_hash_time_locked_payment(signed).map(TransactionEnum::from))
+        Box::new(
+            self.refund_hash_time_locked_payment(swap_contract_address, signed)
+                .map(TransactionEnum::from),
+        )
     }
 
     fn validate_fee(
@@ -675,8 +707,17 @@ impl SwapOps for EthCoin {
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        self.validate_payment(payment_tx, time_lock, maker_pub, secret_hash, amount)
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
+        self.validate_payment(
+            payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            amount,
+            swap_contract_address,
+        )
     }
 
     fn validate_taker_payment(
@@ -686,8 +727,17 @@ impl SwapOps for EthCoin {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        self.validate_payment(payment_tx, time_lock, taker_pub, secret_hash, amount)
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
+        self.validate_payment(
+            payment_tx,
+            time_lock,
+            taker_pub,
+            secret_hash,
+            amount,
+            swap_contract_address,
+        )
     }
 
     fn check_if_my_payment_sent(
@@ -696,15 +746,27 @@ impl SwapOps for EthCoin {
         _other_pub: &[u8],
         secret_hash: &[u8],
         from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let id = self.etomic_swap_id(time_lock, secret_hash);
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
         let selfi = self.clone();
         let fut = async move {
-            let status = try_s!(selfi.payment_status(Token::FixedBytes(id.clone())).compat().await);
+            let status = try_s!(
+                selfi
+                    .payment_status(swap_contract_address, Token::FixedBytes(id.clone()))
+                    .compat()
+                    .await
+            );
             if status == PAYMENT_STATE_UNINITIALIZED.into() {
                 return Ok(None);
             };
-            let events = try_s!(selfi.payment_sent_events(from_block).compat().await);
+            let events = try_s!(
+                selfi
+                    .payment_sent_events(swap_contract_address, from_block)
+                    .compat()
+                    .await
+            );
 
             let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
@@ -736,8 +798,10 @@ impl SwapOps for EthCoin {
         _secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        self.search_for_swap_tx_spend(tx, search_from_block)
+        let swap_contract_address = try_s!(swap_contract_address.try_to_address());
+        self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)
     }
 
     fn search_for_swap_tx_spend_other(
@@ -747,8 +811,10 @@ impl SwapOps for EthCoin {
         _secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        self.search_for_swap_tx_spend(tx, search_from_block)
+        let swap_contract_address = try_s!(swap_contract_address.try_to_address());
+        self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)
     }
 
     fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
@@ -871,9 +937,16 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_tx_spend(&self, tx_bytes: &[u8], wait_until: u64, from_block: u64) -> TransactionFut {
+    fn wait_for_tx_spend(
+        &self,
+        tx_bytes: &[u8],
+        wait_until: u64,
+        from_block: u64,
+        swap_contract_address: &Option<BytesJson>,
+    ) -> TransactionFut {
         let unverified: UnverifiedTransaction = try_fus!(rlp::decode(tx_bytes));
         let tx = try_fus!(SignedEthTx::new(unverified));
+        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
 
         let func_name = match self.coin_type {
             EthCoinType::Eth => "ethPayment",
@@ -890,7 +963,7 @@ impl MarketCoinOps for EthCoin {
 
         let fut = async move {
             loop {
-                let events = match selfi.spend_events(from_block).compat().await {
+                let events = match selfi.spend_events(swap_contract_address, from_block).compat().await {
                     Ok(ev) => ev,
                     Err(e) => {
                         log!("Error " (e) " getting spend events");
@@ -1091,6 +1164,7 @@ impl EthCoin {
         time_lock: u32,
         secret_hash: &[u8],
         receiver_addr: Address,
+        swap_contract_address: Address,
     ) -> EthTxFut {
         match self.coin_type {
             EthCoinType::Eth => {
@@ -1101,15 +1175,10 @@ impl EthCoin {
                     Token::FixedBytes(secret_hash.to_vec()),
                     Token::Uint(U256::from(time_lock))
                 ]));
-                self.sign_and_send_transaction(
-                    value,
-                    Action::Call(self.swap_contract_address),
-                    data,
-                    U256::from(150_000),
-                )
+                self.sign_and_send_transaction(value, Action::Call(swap_contract_address), data, U256::from(150_000))
             },
             EthCoinType::Erc20(token_addr) => {
-                let allowance_fut = self.allowance(self.swap_contract_address);
+                let allowance_fut = self.allowance(swap_contract_address);
 
                 let function = try_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let data = try_fus!(function.encode_input(&[
@@ -1126,20 +1195,19 @@ impl EthCoin {
                     if allowed < value {
                         let balance_f = arc.my_balance();
                         Box::new(balance_f.and_then(move |balance| {
-                            arc.approve(arc.swap_contract_address, balance)
-                                .and_then(move |_approved| {
-                                    arc.sign_and_send_transaction(
-                                        0.into(),
-                                        Action::Call(arc.swap_contract_address),
-                                        data,
-                                        U256::from(150_000),
-                                    )
-                                })
+                            arc.approve(swap_contract_address, balance).and_then(move |_approved| {
+                                arc.sign_and_send_transaction(
+                                    0.into(),
+                                    Action::Call(swap_contract_address),
+                                    data,
+                                    U256::from(150_000),
+                                )
+                            })
                         }))
                     } else {
                         Box::new(arc.sign_and_send_transaction(
                             0.into(),
-                            Action::Call(arc.swap_contract_address),
+                            Action::Call(swap_contract_address),
                             data,
                             U256::from(150_000),
                         ))
@@ -1149,7 +1217,12 @@ impl EthCoin {
         }
     }
 
-    fn spend_hash_time_locked_payment(&self, payment: SignedEthTx, secret: &[u8]) -> EthTxFut {
+    fn spend_hash_time_locked_payment(
+        &self,
+        payment: SignedEthTx,
+        swap_contract_address: Address,
+        secret: &[u8],
+    ) -> EthTxFut {
         let spend_func = try_fus!(SWAP_CONTRACT.function("receiverSpend"));
         let clone = self.clone();
         let secret_vec = secret.to_vec();
@@ -1159,7 +1232,7 @@ impl EthCoin {
                 let payment_func = try_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_fus!(payment_func.decode_input(&payment.data));
 
-                let state_f = self.payment_status(decoded[0].clone());
+                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(state_f.and_then(move |state| -> EthTxFut {
                     if state != PAYMENT_STATE_SENT.into() {
                         return Box::new(futures01::future::err(ERRL!(
@@ -1180,7 +1253,7 @@ impl EthCoin {
 
                     clone.sign_and_send_transaction(
                         0.into(),
-                        Action::Call(clone.swap_contract_address),
+                        Action::Call(swap_contract_address),
                         data,
                         U256::from(150_000),
                     )
@@ -1189,7 +1262,7 @@ impl EthCoin {
             EthCoinType::Erc20(token_addr) => {
                 let payment_func = try_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_fus!(payment_func.decode_input(&payment.data));
-                let state_f = self.payment_status(decoded[0].clone());
+                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
 
                 Box::new(state_f.and_then(move |state| -> EthTxFut {
                     if state != PAYMENT_STATE_SENT.into() {
@@ -1209,7 +1282,7 @@ impl EthCoin {
 
                     clone.sign_and_send_transaction(
                         0.into(),
-                        Action::Call(clone.swap_contract_address),
+                        Action::Call(swap_contract_address),
                         data,
                         U256::from(150_000),
                     )
@@ -1218,7 +1291,7 @@ impl EthCoin {
         }
     }
 
-    fn refund_hash_time_locked_payment(&self, payment: SignedEthTx) -> EthTxFut {
+    fn refund_hash_time_locked_payment(&self, swap_contract_address: Address, payment: SignedEthTx) -> EthTxFut {
         let refund_func = try_fus!(SWAP_CONTRACT.function("senderRefund"));
         let clone = self.clone();
 
@@ -1227,7 +1300,7 @@ impl EthCoin {
                 let payment_func = try_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_fus!(payment_func.decode_input(&payment.data));
 
-                let state_f = self.payment_status(decoded[0].clone());
+                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(state_f.and_then(move |state| -> EthTxFut {
                     if state != PAYMENT_STATE_SENT.into() {
                         return Box::new(futures01::future::err(ERRL!(
@@ -1248,7 +1321,7 @@ impl EthCoin {
 
                     clone.sign_and_send_transaction(
                         0.into(),
-                        Action::Call(clone.swap_contract_address),
+                        Action::Call(swap_contract_address),
                         data,
                         U256::from(150_000),
                     )
@@ -1257,7 +1330,7 @@ impl EthCoin {
             EthCoinType::Erc20(token_addr) => {
                 let payment_func = try_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_fus!(payment_func.decode_input(&payment.data));
-                let state_f = self.payment_status(decoded[0].clone());
+                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(state_f.and_then(move |state| -> EthTxFut {
                     if state != PAYMENT_STATE_SENT.into() {
                         return Box::new(futures01::future::err(ERRL!(
@@ -1277,7 +1350,7 @@ impl EthCoin {
 
                     clone.sign_and_send_transaction(
                         0.into(),
-                        Action::Call(clone.swap_contract_address),
+                        Action::Call(swap_contract_address),
                         data,
                         U256::from(150_000),
                     )
@@ -1376,14 +1449,18 @@ impl EthCoin {
         }
     }
 
-    /// Gets `PaymentSent` events from etomic swap smart contract (`self.swap_contract_address` ) since `from_block`
-    fn payment_sent_events(&self, from_block: u64) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
+    /// Gets `PaymentSent` events from etomic swap smart contract since `from_block`
+    fn payment_sent_events(
+        &self,
+        swap_contract_address: Address,
+        from_block: u64,
+    ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("PaymentSent"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
             .from_block(BlockNumber::Number(from_block))
             .to_block(BlockNumber::Pending)
-            .address(vec![self.swap_contract_address])
+            .address(vec![swap_contract_address])
             .build();
 
         Box::new(self.web3.eth().logs(filter).map_err(|e| ERRL!("{}", e)))
@@ -1396,6 +1473,7 @@ impl EthCoin {
         sender_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        expected_swap_contract_address: Address,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(payment_tx));
         let tx = try_fus!(SignedEthTx::new(unsigned));
@@ -1405,7 +1483,12 @@ impl EthCoin {
         let secret_hash = secret_hash.to_vec();
         let fut = async move {
             let swap_id = selfi.etomic_swap_id(time_lock, &secret_hash);
-            let status = try_s!(selfi.payment_status(Token::FixedBytes(swap_id.clone())).compat().await);
+            let status = try_s!(
+                selfi
+                    .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
+                    .compat()
+                    .await
+            );
             if status != PAYMENT_STATE_SENT.into() {
                 return ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
             }
@@ -1433,11 +1516,11 @@ impl EthCoin {
 
             match selfi.coin_type {
                 EthCoinType::Eth => {
-                    if tx_from_rpc.to != Some(selfi.swap_contract_address) {
+                    if tx_from_rpc.to != Some(expected_swap_contract_address) {
                         return ERR!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
                             tx_from_rpc,
-                            selfi.swap_contract_address
+                            expected_swap_contract_address
                         );
                     }
 
@@ -1480,11 +1563,11 @@ impl EthCoin {
                     }
                 },
                 EthCoinType::Erc20(token_addr) => {
-                    if tx_from_rpc.to != Some(selfi.swap_contract_address) {
+                    if tx_from_rpc.to != Some(expected_swap_contract_address) {
                         return ERR!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
                             tx_from_rpc,
-                            selfi.swap_contract_address
+                            expected_swap_contract_address
                         );
                     }
 
@@ -1541,13 +1624,17 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn payment_status(&self, token: Token) -> Box<dyn Future<Item = U256, Error = String> + Send + 'static> {
+    fn payment_status(
+        &self,
+        swap_contract_address: H160,
+        token: Token,
+    ) -> Box<dyn Future<Item = U256, Error = String> + Send + 'static> {
         let function = try_fus!(SWAP_CONTRACT.function("payments"));
 
         let data = try_fus!(function.encode_input(&[token]));
 
         Box::new(
-            self.call_request(self.swap_contract_address, None, Some(data.into()))
+            self.call_request(swap_contract_address, None, Some(data.into()))
                 .and_then(move |bytes| {
                     let decoded_tokens = try_s!(function.decode_output(&bytes.0));
                     match decoded_tokens[2] {
@@ -2349,6 +2436,27 @@ impl MmCoin for EthCoin {
     fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
         // Eth has not unspendable outputs
         Box::new(futures01::future::ok(0.into()))
+    }
+
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
+    }
+}
+
+pub trait TryToAddress {
+    fn try_to_address(&self) -> Result<Address, String>;
+}
+
+impl TryToAddress for BytesJson {
+    fn try_to_address(&self) -> Result<Address, String> { Ok(Address::from(self.0.as_slice())) }
+}
+
+impl<T: TryToAddress> TryToAddress for Option<T> {
+    fn try_to_address(&self) -> Result<Address, String> {
+        match self {
+            Some(ref inner) => inner.try_to_address(),
+            None => ERR!("Cannot convert None to address"),
+        }
     }
 }
 

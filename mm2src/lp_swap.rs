@@ -60,7 +60,7 @@ use crate::mm2::lp_network::broadcast_p2p_msg;
 use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, TradeFee, TransactionEnum};
-use common::{bits256, block_on,
+use common::{bits256, block_on, calc_total_pages,
              executor::{spawn, Timer},
              mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber,
@@ -73,6 +73,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
@@ -449,6 +450,18 @@ pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, Str
     Ok(uuids)
 }
 
+pub fn active_swaps(ctx: &MmArc) -> Result<Vec<Uuid>, String> {
+    let swap_ctx = try_s!(SwapsContext::from_ctx(&ctx));
+    let swaps = try_s!(swap_ctx.running_swaps.lock());
+    let mut uuids = vec![];
+    for swap in swaps.iter() {
+        if let Some(swap) = swap.upgrade() {
+            uuids.push(*swap.uuid())
+        }
+    }
+    Ok(uuids)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SwapConfirmationsSettings {
     pub maker_coin_confs: u64,
@@ -810,13 +823,14 @@ pub fn save_stats_swap_status(ctx: &MmArc, data: Json) {
     unwrap!(save_stats_swap(ctx, &swap));
 }
 
-fn ten() -> u64 { 10 }
+fn ten() -> usize { 10 }
 
 #[derive(Debug, Deserialize)]
 struct MyRecentSwapsReq {
     #[serde(default = "ten")]
-    limit: u64,
+    limit: usize,
     from_uuid: Option<Uuid>,
+    page_number: Option<NonZeroUsize>,
 }
 
 /// Returns the data of recent swaps of `my` node. Returns no more than `limit` records (default: 10).
@@ -836,14 +850,17 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
                 .ok_or(format!("from_uuid {} swap is not found", uuid)))
                 + 1
         },
-        None => 0,
+        None => match req.page_number {
+            Some(page_n) => (page_n.get() - 1) * req.limit,
+            None => 0,
+        },
     };
 
     // iterate over file entries trying to parse the file contents and add to result vector
     let swaps: Vec<Json> = entries
         .iter()
         .skip(skip)
-        .take(req.limit as usize)
+        .take(req.limit)
         .map(
             |(_, path)| match json::from_slice::<SavedSwap>(&unwrap!(slurp(&path))) {
                 Ok(swap) => unwrap!(json::to_value(MySwapStatusResponse::from(&swap))),
@@ -864,6 +881,8 @@ pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
                 "skipped": skip,
                 "limit": req.limit,
                 "total": entries.len(),
+                "page_number": req.page_number,
+                "total_pages": calc_total_pages(entries.len(), req.limit),
             },
         })
         .to_string(),
@@ -1052,6 +1071,53 @@ pub async fn unban_pubkeys(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
             "were_not_banned": were_not_banned,
         },
     })));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+#[derive(Deserialize)]
+struct ActiveSwapsReq {
+    #[serde(default)]
+    include_status: bool,
+}
+
+#[derive(Serialize)]
+struct ActiveSwapsRes {
+    uuids: Vec<Uuid>,
+    statuses: Option<HashMap<Uuid, SavedSwap>>,
+}
+
+pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: ActiveSwapsReq = try_s!(json::from_value(req));
+    let uuids = try_s!(active_swaps(&ctx));
+    let statuses = if req.include_status {
+        let mut map = HashMap::new();
+        for uuid in uuids.iter() {
+            let path = my_swap_file_path(&ctx, &uuid);
+            let content = match slurp(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    common::log::error!("Error {} on slurp({})", e, path.display());
+                    continue;
+                },
+            };
+            if content.is_empty() {
+                continue;
+            }
+            let status: SavedSwap = match json::from_slice(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    common::log::error!("Error {} on deserializing the content {:?}", e, content);
+                    continue;
+                },
+            };
+            map.insert(*uuid, status);
+        }
+        Some(map)
+    } else {
+        None
+    };
+    let result = ActiveSwapsRes { uuids, statuses };
+    let res = try_s!(json::to_vec(&result));
     Ok(try_s!(Response::builder().body(res)))
 }
 

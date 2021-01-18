@@ -1,9 +1,97 @@
 use super::*;
-use crate::{SwapOps, ValidateAddressResult};
+use crate::{eth, SwapOps, ValidateAddressResult};
 use common::mm_metrics::MetricsArc;
+use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "format")]
+pub enum QtumAddressFormat {
+    /// Standard Qtum/UTXO address format.
+    #[serde(rename = "wallet")]
+    Wallet,
+    /// Contract address format. The same as used in ETH/ERC20.
+    /// Note starts with "0x" prefix.
+    #[serde(rename = "contract")]
+    Contract,
+}
+
+pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+        let to_address_format: QtumAddressFormat =
+            json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse Qtum address format {:?}", e))?;
+        let from_address = try_s!(self.utxo_address_from_any_format(from));
+        match to_address_format {
+            QtumAddressFormat::Wallet => Ok(from_address.to_string()),
+            QtumAddressFormat::Contract => Ok(display_as_contract_address(from_address)),
+        }
+    }
+
+    /// Try to parse address from either wallet (UTXO) format or contract format.
+    fn utxo_address_from_any_format(&self, from: &str) -> Result<Address, String> {
+        let utxo_err = match Address::from_str(from) {
+            Ok(addr) => {
+                let is_p2pkh = addr.prefix == self.as_ref().pub_addr_prefix
+                    && addr.t_addr_prefix == self.as_ref().pub_t_addr_prefix;
+                if is_p2pkh {
+                    return Ok(addr);
+                }
+                "Address has invalid prefixes".to_string()
+            },
+            Err(e) => e.to_string(),
+        };
+        let contract_err = match contract_addr_from_str(from) {
+            Ok(contract_addr) => return Ok(self.utxo_addr_from_contract_addr(contract_addr)),
+            Err(e) => e,
+        };
+        ERR!(
+            "error on parse wallet address: {:?}, error on parse contract address: {:?}",
+            utxo_err,
+            contract_err,
+        )
+    }
+
+    fn utxo_addr_from_contract_addr(&self, address: H160) -> Address {
+        let utxo = self.as_ref();
+        Address {
+            prefix: utxo.pub_addr_prefix,
+            t_addr_prefix: utxo.pub_t_addr_prefix,
+            hash: address.0.into(),
+            checksum_type: utxo.checksum_type,
+        }
+    }
+
+    fn my_addr_as_contract_addr(&self) -> H160 { contract_addr_from_utxo_addr(self.as_ref().my_address.clone()) }
+
+    fn utxo_address_from_contract_addr(&self, address: H160) -> Address {
+        let utxo = self.as_ref();
+        Address {
+            prefix: utxo.pub_addr_prefix,
+            t_addr_prefix: utxo.pub_t_addr_prefix,
+            hash: address.0.into(),
+            checksum_type: utxo.checksum_type,
+        }
+    }
+
+    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, String> {
+        let utxo = self.as_ref();
+        let qtum_address = try_s!(utxo_common::address_from_raw_pubkey(
+            pubkey,
+            utxo.pub_addr_prefix,
+            utxo.pub_t_addr_prefix,
+            utxo.checksum_type
+        ));
+        Ok(qtum::contract_addr_from_utxo_addr(qtum_address))
+    }
+
+    fn is_qtum_unspent_mature(&self, output: &RpcTransaction) -> bool {
+        let is_qrc20_coinbase = output.vout.iter().any(|x| x.is_empty());
+        let is_coinbase = output.is_coinbase() || is_qrc20_coinbase;
+        !is_coinbase || output.confirmations >= self.as_ref().mature_confirmations
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct QtumCoin {
@@ -29,9 +117,11 @@ pub async fn qtum_coin_from_conf_and_request(
     req: &Json,
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
-    let inner = try_s!(utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, QTUM_STANDARD_DUST).await);
-    Ok(inner.into())
+    let coin: QtumCoin = try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key).await);
+    Ok(coin)
 }
+
+impl QtumBasedCoin for QtumCoin {}
 
 #[cfg_attr(test, mockable)]
 #[async_trait]
@@ -58,9 +148,7 @@ impl UtxoCommonOps for QtumCoin {
 
     async fn get_current_mtp(&self) -> Result<u32, String> { utxo_common::get_current_mtp(&self.utxo_arc).await }
 
-    fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
-        is_qtum_unspent_mature(self.utxo_arc.mature_confirmations, output)
-    }
+    fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
 
     async fn generate_transaction(
         &self,
@@ -154,6 +242,7 @@ impl SwapOps for QtumCoin {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_maker_payment(self.clone(), time_lock, taker_pub, secret_hash, amount)
     }
@@ -164,6 +253,7 @@ impl SwapOps for QtumCoin {
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_taker_payment(self.clone(), time_lock, maker_pub, secret_hash, amount)
     }
@@ -174,6 +264,7 @@ impl SwapOps for QtumCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_maker_spends_taker_payment(self.clone(), taker_payment_tx, time_lock, taker_pub, secret)
     }
@@ -184,6 +275,7 @@ impl SwapOps for QtumCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_taker_spends_maker_payment(self.clone(), maker_payment_tx, time_lock, maker_pub, secret)
     }
@@ -194,6 +286,7 @@ impl SwapOps for QtumCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_taker_refunds_payment(self.clone(), taker_payment_tx, time_lock, maker_pub, secret_hash)
     }
@@ -204,6 +297,7 @@ impl SwapOps for QtumCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         utxo_common::send_maker_refunds_payment(self.clone(), maker_payment_tx, time_lock, taker_pub, secret_hash)
     }
@@ -224,6 +318,7 @@ impl SwapOps for QtumCoin {
         maker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         utxo_common::validate_maker_payment(self, payment_tx, time_lock, maker_pub, priv_bn_hash, amount)
     }
@@ -235,6 +330,7 @@ impl SwapOps for QtumCoin {
         taker_pub: &[u8],
         priv_bn_hash: &[u8],
         amount: BigDecimal,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         utxo_common::validate_taker_payment(self, payment_tx, time_lock, taker_pub, priv_bn_hash, amount)
     }
@@ -245,6 +341,7 @@ impl SwapOps for QtumCoin {
         other_pub: &[u8],
         secret_hash: &[u8],
         _search_from_block: u64,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash)
     }
@@ -256,6 +353,7 @@ impl SwapOps for QtumCoin {
         secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::search_for_swap_tx_spend_my(
             &self.utxo_arc,
@@ -274,6 +372,7 @@ impl SwapOps for QtumCoin {
         secret_hash: &[u8],
         tx: &[u8],
         search_from_block: u64,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::search_for_swap_tx_spend_other(
             &self.utxo_arc,
@@ -325,7 +424,13 @@ impl MarketCoinOps for QtumCoin {
         )
     }
 
-    fn wait_for_tx_spend(&self, transaction: &[u8], wait_until: u64, from_block: u64) -> TransactionFut {
+    fn wait_for_tx_spend(
+        &self,
+        transaction: &[u8],
+        wait_until: u64,
+        from_block: u64,
+        _swap_contract_address: &Option<BytesJson>,
+    ) -> TransactionFut {
         utxo_common::wait_for_tx_spend(&self.utxo_arc, transaction, wait_until, from_block)
     }
 
@@ -361,7 +466,7 @@ impl MmCoin for QtumCoin {
 
     /// Check if the `to_address_format` is standard and if the `from` address is standard UTXO address.
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
-        convert_qtum_address(&self.utxo_arc.ticker, from, to_address_format)
+        QtumBasedCoin::convert_to_address(self, from, to_address_format)
     }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
@@ -389,85 +494,17 @@ impl MmCoin for QtumCoin {
     fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
         Box::new(utxo_common::my_unspendable_balance(self.clone()).boxed().compat())
     }
+
+    fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 }
 
-pub fn is_qtum_unspent_mature(mature_confirmations: u32, output: &RpcTransaction) -> bool {
-    let is_qrc20_coinbase = output.vout.iter().any(|x| x.is_empty());
-    let is_coinbase = output.is_coinbase() || is_qrc20_coinbase;
-    !is_coinbase || output.confirmations >= mature_confirmations
-}
+/// Parse contract address (H160) from string.
+/// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
+pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> { eth::addr_from_str(addr) }
 
-pub fn convert_qtum_address(coin: &str, from: &str, to_address_format: Json) -> Result<String, String> {
-    let to_address_format: UtxoAddressFormat =
-        json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse UTXO address format {:?}", e))?;
-    match to_address_format {
-        UtxoAddressFormat::Standard => (),
-        _ => return ERR!("{} supports standard UTXO address format only", coin),
-    }
+pub fn contract_addr_from_utxo_addr(address: Address) -> H160 { address.hash.take().into() }
 
-    let from_address = try_s!(Address::from_str(from));
-    Ok(from_address.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rpc::v1::types::{ScriptType, SignedTransactionOutput, TransactionOutputScript};
-
-    #[test]
-    fn test_is_unspent_mature() {
-        let empty_output = SignedTransactionOutput {
-            value: 0.,
-            n: 0,
-            script: TransactionOutputScript {
-                asm: "".into(),
-                hex: "".into(),
-                req_sigs: 0,
-                script_type: ScriptType::NonStandard,
-                addresses: vec![],
-            },
-        };
-        let real_output = SignedTransactionOutput {
-            value: 117.02430015,
-            n: 1,
-            script: TransactionOutputScript {
-                asm: "03e71b9c152bb233ddfe58f20056715c51b054a1823e0aba108e6f1cea0ceb89c8 OP_CHECKSIG".into(),
-                hex: "2103e71b9c152bb233ddfe58f20056715c51b054a1823e0aba108e6f1cea0ceb89c8ac".into(),
-                req_sigs: 0,
-                script_type: ScriptType::PubKey,
-                addresses: vec![],
-            },
-        };
-
-        let mut tx = RpcTransaction {
-            hex: Default::default(),
-            txid: "47d983175720ba2a67f36d0e1115a129351a2f340bdde6ecb6d6029e138fe920".into(),
-            hash: None,
-            size: Default::default(),
-            vsize: Default::default(),
-            version: 2,
-            locktime: 0,
-            vin: vec![],
-            vout: vec![empty_output, real_output],
-            blockhash: "c23882939ff695be36546ea998eb585e962b043396e4d91959477b9796ceb9e1".into(),
-            confirmations: 421,
-            rawconfirmations: None,
-            time: 1590671504,
-            blocktime: 1590671504,
-            height: None,
-        };
-
-        // output is coinbase and has confirmations < QTUM_MATURE_CONFIRMATIONS
-        assert_eq!(is_qtum_unspent_mature(500, &tx), false);
-
-        tx.confirmations = 501;
-        // output is coinbase but has confirmations > QTUM_MATURE_CONFIRMATIONS
-        assert!(is_qtum_unspent_mature(500, &tx));
-
-        tx.confirmations = 421;
-        // remove empty output
-        tx.vout.remove(0);
-        // output is not coinbase
-        assert!(is_qtum_unspent_mature(500, &tx));
-    }
+pub fn display_as_contract_address(address: Address) -> String {
+    let address = qtum::contract_addr_from_utxo_addr(address);
+    format!("{:#02x}", address)
 }

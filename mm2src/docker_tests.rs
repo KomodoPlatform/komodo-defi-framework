@@ -50,20 +50,26 @@ mod swaps_confs_settings_sync_tests;
 #[path = "docker_tests/swaps_file_lock_tests.rs"]
 mod swaps_file_lock_tests;
 
+#[cfg(rustfmt)]
+#[path = "docker_tests/qrc20_tests.rs"]
+mod qrc20_tests;
+
 #[cfg(all(test, feature = "native"))]
 mod docker_tests {
     #[rustfmt::skip]
     mod swaps_confs_settings_sync_tests;
     #[rustfmt::skip]
     mod swaps_file_lock_tests;
+    #[rustfmt::skip]
+    mod qrc20_tests;
 
     use bigdecimal::BigDecimal;
     use bitcrypto::ChecksumType;
     use chain::OutPoint;
     use coins::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps};
     use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-    use coins::utxo::{coin_daemon_data_dir, dhash160, zcash_params_path, UtxoCommonOps};
-    use coins::{FoundSwapTxSpend, MarketCoinOps, SwapOps, TransactionEnum};
+    use coins::utxo::{coin_daemon_data_dir, dhash160, zcash_params_path, UtxoCoinFields, UtxoCommonOps};
+    use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TransactionEnum};
     use common::block_on;
     use common::for_tests::enable_electrum;
     use common::{file_lock::FileLock,
@@ -73,6 +79,7 @@ mod docker_tests {
     use gstuff::now_ms;
     use keys::{KeyPair, Private};
     use primitives::hash::H160;
+    use qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};
     use secp256k1::{PublicKey, SecretKey};
     use serde_json::{self as json, Value as Json};
     use std::collections::HashMap;
@@ -93,6 +100,8 @@ mod docker_tests {
         dhash160(&public.serialize_compressed())
     }
 
+    const UTXO_ASSET_DOCKER_IMAGE: &str = "artempikulin/testblockchain";
+
     // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
     // and then gracefully clear it by dropping the RAII docker container handlers
     // I've tried to use static for such singleton initialization but it turned out that despite
@@ -107,37 +116,27 @@ mod docker_tests {
         let mut containers = vec![];
         // skip Docker containers initialization if we are intended to run test_mm_start only
         if std::env::var("_MM2_TEST_CONF").is_err() {
-            Command::new("docker")
-                .arg("pull")
-                .arg("artempikulin/testblockchain")
-                .status()
-                .expect("Failed to execute docker command");
+            pull_docker_image(UTXO_ASSET_DOCKER_IMAGE);
+            pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE);
+            remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE);
+            remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE);
 
-            let stdout = Command::new("docker")
-                .arg("ps")
-                .arg("-f")
-                .arg("ancestor=artempikulin/testblockchain")
-                .arg("-q")
-                .output()
-                .expect("Failed to execute docker command");
+            let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
+            let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
+            let qtum_node = qtum_docker_node(&docker, 9000);
 
-            let reader = BufReader::new(stdout.stdout.as_slice());
-            let ids: Vec<_> = reader.lines().map(|line| line.unwrap()).collect();
-            if !ids.is_empty() {
-                Command::new("docker")
-                    .arg("rm")
-                    .arg("-f")
-                    .args(ids)
-                    .status()
-                    .expect("Failed to execute docker command");
-            }
+            let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
+            let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
+            let qtum_ops = QtumDockerOps::new();
 
-            let utxo_node = utxo_docker_node(&docker, "MYCOIN", 7000);
-            let utxo_node1 = utxo_docker_node(&docker, "MYCOIN1", 8000);
-            utxo_node.wait_ready();
-            utxo_node1.wait_ready();
+            utxo_ops.wait_ready();
+            utxo_ops1.wait_ready();
+            qtum_ops.wait_ready();
+            qtum_ops.initialize_contracts();
+
             containers.push(utxo_node);
             containers.push(utxo_node1);
+            containers.push(qtum_node);
         }
         // detect if docker is installed
         // skip the tests that use docker if not installed
@@ -159,32 +158,42 @@ mod docker_tests {
         let _exit_code = test_main(&args, owned_tests, None);
     }
 
-    struct UtxoDockerNode<'a> {
-        #[allow(dead_code)]
-        container: Container<'a, Cli, GenericImage>,
-        ticker: String,
-        #[allow(dead_code)]
-        port: u16,
+    fn pull_docker_image(name: &str) {
+        Command::new("docker")
+            .arg("pull")
+            .arg(name)
+            .status()
+            .expect("Failed to execute docker command");
     }
 
-    impl<'a> UtxoDockerNode<'a> {
-        pub fn wait_ready(&self) {
-            let ctx = MmCtxBuilder::new().into_mm_arc();
-            let conf = json!({"asset":self.ticker, "txfee": 1000});
-            let req = json!({"method":"enable"});
-            let priv_key = unwrap!(hex::decode(
-                "809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"
-            ));
-            let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-                &ctx,
-                &self.ticker,
-                &conf,
-                &req,
-                &priv_key
-            )));
+    fn remove_docker_containers(name: &str) {
+        let stdout = Command::new("docker")
+            .arg("ps")
+            .arg("-f")
+            .arg(format!("ancestor={}", name))
+            .arg("-q")
+            .output()
+            .expect("Failed to execute docker command");
+
+        let reader = BufReader::new(stdout.stdout.as_slice());
+        let ids: Vec<_> = reader.lines().map(|line| line.unwrap()).collect();
+        if !ids.is_empty() {
+            Command::new("docker")
+                .arg("rm")
+                .arg("-f")
+                .args(ids)
+                .status()
+                .expect("Failed to execute docker command");
+        }
+    }
+
+    trait CoinDockerOps {
+        fn rpc_client(&self) -> &UtxoRpcClientEnum;
+
+        fn wait_ready(&self) {
             let timeout = now_ms() + 30000;
             loop {
-                match coin.as_ref().rpc_client.get_block_count().wait() {
+                match self.rpc_client().get_block_count().wait() {
                     Ok(n) => {
                         if n > 1 {
                             break;
@@ -198,14 +207,48 @@ mod docker_tests {
         }
     }
 
-    fn utxo_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> UtxoDockerNode<'a> {
+    struct UtxoAssetDockerOps {
+        #[allow(dead_code)]
+        ctx: MmArc,
+        coin: UtxoStandardCoin,
+    }
+
+    impl CoinDockerOps for UtxoAssetDockerOps {
+        fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    }
+
+    impl UtxoAssetDockerOps {
+        fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
+            let conf = json!({"asset": ticker, "txfee": 1000, "network": "regtest"});
+            let req = json!({"method":"enable"});
+            let priv_key = unwrap!(hex::decode(
+                "809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f"
+            ));
+            let ctx = MmCtxBuilder::new().into_mm_arc();
+            let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
+                &ctx, ticker, &conf, &req, &priv_key,
+            )));
+            UtxoAssetDockerOps { ctx, coin }
+        }
+    }
+
+    pub struct UtxoDockerNode<'a> {
+        #[allow(dead_code)]
+        container: Container<'a, Cli, GenericImage>,
+        #[allow(dead_code)]
+        ticker: String,
+        #[allow(dead_code)]
+        port: u16,
+    }
+
+    fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> UtxoDockerNode<'a> {
         let args = vec![
             "-v".into(),
             format!("{}:/data/.zcash-params", zcash_params_path().display()),
             "-p".into(),
             format!("127.0.0.1:{}:{}", port, port).into(),
         ];
-        let image = GenericImage::new("artempikulin/testblockchain")
+        let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE)
             .with_args(args)
             .with_env_var("CLIENTS", "2")
             .with_env_var("CHAIN", ticker)
@@ -247,21 +290,45 @@ mod docker_tests {
         static ref COINS_LOCK: Mutex<()> = Mutex::new(());
     }
 
-    // generate random privkey, create a coin and fill it's address with 1000 coins
-    fn generate_coin_with_random_privkey(ticker: &str, balance: BigDecimal) -> (MmArc, UtxoStandardCoin, [u8; 32]) {
+    /// Build asset `UtxoStandardCoin` from ticker and privkey without filling the balance.
+    fn utxo_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, UtxoStandardCoin) {
         let ctx = MmCtxBuilder::new().into_mm_arc();
-        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000});
+        let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
         let req = json!({"method":"enable"});
-        let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
         let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-            &ctx, ticker, &conf, &req, &priv_key
+            &ctx, ticker, &conf, &req, priv_key
         )));
-        fill_address(&coin, &coin.my_address().unwrap(), balance, timeout);
+        import_address(&coin);
+        (ctx, coin)
+    }
+
+    /// Generate random privkey, create a coin and fill it's address with the specified balance.
+    fn generate_coin_with_random_privkey(ticker: &str, balance: BigDecimal) -> (MmArc, UtxoStandardCoin, [u8; 32]) {
+        let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+        let (ctx, coin) = utxo_coin_from_privkey(ticker, &priv_key);
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let my_address = coin.my_address().expect("!my_address");
+        fill_address(&coin, &my_address, balance, timeout);
         (ctx, coin, priv_key)
     }
 
-    fn fill_address(coin: &UtxoStandardCoin, address: &str, amount: BigDecimal, timeout: u64) {
+    fn import_address<T>(coin: &T)
+    where
+        T: MarketCoinOps + AsRef<UtxoCoinFields>,
+    {
+        match coin.as_ref().rpc_client {
+            UtxoRpcClientEnum::Native(ref native) => {
+                let my_address = coin.my_address().unwrap();
+                unwrap!(native.import_address(&my_address, &my_address, false).wait())
+            },
+            UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
+        }
+    }
+
+    fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)
+    where
+        T: MarketCoinOps + AsRef<UtxoCoinFields>,
+    {
         // prevent concurrent fill since daemon RPC returns errors if send_to_address
         // is called concurrently (insufficient funds) and it also may return other errors
         // if previous transaction is not confirmed yet
@@ -278,7 +345,6 @@ mod docker_tests {
                     .list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
                     .wait()
                     .unwrap();
-                log!([unspents]);
                 if !unspents.is_empty() {
                     break;
                 }
@@ -295,14 +361,14 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into())
+            .send_taker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into(), &None)
             .wait()
             .unwrap();
 
         unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
 
         let refund_tx = coin
-            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20])
+            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20], &None)
             .wait()
             .unwrap();
 
@@ -316,6 +382,7 @@ mod docker_tests {
             &[0; 20],
             &tx.tx_hex(),
             0,
+            &None
         )));
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
@@ -327,14 +394,14 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into())
+            .send_maker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into(), &None)
             .wait()
             .unwrap();
 
         unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
 
         let refund_tx = coin
-            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20])
+            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20], &None)
             .wait()
             .unwrap();
 
@@ -348,6 +415,7 @@ mod docker_tests {
             &[0; 20],
             &tx.tx_hex(),
             0,
+            &None
         )));
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
@@ -360,14 +428,14 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into())
+            .send_taker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into(), &None)
             .wait()
             .unwrap();
 
         unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
 
         let spend_tx = coin
-            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret)
+            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret, &None)
             .wait()
             .unwrap();
 
@@ -381,6 +449,7 @@ mod docker_tests {
             &*dhash160(&secret),
             &tx.tx_hex(),
             0,
+            &None
         )));
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
@@ -393,14 +462,14 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into())
+            .send_maker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into(), &None)
             .wait()
             .unwrap();
 
         unwrap!(coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1).wait());
 
         let spend_tx = coin
-            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret)
+            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret, &None)
             .wait()
             .unwrap();
 
@@ -414,6 +483,7 @@ mod docker_tests {
             &*dhash160(&secret),
             &tx.tx_hex(),
             0,
+            &None
         )));
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
@@ -430,7 +500,13 @@ mod docker_tests {
         let mut sent_tx = vec![];
         for i in 0..100 {
             let tx = coin
-                .send_maker_payment(time_lock + i, &*coin.my_public_key(), &*dhash160(&secret), 1.into())
+                .send_maker_payment(
+                    time_lock + i,
+                    &*coin.my_public_key(),
+                    &*dhash160(&secret),
+                    1.into(),
+                    &coin.swap_contract_address(),
+                )
                 .wait()
                 .unwrap();
             if let TransactionEnum::UtxoTx(tx) = tx {
@@ -2149,5 +2225,133 @@ mod docker_tests {
 
         unwrap!(block_on(mm_bob.stop()));
         unwrap!(block_on(mm_alice.stop()));
+    }
+
+    #[test]
+    fn test_utxo_merge() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (_ctx, coin, privkey) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        // fill several times to have more UTXOs on address
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm_bob = unwrap!(MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(privkey)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        unwrap!(block_on(
+            mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        ));
+
+        let native = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "enable",
+            "coin": "MYCOIN",
+            "mm2": 1,
+            "utxo_merge_params": {
+                "merge_at": 2,
+                "check_every": 1,
+            }
+        })))
+        .unwrap();
+        assert!(native.0.is_success(), "'enable' failed: {}", native.1);
+        log!("Enable result "(native.1));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("Starting UTXO merge loop for coin MYCOIN")
+        })));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("Trying to merge 5 UTXOs of coin MYCOIN")
+        })));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("UTXO merge successful for coin MYCOIN, tx_hash")
+        })));
+
+        thread::sleep(Duration::from_secs(2));
+        let (unspents, _) = block_on(coin.list_unspent_ordered(&coin.as_ref().my_address)).unwrap();
+        assert_eq!(unspents.len(), 1);
+    }
+
+    #[test]
+    fn test_utxo_merge_max_merge_at_once() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (_ctx, coin, privkey) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        // fill several times to have more UTXOs on address
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+        fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
+
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm_bob = unwrap!(MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(privkey)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        ));
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        unwrap!(block_on(
+            mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        ));
+
+        let native = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "enable",
+            "coin": "MYCOIN",
+            "mm2": 1,
+            "utxo_merge_params": {
+                "merge_at": 3,
+                "check_every": 1,
+                "max_merge_at_once": 4,
+            }
+        })))
+        .unwrap();
+        assert!(native.0.is_success(), "'enable' failed: {}", native.1);
+        log!("Enable result "(native.1));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("Starting UTXO merge loop for coin MYCOIN")
+        })));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("Trying to merge 4 UTXOs of coin MYCOIN")
+        })));
+
+        unwrap!(block_on(mm_bob.wait_for_log(4., |log| {
+            log.contains("UTXO merge successful for coin MYCOIN, tx_hash")
+        })));
+
+        thread::sleep(Duration::from_secs(2));
+        let (unspents, _) = block_on(coin.list_unspent_ordered(&coin.as_ref().my_address)).unwrap();
+        // 4 utxos are merged of 5 so the resulting unspents len must be 2
+        assert_eq!(unspents.len(), 2);
     }
 }

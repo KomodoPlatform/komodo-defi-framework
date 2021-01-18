@@ -2,11 +2,9 @@ use super::*;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
-use common::executor::spawn;
 use common::mm_ctx::MmCtxBuilder;
 use itertools::Itertools;
 use mocktopus::mocking::{MockResult, Mockable};
-use std::sync::{Arc, Mutex};
 
 pub fn qrc20_coin_for_test(priv_key: &[u8]) -> (MmArc, Qrc20Coin) {
     let conf = json!({
@@ -101,6 +99,7 @@ fn test_can_i_spend_other_payment() {
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
 
+    // qfkXE2cNFEwPFQqvBcqs8m9KrkNa9KV4xi
     let priv_key = [
         192, 240, 176, 226, 14, 170, 226, 96, 107, 47, 166, 243, 154, 48, 28, 243, 18, 144, 240, 1, 79, 103, 178, 42,
         32, 161, 106, 119, 241, 227, 42, 102,
@@ -135,43 +134,6 @@ fn test_can_i_spend_other_payment_err() {
 }
 
 #[test]
-#[ignore]
-fn test_send_maker_payment() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    let secret_hash = &[1; 20];
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = coin
-        .send_maker_payment(timelock, &taker_pub, secret_hash, amount)
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let tx_hash: H256Json = tx.hash().reversed().into();
-    log!([tx_hash]);
-    let tx_hex = serialize(&tx);
-    log!("tx_hex: "[tx_hex]);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 240; // timeout if test takes more than 240 seconds to run
-    let check_every = 1;
-    unwrap!(coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-}
-
-#[test]
 fn test_validate_maker_payment() {
     // this priv_key corresponds to "taker_passphrase" passphrase
     let priv_key = [
@@ -191,12 +153,26 @@ fn test_validate_maker_payment() {
     let amount = BigDecimal::from_str("0.2").unwrap();
 
     unwrap!(coin
-        .validate_maker_payment(&payment_tx, time_lock, &maker_pub, secret_hash, amount.clone())
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock,
+            &maker_pub,
+            secret_hash,
+            amount.clone(),
+            &coin.swap_contract_address()
+        )
         .wait());
 
     let maker_pub_dif = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
     let error = unwrap!(coin
-        .validate_maker_payment(&payment_tx, time_lock, &maker_pub_dif, secret_hash, amount.clone())
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock,
+            &maker_pub_dif,
+            secret_hash,
+            amount.clone(),
+            &coin.swap_contract_address()
+        )
         .wait()
         .err());
     log!("error: "[error]);
@@ -206,7 +182,14 @@ fn test_validate_maker_payment() {
 
     let amount_dif = BigDecimal::from_str("0.3").unwrap();
     let error = unwrap!(coin
-        .validate_maker_payment(&payment_tx, time_lock, &maker_pub, secret_hash, amount_dif)
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock,
+            &maker_pub,
+            secret_hash,
+            amount_dif,
+            &coin.swap_contract_address()
+        )
         .wait()
         .err());
     log!("error: "[error]);
@@ -214,7 +197,14 @@ fn test_validate_maker_payment() {
 
     let secret_hash_dif = &[2; 20];
     let error = unwrap!(coin
-        .validate_maker_payment(&payment_tx, time_lock, &maker_pub, secret_hash_dif, amount.clone())
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock,
+            &maker_pub,
+            secret_hash_dif,
+            amount.clone(),
+            &coin.swap_contract_address()
+        )
         .wait()
         .err());
     log!("error: "[error]);
@@ -222,7 +212,14 @@ fn test_validate_maker_payment() {
 
     let time_lock_dif = 123;
     let error = unwrap!(coin
-        .validate_maker_payment(&payment_tx, time_lock_dif, &maker_pub, secret_hash, amount)
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock_dif,
+            &maker_pub,
+            secret_hash,
+            amount,
+            &coin.swap_contract_address()
+        )
         .wait()
         .err());
     log!("error: "[error]);
@@ -271,302 +268,6 @@ fn test_wait_for_confirmations_excepted() {
         .err());
     log!("error: "[error]);
     assert!(error.contains("Contract call failed with an error: Revert"));
-}
-
-#[test]
-#[ignore]
-fn test_taker_spends_maker_payment() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, maker_coin) = qrc20_coin_for_test(&priv_key);
-
-    // priv_key of qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf
-    let priv_key = [
-        24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
-        17, 11, 29, 113, 235, 48, 70,
-    ];
-    let (_ctx, taker_coin) = qrc20_coin_for_test(&priv_key);
-
-    let bob_balance = taker_coin.my_balance().wait().unwrap();
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    // pubkey of "taker_passphrase" passphrase and qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf address
-    let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    // pubkey of "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL" passphrase
-    let maker_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
-    let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = maker_coin
-        .send_maker_payment(timelock, &taker_pub, secret_hash, amount.clone())
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let payment_tx_hash: H256Json = tx.hash().reversed().into();
-    log!("Maker payment: "[payment_tx_hash]);
-    let tx_hex = serialize(&tx);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 320; // timeout if test takes more than 320 seconds to run
-    let check_every = 1;
-    unwrap!(taker_coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    unwrap!(taker_coin
-        .validate_maker_payment(&tx_hex, timelock, &maker_pub, secret_hash, amount.clone())
-        .wait());
-
-    let spend = unwrap!(taker_coin
-        .send_taker_spends_maker_payment(&tx_hex, timelock, &maker_pub, secret)
-        .wait());
-    let spend_tx = match spend {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let spend_tx_hash: H256Json = spend_tx.hash().reversed().into();
-    log!("Taker spends tx: "[spend_tx_hash]);
-    let spend_tx_hex = serialize(&spend_tx);
-    let wait_until = (now_ms() / 1000) + 240; // timeout if test takes more than 240 seconds to run
-    unwrap!(taker_coin
-        .wait_for_confirmations(&spend_tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let bob_new_balance = taker_coin.my_balance().wait().unwrap();
-    assert_eq!(bob_balance + amount, bob_new_balance);
-}
-
-#[test]
-#[ignore]
-fn test_maker_spends_taker_payment() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, maker_coin) = qrc20_coin_for_test(&priv_key);
-
-    // priv_key of qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf
-    let priv_key = [
-        24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
-        17, 11, 29, 113, 235, 48, 70,
-    ];
-    let (_ctx, taker_coin) = qrc20_coin_for_test(&priv_key);
-
-    let maker_balance = maker_coin.my_balance().wait().unwrap();
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    // pubkey of "taker_passphrase" passphrase and qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf address
-    let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    // pubkey of "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL" passphrase
-    let maker_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
-    let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = taker_coin
-        .send_taker_payment(timelock, &maker_pub, secret_hash, amount.clone())
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let payment_tx_hash: H256Json = tx.hash().reversed().into();
-    log!("Maker payment: "[payment_tx_hash]);
-    let tx_hex = serialize(&tx);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 320; // timeout if test takes more than 320 seconds to run
-    let check_every = 1;
-    unwrap!(maker_coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    unwrap!(maker_coin
-        .validate_taker_payment(&tx_hex, timelock, &taker_pub, secret_hash, amount.clone())
-        .wait());
-
-    let spend = unwrap!(maker_coin
-        .send_maker_spends_taker_payment(&tx_hex, timelock, &taker_pub, secret)
-        .wait());
-    let spend_tx = match spend {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let spend_tx_hash: H256Json = spend_tx.hash().reversed().into();
-    log!("Taker spends tx: "[spend_tx_hash]);
-    let spend_tx_hex = serialize(&spend_tx);
-    let wait_until = (now_ms() / 1000) + 240; // timeout if test takes more than 240 seconds to run
-    unwrap!(maker_coin
-        .wait_for_confirmations(&spend_tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let maker_new_balance = maker_coin.my_balance().wait().unwrap();
-    assert_eq!(maker_balance + amount, maker_new_balance);
-}
-
-#[test]
-#[ignore]
-fn test_maker_refunds_payment() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
-
-    let expected_balance = unwrap!(coin.my_balance().wait());
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    // pubkey of "taker_passphrase" passphrase and qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf address
-    let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    let secret_hash = &[1; 20];
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = coin
-        .send_maker_payment(timelock, &taker_pub, secret_hash, amount.clone())
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let payment_tx_hash: H256Json = tx.hash().reversed().into();
-    log!("Maker payment: "[payment_tx_hash]);
-    let tx_hex = serialize(&tx);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 320; // timeout if test takes more than 320 seconds to run
-    let check_every = 1;
-    unwrap!(coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let balance_after_payment = unwrap!(coin.my_balance().wait());
-    assert_eq!(expected_balance.clone() - amount, balance_after_payment);
-
-    let refund = unwrap!(coin
-        .send_maker_refunds_payment(&tx_hex, timelock, &taker_pub, secret_hash)
-        .wait());
-    let refund_tx = match refund {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let refund_tx_hash: H256Json = refund_tx.hash().reversed().into();
-    log!("Taker spends tx: "[refund_tx_hash]);
-    let refund_tx_hex = serialize(&refund_tx);
-    let wait_until = (now_ms() / 1000) + 240; // timeout if test takes more than 240 seconds to run
-    unwrap!(coin
-        .wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let balance_after_refund = unwrap!(coin.my_balance().wait());
-    assert_eq!(expected_balance, balance_after_refund);
-}
-
-#[test]
-#[ignore]
-fn test_taker_refunds_payment() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
-
-    let expected_balance = unwrap!(coin.my_balance().wait());
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    // pubkey of "taker_passphrase" passphrase and qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf address
-    let maker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    let secret_hash = &[1; 20];
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = coin
-        .send_taker_payment(timelock, &maker_pub, secret_hash, amount.clone())
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let payment_tx_hash: H256Json = tx.hash().reversed().into();
-    log!("Maker payment: "[payment_tx_hash]);
-    let tx_hex = serialize(&tx);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 320; // timeout if test takes more than 320 seconds to run
-    let check_every = 1;
-    unwrap!(coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let balance_after_payment = unwrap!(coin.my_balance().wait());
-    assert_eq!(expected_balance.clone() - amount, balance_after_payment);
-
-    let refund = unwrap!(coin
-        .send_taker_refunds_payment(&tx_hex, timelock, &maker_pub, secret_hash)
-        .wait());
-    let refund_tx = match refund {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let refund_tx_hash: H256Json = refund_tx.hash().reversed().into();
-    log!("Taker spends tx: "[refund_tx_hash]);
-    let refund_tx_hex = serialize(&refund_tx);
-    let wait_until = (now_ms() / 1000) + 240; // timeout if test takes more than 240 seconds to run
-    unwrap!(coin
-        .wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    let balance_after_refund = unwrap!(coin.my_balance().wait());
-    assert_eq!(expected_balance, balance_after_refund);
-}
-
-#[test]
-fn test_check_if_my_payment_sent() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
-
-    let time_lock = 1601367157;
-    // pubkey of "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL" passphrase
-    let maker_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
-    let secret_hash = &[1; 20];
-    // search from b22ee034e860d89af6e76e54bb7f8efb69d833a8670e61c60e5dfdfaa27db371 transaction
-    let search_from_block = 686125;
-
-    // tx_hash: 016a59dd2b181b3906b0f0333d5c7561dacb332dc99ac39679a591e523f2c49a
-    let expected_tx = TransactionEnum::UtxoTx("010000000194448324c14fc6b78c7a52c59debe3240fc392019dbd6f1457422e3308ce1e75010000006b483045022100800a4956a30a36708536d98e8ea55a3d0983b963af6c924f60241616e2ff056d0220239e622f8ec8f1a0f5ef0fc93ff094a8e6b5aab964a62bed680b17bf6a848aac012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a0c692f2ec8ebab181a79e31b7baab30fef0902e57f901c47a342643eeafa6b510000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8320101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000005f72ec7514ba8b71f3544b93e2f681f996da519a98ace0107ac201319302000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac40ed725f".into());
-    let tx = unwrap!(coin
-        .check_if_my_payment_sent(time_lock, &maker_pub, secret_hash, search_from_block)
-        .wait());
-    assert_eq!(tx, Some(expected_tx));
-
-    let time_lock_dif = 1601367156;
-    let tx = unwrap!(coin
-        .check_if_my_payment_sent(time_lock_dif, &maker_pub, secret_hash, search_from_block)
-        .wait());
-    assert_eq!(tx, None);
 }
 
 #[test]
@@ -639,146 +340,6 @@ fn test_validate_fee() {
 }
 
 #[test]
-#[ignore]
-fn test_search_for_swap_tx_spend() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
-
-    let other_pub = &[0]; //ignored
-    let search_from_block = 693000;
-
-    // taker spent maker payment - d3f5dab4d54c14b3d7ed8c7f5c8cc7f47ccf45ce589fdc7cd5140a3c1c3df6e1
-    let expected = Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::UtxoTx("01000000033f56ecafafc8602fde083ba868d1192d6649b8433e42e1a2d79ba007ea4f7abb010000006b48304502210093404e90e40d22730013035d31c404c875646dcf2fad9aa298348558b6d65ba60220297d045eac5617c1a3eddb71d4bca9772841afa3c4c9d6c68d8d2d42ee6de3950121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff9cac7fe90d597922a1d92e05306c2215628e7ea6d5b855bfb4289c2944f4c73a030000006b483045022100b987da58c2c0c40ce5b6ef2a59e8124ed4ef7a8b3e60c7fb631139280019bc93022069649bcde6fe4dd5df9462a1fcae40598488d6af8c324cd083f5c08afd9568be0121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff70b9870f2b0c65d220a839acecebf80f5b44c3ca4c982fa2fdc5552c037f5610010000006a473044022071b34dd3ebb72d29ca24f3fa0fc96571c815668d3b185dd45cc46a7222b6843f02206c39c030e618d411d4124f7b3e7ca1dd5436775bd8083a85712d123d933a51300121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff020000000000000000c35403a0860101284ca402ed292b806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2c02288d4010000001976a914783cf0be521101942da509846ea476e683aad83288ac0f047f5f".into()))));
-    // maker sent payment - c8112c75be039100c30d71293571f081e189540818ef8e2903ff75d2d556b446
-    let tx_hex = hex::decode("0100000001e6b256dd9d390be2ccd8eddaf67a40d1994a983845fb223c102ce8e58eca2b48010000006b4830450221008e8e793ad00ed1d45f4546b9e7b9dc8305d61c384e126c24e7945bd0056df099022077f033cf16535f0d3627548196cd3868d904ca6ccac9d80d56f1f70df6589915012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8324b6b2e5444c2639cc0fb7bcea5afba3f3cdce239000000000000000000000000000000000000000000000000000000000000000000000000000000005f7f02c014ba8b71f3544b93e2f681f996da519a98ace0107ac27046a001000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac8b037f5f").unwrap();
-    let timelock = 1602159296;
-    let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
-    let actual = coin.search_for_swap_tx_spend_my(timelock, other_pub, secret_hash, &tx_hex, search_from_block);
-    assert_eq!(actual, expected);
-
-    // maker refunded payment his - df41079d58a13320590476e648d37007459366b0fbfce8d0b72fae502e39cc01
-    let expected = Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::UtxoTx("010000000191999480813e0284212d08a16b32146e7d32315feaf6489cd3aa696b54e5ce71010000006a4730440220282a32f05a4802caee065ee8d2b08a9b366c26b16d9afb068b3259aa54107b0e0220039c7697620e91096d566ddb6056ad347c395584114f790a2a727db86789c576012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000c35403a0860101284ca446fc0294796332096ae329d7aa84c52f036bbeb9dd4b872c8d2021ccb8775e23f56a422e0000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101000000000000000000000000000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad83214ba8b71f3544b93e2f681f996da519a98ace0107ac2d012ac00000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac97067f5f".into()))));
-    // maker sent payment - 71cee5546b69aad39c48f6ea5f31327d6e14326ba1082d2184023e8180949991
-    let tx_hex = hex::decode("0100000001422dd62a9405fbda1f0e01ed45917cd908a68258a5f5530a1f53c4cd173bc82b010000006a47304402201c2c3b789a651143a657217b5b459027b68a78545a5036e03f90bacbc4cfd8b1022055200a3da6b208dc8763471a87d869d6b045f1dd38f855b0fda0b526f23f88ea012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a796332096ae329d7aa84c52f036bbeb9dd4b872c8d2021ccb8775e23f56a422e0000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8320101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000005f7f059f14ba8b71f3544b93e2f681f996da519a98ace0107ac2b81fe900000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac6a067f5f").unwrap();
-    let timelock = 1602160031;
-    let secret_hash = &[1; 20];
-    let actual = coin.search_for_swap_tx_spend_my(timelock, other_pub, secret_hash, &tx_hex, search_from_block);
-    assert_eq!(actual, expected);
-
-    // maker payment hasn't been spent or refunded yet
-    let expected = Ok(None);
-    // maker sent payment 9fae1771bb542f9860d845091109a6a951f95fc277faebe3ec6ab3e8df9e58b6
-    let tx_hex = hex::decode("010000000101cc392e50ae2fb7d0e8fcfbb06693450770d348e67604592033a1589d0741df010000006b483045022100935cf73d2b01a694f4383eb844d5e93e041496b13e6bdf1f7a8f3bb8dd83b50002204952184584460cc1ab979895ec4850ea9e26a7308d231376fc21c133c7eeaf08012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a4357ff815e6657ea5b4cf992475e29940b3a4cda9b589d5e5061bb06c1f5bf5a0000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8320101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000005f7f066014ba8b71f3544b93e2f681f996da519a98ace0107ac2e8056f00000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac2b077f5f").unwrap();
-    let timelock = 1602160224;
-    let secret_hash = &[1; 20];
-    let actual = coin.search_for_swap_tx_spend_my(timelock, other_pub, secret_hash, &tx_hex, search_from_block);
-    assert_eq!(actual, expected);
-}
-
-#[test]
-#[ignore]
-fn test_wait_for_tx_spend() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, maker_coin) = qrc20_coin_for_test(&priv_key);
-
-    // priv_key of qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf
-    let priv_key = [
-        24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
-        17, 11, 29, 113, 235, 48, 70,
-    ];
-    let (_ctx, taker_coin) = qrc20_coin_for_test(&priv_key);
-
-    let from_block = maker_coin.current_block().wait().unwrap();
-
-    let timelock = (now_ms() / 1000) as u32 - 200;
-    // pubkey of "taker_passphrase" passphrase and qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf address
-    let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
-    // pubkey of "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL" passphrase
-    let maker_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
-    let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from_str("0.2").unwrap();
-    let payment = maker_coin
-        .send_maker_payment(timelock, &taker_pub, secret_hash, amount.clone())
-        .wait()
-        .unwrap();
-    let tx = match payment {
-        TransactionEnum::UtxoTx(tx) => tx,
-        _ => panic!("Expected UtxoTx"),
-    };
-
-    let payment_tx_hash: H256Json = tx.hash().reversed().into();
-    log!("Maker payment: "[payment_tx_hash]);
-    let tx_hex = serialize(&tx);
-
-    let confirmations = 1;
-    let requires_nota = false;
-    let wait_until = (now_ms() / 1000) + 320; // timeout if test takes more than 320 seconds to run
-    let check_every = 1;
-    unwrap!(taker_coin
-        .wait_for_confirmations(&tx_hex, confirmations, requires_nota, wait_until, check_every)
-        .wait());
-
-    unwrap!(taker_coin
-        .validate_maker_payment(&tx_hex, timelock, &maker_pub, secret_hash, amount.clone())
-        .wait());
-
-    // first try to check if the wait_for_tx_spend() returns an error correctly
-    let wait_until = (now_ms() / 1000) + 11;
-    let err = maker_coin
-        .wait_for_tx_spend(&tx_hex, wait_until, from_block)
-        .wait()
-        .expect_err("Expected 'Waited too long' error");
-    log!("error: "[err]);
-    assert!(err.contains("Waited too long"));
-
-    // also spends the maker payment and try to check if the wait_for_tx_spend() returns the correct tx
-    let spend_tx: Arc<Mutex<Option<UtxoTx>>> = Arc::new(Mutex::new(None));
-
-    let tx_hex_c = tx_hex.clone();
-    let spend_tx_c = spend_tx.clone();
-    let fut = async move {
-        Timer::sleep(11.).await;
-
-        let spend = unwrap!(
-            taker_coin
-                .send_taker_spends_maker_payment(&tx_hex_c, timelock, &maker_pub, secret)
-                .compat()
-                .await
-        );
-        let mut lock = spend_tx_c.lock().unwrap();
-        match spend {
-            TransactionEnum::UtxoTx(tx) => *lock = Some(tx),
-            _ => panic!("Expected UtxoTx"),
-        }
-    };
-
-    spawn(fut);
-
-    let wait_until = (now_ms() / 1000) + 320;
-    let found = unwrap!(maker_coin.wait_for_tx_spend(&tx_hex, wait_until, from_block).wait());
-
-    let spend_tx = match spend_tx.lock().unwrap().as_ref() {
-        Some(tx) => tx.clone(),
-        None => panic!(),
-    };
-
-    match found {
-        TransactionEnum::UtxoTx(tx) => assert_eq!(tx, spend_tx),
-        _ => panic!("Unexpected Transaction type"),
-    }
-}
-
-#[test]
 fn test_wait_for_tx_spend_malicious() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [
@@ -797,7 +358,9 @@ fn test_wait_for_tx_spend_malicious() {
     let payment_tx = hex::decode("01000000016601daa208531d20532c460d0c86b74a275f4a126bbffcf4eafdf33835af2859010000006a47304402205825657548bc1b5acf3f4bb2f89635a02b04f3228cd08126e63c5834888e7ac402207ca05fa0a629a31908a97a508e15076e925f8e621b155312b7526a6666b06a76012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8324b6b2e5444c2639cc0fb7bcea5afba3f3cdce239000000000000000000000000000000000000000000000000000000000000000000000000000000005f855c7614ba8b71f3544b93e2f681f996da519a98ace0107ac2203de400000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac415d855f").unwrap();
     let wait_until = (now_ms() / 1000) + 1;
     let from_block = 696245;
-    let found = unwrap!(coin.wait_for_tx_spend(&payment_tx, wait_until, from_block).wait());
+    let found = unwrap!(coin
+        .wait_for_tx_spend(&payment_tx, wait_until, from_block, &coin.swap_contract_address())
+        .wait());
 
     let spend_tx = match found {
         TransactionEnum::UtxoTx(tx) => tx,
@@ -869,7 +432,7 @@ fn test_generate_token_transfer_script_pubkey() {
     };
 
     let to_addr: UtxoAddress = "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into();
-    let to_addr = qrc20_addr_from_utxo_addr(to_addr);
+    let to_addr = qtum::contract_addr_from_utxo_addr(to_addr);
     let amount: U256 = 1000000000.into();
     let actual = coin
         .transfer_output(to_addr.clone(), amount, gas_limit, gas_price)
@@ -1060,7 +623,7 @@ fn test_get_trade_fee() {
 }
 
 #[test]
-fn test_qrc20_coin_from_conf_without_decimals() {
+fn test_coin_from_conf_without_decimals() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
@@ -1157,7 +720,14 @@ fn test_validate_maker_payment_malicious() {
     let secret_hash = &*dhash160(secret);
     let amount = BigDecimal::from_str("1").unwrap();
     let error = coin
-        .validate_maker_payment(&payment_tx, time_lock, &maker_pub, secret_hash, amount)
+        .validate_maker_payment(
+            &payment_tx,
+            time_lock,
+            &maker_pub,
+            secret_hash,
+            amount,
+            &coin.swap_contract_address(),
+        )
         .wait()
         .err()
         .expect("'erc20Payment' was called from another swap contract, expected an error");

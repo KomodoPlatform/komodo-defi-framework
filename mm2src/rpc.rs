@@ -19,8 +19,9 @@
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
-use coins::{convert_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history, send_raw_transaction,
-            set_required_confirmations, set_requires_notarization, show_priv_key, validate_address, withdraw};
+use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
+            send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
+            validate_address, withdraw};
 use common::mm_ctx::MmArc;
 #[cfg(feature = "native")] use common::wio::{CORE, CPUPOOL};
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HyRes};
@@ -38,8 +39,9 @@ use std::net::SocketAddr;
 use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell,
                                 set_price};
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{coins_needed_for_kick_start, import_swaps, list_banned_pubkeys, max_taker_vol,
-                          my_recent_swaps, my_swap_status, recover_funds_of_swap, stats_swap_status, unban_pubkeys};
+use crate::mm2::lp_swap::{active_swaps_rpc, coins_needed_for_kick_start, import_swaps, list_banned_pubkeys,
+                          max_taker_vol, my_recent_swaps, my_swap_status, recover_funds_of_swap, stats_swap_status,
+                          unban_pubkeys};
 
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 use self::lp_commands::*;
@@ -119,6 +121,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         // Sorted alphanumerically (on the first latter) for readability.
         // "autoprice" => lp_autoprice (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
+        "active_swaps" => hyres(active_swaps_rpc(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "buy" => hyres(buy(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "cancel_all_orders" => hyres(cancel_all_orders(ctx, req)),
@@ -127,6 +131,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         "convertaddress" => hyres(convert_address(ctx, req)),
+        "convert_utxo_address" => hyres(convert_utxo_address(ctx, req)),
         "disable_coin" => hyres(disable_coin(ctx, req)),
         "electrum" => hyres(electrum(ctx, req)),
         "enable" => hyres(enable(ctx, req)),

@@ -36,10 +36,6 @@ jobs:
           echo "##vso[task.setvariable variable=RELEASE_UPLOADED]${RELEASE_UPLOADED}"
           echo "##vso[task.setvariable variable=RELEASE_TAG]${RELEASE_TAG}"
         displayName: Setup ENV
-      - powershell: |
-          .\marketmaker_build_depends.cmd
-        displayName: Build Windows deps
-        condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['COMMIT_TAG'], '' ) )
       - bash: |
           rm -rf upload
           mkdir upload

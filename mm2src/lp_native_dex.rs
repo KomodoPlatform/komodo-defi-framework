@@ -25,17 +25,14 @@ use mm2_libp2p::start_gossipsub;
 use rand::rngs::SmallRng;
 use rand::{random, Rng, SeedableRng};
 use serde_json::{self as json};
-use std::ffi::CString;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
-use std::os::raw::c_char;
 use std::path::Path;
 use std::str;
 use std::str::from_utf8;
 
 use crate::common::executor::{spawn, spawn_boxed, Timer};
-#[cfg(feature = "native")] use crate::common::lp;
 use crate::common::mm_ctx::{MmArc, MmCtx};
 use crate::common::privkey::key_pair_from_seed;
 use crate::common::{slurp_url, MM_DATETIME, MM_VERSION};
@@ -47,6 +44,7 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_order
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
+use bitcrypto::sha256;
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
     const LP_RPCPORT: u16 = 7783;
@@ -68,13 +66,13 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
 /// Invokes `OS_ensure_directory`,
 /// then prints an error and returns `false` if the directory is not writable.
 fn ensure_dir_is_writable(dir_path: &Path) -> bool {
-    #[cfg(feature = "native")]
-    unsafe {
-        let c_dir_path = unwrap!(dir_path.to_str());
-        let c_dir_path = unwrap!(CString::new(c_dir_path));
-        lp::OS_ensure_directory(c_dir_path.as_ptr() as *mut c_char)
-    };
-
+    if dir_path.exists() && !dir_path.is_dir() {
+        common::log::error!("The {} is not a directory", dir_path.display());
+        return false;
+    } else if let Err(e) = std::fs::create_dir_all(dir_path) {
+        common::log::error!("Could not create dir {}, error {}", dir_path.display(), e);
+        return false;
+    }
     let r: [u8; 32] = random();
     let mut check: Vec<u8> = Vec::with_capacity(r.len());
     let fname = dir_path.join("checkval");
@@ -131,13 +129,6 @@ fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
 fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     let dbdir = ctx.dbdir();
     try_s!(std::fs::create_dir_all(&dbdir));
-
-    unsafe {
-        let dbdir = ctx.dbdir();
-        let dbdir = try_s!(dbdir.to_str().ok_or("Bad dbdir"));
-        let dbdir = try_s!(CString::new(dbdir));
-        lp::OS_ensure_directory(dbdir.as_ptr() as *mut c_char)
-    };
 
     if !ensure_dir_is_writable(&dbdir.join("SWAPS")) {
         return ERR!("SWAPS db dir is not writable");
@@ -481,15 +472,45 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     };
 
     let ctx_on_poll = ctx.clone();
-    let (cmd_tx, event_rx, peer_id) =
-        start_gossipsub(myipaddr, mypubport, spawn_boxed, seednodes, i_am_seed, move |swarm| {
+    let force_p2p_key = if i_am_seed {
+        let key = sha256(&*ctx.secp256k1_key_pair().private().secret);
+        Some(key.take())
+    } else {
+        None
+    };
+    let (cmd_tx, event_rx, peer_id) = start_gossipsub(
+        myipaddr,
+        mypubport,
+        ctx.netid(),
+        force_p2p_key,
+        spawn_boxed,
+        seednodes,
+        i_am_seed,
+        move |swarm| {
             mm_gauge!(
                 ctx_on_poll.metrics,
                 "p2p.connected_relays.len",
                 swarm.connected_relays_len() as i64
             );
             mm_gauge!(ctx_on_poll.metrics, "p2p.relay_mesh.len", swarm.relay_mesh_len() as i64);
-        });
+            let (period, received_msgs) = swarm.received_messages_in_period();
+            mm_gauge!(
+                ctx_on_poll.metrics,
+                "p2p.received_messages.period_in_secs",
+                period.as_secs() as i64
+            );
+
+            mm_gauge!(ctx_on_poll.metrics, "p2p.received_messages.count", received_msgs as i64);
+
+            let connected_peers_count = swarm.connected_peers_len();
+
+            mm_gauge!(
+                ctx_on_poll.metrics,
+                "p2p.connected_peers.count",
+                connected_peers_count as i64
+            );
+        },
+    );
     try_s!(ctx.peer_id.pin(peer_id.to_string()));
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
@@ -525,7 +546,12 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     let ctx_id = try_s!(ctx.ffi_handle());
 
     spawn_rpc(ctx_id);
-
+    let ctxʹ = ctx.clone();
+    spawn(async move {
+        if let Err(err) = ctxʹ.init_metrics() {
+            log!("Warning: couldn't initialize metrics system: "(err));
+        }
+    });
     // In the mobile version we might depend on `lp_init` staying around until the context stops.
     loop {
         if ctx.is_stopping() {

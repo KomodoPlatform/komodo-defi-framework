@@ -683,7 +683,7 @@ mod tests {
             build_and_inject_nodes(20, vec![String::from("topic1")], GossipsubConfig::default(), true);
 
         let msg_id = MessageId(String::from("known id"));
-        gs.received.put(msg_id.clone(), SmallVec::new());
+        gs.received.insert(msg_id.clone(), SmallVec::new());
 
         let events_before = gs.events.len();
         gs.handle_ihave(&peers[7], vec![(topic_hashes[0].clone(), vec![msg_id])]);

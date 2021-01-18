@@ -53,7 +53,9 @@ pub struct Floodsub {
 
 impl Floodsub {
     /// Creates a `Floodsub` with default configuration.
-    pub fn new(local_peer_id: PeerId) -> Self { Self::from_config(FloodsubConfig::new(local_peer_id)) }
+    pub fn new(local_peer_id: PeerId, forward_messages: bool) -> Self {
+        Self::from_config(FloodsubConfig::new(local_peer_id, forward_messages))
+    }
 
     /// Creates a `Floodsub` with the given configuration.
     pub fn from_config(config: FloodsubConfig) -> Self {
@@ -286,23 +288,25 @@ impl NetworkBehaviour for Floodsub {
                 self.events.push_back(NetworkBehaviourAction::GenerateEvent(event));
             }
 
-            // Propagate the message to everyone else who is subscribed to any of the topics.
-            for (peer_id, subscr_topics) in self.connected_peers.iter() {
-                if peer_id == &propagation_source {
-                    continue;
-                }
+            if self.config.forward_messages {
+                // Propagate the message to everyone else who is subscribed to any of the topics.
+                for (peer_id, subscr_topics) in self.connected_peers.iter() {
+                    if peer_id == &propagation_source {
+                        continue;
+                    }
 
-                if !subscr_topics.iter().any(|t| message.topics.iter().any(|u| t == u)) {
-                    continue;
-                }
+                    if !subscr_topics.iter().any(|t| message.topics.iter().any(|u| t == u)) {
+                        continue;
+                    }
 
-                if let Some(pos) = rpcs_to_dispatch.iter().position(|(p, _)| p == peer_id) {
-                    rpcs_to_dispatch[pos].1.messages.push(message.clone());
-                } else {
-                    rpcs_to_dispatch.push((peer_id.clone(), FloodsubRpc {
-                        subscriptions: Vec::new(),
-                        messages: vec![message.clone()],
-                    }));
+                    if let Some(pos) = rpcs_to_dispatch.iter().position(|(p, _)| p == peer_id) {
+                        rpcs_to_dispatch[pos].1.messages.push(message.clone());
+                    } else {
+                        rpcs_to_dispatch.push((peer_id.clone(), FloodsubRpc {
+                            subscriptions: Vec::new(),
+                            messages: vec![message.clone()],
+                        }));
+                    }
                 }
             }
         }

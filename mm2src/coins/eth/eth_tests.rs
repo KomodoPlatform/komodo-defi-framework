@@ -203,6 +203,7 @@ fn send_and_refund_erc20_payment() {
             )),
             &[1; 20],
             "0.001".parse().unwrap(),
+            &coin.swap_contract_address(),
         )
         .wait()
         .unwrap();
@@ -219,6 +220,7 @@ fn send_and_refund_erc20_payment() {
                 "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"
             )),
             &[1; 20],
+            &coin.swap_contract_address(),
         )
         .wait()
         .unwrap();
@@ -263,6 +265,7 @@ fn send_and_refund_eth_payment() {
             )),
             &[1; 20],
             "0.001".parse().unwrap(),
+            &coin.swap_contract_address(),
         )
         .wait()
         .unwrap();
@@ -279,6 +282,7 @@ fn send_and_refund_eth_payment() {
                 "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06"
             )),
             &[1; 20],
+            &coin.swap_contract_address(),
         )
         .wait()
         .unwrap();
@@ -347,7 +351,7 @@ fn test_nonce_several_urls() {
 
 #[test]
 fn test_wait_for_payment_spend_timeout() {
-    EthCoinImpl::spend_events.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
+    EthCoinImpl::spend_events.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
 
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -393,7 +397,7 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_tx_spend(&tx_bytes, wait_until, from_block)
+        .wait_for_tx_spend(&tx_bytes, wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .is_err());
 }
@@ -411,6 +415,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
+    let swap_contract_address = Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94");
     let coin = EthCoin(Arc::new(EthCoinImpl {
         coin_type: EthCoinType::Eth,
         decimals: 18,
@@ -418,7 +423,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
-        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        swap_contract_address,
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -457,7 +462,11 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(unwrap!(signed_eth_tx_from_bytes(&spend_tx)).into());
 
-    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(&payment_tx, 6051857,)));
+    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        &payment_tx,
+        swap_contract_address,
+        6051857,
+    )));
     assert_eq!(spend_tx, found_tx);
 }
 
@@ -474,6 +483,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
+    let swap_contract_address = Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94");
     let coin = EthCoin(Arc::new(EthCoinImpl {
         coin_type: EthCoinType::Erc20(Address::from("0xc0eb7aed740e1796992a08962c15661bdeb58003")),
         decimals: 18,
@@ -481,7 +491,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
-        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        swap_contract_address,
         ticker: "ETH".into(),
         web3_instances: vec![Web3Instance {
             web3: web3.clone(),
@@ -521,7 +531,11 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(unwrap!(signed_eth_tx_from_bytes(&refund_tx)).into());
 
-    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(&payment_tx, 5886908,)));
+    let found_tx = unwrap!(unwrap!(coin.search_for_swap_tx_spend(
+        &payment_tx,
+        swap_contract_address,
+        5886908,
+    )));
     assert_eq!(refund_tx, found_tx);
 }
 

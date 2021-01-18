@@ -3,6 +3,7 @@
 #![cfg_attr(not(feature = "native"), allow(unused_variables))]
 
 use crate::block_on;
+use bigdecimal::BigDecimal;
 use bytes::Bytes;
 use chrono::{Local, TimeZone};
 use futures::channel::oneshot::channel;
@@ -33,6 +34,65 @@ use crate::mm_ctx::{MmArc, MmCtxBuilder};
 use crate::mm_metrics::{MetricType, MetricsJson};
 #[cfg(feature = "native")] use crate::wio::{slurp_req, POOL};
 use crate::{now_float, slurp};
+
+pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeValidated",
+    "MakerPaymentSent",
+    "TakerPaymentReceived",
+    "TakerPaymentWaitConfirmStarted",
+    "TakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSpent",
+    "TakerPaymentSpendConfirmStarted",
+    "TakerPaymentSpendConfirmed",
+    "Finished",
+];
+
+pub const MAKER_ERROR_EVENTS: [&str; 13] = [
+    "StartFailed",
+    "NegotiateFailed",
+    "TakerFeeValidateFailed",
+    "MakerPaymentTransactionFailed",
+    "MakerPaymentDataSendFailed",
+    "MakerPaymentWaitConfirmFailed",
+    "TakerPaymentValidateFailed",
+    "TakerPaymentWaitConfirmFailed",
+    "TakerPaymentSpendFailed",
+    "TakerPaymentSpendConfirmFailed",
+    "MakerPaymentWaitRefundStarted",
+    "MakerPaymentRefunded",
+    "MakerPaymentRefundFailed",
+];
+
+pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "Finished",
+];
+
+pub const TAKER_ERROR_EVENTS: [&str; 13] = [
+    "StartFailed",
+    "NegotiateFailed",
+    "TakerFeeSendFailed",
+    "MakerPaymentValidateFailed",
+    "MakerPaymentWaitConfirmFailed",
+    "TakerPaymentTransactionFailed",
+    "TakerPaymentWaitConfirmFailed",
+    "TakerPaymentDataSendFailed",
+    "TakerPaymentWaitForSpendFailed",
+    "MakerPaymentSpendFailed",
+    "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefunded",
+    "TakerPaymentRefundFailed",
+];
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -699,4 +759,89 @@ pub fn find_metrics_in_json(
 
         true
     })
+}
+
+/// Helper function requesting my swap status and checking it's events
+pub async fn check_my_swap_status(
+    mm: &MarketMakerIt,
+    uuid: &str,
+    expected_success_events: &[&str],
+    expected_error_events: &[&str],
+    maker_amount: BigDecimal,
+    taker_amount: BigDecimal,
+) {
+    let response = unwrap!(
+        mm.rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "my_swap_status",
+            "params": {
+                "uuid": uuid,
+            }
+        }))
+        .await
+    );
+    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+    let status_response: Json = unwrap!(json::from_str(&response.1));
+    let success_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["success_events"].clone()));
+    assert_eq!(expected_success_events, success_events.as_slice());
+    let error_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["error_events"].clone()));
+    assert_eq!(expected_error_events, error_events.as_slice());
+
+    let events_array = unwrap!(status_response["result"]["events"].as_array());
+    let actual_maker_amount = unwrap!(json::from_value(
+        events_array[0]["event"]["data"]["maker_amount"].clone()
+    ));
+    assert_eq!(maker_amount, actual_maker_amount);
+    let actual_taker_amount = unwrap!(json::from_value(
+        events_array[0]["event"]["data"]["taker_amount"].clone()
+    ));
+    assert_eq!(taker_amount, actual_taker_amount);
+    let actual_events = events_array.iter().map(|item| unwrap!(item["event"]["type"].as_str()));
+    let actual_events: Vec<&str> = actual_events.collect();
+    assert_eq!(expected_success_events, actual_events.as_slice());
+}
+
+pub async fn check_stats_swap_status(
+    mm: &MarketMakerIt,
+    uuid: &str,
+    maker_expected_events: &[&str],
+    taker_expected_events: &[&str],
+) {
+    let response = unwrap!(
+        mm.rpc(json! ({
+            "method": "stats_swap_status",
+            "params": {
+                "uuid": uuid,
+            }
+        }))
+        .await
+    );
+    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+    let status_response: Json = unwrap!(json::from_str(&response.1));
+    let maker_events_array = unwrap!(status_response["result"]["maker"]["events"].as_array());
+    let taker_events_array = unwrap!(status_response["result"]["taker"]["events"].as_array());
+    let maker_actual_events = maker_events_array
+        .iter()
+        .map(|item| unwrap!(item["event"]["type"].as_str()));
+    let maker_actual_events: Vec<&str> = maker_actual_events.collect();
+    let taker_actual_events = taker_events_array
+        .iter()
+        .map(|item| unwrap!(item["event"]["type"].as_str()));
+    let taker_actual_events: Vec<&str> = taker_actual_events.collect();
+    assert_eq!(maker_expected_events, maker_actual_events.as_slice());
+    assert_eq!(taker_expected_events, taker_actual_events.as_slice());
+}
+
+pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
+    let response = unwrap!(
+        mm.rpc(json! ({
+            "method": "my_recent_swaps",
+            "userpass": mm.userpass,
+        }))
+        .await
+    );
+    assert!(response.0.is_success(), "!status of my_recent_swaps {}", response.1);
+    let swaps_response: Json = unwrap!(json::from_str(&response.1));
+    let swaps: &Vec<Json> = unwrap!(swaps_response["result"]["swaps"].as_array());
+    assert_eq!(expected_len, swaps.len());
 }

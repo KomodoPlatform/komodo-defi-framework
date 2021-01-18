@@ -37,7 +37,7 @@ use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsArc;
-use common::{first_char_to_upper, now_ms, small_rng, MM_VERSION};
+use common::{first_char_to_upper, small_rng, MM_VERSION};
 #[cfg(feature = "native")] use dirs::home_dir;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
@@ -45,7 +45,7 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
-use keys::{Address, KeyPair, Private, Public, Secret};
+pub use keys::{Address, KeyPair, Private, Public, Secret};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
@@ -82,6 +82,7 @@ const MAX_DER_SIGNATURE_LEN: usize = 72;
 const COMPRESSED_PUBKEY_LEN: usize = 33;
 const P2PKH_OUTPUT_LEN: u64 = 34;
 const MATURE_CONFIRMATIONS_DEFAULT: u32 = 100;
+const UTXO_DUST_AMOUNT: u64 = 1000;
 /// Block count for KMD median time past calculation
 ///
 /// # Safety
@@ -278,6 +279,16 @@ impl RecentlySpentOutPoints {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub enum BlockchainNetwork {
+    #[serde(rename = "mainnet")]
+    Mainnet,
+    #[serde(rename = "testnet")]
+    Testnet,
+    #[serde(rename = "regtest")]
+    Regtest,
+}
+
 #[derive(Debug)]
 pub struct UtxoCoinFields {
     pub ticker: String,
@@ -462,6 +473,29 @@ impl From<UtxoCoinFields> for UtxoArc {
     fn from(coin: UtxoCoinFields) -> UtxoArc { UtxoArc(Arc::new(coin)) }
 }
 
+impl From<Arc<UtxoCoinFields>> for UtxoArc {
+    fn from(arc: Arc<UtxoCoinFields>) -> UtxoArc { UtxoArc(arc) }
+}
+
+impl UtxoArc {
+    /// Returns weak reference to the inner UtxoCoinFields
+    fn downgrade(&self) -> UtxoWeak {
+        let weak = Arc::downgrade(&self.0);
+        UtxoWeak(weak)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UtxoWeak(Weak<UtxoCoinFields>);
+
+impl From<Weak<UtxoCoinFields>> for UtxoWeak {
+    fn from(weak: Weak<UtxoCoinFields>) -> Self { UtxoWeak(weak) }
+}
+
+impl UtxoWeak {
+    fn upgrade(&self) -> Option<UtxoArc> { self.0.upgrade().map(UtxoArc::from) }
+}
+
 // We can use a shared UTXO lock for all UTXO coins at 1 time.
 // It's highly likely that we won't experience any issues with it as we won't need to send "a lot" of transactions concurrently.
 lazy_static! {
@@ -555,7 +589,6 @@ pub fn zcash_params_path() -> PathBuf {
 }
 
 #[cfg(feature = "native")]
-#[cfg(feature = "native")]
 pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     // komodo/util.cpp/GetDefaultDataDir
     let mut data_dir = match dirs::home_dir() {
@@ -596,7 +629,7 @@ pub fn coin_daemon_data_dir(_name: &str, _is_asset_chain: bool) -> PathBuf { uni
 
 #[cfg(feature = "native")]
 /// Returns a path to the native coin wallet configuration.
-/// (This path is used in `LP_userpassfp` to read the wallet credentials).
+/// (This path is used in to read the wallet credentials).
 /// cf. https://github.com/artemii235/SuperNET/issues/346
 fn confpath(coins_en: &Json) -> Result<PathBuf, String> {
     // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
@@ -640,8 +673,22 @@ fn confpath(_coins_en: &Json) -> Result<PathBuf, String> { unimplemented!() }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
 #[cfg(feature = "native")]
-fn read_native_mode_conf(filename: &dyn AsRef<Path>) -> Result<(Option<u16>, String, String), String> {
+fn read_native_mode_conf(
+    filename: &dyn AsRef<Path>,
+    network: &BlockchainNetwork,
+) -> Result<(Option<u16>, String, String), String> {
     use ini::Ini;
+
+    fn read_property<'a>(conf: &'a ini::Ini, network: &BlockchainNetwork, property: &str) -> Option<&'a String> {
+        let subsection = match network {
+            BlockchainNetwork::Mainnet => None,
+            BlockchainNetwork::Testnet => conf.section(Some("test")),
+            BlockchainNetwork::Regtest => conf.section(Some("regtest")),
+        };
+        subsection
+            .and_then(|props| props.get(property))
+            .or_else(|| conf.general_section().get(property))
+    }
 
     let conf: Ini = match Ini::load_from_file(&filename) {
         Ok(ini) => ini,
@@ -653,16 +700,15 @@ fn read_native_mode_conf(filename: &dyn AsRef<Path>) -> Result<(Option<u16>, Str
             )
         },
     };
-    let section = conf.general_section();
-    let rpc_port = match section.get("rpcport") {
+    let rpc_port = match read_property(&conf, network, "rpcport") {
         Some(port) => port.parse::<u16>().ok(),
         None => None,
     };
-    let rpc_user = try_s!(section.get("rpcuser").ok_or(ERRL!(
+    let rpc_user = try_s!(read_property(&conf, network, "rpcuser").ok_or(ERRL!(
         "Conf file {} doesn't have the rpcuser key",
         filename.as_ref().display()
     )));
-    let rpc_password = try_s!(section.get("rpcpassword").ok_or(ERRL!(
+    let rpc_password = try_s!(read_property(&conf, network, "rpcpassword").ok_or(ERRL!(
         "Conf file {} doesn't have the rpcpassword key",
         filename.as_ref().display()
     )));
@@ -670,7 +716,10 @@ fn read_native_mode_conf(filename: &dyn AsRef<Path>) -> Result<(Option<u16>, Str
 }
 
 #[cfg(not(feature = "native"))]
-fn read_native_mode_conf(_filename: &dyn AsRef<Path>) -> Result<(Option<u16>, String, String), String> {
+fn read_native_mode_conf(
+    _filename: &dyn AsRef<Path>,
+    network: &BlockchainNetwork,
+) -> Result<(Option<u16>, String, String), String> {
     unimplemented!()
 }
 
@@ -697,257 +746,419 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
     }
 }
 
-pub async fn utxo_arc_from_conf_and_request(
-    ctx: &MmArc,
-    ticker: &str,
-    conf: &Json,
-    req: &Json,
-    priv_key: &[u8],
-    dust_amount: u64,
-) -> Result<UtxoArc, String> {
-    utxo_fields_from_conf_and_request(ctx, ticker, conf, req, priv_key, dust_amount)
-        .await
-        .map(|coin| UtxoArc(Arc::new(coin)))
-}
+#[async_trait]
+pub trait UtxoCoinBuilder {
+    type ResultCoin;
 
-pub async fn utxo_fields_from_conf_and_request(
-    ctx: &MmArc,
-    ticker: &str,
-    conf: &Json,
-    req: &Json,
-    priv_key: &[u8],
-    dust_amount: u64,
-) -> Result<UtxoCoinFields, String> {
-    let checksum_type = if ticker == "GRS" {
-        ChecksumType::DGROESTL512
-    } else if ticker == "SMART" {
-        ChecksumType::KECCAK256
-    } else {
-        ChecksumType::DSHA256
-    };
+    async fn build(self) -> Result<Self::ResultCoin, String>;
 
-    let pub_addr_prefix = conf["pubtype"].as_u64().unwrap_or(if ticker == "BTC" { 0 } else { 60 }) as u8;
-    let wif_prefix = conf["wiftype"]
-        .as_u64()
-        .unwrap_or(if ticker == "BTC" { 128 } else { 188 }) as u8;
+    fn ctx(&self) -> &MmArc;
 
-    let private = Private {
-        prefix: wif_prefix,
-        secret: H256::from(priv_key),
-        compressed: true,
-        checksum_type,
-    };
+    fn conf(&self) -> &Json;
 
-    let key_pair = try_s!(KeyPair::from_private(private));
-    let my_address = Address {
-        prefix: pub_addr_prefix,
-        t_addr_prefix: conf["taddr"].as_u64().unwrap_or(0) as u8,
-        hash: key_pair.public().address_hash(),
-        checksum_type,
-    };
+    fn req(&self) -> &Json;
 
-    let address_format = if conf["address_format"].is_null() {
-        UtxoAddressFormat::Standard
-    } else {
-        try_s!(json::from_value(conf["address_format"].clone()))
-    };
+    fn ticker(&self) -> &str;
 
-    let decimals = conf["decimals"].as_u64().unwrap_or(8) as u8;
+    fn priv_key(&self) -> &[u8];
 
-    let rpc_client = match req["method"].as_str() {
-        Some("enable") => {
-            if cfg!(feature = "native") {
-                let native_conf_path = try_s!(confpath(conf));
-                let (rpc_port, rpc_user, rpc_password) = try_s!(read_native_mode_conf(&native_conf_path));
-                let auth_str = fomat!((rpc_user)":"(rpc_password));
-                let rpc_port = match rpc_port {
-                    Some(p) => p,
-                    None => try_s!(conf["rpcport"].as_u64().ok_or(ERRL!(
-                        "Rpc port is not set neither in `coins` file nor in native daemon config"
-                    ))) as u16,
-                };
-                let event_handlers =
-                    vec![
-                        CoinTransportMetrics::new(ctx.metrics.weak(), ticker.to_owned(), RpcClientType::Native)
-                            .into_shared(),
-                    ];
-                let client = Arc::new(NativeClientImpl {
-                    coin_ticker: ticker.to_string(),
-                    uri: fomat!("http://127.0.0.1:"(rpc_port)),
-                    auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
-                    event_handlers,
-                    request_id: 0u64.into(),
-                    list_unspent_in_progress: false.into(),
-                    list_unspent_subs: AsyncMutex::new(Vec::new()),
-                    coin_decimals: decimals,
-                });
+    async fn build_utxo_fields(&self) -> Result<UtxoCoinFields, String> {
+        let checksum_type = self.checksum_type();
+        let pub_addr_prefix = self.pub_addr_prefix();
+        let p2sh_addr_prefix = self.p2sh_address_prefix();
+        let pub_t_addr_prefix = self.pub_t_address_prefix();
+        let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
 
-                UtxoRpcClientEnum::Native(NativeClient(client))
-            } else {
-                return ERR!("Native UTXO mode is not available in non-native build");
-            }
-        },
-        Some("electrum") => {
-            let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
-            let event_handlers = vec![
-                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.to_owned(), RpcClientType::Electrum).into_shared(),
-                ElectrumProtoVerifier { on_connect_tx }.into_shared(),
-            ];
+        let wif_prefix = self.wif_prefix();
+        let private = Private {
+            prefix: wif_prefix,
+            secret: H256::from(self.priv_key()),
+            compressed: true,
+            checksum_type,
+        };
+        let key_pair = try_s!(KeyPair::from_private(private));
+        let my_address = Address {
+            prefix: pub_addr_prefix,
+            t_addr_prefix: pub_t_addr_prefix,
+            hash: key_pair.public().address_hash(),
+            checksum_type,
+        };
+        let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let address_format = try_s!(self.address_format());
+        let rpc_client = try_s!(self.rpc_client().await);
+        let decimals = try_s!(self.decimals(&rpc_client).await);
 
-            let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(req["servers"].clone()));
-            let mut rng = small_rng();
-            servers.as_mut_slice().shuffle(&mut rng);
-            let client = ElectrumClientImpl::new(ticker.to_string(), event_handlers);
-            for server in servers.iter() {
-                match client.add_server(server).await {
-                    Ok(_) => (),
-                    Err(e) => log!("Error " (e) " connecting to " [server] ". Address won't be used"),
-                };
-            }
+        let asset_chain = self.asset_chain();
+        let tx_version = self.tx_version();
+        let overwintered = self.overwintered();
+        let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
+        let version_group_id = try_s!(self.version_group_id(tx_version, overwintered));
+        let consensus_branch_id = try_s!(self.consensus_branch_id(tx_version));
+        let signature_version = self.signature_version();
+        let fork_id = self.fork_id();
 
-            let mut attempts = 0i32;
-            while !client.is_connected().await {
-                if attempts >= 10 {
-                    return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
-                }
+        // should be sufficient to detect zcash by overwintered flag
+        let zcash = overwintered;
+        let initial_history_state = self.initial_history_state();
 
-                Timer::sleep(0.5).await;
-                attempts += 1;
-            }
+        let required_confirmations = self.required_confirmations();
+        let requires_notarization = self.requires_notarization();
 
-            let client = Arc::new(client);
+        let mature_confirmations = self.mature_confirmations();
+        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
 
-            let weak_client = Arc::downgrade(&client);
-            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), MM_VERSION);
-            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+        let is_pos = self.is_pos();
+        let segwit = self.segwit();
+        let force_min_relay_fee = self.conf()["force_min_relay_fee"].as_bool().unwrap_or(false);
+        let mtp_block_count = self.mtp_block_count();
+        let estimate_fee_mode = self.estimate_fee_mode();
+        let dust_amount = self.dust_amount();
 
-            try_s!(wait_for_protocol_version_checked(&client).await);
+        let _my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let coin = UtxoCoinFields {
+            ticker: self.ticker().to_owned(),
+            decimals,
+            rpc_client,
+            key_pair,
+            is_pos,
+            requires_notarization,
+            overwintered,
+            pub_addr_prefix,
+            p2sh_addr_prefix,
+            pub_t_addr_prefix,
+            p2sh_t_addr_prefix,
+            segwit,
+            wif_prefix,
+            tx_version,
+            my_address,
+            address_format,
+            asset_chain,
+            tx_fee,
+            version_group_id,
+            consensus_branch_id,
+            zcash,
+            checksum_type,
+            signature_version,
+            fork_id,
+            history_sync_state: Mutex::new(initial_history_state),
+            required_confirmations: required_confirmations.into(),
+            force_min_relay_fee,
+            mtp_block_count,
+            estimate_fee_mode,
+            dust_amount,
+            mature_confirmations,
+            tx_cache_directory,
+            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
+        };
+        Ok(coin)
+    }
 
-            let weak_client = Arc::downgrade(&client);
-            spawn_electrum_ping_loop(weak_client, servers);
+    fn checksum_type(&self) -> ChecksumType {
+        match self.ticker() {
+            "GRS" => ChecksumType::DGROESTL512,
+            "SMART" => ChecksumType::KECCAK256,
+            _ => ChecksumType::DSHA256,
+        }
+    }
 
-            UtxoRpcClientEnum::Electrum(ElectrumClient(client))
-        },
-        _ => return ERR!("utxo_arc_from_conf_and_request should be called only by enable or electrum requests"),
-    };
-    let asset_chain = conf["asset"].as_str().is_some();
-    let tx_version = conf["txversion"].as_i64().unwrap_or(1) as i32;
-    let overwintered = conf["overwintered"].as_u64().unwrap_or(0) == 1;
-
-    let tx_fee = match conf["txfee"].as_u64() {
-        None => TxFee::Fixed(1000),
-        Some(0) => {
-            let fee_method = match &rpc_client {
-                UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
-                UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await),
-            };
-            TxFee::Dynamic(fee_method)
-        },
-        Some(fee) => TxFee::Fixed(fee),
-    };
-    let version_group_id = match conf["version_group_id"].as_str() {
-        Some(mut s) => {
-            if s.starts_with("0x") {
-                s = &s[2..];
-            }
-            let bytes = try_s!(hex::decode(s));
-            u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
-        },
-        None => {
-            if tx_version == 3 && overwintered {
-                0x03c4_8270
-            } else if tx_version == 4 && overwintered {
-                0x892f_2085
-            } else {
-                0
-            }
-        },
-    };
-
-    let consensus_branch_id = match conf["consensus_branch_id"].as_str() {
-        Some(mut s) => {
-            if s.starts_with("0x") {
-                s = &s[2..];
-            }
-            let bytes = try_s!(hex::decode(s));
-            u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
-        },
-        None => match tx_version {
-            3 => 0x5ba8_1b19,
-            4 => 0x76b8_09bb,
-            _ => 0,
-        },
-    };
-
-    let (signature_version, fork_id) = if ticker == "BCH" {
-        (SignatureVersion::ForkId, 0x40)
-    } else {
-        (SignatureVersion::Base, 0)
-    };
-    // should be sufficient to detect zcash by overwintered flag
-    let zcash = overwintered;
-
-    let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
-        HistorySyncState::NotStarted
-    } else {
-        HistorySyncState::NotEnabled
-    };
-
-    // param from request should override the config
-    let required_confirmations = req["required_confirmations"]
-        .as_u64()
-        .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1));
-    let requires_notarization = req["requires_notarization"]
-        .as_bool()
-        .unwrap_or_else(|| conf["requires_notarization"].as_bool().unwrap_or(false))
-        .into();
-
-    let mature_confirmations = conf["mature_confirmations"]
-        .as_u64()
-        .map(|x| x as u32)
-        .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT);
-    let tx_cache_directory = Some(ctx.dbdir().join("TX_CACHE"));
-
-    let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
-
-    let coin = UtxoCoinFields {
-        ticker: ticker.into(),
-        decimals,
-        rpc_client,
-        key_pair,
-        is_pos: conf["isPoS"].as_u64() == Some(1),
-        requires_notarization,
-        overwintered,
-        pub_addr_prefix,
-        p2sh_addr_prefix: conf["p2shtype"]
+    fn pub_addr_prefix(&self) -> u8 {
+        let pubtype = self.conf()["pubtype"]
             .as_u64()
-            .unwrap_or(if ticker == "BTC" { 5 } else { 85 }) as u8,
-        pub_t_addr_prefix: conf["taddr"].as_u64().unwrap_or(0) as u8,
-        p2sh_t_addr_prefix: conf["taddr"].as_u64().unwrap_or(0) as u8,
-        segwit: conf["segwit"].as_bool().unwrap_or(false),
-        wif_prefix,
-        tx_version,
-        my_address,
-        address_format,
-        asset_chain,
-        tx_fee,
-        version_group_id,
-        consensus_branch_id,
-        zcash,
-        checksum_type,
-        signature_version,
-        fork_id,
-        history_sync_state: Mutex::new(initial_history_state),
-        required_confirmations: required_confirmations.into(),
-        force_min_relay_fee: conf["force_min_relay_fee"].as_bool().unwrap_or(false),
-        mtp_block_count: json::from_value(conf["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT),
-        estimate_fee_mode: json::from_value(conf["estimate_fee_mode"].clone()).unwrap_or(None),
-        dust_amount,
-        mature_confirmations,
-        tx_cache_directory,
-        recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
-    };
-    Ok(coin)
+            .unwrap_or(if self.ticker() == "BTC" { 0 } else { 60 });
+        pubtype as u8
+    }
+
+    fn p2sh_address_prefix(&self) -> u8 {
+        self.conf()["p2shtype"]
+            .as_u64()
+            .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
+    }
+
+    fn pub_t_address_prefix(&self) -> u8 { self.conf()["taddr"].as_u64().unwrap_or(0) as u8 }
+
+    fn p2sh_t_address_prefix(&self) -> u8 { self.conf()["taddr"].as_u64().unwrap_or(0) as u8 }
+
+    fn wif_prefix(&self) -> u8 {
+        let wiftype = self.conf()["wiftype"]
+            .as_u64()
+            .unwrap_or(if self.ticker() == "BTC" { 128 } else { 188 });
+        wiftype as u8
+    }
+
+    fn address_format(&self) -> Result<UtxoAddressFormat, String> {
+        let conf = self.conf();
+        if conf["address_format"].is_null() {
+            Ok(UtxoAddressFormat::Standard)
+        } else {
+            json::from_value(self.conf()["address_format"].clone()).map_err(|e| ERRL!("{}", e))
+        }
+    }
+
+    async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> Result<u8, String> {
+        Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
+    }
+
+    fn asset_chain(&self) -> bool { self.conf()["asset"].as_str().is_some() }
+
+    fn tx_version(&self) -> i32 { self.conf()["txversion"].as_i64().unwrap_or(1) as i32 }
+
+    fn overwintered(&self) -> bool { self.conf()["overwintered"].as_u64().unwrap_or(0) == 1 }
+
+    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, String> {
+        let tx_fee = match self.conf()["txfee"].as_u64() {
+            None => TxFee::Fixed(1000),
+            Some(0) => {
+                let fee_method = match &rpc_client {
+                    UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
+                    UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await),
+                };
+                TxFee::Dynamic(fee_method)
+            },
+            Some(fee) => TxFee::Fixed(fee),
+        };
+        Ok(tx_fee)
+    }
+
+    fn version_group_id(&self, tx_version: i32, overwintered: bool) -> Result<u32, String> {
+        let version_group_id = match self.conf()["version_group_id"].as_str() {
+            Some(mut s) => {
+                if s.starts_with("0x") {
+                    s = &s[2..];
+                }
+                let bytes = try_s!(hex::decode(s));
+                u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
+            },
+            None => {
+                if tx_version == 3 && overwintered {
+                    0x03c4_8270
+                } else if tx_version == 4 && overwintered {
+                    0x892f_2085
+                } else {
+                    0
+                }
+            },
+        };
+        Ok(version_group_id)
+    }
+
+    fn consensus_branch_id(&self, tx_version: i32) -> Result<u32, String> {
+        let consensus_branch_id = match self.conf()["consensus_branch_id"].as_str() {
+            Some(mut s) => {
+                if s.starts_with("0x") {
+                    s = &s[2..];
+                }
+                let bytes = try_s!(hex::decode(s));
+                u32::from_be_bytes(try_s!(bytes.as_slice().try_into()))
+            },
+            None => match tx_version {
+                3 => 0x5ba8_1b19,
+                4 => 0x76b8_09bb,
+                _ => 0,
+            },
+        };
+        Ok(consensus_branch_id)
+    }
+
+    fn signature_version(&self) -> SignatureVersion {
+        if self.ticker() == "BCH" {
+            SignatureVersion::ForkId
+        } else {
+            SignatureVersion::Base
+        }
+    }
+
+    fn fork_id(&self) -> u32 {
+        if self.ticker() == "BCH" {
+            0x40
+        } else {
+            0
+        }
+    }
+
+    fn required_confirmations(&self) -> u64 {
+        // param from request should override the config
+        self.req()["required_confirmations"]
+            .as_u64()
+            .unwrap_or_else(|| self.conf()["required_confirmations"].as_u64().unwrap_or(1))
+    }
+
+    fn requires_notarization(&self) -> AtomicBool {
+        self.req()["requires_notarization"]
+            .as_bool()
+            .unwrap_or_else(|| self.conf()["requires_notarization"].as_bool().unwrap_or(false))
+            .into()
+    }
+
+    fn mature_confirmations(&self) -> u32 {
+        self.conf()["mature_confirmations"]
+            .as_u64()
+            .map(|x| x as u32)
+            .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT)
+    }
+
+    fn is_pos(&self) -> bool { self.conf()["isPoS"].as_u64() == Some(1) }
+
+    fn segwit(&self) -> bool { self.conf()["segwit"].as_bool().unwrap_or(false) }
+
+    fn mtp_block_count(&self) -> NonZeroU64 {
+        json::from_value(self.conf()["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT)
+    }
+
+    fn estimate_fee_mode(&self) -> Option<EstimateFeeMode> {
+        json::from_value(self.conf()["estimate_fee_mode"].clone()).unwrap_or(None)
+    }
+
+    fn dust_amount(&self) -> u64 { UTXO_DUST_AMOUNT }
+
+    fn network(&self) -> Result<BlockchainNetwork, String> {
+        let conf = self.conf();
+        if !conf["network"].is_null() {
+            return json::from_value(conf["network"].clone()).map_err(|e| ERRL!("{}", e));
+        }
+        Ok(BlockchainNetwork::Mainnet)
+    }
+
+    fn initial_history_state(&self) -> HistorySyncState {
+        if self.req()["tx_history"].as_bool().unwrap_or(false) {
+            HistorySyncState::NotStarted
+        } else {
+            HistorySyncState::NotEnabled
+        }
+    }
+
+    async fn rpc_client(&self) -> Result<UtxoRpcClientEnum, String> {
+        match self.req()["method"].as_str() {
+            Some("enable") => {
+                if cfg!(feature = "native") {
+                    let native = try_s!(self.native_client());
+                    Ok(UtxoRpcClientEnum::Native(native))
+                } else {
+                    return ERR!("Native UTXO mode is not available in non-native build");
+                }
+            },
+            Some("electrum") => {
+                let electrum = try_s!(self.electrum_client().await);
+                Ok(UtxoRpcClientEnum::Electrum(electrum))
+            },
+            _ => ERR!("Expected enable or electrum request"),
+        }
+    }
+
+    async fn electrum_client(&self) -> Result<ElectrumClient, String> {
+        let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
+        let ticker = self.ticker().to_owned();
+        let ctx = self.ctx();
+        let event_handlers = vec![
+            CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
+            ElectrumProtoVerifier { on_connect_tx }.into_shared(),
+        ];
+
+        let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(self.req()["servers"].clone()));
+        let mut rng = small_rng();
+        servers.as_mut_slice().shuffle(&mut rng);
+        let client = ElectrumClientImpl::new(ticker, event_handlers);
+        for server in servers.iter() {
+            match client.add_server(server).await {
+                Ok(_) => (),
+                Err(e) => log!("Error " (e) " connecting to " [server] ". Address won't be used"),
+            };
+        }
+
+        let mut attempts = 0i32;
+        while !client.is_connected().await {
+            if attempts >= 10 {
+                return ERR!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
+            }
+
+            Timer::sleep(0.5).await;
+            attempts += 1;
+        }
+
+        let client = Arc::new(client);
+
+        let weak_client = Arc::downgrade(&client);
+        let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), MM_VERSION);
+        spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+
+        try_s!(wait_for_protocol_version_checked(&client).await);
+
+        let weak_client = Arc::downgrade(&client);
+        spawn_electrum_ping_loop(weak_client, servers);
+
+        Ok(ElectrumClient(client))
+    }
+
+    #[cfg(feature = "native")]
+    fn native_client(&self) -> Result<NativeClient, String> {
+        let native_conf_path = try_s!(self.confpath());
+        let network = try_s!(self.network());
+        let (rpc_port, rpc_user, rpc_password) = try_s!(read_native_mode_conf(&native_conf_path, &network));
+        let auth_str = fomat!((rpc_user)":"(rpc_password));
+        let rpc_port = match rpc_port {
+            Some(p) => p,
+            None => try_s!(self.conf()["rpcport"].as_u64().ok_or(ERRL!(
+                "Rpc port is not set neither in `coins` file nor in native daemon config"
+            ))) as u16,
+        };
+
+        let ctx = self.ctx();
+        let coin_ticker = self.ticker().to_owned();
+        let event_handlers =
+            vec![
+                CoinTransportMetrics::new(ctx.metrics.weak(), coin_ticker.clone(), RpcClientType::Native).into_shared(),
+            ];
+        let client = Arc::new(NativeClientImpl {
+            coin_ticker,
+            uri: fomat!("http://127.0.0.1:"(rpc_port)),
+            auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
+            event_handlers,
+            request_id: 0u64.into(),
+            list_unspent_in_progress: false.into(),
+            list_unspent_subs: AsyncMutex::new(Vec::new()),
+        });
+
+        Ok(NativeClient(client))
+    }
+
+    #[cfg(feature = "native")]
+    fn confpath(&self) -> Result<PathBuf, String> {
+        let conf = self.conf();
+        // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
+        // "USERHOME/" prefix should be replaced with the user's home folder.
+        let declared_confpath = match self.conf()["confpath"].as_str() {
+            Some(path) if !path.is_empty() => path.trim(),
+            _ => {
+                let (name, is_asset_chain) = {
+                    match conf["asset"].as_str() {
+                        Some(a) => (a, true),
+                        None => (
+                            try_s!(conf["name"].as_str().ok_or("'name' field is not found in config")),
+                            false,
+                        ),
+                    }
+                };
+                let data_dir = coin_daemon_data_dir(name, is_asset_chain);
+                let confname = format!("{}.conf", name);
+
+                return Ok(data_dir.join(&confname[..]));
+            },
+        };
+
+        let (confpath, rel_to_home) = match declared_confpath.strip_prefix("~/") {
+            Some(stripped) => (stripped, true),
+            None => match declared_confpath.strip_prefix("USERHOME/") {
+                Some(stripped) => (stripped, true),
+                None => (declared_confpath, false),
+            },
+        };
+
+        if rel_to_home {
+            let home = try_s!(home_dir().ok_or("Can not detect the user home directory"));
+            Ok(home.join(confpath))
+        } else {
+            Ok(confpath.into())
+        }
+    }
 }
 
 /// Ping the electrum servers every 30 seconds to prevent them from disconnecting us.
@@ -1183,8 +1394,9 @@ where
         return ERR!("rewards info can be obtained for KMD only");
     }
 
-    let rpc_client = &coin.as_ref().rpc_client;
-    let mut unspents = try_s!(rpc_client.list_unspent(&coin.as_ref().my_address).compat().await);
+    let utxo = coin.as_ref();
+    let rpc_client = &utxo.rpc_client;
+    let mut unspents = try_s!(rpc_client.list_unspent(&utxo.my_address, utxo.decimals).compat().await);
     // list_unspent_ordered() returns ordered from lowest to highest by value unspent outputs.
     // reverse it to reorder from highest to lowest outputs.
     unspents.reverse();
@@ -1288,15 +1500,23 @@ async fn send_outputs_from_my_address_impl<T>(coin: T, outputs: Vec<TransactionO
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
-    let before_list_unspent_ordered = now_ms();
-    let (unspents, mut recently_sent_txs) = try_s!(coin.list_unspent_ordered(&coin.as_ref().my_address).await);
-    let after_list_unspent_ordered = now_ms();
-    log!("list_unspent_ordered took "(
-        after_list_unspent_ordered - before_list_unspent_ordered
-    ));
+    let (unspents, recently_sent_txs) = try_s!(coin.list_unspent_ordered(&coin.as_ref().my_address).await);
+    generate_and_send_tx(&coin, unspents, outputs, FeePolicy::SendExact, recently_sent_txs).await
+}
 
+/// Generates and sends tx using unspents and outputs adding new record to the recently_spent in case of success
+async fn generate_and_send_tx<T>(
+    coin: &T,
+    unspents: Vec<UnspentInfo>,
+    outputs: Vec<TransactionOutput>,
+    fee_policy: FeePolicy,
+    mut recently_spent: AsyncMutexGuard<'_, RecentlySpentOutPoints>,
+) -> Result<UtxoTx, String>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
     let (unsigned, _) = try_s!(
-        coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None, None)
+        coin.generate_transaction(unspents, outputs, fee_policy, None, None)
             .await
     );
 
@@ -1319,7 +1539,6 @@ where
         coin.as_ref().fork_id
     ));
 
-    let before_send_transaction = now_ms();
     try_s!(
         coin.as_ref()
             .rpc_client
@@ -1328,15 +1547,8 @@ where
             .compat()
             .await
     );
-    let after_send_transaction = now_ms();
-    log!("send_transaction took "(
-        after_send_transaction - before_send_transaction
-    ));
 
-    let before = now_ms();
-    recently_sent_txs.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
-    let after = now_ms();
-    log!("add_spent took "(after - before));
+    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
 
     Ok(signed)
 }

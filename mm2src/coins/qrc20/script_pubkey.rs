@@ -245,7 +245,7 @@ mod tests {
         let script: Script = "5403a02526012844a9059cbb0000000000000000000000000240b898276ad2cc0d2fe6f527e8e31104e7fde3000000000000000000000000000000000000000000000000000000003b9aca0014d362e096e873eb7907e205fadc6175c6fec7bc44c2".into();
 
         let to_addr: UtxoAddress = "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into();
-        let to_addr = qrc20_addr_from_utxo_addr(to_addr);
+        let to_addr = qtum::contract_addr_from_utxo_addr(to_addr);
         let amount: U256 = 1000000000.into();
         let function = eth::ERC20_CONTRACT.function("transfer").unwrap();
         let expected = function
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_extract_contract_addr_from_script() {
         let script: Script = "5403a02526012844a9059cbb0000000000000000000000000240b898276ad2cc0d2fe6f527e8e31104e7fde3000000000000000000000000000000000000000000000000000000003b9aca0014d362e096e873eb7907e205fadc6175c6fec7bc44c2".into();
-        let expected = qrc20_addr_from_str("0xd362e096e873eb7907e205fadc6175c6fec7bc44").unwrap();
+        let expected = qtum::contract_addr_from_str("0xd362e096e873eb7907e205fadc6175c6fec7bc44").unwrap();
 
         let actual = unwrap!(extract_contract_addr_from_script(&script));
         assert_eq!(actual, expected);

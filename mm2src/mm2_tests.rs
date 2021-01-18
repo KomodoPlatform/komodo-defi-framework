@@ -5,9 +5,10 @@ use bigdecimal::BigDecimal;
 #[cfg(not(feature = "native"))] use common::call_back;
 use common::executor::Timer;
 #[cfg(feature = "native")] use common::for_tests::mm_dump;
-use common::for_tests::{enable_electrum, enable_native, from_env_file, get_passphrase, mm_spat, LocalStart,
-                        MarketMakerIt, RaiiDump};
-use common::for_tests::{enable_qrc20, find_metrics_in_json};
+use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_electrum,
+                        enable_native, enable_qrc20, find_metrics_in_json, from_env_file, get_passphrase, mm_spat,
+                        LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                        TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::Fraction;
 use common::privkey::key_pair_from_seed;
@@ -725,91 +726,6 @@ fn test_rpc_password_from_json_no_userpass() {
     );
 }
 
-/// Helper function requesting my swap status and checking it's events
-async fn check_my_swap_status(
-    mm: &MarketMakerIt,
-    uuid: &str,
-    expected_success_events: &Vec<&str>,
-    expected_error_events: &Vec<&str>,
-    maker_amount: BigDecimal,
-    taker_amount: BigDecimal,
-) {
-    let response = unwrap!(
-        mm.rpc(json! ({
-            "userpass": mm.userpass,
-            "method": "my_swap_status",
-            "params": {
-                "uuid": uuid,
-            }
-        }))
-        .await
-    );
-    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    let status_response: Json = unwrap!(json::from_str(&response.1));
-    let success_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["success_events"].clone()));
-    assert_eq!(expected_success_events, &success_events);
-    let error_events: Vec<String> = unwrap!(json::from_value(status_response["result"]["error_events"].clone()));
-    assert_eq!(expected_error_events, &error_events);
-
-    let events_array = unwrap!(status_response["result"]["events"].as_array());
-    let actual_maker_amount = unwrap!(json::from_value(
-        events_array[0]["event"]["data"]["maker_amount"].clone()
-    ));
-    assert_eq!(maker_amount, actual_maker_amount);
-    let actual_taker_amount = unwrap!(json::from_value(
-        events_array[0]["event"]["data"]["taker_amount"].clone()
-    ));
-    assert_eq!(taker_amount, actual_taker_amount);
-    let actual_events = events_array.iter().map(|item| unwrap!(item["event"]["type"].as_str()));
-    let actual_events: Vec<&str> = actual_events.collect();
-    assert_eq!(expected_success_events, &actual_events);
-}
-
-async fn check_stats_swap_status(
-    mm: &MarketMakerIt,
-    uuid: &str,
-    maker_expected_events: &Vec<&str>,
-    taker_expected_events: &Vec<&str>,
-) {
-    let response = unwrap!(
-        mm.rpc(json! ({
-            "method": "stats_swap_status",
-            "params": {
-                "uuid": uuid,
-            }
-        }))
-        .await
-    );
-    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    let status_response: Json = unwrap!(json::from_str(&response.1));
-    let maker_events_array = unwrap!(status_response["result"]["maker"]["events"].as_array());
-    let taker_events_array = unwrap!(status_response["result"]["taker"]["events"].as_array());
-    let maker_actual_events = maker_events_array
-        .iter()
-        .map(|item| unwrap!(item["event"]["type"].as_str()));
-    let maker_actual_events: Vec<&str> = maker_actual_events.collect();
-    let taker_actual_events = taker_events_array
-        .iter()
-        .map(|item| unwrap!(item["event"]["type"].as_str()));
-    let taker_actual_events: Vec<&str> = taker_actual_events.collect();
-    assert_eq!(maker_expected_events, &maker_actual_events);
-    assert_eq!(taker_expected_events, &taker_actual_events);
-}
-
-async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
-    let response = unwrap!(
-        mm.rpc(json! ({
-            "method": "my_recent_swaps",
-            "userpass": mm.userpass,
-        }))
-        .await
-    );
-    assert!(response.0.is_success(), "!status of my_recent_swaps {}", response.1);
-    let swaps_response: Json = unwrap!(json::from_str(&response.1));
-    let swaps: &Vec<Json> = unwrap!(swaps_response["result"]["swaps"].as_array());
-    assert_eq!(expected_len, swaps.len());
-}
-
 /// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
 async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
@@ -951,65 +867,6 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         );
     }
 
-    let maker_success_events = vec![
-        "Started",
-        "Negotiated",
-        "TakerFeeValidated",
-        "MakerPaymentSent",
-        "TakerPaymentReceived",
-        "TakerPaymentWaitConfirmStarted",
-        "TakerPaymentValidatedAndConfirmed",
-        "TakerPaymentSpent",
-        "TakerPaymentSpendConfirmStarted",
-        "TakerPaymentSpendConfirmed",
-        "Finished",
-    ];
-
-    let maker_error_events = vec![
-        "StartFailed",
-        "NegotiateFailed",
-        "TakerFeeValidateFailed",
-        "MakerPaymentTransactionFailed",
-        "MakerPaymentDataSendFailed",
-        "MakerPaymentWaitConfirmFailed",
-        "TakerPaymentValidateFailed",
-        "TakerPaymentWaitConfirmFailed",
-        "TakerPaymentSpendFailed",
-        "TakerPaymentSpendConfirmFailed",
-        "MakerPaymentWaitRefundStarted",
-        "MakerPaymentRefunded",
-        "MakerPaymentRefundFailed",
-    ];
-
-    let taker_success_events = vec![
-        "Started",
-        "Negotiated",
-        "TakerFeeSent",
-        "MakerPaymentReceived",
-        "MakerPaymentWaitConfirmStarted",
-        "MakerPaymentValidatedAndConfirmed",
-        "TakerPaymentSent",
-        "TakerPaymentSpent",
-        "MakerPaymentSpent",
-        "Finished",
-    ];
-
-    let taker_error_events = vec![
-        "StartFailed",
-        "NegotiateFailed",
-        "TakerFeeSendFailed",
-        "MakerPaymentValidateFailed",
-        "MakerPaymentWaitConfirmFailed",
-        "TakerPaymentTransactionFailed",
-        "TakerPaymentWaitConfirmFailed",
-        "TakerPaymentDataSendFailed",
-        "TakerPaymentWaitForSpendFailed",
-        "MakerPaymentSpendFailed",
-        "TakerPaymentWaitRefundStarted",
-        "TakerPaymentRefunded",
-        "TakerPaymentRefundFailed",
-    ];
-
     for uuid in uuids.iter() {
         unwrap!(
             mm_bob
@@ -1032,8 +889,8 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         check_my_swap_status(
             &mm_alice,
             &uuid,
-            &taker_success_events,
-            &taker_error_events,
+            &TAKER_SUCCESS_EVENTS,
+            &TAKER_ERROR_EVENTS,
             "0.1".parse().unwrap(),
             "0.1".parse().unwrap(),
         )
@@ -1043,8 +900,8 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         check_my_swap_status(
             &mm_bob,
             &uuid,
-            &maker_success_events,
-            &maker_error_events,
+            &MAKER_SUCCESS_EVENTS,
+            &MAKER_ERROR_EVENTS,
             "0.1".parse().unwrap(),
             "0.1".parse().unwrap(),
         )
@@ -1056,10 +913,10 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
 
     for uuid in uuids.iter() {
         log!("Checking alice status..");
-        check_stats_swap_status(&mm_alice, &uuid, &maker_success_events, &taker_success_events).await;
+        check_stats_swap_status(&mm_alice, &uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
 
         log!("Checking bob status..");
-        check_stats_swap_status(&mm_bob, &uuid, &maker_success_events, &taker_success_events).await;
+        check_stats_swap_status(&mm_bob, &uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
     }
 
     log!("Checking alice recent swaps..");
@@ -3750,7 +3607,7 @@ fn test_convert_qrc20_address() {
         &mm,
         "QRC20",
         &["95.217.83.126:10001"],
-        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
 
     // test wallet to contract
@@ -4043,7 +3900,7 @@ fn qrc20_activate_electrum() {
         &mm,
         "QRC20",
         &["95.217.83.126:10001"],
-        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
         electrum_json["address"].as_str(),
@@ -4088,7 +3945,7 @@ fn test_qrc20_withdraw() {
         &mm,
         "QRC20",
         &["95.217.83.126:10001"],
-        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
         electrum_json["address"].as_str(),
@@ -4163,7 +4020,7 @@ fn test_qrc20_withdraw_error() {
         &mm,
         "QRC20",
         &["95.217.83.126:10001"],
-        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     let balance = electrum_json["balance"].as_str().unwrap();
     assert_eq!(balance, "10");

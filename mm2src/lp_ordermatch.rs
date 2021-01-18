@@ -18,8 +18,6 @@
 //  marketmaker
 //
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
-// TODO remove after refactoring
-#![allow(dead_code, unused_variables)]
 
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -30,7 +28,7 @@ use coins::{lp_coinfindᵃ, BalanceTradeFeeUpdatedHandler, MmCoinEnum, TradeFee}
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
-use common::{bits256, json_dir_entries, new_uuid, now_ms, remove_file, write};
+use common::{bits256, json_dir_entries, log, new_uuid, now_ms, remove_file, write};
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt};
 use gstuff::slurp;
 use hash256_std_hasher::Hash256StdHasher;
@@ -203,7 +201,10 @@ async fn process_maker_order_updated(
             true
         },
         None => {
-            log!("Couldn't find an order " [uuid] ", ignoring, it will be synced upon pubkey keep alive");
+            log::warn!(
+                "Couldn't find an order {}, ignoring, it will be synced upon pubkey keep alive",
+                uuid
+            );
             false
         },
     }
@@ -322,7 +323,7 @@ fn remove_and_purge_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, 
     }
 
     if orderbook.memory_db.remove_and_purge(&pair_root, EMPTY_PREFIX).is_none() {
-        log!("Warning: couldn't find "[pair_root]" hash root in memory_db");
+        log::warn!("Warning: couldn't find {:?} hash root in memory_db", pair_root);
     }
 }
 
@@ -365,7 +366,7 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
             },
         },
         Err(e) => {
-            log!("Error "(e)" while decoding signed message");
+            log::error!("Error {} while decoding signed message", e);
             false
         },
     }
@@ -421,7 +422,7 @@ impl TryFromBytes for Uuid {
 }
 
 pub async fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
-    log!("Got ordermatch request "[request]);
+    log::debug!("Got ordermatch request {:?}", request);
     match request {
         OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel).await,
         OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
@@ -572,7 +573,11 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone + TryFromByt
                 return Ok(DeltaOrFullTrie::Delta(total_delta));
             }
 
-            log!("History started from "[from_hash]" ends with not up-to-date trie root "[actual_trie_root]);
+            log::warn!(
+                "History started from {:?} ends with not up-to-date trie root {:?}",
+                from_hash,
+                actual_trie_root
+            );
         }
 
         let trie = get_full_trie(&actual_trie_root, db)?;
@@ -700,7 +705,7 @@ async fn maker_order_created_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg);
 }
 
-async fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrderUpdated, serialized: Vec<u8>) {
+async fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrderUpdated) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock().await;
 
@@ -716,7 +721,7 @@ async fn maker_order_updated_p2p_notify(ctx: MmArc, base: &str, rel: &str, messa
     let topic = orderbook_topic_from_base_rel(base, rel);
     let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
     let encoded_msg = encode_and_sign(&msg, &*key_pair.private().secret).unwrap();
-    process_my_maker_order_updated(&ctx, &message, encoded_msg.clone()).await;
+    process_my_maker_order_updated(&ctx, &message).await;
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg);
 }
 
@@ -727,7 +732,7 @@ async fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         pair_trie_root: H64::default(),
     });
     delete_my_order(&ctx, order.uuid).await;
-    log!("maker_order_cancelled_p2p_notify called, message "[message]);
+    log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
     broadcast_ordermatch_message(
         &ctx,
         vec![orderbook_topic_from_base_rel(&order.base, &order.rel)],
@@ -1207,6 +1212,10 @@ enum MakerOrderBuildError {
         threshold: MmNumber,
     },
     ConfSettingsNotSet,
+    MaxBaseVolBelowMinBaseVol {
+        min: MmNumber,
+        max: MmNumber,
+    },
 }
 
 impl fmt::Display for MakerOrderBuildError {
@@ -1240,6 +1249,12 @@ impl fmt::Display for MakerOrderBuildError {
                 threshold.to_decimal()
             ),
             MakerOrderBuildError::ConfSettingsNotSet => write!(f, "Confirmation settings must be set"),
+            MakerOrderBuildError::MaxBaseVolBelowMinBaseVol { min, max } => write!(
+                f,
+                "Max base vol {} is below min base vol: {}",
+                max.to_decimal(),
+                min.to_decimal()
+            ),
         }
     }
 }
@@ -1318,6 +1333,13 @@ impl MakerOrderBuilder {
             return Err(MakerOrderBuildError::MinBaseVolTooLow {
                 actual: self.min_base_vol,
                 threshold: min_vol,
+            });
+        }
+
+        if self.max_base_vol < self.min_base_vol {
+            return Err(MakerOrderBuildError::MaxBaseVolBelowMinBaseVol {
+                min: self.min_base_vol,
+                max: self.max_base_vol,
             });
         }
 
@@ -1665,6 +1687,7 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
     #[allow(dead_code)]
     fn remove_key(&mut self, key: &H64) { self.inner.remove(key); }
 
+    #[allow(dead_code)]
     fn contains_key(&self, key: &H64) -> bool { self.inner.contains_key(key) }
 
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
@@ -1809,13 +1832,18 @@ impl Orderbook {
         let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
             Ok(trie) => trie,
             Err(e) => {
-                log!("Error getting "(e)" trie with root "[prev_root]);
+                log::error!("Error getting {} trie with root {:?}", e, prev_root);
                 return;
             },
         };
         let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
         if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
-            log!("Error " (e) " on insertion to trie. Key " (order.uuid) ", value " [order_bytes]);
+            log::error!(
+                "Error {} on insertion to trie. Key {}, value {:?}",
+                e,
+                order.uuid,
+                order_bytes
+            );
             return;
         };
         drop(pair_trie);
@@ -1830,7 +1858,7 @@ impl Orderbook {
     }
 
     fn insert_or_update_order(&mut self, order: OrderbookItem) {
-        log!("Inserting order "[order]);
+        log::debug!("Inserting order {:?}", order);
         let zero = BigRational::from_integer(0.into());
         if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
             self.remove_order_trie_update(order.uuid);
@@ -1927,7 +1955,7 @@ impl Orderbook {
         )]) {
             Ok(root) => root,
             Err(_) => {
-                log!("Failed to get existing trie with root "[pair_state]);
+                log::error!("Failed to get existing trie with root {:?}", pair_state);
                 return Some(order);
             },
         };
@@ -2011,11 +2039,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let taker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log!("Coin " (maker_match.reserved.rel) " is not found/enabled");
+                log::error!("Coin {} is not found/enabled", maker_match.reserved.rel);
                 return;
             },
             Err(e) => {
-                log!("!lp_coinfind(" (maker_match.reserved.rel) "): " (e));
+                log::error!("!lp_coinfind({}): {}", maker_match.reserved.rel, e);
                 return;
             },
         };
@@ -2023,11 +2051,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log!("Coin " (maker_match.reserved.base) " is not found/enabled");
+                log::error!("Coin {} is not found/enabled", maker_match.reserved.base);
                 return;
             },
             Err(e) => {
-                log!("!lp_coinfind(" (maker_match.reserved.base) "): " (e));
+                log::error!("!lp_coinfind({}): {}", maker_match.reserved.base, e);
                 return;
             },
         };
@@ -2057,7 +2085,12 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             None => AtomicLocktimeVersion::V1,
         };
         let lock_time = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
-        log!("Entering the maker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker()) " with uuid: " (uuid));
+        log::info!(
+            "Entering the maker_swap_loop {}/{} with uuid: {}",
+            maker_coin.ticker(),
+            taker_coin.ticker(),
+            uuid
+        );
         let maker_swap = MakerSwap::new(
             ctx.clone(),
             alice,
@@ -2082,11 +2115,11 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
         let taker_coin = match lp_coinfindᵃ(&ctx, &taker_match.reserved.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log!("Coin " (taker_match.reserved.rel) " is not found/enabled");
+                log::error!("Coin {} is not found/enabled", taker_match.reserved.rel);
                 return;
             },
             Err(e) => {
-                log!("!lp_coinfind(" (taker_match.reserved.rel) "): " (e));
+                log::error!("!lp_coinfind({}): {}", taker_match.reserved.rel, e);
                 return;
             },
         };
@@ -2094,11 +2127,11 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
         let maker_coin = match lp_coinfindᵃ(&ctx, &taker_match.reserved.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log!("Coin " (taker_match.reserved.base) " is not found/enabled");
+                log::error!("Coin {} is not found/enabled", taker_match.reserved.base);
                 return;
             },
             Err(e) => {
-                log!("!lp_coinfind(" (taker_match.reserved.base) "): " (e));
+                log::error!("!lp_coinfind({}): {}", taker_match.reserved.base, e);
                 return;
             },
         };
@@ -2128,7 +2161,12 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
             None => AtomicLocktimeVersion::V1,
         };
         let locktime = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
-        log!("Entering the taker_swap_loop " (maker_coin.ticker()) "/" (taker_coin.ticker())  " with uuid: " (uuid));
+        log::info!(
+            "Entering the taker_swap_loop {}/{} with uuid: {}",
+            maker_coin.ticker(),
+            taker_coin.ticker(),
+            uuid
+        );
         let taker_swap = TakerSwap::new(
             ctx.clone(),
             maker,
@@ -2246,7 +2284,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                                 if let Err(e) =
                                     subscribe_to_orderbook_topic(&ctx, &order.base, &order.rel, request_orderbook).await
                                 {
-                                    log!("Error " (e) " on subscribing to orderbook topic " (topic));
+                                    log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
                                 }
                             }
                             maker_order_created_p2p_notify(ctx.clone(), order).await;
@@ -2264,23 +2302,18 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
     let our_public_id = unwrap!(ctx.public_id());
     if our_public_id.bytes == from_pubkey.0 {
-        log!("Skip maker reserved from our pubkey");
+        log::warn!("Skip maker reserved from our pubkey");
         return;
     }
 
     if is_pubkey_banned(&ctx, &reserved_msg.sender_pubkey) {
-        log!("Sender pubkey " [reserved_msg.sender_pubkey] " is banned");
+        log::info!("Sender pubkey {:?} is banned", reserved_msg.sender_pubkey);
         return;
     }
 
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order = match my_taker_orders.entry(reserved_msg.taker_order_uuid) {
-        Entry::Vacant(_) => {
-            log!("Our node doesn't have the order with uuid "(
-                reserved_msg.taker_order_uuid
-            ));
-            return;
-        },
+        Entry::Vacant(_) => return,
         Entry::Occupied(entry) => entry.into_mut(),
     };
 
@@ -2312,28 +2345,28 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
     let our_public_id = unwrap!(ctx.public_id());
     if our_public_id.bytes == from_pubkey.0 {
-        log!("Skip maker connected from our pubkey");
+        log::warn!("Skip maker connected from our pubkey");
         return;
     }
 
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
         Entry::Occupied(e) => e,
-        Entry::Vacant(_) => {
-            log!("Our node doesn't have the order with uuid "(connected.taker_order_uuid));
-            return;
-        },
+        Entry::Vacant(_) => return,
     };
     let order_match = match my_order_entry.get().matches.get(&connected.maker_order_uuid) {
         Some(o) => o,
         None => {
-            log!("Our node doesn't have the match with uuid "(connected.maker_order_uuid));
+            log::warn!(
+                "Our node doesn't have the match with uuid {}",
+                connected.maker_order_uuid
+            );
             return;
         },
     };
 
     if order_match.reserved.sender_pubkey != from_pubkey {
-        log!("Connected message sender pubkey != reserved message sender pubkey");
+        log::error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
     // alice
@@ -2346,13 +2379,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
     let our_public_id: H256Json = unwrap!(ctx.public_id()).bytes.into();
     if our_public_id == from_pubkey {
-        log!("Skip the request originating from our pubkey");
+        log::warn!("Skip the request originating from our pubkey");
         return;
     }
-    log!({"Processing request {:?}", taker_request});
+    log::debug!("Processing request {:?}", taker_request);
 
     if is_pubkey_banned(&ctx, &taker_request.sender_pubkey) {
-        log!("Sender pubkey " [taker_request.sender_pubkey] " is banned");
+        log::info!("Sender pubkey {:?} is banned", taker_request.sender_pubkey);
         return;
     }
 
@@ -2397,7 +2430,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     }),
                 };
                 let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
-                log!({"Request matched sending reserved {:?}", reserved});
+                log::debug!("Request matched sending reserved {:?}", reserved);
                 broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into());
                 let maker_match = MakerMatch {
                     request: taker_request,
@@ -2418,31 +2451,27 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
     let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&ctx));
     let our_public_id = unwrap!(ctx.public_id());
     if our_public_id.bytes == sender_pubkey.0 {
-        log!("Skip taker connect from our pubkey");
+        log::warn!("Skip taker connect from our pubkey");
         return;
     }
 
     let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
     let my_order = match maker_orders.get_mut(&connect_msg.maker_order_uuid) {
         Some(o) => o,
-        None => {
-            log!("Our node doesn't have the order with uuid "(
-                connect_msg.maker_order_uuid
-            ));
-            return;
-        },
+        None => return,
     };
     let order_match = match my_order.matches.get_mut(&connect_msg.taker_order_uuid) {
         Some(o) => o,
         None => {
-            log!("Our node doesn't have the match with uuid "(
+            log::warn!(
+                "Our node doesn't have the match with uuid {}",
                 connect_msg.taker_order_uuid
-            ));
+            );
             return;
         },
     };
     if order_match.request.sender_pubkey != sender_pubkey {
-        log!("Connect message sender pubkey != request message sender pubkey");
+        log::warn!("Connect message sender pubkey != request message sender pubkey");
         return;
     }
 
@@ -2608,9 +2637,6 @@ pub async fn lp_auto_buy(
     rel_coin: &MmCoinEnum,
     input: AutoBuyInput,
 ) -> Result<String, String> {
-    log!("Received autobuy "[input]);
-    log!("Received autobuy price "(input.price.to_decimal()) " " [input.price.to_fraction()]);
-    log!("Received autobuy volume "(input.volume.to_decimal()) " " [input.volume.to_fraction()]);
     if input.price < MmNumber::from(BigRational::new(1.into(), 100_000_000.into())) {
         return ERR!("Price is too low, minimum is 0.00000001");
     }
@@ -2660,7 +2686,6 @@ pub async fn lp_auto_buy(
     };
     save_my_taker_order(ctx, &order);
     my_taker_orders.insert(order.request.uuid, order);
-    log!("Autobuy result "(result));
     drop(my_taker_orders);
     Ok(result.to_string())
 }
@@ -2698,17 +2723,6 @@ impl Hasher for Blake2Hasher64 {
 type Layout = sp_trie::Layout<Blake2Hasher64>;
 
 impl OrderbookItem {
-    fn from_initial_msg(initial_message: Vec<u8>, from_peer: String) -> Result<OrderbookItem, String> {
-        let (message, _sig, init_pubkey) = try_s!(decode_signed::<new_protocol::OrdermatchMessage>(&initial_message));
-        let order = match message {
-            new_protocol::OrdermatchMessage::MakerOrderCreated(order) => order,
-            msg => return ERR!("Expected MakerOrderCreated, found {:?}", msg),
-        };
-
-        let req: OrderbookItem = (order, hex::encode(init_pubkey.to_bytes().as_slice())).into();
-        Ok(req)
-    }
-
     fn apply_updated(&mut self, msg: &new_protocol::MakerOrderUpdated) {
         if let Some(new_price) = msg.new_price() {
             self.price = new_price.into();
@@ -3189,7 +3203,7 @@ fn delete_my_maker_order(ctx: &MmArc, order: &MakerOrder) {
     let path = my_maker_order_file_path(ctx, &order.uuid);
     match remove_file(&path) {
         Ok(_) => (),
-        Err(e) => log!("Warning, could not remove order file " (path.display()) ", error " (e)),
+        Err(e) => log::warn!("Could not remove order file {}, error {}", path.display(), e),
     }
 }
 
@@ -3198,7 +3212,7 @@ fn delete_my_taker_order(ctx: &MmArc, uuid: &Uuid) {
     let path = my_taker_order_file_path(ctx, uuid);
     match remove_file(&path) {
         Ok(_) => (),
-        Err(e) => log!("Warning, could not remove order file " (path.display()) ", error " (e)),
+        Err(e) => log::warn!("Could not remove order file {}, error {}", path.display(), e),
     }
 }
 
@@ -3545,8 +3559,6 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         rel: req.rel,
         timestamp: now_ms() / 1000,
     };
-    let response_str = try_s!(json::to_string(&response));
-    log!("Orderbook response "(response_str));
     let responseʲ = try_s!(json::to_vec(&response));
     Ok(try_s!(Response::builder().body(responseʲ)))
 }

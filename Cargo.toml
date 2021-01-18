@@ -40,19 +40,6 @@ test = false
 doctest = false
 bench = false
 
-[profile.dev]
-# Enable light optimizations. We want a debuggable version but not a completely dumb one.
-# Can override this with "set CARGO_BUILD_RUSTFLAGS=-C opt-level=0".
-opt-level = 1
-
-# Uncomment on Raspberry Pi
-# cf. https://github.com/rust-lang/rust/issues/62896
-#codegen-units = 1
-
-[profile.test]
-# Should probably match "profile.dev", given that we're reusing the libraries.
-opt-level = 1
-
 [profile.release]
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true
@@ -80,8 +67,8 @@ crc32fast = { version = "1.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 dirs = { version = "1", optional = true }
 either = "1.6"
+ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 enum-primitive-derive = "0.1"
-env_logger = "0.7.1"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"

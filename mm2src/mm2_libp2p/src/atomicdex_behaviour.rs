@@ -20,10 +20,13 @@ use libp2p::{core::{ConnectedPoint, Multiaddr, Transport},
 use libp2p_floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
 use log::{debug, error, info};
 use rand::{seq::SliceRandom, thread_rng};
+use std::collections::HashSet;
 use std::{collections::hash_map::{DefaultHasher, HashMap},
           hash::{Hash, Hasher},
+          iter::{self, FromIterator},
           net::IpAddr,
           pin::Pin,
+          str::FromStr,
           task::{Context, Poll},
           time::Duration};
 use tokio::runtime::Runtime;
@@ -42,6 +45,7 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
+const NETID_7777: u16 = 7777;
 
 impl libp2p::core::Executor for &SwarmRuntime {
     fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.0.spawn(future); }
@@ -237,6 +241,8 @@ pub struct AtomicDexBehaviour {
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
     #[behaviour(ignore)]
     cmd_rx: Receiver<AdexBehaviourCmd>,
+    #[behaviour(ignore)]
+    netid: u16,
     floodsub: Floodsub,
     gossipsub: Gossipsub,
     request_response: RequestResponseBehaviour,
@@ -389,6 +395,10 @@ impl AtomicDexBehaviour {
     pub fn connected_relays_len(&self) -> usize { self.gossipsub.connected_relays_len() }
 
     pub fn relay_mesh_len(&self) -> usize { self.gossipsub.relay_mesh_len() }
+
+    pub fn received_messages_in_period(&self) -> (Duration, usize) { self.gossipsub.get_received_messages_in_period() }
+
+    pub fn connected_peers_len(&self) -> usize { self.gossipsub.get_num_peers() }
 }
 
 impl NetworkBehaviourEventProcess<GossipsubEvent> for AtomicDexBehaviour {
@@ -397,14 +407,17 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for AtomicDexBehaviour {
 
 impl NetworkBehaviourEventProcess<FloodsubEvent> for AtomicDexBehaviour {
     fn inject_event(&mut self, event: FloodsubEvent) {
-        if let FloodsubEvent::Message(message) = &event {
-            for topic in &message.topics {
-                if topic == &FloodsubTopic::new(PEERS_TOPIC) {
-                    let addresses: PeerAddresses = match rmp_serde::from_read_ref(&message.data) {
-                        Ok(a) => a,
-                        Err(_) => return,
-                    };
-                    self.peers_exchange.add_peer_addresses(&message.source, addresses);
+        // do not process peer announce on 7777 temporary
+        if self.netid != NETID_7777 {
+            if let FloodsubEvent::Message(message) = &event {
+                for topic in &message.topics {
+                    if topic == &FloodsubTopic::new(PEERS_TOPIC) {
+                        let addresses: PeerAddresses = match rmp_serde::from_read_ref(&message.data) {
+                            Ok(a) => a,
+                            Err(_) => return,
+                        };
+                        self.peers_exchange.add_peer_addresses(&message.source, addresses);
+                    }
                 }
             }
         }
@@ -519,24 +532,82 @@ fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
             }
             false
         })
+        .take(1)
         .cloned()
         .collect();
-    swarm.announce_listeners(global_listeners);
+    if !global_listeners.is_empty() {
+        swarm.announce_listeners(global_listeners);
+    }
 }
+
+const ALL_NETID_7777_SEEDNODES: &[(&str, &str)] = &[
+    (
+        "12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P",
+        "168.119.236.241",
+    ),
+    (
+        "12D3KooWKxavLCJVrQ5Gk1kd9m6cohctGQBmiKPS9XQFoXEoyGmS",
+        "168.119.236.249",
+    ),
+    (
+        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
+        "168.119.236.240",
+    ),
+    (
+        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
+        "168.119.236.239",
+    ),
+    (
+        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
+        "168.119.236.251",
+    ),
+    ("12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb", "168.119.237.8"),
+    (
+        "12D3KooWL6yrrNACb7t7RPyTEPxKmq8jtrcbkcNd6H5G2hK7bXaL",
+        "168.119.236.233",
+    ),
+    (
+        "12D3KooWHBeCnJdzNk51G4mLnao9cDsjuqiMTEo5wMFXrd25bd1F",
+        "168.119.236.243",
+    ),
+    (
+        "12D3KooW9soGyPfX6kcyh3uVXNHq1y2dPmQNt2veKgdLXkBiCVKq",
+        "168.119.236.246",
+    ),
+    ("12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d", "168.119.237.13"),
+    ("12D3KooWKu8pMTgteWacwFjN7zRWWHb3bctyTvHU3xx5x4x6qDYY", "195.201.91.96"),
+    ("12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd", "195.201.91.53"),
+    (
+        "12D3KooWGrUpCAbkxhPRioNs64sbUmPmpEcou6hYfrqQvxfWDEuf",
+        "168.119.174.126",
+    ),
+    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11"),
+    ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18"),
+];
 
 /// Creates and spawns new AdexBehaviour Swarm returning:
 /// 1. tx to send control commands
 /// 2. rx emitting gossip events to processing side
 /// 3. our peer_id
+#[allow(clippy::too_many_arguments)]
 pub fn start_gossipsub(
     ip: IpAddr,
     port: u16,
+    netid: u16,
+    force_key: Option<[u8; 32]>,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
     to_dial: Vec<String>,
     i_am_relay: bool,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId) {
-    let local_key = identity::Keypair::generate_ed25519();
+    let local_key = match force_key {
+        Some(mut key) => {
+            let secret = identity::ed25519::SecretKey::from_bytes(&mut key).expect("Secret length is 32 bytes");
+            let keypair = identity::ed25519::Keypair::from(secret);
+            identity::Keypair::Ed25519(keypair)
+        },
+        None => identity::Keypair::generate_ed25519(),
+    };
     let local_peer_id = PeerId::from(local_key.public());
     info!("Local peer id: {:?}", local_peer_id);
 
@@ -593,9 +664,19 @@ pub fn start_gossipsub(
             .max_transmit_size(1024 * 1024 - 100)
             .build();
         // build a gossipsub network behaviour
-        let gossipsub = Gossipsub::new(local_peer_id.clone(), gossipsub_config);
+        let mut gossipsub = Gossipsub::new(local_peer_id.clone(), gossipsub_config);
 
-        let floodsub = Floodsub::new(local_peer_id.clone());
+        let floodsub = Floodsub::new(local_peer_id.clone(), netid != NETID_7777);
+
+        let mut peers_exchange = PeersExchange::new(port);
+        if netid == NETID_7777 {
+            for (peer_id, address) in ALL_NETID_7777_SEEDNODES {
+                let peer_id = PeerId::from_str(peer_id).expect("valid peer id");
+                let multiaddr = parse_relay_address((*address).to_owned(), port);
+                peers_exchange.add_peer_addresses(&peer_id, HashSet::from_iter(iter::once(multiaddr)));
+                gossipsub.add_explicit_relay(peer_id);
+            }
+        }
 
         // build a request-response network behaviour
         let request_response = build_request_response_behaviour();
@@ -610,8 +691,9 @@ pub fn start_gossipsub(
             gossipsub,
             floodsub,
             request_response,
-            peers_exchange: PeersExchange::new(),
+            peers_exchange,
             ping,
+            netid,
         };
         libp2p::swarm::SwarmBuilder::new(transport, adex_behavior, local_peer_id.clone())
             .executor(Box::new(&*SWARM_RUNTIME))

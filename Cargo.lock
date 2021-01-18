@@ -393,7 +393,7 @@ dependencies = [
 [[package]]
 name = "bitcrypto"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "groestl",
  "primitives",
@@ -438,18 +438,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d6d530bdd2d52966a6d03b7a964add7ae1a288d25214066fd4b600f0f796400"
 dependencies = [
  "arrayvec 0.4.12",
- "constant_time_eq",
-]
-
-[[package]]
-name = "blake2b_simd"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce2571a6cd634670daa2977cc894c1cc2ba57c563c498e5a82c35446f34d056e"
-dependencies = [
- "arrayref",
- "arrayvec 0.4.12",
- "byteorder 1.3.4",
  "constant_time_eq",
 ]
 
@@ -681,7 +669,7 @@ dependencies = [
 [[package]]
 name = "chain"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "bitcrypto",
  "primitives",
@@ -2348,7 +2336,7 @@ dependencies = [
 [[package]]
 name = "keys"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "base58",
  "bitcrypto",
@@ -3048,7 +3036,7 @@ dependencies = [
  "dirs 1.0.5",
  "either",
  "enum-primitive-derive",
- "env_logger 0.7.1",
+ "ethereum-types 0.4.2",
  "fomat-macros 0.2.1",
  "futures 0.1.29",
  "futures 0.3.5",
@@ -3157,7 +3145,7 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f75db05d738947aa5389863aadafbcf2e509d7ba099dc2ddcdf4fc66bf7a9e03"
 dependencies = [
- "blake2b_simd 0.5.10",
+ "blake2b_simd",
  "blake2s_simd",
  "digest 0.8.1",
  "sha-1",
@@ -3642,7 +3630,7 @@ dependencies = [
 [[package]]
 name = "primitives"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "bigint",
  "byteorder 1.3.4",
@@ -4171,7 +4159,7 @@ dependencies = [
 [[package]]
 name = "rpc"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "chain",
  "keys",
@@ -4192,7 +4180,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bc8af4bda8e1ff4932523b94d3dd20ee30a87232323eda55903ffd71d2fb017"
 dependencies = [
  "base64 0.11.0",
- "blake2b_simd 0.5.10",
+ "blake2b_simd",
  "constant_time_eq",
  "crossbeam-utils 0.7.2",
 ]
@@ -4352,10 +4340,10 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "script"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "bitcrypto",
- "blake2b_simd 0.4.1",
+ "blake2b_simd",
  "chain",
  "keys",
  "log 0.4.11",
@@ -4557,7 +4545,7 @@ dependencies = [
 [[package]]
 name = "serialization"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "byteorder 1.3.4",
  "primitives",
@@ -4566,7 +4554,7 @@ dependencies = [
 [[package]]
 name = "serialization_derive"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#1296f50c1ad5a51e6a44c8fdf1526ec6e244607f"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
 dependencies = [
  "quote 0.3.15",
  "syn 0.11.11",

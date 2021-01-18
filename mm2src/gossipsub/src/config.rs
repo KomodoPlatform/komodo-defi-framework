@@ -64,6 +64,12 @@ pub struct GossipsubConfig {
     /// The maximum byte size for each gossip (default is 2048 bytes).
     pub max_transmit_size: usize,
 
+    /// Duplicates are prevented by storing message id's of known messages in an LRU time cache.
+    /// This settings sets the time period that messages are stored in the cache. Duplicates can be
+    /// received if duplicate messages are sent at a time greater than this setting apart. The
+    /// default is 1 minute.
+    pub duplicate_cache_time: Duration,
+
     /// Flag determining if gossipsub topics are hashed or sent as plain strings (default is false).
     pub hash_topics: bool,
 
@@ -103,6 +109,7 @@ impl Default for GossipsubConfig {
             heartbeat_interval: Duration::from_secs(1),
             fanout_ttl: Duration::from_secs(60),
             max_transmit_size: 2048,
+            duplicate_cache_time: Duration::from_secs(60),
             hash_topics: false, // default compatibility with floodsub
             no_source_id: false,
             manual_propagation: false,

@@ -23,12 +23,12 @@ use crate::handler::GossipsubHandler;
 use crate::mcache::MessageCache;
 use crate::protocol::{GossipsubControlAction, GossipsubMessage, GossipsubSubscription, GossipsubSubscriptionAction,
                       MessageId};
+use crate::time_cache::{Entry as TimeCacheEntry, TimeCache};
 use crate::topic::{Topic, TopicHash};
 use futures::prelude::*;
 use libp2p_core::{connection::ConnectionId, ConnectedPoint, Multiaddr, PeerId};
 use libp2p_swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters, ProtocolsHandler};
 use log::{debug, error, info, trace, warn};
-use lru::LruCache;
 use rand::{seq::SliceRandom, thread_rng};
 use smallvec::SmallVec;
 use std::time::Duration;
@@ -84,7 +84,7 @@ pub struct Gossipsub {
     /// We keep track of the messages we received (in the format `string(source ID, seq_no)`) so that
     /// we don't dispatch the same message twice if we receive it twice on the network.
     /// Also store the peers from which message was received so we don't manually propagate already known message to them
-    received: LruCache<MessageId, SmallVec<[PeerId; 12]>>,
+    received: TimeCache<MessageId, SmallVec<[PeerId; 12]>>,
 
     /// Heartbeat interval stream.
     heartbeat: Interval,
@@ -95,6 +95,9 @@ pub struct Gossipsub {
     peer_connections: HashMap<PeerId, Vec<ConnectedPoint>>,
 
     connected_addresses: Vec<Multiaddr>,
+
+    /// The relay list which are forcefully kept in relay mesh
+    explicit_relay_list: Vec<PeerId>,
 }
 
 impl Gossipsub {
@@ -121,7 +124,7 @@ impl Gossipsub {
                 gs_config.history_length,
                 gs_config.message_id_fn,
             ),
-            received: LruCache::new(8192 * 8), // keep track of the last 8192 * 8 messages
+            received: TimeCache::new(gs_config.duplicate_cache_time),
             heartbeat: Interval::new_at(
                 Instant::now() + gs_config.heartbeat_initial_delay,
                 gs_config.heartbeat_interval,
@@ -135,7 +138,13 @@ impl Gossipsub {
             relays_mesh: HashMap::new(),
             included_to_relays_mesh: HashSet::new(),
             connected_addresses: Vec::new(),
+            explicit_relay_list: Vec::new(),
         }
+    }
+
+    pub fn add_explicit_relay(&mut self, peer_id: PeerId) {
+        info!("Adding peer {} to explicit relay list", peer_id);
+        self.explicit_relay_list.push(peer_id);
     }
 
     /// Subscribe to a topic.
@@ -288,7 +297,8 @@ impl Gossipsub {
         // add published message to our received caches
         let msg_id = (self.config.message_id_fn)(&message);
         self.mcache.put(message.clone());
-        self.received.put(msg_id.clone(), SmallVec::from_elem(local_peer_id, 1));
+        self.received
+            .insert(msg_id.clone(), SmallVec::from_elem(local_peer_id, 1));
 
         debug!("Published message: {:?}", msg_id);
 
@@ -417,7 +427,7 @@ impl Gossipsub {
             }
 
             for id in ids {
-                if !self.received.contains(&id) {
+                if !self.received.contains_key(&id) {
                     // have not seen this message, request it
                     iwant_ids.insert(id);
                 }
@@ -587,15 +597,14 @@ impl Gossipsub {
     fn handle_received_message(&mut self, msg: GossipsubMessage, propagation_source: &PeerId) {
         let msg_id = (self.config.message_id_fn)(&msg);
         debug!("Handling message: {:?} from peer: {:?}", msg_id, propagation_source);
-        match self.received.get_mut(&msg_id) {
-            Some(peers) => {
+        match self.received.entry(msg_id.clone()) {
+            TimeCacheEntry::Occupied(entry) => {
                 debug!("Message already received, ignoring. Message: {:?}", msg_id);
-                peers.push(propagation_source.clone());
+                entry.into_mut().push(propagation_source.clone());
                 return;
             },
-            None => {
-                self.received
-                    .put(msg_id.clone(), SmallVec::from_elem(propagation_source.clone(), 1));
+            TimeCacheEntry::Vacant(entry) => {
+                entry.insert(SmallVec::from_elem(propagation_source.clone(), 1));
             },
         }
         // add to the memcache
@@ -1094,6 +1103,9 @@ impl Gossipsub {
 
     pub fn get_all_peer_topics(&self) -> &HashMap<PeerId, Vec<TopicHash>> { &self.peer_topics }
 
+    /// Get count of received messages in the [`GossipsubConfig::duplicate_cache_time`] period.
+    pub fn get_received_messages_in_period(&self) -> (Duration, usize) { (self.received.ttl(), self.received.len()) }
+
     pub fn get_config(&self) -> &GossipsubConfig { &self.config }
 
     /// Adds peers to relays mesh and notifies them they are added
@@ -1118,6 +1130,22 @@ impl Gossipsub {
     fn clean_up_relays_mesh(&mut self) {
         let mesh_n = self.config.mesh_n;
         let mut removed = Vec::with_capacity(self.relays_mesh.len() - mesh_n);
+        let explicit_relay_list = self.explicit_relay_list.clone();
+        // perform 2 filter iterations to not keep excessive number of explicit peers in mesh
+        self.relays_mesh = self
+            .relays_mesh
+            .drain()
+            .enumerate()
+            .filter_map(|(i, peer)| {
+                if i < mesh_n || explicit_relay_list.contains(&peer.0) {
+                    Some(peer)
+                } else {
+                    removed.push(peer);
+                    None
+                }
+            })
+            .collect();
+
         self.relays_mesh = self
             .relays_mesh
             .drain()
