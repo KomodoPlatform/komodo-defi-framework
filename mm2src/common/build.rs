@@ -17,7 +17,8 @@
 use chrono::DateTime;
 use gstuff::{last_modified_sec, slurp};
 use regex::Regex;
-use std::env::{self, var};
+use std::env::var;
+use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,57 +127,6 @@ fn root() -> PathBuf {
     } else {
         super_net
     }
-}
-
-/// Returns `true` if the `target` is not as fresh as the `prerequisites`.
-fn make(target: &AsRef<Path>, prerequisites: &[PathBuf]) -> bool {
-    let target_lm = last_modified_sec(target).expect("!last_modified") as u64;
-    if target_lm == 0 {
-        return true;
-    }
-    let mut prerequisites_lm = 0;
-    for path in prerequisites {
-        prerequisites_lm = std::cmp::max(
-            prerequisites_lm,
-            last_modified_sec(&path).expect("!last_modified") as u64,
-        )
-    }
-    target_lm < prerequisites_lm
-}
-
-/// Build MM1 libraries without CMake, making cross-platform builds more transparent to us.
-fn manual_mm1_build(target: Target) {
-    let (root, out_dir) = (root(), out_dir());
-    let libexchanges_src = vec![rabs("iguana/exchanges/mm.c")];
-
-    let exchanges_build = out_dir.join("exchanges_build");
-    epintln!("exchanges_build at "[exchanges_build]);
-
-    let libexchanges_a = out_dir.join("libexchanges.a");
-    if make(&libexchanges_a, &libexchanges_src[..]) {
-        let _ = fs::create_dir(&exchanges_build);
-        let mut cc = target.cc(false);
-        for p in libexchanges_src.iter() {
-            cc.file(p);
-        }
-        cc.compile("exchanges");
-        assert!(libexchanges_a.is_file());
-    }
-    println!("cargo:rustc-link-lib=static=exchanges");
-    println!("cargo:rustc-link-search=native={}", path2s(&out_dir));
-
-    // TODO: Rebuild the libraries when the C source code is updated.
-}
-
-/// A folder cargo creates for our build.rs specifically.
-fn out_dir() -> PathBuf {
-    // cf. https://github.com/rust-lang/cargo/issues/3368#issuecomment-265900350
-    let out_dir = unwrap!(var("OUT_DIR"));
-    let out_dir = Path::new(&out_dir);
-    if !out_dir.is_dir() {
-        panic!("OUT_DIR !is_dir")
-    }
-    out_dir.to_path_buf()
 }
 
 /// Absolute path taken from SuperNET's root + `path`.  

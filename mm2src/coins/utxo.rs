@@ -627,50 +627,6 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
 #[cfg(not(feature = "native"))]
 pub fn coin_daemon_data_dir(_name: &str, _is_asset_chain: bool) -> PathBuf { unimplemented!() }
 
-#[cfg(feature = "native")]
-/// Returns a path to the native coin wallet configuration.
-/// (This path is used in to read the wallet credentials).
-/// cf. https://github.com/artemii235/SuperNET/issues/346
-fn confpath(coins_en: &Json) -> Result<PathBuf, String> {
-    // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
-    // "USERHOME/" prefix should be replaced with the user's home folder.
-    let confpathˢ = coins_en["confpath"].as_str().unwrap_or("").trim();
-    if confpathˢ.is_empty() {
-        let (name, is_asset_chain) = {
-            match coins_en["asset"].as_str() {
-                Some(a) => (a, true),
-                None => (
-                    try_s!(coins_en["name"].as_str().ok_or("'name' field is not found in config")),
-                    false,
-                ),
-            }
-        };
-
-        let data_dir = coin_daemon_data_dir(name, is_asset_chain);
-
-        let confname = format!("{}.conf", name);
-
-        return Ok(data_dir.join(&confname[..]));
-    }
-    let (confpathˢ, rel_to_home) = match confpathˢ.strip_prefix("~/") {
-        Some(stripped) => (stripped, true),
-        None => match confpathˢ.strip_prefix("USERHOME/") {
-            Some(stripped) => (stripped, true),
-            None => (confpathˢ, false),
-        },
-    };
-
-    if rel_to_home {
-        let home = try_s!(home_dir().ok_or("Can not detect the user home directory"));
-        Ok(home.join(confpathˢ))
-    } else {
-        Ok(confpathˢ.into())
-    }
-}
-
-#[cfg(not(feature = "native"))]
-fn confpath(_coins_en: &Json) -> Result<PathBuf, String> { unimplemented!() }
-
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
 #[cfg(feature = "native")]
 fn read_native_mode_conf(
