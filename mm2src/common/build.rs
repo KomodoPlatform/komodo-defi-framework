@@ -183,10 +183,6 @@ fn build_c_code() {
         println!("cargo:rustc-link-lib=static=seh");
         println!("cargo:rustc-link-search=native={}", out_dir);
     }
-
-    if !cfg!(windows) {
-        println!("cargo:rustc-link-lib=crypto");
-    }
 }
 
 fn main() {
