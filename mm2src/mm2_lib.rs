@@ -20,6 +20,7 @@
 
 #[cfg(feature = "native")] use crate::common::log::LOG_OUTPUT;
 use crate::common::mm_ctx::MmArc;
+use common::crash_reports::init_crash_reports;
 use futures01::Future;
 use gstuff::{any_to_str, now_float};
 #[cfg(feature = "native")] use libc::c_char;
@@ -48,6 +49,7 @@ enum MainErr {
 #[cfg(feature = "native")]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(line: *const c_char)) -> i8 {
+    init_crash_reports();
     macro_rules! log {
         ($($args: tt)+) => {{
             let msg = fomat! ("mm2_lib:" ((line!())) "] " $($args)+ '\0');
