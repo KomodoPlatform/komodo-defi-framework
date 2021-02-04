@@ -26,7 +26,7 @@ main() {
     pushd $td
     curl -O $NDK_URL
     unzip -q android-ndk-*.zip
-    pushd android-ndk-*
+    pushd android-ndk-*/
     ./build/tools/make_standalone_toolchain.py \
       --install-dir /android-ndk \
       --arch $arch \
