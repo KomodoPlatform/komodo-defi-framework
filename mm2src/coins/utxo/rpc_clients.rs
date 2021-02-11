@@ -199,6 +199,7 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         decimals: u8,
         fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
+        n_blocks: u32,
     ) -> RpcRes<u64>;
 
     fn get_relay_fee(&self) -> RpcRes<BigDecimal>;
@@ -513,16 +514,17 @@ impl UtxoRpcClientOps for NativeClient {
         decimals: u8,
         fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
+        n_blocks: u32,
     ) -> RpcRes<u64> {
         match fee_method {
-            EstimateFeeMethod::Standard => Box::new(self.estimate_fee().map(move |fee| {
+            EstimateFeeMethod::Standard => Box::new(self.estimate_fee(n_blocks).map(move |fee| {
                 if fee > 0.00001 {
                     (fee * 10.0_f64.powf(decimals as f64)) as u64
                 } else {
                     1000
                 }
             })),
-            EstimateFeeMethod::SmartFee => Box::new(self.estimate_smart_fee(mode).map(move |res| {
+            EstimateFeeMethod::SmartFee => Box::new(self.estimate_smart_fee(mode, n_blocks).map(move |res| {
                 if res.fee_rate > 0.00001 {
                     (res.fee_rate * 10.0_f64.powf(decimals as f64)) as u64
                 } else {
@@ -681,16 +683,16 @@ impl NativeClientImpl {
     }
 
     /// https://developer.bitcoin.org/reference/rpc/estimatefee.html
-    /// Always estimate fee for transaction to be confirmed in next block
-    fn estimate_fee(&self) -> RpcRes<f64> {
-        let n_blocks = 1;
-        rpc_func!(self, "estimatefee", n_blocks)
-    }
+    /// It is recommended to set n_blocks as low as possible.
+    /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
+    fn estimate_fee(&self, n_blocks: u32) -> RpcRes<f64> { rpc_func!(self, "estimatefee", n_blocks) }
 
     /// https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
-    /// Always estimate fee for transaction to be confirmed in next block
-    pub fn estimate_smart_fee(&self, mode: &Option<EstimateFeeMode>) -> RpcRes<EstimateSmartFeeRes> {
-        let n_blocks = 1;
+    /// It is recommended to set n_blocks as low as possible.
+    /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
+    pub fn estimate_smart_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<EstimateSmartFeeRes> {
         match mode {
             Some(m) => rpc_func!(self, "estimatesmartfee", n_blocks, m),
             None => rpc_func!(self, "estimatesmartfee", n_blocks),
@@ -721,8 +723,8 @@ impl NativeClientImpl {
     }
 
     pub fn detect_fee_method(&self) -> impl Future<Item = EstimateFeeMethod, Error = String> + Send {
-        let estimate_fee_fut = self.estimate_fee();
-        self.estimate_smart_fee(&None).then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String> + Send> {
+        let estimate_fee_fut = self.estimate_fee(1);
+        self.estimate_smart_fee(&None, 1).then(move |res| -> Box<dyn Future<Item=EstimateFeeMethod, Error=String> + Send> {
             match res {
                 Ok(smart_fee) => if smart_fee.fee_rate > 0. {
                     Box::new(futures01::future::ok(EstimateFeeMethod::SmartFee))
@@ -1449,9 +1451,10 @@ impl ElectrumClient {
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-estimatefee
-    /// Always estimate fee for transaction to be confirmed in next block
-    fn estimate_fee(&self, mode: &Option<EstimateFeeMode>) -> RpcRes<f64> {
-        let n_blocks = 1;
+    /// It is recommended to set n_blocks as low as possible.
+    /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
+    fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<f64> {
         match mode {
             Some(m) => rpc_func!(self, "blockchain.estimatefee", n_blocks, m),
             None => rpc_func!(self, "blockchain.estimatefee", n_blocks),
@@ -1524,8 +1527,9 @@ impl UtxoRpcClientOps for ElectrumClient {
         decimals: u8,
         _fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
+        n_blocks: u32,
     ) -> RpcRes<u64> {
-        Box::new(self.estimate_fee(mode).map(move |fee| {
+        Box::new(self.estimate_fee(mode, n_blocks).map(move |fee| {
             if fee > 0.00001 {
                 (fee * 10.0_f64.powf(decimals as f64)) as u64
             } else {

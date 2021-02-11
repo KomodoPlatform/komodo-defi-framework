@@ -23,7 +23,7 @@ use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
-use common::{block_on, now_ms, slurp_url, small_rng};
+use common::{block_on, now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, U256};
@@ -53,16 +53,16 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
 
-use super::{CoinTransportMetrics, CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps, TradeFee, Transaction,
-            TransactionDetails, TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
+use super::{CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps,
+            TradeFee, TradePreimageError, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum,
+            TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
-use crate::CoinProtocol;
 
 #[cfg(test)] mod eth_tests;
 
@@ -79,6 +79,21 @@ pub const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
 pub const PAYMENT_STATE_SENT: u8 = 1;
 const _PAYMENT_STATE_SPENT: u8 = 2;
 const _PAYMENT_STATE_REFUNDED: u8 = 3;
+const GAS_PRICE_PERCENT: u64 = 10;
+
+/// Take into account that the dynamic fee may increase by 3% during the swap.
+const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
+/// Take into account that the dynamic fee may increase at each of the following stages:
+/// - it may increase by 2% until a swap is started;
+/// - it may increase by 3% during the swap.
+const GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE: u64 = 5;
+/// Take into account that the dynamic fee may increase at each of the following stages:
+/// - it may increase by 2% until an order is issued;
+/// - it may increase by 2% until a swap is started;
+/// - it may increase by 3% during the swap.
+const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
+
+const APPROVE_GAS_LIMIT: u64 = 50_000;
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
@@ -266,12 +281,23 @@ impl EthCoinImpl {
     }
 
     /// Get gas price
-    fn get_gas_price(&self) -> impl Future<Item = U256, Error = String> {
-        if let Some(url) = &self.gas_station_url {
-            Either01::A(GasStationData::get_gas_price(&url).map(add_ten_pct_one_gwei))
+    fn get_gas_price(&self) -> Box<dyn Future<Item = U256, Error = String> + Send> {
+        let fut = if let Some(url) = &self.gas_station_url {
+            Either01::A(
+                GasStationData::get_gas_price(&url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
+            )
         } else {
             Either01::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
-        }
+        };
+        Box::new(fut)
+    }
+
+    fn estimate_gas(
+        &self,
+        req: CallRequest,
+        block: Option<BlockNumber>,
+    ) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
+        Box::new(self.web3.eth().estimate_gas(req, block))
     }
 
     /// Gets `ReceiverSpent` events from etomic swap smart contract since `from_block`
@@ -409,12 +435,7 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
                 // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
                 gas_price: Some(gas_price),
             };
-            let gas_fut = coin
-                .web3
-                .eth()
-                .estimate_gas(estimate_gas_req, None)
-                .map_err(|e| ERRL!("{}", e))
-                .compat();
+            let gas_fut = coin.estimate_gas(estimate_gas_req, None).compat();
             (try_s!(gas_fut.await), gas_price)
         },
     };
@@ -1035,6 +1056,8 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
+
+    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 }
 
 pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {
@@ -1444,7 +1467,7 @@ impl EthCoin {
                 let function = try_fus!(ERC20_CONTRACT.function("approve"));
                 let data = try_fus!(function.encode_input(&[Token::Address(spender), Token::Uint(amount),]));
 
-                self.sign_and_send_transaction(0.into(), Action::Call(token_addr), data, U256::from(150_000))
+                self.sign_and_send_transaction(0.into(), Action::Call(token_addr), data, U256::from(APPROVE_GAS_LIMIT))
             },
         }
     }
@@ -2357,21 +2380,6 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        Box::new(self.eth_balance().and_then(move |eth_balance| {
-            let eth_balance_f64: f64 = try_s!(display_u256_with_decimal_point(eth_balance, 18).parse());
-            if eth_balance_f64 < 0.0002 {
-                ERR!(
-                    "Base coin balance {} is too low to cover gas fee, required {}",
-                    eth_balance_f64,
-                    0.0002
-                )
-            } else {
-                Ok(())
-            }
-        }))
-    }
-
     fn wallet_only(&self) -> bool { false }
 
     fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
@@ -2418,6 +2426,125 @@ impl MmCoin for EthCoin {
                 amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
             })
         }))
+    }
+
+    fn get_sender_trade_fee(
+        &self,
+        value: TradePreimageValue,
+        stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        let coin = self.clone();
+        let fut = async move {
+            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = increase_gas_price_by_stage(gas_price, &stage);
+            let gas_limit = match coin.coin_type {
+                EthCoinType::Eth => {
+                    // this gas_limit includes gas for `ethPayment` and `senderRefund` contract calls
+                    U256::from(300_000)
+                },
+                EthCoinType::Erc20(_) => {
+                    let value = match value {
+                        TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
+                            try_map!(wei_from_big_decimal(&value, coin.decimals), TradePreimageError::Other)
+                        },
+                    };
+                    let allowed = try_map!(
+                        coin.allowance(coin.swap_contract_address).compat().await,
+                        TradePreimageError::Other
+                    );
+                    if allowed < value {
+                        // this gas_limit includes gas for `approve`, `erc20Payment` and `senderRefund` contract calls
+                        U256::from(300_000 + APPROVE_GAS_LIMIT)
+                    } else {
+                        // this gas_limit includes gas for `erc20Payment` and `senderRefund` contract calls
+                        U256::from(300_000)
+                    }
+                },
+            };
+
+            let total_fee = gas_limit * gas_price;
+            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            Ok(TradeFee {
+                coin: "ETH".to_owned(),
+                amount: amount.into(),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn get_receiver_trade_fee(
+        &self,
+        stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        let coin = self.clone();
+        let fut = async move {
+            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = increase_gas_price_by_stage(gas_price, &stage);
+            let total_fee = gas_price * U256::from(150_000);
+            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            Ok(TradeFee {
+                coin: "ETH".to_owned(),
+                amount: amount.into(),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn get_fee_to_send_taker_fee(
+        &self,
+        dex_fee_amount: BigDecimal,
+        stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        let coin = self.clone();
+        let fut = async move {
+            let dex_fee_amount = try_map!(
+                wei_from_big_decimal(&dex_fee_amount, coin.decimals),
+                TradePreimageError::Other
+            );
+
+            // pass the dummy params
+            let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)
+                .expect("addr_from_raw_pubkey should never fail with DEX_FEE_ADDR_RAW_PUBKEY");
+            let (eth_value, data, call_addr) = match coin.coin_type {
+                EthCoinType::Eth => (dex_fee_amount, Vec::new(), to_addr),
+                EthCoinType::Erc20(token_addr) => {
+                    let function = try_map!(ERC20_CONTRACT.function("transfer"), TradePreimageError::Other);
+                    let data = try_map!(
+                        function.encode_input(&[Token::Address(to_addr), Token::Uint(dex_fee_amount)]),
+                        TradePreimageError::Other
+                    );
+                    (0.into(), data, token_addr)
+                },
+            };
+
+            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = increase_gas_price_by_stage(gas_price, &stage);
+            let estimate_gas_req = CallRequest {
+                value: Some(eth_value),
+                data: Some(data.clone().into()),
+                from: Some(coin.my_address),
+                to: call_addr,
+                gas: None,
+                // gas price must be supplied because some smart contracts base their
+                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
+                gas_price: Some(gas_price),
+            };
+
+            // Please note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
+            // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
+            let gas_limit = try_map!(
+                coin.estimate_gas(estimate_gas_req, None).compat().await,
+                TradePreimageError::Other
+            );
+
+            let total_fee = gas_limit * gas_price;
+            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            Ok(TradeFee {
+                coin: "ETH".to_owned(),
+                amount: amount.into(),
+            })
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrderding::Relaxed) }
@@ -2801,12 +2928,27 @@ fn get_addr_nonce(addr: Address, web3s: Vec<Web3Instance>) -> Box<dyn Future<Ite
     Box::new(Box::pin(fut).compat())
 }
 
-fn add_ten_pct_one_gwei(num: U256) -> U256 {
+fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));
-    let ten_pct = (num / U256::from(100)) * U256::from(10);
-    if ten_pct < one_gwei {
+    let percent = (num / U256::from(100)) * U256::from(percent);
+    if percent < one_gwei {
         num + one_gwei
     } else {
-        num + ten_pct
+        num + percent
+    }
+}
+
+fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 {
+    match level {
+        FeeApproxStage::WithoutApprox => gas_price,
+        FeeApproxStage::StartSwap => {
+            increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP)
+        },
+        FeeApproxStage::OrderIssue => {
+            increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE)
+        },
+        FeeApproxStage::TradePreimage => {
+            increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE)
+        },
     }
 }

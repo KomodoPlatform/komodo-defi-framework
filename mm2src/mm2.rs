@@ -42,6 +42,7 @@ use std::str;
 use self::lp_native_dex::{lp_init, lp_ports};
 use coins::update_coins_config;
 
+#[path = "database.rs"] pub mod database;
 #[cfg(not(feature = "wallet-only"))]
 #[path = "lp_network.rs"]
 pub mod lp_network;

@@ -1,11 +1,9 @@
-use bytes::Bytes;
 use gstuff::Constructible;
 #[cfg(not(feature = "native"))] use http::Response;
-use keys::{DisplayLayout, KeyPair, Private};
+use keys::KeyPair;
 use primitives::hash::H160;
 use rand::Rng;
-use serde_bencode::de::from_bytes as bdecode;
-use serde_bencode::ser::to_bytes as bencode;
+use rusqlite::Connection;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::any::Any;
@@ -69,34 +67,22 @@ pub struct MmCtx {
     pub ffi_handle: Constructible<u32>,
     /// Callbacks to invoke from `fn stop`.
     pub stop_listeners: Mutex<Vec<StopListenerCallback>>,
-    /// The context belonging to the `portfolio` crate: `PortfolioContext`.
-    pub portfolio_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// The context belonging to the `peers` crate: `PeersContext`.
-    pub peers_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub p2p_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub peer_id: Constructible<String>,
-    /// The context belonging to the `http_fallback` mod: `HttpFallbackContext`.
-    pub http_fallback_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// The context belonging to the `prices` mod: `PricesContext`.
-    pub prices_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
-    /// Replacement of `lp::G.LP_myrmd160`.
     pub rmd160: Constructible<H160>,
-    /// Seed node IPs, initialized in `fn lp_initpeers`.
-    pub seeds: Mutex<Vec<IpAddr>>,
     /// secp256k1 key pair derived from passphrase.
     /// cf. `key_pair_from_seed`.
-    /// Replacement of `lp::G.LP_privkey`.
     pub secp256k1_key_pair: Constructible<KeyPair>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    pub gossipsub_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub sqlite_connection: Constructible<Connection>,
 }
 impl MmCtx {
     pub fn with_log_state(log: LogState) -> MmCtx {
@@ -109,20 +95,15 @@ impl MmCtx {
             stop: Constructible::default(),
             ffi_handle: Constructible::default(),
             stop_listeners: Mutex::new(Vec::new()),
-            portfolio_ctx: Mutex::new(None),
             ordermatch_ctx: Mutex::new(None),
-            peers_ctx: Mutex::new(None),
             p2p_ctx: Mutex::new(None),
             peer_id: Constructible::default(),
-            http_fallback_ctx: Mutex::new(None),
             coins_ctx: Mutex::new(None),
-            prices_ctx: Mutex::new(None),
             rmd160: Constructible::default(),
-            seeds: Mutex::new(Vec::new()),
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
-            gossipsub_ctx: Mutex::new(None),
+            sqlite_connection: Constructible::default(),
         }
     }
 
@@ -237,6 +218,19 @@ impl MmCtx {
     }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
+
+    pub fn init_sqlite_connection(&self) -> Result<(), String> {
+        let sqlite_file_path = self.dbdir().join("MM2.db");
+        log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
+        let connection = try_s!(Connection::open(sqlite_file_path));
+        try_s!(self.sqlite_connection.pin(connection));
+        Ok(())
+    }
+
+    pub fn sqlite_connection(&self) -> &Connection {
+        self.sqlite_connection
+            .or(&|| panic!("sqlite_connection is not initialized"))
+    }
 }
 impl Default for MmCtx {
     fn default() -> Self { Self::with_log_state(LogState::in_memory()) }
@@ -428,68 +422,6 @@ impl MmArc {
 
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }
-}
-
-/// Receives a subset of a portable context in order to recreate a native copy of it.
-/// Can be invoked with the same context multiple times, synchronizing some of the fields.
-/// As of now we're expecting a one-to-one pairing between the portable and the native versions of MM
-/// so the uniqueness of the `ffi_handle` is not a concern yet.
-#[cfg(feature = "native")]
-pub async fn ctx2helpers(main_ctx: MmArc, req: Bytes) -> Result<Vec<u8>, String> {
-    let ctxʷ: PortableCtx = try_s!(bdecode(&req));
-    let private = try_s!(Private::from_layout(&ctxʷ.secp256k1_key_pair[..]));
-    let main_key = try_s!(main_ctx.secp256k1_key_pair.as_option().ok_or("No key"));
-
-    if *main_key.private() == private {
-        // We have a match with the primary native context, the one configured on the command line.
-        let res = try_s!(bencode(&NativeCtx {
-            ffi_handle: try_s!(main_ctx.ffi_handle())
-        }));
-        return Ok(res);
-    }
-
-    if let Some(ffi_handle) = ctxʷ.ffi_handle {
-        if let Ok(ctx) = MmArc::from_ffi_handle(ffi_handle) {
-            let key = try_s!(ctx.secp256k1_key_pair.as_option().ok_or("No key"));
-            if *key.private() != private {
-                return ERR!("key mismatch");
-            }
-            let res = try_s!(bencode(&NativeCtx {
-                ffi_handle: try_s!(ctx.ffi_handle())
-            }));
-            return Ok(res);
-        }
-    }
-
-    // Create a native copy of the portable context.
-
-    let pair: Option<KeyPair> = if ctxʷ.secp256k1_key_pair.is_empty() {
-        None
-    } else {
-        let private = try_s!(Private::from_layout(&ctxʷ.secp256k1_key_pair[..]));
-        Some(try_s!(KeyPair::from_private(private)))
-    };
-
-    let ctx = MmCtx {
-        conf: try_s!(json::from_str(&ctxʷ.conf)),
-        secp256k1_key_pair: pair.into(),
-        ffi_handle: ctxʷ.ffi_handle.into(),
-        ..MmCtx::with_log_state(LogState::in_memory())
-    };
-    let ctx = MmArc(Arc::new(ctx));
-    if let Some(ffi_handle) = ctxʷ.ffi_handle {
-        let mut ctx_ffi = try_s!(MM_CTX_FFI.lock());
-        if ctx_ffi.contains_key(&ffi_handle) {
-            return ERR!("ID race");
-        }
-        ctx_ffi.insert(ffi_handle, ctx.weak());
-    }
-    let res = try_s!(bencode(&NativeCtx {
-        ffi_handle: try_s!(ctx.ffi_handle())
-    }));
-    Arc::into_raw(ctx.0); // Leak.
-
-    Ok(res)
 }
 
 /// Helps getting a crate context from a corresponding `MmCtx` field.

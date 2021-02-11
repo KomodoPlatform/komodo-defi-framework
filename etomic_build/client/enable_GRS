@@ -1,0 +1,3 @@
+#!/bin/bash
+source userpass
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"electrum\",\"coin\":\"GRS\",\"servers\":[{\"url\":\"electrum10.groestlcoin.org:50001\"},{\"url\":\"electrum11.groestlcoin.org:50001\"},{\"url\":\"electrum13.groestlcoin.org:50001\"}],\"mm2\":1}"

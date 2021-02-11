@@ -38,30 +38,21 @@ impl Qrc20Coin {
         receiver_addr: H160,
         swap_contract_address: H160,
     ) -> Result<TransactionEnum, String> {
-        let allowance = try_s!(self.allowance(swap_contract_address).await);
+        let balance = try_s!(self.my_balance().compat().await);
+        let balance = try_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
-        let mut outputs = Vec::default();
-        // check if we should reset the allowance to 0 and raise this to the max available value (our balance)
-        if allowance < value {
-            let balance = try_s!(self.my_balance().compat().await);
-            let balance = try_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
-            if allowance > U256::zero() {
-                // first reset the allowance to the 0
-                outputs.push(try_s!(self.approve_output(swap_contract_address, 0.into())));
-            }
-            // set the allowance from 0 to `balance` after the previous output will be executed
-            outputs.push(try_s!(self.approve_output(swap_contract_address, balance)));
-        }
-
-        // when this output is executed, the allowance will be sufficient already
-        outputs.push(try_s!(self.erc20_payment_output(
-            id,
-            value,
-            time_lock,
-            &secret_hash,
-            receiver_addr,
-            &swap_contract_address
-        )));
+        let outputs = try_s!(
+            self.generate_swap_payment_outputs(
+                balance,
+                id,
+                value,
+                time_lock,
+                secret_hash,
+                receiver_addr,
+                swap_contract_address,
+            )
+            .await
+        );
 
         self.send_contract_calls(outputs).await
     }
@@ -372,7 +363,50 @@ impl Qrc20Coin {
         Ok(())
     }
 
-    async fn allowance(&self, spender: H160) -> Result<U256, String> {
+    /// Generate `ContractCallOutput` outputs required to send a swap payment.
+    /// If the wallet allowance is not enough we should set it to the wallet balance.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn generate_swap_payment_outputs(
+        &self,
+        my_balance: U256,
+        id: Vec<u8>,
+        value: U256,
+        time_lock: u32,
+        secret_hash: Vec<u8>,
+        receiver_addr: H160,
+        swap_contract_address: H160,
+    ) -> Result<Vec<ContractCallOutput>, String> {
+        // Check the balance to avoid unnecessary burning of gas
+        if my_balance < value {
+            return ERR!("Balance {} is less than value {}", my_balance, value);
+        }
+
+        let allowance = try_s!(self.allowance(swap_contract_address).await);
+
+        let mut outputs = Vec::with_capacity(3);
+        // check if we should reset the allowance to 0 and raise this to the max available value (our balance)
+        if allowance < value {
+            if allowance > U256::zero() {
+                // first reset the allowance to the 0
+                outputs.push(try_s!(self.approve_output(swap_contract_address, 0.into())));
+            }
+            // set the allowance from 0 to `my_balance` after the previous output is executed
+            outputs.push(try_s!(self.approve_output(swap_contract_address, my_balance)));
+        }
+
+        // when this output is executed, the allowance will be sufficient already
+        outputs.push(try_s!(self.erc20_payment_output(
+            id,
+            value,
+            time_lock,
+            &secret_hash,
+            receiver_addr,
+            &swap_contract_address
+        )));
+        Ok(outputs)
+    }
+
+    pub async fn allowance(&self, spender: H160) -> Result<U256, String> {
         let tokens = try_s!(
             self.utxo
                 .rpc_client
@@ -417,7 +451,7 @@ impl Qrc20Coin {
     }
 
     /// Generate a UTXO output with a script_pubkey that calls standard QRC20 `approve` function.
-    fn approve_output(&self, spender: H160, amount: U256) -> Result<ContractCallOutput, String> {
+    pub fn approve_output(&self, spender: H160, amount: U256) -> Result<ContractCallOutput, String> {
         let function = try_s!(eth::ERC20_CONTRACT.function("approve"));
         let params = try_s!(function.encode_input(&[Token::Address(spender), Token::Uint(amount)]));
 
@@ -491,7 +525,7 @@ impl Qrc20Coin {
     }
 
     /// Generate a UTXO output with a script_pubkey that calls EtomicSwap `receiverSpend` function.
-    fn receiver_spend_output(
+    pub fn receiver_spend_output(
         &self,
         swap_contract_address: &H160,
         id: Vec<u8>,
@@ -526,7 +560,7 @@ impl Qrc20Coin {
         })
     }
 
-    fn sender_refund_output(
+    pub fn sender_refund_output(
         &self,
         swap_contract_address: &H160,
         id: Vec<u8>,

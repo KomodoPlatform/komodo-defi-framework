@@ -2164,7 +2164,6 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     let mut roots = HashMap::new();
     roots.insert(alb_pair.clone(), old_root);
 
-    let propagated_from_peer = String::default();
     let SyncPubkeyOrderbookStateRes {
         mut pair_orders_diff, ..
     } = block_on(process_sync_pubkey_orderbook_state(ctx.clone(), pubkey, roots))
@@ -2274,7 +2273,6 @@ fn test_remove_and_purge_pubkey_pair_orders() {
     }
 
     let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
-    let rick_kmd_pair = alb_ordered_pair("RICK", "KMD");
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());

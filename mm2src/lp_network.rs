@@ -17,7 +17,6 @@
 //  marketmaker
 //
 use common::executor::spawn;
-#[cfg(not(feature = "native"))] use common::helperᶜ;
 use common::mm_ctx::MmArc;
 use common::HyRes;
 use futures::{channel::oneshot, lock::Mutex as AsyncMutex, StreamExt};

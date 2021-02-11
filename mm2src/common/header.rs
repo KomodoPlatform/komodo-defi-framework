@@ -1,7 +1,7 @@
 //! Indirect routing between crates.
 //!
 //! Sometimes we need to call downstream, from a dependency and into a dependent crate,
-//! such as when calling `mm2::rpc::rpc_serviceʹ` from `common::MarketMakerIt::rpc`.
+//! such as when calling `mm2::rpc::process_rpc_request` from `common::MarketMakerIt::rpc`.
 //! Here we can use C-like headers and/or constructible slots for that.
 
 #[cfg(not(feature = "native"))] use crate::mm_ctx::MmArc;
@@ -16,7 +16,7 @@
 
 #[cfg(not(feature = "native"))] use std::pin::Pin;
 
-/// Access to `rpc::rpc_serviceʹ` defined downstream.  
+/// Access to `rpc::process_rpc_request` defined downstream.
 /// Initialized in `rpc::init_header_slots`.
 #[cfg(not(feature = "native"))]
 pub static RPC_SERVICE: Constructible<

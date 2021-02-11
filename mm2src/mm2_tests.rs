@@ -145,9 +145,9 @@ fn chdir(dir: &Path) {
         #[cfg(not(windows))]
         {
             use std::ffi::CString;
-            let dirˢ = unwrap!(dir.to_str());
-            let dirᶜ = unwrap!(CString::new(dirˢ));
-            let rc = unsafe { libc::chdir(dirᶜ.as_ptr()) };
+            let dir_s = unwrap!(dir.to_str());
+            let dir_c = unwrap!(CString::new(dir_s));
+            let rc = unsafe { libc::chdir(dir_c.as_ptr()) };
             assert_eq!(rc, 0, "Can not chdir to {:?}", dir);
         }
 
@@ -508,7 +508,7 @@ fn test_check_balance_on_order_post() {
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x996a8aE0304680F6A69b8A9d7C6E37D65AB5AB56"}}}
     ]);
 
     // start bob and immediately place the order
@@ -533,7 +533,7 @@ fn test_check_balance_on_order_post() {
         mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
     ));
     // Enable coins. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm, vec!["http://195.201.0.6:8565"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm, vec!["http://eth1.cipig.net:8555"]))});
     // issue sell request by setting base/rel price
 
     // Expect error as MORTY balance is 0
@@ -762,6 +762,10 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         log! ({"Bob log path: {}", mm_bob.log_path.display()})
     }
 
+    // wait until bob starts listening on the p2p port and sleep for 1 second
+    wait_log_re!(mm_bob, 22., "INFO Listening on");
+    Timer::sleep(1.).await;
+
     // Both Alice and Bob might try to bind on the "0.0.0.0:47773" DHT port in this test
     // (because the local "127.0.0.*:47773" addresses aren't that useful for DHT).
     // We want to give Bob a headstart in acquiring the port,
@@ -790,10 +794,6 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
     {
         log! ({"Alice log path: {}", mm_alice.log_path.display()})
     }
-
-    // Wait for keypair initialization, `lp_passphrase_init`.
-    unwrap!(mm_bob.wait_for_log(11., |l| l.contains("version: ")).await);
-    unwrap!(mm_alice.wait_for_log(11., |l| l.contains("version: ")).await);
 
     // wait until both nodes RPC API is active
     wait_log_re!(mm_bob, 22., ">>>>>>>>> DEX stats ");
@@ -828,12 +828,25 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    // Allow the order to be converted to maker after not being matched in 30 seconds.
-    // log! ("Waiting 32 seconds…");
-    // Timer::sleep (32.) .await;
-
     for (base, rel) in pairs.iter() {
-        log!("Issue alice " (base) "/" (rel) " buy request");
+        common::log::info!(
+            "Trigger alice subscription to {}/{} orderbook topic first and sleep for 1 second",
+            base,
+            rel
+        );
+        let rc = unwrap!(
+            mm_alice
+                .rpc(json! ({
+                    "userpass": mm_alice.userpass,
+                    "method": "orderbook",
+                    "base": base,
+                    "rel": rel,
+                }))
+                .await
+        );
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        Timer::sleep(1.).await;
+        common::log::info!("Issue alice {}/{} buy request", base, rel);
         let rc = unwrap!(
             mm_alice
                 .rpc(json! ({
@@ -853,18 +866,29 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
 
     for (base, rel) in pairs.iter() {
         // ensure the swaps are started
-        unwrap!(
-            mm_alice
-                .wait_for_log(5., |log| log
-                    .contains(&format!("Entering the taker_swap_loop {}/{}", base, rel)))
-                .await
-        );
-        unwrap!(
-            mm_bob
-                .wait_for_log(5., |log| log
-                    .contains(&format!("Entering the maker_swap_loop {}/{}", base, rel)))
-                .await
-        );
+        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
+    }
+
+    for uuid in uuids.iter() {
+        // ensure the swaps are indexed to the SQLite database
+        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
     }
 
     for uuid in uuids.iter() {
@@ -3221,7 +3245,7 @@ fn test_withdraw_cashaddresses() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}],
+        "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"}],
         "mm2": 1,
     }))));
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{eth, SwapOps, ValidateAddressResult};
+use crate::{eth, SwapOps, TradePreimageError, TradePreimageValue, ValidateAddressResult};
 use common::mm_metrics::MetricsArc;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -218,6 +218,20 @@ impl UtxoCommonOps for QtumCoin {
     ) -> Result<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>), String> {
         utxo_common::list_unspent_ordered(self, address).await
     }
+
+    async fn preimage_trade_fee_required_to_send_outputs(
+        &self,
+        outputs: Vec<TransactionOutput>,
+        fee_policy: FeePolicy,
+        gas_fee: Option<u64>,
+        stage: &FeeApproxStage,
+    ) -> Result<BigDecimal, TradePreimageError> {
+        utxo_common::preimage_trade_fee_required_to_send_outputs(self, outputs, fee_policy, gas_fee, stage).await
+    }
+
+    fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64 {
+        utxo_common::increase_dynamic_fee_by_stage(self, dynamic_fee, stage)
+    }
 }
 
 #[async_trait]
@@ -435,7 +449,7 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
-        utxo_common::tx_enum_from_bytes(bytes)
+        utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
@@ -447,14 +461,12 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
+
+    fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 }
 
 impl MmCoin for QtumCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
-
-    fn can_i_spend_other_payment(&self) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::can_i_spend_other_payment()
-    }
 
     fn wallet_only(&self) -> bool { false }
 
@@ -477,6 +489,29 @@ impl MmCoin for QtumCoin {
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         utxo_common::get_trade_fee(self.clone())
+    }
+
+    fn get_sender_trade_fee(
+        &self,
+        value: TradePreimageValue,
+        stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        utxo_common::get_sender_trade_fee(self.clone(), value, stage)
+    }
+
+    fn get_receiver_trade_fee(
+        &self,
+        _stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        utxo_common::get_receiver_trade_fee(self)
+    }
+
+    fn get_fee_to_send_taker_fee(
+        &self,
+        dex_fee_amount: BigDecimal,
+        stage: FeeApproxStage,
+    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+        utxo_common::get_fee_to_send_taker_fee(self.clone(), dex_fee_amount, stage)
     }
 
     fn required_confirmations(&self) -> u64 { utxo_common::required_confirmations(&self.utxo_arc) }

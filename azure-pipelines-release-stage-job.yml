@@ -58,7 +58,7 @@ jobs:
             mm2_builder \
             /bin/bash -c "source /root/.cargo/env && cargo build --features native -vv --target-dir target-xenial"
           else
-            cargo +nightly build --features native -vv
+            cargo build --features native -vv
           fi
         displayName: 'Build MM2 Debug'
         condition: eq( variables['DEBUG_UPLOADED'], '' )
@@ -95,7 +95,7 @@ jobs:
             mm2_builder \
             /bin/bash -c "source /root/.cargo/env && cargo build --features native --release -vv --target-dir target-xenial"
           else
-            cargo +nightly build --features native --release -vv
+            cargo build --features native --release -vv
           fi
         displayName: 'Build MM2 Release'
         condition: eq( variables['RELEASE_UPLOADED'], '' )

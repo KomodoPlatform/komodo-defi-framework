@@ -104,8 +104,6 @@ use http::{HeaderMap, Request, Response, StatusCode};
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
-#[cfg(not(feature = "native"))]
-use serde_bencode::de::from_bytes as bdecode;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -131,11 +129,18 @@ use uuid::Uuid;
 #[cfg(feature = "w-bindgen")] use wasm_bindgen::prelude::*;
 
 pub use num_bigint::BigInt;
+pub use rusqlite;
 
 pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
 
 pub const SATOSHIS: u64 = 100_000_000;
+
+pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+lazy_static! {
+    pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
+        hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
@@ -1141,6 +1146,48 @@ macro_rules! try_h {
             Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
         }
     };
+}
+
+/// Maps an error by applying a `map_f` expression to an error within `exp` and return the result on a failure.
+///
+/// Unlike `$exp.map_err($map_f)` this macro applies `ERRL` to an error before the `map_f` is called.
+#[macro_export]
+macro_rules! try_map {
+    ($exp: expr, $map_f: expr) => {
+        match $exp {
+            Ok(x) => x,
+            Err(e) => {
+                let err = ERRL!("{}", e);
+                return Err($map_f(err));
+            },
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! source {
+    () => {
+        $crate::TraceSource::new(gstuff::filename(file!()), line!())
+    };
+}
+
+pub struct TraceSource {
+    filename: &'static str,
+    line: u32,
+}
+
+impl TraceSource {
+    pub fn new(filename: &'static str, line: u32) -> TraceSource { TraceSource { filename, line } }
+
+    pub fn with_msg(&self, msg: &str) -> String { format!("{}:{}] {}", self.filename, self.line, msg) }
+}
+
+pub trait Traceable {
+    fn trace(self, source: TraceSource) -> Self;
+}
+
+impl<T, E: Traceable> Traceable for Result<T, E> {
+    fn trace(self, source: TraceSource) -> Self { self.map_err(|e| e.trace(source)) }
 }
 
 /// Executes a GET request, returning the response status, headers and body.

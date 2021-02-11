@@ -32,7 +32,7 @@ use async_trait::async_trait;
 use base64::{encode_config as base64_encode, URL_SAFE};
 use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use chain::{OutPoint, TransactionInput, TransactionOutput};
+use chain::{OutPoint, TransactionInput, TransactionOutput, TxHashAlgo};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
@@ -68,9 +68,10 @@ pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, EstimateFeeMode, NativeClient,
                         UnspentInfo, UtxoRpcClientEnum};
-use super::{CoinTransportMetrics, CoinsContext, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, Transaction,
-            TransactionDetails, TransactionEnum, TransactionFut, WithdrawFee, WithdrawRequest};
+use super::{CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
+            TradePreimageError, Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawFee,
+            WithdrawRequest};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClientImpl};
 
 #[cfg(test)] pub mod utxo_tests;
@@ -88,6 +89,7 @@ const UTXO_DUST_AMOUNT: u64 = 1000;
 /// # Safety
 /// 11 > 0
 const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64) };
+const DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT: f64 = 0.5;
 
 #[cfg(windows)]
 #[cfg(feature = "native")]
@@ -127,6 +129,7 @@ pub struct AdditionalTxData {
     pub received_by_me: u64,
     pub spent_by_me: u64,
     pub fee_amount: u64,
+    pub unused_change: Option<u64>,
 }
 
 /// The fee set from coins config
@@ -340,6 +343,8 @@ pub struct UtxoCoinFields {
     /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729160/What+is+a+Parallel+Chain+Asset+Chain
     pub asset_chain: bool,
     pub tx_fee: TxFee,
+    /// Dynamic transaction fee volatility in percent. The value is used to predict a possible increase in dynamic fee.
+    pub tx_fee_volatility_percent: f64,
     /// Transaction version group id for Zcash transactions since Overwinter: https://github.com/zcash/zips/blob/master/zip-0202.rst
     pub version_group_id: u32,
     /// Consensus branch id for Zcash transactions since Overwinter: https://github.com/zcash/zcash/blob/master/src/consensus/upgrades.cpp#L11
@@ -372,6 +377,9 @@ pub struct UtxoCoinFields {
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
+    /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
+    pub estimate_fee_blocks: u32,
+    pub tx_hash_algo: TxHashAlgo,
 }
 
 #[cfg_attr(test, mockable)]
@@ -452,6 +460,18 @@ pub trait UtxoCommonOps {
         &self,
         address: &Address,
     ) -> Result<(Vec<UnspentInfo>, AsyncMutexGuard<'_, RecentlySpentOutPoints>), String>;
+
+    async fn preimage_trade_fee_required_to_send_outputs(
+        &self,
+        outputs: Vec<TransactionOutput>,
+        fee_policy: FeePolicy,
+        gas_fee: Option<u64>,
+        stage: &FeeApproxStage,
+    ) -> Result<BigDecimal, TradePreimageError>;
+
+    /// Increase the given `dynamic_fee` according to the fee approximation `stage`.
+    /// The method is used to predict a possible increase in dynamic fee.
+    fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64;
 }
 
 #[async_trait]
@@ -748,6 +768,7 @@ pub trait UtxoCoinBuilder {
         let tx_version = self.tx_version();
         let overwintered = self.overwintered();
         let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
+        let tx_fee_volatility_percent = self.tx_fee_volatility_percent();
         let version_group_id = try_s!(self.version_group_id(tx_version, overwintered));
         let consensus_branch_id = try_s!(self.consensus_branch_id(tx_version));
         let signature_version = self.signature_version();
@@ -769,8 +790,10 @@ pub trait UtxoCoinBuilder {
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
         let dust_amount = self.dust_amount();
+        let estimate_fee_blocks = self.estimate_fee_blocks();
 
         let _my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let tx_hash_algo = self.tx_hash_algo();
         let coin = UtxoCoinFields {
             ticker: self.ticker().to_owned(),
             decimals,
@@ -790,6 +813,7 @@ pub trait UtxoCoinBuilder {
             address_format,
             asset_chain,
             tx_fee,
+            tx_fee_volatility_percent,
             version_group_id,
             consensus_branch_id,
             zcash,
@@ -805,6 +829,8 @@ pub trait UtxoCoinBuilder {
             mature_confirmations,
             tx_cache_directory,
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
+            estimate_fee_blocks,
+            tx_hash_algo,
         };
         Ok(coin)
     }
@@ -873,6 +899,13 @@ pub trait UtxoCoinBuilder {
             Some(fee) => TxFee::Fixed(fee),
         };
         Ok(tx_fee)
+    }
+
+    fn tx_fee_volatility_percent(&self) -> f64 {
+        match self.conf()["txfee_volatility_percent"].as_f64() {
+            Some(volatility) => volatility,
+            None => DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
+        }
     }
 
     fn version_group_id(&self, tx_version: i32, overwintered: bool) -> Result<u32, String> {
@@ -964,7 +997,9 @@ pub trait UtxoCoinBuilder {
         json::from_value(self.conf()["estimate_fee_mode"].clone()).unwrap_or(None)
     }
 
-    fn dust_amount(&self) -> u64 { UTXO_DUST_AMOUNT }
+    fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
+
+    fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf()["estimate_fee_blocks"].clone()).unwrap_or(1) }
 
     fn network(&self) -> Result<BlockchainNetwork, String> {
         let conf = self.conf();
@@ -1113,6 +1148,14 @@ pub trait UtxoCoinBuilder {
             Ok(home.join(confpath))
         } else {
             Ok(confpath.into())
+        }
+    }
+
+    fn tx_hash_algo(&self) -> TxHashAlgo {
+        if self.ticker() == "GRS" {
+            TxHashAlgo::SHA256
+        } else {
+            TxHashAlgo::DSHA256
         }
     }
 }
@@ -1449,6 +1492,7 @@ pub(crate) fn sign_tx(
         join_split_pubkey: H256::default(),
         zcash: unsigned.zcash,
         str_d_zeel: unsigned.str_d_zeel,
+        tx_hash_algo: unsigned.hash_algo.into(),
     })
 }
 

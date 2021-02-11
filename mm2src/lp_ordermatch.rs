@@ -24,8 +24,9 @@ use bigdecimal::BigDecimal;
 use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
-use coins::{lp_coinfindᵃ, BalanceTradeFeeUpdatedHandler, MmCoinEnum, TradeFee};
+use coins::{lp_coinfind, BalanceTradeFeeUpdatedHandler, FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
+use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
 use common::{bits256, json_dir_entries, log, new_uuid, now_ms, remove_file, write};
@@ -53,11 +54,12 @@ use std::sync::Arc;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::{lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest},
+use crate::mm2::{database::my_swaps::insert_new_swap,
+                 lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest},
                  lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                           is_pubkey_banned, lp_atomic_locktime, run_maker_swap, run_taker_swap,
-                           AtomicLocktimeVersion, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
-                           SwapConfirmationsSettings, TakerSwap}};
+                           check_other_coin_balance_for_swap, is_pubkey_banned, lp_atomic_locktime, run_maker_swap,
+                           run_taker_swap, AtomicLocktimeVersion, CheckBalanceError, MakerSwap, RunMakerSwapInput,
+                           RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap}};
 
 #[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
 #[path = "lp_ordermatch/order_requests_tracker.rs"]
@@ -750,14 +752,23 @@ impl BalanceUpdateOrdermatchHandler {
 
 #[async_trait]
 impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
-    async fn balance_updated(&self, ticker: &str, new_balance: &BigDecimal, trade_fee: &TradeFee) {
-        let new_volume = calc_max_maker_vol(&self.ctx, &new_balance, trade_fee, ticker);
+    async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal) {
+        // Get the max maker available volume to check if the wallet balances are sufficient for the issued maker orders.
+        // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
+        let new_volume = match calc_max_maker_vol(&self.ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
+            Ok(v) => v,
+            Err(CheckBalanceError::NotSufficientBalance(_)) => MmNumber::from(0),
+            Err(e) => {
+                log::warn!("Couldn't handle the 'balance_updated' event: {}", e);
+                return;
+            },
+        };
         let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(&self.ctx));
         let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
         *maker_orders = maker_orders
             .drain()
             .filter_map(|(uuid, order)| {
-                if order.base == *ticker {
+                if order.base == coin.ticker() {
                     if new_volume < order.min_base_vol {
                         let ctx = self.ctx.clone();
                         delete_my_maker_order(&ctx, &order);
@@ -2036,7 +2047,7 @@ impl OrdermatchContext {
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
     spawn(async move {
         // aka "maker_loop"
-        let taker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.rel).await {
+        let taker_coin = match lp_coinfind(&ctx, &maker_match.reserved.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", maker_match.reserved.rel);
@@ -2048,7 +2059,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        let maker_coin = match lp_coinfindᵃ(&ctx, &maker_match.reserved.base).await {
+        let maker_coin = match lp_coinfind(&ctx, &maker_match.reserved.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", maker_match.reserved.base);
@@ -2091,6 +2102,17 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin.ticker(),
             uuid
         );
+
+        let now = now_ms() / 1000;
+        if let Err(e) = insert_new_swap(
+            &ctx,
+            maker_coin.ticker(),
+            taker_coin.ticker(),
+            &uuid.to_string(),
+            &now.to_string(),
+        ) {
+            error!("Error {} on new swap insertion", e);
+        }
         let maker_swap = MakerSwap::new(
             ctx.clone(),
             alice,
@@ -2112,7 +2134,7 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
         // aka "taker_loop"
         let mut maker = bits256::default();
         maker.bytes = taker_match.reserved.sender_pubkey.0;
-        let taker_coin = match lp_coinfindᵃ(&ctx, &taker_match.reserved.rel).await {
+        let taker_coin = match lp_coinfind(&ctx, &taker_match.reserved.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", taker_match.reserved.rel);
@@ -2124,7 +2146,7 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
             },
         };
 
-        let maker_coin = match lp_coinfindᵃ(&ctx, &taker_match.reserved.base).await {
+        let maker_coin = match lp_coinfind(&ctx, &taker_match.reserved.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", taker_match.reserved.base);
@@ -2167,6 +2189,16 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
             taker_coin.ticker(),
             uuid
         );
+        let now = now_ms() / 1000;
+        if let Err(e) = insert_new_swap(
+            &ctx,
+            taker_coin.ticker(),
+            maker_coin.ticker(),
+            &uuid.to_string(),
+            &now.to_string(),
+        ) {
+            error!("Error {} on new swap insertion", e);
+        }
         let taker_swap = TakerSwap::new(
             ctx.clone(),
             maker,
@@ -2276,8 +2308,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
             for (uuid, order) in my_maker_orders.iter() {
                 if !ordermatch_ctx.orderbook.lock().await.order_set.contains_key(uuid) {
-                    if let Ok(Some(_)) = lp_coinfindᵃ(&ctx, &order.base).await {
-                        if let Ok(Some(_)) = lp_coinfindᵃ(&ctx, &order.rel).await {
+                    if let Ok(Some(_)) = lp_coinfind(&ctx, &order.base).await {
+                        if let Ok(Some(_)) = lp_coinfind(&ctx, &order.rel).await {
                             let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
                             if !ordermatch_ctx.orderbook.lock().await.is_subscribed_to(&topic) {
                                 let request_orderbook = false;
@@ -2401,11 +2433,11 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 
     for (uuid, order) in filtered {
         if let OrderMatchResult::Matched((base_amount, rel_amount)) = order.match_with_request(&taker_request) {
-            let base_coin = match lp_coinfindᵃ(&ctx, &order.base).await {
+            let base_coin = match lp_coinfind(&ctx, &order.base).await {
                 Ok(Some(c)) => c,
                 _ => return, // attempt to match with deactivated coin
             };
-            let rel_coin = match lp_coinfindᵃ(&ctx, &order.rel).await {
+            let rel_coin = match lp_coinfind(&ctx, &order.rel).await {
                 Ok(Some(c)) => c,
                 _ => return, // attempt to match with deactivated coin
             };
@@ -2530,9 +2562,9 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     if input.base == input.rel {
         return ERR!("Base and rel must be different coins");
     }
-    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &input.rel).await);
+    let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &input.base).await);
+    let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     if base_coin.wallet_only() {
         return ERR!("Base coin is wallet only");
@@ -2541,8 +2573,18 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
         return ERR!("Rel coin is wallet only");
     }
     let my_amount = &input.volume * &input.price;
-    try_s!(check_balance_for_taker_swap(&ctx, &rel_coin, &base_coin, my_amount, None).await);
-    try_s!(base_coin.can_i_spend_other_payment().compat().await);
+    try_s!(
+        check_balance_for_taker_swap(
+            &ctx,
+            &rel_coin,
+            &base_coin,
+            my_amount,
+            None,
+            None,
+            FeeApproxStage::OrderIssue
+        )
+        .await
+    );
     let res = try_s!(lp_auto_buy(&ctx, &base_coin, &rel_coin, input).await).into_bytes();
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -2552,9 +2594,9 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     if input.base == input.rel {
         return ERR!("Base and rel must be different coins");
     }
-    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &input.base).await);
+    let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &input.rel).await);
+    let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     if base_coin.wallet_only() {
         return ERR!("Base coin is wallet only");
@@ -2562,8 +2604,18 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     if rel_coin.wallet_only() {
         return ERR!("Rel coin is wallet only");
     }
-    try_s!(check_balance_for_taker_swap(&ctx, &base_coin, &rel_coin, input.volume.clone(), None).await);
-    try_s!(rel_coin.can_i_spend_other_payment().compat().await);
+    try_s!(
+        check_balance_for_taker_swap(
+            &ctx,
+            &base_coin,
+            &rel_coin,
+            input.volume.clone(),
+            None,
+            None,
+            FeeApproxStage::OrderIssue
+        )
+        .await
+    );
     let res = try_s!(lp_auto_buy(&ctx, &base_coin, &rel_coin, input).await).into_bytes();
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -2903,12 +2955,12 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
 pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: SetPriceReq = try_s!(json::from_value(req));
 
-    let base_coin: MmCoinEnum = match try_s!(lp_coinfindᵃ(&ctx, &req.base).await) {
+    let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.base).await) {
         Some(coin) => coin,
         None => return ERR!("Base coin {} is not found", req.base),
     };
 
-    let rel_coin: MmCoinEnum = match try_s!(lp_coinfindᵃ(&ctx, &req.rel).await) {
+    let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.rel).await) {
         Some(coin) => coin,
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
@@ -2920,17 +2972,60 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         return ERR!("Rel coin is wallet only");
     }
 
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+    let mut my_orders = ordermatch_ctx.my_maker_orders.lock().await;
+    if req.cancel_previous {
+        let mut cancelled = vec![];
+        // remove the previous orders if there're some to allow multiple setprice call per pair
+        // it's common use case now as `autoprice` doesn't work with new ordermatching and
+        // MM2 users request the coins price from aggregators by their own scripts issuing
+        // repetitive setprice calls with new price
+        *my_orders = my_orders
+            .drain()
+            .filter_map(|(uuid, order)| {
+                let to_delete = order.base == req.base && order.rel == req.rel;
+                if to_delete {
+                    delete_my_maker_order(&ctx, &order);
+                    cancelled.push(order);
+                    None
+                } else {
+                    Some((uuid, order))
+                }
+            })
+            .collect();
+        for order in cancelled {
+            maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
+        }
+    }
+
     let my_balance = try_s!(base_coin.my_balance().compat().await);
     let volume = if req.max {
-        // use entire balance deducting the locked amount and trade fee if it's paid with base coin,
-        // skipping "check_balance_for_maker_swap"
-        let trade_fee = try_s!(base_coin.get_trade_fee().compat().await);
-        calc_max_maker_vol(&ctx, &my_balance, &trade_fee, base_coin.ticker())
+        // first check if `rel_coin` balance is sufficient
+        let rel_coin_trade_fee = try_s!(
+            rel_coin
+                .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
+                .compat()
+                .await
+        );
+        try_s!(check_other_coin_balance_for_swap(&ctx, &rel_coin, None, rel_coin_trade_fee).await);
+        // calculate max maker volume
+        // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
+        try_s!(calc_max_maker_vol(&ctx, &base_coin, &my_balance, FeeApproxStage::OrderIssue).await)
     } else {
-        try_s!(check_balance_for_maker_swap(&ctx, &base_coin, req.volume.clone(), None).await);
-        req.volume.clone()
+        try_s!(
+            check_balance_for_maker_swap(
+                &ctx,
+                &base_coin,
+                &rel_coin,
+                req.volume.clone(),
+                None,
+                None,
+                FeeApproxStage::OrderIssue
+            )
+            .await
+        );
+        req.volume
     };
-    try_s!(rel_coin.can_i_spend_other_payment().compat().await);
 
     let conf_settings = OrderConfirmationsSettings {
         base_confs: req.base_confs.unwrap_or_else(|| base_coin.required_confirmations()),
@@ -2951,32 +3046,6 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     try_s!(subscribe_to_orderbook_topic(&ctx, &new_order.base, &new_order.rel, request_orderbook).await);
     save_my_maker_order(&ctx, &new_order);
     maker_order_created_p2p_notify(ctx.clone(), &new_order).await;
-
-    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
-    let mut my_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    if req.cancel_previous {
-        let mut cancelled = vec![];
-        // remove the previous orders if there're some to allow multiple setprice call per pair
-        // it's common use case now as `autoprice` doesn't work with new ordermatching and
-        // MM2 users request the coins price from aggregators by their own scripts issuing
-        // repetitive setprice calls with new price
-        *my_orders = my_orders
-            .drain()
-            .filter_map(|(uuid, order)| {
-                let to_delete = order.base == new_order.base && order.rel == new_order.rel;
-                if to_delete {
-                    delete_my_maker_order(&ctx, &order);
-                    cancelled.push(order);
-                    None
-                } else {
-                    Some((uuid, order))
-                }
-            })
-            .collect();
-        for order in cancelled {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
-        }
-    }
     let rpc_result = MakerOrderForRpc::from(&new_order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     my_orders.insert(new_order.uuid, new_order);
@@ -3465,9 +3534,9 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     if req.base == req.rel {
         return ERR!("Base and rel must be different coins");
     }
-    let rel_coin = try_s!(lp_coinfindᵃ(&ctx, &req.rel).await);
+    let rel_coin = try_s!(lp_coinfind(&ctx, &req.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    let base_coin = try_s!(lp_coinfindᵃ(&ctx, &req.base).await);
+    let base_coin = try_s!(lp_coinfind(&ctx, &req.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let request_orderbook = true;
     try_s!(subscribe_to_orderbook_topic(&ctx, &req.base, &req.rel, request_orderbook).await);
@@ -3475,7 +3544,7 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let orderbook = ordermatch_ctx.orderbook.lock().await;
     let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
 
-    let asks = match orderbook.unordered.get(&(req.base.clone(), req.rel.clone())) {
+    let mut asks = match orderbook.unordered.get(&(req.base.clone(), req.rel.clone())) {
         Some(uuids) => {
             let mut orderbook_entries = Vec::new();
             for uuid in uuids {
@@ -3510,8 +3579,9 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         },
         None => Vec::new(),
     };
+    asks.sort_unstable_by(|ask1, ask2| ask2.price_rat.cmp(&ask1.price_rat));
 
-    let bids = match orderbook.unordered.get(&(req.rel.clone(), req.base.clone())) {
+    let mut bids = match orderbook.unordered.get(&(req.rel.clone(), req.base.clone())) {
         Some(uuids) => {
             let mut orderbook_entries = vec![];
             for uuid in uuids {
@@ -3547,6 +3617,8 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         },
         None => vec![],
     };
+    bids.sort_unstable_by(|bid1, bid2| bid2.price_rat.cmp(&bid1.price_rat));
+
     let response = OrderbookResponse {
         num_asks: asks.len(),
         num_bids: bids.len(),
@@ -3559,8 +3631,8 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         rel: req.rel,
         timestamp: now_ms() / 1000,
     };
-    let responseʲ = try_s!(json::to_vec(&response));
-    Ok(try_s!(Response::builder().body(responseʲ)))
+    let response = try_s!(json::to_vec(&response));
+    Ok(try_s!(Response::builder().body(response)))
 }
 
 fn choose_maker_confs_and_notas(

@@ -399,7 +399,7 @@ dependencies = [
 [[package]]
 name = "bitcrypto"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "groestl",
  "primitives",
@@ -687,7 +687,7 @@ dependencies = [
 [[package]]
 name = "chain"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "bitcrypto",
  "primitives",
@@ -859,11 +859,12 @@ dependencies = [
  "num_cpus",
  "parking_lot 0.11.0",
  "parking_lot_core 0.6.2",
+ "paste",
  "primitives",
  "rand 0.7.3",
  "regex",
+ "rusqlite",
  "serde",
- "serde_bencode",
  "serde_bytes 0.11.5",
  "serde_derive",
  "serde_json",
@@ -1500,6 +1501,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
 
 [[package]]
+name = "fallible-iterator"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
 name = "fastrand"
 version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1970,6 +1983,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashlink"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d99cf782f0dc4372d26846bec3de7804ceb5df083c2d4462c0b8d2330e894fa8"
+dependencies = [
+ "hashbrown 0.9.1",
+]
+
+[[package]]
 name = "hdrhistogram"
 version = "6.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2387,7 +2409,7 @@ dependencies = [
 [[package]]
 name = "keys"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "base58",
  "bitcrypto",
@@ -2737,6 +2759,17 @@ dependencies = [
  "sha2 0.8.2",
  "subtle 2.2.3",
  "typenum",
+]
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64d31059f22935e6c31830db5249ba2b7ecd54fd73a9909286f0a67aa55c2fbd"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -3119,6 +3152,7 @@ dependencies = [
  "serialization",
  "serialization_derive",
  "sp-trie",
+ "sql-builder",
  "term 0.5.1",
  "testcontainers",
  "tokio",
@@ -3554,6 +3588,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5d65c4d95931acda4498f675e332fcbdc9a06705cd07086c510e9b6009cd1c1"
+
+[[package]]
 name = "pbkdf2"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3681,7 +3721,7 @@ dependencies = [
 [[package]]
 name = "primitives"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "bigint",
  "byteorder 1.3.4",
@@ -4210,7 +4250,7 @@ dependencies = [
 [[package]]
 name = "rpc"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "chain",
  "keys",
@@ -4222,6 +4262,21 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serialization",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5f38ee71cbab2c827ec0ac24e76f82eca723cee92c509a65f67dee393c25112"
+dependencies = [
+ "bitflags",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "memchr",
+ "smallvec 1.4.0",
 ]
 
 [[package]]
@@ -4391,7 +4446,7 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "script"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "bitcrypto",
  "blake2b_simd",
@@ -4596,7 +4651,7 @@ dependencies = [
 [[package]]
 name = "serialization"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "byteorder 1.3.4",
  "primitives",
@@ -4605,7 +4660,7 @@ dependencies = [
 [[package]]
 name = "serialization_derive"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-bitcoin.git#0c095d051c8b1aa3d2e7cb07d491f7546311b110"
+source = "git+https://github.com/artemii235/parity-bitcoin.git#a681bd701768220b62633598d523fe64cbf00b2b"
 dependencies = [
  "quote 0.3.15",
  "syn 0.11.11",
@@ -4963,6 +5018,16 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "sql-builder"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1008d95d2ec2d062959352527be30e10fec42a1aa5e5a48d990a5ff0fb9bdc0"
+dependencies = [
+ "anyhow",
+ "thiserror",
+]
 
 [[package]]
 name = "stable_deref_trait"

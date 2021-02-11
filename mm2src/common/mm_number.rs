@@ -7,6 +7,48 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 use std::str::FromStr;
 
+pub use paste::paste;
+
+/// Construct a `$name` detailed number that have decimal, fraction and rational representations.
+/// The macro takes the `$name` name of the structure and the `$base_name` that is used to generate three different fields:
+/// `<$base_name>`- decimal representation
+/// `<$base_name>_fraction` - fraction representation
+/// `<$base_name>_rat` - rational representation
+///
+/// Note the constructable `$name` type implements the `From<MmNumber>` trait.
+///
+/// Example: `construct_detailed(MyVolume, volume)` will construct something like that:
+/// ```
+/// struct MyVolume {
+///     volume: BigDecimal,
+///     volume_fraction: Fraction,
+///     volume_rat: BigRational,
+/// }
+/// ```
+#[macro_export]
+macro_rules! construct_detailed {
+    ($name: ident, $base_field: ident) => {
+        $crate::mm_number::paste! {
+            #[derive(Clone, Debug, Serialize)]
+            struct $name {
+                $base_field: BigDecimal,
+                [<$base_field _fraction>]: Fraction,
+                [<$base_field _rat>]: BigRational,
+            }
+
+            impl From<MmNumber> for $name {
+                fn from(mm_num: MmNumber) -> Self {
+                    Self {
+                        $base_field: mm_num.to_decimal(),
+                        [<$base_field _fraction>]: mm_num.to_fraction(),
+                        [<$base_field _rat>]: mm_num.to_ratio(),
+                    }
+                }
+            }
+        }
+    };
+}
+
 pub use num_bigint::{BigInt, Sign};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize)]
@@ -371,5 +413,21 @@ mod tests {
         let fraction = num.to_fraction();
         assert_eq!(num.0.numer(), fraction.numer());
         assert_eq!(num.0.denom(), fraction.denom());
+    }
+
+    #[test]
+    fn test_construct_detailed() {
+        construct_detailed!(MyNumber, number);
+
+        let mm_num = MmNumber::from((1, 10));
+        let actual = MyNumber {
+            number: mm_num.to_decimal(),
+            number_fraction: mm_num.to_fraction(),
+            number_rat: mm_num.to_ratio(),
+        };
+        let expected = MyNumber::from(mm_num);
+        assert_eq!(actual.number, expected.number);
+        assert_eq!(actual.number_rat, expected.number_rat);
+        // Fraction doesn't implement `PartialEq` trait
     }
 }

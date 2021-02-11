@@ -20,7 +20,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfindᵃ, lp_coininit, MmCoinEnum};
+use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
@@ -37,8 +37,7 @@ use crate::mm2::lp_swap::active_swaps_using_coin;
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfindᵃ(&ctx, &ticker).await {
-        // Use lp_coinfindᵃ when async.
+    let _coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
@@ -149,8 +148,7 @@ pub fn metrics(ctx: MmArc) -> HyRes {
 /// Get my_balance of a coin
 pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin = match lp_coinfindᵃ(&ctx, &ticker).await {
-        // Use lp_coinfindᵃ when async.
+    let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),

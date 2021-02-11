@@ -716,6 +716,7 @@ pub fn start_gossipsub(
         CONNECTED_RELAYS_CHECK_INTERVAL,
     );
     let mut announce_interval = Interval::new_at(Instant::now() + ANNOUNCE_INITIAL_DELAY, ANNOUNCE_INTERVAL);
+    let mut listening = false;
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.cmd_rx.poll_next_unpin(cx) {
@@ -741,6 +742,13 @@ pub fn start_gossipsub(
 
         while let Poll::Ready(Some(())) = check_connected_relays_interval.poll_next_unpin(cx) {
             maintain_connection_to_relays(&mut swarm, &bootstrap);
+        }
+
+        if !listening && i_am_relay {
+            for listener in Swarm::listeners(&swarm) {
+                info!("Listening on {}", listener);
+                listening = true;
+            }
         }
         on_poll(&swarm);
         Poll::Pending
