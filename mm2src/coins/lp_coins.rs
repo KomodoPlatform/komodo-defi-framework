@@ -783,6 +783,17 @@ impl BalanceTradeFeeUpdatedHandler for CoinsContext {
     }
 }
 
+pub fn coin_conf(ctx: &MmArc, ticker: &str) -> Json {
+    match ctx.conf["coins"].as_array() {
+        Some(coins) => coins
+            .iter()
+            .find(|coin| coin["coin"].as_str() == Some(ticker))
+            .cloned()
+            .unwrap_or(Json::Null),
+        None => Json::Null,
+    }
+}
+
 /// Adds a new currency into the list of currencies configured.
 ///
 /// Returns an error if the currency already exists. Initializing the same currency twice is a bad habit
@@ -799,14 +810,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         }
     }
 
-    let coins_en = if let Some(coins) = ctx.conf["coins"].as_array() {
-        coins
-            .iter()
-            .find(|coin| coin["coin"].as_str() == Some(ticker))
-            .unwrap_or(&Json::Null)
-    } else {
-        &Json::Null
-    };
+    let coins_en = coin_conf(ctx, ticker);
 
     if coins_en.is_null() {
         ctx.log.log(
@@ -834,11 +838,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
-            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, coins_en, req, secret).await).into()
+            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into()
         },
-        CoinProtocol::QTUM => try_s!(qtum_coin_from_conf_and_request(ctx, ticker, coins_en, req, secret).await).into(),
+        CoinProtocol::QTUM => try_s!(qtum_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into(),
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
-            try_s!(eth_coin_from_conf_and_request(ctx, ticker, coins_en, req, secret, protocol).await).into()
+            try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, protocol).await).into()
         },
         CoinProtocol::QRC20 {
             platform,
@@ -846,7 +850,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         } => {
             let contract_address = try_s!(qtum::contract_addr_from_str(&contract_address));
             try_s!(
-                qrc20_coin_from_conf_and_request(ctx, ticker, &platform, coins_en, req, secret, contract_address).await
+                qrc20_coin_from_conf_and_request(ctx, ticker, &platform, &coins_en, req, secret, contract_address)
+                    .await
             )
             .into()
         },
@@ -1295,4 +1300,14 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
         "result": addr.to_string(),
     })));
     Ok(try_s!(Response::builder().body(response)))
+}
+
+pub fn address_by_coin_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+    let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
+    match protocol {
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } => {
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey)
+        },
+    }
 }

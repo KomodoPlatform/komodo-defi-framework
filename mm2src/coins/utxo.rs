@@ -73,6 +73,7 @@ use super::{CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend
             TradePreimageError, Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawFee,
             WithdrawRequest};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClientImpl};
+use crate::utxo::utxo_common::display_address;
 
 #[cfg(test)] pub mod utxo_tests;
 
@@ -293,7 +294,7 @@ pub enum BlockchainNetwork {
 }
 
 #[derive(Debug)]
-pub struct UtxoCoinFields {
+pub struct UtxoCoinConf {
     pub ticker: String,
     /// https://en.bitcoin.it/wiki/List_of_address_prefixes
     /// https://github.com/jl777/coins/blob/master/coins
@@ -322,27 +323,14 @@ pub struct UtxoCoinFields {
     /// will be the Segwit (starting from 3 for BTC case) instead of legacy
     /// https://en.bitcoin.it/wiki/Segregated_Witness
     pub segwit: bool,
-    /// Default decimals amount is 8 (BTC and almost all other UTXO coins)
-    /// But there are forks which have different decimals:
-    /// Peercoin has 6
-    /// Emercoin has 6
-    /// Bitcoin Diamond has 7
-    pub decimals: u8,
     /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
     pub requires_notarization: AtomicBool,
-    /// RPC client
-    pub rpc_client: UtxoRpcClientEnum,
-    /// ECDSA key pair
-    pub key_pair: KeyPair,
-    /// Lock the mutex when we deal with address utxos
-    pub my_address: Address,
     /// The address format indicates how to parse and display UTXO addresses over RPC calls
     pub address_format: UtxoAddressFormat,
     /// Is current coin KMD asset chain?
     /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729160/What+is+a+Parallel+Chain+Asset+Chain
     pub asset_chain: bool,
-    pub tx_fee: TxFee,
     /// Dynamic transaction fee volatility in percent. The value is used to predict a possible increase in dynamic fee.
     pub tx_fee_volatility_percent: f64,
     /// Transaction version group id for Zcash transactions since Overwinter: https://github.com/zcash/zips/blob/master/zip-0202.rst
@@ -358,7 +346,6 @@ pub struct UtxoCoinFields {
     pub fork_id: u32,
     /// Signature version
     pub signature_version: SignatureVersion,
-    pub history_sync_state: Mutex<HistorySyncState>,
     pub required_confirmations: AtomicU64,
     /// if set to true MM2 will check whether calculated fee is lower than relay fee and use
     /// relay fee amount instead of calculated
@@ -367,18 +354,38 @@ pub struct UtxoCoinFields {
     /// Block count for median time past calculation
     pub mtp_block_count: NonZeroU64,
     pub estimate_fee_mode: Option<EstimateFeeMode>,
-    /// Minimum transaction value at which the value is not less than fee
-    pub dust_amount: u64,
     /// Minimum number of confirmations at which a transaction is considered mature
     pub mature_confirmations: u32,
+    /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
+    pub estimate_fee_blocks: u32,
+}
+
+#[derive(Debug)]
+pub struct UtxoCoinFields {
+    /// UTXO coin config
+    pub conf: UtxoCoinConf,
+    /// Default decimals amount is 8 (BTC and almost all other UTXO coins)
+    /// But there are forks which have different decimals:
+    /// Peercoin has 6
+    /// Emercoin has 6
+    /// Bitcoin Diamond has 7
+    pub decimals: u8,
+    pub tx_fee: TxFee,
+    /// Minimum transaction value at which the value is not less than fee
+    pub dust_amount: u64,
+    /// RPC client
+    pub rpc_client: UtxoRpcClientEnum,
+    /// ECDSA key pair
+    pub key_pair: KeyPair,
+    /// Lock the mutex when we deal with address utxos
+    pub my_address: Address,
+    pub history_sync_state: Mutex<HistorySyncState>,
     /// Path to the TX cache directory
     pub tx_cache_directory: Option<PathBuf>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
-    /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
-    pub estimate_fee_blocks: u32,
     pub tx_hash_algo: TxHashAlgo,
 }
 
@@ -722,23 +729,16 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
     }
 }
 
-#[async_trait]
-pub trait UtxoCoinBuilder {
-    type ResultCoin;
+pub struct UtxoConfBuilder<'a> {
+    conf: &'a Json,
+    req: &'a Json,
+    ticker: &'a str,
+}
 
-    async fn build(self) -> Result<Self::ResultCoin, String>;
+impl<'a> UtxoConfBuilder<'a> {
+    pub fn new(conf: &'a Json, req: &'a Json, ticker: &'a str) -> Self { UtxoConfBuilder { conf, req, ticker } }
 
-    fn ctx(&self) -> &MmArc;
-
-    fn conf(&self) -> &Json;
-
-    fn req(&self) -> &Json;
-
-    fn ticker(&self) -> &str;
-
-    fn priv_key(&self) -> &[u8];
-
-    async fn build_utxo_fields(&self) -> Result<UtxoCoinFields, String> {
+    pub fn build(&self) -> Result<UtxoCoinConf, String> {
         let checksum_type = self.checksum_type();
         let pub_addr_prefix = self.pub_addr_prefix();
         let p2sh_addr_prefix = self.p2sh_address_prefix();
@@ -746,28 +746,13 @@ pub trait UtxoCoinBuilder {
         let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
 
         let wif_prefix = self.wif_prefix();
-        let private = Private {
-            prefix: wif_prefix,
-            secret: H256::from(self.priv_key()),
-            compressed: true,
-            checksum_type,
-        };
-        let key_pair = try_s!(KeyPair::from_private(private));
-        let my_address = Address {
-            prefix: pub_addr_prefix,
-            t_addr_prefix: pub_t_addr_prefix,
-            hash: key_pair.public().address_hash(),
-            checksum_type,
-        };
-        let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+
         let address_format = try_s!(self.address_format());
-        let rpc_client = try_s!(self.rpc_client().await);
-        let decimals = try_s!(self.decimals(&rpc_client).await);
 
         let asset_chain = self.asset_chain();
         let tx_version = self.tx_version();
         let overwintered = self.overwintered();
-        let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
+
         let tx_fee_volatility_percent = self.tx_fee_volatility_percent();
         let version_group_id = try_s!(self.version_group_id(tx_version, overwintered));
         let consensus_branch_id = try_s!(self.consensus_branch_id(tx_version));
@@ -776,29 +761,21 @@ pub trait UtxoCoinBuilder {
 
         // should be sufficient to detect zcash by overwintered flag
         let zcash = overwintered;
-        let initial_history_state = self.initial_history_state();
 
         let required_confirmations = self.required_confirmations();
         let requires_notarization = self.requires_notarization();
 
         let mature_confirmations = self.mature_confirmations();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
 
         let is_pos = self.is_pos();
         let segwit = self.segwit();
-        let force_min_relay_fee = self.conf()["force_min_relay_fee"].as_bool().unwrap_or(false);
+        let force_min_relay_fee = self.conf["force_min_relay_fee"].as_bool().unwrap_or(false);
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
-        let dust_amount = self.dust_amount();
         let estimate_fee_blocks = self.estimate_fee_blocks();
 
-        let _my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
-        let tx_hash_algo = self.tx_hash_algo();
-        let coin = UtxoCoinFields {
-            ticker: self.ticker().to_owned(),
-            decimals,
-            rpc_client,
-            key_pair,
+        Ok(UtxoCoinConf {
+            ticker: self.ticker.to_owned(),
             is_pos,
             requires_notarization,
             overwintered,
@@ -809,10 +786,8 @@ pub trait UtxoCoinBuilder {
             segwit,
             wif_prefix,
             tx_version,
-            my_address,
             address_format,
             asset_chain,
-            tx_fee,
             tx_fee_volatility_percent,
             version_group_id,
             consensus_branch_id,
@@ -820,23 +795,17 @@ pub trait UtxoCoinBuilder {
             checksum_type,
             signature_version,
             fork_id,
-            history_sync_state: Mutex::new(initial_history_state),
             required_confirmations: required_confirmations.into(),
             force_min_relay_fee,
             mtp_block_count,
             estimate_fee_mode,
-            dust_amount,
             mature_confirmations,
-            tx_cache_directory,
-            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             estimate_fee_blocks,
-            tx_hash_algo,
-        };
-        Ok(coin)
+        })
     }
 
     fn checksum_type(&self) -> ChecksumType {
-        match self.ticker() {
+        match self.ticker {
             "GRS" => ChecksumType::DGROESTL512,
             "SMART" => ChecksumType::KECCAK256,
             _ => ChecksumType::DSHA256,
@@ -844,72 +813,53 @@ pub trait UtxoCoinBuilder {
     }
 
     fn pub_addr_prefix(&self) -> u8 {
-        let pubtype = self.conf()["pubtype"]
+        let pubtype = self.conf["pubtype"]
             .as_u64()
-            .unwrap_or(if self.ticker() == "BTC" { 0 } else { 60 });
+            .unwrap_or(if self.ticker == "BTC" { 0 } else { 60 });
         pubtype as u8
     }
 
     fn p2sh_address_prefix(&self) -> u8 {
-        self.conf()["p2shtype"]
+        self.conf["p2shtype"]
             .as_u64()
-            .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
+            .unwrap_or(if self.ticker == "BTC" { 5 } else { 85 }) as u8
     }
 
-    fn pub_t_address_prefix(&self) -> u8 { self.conf()["taddr"].as_u64().unwrap_or(0) as u8 }
+    fn pub_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
 
-    fn p2sh_t_address_prefix(&self) -> u8 { self.conf()["taddr"].as_u64().unwrap_or(0) as u8 }
+    fn p2sh_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
 
     fn wif_prefix(&self) -> u8 {
-        let wiftype = self.conf()["wiftype"]
+        let wiftype = self.conf["wiftype"]
             .as_u64()
-            .unwrap_or(if self.ticker() == "BTC" { 128 } else { 188 });
+            .unwrap_or(if self.ticker == "BTC" { 128 } else { 188 });
         wiftype as u8
     }
 
     fn address_format(&self) -> Result<UtxoAddressFormat, String> {
-        let conf = self.conf();
+        let conf = self.conf;
         if conf["address_format"].is_null() {
             Ok(UtxoAddressFormat::Standard)
         } else {
-            json::from_value(self.conf()["address_format"].clone()).map_err(|e| ERRL!("{}", e))
+            json::from_value(self.conf["address_format"].clone()).map_err(|e| ERRL!("{}", e))
         }
     }
 
-    async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> Result<u8, String> {
-        Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
-    }
+    fn asset_chain(&self) -> bool { self.conf["asset"].as_str().is_some() }
 
-    fn asset_chain(&self) -> bool { self.conf()["asset"].as_str().is_some() }
+    fn tx_version(&self) -> i32 { self.conf["txversion"].as_i64().unwrap_or(1) as i32 }
 
-    fn tx_version(&self) -> i32 { self.conf()["txversion"].as_i64().unwrap_or(1) as i32 }
-
-    fn overwintered(&self) -> bool { self.conf()["overwintered"].as_u64().unwrap_or(0) == 1 }
-
-    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, String> {
-        let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => TxFee::Fixed(1000),
-            Some(0) => {
-                let fee_method = match &rpc_client {
-                    UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
-                    UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await),
-                };
-                TxFee::Dynamic(fee_method)
-            },
-            Some(fee) => TxFee::Fixed(fee),
-        };
-        Ok(tx_fee)
-    }
+    fn overwintered(&self) -> bool { self.conf["overwintered"].as_u64().unwrap_or(0) == 1 }
 
     fn tx_fee_volatility_percent(&self) -> f64 {
-        match self.conf()["txfee_volatility_percent"].as_f64() {
+        match self.conf["txfee_volatility_percent"].as_f64() {
             Some(volatility) => volatility,
             None => DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
         }
     }
 
     fn version_group_id(&self, tx_version: i32, overwintered: bool) -> Result<u32, String> {
-        let version_group_id = match self.conf()["version_group_id"].as_str() {
+        let version_group_id = match self.conf["version_group_id"].as_str() {
             Some(mut s) => {
                 if s.starts_with("0x") {
                     s = &s[2..];
@@ -931,7 +881,7 @@ pub trait UtxoCoinBuilder {
     }
 
     fn consensus_branch_id(&self, tx_version: i32) -> Result<u32, String> {
-        let consensus_branch_id = match self.conf()["consensus_branch_id"].as_str() {
+        let consensus_branch_id = match self.conf["consensus_branch_id"].as_str() {
             Some(mut s) => {
                 if s.starts_with("0x") {
                     s = &s[2..];
@@ -949,7 +899,7 @@ pub trait UtxoCoinBuilder {
     }
 
     fn signature_version(&self) -> SignatureVersion {
-        if self.ticker() == "BCH" {
+        if self.ticker == "BCH" {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
@@ -957,7 +907,7 @@ pub trait UtxoCoinBuilder {
     }
 
     fn fork_id(&self) -> u32 {
-        if self.ticker() == "BCH" {
+        if self.ticker == "BCH" {
             0x40
         } else {
             0
@@ -966,40 +916,100 @@ pub trait UtxoCoinBuilder {
 
     fn required_confirmations(&self) -> u64 {
         // param from request should override the config
-        self.req()["required_confirmations"]
+        self.req["required_confirmations"]
             .as_u64()
-            .unwrap_or_else(|| self.conf()["required_confirmations"].as_u64().unwrap_or(1))
+            .unwrap_or_else(|| self.conf["required_confirmations"].as_u64().unwrap_or(1))
     }
 
     fn requires_notarization(&self) -> AtomicBool {
-        self.req()["requires_notarization"]
+        self.req["requires_notarization"]
             .as_bool()
-            .unwrap_or_else(|| self.conf()["requires_notarization"].as_bool().unwrap_or(false))
+            .unwrap_or_else(|| self.conf["requires_notarization"].as_bool().unwrap_or(false))
             .into()
     }
 
     fn mature_confirmations(&self) -> u32 {
-        self.conf()["mature_confirmations"]
+        self.conf["mature_confirmations"]
             .as_u64()
             .map(|x| x as u32)
             .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT)
     }
 
-    fn is_pos(&self) -> bool { self.conf()["isPoS"].as_u64() == Some(1) }
+    fn is_pos(&self) -> bool { self.conf["isPoS"].as_u64() == Some(1) }
 
-    fn segwit(&self) -> bool { self.conf()["segwit"].as_bool().unwrap_or(false) }
+    fn segwit(&self) -> bool { self.conf["segwit"].as_bool().unwrap_or(false) }
 
     fn mtp_block_count(&self) -> NonZeroU64 {
-        json::from_value(self.conf()["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT)
+        json::from_value(self.conf["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT)
     }
 
     fn estimate_fee_mode(&self) -> Option<EstimateFeeMode> {
-        json::from_value(self.conf()["estimate_fee_mode"].clone()).unwrap_or(None)
+        json::from_value(self.conf["estimate_fee_mode"].clone()).unwrap_or(None)
+    }
+
+    fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
+}
+
+#[async_trait]
+pub trait UtxoCoinBuilder {
+    type ResultCoin;
+
+    async fn build(self) -> Result<Self::ResultCoin, String>;
+
+    fn ctx(&self) -> &MmArc;
+
+    fn conf(&self) -> &Json;
+
+    fn req(&self) -> &Json;
+
+    fn ticker(&self) -> &str;
+
+    fn priv_key(&self) -> &[u8];
+
+    async fn build_utxo_fields(&self) -> Result<UtxoCoinFields, String> {
+        let conf = try_s!(UtxoConfBuilder::new(self.conf(), self.req(), self.ticker()).build());
+
+        let private = Private {
+            prefix: conf.wif_prefix,
+            secret: H256::from(self.priv_key()),
+            compressed: true,
+            checksum_type: conf.checksum_type,
+        };
+        let key_pair = try_s!(KeyPair::from_private(private));
+        let my_address = Address {
+            prefix: conf.pub_addr_prefix,
+            t_addr_prefix: conf.pub_t_addr_prefix,
+            hash: key_pair.public().address_hash(),
+            checksum_type: conf.checksum_type,
+        };
+        let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let rpc_client = try_s!(self.rpc_client().await);
+        let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
+        let decimals = try_s!(self.decimals(&rpc_client).await);
+        let dust_amount = self.dust_amount();
+
+        let initial_history_state = self.initial_history_state();
+        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
+        let tx_hash_algo = self.tx_hash_algo();
+
+        let _my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let coin = UtxoCoinFields {
+            conf,
+            decimals,
+            dust_amount,
+            rpc_client,
+            key_pair,
+            my_address,
+            history_sync_state: Mutex::new(initial_history_state),
+            tx_cache_directory,
+            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
+            tx_fee,
+            tx_hash_algo,
+        };
+        Ok(coin)
     }
 
     fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
-
-    fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf()["estimate_fee_blocks"].clone()).unwrap_or(1) }
 
     fn network(&self) -> Result<BlockchainNetwork, String> {
         let conf = self.conf();
@@ -1007,6 +1017,25 @@ pub trait UtxoCoinBuilder {
             return json::from_value(conf["network"].clone()).map_err(|e| ERRL!("{}", e));
         }
         Ok(BlockchainNetwork::Mainnet)
+    }
+
+    async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> Result<u8, String> {
+        Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
+    }
+
+    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, String> {
+        let tx_fee = match self.conf()["txfee"].as_u64() {
+            None => TxFee::Fixed(1000),
+            Some(0) => {
+                let fee_method = match &rpc_client {
+                    UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
+                    UtxoRpcClientEnum::Native(client) => try_s!(client.detect_fee_method().compat().await),
+                };
+                TxFee::Dynamic(fee_method)
+            },
+            Some(fee) => TxFee::Fixed(fee),
+        };
+        Ok(tx_fee)
     }
 
     fn initial_history_state(&self) -> HistorySyncState {
@@ -1389,7 +1418,7 @@ pub async fn kmd_rewards_info<T>(coin: &T) -> Result<Vec<KmdRewardsInfoElement>,
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
-    if coin.as_ref().ticker != "KMD" {
+    if coin.as_ref().conf.ticker != "KMD" {
         return ERR!("rewards info can be obtained for KMD only");
     }
 
@@ -1535,8 +1564,8 @@ where
         unsigned,
         &coin.as_ref().key_pair,
         prev_script,
-        coin.as_ref().signature_version,
-        coin.as_ref().fork_id
+        coin.as_ref().conf.signature_version,
+        coin.as_ref().conf.fork_id
     ));
 
     try_s!(
@@ -1609,4 +1638,20 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
     sig_script.append(&mut Bytes::from(vec![1 | fork_id as u8]));
 
     Ok(sig_script)
+}
+
+pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+    let null = Json::Null;
+    let conf_builder = UtxoConfBuilder::new(&conf, &null, coin);
+    let utxo_conf = try_s!(conf_builder.build());
+    let pubkey_bytes = try_s!(hex::decode(pubkey));
+    let hash = dhash160(&pubkey_bytes);
+
+    let address = Address {
+        prefix: utxo_conf.pub_addr_prefix,
+        t_addr_prefix: utxo_conf.pub_t_addr_prefix,
+        hash,
+        checksum_type: utxo_conf.checksum_type,
+    };
+    display_address(&utxo_conf, &address)
 }

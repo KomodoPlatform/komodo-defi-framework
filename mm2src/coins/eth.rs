@@ -1049,11 +1049,7 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        let pubkey_bytes = try_s!(hex::decode(pubkey));
-        let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
-        Ok(format!("{:#02x}", addr))
-    }
+    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> { addr_from_pubkey_str(pubkey) }
 
     fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
 
@@ -2587,10 +2583,16 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
     }
 }
 
-fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
+pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
     let pubkey = try_s!(PublicKey::parse_slice(pubkey, None).map_err(|e| ERRL!("{:?}", e)));
     let eth_public = Public::from(&pubkey.serialize()[1..65]);
     Ok(public_to_address(&eth_public))
+}
+
+pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, String> {
+    let pubkey_bytes = try_s!(hex::decode(pubkey));
+    let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
+    Ok(format!("{:#02x}", addr))
 }
 
 fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {

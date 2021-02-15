@@ -2,7 +2,7 @@ use crate::big_int_str::BigIntStr;
 use bigdecimal::BigDecimal;
 use core::ops::{Add, Div, Mul, Sub};
 use num_rational::BigRational;
-use num_traits::Pow;
+use num_traits::{Pow, Zero};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 use std::str::FromStr;
@@ -279,6 +279,8 @@ impl MmNumber {
     pub fn numer(&self) -> &BigInt { self.0.numer() }
 
     pub fn denom(&self) -> &BigInt { self.0.denom() }
+
+    pub fn is_zero(&self) -> bool { self.0.is_zero() }
 }
 
 impl From<i32> for MmNumber {

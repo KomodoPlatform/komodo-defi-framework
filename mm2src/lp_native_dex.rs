@@ -335,7 +335,7 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
 
     try_s!(fix_directories(&ctx));
     try_s!(ctx.init_sqlite_connection());
-    try_s!(init_and_migrate_db(&ctx, ctx.sqlite_connection()));
+    try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()));
     #[cfg(all(feature = "native", not(feature = "wallet-only")))]
     {
         try_s!(migrate_db(&ctx));

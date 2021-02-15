@@ -783,7 +783,7 @@ fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
         ),
     };
     try_s!(write(&path, &content));
-    add_swap_to_index(ctx.sqlite_connection(), swap);
+    add_swap_to_index(&ctx.sqlite_connection(), swap);
     Ok(())
 }
 
@@ -1109,7 +1109,7 @@ pub struct MySwapsFilter {
 /// Returns *all* uuids of swaps, which match the selected filter.
 pub fn all_swaps_uuids_by_filter(ctx: MmArc, req: Json) -> HyRes {
     let filter: MySwapsFilter = try_h!(json::from_value(req));
-    let db_result = try_h!(select_uuids_by_my_swaps_filter(ctx.sqlite_connection(), &filter, None));
+    let db_result = try_h!(select_uuids_by_my_swaps_filter(&ctx.sqlite_connection(), &filter, None));
 
     rpc_response(
         200,
@@ -1148,7 +1148,7 @@ pub struct MyRecentSwapsReq {
 pub fn my_recent_swaps(ctx: MmArc, req: Json) -> HyRes {
     let req: MyRecentSwapsReq = try_h!(json::from_value(req));
     let db_result = try_h!(select_uuids_by_my_swaps_filter(
-        ctx.sqlite_connection(),
+        &ctx.sqlite_connection(),
         &req.filter,
         Some(&req.paging_options),
     ));

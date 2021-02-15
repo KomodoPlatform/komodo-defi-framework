@@ -2572,6 +2572,98 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
 
 #[test]
 #[cfg(feature = "native")]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/670
+fn orderbook_should_work_without_coins_activation() {
+    let bob_passphrase = unwrap!(get_passphrase(&".env.seed", "BOB_PASSPHRASE"));
+
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    let mut mm_bob = unwrap!(MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| unwrap! (s.parse::<i64>())),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        }
+    ));
+
+    let (_dump_log, _dump_dashboard) = mm_dump(&mm_bob.log_path);
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    unwrap!(block_on(
+        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
+
+    let mut mm_alice = unwrap!(MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": coins,
+            "seednodes": [fomat!((mm_bob.ip))],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "alice" => Some(local_start()),
+            _ => None,
+        }
+    ));
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    log!({"Alice log path: {}", mm_alice.log_path.display()});
+
+    unwrap!(block_on(
+        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+    ));
+
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, vec!["http://195.201.0.6:8565"]))});
+
+    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "ETH",
+        "rel": "JST",
+        "price": "1",
+        "volume": "10",
+        "min_volume": "1",
+    }))));
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    log!("Get ETH/JST orderbook on Alice side");
+    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "orderbook",
+        "base": "ETH",
+        "rel": "JST",
+    }))));
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    let orderbook: Json = unwrap!(json::from_str(&rc.1));
+    log!("orderbook "[orderbook]);
+    let asks = orderbook["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 1, "Alice ETH/JST orderbook must have exactly 1 ask");
+}
+
+#[test]
+#[cfg(feature = "native")]
 fn test_fill_or_kill_taker_order_should_not_transform_to_maker() {
     let bob_passphrase = unwrap!(get_passphrase(&".env.client", "BOB_PASSPHRASE"));
 

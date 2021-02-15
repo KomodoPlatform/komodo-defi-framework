@@ -33,7 +33,9 @@ pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str,
     let conn = ctx
         .sqlite_connection
         .as_option()
-        .expect("SQLite connection is not initialized");
+        .expect("SQLite connection is not initialized")
+        .lock()
+        .unwrap();
     let params = [my_coin, other_coin, uuid, started_at];
     conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
 }

@@ -14,7 +14,7 @@ use std::net::IpAddr;
 #[cfg(feature = "native")] use std::net::SocketAddr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use crate::executor::Timer;
 use crate::log::{self, LogState};
@@ -82,7 +82,7 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    pub sqlite_connection: Constructible<Connection>,
+    pub sqlite_connection: Constructible<Mutex<Connection>>,
 }
 impl MmCtx {
     pub fn with_log_state(log: LogState) -> MmCtx {
@@ -223,13 +223,15 @@ impl MmCtx {
         let sqlite_file_path = self.dbdir().join("MM2.db");
         log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
         let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self.sqlite_connection.pin(connection));
+        try_s!(self.sqlite_connection.pin(Mutex::new(connection)));
         Ok(())
     }
 
-    pub fn sqlite_connection(&self) -> &Connection {
+    pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
         self.sqlite_connection
             .or(&|| panic!("sqlite_connection is not initialized"))
+            .lock()
+            .unwrap()
     }
 }
 impl Default for MmCtx {

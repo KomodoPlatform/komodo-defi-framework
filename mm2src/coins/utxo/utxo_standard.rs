@@ -41,7 +41,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
     async fn get_htlc_spend_fee(&self) -> Result<u64, String> { utxo_common::get_htlc_spend_fee(self).await }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        utxo_common::addresses_from_script(&self.utxo_arc, script)
+        utxo_common::addresses_from_script(&self.utxo_arc.conf, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
@@ -49,17 +49,17 @@ impl UtxoCommonOps for UtxoStandardCoin {
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
     fn display_address(&self, address: &Address) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo_arc, address)
+        utxo_common::display_address(&self.utxo_arc.conf, address)
     }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::address_from_str(&self.utxo_arc, address)
+        utxo_common::address_from_str(&self.utxo_arc.conf, address)
     }
 
     async fn get_current_mtp(&self) -> Result<u32, String> { utxo_common::get_current_mtp(&self.utxo_arc).await }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
-        utxo_common::is_unspent_mature(self.utxo_arc.mature_confirmations, output)
+        utxo_common::is_unspent_mature(self.utxo_arc.conf.mature_confirmations, output)
     }
 
     async fn generate_transaction(
@@ -316,7 +316,7 @@ impl SwapOps for UtxoStandardCoin {
 }
 
 impl MarketCoinOps for UtxoStandardCoin {
-    fn ticker(&self) -> &str { &self.utxo_arc.ticker }
+    fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 

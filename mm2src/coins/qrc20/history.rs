@@ -91,8 +91,9 @@ impl Qrc20Coin {
             {
                 let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
                 let coins = block_on(coins_ctx.coins.lock());
-                if !coins.contains_key(&self.utxo.ticker) {
-                    ctx.log.log("", &[&"tx_history", &self.utxo.ticker], "Loop stopped");
+                if !coins.contains_key(&self.utxo.conf.ticker) {
+                    ctx.log
+                        .log("", &[&"tx_history", &self.utxo.conf.ticker], "Loop stopped");
                     break;
                 };
             }
@@ -102,7 +103,7 @@ impl Qrc20Coin {
                 Err(err) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on getting balance", err),
                     );
                     thread::sleep(Duration::from_secs(10));
@@ -119,15 +120,18 @@ impl Qrc20Coin {
             let tx_ids = match self.request_tx_history(ctx.metrics.clone()) {
                 RequestTxHistoryResult::Ok(tx_ids) => tx_ids,
                 RequestTxHistoryResult::Retry { error } => {
-                    ctx.log
-                        .log("", &[&"tx_history", &self.utxo.ticker], &ERRL!("{}, retrying", error));
+                    ctx.log.log(
+                        "",
+                        &[&"tx_history", &self.utxo.conf.ticker],
+                        &ERRL!("{}, retrying", error),
+                    );
                     thread::sleep(Duration::from_secs(10));
                     continue;
                 },
                 RequestTxHistoryResult::HistoryTooLarge => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Got `history too large`, stopping further attempts to retrieve it"),
                     );
                     *unwrap!(self.utxo.history_sync_state.lock()) = HistorySyncState::Error(json!({
@@ -139,7 +143,7 @@ impl Qrc20Coin {
                 RequestTxHistoryResult::UnknownError(e) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("{}, stopping futher attempts to retreive it", e),
                     );
                     break;
@@ -150,7 +154,7 @@ impl Qrc20Coin {
             if success_iteration == 0 {
                 ctx.log.log(
                     "😅",
-                    &[&"tx_history", &("coin", self.utxo.ticker.clone().as_str())],
+                    &[&"tx_history", &("coin", self.utxo.conf.ticker.clone().as_str())],
                     "history has been loaded successfully",
                 );
             }
@@ -324,7 +328,7 @@ impl Qrc20Coin {
 
     fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
         mm_counter!(metrics, "tx.history.request.count", 1,
-                    "coin" => self.utxo.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
+                    "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
         let history_res = block_on(TransferHistoryBuilder::new(self.clone()).build_tx_idents());
         let history = match history_res {
             Ok(h) => h,
@@ -346,10 +350,10 @@ impl Qrc20Coin {
             },
         };
         mm_counter!(metrics, "tx.history.response.count", 1,
-                    "coin" => self.utxo.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
+                    "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
 
         mm_counter!(metrics, "tx.history.response.total_length", history.len() as u64,
-                    "coin" => self.utxo.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
+                    "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
 
         RequestTxHistoryResult::Ok(history)
     }
@@ -385,16 +389,16 @@ impl Qrc20Coin {
         // `qtum_details` will be initialized once on first LazyLocal::[get, get_mut] call.
         // Note if `utxo_common::tx_details_by_hash` failed for some reason then LazyLocal::get will return None.
         let mut qtum_details = LazyLocal::with_constructor(move || {
-            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.ticker.clone(), "method" => "tx_detail_by_hash");
+            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
             match block_on(utxo_common::tx_details_by_hash(self, &tx_hash.0)) {
                 Ok(d) => {
-                    mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.ticker.clone(), "method" => "tx_detail_by_hash");
+                    mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
                     Some(d)
                 },
                 Err(e) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on tx_details_by_hash for {:?} tx", e, tx_hash),
                     );
                     None
@@ -407,7 +411,7 @@ impl Qrc20Coin {
             if id.tx_hash != *tx_hash {
                 ctx.log.log(
                     "😟",
-                    &[&"tx_history", &self.utxo.ticker],
+                    &[&"tx_history", &self.utxo.conf.ticker],
                     &ERRL!(
                         "Warning: TxTransferMap contains entries with the different tx_hash {:?}, expected {:?}",
                         id.tx_hash,
@@ -464,13 +468,13 @@ impl Qrc20Coin {
 
             // `transfer` details are not initialized for the `tx_hash`
             // or there is an error in cached `tx_hash_history`
-            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.ticker.clone(), "method" => "transfer_details_by_hash");
+            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "transfer_details_by_hash");
             let tx_hash_history = match block_on(self.transfer_details_by_hash(tx_hash.clone())) {
                 Ok(d) => d,
                 Err(e) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on getting the details of {:?}, skipping the tx", e, tx_hash),
                     );
                     continue;
@@ -480,12 +484,12 @@ impl Qrc20Coin {
             if history_map.insert(tx_hash.clone(), tx_hash_history).is_some() {
                 ctx.log.log(
                     "😟",
-                    &[&"tx_history", &self.utxo.ticker],
+                    &[&"tx_history", &self.utxo.conf.ticker],
                     &format!("'transfer' details of {:?} were reloaded", tx_hash),
                 );
             }
 
-            mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.ticker.clone(), "method" => "transfer_details_by_hash");
+            mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "transfer_details_by_hash");
             if transactions_left > 0 {
                 transactions_left -= 1;
                 *unwrap!(self.utxo.history_sync_state.lock()) =
@@ -509,7 +513,7 @@ impl Qrc20Coin {
                 Err(e) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.ticker],
+                        &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on load history from file", e),
                     );
                     return HistoryMapByHash::default();
@@ -519,7 +523,7 @@ impl Qrc20Coin {
             if tx_hash_history.insert(id, tx).is_some() {
                 ctx.log.log(
                     "😟",
-                    &[&"tx_history", &self.utxo.ticker],
+                    &[&"tx_history", &self.utxo.conf.ticker],
                     &ERRL!("History file contains entries with the same 'internal_id'"),
                 );
                 return HistoryMapByHash::default();

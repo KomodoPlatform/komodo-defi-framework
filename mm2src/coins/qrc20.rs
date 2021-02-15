@@ -5,8 +5,8 @@ use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat};
 use crate::utxo::{coin_daemon_data_dir, qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy,
-                  GenerateTransactionError, RecentlySpentOutPoints, UtxoAddressFormat, UtxoCoinBuilder,
-                  UtxoCoinFields, UtxoCommonOps, UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
+                  GenerateTransactionError, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps,
+                  UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee,
             TradePreimageError, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
             ValidateAddressResult, WithdrawFee, WithdrawRequest};
@@ -124,8 +124,6 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
     fn ticker(&self) -> &str { self.ticker }
 
     fn priv_key(&self) -> &[u8] { self.priv_key }
-
-    fn address_format(&self) -> Result<UtxoAddressFormat, String> { Ok(UtxoAddressFormat::Standard) }
 
     async fn decimals(&self, rpc_client: &UtxoRpcClientEnum) -> Result<u8, String> {
         if let Some(d) = self.conf()["decimals"].as_u64() {
@@ -365,8 +363,8 @@ impl Qrc20Coin {
                 unsigned,
                 &self.utxo.key_pair,
                 prev_script,
-                self.utxo.signature_version,
-                self.utxo.fork_id
+                self.utxo.conf.signature_version,
+                self.utxo.conf.fork_id
             ),
             GenerateTransactionError::Other
         );
@@ -435,7 +433,7 @@ impl UtxoCommonOps for Qrc20Coin {
     async fn get_htlc_spend_fee(&self) -> Result<u64, String> { utxo_common::get_htlc_spend_fee(self).await }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, String> {
-        utxo_common::addresses_from_script(&self.utxo, script)
+        utxo_common::addresses_from_script(&self.utxo.conf, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo, satoshi) }
@@ -443,11 +441,11 @@ impl UtxoCommonOps for Qrc20Coin {
     fn my_public_key(&self) -> &Public { self.utxo.key_pair.public() }
 
     fn display_address(&self, address: &UtxoAddress) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo, address)
+        utxo_common::display_address(&self.utxo.conf, address)
     }
 
     fn address_from_str(&self, address: &str) -> Result<UtxoAddress, String> {
-        utxo_common::address_from_str(&self.utxo, address)
+        utxo_common::address_from_str(&self.utxo.conf, address)
     }
 
     async fn get_current_mtp(&self) -> Result<u32, String> { utxo_common::get_current_mtp(&self.utxo).await }
@@ -817,7 +815,7 @@ impl SwapOps for Qrc20Coin {
 }
 
 impl MarketCoinOps for Qrc20Coin {
-    fn ticker(&self) -> &str { &self.utxo.ticker }
+    fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
@@ -1111,10 +1109,10 @@ pub struct Qrc20FeeDetails {
 
 async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
     let to_addr = try_s!(UtxoAddress::from_str(&req.to));
-    let is_p2pkh = to_addr.prefix == coin.utxo.pub_addr_prefix && to_addr.t_addr_prefix == coin.utxo.pub_t_addr_prefix;
-    let is_p2sh = to_addr.prefix == coin.utxo.p2sh_addr_prefix
-        && to_addr.t_addr_prefix == coin.utxo.p2sh_t_addr_prefix
-        && coin.utxo.segwit;
+    let conf = &coin.utxo.conf;
+    let is_p2pkh = to_addr.prefix == conf.pub_addr_prefix && to_addr.t_addr_prefix == conf.pub_t_addr_prefix;
+    let is_p2sh =
+        to_addr.prefix == conf.p2sh_addr_prefix && to_addr.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
     if !is_p2pkh && !is_p2sh {
         return ERR!("Address {} has invalid format", to_addr);
     }
@@ -1196,7 +1194,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> Result<Transac
         tx_hex: serialize(&signed).into(),
         fee_details: Some(fee_details.into()),
         block_height: 0,
-        coin: coin.utxo.ticker.clone(),
+        coin: conf.ticker.clone(),
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
     })

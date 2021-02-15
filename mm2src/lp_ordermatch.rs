@@ -24,7 +24,8 @@ use bigdecimal::BigDecimal;
 use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
-use coins::{lp_coinfind, BalanceTradeFeeUpdatedHandler, FeeApproxStage, MmCoinEnum};
+use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, lp_coinfind, BalanceTradeFeeUpdatedHandler,
+            FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
@@ -3534,10 +3535,14 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     if req.base == req.rel {
         return ERR!("Base and rel must be different coins");
     }
-    let rel_coin = try_s!(lp_coinfind(&ctx, &req.rel).await);
-    let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    let base_coin = try_s!(lp_coinfind(&ctx, &req.base).await);
-    let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
+    let base_coin_conf = coin_conf(&ctx, &req.base);
+    if base_coin_conf.is_null() {
+        return ERR!("Coin {} is not found in config", req.base);
+    }
+    let rel_coin_conf = coin_conf(&ctx, &req.rel);
+    if rel_coin_conf.is_null() {
+        return ERR!("Coin {} is not found in config", req.rel);
+    }
     let request_orderbook = true;
     try_s!(subscribe_to_orderbook_topic(&ctx, &req.base, &req.rel, request_orderbook).await);
     let ordermatch_ctx: Arc<OrdermatchContext> = try_s!(OrdermatchContext::from_ctx(&ctx));
@@ -3558,7 +3563,11 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
 
                 orderbook_entries.push(OrderbookEntry {
                     coin: req.base.clone(),
-                    address: try_s!(base_coin.address_from_pubkey_str(&ask.pubkey)),
+                    address: try_s!(address_by_coin_conf_and_pubkey_str(
+                        &req.base,
+                        &base_coin_conf,
+                        &ask.pubkey
+                    )),
                     price: price_mm.to_decimal(),
                     price_rat: price_mm.to_ratio(),
                     price_fraction: price_mm.to_fraction(),
@@ -3594,7 +3603,11 @@ pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
                 let min_vol_mm: MmNumber = bid.min_volume.clone().into();
                 orderbook_entries.push(OrderbookEntry {
                     coin: req.rel.clone(),
-                    address: try_s!(rel_coin.address_from_pubkey_str(&bid.pubkey)),
+                    address: try_s!(address_by_coin_conf_and_pubkey_str(
+                        &req.rel,
+                        &rel_coin_conf,
+                        &bid.pubkey
+                    )),
                     // NB: 1/x can not be represented as a decimal and introduces a rounding error
                     // cf. https://github.com/KomodoPlatform/atomicDEX-API/issues/495#issuecomment-516365682
                     price: price_mm.to_decimal(),

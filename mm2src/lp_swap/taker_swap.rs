@@ -12,7 +12,7 @@ use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue};
 use common::executor::Timer;
-use common::log::debug;
+use common::log::{debug, warn};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
 use common::{bits256, file_lock::FileLock, now_ms, slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY, MM_VERSION};
@@ -1684,19 +1684,15 @@ pub fn max_taker_vol_from_available(
     let fee_threshold = dex_fee_threshold(min_tx_amount.clone());
     let dex_fee_rate = dex_fee_rate(base, rel);
     let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
-    let max_vol = if available > &fee_threshold * &threshold_coef {
+    let mut max_vol = if available > &fee_threshold * &threshold_coef {
         available / (MmNumber::from(1) + dex_fee_rate)
     } else {
         available - fee_threshold
     };
 
     if &max_vol <= min_tx_amount {
-        let err = ERRL!(
-            "Max taker volume {:?} less than minimum transaction amount {:?}",
-            max_vol.to_fraction(),
-            min_tx_amount.to_fraction()
-        );
-        return Err(CheckBalanceError::NotSufficientBalance(err));
+        warn!("max_vol {} <= min_tx_amount {}", max_vol, min_tx_amount);
+        max_vol = 0.into();
     }
     Ok(max_vol)
 }
@@ -2158,7 +2154,7 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // these `availables` must be the cause of an error
+        // these `availables` must return 0
         let availables = vec![
             "0.0001999",
             "0.00011",
@@ -2171,8 +2167,11 @@ mod taker_swap_tests {
         ];
         for available in availables {
             let available = MmNumber::from(available);
-            max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
-                .expect_err("!max_taker_vol_from_available success but should be error");
+            assert!(
+                max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
+                    .unwrap()
+                    .is_zero()
+            );
         }
     }
 }

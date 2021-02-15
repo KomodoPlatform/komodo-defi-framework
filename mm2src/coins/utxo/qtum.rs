@@ -33,8 +33,8 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
     fn utxo_address_from_any_format(&self, from: &str) -> Result<Address, String> {
         let utxo_err = match Address::from_str(from) {
             Ok(addr) => {
-                let is_p2pkh = addr.prefix == self.as_ref().pub_addr_prefix
-                    && addr.t_addr_prefix == self.as_ref().pub_t_addr_prefix;
+                let is_p2pkh = addr.prefix == self.as_ref().conf.pub_addr_prefix
+                    && addr.t_addr_prefix == self.as_ref().conf.pub_t_addr_prefix;
                 if is_p2pkh {
                     return Ok(addr);
                 }
@@ -56,10 +56,10 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
     fn utxo_addr_from_contract_addr(&self, address: H160) -> Address {
         let utxo = self.as_ref();
         Address {
-            prefix: utxo.pub_addr_prefix,
-            t_addr_prefix: utxo.pub_t_addr_prefix,
+            prefix: utxo.conf.pub_addr_prefix,
+            t_addr_prefix: utxo.conf.pub_t_addr_prefix,
             hash: address.0.into(),
-            checksum_type: utxo.checksum_type,
+            checksum_type: utxo.conf.checksum_type,
         }
     }
 
@@ -68,10 +68,10 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
     fn utxo_address_from_contract_addr(&self, address: H160) -> Address {
         let utxo = self.as_ref();
         Address {
-            prefix: utxo.pub_addr_prefix,
-            t_addr_prefix: utxo.pub_t_addr_prefix,
+            prefix: utxo.conf.pub_addr_prefix,
+            t_addr_prefix: utxo.conf.pub_t_addr_prefix,
             hash: address.0.into(),
-            checksum_type: utxo.checksum_type,
+            checksum_type: utxo.conf.checksum_type,
         }
     }
 
@@ -79,9 +79,9 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
         let utxo = self.as_ref();
         let qtum_address = try_s!(utxo_common::address_from_raw_pubkey(
             pubkey,
-            utxo.pub_addr_prefix,
-            utxo.pub_t_addr_prefix,
-            utxo.checksum_type
+            utxo.conf.pub_addr_prefix,
+            utxo.conf.pub_t_addr_prefix,
+            utxo.conf.checksum_type
         ));
         Ok(qtum::contract_addr_from_utxo_addr(qtum_address))
     }
@@ -89,7 +89,7 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> {
     fn is_qtum_unspent_mature(&self, output: &RpcTransaction) -> bool {
         let is_qrc20_coinbase = output.vout.iter().any(|x| x.is_empty());
         let is_coinbase = output.is_coinbase() || is_qrc20_coinbase;
-        !is_coinbase || output.confirmations >= self.as_ref().mature_confirmations
+        !is_coinbase || output.confirmations >= self.as_ref().conf.mature_confirmations
     }
 }
 
@@ -131,7 +131,7 @@ impl UtxoCommonOps for QtumCoin {
     async fn get_htlc_spend_fee(&self) -> Result<u64, String> { utxo_common::get_htlc_spend_fee(self).await }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        utxo_common::addresses_from_script(&self.utxo_arc, script)
+        utxo_common::addresses_from_script(&self.utxo_arc.conf, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
@@ -139,11 +139,11 @@ impl UtxoCommonOps for QtumCoin {
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
     fn display_address(&self, address: &Address) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo_arc, address)
+        utxo_common::display_address(&self.utxo_arc.conf, address)
     }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::address_from_str(&self.utxo_arc, address)
+        utxo_common::address_from_str(&self.utxo_arc.conf, address)
     }
 
     async fn get_current_mtp(&self) -> Result<u32, String> { utxo_common::get_current_mtp(&self.utxo_arc).await }
@@ -404,7 +404,7 @@ impl SwapOps for QtumCoin {
 }
 
 impl MarketCoinOps for QtumCoin {
-    fn ticker(&self) -> &str { &self.utxo_arc.ticker }
+    fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 

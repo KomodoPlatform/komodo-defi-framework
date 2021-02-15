@@ -72,41 +72,43 @@ fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
     UtxoCoinFields {
+        conf: UtxoCoinConf {
+            is_pos: false,
+            requires_notarization: false.into(),
+            overwintered: true,
+            segwit: false,
+            tx_version: 4,
+            address_format: UtxoAddressFormat::Standard,
+            asset_chain: true,
+            p2sh_addr_prefix: 85,
+            p2sh_t_addr_prefix: 0,
+            pub_addr_prefix: 60,
+            pub_t_addr_prefix: 0,
+            ticker: TEST_COIN_NAME.into(),
+            wif_prefix: 0,
+            tx_fee_volatility_percent: DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
+            version_group_id: 0x892f2085,
+            consensus_branch_id: 0x76b809bb,
+            zcash: true,
+            checksum_type,
+            fork_id: 0,
+            signature_version: SignatureVersion::Base,
+            required_confirmations: 1.into(),
+            force_min_relay_fee: false,
+            mtp_block_count: NonZeroU64::new(11).unwrap(),
+            estimate_fee_mode: None,
+            mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
+            estimate_fee_blocks: 1,
+        },
         decimals: 8,
+        dust_amount: UTXO_DUST_AMOUNT,
+        tx_fee: TxFee::Fixed(1000),
         rpc_client,
         key_pair,
-        is_pos: false,
-        requires_notarization: false.into(),
-        overwintered: true,
-        segwit: false,
-        tx_version: 4,
         my_address,
-        address_format: UtxoAddressFormat::Standard,
-        asset_chain: true,
-        p2sh_addr_prefix: 85,
-        p2sh_t_addr_prefix: 0,
-        pub_addr_prefix: 60,
-        pub_t_addr_prefix: 0,
-        ticker: TEST_COIN_NAME.into(),
-        wif_prefix: 0,
-        tx_fee: TxFee::Fixed(1000),
-        tx_fee_volatility_percent: DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
-        version_group_id: 0x892f2085,
-        consensus_branch_id: 0x76b809bb,
-        zcash: true,
-        checksum_type,
-        fork_id: 0,
-        signature_version: SignatureVersion::Base,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        required_confirmations: 1.into(),
-        force_min_relay_fee: false,
-        mtp_block_count: NonZeroU64::new(11).unwrap(),
-        estimate_fee_mode: None,
-        dust_amount: UTXO_DUST_AMOUNT,
-        mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
         tx_cache_directory: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
-        estimate_fee_blocks: 1,
         tx_hash_algo: TxHashAlgo::DSHA256,
     }
 }
@@ -910,7 +912,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
     let mut coin = utxo_coin_fields_for_test(client, None);
-    coin.force_min_relay_fee = true;
+    coin.conf.force_min_relay_fee = true;
     let coin = utxo_coin_from_fields(coin);
     let unspents = vec![UnspentInfo {
         value: 1000000000,
@@ -953,7 +955,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
     let mut coin = utxo_coin_fields_for_test(client, None);
-    coin.force_min_relay_fee = true;
+    coin.conf.force_min_relay_fee = true;
     let coin = utxo_coin_from_fields(coin);
     let unspents = vec![
         UnspentInfo {
@@ -1163,9 +1165,9 @@ fn test_address_from_str_with_legacy_address_activated() {
 
     let expected = Address::from_cashaddress(
         "bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55",
-        coin.as_ref().checksum_type,
-        coin.as_ref().pub_addr_prefix,
-        coin.as_ref().p2sh_addr_prefix,
+        coin.as_ref().conf.checksum_type,
+        coin.as_ref().conf.pub_addr_prefix,
+        coin.as_ref().conf.p2sh_addr_prefix,
     )
     .unwrap();
     assert_eq!(
@@ -1422,7 +1424,7 @@ fn test_unspendable_balance_failed() {
 #[test]
 fn test_tx_history_path_colon_should_be_escaped_for_cash_address() {
     let mut coin = utxo_coin_fields_for_test(native_client_for_test().into(), None);
-    coin.address_format = UtxoAddressFormat::CashAddress {
+    coin.conf.address_format = UtxoAddressFormat::CashAddress {
         network: "bitcoincash".into(),
     };
     let coin = utxo_coin_from_fields(coin);
@@ -2011,7 +2013,7 @@ fn test_qtum_is_unspent_mature() {
 
     let mut coin_fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(native_client_for_test()), None);
     // Qtum's mature confirmations is 500 blocks
-    coin_fields.mature_confirmations = 500;
+    coin_fields.conf.mature_confirmations = 500;
     let arc: UtxoArc = coin_fields.into();
     let coin = QtumCoin::from(arc);
 

@@ -1805,7 +1805,10 @@ mod docker_tests {
             "method": "max_taker_vol",
             "coin": "MYCOIN1",
         }))));
-        assert!(!rc.0.is_success(), "max_taker_vol success, but should fail: {}", rc.1);
+        assert!(rc.0.is_success(), "!max_taker_vol {}", rc.1);
+        let json: Json = json::from_str(&rc.1).unwrap();
+        let result: MmNumber = json::from_value(json["result"].clone()).unwrap();
+        assert!(result.is_zero());
 
         fill_address(&coin, &coin.my_address().unwrap(), "0.00001".parse().unwrap(), 30);
 
