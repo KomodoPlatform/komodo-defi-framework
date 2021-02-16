@@ -63,10 +63,13 @@ fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     create_and_fill_stats_swaps_from_json_statements(ctx)
 }
 
+fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
+
 fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx)),
         2 => Some(migration_2(ctx)),
+        3 => Some(migration_3()),
         _ => None,
     }
 }

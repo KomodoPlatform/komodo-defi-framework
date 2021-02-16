@@ -6,7 +6,7 @@ use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, Gos
                           TopicHash};
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
-              future::{join_all, poll_fn},
+              future::{abortable, join_all, poll_fn, AbortHandle},
               Future, SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use libp2p::swarm::{IntoProtocolsHandler, NetworkBehaviour, ProtocolsHandler};
@@ -589,6 +589,7 @@ const ALL_NETID_7777_SEEDNODES: &[(&str, &str)] = &[
 /// 1. tx to send control commands
 /// 2. rx emitting gossip events to processing side
 /// 3. our peer_id
+/// 4. abort handle to stop the P2P processing fut
 #[allow(clippy::too_many_arguments)]
 pub fn start_gossipsub(
     ip: IpAddr,
@@ -599,7 +600,7 @@ pub fn start_gossipsub(
     to_dial: Vec<String>,
     i_am_relay: bool,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
-) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId) {
+) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle) {
     let local_key = match force_key {
         Some(mut key) => {
             let secret = identity::ed25519::SecretKey::from_bytes(&mut key).expect("Secret length is 32 bytes");
@@ -754,9 +755,10 @@ pub fn start_gossipsub(
         Poll::Pending
     });
 
+    let (polling_fut, abort_handle) = abortable(polling_fut);
     SWARM_RUNTIME.0.spawn(polling_fut);
 
-    (cmd_tx, event_rx, local_peer_id)
+    (cmd_tx, event_rx, local_peer_id, abort_handle)
 }
 
 /// If te `addr` is in the "/ip4/{addr}/tcp/{port}" format then parse the `addr` immediately to the `Multiaddr`,

@@ -27,7 +27,7 @@ impl Node {
 
         let mut rng = rand::thread_rng();
         let secret = SecretKey::new(&mut rng);
-        let (cmd_tx, mut event_rx, peer_id) =
+        let (cmd_tx, mut event_rx, peer_id, _) =
             start_gossipsub(my_address, port, 333, None, spawn_boxed, seednodes, true, |_| {});
 
         // spawn a response future

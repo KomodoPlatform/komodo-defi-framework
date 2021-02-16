@@ -478,7 +478,7 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     } else {
         None
     };
-    let (cmd_tx, event_rx, peer_id) = start_gossipsub(
+    let (cmd_tx, event_rx, peer_id, p2p_abort) = start_gossipsub(
         myipaddr,
         mypubport,
         ctx.netid(),
@@ -511,6 +511,13 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
             );
         },
     );
+    let mut p2p_abort = Some(p2p_abort);
+    ctx.on_stop(Box::new(move || {
+        if let Some(handle) = p2p_abort.take() {
+            drop(handle);
+        }
+        Ok(())
+    }));
     try_s!(ctx.peer_id.pin(peer_id.to_string()));
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);

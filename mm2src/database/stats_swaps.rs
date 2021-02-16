@@ -31,6 +31,8 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     is_success
 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
 
+pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
+
 const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
