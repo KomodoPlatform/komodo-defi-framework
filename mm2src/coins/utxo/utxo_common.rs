@@ -18,6 +18,7 @@ use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, SignatureVersion, TransactionInputSigner,
              UnsignedTransactionInput};
+use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize};
 use std::cmp::Ordering;
@@ -31,7 +32,7 @@ pub use chain::Transaction as UtxoTx;
 
 use self::rpc_clients::{electrum_script_hash, UnspentInfo, UtxoRpcClientEnum};
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
-use crate::{FeeApproxStage, TradePreimageError, TradePreimageValue, ValidateAddressResult};
+use crate::{CanRefundHtlc, FeeApproxStage, TradePreimageError, TradePreimageValue, ValidateAddressResult};
 use common::{block_on, Traceable};
 
 macro_rules! true_or {
@@ -150,6 +151,7 @@ pub async fn get_tx_fee(coin: &UtxoCoinFields) -> Result<ActualTxFee, JsonRpcErr
                 .await?;
             Ok(ActualTxFee::Dynamic(fee))
         },
+        TxFee::FixedPerKb(satoshis) => Ok(ActualTxFee::FixedPerKb(*satoshis)),
     }
 }
 
@@ -163,6 +165,8 @@ where
         ActualTxFee::Fixed(fee) => fee,
         // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
         ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * SWAP_TX_SPEND_SIZE) / KILO_BYTE,
+        // return satoshis here as swap spend transaction size is always less than 1 kb
+        ActualTxFee::FixedPerKb(satoshis) => satoshis,
     };
     if coin.as_ref().conf.force_min_relay_fee {
         let relay_fee = try_s!(coin.as_ref().rpc_client.get_relay_fee().compat().await);
@@ -372,6 +376,20 @@ where
                 let tx_size = transaction_bytes.len() + transaction.inputs().len() * additional_len;
                 (f * tx_size as u64) / KILO_BYTE
             },
+            ActualTxFee::FixedPerKb(f) => {
+                let transaction = UtxoTx::from(tx.clone());
+                let transaction_bytes = serialize(&transaction);
+                // 2 bytes are used to indicate the length of signature and pubkey
+                // total is 107
+                let additional_len = 2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN;
+                let tx_size_bytes = (transaction_bytes.len() + transaction.inputs().len() * additional_len) as u64;
+                let tx_size_kb = if tx_size_bytes % KILO_BYTE == 0 {
+                    tx_size_bytes / KILO_BYTE
+                } else {
+                    tx_size_bytes / KILO_BYTE + 1
+                };
+                f * tx_size_kb
+            },
         };
 
         match fee_policy {
@@ -536,18 +554,8 @@ pub fn p2sh_spending_tx(
     outputs: Vec<TransactionOutput>,
     script_data: Script,
     sequence: u32,
+    lock_time: u32,
 ) -> Result<UtxoTx, String> {
-    // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
-    // Implication for users: GetMedianTimePast() always trails behind the current time,
-    // so a transaction locktime set to the present time will be rejected by nodes running this
-    // release until the median time moves forward.
-    // To compensate, subtract one hour (3,600 seconds) from your locktimes to allow those
-    // transactions to be included in mempools at approximately the expected time.
-    let lock_time = if coin.conf.ticker == "KMD" {
-        (now_ms() / 1000) as u32 - 3600 + 2 * 777
-    } else {
-        (now_ms() / 1000) as u32 - 3600
-    };
     let n_time = if coin.conf.is_pos {
         Some((now_ms() / 1000) as u32)
     } else {
@@ -731,8 +739,14 @@ where
             value: prev_tx.outputs[0].value - fee,
             script_pubkey: Builder::build_p2pkh(&coin.as_ref().key_pair.public().address_hash()).to_bytes(),
         };
-        let transaction =
-            try_s!(coin.p2sh_spending_tx(prev_tx, redeem_script.into(), vec![output], script_data, SEQUENCE_FINAL,));
+        let transaction = try_s!(coin.p2sh_spending_tx(
+            prev_tx,
+            redeem_script.into(),
+            vec![output],
+            script_data,
+            SEQUENCE_FINAL,
+            time_lock
+        ));
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_s!(tx_fut.await);
         Ok(transaction.into())
@@ -768,8 +782,14 @@ where
             value: prev_tx.outputs[0].value - fee,
             script_pubkey: Builder::build_p2pkh(&coin.as_ref().key_pair.public().address_hash()).to_bytes(),
         };
-        let transaction =
-            try_s!(coin.p2sh_spending_tx(prev_tx, redeem_script.into(), vec![output], script_data, SEQUENCE_FINAL,));
+        let transaction = try_s!(coin.p2sh_spending_tx(
+            prev_tx,
+            redeem_script.into(),
+            vec![output],
+            script_data,
+            SEQUENCE_FINAL,
+            time_lock
+        ));
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_s!(tx_fut.await);
         Ok(transaction.into())
@@ -808,6 +828,7 @@ where
             vec![output],
             script_data,
             SEQUENCE_FINAL - 1,
+            time_lock,
         ));
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_s!(tx_fut.await);
@@ -847,6 +868,7 @@ where
             vec![output],
             script_data,
             SEQUENCE_FINAL - 1,
+            time_lock,
         ));
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_s!(tx_fut.await);
@@ -855,11 +877,76 @@ where
     Box::new(fut.boxed().compat())
 }
 
+/// Extracts pubkey from script sig
+fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
+    match script.get_instruction(0) {
+        Some(Ok(instruction)) => match instruction.opcode {
+            Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
+                Some(bytes) => try_s!(Signature::parse_der(&bytes[..bytes.len() - 1])),
+                None => return ERR!("No data at instruction 0 of script {:?}", script),
+            },
+            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        },
+        Some(Err(e)) => return ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
+        None => return ERR!("None instruction 0 of script {:?}", script),
+    };
+
+    let pubkey = match script.get_instruction(1) {
+        Some(Ok(instruction)) => match instruction.opcode {
+            Opcode::OP_PUSHBYTES_33 => match instruction.data {
+                Some(bytes) => try_s!(PublicKey::parse_slice(bytes, None)),
+                None => return ERR!("No data at instruction 1 of script {:?}", script),
+            },
+            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        },
+        Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
+        None => return ERR!("None instruction 1 of script {:?}", script),
+    };
+
+    if script.get_instruction(2).is_some() {
+        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+    }
+    Ok(pubkey.serialize_compressed().into())
+}
+
+pub async fn is_tx_confirmed_before_block<T>(coin: &T, tx: &RpcTransaction, block_number: u64) -> Result<bool, String>
+where
+    T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
+{
+    match tx.height {
+        Some(confirmed_at) => Ok(confirmed_at <= block_number),
+        // fallback to a number of confirmations
+        None => {
+            if tx.confirmations > 0 {
+                let current_block = try_s!(coin.as_ref().rpc_client.get_block_count().compat().await);
+                let confirmed_at = current_block + 1 - tx.confirmations as u64;
+                Ok(confirmed_at <= block_number)
+            } else {
+                Ok(false)
+            }
+        },
+    }
+}
+
+pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
+    for input in &tx.inputs {
+        let script: Script = input.script_sig.clone().into();
+        let pubkey = try_s!(pubkey_from_script_sig(&script));
+        if *pubkey != expected_pub {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
 pub fn validate_fee<T>(
     coin: T,
     fee_tx: &TransactionEnum,
     fee_addr: &[u8],
+    sender_pubkey: &[u8],
     amount: &BigDecimal,
+    min_block_number: u64,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
     T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
@@ -876,17 +963,27 @@ where
         coin.as_ref().conf.checksum_type
     ));
 
+    if !try_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey)) {
+        return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
+    }
     let fut = async move {
         let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
         let tx_from_rpc = try_s!(
             coin.as_ref()
                 .rpc_client
-                .get_transaction_bytes(tx.hash().reversed().into())
+                .get_verbose_transaction(tx.hash().reversed().into())
                 .compat()
                 .await
         );
 
-        if tx_from_rpc.0 != serialize(&tx).take() {
+        if try_s!(is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number).await) {
+            return ERR!(
+                "Fee tx {:?} confirmed before min_block {}",
+                tx_from_rpc,
+                min_block_number,
+            );
+        }
+        if tx_from_rpc.hex.0 != serialize(&tx).take() {
             return ERR!(
                 "Provided dex fee tx {:?} doesn't match tx data from rpc {:?}",
                 tx,
@@ -1743,6 +1840,7 @@ where
         let amount = match fee {
             ActualTxFee::Fixed(f) => f,
             ActualTxFee::Dynamic(f) => f,
+            ActualTxFee::FixedPerKb(f) => f,
         };
         Ok(TradeFee {
             coin: ticker,
@@ -1776,36 +1874,61 @@ where
 {
     let decimals = coin.as_ref().decimals;
     let tx_fee = try_map!(coin.get_tx_fee().await, TradePreimageError::Other);
-    let dynamic_fee = match tx_fee {
+    match tx_fee {
         ActualTxFee::Fixed(fee_amount) => {
             let amount = big_decimal_from_sat(fee_amount as i64, decimals);
             return Ok(amount);
         },
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
-        ActualTxFee::Dynamic(fee) => fee,
-    };
+        ActualTxFee::Dynamic(fee) => {
+            // take into account that the dynamic tx fee may increase during the swap
+            let dynamic_fee = coin.increase_dynamic_fee_by_stage(fee, stage);
 
-    // take into account that the dynamic tx fee may increase during the swap
-    let dynamic_fee = coin.increase_dynamic_fee_by_stage(dynamic_fee, stage);
+            let outputs_count = outputs.len();
+            let (unspents, _recently_sent_txs) = try_map!(
+                coin.list_unspent_ordered(&coin.as_ref().my_address).await,
+                TradePreimageError::Other
+            );
 
-    let outputs_count = outputs.len();
-    let (unspents, _recently_sent_txs) = try_map!(
-        coin.list_unspent_ordered(&coin.as_ref().my_address).await,
-        TradePreimageError::Other
-    );
+            let actual_tx_fee = Some(ActualTxFee::Dynamic(dynamic_fee));
+            let (tx, data) = generate_transaction(coin, unspents, outputs, fee_policy, actual_tx_fee, gas_fee).await?;
 
-    let actual_tx_fee = Some(ActualTxFee::Dynamic(dynamic_fee));
-    let (tx, data) = generate_transaction(coin, unspents, outputs, fee_policy, actual_tx_fee, gas_fee).await?;
+            let total_fee = if tx.outputs.len() == outputs_count {
+                // take into account the change output
+                data.fee_amount + (dynamic_fee * P2PKH_OUTPUT_LEN) / KILO_BYTE
+            } else {
+                // the change output is included already
+                data.fee_amount
+            };
 
-    let total_fee = if tx.outputs.len() == outputs_count {
-        // take into account the change output
-        data.fee_amount + (dynamic_fee * P2PKH_OUTPUT_LEN) / KILO_BYTE
-    } else {
-        // the change outputs is included already
-        data.fee_amount
-    };
+            Ok(big_decimal_from_sat(total_fee as i64, decimals))
+        },
+        ActualTxFee::FixedPerKb(fee) => {
+            let outputs_count = outputs.len();
+            let (unspents, _recently_sent_txs) = try_map!(
+                coin.list_unspent_ordered(&coin.as_ref().my_address).await,
+                TradePreimageError::Other
+            );
 
-    Ok(big_decimal_from_sat(total_fee as i64, decimals))
+            let (tx, data) = generate_transaction(coin, unspents, outputs, fee_policy, Some(tx_fee), gas_fee).await?;
+
+            let total_fee = if tx.outputs.len() == outputs_count {
+                // take into account the change output if tx_size_kb(tx with change) > tx_size_kb(tx without change)
+                let tx = UtxoTx::from(tx);
+                let tx_bytes = serialize(&tx);
+                if tx_bytes.len() as u64 % KILO_BYTE + P2PKH_OUTPUT_LEN > KILO_BYTE {
+                    data.fee_amount + fee
+                } else {
+                    data.fee_amount
+                }
+            } else {
+                // the change output is included already
+                data.fee_amount
+            };
+
+            Ok(big_decimal_from_sat(total_fee as i64, decimals))
+        },
+    }
 }
 
 /// Maker or Taker should pay fee only for sending his payment.
@@ -2467,6 +2590,26 @@ where
     }
 }
 
+pub fn can_refund_htlc<T>(coin: &T, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_>
+where
+    T: UtxoCommonOps,
+{
+    let now = now_ms() / 1000;
+    if now < locktime {
+        let to_wait = locktime - now + 1;
+        return Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(to_wait)));
+    }
+    Box::new(coin.get_current_mtp().compat().map(move |mtp| {
+        let mtp = mtp as u64;
+        if locktime < mtp {
+            CanRefundHtlc::CanRefundNow
+        } else {
+            let to_wait = locktime - mtp + 1;
+            CanRefundHtlc::HaveToWait(to_wait)
+        }
+    }))
+}
+
 #[test]
 fn test_increase_by_percent() {
     assert_eq!(increase_by_percent(4300, 1.), 4343);
@@ -2479,4 +2622,18 @@ fn test_increase_by_percent() {
     assert_eq!(increase_by_percent(23, 100.), 46);
     assert_eq!(increase_by_percent(100, 2.4), 102);
     assert_eq!(increase_by_percent(100, 2.5), 103);
+}
+
+#[test]
+fn test_pubkey_from_script_sig() {
+    let script_sig = Script::from("473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
+    let expected_pub = H264::from("03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
+    let actual_pub = pubkey_from_script_sig(&script_sig).unwrap();
+    assert_eq!(expected_pub, actual_pub);
+
+    let script_sig_err = Script::from("473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa21");
+    pubkey_from_script_sig(&script_sig_err).unwrap_err();
+
+    let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
+    pubkey_from_script_sig(&script_sig_err).unwrap_err();
 }

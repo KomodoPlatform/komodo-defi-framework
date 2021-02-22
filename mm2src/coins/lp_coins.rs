@@ -37,7 +37,7 @@ use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
-use common::{block_on, calc_total_pages, rpc_err_response, rpc_response, HyRes, TraceSource, Traceable};
+use common::{block_on, calc_total_pages, now_ms, rpc_err_response, rpc_response, HyRes, TraceSource, Traceable};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
@@ -115,6 +115,12 @@ pub enum FoundSwapTxSpend {
     Refunded(TransactionEnum),
 }
 
+pub enum CanRefundHtlc {
+    CanRefundNow,
+    // returns the number of seconds to sleep before HTLC becomes refundable
+    HaveToWait(u64),
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut;
@@ -176,8 +182,10 @@ pub trait SwapOps {
     fn validate_fee(
         &self,
         fee_tx: &TransactionEnum,
+        expected_sender: &[u8],
         fee_addr: &[u8],
         amount: &BigDecimal,
+        min_block_number: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn validate_maker_payment(
@@ -230,6 +238,19 @@ pub trait SwapOps {
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+
+    /// Whether the refund transaction can be sent now
+    /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
+    /// locktime < MTP
+    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
+        let now = now_ms() / 1000;
+        let result = if now > locktime {
+            CanRefundHtlc::CanRefundNow
+        } else {
+            CanRefundHtlc::HaveToWait(locktime - now + 1)
+        };
+        Box::new(futures01::future::ok(result))
+    }
 }
 
 /// Operations that coins have independently from the MarketMaker.

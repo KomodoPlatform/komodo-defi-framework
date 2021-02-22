@@ -10,9 +10,9 @@ use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, 
 use crate::mm2::lp_network::subscribe_to_topic;
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
-use coins::{lp_coinfind, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue};
+use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue};
 use common::executor::Timer;
-use common::log::{debug, warn};
+use common::log::{debug, error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
 use common::{bits256, file_lock::FileLock, now_ms, slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY, MM_VERSION};
@@ -1145,14 +1145,18 @@ impl TakerSwap {
     }
 
     async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        let locktime = self.r().data.taker_payment_lock;
         loop {
-            // have to wait for 1 hour more because some coins have BIP113 activated so these will reject transactions with locktime == present time
-            // https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-0.11.2.md#bip113-mempool-only-locktime-enforcement-using-getmediantimepast
-            if now_ms() / 1000 > self.wait_refund_until() {
-                break;
+            match self.taker_coin.can_refund_htlc(locktime).compat().await {
+                Ok(CanRefundHtlc::CanRefundNow) => break,
+                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                Err(e) => {
+                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                    Timer::sleep(30.).await;
+                },
             }
-            Timer::sleep(10.).await;
         }
+
         let refund_fut = self.taker_coin.send_taker_refunds_payment(
             &self.r().taker_payment.clone().unwrap().tx_hex.0,
             self.r().data.taker_payment_lock as u32,
@@ -1592,7 +1596,17 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         Err(err) => return ERR!("!lp_coinfind({}): {}", req.coin, err),
     };
     let other_coin = req.trade_with.as_ref().unwrap_or(&req.coin);
-    let max_vol = try_s!(calc_max_taker_vol(&ctx, &coin, other_coin, FeeApproxStage::TradePreimage).await);
+    let fut = calc_max_taker_vol(&ctx, &coin, other_coin, FeeApproxStage::TradePreimage);
+    let max_vol = match fut.await {
+        Ok(max_vol) => max_vol,
+        Err(CheckBalanceError::NotSufficientBalance(err)) => {
+            warn!("{}", err);
+            MmNumber::from(0)
+        },
+        Err(CheckBalanceError::Other(err)) => {
+            return ERR!("{}", err);
+        },
+    };
 
     let res = try_s!(json::to_vec(&json!({
         "result": max_vol.to_fraction()
@@ -1684,15 +1698,19 @@ pub fn max_taker_vol_from_available(
     let fee_threshold = dex_fee_threshold(min_tx_amount.clone());
     let dex_fee_rate = dex_fee_rate(base, rel);
     let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
-    let mut max_vol = if available > &fee_threshold * &threshold_coef {
+    let max_vol = if available > &fee_threshold * &threshold_coef {
         available / (MmNumber::from(1) + dex_fee_rate)
     } else {
         available - fee_threshold
     };
 
     if &max_vol <= min_tx_amount {
-        warn!("max_vol {} <= min_tx_amount {}", max_vol, min_tx_amount);
-        max_vol = 0.into();
+        let err = ERRL!(
+            "Max taker volume {:?} less than minimum transaction amount {:?}",
+            max_vol.to_fraction(),
+            min_tx_amount.to_fraction()
+        );
+        return Err(CheckBalanceError::NotSufficientBalance(err));
     }
     Ok(max_vol)
 }
@@ -2154,7 +2172,7 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // these `availables` must return 0
+        // these `availables` must return an error
         let availables = vec![
             "0.0001999",
             "0.00011",
@@ -2167,11 +2185,8 @@ mod taker_swap_tests {
         ];
         for available in availables {
             let available = MmNumber::from(available);
-            assert!(
-                max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
-                    .unwrap()
-                    .is_zero()
-            );
+            max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
+                .expect_err("!max_taker_vol_from_available success but should be error");
         }
     }
 }

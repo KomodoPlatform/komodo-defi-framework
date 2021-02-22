@@ -1,13 +1,14 @@
 use super::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo};
 use super::*;
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes};
+use crate::utxo::utxo_common::{generate_transaction, UtxoArcBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
 use crate::{SwapOps, TradePreimageValue, WithdrawFee};
 use bigdecimal::BigDecimal;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
-use common::{block_on, OrdRange};
+use common::{block_on, OrdRange, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::future::join_all;
 use gstuff::now_ms;
 use mocktopus::mocking::*;
@@ -2111,4 +2112,132 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
         .wait()
         .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee3);
+}
+
+#[test]
+fn test_validate_fee_wrong_sender() {
+    let rpc_client = electrum_client_for_test(&[
+        "electrum1.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum3.cipig.net:10018",
+    ]);
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None);
+    // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
+    let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
+    let amount: BigDecimal = "0.0014157".parse().unwrap();
+    let validate_err = coin
+        .validate_fee(
+            &taker_fee_tx,
+            &*DEX_FEE_ADDR_RAW_PUBKEY,
+            &*DEX_FEE_ADDR_RAW_PUBKEY,
+            &amount,
+            0,
+        )
+        .wait()
+        .unwrap_err();
+    assert!(validate_err.contains("was sent from wrong address"));
+}
+
+#[test]
+fn test_validate_fee_min_block() {
+    let rpc_client = electrum_client_for_test(&[
+        "electrum1.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum3.cipig.net:10018",
+    ]);
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None);
+    // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
+    let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
+    let amount: BigDecimal = "0.0014157".parse().unwrap();
+    let sender_pub = hex::decode("03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa").unwrap();
+    let validate_err = coin
+        .validate_fee(&taker_fee_tx, &sender_pub, &*DEX_FEE_ADDR_RAW_PUBKEY, &amount, 810329)
+        .wait()
+        .unwrap_err();
+    assert!(validate_err.contains("confirmed before min_block"));
+}
+
+#[test]
+fn test_generate_tx_doge_fee() {
+    // A tx below 1kb is always 1 doge fee yes.
+    // But keep in mind that every output below 1 doge will incur and extra 1 doge dust fee
+    let config = json!({
+        "coin": "DOGE",
+        "name": "dogecoin",
+        "fname": "Dogecoin",
+        "rpcport": 22555,
+        "pubtype": 30,
+        "p2shtype": 22,
+        "wiftype": 158,
+        "txfee": 0,
+        "force_min_relay_fee": true,
+        "dust": 100000000,
+        "mm2": 1,
+        "required_confirmations": 2,
+        "avg_blocktime": 1,
+        "protocol": {
+            "type": "UTXO"
+        }
+    });
+    let request = json!({
+        "method": "electrum",
+        "coin": "DOGE",
+        "servers": [{"url": "electrum1.cipig.net:10060"},{"url": "electrum2.cipig.net:10060"},{"url": "electrum3.cipig.net:10060"}],
+    });
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let doge: UtxoStandardCoin = block_on(UtxoArcBuilder::new(&ctx, "DOGE", &config, &request, &[1; 32]).build())
+        .unwrap()
+        .into();
+
+    let unspents = vec![UnspentInfo {
+        outpoint: Default::default(),
+        value: 1000000000000,
+        height: None,
+    }];
+    let outputs = vec![TransactionOutput {
+        value: 100000000,
+        script_pubkey: vec![0; 26].into(),
+    }];
+    let policy = FeePolicy::SendExact;
+    let (_, data) = block_on(generate_transaction(&doge, unspents, outputs, policy, None, None)).unwrap();
+    let expected_fee = 100000000;
+    assert_eq!(expected_fee, data.fee_amount);
+
+    let unspents = vec![UnspentInfo {
+        outpoint: Default::default(),
+        value: 1000000000000,
+        height: None,
+    }];
+    let outputs = vec![
+        TransactionOutput {
+            value: 100000000,
+            script_pubkey: vec![0; 26].into(),
+        }
+        .clone();
+        40
+    ];
+    let policy = FeePolicy::SendExact;
+    let (_, data) = block_on(generate_transaction(&doge, unspents, outputs, policy, None, None)).unwrap();
+    let expected_fee = 200000000;
+    assert_eq!(expected_fee, data.fee_amount);
+
+    let unspents = vec![UnspentInfo {
+        outpoint: Default::default(),
+        value: 1000000000000,
+        height: None,
+    }];
+    let outputs = vec![
+        TransactionOutput {
+            value: 100000000,
+            script_pubkey: vec![0; 26].into(),
+        }
+        .clone();
+        60
+    ];
+    let policy = FeePolicy::SendExact;
+    let (_, data) = block_on(generate_transaction(&doge, unspents, outputs, policy, None, None)).unwrap();
+    let expected_fee = 300000000;
+    assert_eq!(expected_fee, data.fee_amount);
 }

@@ -325,7 +325,10 @@ fn remove_and_purge_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, 
         orderbook.remove_order(order);
     }
 
-    if orderbook.memory_db.remove_and_purge(&pair_root, EMPTY_PREFIX).is_none() {
+    if orderbook.memory_db.remove_and_purge(&pair_root, EMPTY_PREFIX).is_none()
+        && pair_root != H64::default()
+        && pair_root != hashed_null_node::<Layout>()
+    {
         log::warn!("Warning: couldn't find {:?} hash root in memory_db", pair_root);
     }
 }
@@ -1999,6 +2002,15 @@ impl Orderbook {
                 continue;
             }
 
+            if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
+                log::warn!(
+                    "Received zero or hashed_null_node pair {} trie root from pub {}",
+                    alb_pair,
+                    from_pubkey
+                );
+
+                continue;
+            }
             let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
             if *actual_trie_root != trie_root {
                 trie_roots_to_request.insert(alb_pair, trie_root);

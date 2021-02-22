@@ -1,5 +1,5 @@
 use super::*;
-use crate::{SwapOps, TradePreimageError, TradePreimageValue, ValidateAddressResult};
+use crate::{CanRefundHtlc, SwapOps, TradePreimageError, TradePreimageValue, ValidateAddressResult};
 use common::mm_metrics::MetricsArc;
 use futures::{FutureExt, TryFutureExt};
 
@@ -89,6 +89,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         outputs: Vec<TransactionOutput>,
         script_data: Script,
         sequence: u32,
+        lock_time: u32,
     ) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(
             &self.utxo_arc,
@@ -97,6 +98,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
             outputs,
             script_data,
             sequence,
+            lock_time,
         )
     }
 
@@ -231,10 +233,19 @@ impl SwapOps for UtxoStandardCoin {
     fn validate_fee(
         &self,
         fee_tx: &TransactionEnum,
+        expected_sender: &[u8],
         fee_addr: &[u8],
         amount: &BigDecimal,
+        min_block_number: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::validate_fee(self.clone(), fee_tx, fee_addr, amount)
+        utxo_common::validate_fee(
+            self.clone(),
+            fee_tx,
+            fee_addr,
+            expected_sender,
+            amount,
+            min_block_number,
+        )
     }
 
     fn validate_maker_payment(
@@ -312,6 +323,10 @@ impl SwapOps for UtxoStandardCoin {
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
+    }
+
+    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
+        utxo_common::can_refund_htlc(self, locktime)
     }
 }
 

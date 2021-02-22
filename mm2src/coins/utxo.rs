@@ -140,6 +140,7 @@ pub enum TxFee {
     Fixed(u64),
     /// Tell the coin that it should request the fee from daemon RPC and calculate it relying on tx size
     Dynamic(EstimateFeeMethod),
+    FixedPerKb(u64),
 }
 
 /// The actual "runtime" fee that is received from RPC in case of dynamic calculation
@@ -149,6 +150,9 @@ pub enum ActualTxFee {
     Fixed(u64),
     /// fee amount per Kbyte received from coin RPC
     Dynamic(u64),
+    /// Use specified amount per each 1 kb of transaction and also per each output less than amount.
+    /// Used by DOGE, but more coins might support it too.
+    FixedPerKb(u64),
 }
 
 /// Fee policy applied on transaction creation
@@ -444,6 +448,7 @@ pub trait UtxoCommonOps {
         outputs: Vec<TransactionOutput>,
         script_data: Script,
         sequence: u32,
+        lock_time: u32,
     ) -> Result<UtxoTx, String>;
 
     /// Get transaction outputs available to spend.
@@ -1024,6 +1029,12 @@ pub trait UtxoCoinBuilder {
     }
 
     async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, String> {
+        const ONE_DOGE: u64 = 100000000;
+
+        if self.ticker() == "DOGE" {
+            return Ok(TxFee::FixedPerKb(ONE_DOGE));
+        }
+
         let tx_fee = match self.conf()["txfee"].as_u64() {
             None => TxFee::Fixed(1000),
             Some(0) => {
