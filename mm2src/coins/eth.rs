@@ -53,10 +53,10 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
 
-use super::{CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum,
-            TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
+use super::{CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SwapOps, TradeFee, TradePreimageError, TradePreimageValue, Transaction,
+            TransactionDetails, TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
 
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
@@ -880,12 +880,16 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
 
-    fn my_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
+    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send> {
         let decimals = self.decimals;
-        Box::new(
-            self.my_balance()
-                .and_then(move |result| Ok(try_s!(u256_to_big_decimal(result, decimals)))),
-        )
+        let fut = self
+            .my_balance()
+            .and_then(move |result| Ok(try_s!(u256_to_big_decimal(result, decimals))))
+            .map(|spendable| CoinBalance {
+                spendable,
+                unspendable: BigDecimal::from(0),
+            });
+        Box::new(fut)
     }
 
     fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
@@ -2574,11 +2578,6 @@ impl MmCoin for EthCoin {
 
     fn set_requires_notarization(&self, _requires_nota: bool) {
         log!("Warning: set_requires_notarization doesn't take any effect on ETH/ERC20 coins");
-    }
-
-    fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
-        // Eth has not unspendable outputs
-        Box::new(futures01::future::ok(0.into()))
     }
 
     fn swap_contract_address(&self) -> Option<BytesJson> {

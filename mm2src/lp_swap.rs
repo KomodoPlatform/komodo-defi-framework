@@ -442,7 +442,10 @@ pub async fn check_other_coin_balance_for_swap(
 ) -> Result<(), CheckBalanceError> {
     let ticker = coin.ticker();
     info!("Check other_coin '{}' balance for swap", ticker);
-    let balance = MmNumber::from(try_map!(coin.my_balance().compat().await, CheckBalanceError::Other));
+    let balance = MmNumber::from(try_map!(
+        coin.my_spendable_balance().compat().await,
+        CheckBalanceError::Other
+    ));
 
     let locked = match swap_uuid {
         Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),
@@ -501,7 +504,10 @@ pub async fn check_my_coin_balance_for_swap(
 ) -> Result<(), CheckBalanceError> {
     let ticker = coin.ticker();
     info!("Check my_coin '{}' balance for swap", ticker);
-    let balance = MmNumber::from(try_map!(coin.my_balance().compat().await, CheckBalanceError::Other));
+    let balance = MmNumber::from(try_map!(
+        coin.my_spendable_balance().compat().await,
+        CheckBalanceError::Other
+    ));
 
     let locked = match swap_uuid {
         Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),

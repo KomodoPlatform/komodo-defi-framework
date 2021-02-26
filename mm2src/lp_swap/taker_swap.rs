@@ -1643,7 +1643,10 @@ pub async fn calc_max_taker_vol(
     stage: FeeApproxStage,
 ) -> Result<MmNumber, CheckBalanceError> {
     let my_coin = coin.ticker();
-    let balance = MmNumber::from(try_map!(coin.my_balance().compat().await, CheckBalanceError::Other));
+    let balance = MmNumber::from(try_map!(
+        coin.my_spendable_balance().compat().await,
+        CheckBalanceError::Other
+    ));
     let locked = get_locked_amount(ctx, my_coin);
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
 

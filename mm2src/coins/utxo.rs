@@ -180,14 +180,39 @@ impl Default for UtxoAddressFormat {
     fn default() -> Self { UtxoAddressFormat::Standard }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CachedUnspentInfo {
+    pub outpoint: OutPoint,
+    pub value: u64,
+}
+
+impl From<UnspentInfo> for CachedUnspentInfo {
+    fn from(unspent: UnspentInfo) -> CachedUnspentInfo {
+        CachedUnspentInfo {
+            outpoint: unspent.outpoint,
+            value: unspent.value,
+        }
+    }
+}
+
+impl From<CachedUnspentInfo> for UnspentInfo {
+    fn from(cached: CachedUnspentInfo) -> UnspentInfo {
+        UnspentInfo {
+            outpoint: cached.outpoint,
+            value: cached.value,
+            height: None,
+        }
+    }
+}
+
 /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
 /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
 /// This cache helps to prevent UTXO reuse in such cases
 pub struct RecentlySpentOutPoints {
-    /// Maps UnspentInfo A to a set of UnspentInfos which `spent` A
-    input_to_output_map: HashMap<UnspentInfo, HashSet<UnspentInfo>>,
-    /// Maps UnspentInfo A to a set of UnspentInfos that `were spent by` A
-    output_to_input_map: HashMap<UnspentInfo, HashSet<UnspentInfo>>,
+    /// Maps CachedUnspentInfo A to a set of CachedUnspentInfo which `spent` A
+    input_to_output_map: HashMap<CachedUnspentInfo, HashSet<CachedUnspentInfo>>,
+    /// Maps CachedUnspentInfo A to a set of CachedUnspentInfo that `were spent by` A
+    output_to_input_map: HashMap<CachedUnspentInfo, HashSet<CachedUnspentInfo>>,
     /// Cache includes only outputs having script_pubkey == for_script_pubkey
     for_script_pubkey: Bytes,
 }
@@ -201,22 +226,19 @@ impl RecentlySpentOutPoints {
         }
     }
 
-    pub fn add_spent(&mut self, mut inputs: Vec<UnspentInfo>, spend_tx_hash: H256, outputs: Vec<TransactionOutput>) {
-        // reset the height for all inputs as spent cache is not aware about block height of spent output
-        inputs.iter_mut().for_each(|input| input.height = None);
-        let inputs: HashSet<_> = inputs.into_iter().collect();
+    pub fn add_spent(&mut self, inputs: Vec<UnspentInfo>, spend_tx_hash: H256, outputs: Vec<TransactionOutput>) {
+        let inputs: HashSet<_> = inputs.into_iter().map(From::from).collect();
         let to_replace: HashSet<_> = outputs
             .iter()
             .enumerate()
             .filter_map(|(index, output)| {
                 if output.script_pubkey == self.for_script_pubkey {
-                    Some(UnspentInfo {
+                    Some(CachedUnspentInfo {
                         outpoint: OutPoint {
                             hash: spend_tx_hash.clone(),
                             index: index as u32,
                         },
                         value: output.value,
-                        height: None,
                     })
                 } else {
                     None
@@ -254,18 +276,10 @@ impl RecentlySpentOutPoints {
 
     pub fn replace_spent_outputs_with_cache(&self, mut outputs: HashSet<UnspentInfo>) -> HashSet<UnspentInfo> {
         let mut replacement_unspents = HashSet::new();
-        // reset the height for all outputs as spent cache is not aware about block height of a just sent tx
-        outputs = outputs
-            .into_iter()
-            .map(|mut output| {
-                output.height = None;
-                output
-            })
-            .collect();
         outputs = outputs
             .into_iter()
             .filter(|unspent| {
-                let outs = self.input_to_output_map.get(&unspent);
+                let outs = self.input_to_output_map.get(&unspent.clone().into());
                 match outs {
                     Some(outs) => {
                         for out in outs.iter() {
@@ -282,7 +296,7 @@ impl RecentlySpentOutPoints {
         if replacement_unspents.is_empty() {
             return outputs;
         }
-        outputs.extend(replacement_unspents);
+        outputs.extend(replacement_unspents.into_iter().map(From::from));
         self.replace_spent_outputs_with_cache(outputs)
     }
 }
@@ -393,8 +407,8 @@ pub struct UtxoCoinFields {
     pub tx_hash_algo: TxHashAlgo,
 }
 
-#[cfg_attr(test, mockable)]
 #[async_trait]
+#[cfg_attr(test, mockable)]
 pub trait UtxoCommonOps {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError>;
 
@@ -452,10 +466,10 @@ pub trait UtxoCommonOps {
     ) -> Result<UtxoTx, String>;
 
     /// Get transaction outputs available to spend.
-    fn ordered_mature_unspents(
-        &self,
+    async fn ordered_mature_unspents<'a>(
+        &'a self,
         address: &Address,
-    ) -> Box<dyn Future<Item = Vec<UnspentInfo>, Error = String> + Send>;
+    ) -> Result<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>), String>;
 
     /// Try load verbose transaction from cache or try to request it from Rpc client.
     fn get_verbose_transaction_from_cache_or_rpc(

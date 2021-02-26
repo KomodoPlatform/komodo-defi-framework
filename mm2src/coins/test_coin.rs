@@ -1,5 +1,5 @@
-use super::{HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionDetails, TransactionEnum,
-            TransactionFut};
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionDetails,
+            TransactionEnum, TransactionFut};
 use crate::{FeeApproxStage, FoundSwapTxSpend, TradePreimageError, TradePreimageValue, ValidateAddressResult,
             WithdrawRequest};
 use bigdecimal::BigDecimal;
@@ -21,7 +21,7 @@ impl MarketCoinOps for TestCoin {
 
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 
-    fn my_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
+    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send> { unimplemented!() }
 
     fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
 
@@ -258,8 +258,6 @@ impl MmCoin for TestCoin {
     fn set_required_confirmations(&self, _confirmations: u64) { unimplemented!() }
 
     fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
-
-    fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
 

@@ -542,8 +542,14 @@ fn trade_base_rel((base, rel): (&str, &str)) {
 fn test_taker_spends_maker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
-    let maker_old_balance = maker_coin.my_balance().wait().expect("Error on get maker balance");
-    let taker_old_balance = taker_coin.my_balance().wait().expect("Error on get taker balance");
+    let maker_old_balance = maker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get maker balance");
+    let taker_old_balance = taker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get taker balance");
     assert_eq!(maker_old_balance, BigDecimal::from(10));
     assert_eq!(taker_old_balance, BigDecimal::from(1));
 
@@ -605,8 +611,14 @@ fn test_taker_spends_maker_payment() {
         .wait_for_confirmations(&spend_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let maker_balance = maker_coin.my_balance().wait().expect("Error on get maker balance");
-    let taker_balance = taker_coin.my_balance().wait().expect("Error on get taker balance");
+    let maker_balance = maker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get maker balance");
+    let taker_balance = taker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get taker balance");
     assert_eq!(maker_old_balance - amount.clone(), maker_balance);
     assert_eq!(taker_old_balance + amount, taker_balance);
 }
@@ -615,8 +627,14 @@ fn test_taker_spends_maker_payment() {
 fn test_maker_spends_taker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let maker_old_balance = maker_coin.my_balance().wait().expect("Error on get maker balance");
-    let taker_old_balance = taker_coin.my_balance().wait().expect("Error on get taker balance");
+    let maker_old_balance = maker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get maker balance");
+    let taker_old_balance = taker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get taker balance");
     assert_eq!(maker_old_balance, BigDecimal::from(10));
     assert_eq!(taker_old_balance, BigDecimal::from(10));
 
@@ -678,8 +696,14 @@ fn test_maker_spends_taker_payment() {
         .wait_for_confirmations(&spend_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let maker_balance = maker_coin.my_balance().wait().expect("Error on get maker balance");
-    let taker_balance = taker_coin.my_balance().wait().expect("Error on get taker balance");
+    let maker_balance = maker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get maker balance");
+    let taker_balance = taker_coin
+        .my_spendable_balance()
+        .wait()
+        .expect("Error on get taker balance");
     assert_eq!(maker_old_balance + amount.clone(), maker_balance);
     assert_eq!(taker_old_balance - amount, taker_balance);
 }
@@ -687,7 +711,7 @@ fn test_maker_spends_taker_payment() {
 #[test]
 fn test_maker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let expected_balance = unwrap!(coin.my_balance().wait());
+    let expected_balance = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance, BigDecimal::from(10));
 
     let timelock = (now_ms() / 1000) as u32 - 200;
@@ -717,7 +741,7 @@ fn test_maker_refunds_payment() {
         .wait_for_confirmations(&payment_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let balance_after_payment = unwrap!(coin.my_balance().wait());
+    let balance_after_payment = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance.clone() - amount, balance_after_payment);
 
     let refund = unwrap!(coin
@@ -738,14 +762,14 @@ fn test_maker_refunds_payment() {
         .wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let balance_after_refund = unwrap!(coin.my_balance().wait());
+    let balance_after_refund = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance, balance_after_refund);
 }
 
 #[test]
 fn test_taker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let expected_balance = unwrap!(coin.my_balance().wait());
+    let expected_balance = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance, BigDecimal::from(10));
 
     let timelock = (now_ms() / 1000) as u32 - 200;
@@ -775,7 +799,7 @@ fn test_taker_refunds_payment() {
         .wait_for_confirmations(&payment_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let balance_after_payment = unwrap!(coin.my_balance().wait());
+    let balance_after_payment = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance.clone() - amount, balance_after_payment);
 
     let refund = unwrap!(coin
@@ -796,7 +820,7 @@ fn test_taker_refunds_payment() {
         .wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
         .wait());
 
-    let balance_after_refund = unwrap!(coin.my_balance().wait());
+    let balance_after_refund = unwrap!(coin.my_spendable_balance().wait());
     assert_eq!(expected_balance, balance_after_refund);
 }
 
@@ -1252,7 +1276,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     log!([block_on(enable_native(&mm, "MYCOIN", vec![]))]);
     log!([block_on(enable_native(&mm, "QTUM", vec![]))]);
 
-    let qtum_balance = coin.my_balance().wait().expect("!my_balance");
+    let qtum_balance = coin.my_spendable_balance().wait().expect("!my_balance");
     let qtum_dex_fee_threshold = MmNumber::from("0.000728");
 
     // - `max_possible = balance - locked_amount`, where `locked_amount = 0`
@@ -1345,7 +1369,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         .wait()
         .expect("!send_taker_payment");
 
-    let my_balance = coin.my_balance().wait().expect("!my_balance");
+    let my_balance = coin.my_spendable_balance().wait().expect("!my_balance");
     assert_eq!(my_balance, 0.into());
 }
 

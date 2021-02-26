@@ -3025,7 +3025,7 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         }
     }
 
-    let my_balance = try_s!(base_coin.my_balance().compat().await);
+    let my_balance = try_s!(base_coin.my_spendable_balance().compat().await);
     let volume = if req.max {
         // first check if `rel_coin` balance is sufficient
         let rel_coin_trade_fee = try_s!(

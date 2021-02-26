@@ -38,7 +38,7 @@ impl Qrc20Coin {
         receiver_addr: H160,
         swap_contract_address: H160,
     ) -> Result<TransactionEnum, String> {
-        let balance = try_s!(self.my_balance().compat().await);
+        let balance = try_s!(self.my_spendable_balance().compat().await);
         let balance = try_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
         let outputs = try_s!(

@@ -48,7 +48,8 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
 
 #[test]
 fn test_withdraw_impl_fee_details() {
-    Qrc20Coin::ordered_mature_unspents.mock_safe(|_, _| {
+    Qrc20Coin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -57,7 +58,7 @@ fn test_withdraw_impl_fee_details() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
@@ -717,7 +718,11 @@ fn test_taker_fee_tx_fee() {
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
-    assert_eq!(coin.my_balance().wait().expect("!my_balance"), BigDecimal::from(5));
+    let expected_balance = CoinBalance {
+        spendable: BigDecimal::from(5),
+        unspendable: BigDecimal::from(0),
+    };
+    assert_eq!(coin.my_balance().wait().expect("!my_balance"), expected_balance);
 
     let dex_fee_amount = BigDecimal::from(5);
     let actual = coin

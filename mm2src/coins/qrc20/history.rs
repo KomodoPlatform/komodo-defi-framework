@@ -80,7 +80,7 @@ enum ProcessCachedTransferMapResult {
 
 impl Qrc20Coin {
     pub fn history_loop(&self, ctx: MmArc) {
-        let mut my_balance: Option<BigDecimal> = None;
+        let mut my_balance: Option<CoinBalance> = None;
         let mut history_map = self.try_load_history_from_file(&ctx);
 
         let mut success_iteration = 0i32;
@@ -361,8 +361,8 @@ impl Qrc20Coin {
     fn check_if_history_update_is_needed(
         &self,
         history: &HistoryMapByHash,
-        last_balance: &Option<BigDecimal>,
-        actual_balance: &BigDecimal,
+        last_balance: &Option<CoinBalance>,
+        actual_balance: &CoinBalance,
     ) -> bool {
         let need_update = history
             .iter()

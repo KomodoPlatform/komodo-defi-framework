@@ -260,7 +260,11 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> Result<String, String>;
 
-    fn my_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send>;
+    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send>;
+
+    fn my_spendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
+        Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
+    }
 
     /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
     fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send>;
@@ -427,6 +431,12 @@ impl TransactionDetails {
 pub struct TradeFee {
     pub coin: String,
     pub amount: MmNumber,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct CoinBalance {
+    pub spendable: BigDecimal,
+    pub unspendable: BigDecimal,
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
@@ -596,9 +606,6 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// set requires notarization
     fn set_requires_notarization(&self, requires_nota: bool);
-
-    /// Get unspendable balance (sum of non-mature output values).
-    fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send>;
 
     /// Get swap contract address if the coin uses it in Atomic Swaps.
     fn swap_contract_address(&self) -> Option<BytesJson>;
@@ -1234,8 +1241,8 @@ pub async fn check_balance_update_loop(ctx: MmArc, ticker: String) {
         Timer::sleep(10.).await;
         match lp_coinfind(&ctx, &ticker).await {
             Ok(Some(coin)) => {
-                let balance = match coin.my_balance().compat().await {
-                    Ok(b) => b,
+                let balance = match coin.my_spendable_balance().compat().await {
+                    Ok(balance) => balance,
                     Err(_) => continue,
                 };
                 if Some(&balance) != current_balance.as_ref() {

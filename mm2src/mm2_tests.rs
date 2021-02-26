@@ -457,6 +457,8 @@ fn test_my_balance() {
     let json: Json = unwrap!(json::from_str(&my_balance.1));
     let my_balance = unwrap!(json["balance"].as_str());
     assert_eq!(my_balance, "7.777");
+    let my_unspendable_balance = unwrap!(json["unspendable_balance"].as_str());
+    assert_eq!(my_unspendable_balance, "0");
     let my_address = unwrap!(json["address"].as_str());
     assert_eq!(my_address, "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
 }
@@ -2308,6 +2310,7 @@ fn test_electrum_and_enable_response() {
         electrum_rick.1
     );
     let rick_response: Json = unwrap!(json::from_str(&electrum_rick.1));
+    assert_eq!(rick_response["unspendable_balance"], Json::from("0"));
     assert_eq!(rick_response["required_confirmations"], Json::from(10));
     assert_eq!(rick_response["requires_notarization"], Json::from(true));
     assert_eq!(rick_response["mature_confirmations"], Json::from(101));
@@ -2351,6 +2354,7 @@ fn test_electrum_and_enable_response() {
         enable_eth.1
     );
     let eth_response: Json = unwrap!(json::from_str(&enable_eth.1));
+    assert_eq!(rick_response["unspendable_balance"], Json::from("0"));
     assert_eq!(eth_response["required_confirmations"], Json::from(10));
     // requires_notarization doesn't take any effect on ETH/ERC20 coins
     assert_eq!(eth_response["requires_notarization"], Json::from(false));

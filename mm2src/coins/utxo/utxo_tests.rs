@@ -1,9 +1,10 @@
 use super::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo};
 use super::*;
+use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumBasedCoin, QtumCoin};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{generate_transaction, UtxoArcBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-use crate::{SwapOps, TradePreimageValue, WithdrawFee};
+use crate::{CoinBalance, SwapOps, TradePreimageValue, WithdrawFee};
 use bigdecimal::BigDecimal;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
@@ -450,7 +451,8 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 
 #[test]
 fn test_withdraw_impl_set_fixed_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -459,7 +461,7 @@ fn test_withdraw_impl_set_fixed_fee() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -487,7 +489,8 @@ fn test_withdraw_impl_set_fixed_fee() {
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -496,7 +499,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -527,7 +530,8 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -536,7 +540,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -569,7 +573,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -578,7 +583,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -611,7 +616,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -620,7 +626,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -641,7 +647,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 
 #[test]
 fn test_withdraw_impl_sat_per_kb_fee_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|_, _| {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: 1.into(),
@@ -650,7 +657,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
             value: 1000000000,
             height: Default::default(),
         }];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -688,13 +695,12 @@ fn test_ordered_mature_unspents_without_tx_cache() {
     );
     assert!(coin.as_ref().tx_cache_directory.is_none());
     assert_ne!(
-        coin.my_balance().wait().unwrap(),
+        coin.my_spendable_balance().wait().unwrap(),
         0.into(),
         "The test address doesn't have unspent outputs"
     );
-    let unspents = unwrap!(coin
-        .ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))
-        .wait());
+    let (unspents, _) =
+        block_on(coin.ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))).unwrap();
     assert!(!unspents.is_empty());
 }
 
@@ -1317,16 +1323,16 @@ fn test_one_unavailable_electrum_proto_version() {
 }
 
 #[test]
-fn test_unspendable_balance_failed_once() {
+fn test_qtum_unspendable_balance_failed_once() {
     let mut unspents = vec![
-        // unspendable balance (8) > balance (7.777)
+        // spendable balance (69.0) > balance (68.0)
         vec![
             UnspentInfo {
                 outpoint: OutPoint {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 500000000,
+                value: 5000000000,
                 height: Default::default(),
             },
             UnspentInfo {
@@ -1334,18 +1340,18 @@ fn test_unspendable_balance_failed_once() {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 300000000,
+                value: 1900000000,
                 height: Default::default(),
             },
         ],
-        // unspendable balance (7.777) == balance (7.777)
+        // spendable balance (68.0) == balance (68.0)
         vec![
             UnspentInfo {
                 outpoint: OutPoint {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 333300000,
+                value: 5000000000,
                 height: Default::default(),
             },
             UnspentInfo {
@@ -1353,20 +1359,21 @@ fn test_unspendable_balance_failed_once() {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 444400000,
+                value: 1800000000,
                 height: Default::default(),
             },
         ],
     ];
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(move |_, _| {
+    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = unspents.pop().unwrap();
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
-    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10017"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1375,29 +1382,29 @@ fn test_unspendable_balance_failed_once() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "RICK", &conf, &req, &priv_key
+    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
+        &ctx, "tQTUM", &conf, &req, &priv_key
     )));
 
-    let balance = coin.my_balance().wait().unwrap();
-    let expected = "7.777".parse().unwrap();
-    assert_eq!(balance, expected);
-
-    let unspendable_balance = coin.my_unspendable_balance().wait().unwrap();
-    let expected = "0.000".parse().unwrap();
-    assert_eq!(unspendable_balance, expected);
+    let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
+    let expected_spendable = BigDecimal::from(68);
+    let expected_unspendable = BigDecimal::from(0);
+    assert_eq!(spendable, expected_spendable);
+    assert_eq!(unspendable, expected_unspendable);
 }
 
 #[test]
-fn test_unspendable_balance_failed() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(move |_, _| {
+fn test_qtum_unspendable_balance_failed() {
+    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        // spendable balance (69.0) > balance (68.0)
         let unspents = vec![
             UnspentInfo {
                 outpoint: OutPoint {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 500000000,
+                value: 5000000000,
                 height: Default::default(),
             },
             UnspentInfo {
@@ -1405,17 +1412,17 @@ fn test_unspendable_balance_failed() {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 300000000,
+                value: 1900000000,
                 height: Default::default(),
             },
         ];
-        MockResult::Return(Box::new(futures01::future::ok(unspents)))
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
     });
 
-    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10017"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1424,16 +1431,62 @@ fn test_unspendable_balance_failed() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "RICK", &conf, &req, &priv_key
+    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
+        &ctx, "tQTUM", &conf, &req, &priv_key
     )));
 
-    let balance = coin.my_balance().wait().unwrap();
-    let expected = "7.777".parse().unwrap();
-    assert_eq!(balance, expected);
+    let error = coin.my_balance().wait().err().unwrap();
+    log!("error: "[error]);
+    assert!(error.contains("Spendable balance 69 greater than total balance 68"));
+}
 
-    let error = coin.my_unspendable_balance().wait().err().unwrap();
-    assert!(error.contains("spendable balance 8 more than total balance 7.777"));
+#[test]
+fn test_qtum_my_balance() {
+    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        // spendable balance (66.0) < balance (68.0), then unspendable balance is expected to be (2.0)
+        let unspents = vec![
+            UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 5000000000,
+                height: Default::default(),
+            },
+            UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1600000000,
+                height: Default::default(),
+            },
+        ];
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let priv_key = [
+        184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
+        184, 102, 137, 37, 78, 214, 113, 78,
+    ];
+    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
+        &ctx, "tQTUM", &conf, &req, &priv_key
+    )));
+
+    let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
+    let expected_spendable = BigDecimal::from(66);
+    let expected_unspendable = BigDecimal::from(2);
+    assert_eq!(spendable, expected_spendable);
+    assert_eq!(unspendable, expected_unspendable);
 }
 
 #[test]
@@ -1464,7 +1517,7 @@ fn test_ordered_mature_unspents_from_cache_impl(
     verbose.height = cached_height;
 
     // prepare mocks
-    UtxoStandardCoin::list_unspent_ordered.mock_safe(move |coin, _| {
+    ElectrumClient::list_unspent.mock_safe(move |_, _, _| {
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
                 hash: H256::from_reversed_str(TX_HASH),
@@ -1473,10 +1526,7 @@ fn test_ordered_mature_unspents_from_cache_impl(
             value: 1000000000,
             height: unspent_height,
         }];
-        MockResult::Return(Box::pin(futures::future::ok((
-            unspents,
-            block_on(coin.as_ref().recently_spent_outpoints.lock()),
-        ))))
+        MockResult::Return(Box::new(futures01::future::ok(unspents)))
     });
     ElectrumClient::get_block_count
         .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(block_count))));
@@ -1497,9 +1547,7 @@ fn test_ordered_mature_unspents_from_cache_impl(
 
     // run test
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(client), None);
-    let unspents = coin
-        .ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))
-        .wait()
+    let (unspents, _) = block_on(coin.ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")))
         .expect("Expected an empty unspent list");
     // unspents should be empty because `is_unspent_mature()` always returns false
     assert!(unspents.is_empty());
@@ -2023,7 +2071,6 @@ fn test_find_output_spend_skips_conflicting_transactions() {
 
 #[test]
 fn test_qtum_is_unspent_mature() {
-    use crate::utxo::qtum::{QtumBasedCoin, QtumCoin};
     use rpc::v1::types::{ScriptType, SignedTransactionOutput, TransactionOutputScript};
 
     let mut coin_fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(native_client_for_test()), None);
@@ -2096,7 +2143,7 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     );
     coin_fields.tx_fee = TxFee::Dynamic(EstimateFeeMethod::Standard);
     let coin = utxo_coin_from_fields(coin_fields);
-    let my_balance = coin.my_balance().wait().expect("!my_balance");
+    let my_balance = coin.my_spendable_balance().wait().expect("!my_balance");
     let expected_balance = BigDecimal::from_str("2.22222").expect("!BigDecimal::from_str");
     assert_eq!(my_balance, expected_balance);
 

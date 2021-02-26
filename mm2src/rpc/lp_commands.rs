@@ -86,6 +86,7 @@ struct CoinInitResponse<'a> {
     result: &'a str,
     address: String,
     balance: BigDecimal,
+    unspendable_balance: BigDecimal,
     coin: &'a str,
     required_confirmations: u64,
     requires_notarization: bool,
@@ -101,7 +102,8 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String
     let res = CoinInitResponse {
         result: "success",
         address: try_s!(coin.my_address()),
-        balance,
+        balance: balance.spendable,
+        unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
         required_confirmations: coin.required_confirmations(),
         requires_notarization: coin.requires_notarization(),
@@ -119,7 +121,8 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     let res = CoinInitResponse {
         result: "success",
         address: try_s!(coin.my_address()),
-        balance,
+        balance: balance.spendable,
+        unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
         required_confirmations: coin.required_confirmations(),
         requires_notarization: coin.requires_notarization(),
@@ -169,7 +172,8 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
     let my_balance = try_s!(coin.my_balance().compat().await);
     let res = json!({
         "coin": ticker,
-        "balance": my_balance,
+        "balance": my_balance.spendable,
+        "unspendable_balance": my_balance.unspendable,
         "address": try_s!(coin.my_address()),
     });
     let res = try_s!(json::to_vec(&res));

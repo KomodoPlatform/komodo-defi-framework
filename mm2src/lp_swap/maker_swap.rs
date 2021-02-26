@@ -1519,7 +1519,7 @@ pub async fn maker_swap_trade_preimage(
     };
 
     let volume = if req.max {
-        let balance = try_s!(base_coin.my_balance().compat().await);
+        let balance = try_s!(base_coin.my_spendable_balance().compat().await);
         try_s!(calc_max_maker_vol(&ctx, &base_coin, &balance, FeeApproxStage::TradePreimage).await)
     } else {
         req.volume
