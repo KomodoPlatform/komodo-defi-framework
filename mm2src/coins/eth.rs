@@ -2584,6 +2584,8 @@ impl MmCoin for EthCoin {
     fn swap_contract_address(&self) -> Option<BytesJson> {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
     }
+
+    fn mature_confirmations(&self) -> Option<u32> { None }
 }
 
 pub trait TryToAddress {

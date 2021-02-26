@@ -323,6 +323,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -357,6 +358,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -391,6 +393,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -425,6 +428,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -459,6 +463,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -493,6 +498,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -527,6 +533,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -561,6 +568,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -595,6 +603,7 @@ fn test_taker_match_reserved() {
         },
         matches: HashMap::new(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {
@@ -632,6 +641,7 @@ fn test_taker_order_cancellable() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     assert!(order.is_cancellable());
@@ -654,6 +664,7 @@ fn test_taker_order_cancellable() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     order.matches.insert(Uuid::new_v4(), TakerMatch {
@@ -742,6 +753,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             conf_settings: None,
         },
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     });
     rx
 }
@@ -829,6 +841,7 @@ fn test_taker_order_match_by() {
         matches: HashMap::new(),
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
+        min_volume: 0.into(),
     };
 
     let reserved = MakerReserved {

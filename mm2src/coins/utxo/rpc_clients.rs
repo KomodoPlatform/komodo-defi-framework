@@ -31,7 +31,7 @@ use http::Uri;
 use http::{Request, StatusCode};
 use keys::Address;
 #[cfg(test)] use mocktopus::macros::*;
-use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, VerboseBlockClient, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 #[cfg(feature = "native")] use rustls::{self};
 use script::Builder;
 use serde_json::{self as json, Value as Json};
@@ -356,6 +356,54 @@ pub enum EstimateFeeMethod {
     SmartFee,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum BlockNonce {
+    String(String),
+    U64(u64),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerboseBlock {
+    /// Block hash
+    pub hash: H256Json,
+    /// Number of confirmations. -1 if block is on the side chain
+    pub confirmations: i64,
+    /// Block size
+    pub size: u32,
+    /// Block size, excluding witness data
+    pub strippedsize: Option<u32>,
+    /// Block weight
+    pub weight: Option<u32>,
+    /// Block height
+    pub height: Option<u32>,
+    /// Block version
+    pub version: u32,
+    /// Block version as hex
+    #[serde(rename = "versionHex")]
+    pub version_hex: Option<String>,
+    /// Merkle root of this block
+    pub merkleroot: H256Json,
+    /// Transactions ids
+    pub tx: Vec<H256Json>,
+    /// Block time in seconds since epoch (Jan 1 1970 GMT)
+    pub time: u32,
+    /// Median block time in seconds since epoch (Jan 1 1970 GMT)
+    pub mediantime: Option<u32>,
+    /// Block nonce
+    pub nonce: BlockNonce,
+    /// Block nbits
+    pub bits: String,
+    /// Block difficulty
+    pub difficulty: f64,
+    /// Expected number of hashes required to produce the chain up to this block (in hex)
+    pub chainwork: H256Json,
+    /// Hash of previous block
+    pub previousblockhash: Option<H256Json>,
+    /// Hash of next block
+    pub nextblockhash: Option<H256Json>,
+}
+
 pub type RpcReqSub<T> = async_oneshot::Sender<Result<T, JsonRpcError>>;
 
 /// RPC client for UTXO based coins
@@ -574,7 +622,8 @@ impl UtxoRpcClientOps for NativeClient {
     ) -> Box<dyn Future<Item = u32, Error = String> + Send> {
         let selfi = self.clone();
         let fut = async move {
-            let starting_block_data = try_s!(selfi.get_block(starting_block.to_string()).compat().await);
+            let starting_block_hash = try_s!(selfi.get_block_hash(starting_block).compat().await);
+            let starting_block_data = try_s!(selfi.get_block(starting_block_hash).compat().await);
             if let Some(median) = starting_block_data.mediantime {
                 return Ok(median);
             }
@@ -586,7 +635,8 @@ impl UtxoRpcClientOps for NativeClient {
                 starting_block - count.get() + 1
             };
             for block_n in from..starting_block {
-                let block_data = try_s!(selfi.get_block(block_n.to_string()).compat().await);
+                let block_hash = try_s!(selfi.get_block_hash(block_n).compat().await);
+                let block_data = try_s!(selfi.get_block(block_hash).compat().await);
                 block_timestamps.push(block_data.time);
             }
             // can unwrap because count is non zero
@@ -660,10 +710,13 @@ impl NativeClientImpl {
 
     /// https://developer.bitcoin.org/reference/rpc/getblock.html
     /// Always returns verbose block
-    pub fn get_block(&self, height: String) -> RpcRes<VerboseBlockClient> {
+    pub fn get_block(&self, hash: H256Json) -> RpcRes<VerboseBlock> {
         let verbose = true;
-        rpc_func!(self, "getblock", height, verbose)
+        rpc_func!(self, "getblock", hash, verbose)
     }
+
+    /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
+    pub fn get_block_hash(&self, height: u64) -> RpcRes<H256Json> { rpc_func!(self, "getblockhash", height) }
 
     /// https://developer.bitcoin.org/reference/rpc/getblockcount.html
     pub fn get_block_count(&self) -> RpcRes<u64> { rpc_func!(self, "getblockcount") }
@@ -760,11 +813,6 @@ impl NativeClientImpl {
             target_confirmations,
             include_watch_only
         )
-    }
-
-    /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
-    pub fn get_block_hash(&self, block_number: u64) -> RpcRes<H256Json> {
-        rpc_func!(self, "getblockhash", block_number)
     }
 
     /// https://developer.bitcoin.org/reference/rpc/sendtoaddress.html

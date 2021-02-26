@@ -20,6 +20,7 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 #![cfg_attr(not(feature = "native"), allow(unused_imports))]
 
+use bigdecimal::BigDecimal;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
@@ -80,20 +81,32 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         .map_err(|e| ERRL!("{}", e))
 }
 
+#[derive(Serialize)]
+struct CoinInitResponse<'a> {
+    result: &'a str,
+    address: String,
+    balance: BigDecimal,
+    coin: &'a str,
+    required_confirmations: u64,
+    requires_notarization: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mature_confirmations: Option<u32>,
+}
+
 /// Enable a coin in the Electrum mode.
 pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
     let balance = try_s!(coin.my_balance().compat().await);
-
-    let res = json! ({
-        "result": "success",
-        "address": try_s!(coin.my_address()),
-        "balance": balance,
-        "coin": coin.ticker(),
-        "required_confirmations": coin.required_confirmations(),
-        "requires_notarization": coin.requires_notarization(),
-    });
+    let res = CoinInitResponse {
+        result: "success",
+        address: try_s!(coin.my_address()),
+        balance,
+        coin: coin.ticker(),
+        required_confirmations: coin.required_confirmations(),
+        requires_notarization: coin.requires_notarization(),
+        mature_confirmations: coin.mature_confirmations(),
+    };
     let res = try_s!(json::to_vec(&res));
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -103,15 +116,15 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
     let balance = try_s!(coin.my_balance().compat().await);
-
-    let res = json! ({
-        "result": "success",
-        "address": try_s!(coin.my_address()),
-        "balance": balance,
-        "coin": coin.ticker(),
-        "required_confirmations": coin.required_confirmations(),
-        "requires_notarization": coin.requires_notarization(),
-    });
+    let res = CoinInitResponse {
+        result: "success",
+        address: try_s!(coin.my_address()),
+        balance,
+        coin: coin.ticker(),
+        required_confirmations: coin.required_confirmations(),
+        requires_notarization: coin.requires_notarization(),
+        mature_confirmations: coin.mature_confirmations(),
+    };
     let res = try_s!(json::to_vec(&res));
     Ok(try_s!(Response::builder().body(res)))
 }

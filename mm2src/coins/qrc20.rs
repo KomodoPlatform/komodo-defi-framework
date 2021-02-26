@@ -1096,6 +1096,8 @@ impl MmCoin for Qrc20Coin {
     fn swap_contract_address(&self) -> Option<BytesJson> {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
     }
+
+    fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo.conf.mature_confirmations) }
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {

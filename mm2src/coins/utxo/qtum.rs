@@ -546,6 +546,8 @@ impl MmCoin for QtumCoin {
     }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
+
+    fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 }
 
 /// Parse contract address (H160) from string.

@@ -262,4 +262,6 @@ impl MmCoin for TestCoin {
     fn my_unspendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
+
+    fn mature_confirmations(&self) -> Option<u32> { unimplemented!() }
 }
