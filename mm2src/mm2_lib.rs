@@ -14,7 +14,6 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serialization_derive;
-#[macro_use] extern crate unwrap;
 
 #[path = "mm2.rs"] mod mm2;
 
@@ -163,7 +162,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
                 return -1;
             },
         };
-        let conf = unwrap!(json::to_string(&ctx.conf));
+        let conf = json::to_string(&ctx.conf).unwrap();
         let hy_res = mm2::rpc::lp_commands::stop(ctx);
         let r = match hy_res.wait() {
             Ok(r) => r,
@@ -215,9 +214,9 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     // #402: Restart the MM.
     if let Some((prev_ctx_id, conf)) = prev {
         log!("mm2_test] Restarting MM…");
-        let conf = unwrap!(CString::new(&conf[..]));
+        let conf = CString::new(&conf[..]).unwrap();
         let rc = unsafe { mm2_main(conf.as_ptr(), log_cb) };
-        let rc = unwrap!(MainErr::from_i8(rc));
+        let rc = MainErr::from_i8(rc).unwrap();
         if rc != MainErr::Ok {
             log!("!mm2_main: "[rc]);
             return -1;

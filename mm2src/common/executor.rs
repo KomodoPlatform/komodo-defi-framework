@@ -43,14 +43,14 @@ pub fn spawn_after(utc: f64, future: impl Future<Output = ()> + Send + 'static) 
         future: Mutex::new(future),
         alarm_clock: Atomic::new(utc),
     });
-    unwrap!(NEW_TASKS.lock()).push(task)
+    NEW_TASKS.lock().unwrap().push(task)
 }
 
 pub fn run() {
     let mut new_tasks = Vec::new();
-    swap(&mut new_tasks, &mut *unwrap!(NEW_TASKS.lock()));
+    swap(&mut new_tasks, &mut *NEW_TASKS.lock().unwrap());
 
-    let mut tasks = unwrap!(TASKS.lock());
+    let mut tasks = TASKS.lock().unwrap();
     for new_task in new_tasks {
         tasks.push(new_task)
     }
@@ -71,7 +71,7 @@ pub fn run() {
             .alarm_clock
             .compare_exchange(alarm_clock, later, Ordering::Relaxed, Ordering::Relaxed);
 
-        let mut future = unwrap!(task.future.lock());
+        let mut future = task.future.lock().unwrap();
         let waker = waker_ref(&task);
         let context = &mut Context::from_waker(&*waker);
         if let Poll::Pending = future.as_mut().poll(context) {

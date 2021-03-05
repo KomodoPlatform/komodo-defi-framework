@@ -12,7 +12,6 @@
 #![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use] extern crate fomat_macros;
-#[macro_use] extern crate unwrap;
 
 use chrono::DateTime;
 use gstuff::{last_modified_sec, slurp};
@@ -46,7 +45,9 @@ fn mm_version() -> String {
     let mut buf;
     let version = if let Ok(mut mm_versionᶠ) = fs::File::open(&mm_versionᵖ) {
         buf = String::new();
-        unwrap!(mm_versionᶠ.read_to_string(&mut buf), "Can't read from MM_VERSION");
+        mm_versionᶠ
+            .read_to_string(&mut buf)
+            .expect("Can't read from MM_VERSION");
         buf.trim().to_string()
     } else {
         // If the “MM_VERSION” file is absent then we should create it
@@ -64,15 +65,15 @@ fn mm_version() -> String {
         command.arg("log").arg("--pretty=format:%h").arg("-n1");
         if let Ok(go) = command.output() {
             if go.status.success() {
-                version = unwrap!(from_utf8(&go.stdout)).trim().to_string();
-                if !unwrap!(Regex::new(r"^\w+$")).is_match(&version) {
+                version = from_utf8(&go.stdout).unwrap().trim().to_string();
+                if !Regex::new(r"^\w+$").unwrap().is_match(&version) {
                     panic!("{}", version)
                 }
             }
         }
 
         if let Ok(mut mm_versionᶠ) = fs::File::create(&mm_versionᵖ) {
-            unwrap!(mm_versionᶠ.write_all(version.as_bytes()));
+            mm_versionᶠ.write_all(version.as_bytes()).unwrap();
         }
         version
     };
@@ -83,20 +84,20 @@ fn mm_version() -> String {
     command.arg("log").arg("--pretty=format:%cI").arg("-n1"); // ISO 8601
     if let Ok(go) = command.output() {
         if go.status.success() {
-            let got = unwrap!(from_utf8(&go.stdout)).trim();
-            let _dt_check = unwrap!(DateTime::parse_from_rfc3339(got));
+            let got = from_utf8(&go.stdout).unwrap().trim();
+            let _dt_check = DateTime::parse_from_rfc3339(got).unwrap();
             dt_git = Some(got.to_string());
         }
     }
 
     let mm_datetimeᵖ = root().join("MM_DATETIME");
-    let dt_file = unwrap!(String::from_utf8(slurp(&mm_datetimeᵖ)));
+    let dt_file = String::from_utf8(slurp(&mm_datetimeᵖ)).unwrap();
     let mut dt_file = dt_file.trim().to_string();
     if let Some(ref dt_git) = dt_git {
         if dt_git[..] != dt_file[..] {
             // Create or update the “MM_DATETIME” file in order to appease the Cargo dependency management.
-            let mut mm_datetimeᶠ = unwrap!(fs::File::create(&mm_datetimeᵖ));
-            unwrap!(mm_datetimeᶠ.write_all(dt_git.as_bytes()));
+            let mut mm_datetimeᶠ = fs::File::create(&mm_datetimeᵖ).unwrap();
+            mm_datetimeᶠ.write_all(dt_git.as_bytes()).unwrap();
             dt_file = dt_git.clone();
         }
     }
@@ -137,7 +138,7 @@ where
     P: AsRef<Path>,
 {
     let path: &Path = path.as_ref();
-    unwrap!(path.to_str(), "Non-stringy path {:?}", path).into()
+    path.to_str().expect(&format!("Non-stringy path {:?}", path)).into()
 }
 
 /// Loads the `path`, runs `update` on it and saves back the result if it differs.
@@ -146,8 +147,8 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
     if !path.is_file() {
         return;
     }
-    let dir = unwrap!(path.parent());
-    let name = unwrap!(unwrap!(path.file_name()).to_str());
+    let dir = path.parent().unwrap();
+    let name = path.file_name().unwrap().to_str().unwrap();
     let bulk = slurp(&path);
     if bulk.is_empty() {
         return;
@@ -156,10 +157,10 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
     if bulk != updated {
         let tmp = dir.join(fomat! ((name) ".tmp"));
         {
-            let mut file = unwrap!(fs::File::create(&tmp));
-            unwrap!(file.write_all(&updated));
+            let mut file = fs::File::create(&tmp).unwrap();
+            file.write_all(&updated).unwrap();
         }
-        unwrap!(fs::rename(tmp, path))
+        fs::rename(tmp, path).unwrap()
     }
 }
 
@@ -173,8 +174,8 @@ fn build_c_code() {
     // Link in the Windows-specific crash handling code.
 
     if cfg!(windows) {
-        let lm_seh = unwrap!(last_modified_sec(&"seh.c"), "Can't stat seh.c");
-        let out_dir = unwrap!(var("OUT_DIR"), "!OUT_DIR");
+        let lm_seh = last_modified_sec(&"seh.c").expect("Can't stat seh.c");
+        let out_dir = var("OUT_DIR").expect("!OUT_DIR");
         let lib_path = Path::new(&out_dir).join("libseh.a");
         let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
         if lm_seh >= lm_lib - SLIDE {

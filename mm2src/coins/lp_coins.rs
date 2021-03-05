@@ -29,7 +29,6 @@
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
-#[macro_use] extern crate unwrap;
 
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -551,7 +550,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
                         &[&"tx_history", &self.ticker().to_string()],
                         &ERRL!("Error {} on history deserialization, resetting the cache.", e),
                     );
-                    unwrap!(std::fs::remove_file(&self.tx_history_path(&ctx)));
+                    std::fs::remove_file(&self.tx_history_path(&ctx)).unwrap();
                     vec![]
                 },
             }
@@ -1089,7 +1088,7 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
         let history: Vec<Json> = history
             .map(|item| {
                 let tx_block = item.block_height;
-                let mut json = unwrap!(json::to_value(item));
+                let mut json = json::to_value(item).unwrap();
                 json["confirmations"] = if tx_block == 0 {
                     Json::from(0)
                 } else if block_number >= tx_block {
@@ -1246,7 +1245,7 @@ pub async fn check_balance_update_loop(ctx: MmArc, ticker: String) {
                     Err(_) => continue,
                 };
                 if Some(&balance) != current_balance.as_ref() {
-                    let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+                    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
                     coins_ctx.balance_updated(&coin, &balance).await;
                     current_balance = Some(balance);
                 }
@@ -1261,7 +1260,7 @@ pub async fn register_balance_update_handler(
     ctx: MmArc,
     handler: Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>,
 ) {
-    let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx.balance_update_handlers.lock().await.push(handler);
 }
 

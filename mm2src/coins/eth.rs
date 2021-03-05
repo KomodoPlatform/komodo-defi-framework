@@ -96,8 +96,8 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
 const APPROVE_GAS_LIMIT: u64 = 50_000;
 
 lazy_static! {
-    pub static ref SWAP_CONTRACT: Contract = unwrap!(Contract::load(SWAP_CONTRACT_ABI.as_bytes()));
-    pub static ref ERC20_CONTRACT: Contract = unwrap!(Contract::load(ERC20_ABI.as_bytes()));
+    pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
+    pub static ref ERC20_CONTRACT: Contract = Contract::load(ERC20_ABI.as_bytes()).unwrap();
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -239,10 +239,10 @@ impl EthCoinImpl {
 
     /// Store ETH traces to local DB
     fn store_eth_traces(&self, ctx: &MmArc, traces: &SavedTraces) {
-        let content = unwrap!(json::to_vec(traces));
+        let content = json::to_vec(traces).unwrap();
         let tmp_file = format!("{}.tmp", self.eth_traces_path(&ctx).display());
-        unwrap!(std::fs::write(&tmp_file, content));
-        unwrap!(std::fs::rename(tmp_file, self.eth_traces_path(&ctx)));
+        std::fs::write(&tmp_file, content).unwrap();
+        std::fs::rename(tmp_file, self.eth_traces_path(&ctx)).unwrap();
     }
 
     fn erc20_events_path(&self, ctx: &MmArc) -> PathBuf {
@@ -253,10 +253,10 @@ impl EthCoinImpl {
 
     /// Store ERC20 events to local DB
     fn store_erc20_events(&self, ctx: &MmArc, events: &SavedErc20Events) {
-        let content = unwrap!(json::to_vec(events));
+        let content = json::to_vec(events).unwrap();
         let tmp_file = format!("{}.tmp", self.erc20_events_path(&ctx).display());
-        unwrap!(std::fs::write(&tmp_file, content));
-        unwrap!(std::fs::rename(tmp_file, self.erc20_events_path(&ctx)));
+        std::fs::write(&tmp_file, content).unwrap();
+        std::fs::rename(tmp_file, self.erc20_events_path(&ctx)).unwrap();
     }
 
     /// Load saved ERC20 events from local DB
@@ -933,7 +933,7 @@ impl MarketCoinOps for EthCoin {
         let selfi = self.clone();
         let fut = async move {
             loop {
-                if unwrap!(status.ms2deadline()) < 0 {
+                if status.ms2deadline().unwrap() < 0 {
                     status.append(" Timed out.");
                     return ERR!(
                         "Waited too long until {} for transaction {:?} confirmation ",
@@ -1699,7 +1699,7 @@ impl EthCoin {
                 break;
             };
             {
-                let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
                 let coins = block_on(coins_ctx.coins.lock());
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
@@ -1728,7 +1728,7 @@ impl EthCoin {
                     latest_block: current_block,
                 },
             };
-            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+            *self.history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "blocks_left": u64::from(saved_events.earliest_block),
             }));
 
@@ -1952,11 +1952,9 @@ impl EthCoin {
                     },
                 };
                 let fee_details = match receipt {
-                    Some(r) => Some(unwrap!(EthTxFeeDetails::new(
-                        r.gas_used.unwrap_or_else(|| 0.into()),
-                        web3_tx.gas_price,
-                        "ETH"
-                    ))),
+                    Some(r) => Some(
+                        EthTxFeeDetails::new(r.gas_used.unwrap_or_else(|| 0.into()), web3_tx.gas_price, "ETH").unwrap(),
+                    ),
                     None => None,
                 };
                 let block_number = event.block_number.unwrap();
@@ -2012,7 +2010,7 @@ impl EthCoin {
                         b.block_height.cmp(&a.block_height)
                     }
                 });
-                self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
+                self.save_history_to_file(&json::to_vec(&existing_history).unwrap(), &ctx);
             }
             if saved_events.earliest_block == 0.into() {
                 if success_iteration == 0 {
@@ -2024,7 +2022,7 @@ impl EthCoin {
                 }
 
                 success_iteration += 1;
-                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
+                *self.history_sync_state.lock().unwrap() = HistorySyncState::Finished;
                 thread::sleep(Duration::from_secs(15));
             } else {
                 thread::sleep(Duration::from_secs(2));
@@ -2048,7 +2046,7 @@ impl EthCoin {
                 break;
             };
             {
-                let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
                 let coins = block_on(coins_ctx.coins.lock());
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
@@ -2077,7 +2075,7 @@ impl EthCoin {
                     latest_block: current_block,
                 },
             };
-            *unwrap!(self.history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+            *self.history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "blocks_left": u64::from(saved_traces.earliest_block),
             }));
             let mut existing_history = self.load_history_from_file(ctx);
@@ -2278,11 +2276,9 @@ impl EthCoin {
                     },
                 };
                 let fee_details: Option<EthTxFeeDetails> = match receipt {
-                    Some(r) => Some(unwrap!(EthTxFeeDetails::new(
-                        r.gas_used.unwrap_or_else(|| 0.into()),
-                        web3_tx.gas_price,
-                        "ETH"
-                    ))),
+                    Some(r) => Some(
+                        EthTxFeeDetails::new(r.gas_used.unwrap_or_else(|| 0.into()), web3_tx.gas_price, "ETH").unwrap(),
+                    ),
                     None => None,
                 };
 
@@ -2314,7 +2310,7 @@ impl EthCoin {
                     .block(BlockId::Number(BlockNumber::Number(trace.block_number)))
                     .wait()
                 {
-                    Ok(b) => unwrap!(b),
+                    Ok(b) => b.unwrap(),
                     Err(e) => {
                         ctx.log.log(
                             "",
@@ -2351,7 +2347,7 @@ impl EthCoin {
                         b.block_height.cmp(&a.block_height)
                     }
                 });
-                self.save_history_to_file(&unwrap!(json::to_vec(&existing_history)), &ctx);
+                self.save_history_to_file(&json::to_vec(&existing_history).unwrap(), &ctx);
             }
             if saved_traces.earliest_block == 0.into() {
                 if success_iteration == 0 {
@@ -2363,7 +2359,7 @@ impl EthCoin {
                 }
 
                 success_iteration += 1;
-                *unwrap!(self.history_sync_state.lock()) = HistorySyncState::Finished;
+                *self.history_sync_state.lock().unwrap() = HistorySyncState::Finished;
                 thread::sleep(Duration::from_secs(15));
             } else {
                 thread::sleep(Duration::from_secs(2));
@@ -2436,7 +2432,7 @@ impl MmCoin for EthCoin {
         }
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { unwrap!(self.history_sync_state.lock()).clone() }
+    fn history_sync_status(&self) -> HistorySyncState { self.history_sync_state.lock().unwrap().clone() }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         Box::new(self.get_gas_price().and_then(|gas_price| {

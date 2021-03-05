@@ -17,8 +17,8 @@
 //  marketmaker
 //
 use common::executor::spawn;
+use common::log;
 use common::mm_ctx::MmArc;
-use common::HyRes;
 use futures::{channel::oneshot, lock::Mutex as AsyncMutex, StreamExt};
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
@@ -79,7 +79,7 @@ pub async fn p2p_event_process_loop(ctx: MmArc, mut rx: AdexEventRx, i_am_relay:
                 response_channel,
             }) => {
                 if let Err(e) = process_p2p_request(ctx.clone(), peer_id, request, response_channel).await {
-                    log!("Error on process P2P request: "[e]);
+                    log::error!("Error on process P2P request: {:?}", e);
                 }
             },
             None => break,
@@ -162,7 +162,7 @@ pub fn broadcast_p2p_msg(ctx: &MmArc, topics: Vec<String>, msg: Vec<u8>) {
         let cmd = AdexBehaviourCmd::PublishMsg { topics, msg };
         let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
         if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
-            log!("broadcast_p2p_msg cmd_tx.send error "[e]);
+            log::error!("broadcast_p2p_msg cmd_tx.send error {:?}", e);
         };
     });
 }
@@ -177,7 +177,7 @@ pub async fn subscribe_to_topic(ctx: &MmArc, topic: String) {
     let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
     let cmd = AdexBehaviourCmd::Subscribe { topic };
     if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
-        log!("subscribe_to_topic cmd_tx.send error "[e]);
+        log::error!("subscribe_to_topic cmd_tx.send error {:?}", e);
     };
 }
 
@@ -301,16 +301,7 @@ pub fn propagate_message(ctx: &MmArc, message_id: MessageId, propagation_source:
             propagation_source,
         };
         if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
-            log!("propagate_message cmd_tx.send error "[e]);
+            log::error!("propagate_message cmd_tx.send error {:?}", e);
         };
     });
-}
-
-/// Result of `fn dispatcher`.
-#[allow(dead_code)]
-pub enum DispatcherRes {
-    /// `fn dispatcher` has found a Rust handler for the RPC "method".
-    Match(HyRes),
-    /// No handler found by `fn dispatcher`. Returning the `Json` request in order for it to be handled elsewhere.
-    NoMatch,
 }

@@ -1478,7 +1478,7 @@ where
             break;
         };
         {
-            let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+            let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
             let coins = block_on(coins_ctx.coins.lock());
             if !coins.contains_key(&coin.as_ref().conf.ticker) {
                 ctx.log
@@ -1528,7 +1528,7 @@ where
                     &[&"tx_history", &coin.as_ref().conf.ticker],
                     &ERRL!("Got `history too large`, stopping further attempts to retrieve it"),
                 );
-                *unwrap!(coin.as_ref().history_sync_state.lock()) = HistorySyncState::Error(json!({
+                *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Error(json!({
                     "code": HISTORY_TOO_LARGE_ERR_CODE,
                     "message": "Got `history too large` error from Electrum server. History is not available",
                 }));
@@ -1544,12 +1544,12 @@ where
             },
         };
         let mut transactions_left = if tx_ids.len() > history_map.len() {
-            *unwrap!(coin.as_ref().history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+            *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "transactions_left": tx_ids.len() - history_map.len()
             }));
             tx_ids.len() - history_map.len()
         } else {
-            *unwrap!(coin.as_ref().history_sync_state.lock()) = HistorySyncState::InProgress(json!({
+            *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "transactions_left": 0
             }));
             0
@@ -1572,7 +1572,7 @@ where
                             e.insert(tx_details);
                             if transactions_left > 0 {
                                 transactions_left -= 1;
-                                *unwrap!(coin.as_ref().history_sync_state.lock()) =
+                                *coin.as_ref().history_sync_state.lock().unwrap() =
                                     HistorySyncState::InProgress(json!({ "transactions_left": transactions_left }));
                             }
                             updated = true;
@@ -1614,10 +1614,10 @@ where
                         b.block_height.cmp(&a.block_height)
                     }
                 });
-                coin.save_history_to_file(&unwrap!(json::to_vec(&to_write)), &ctx);
+                coin.save_history_to_file(&json::to_vec(&to_write).unwrap(), &ctx);
             }
         }
-        *unwrap!(coin.as_ref().history_sync_state.lock()) = HistorySyncState::Finished;
+        *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Finished;
 
         if success_iteration == 0 {
             ctx.log.log(
@@ -1827,7 +1827,7 @@ where
 }
 
 pub fn history_sync_status(coin: &UtxoCoinFields) -> HistorySyncState {
-    unwrap!(coin.history_sync_state.lock()).clone()
+    coin.history_sync_state.lock().unwrap().clone()
 }
 
 pub fn get_trade_fee<T>(coin: T) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>
@@ -2606,7 +2606,7 @@ where
     let now = now_ms() / 1000;
     if now < locktime {
         let to_wait = locktime - now + 1;
-        return Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(to_wait)));
+        return Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(to_wait.max(3600))));
     }
     Box::new(coin.get_current_mtp().compat().map(move |mtp| {
         let mtp = mtp as u64;
@@ -2614,7 +2614,7 @@ where
             CanRefundHtlc::CanRefundNow
         } else {
             let to_wait = locktime - mtp + 1;
-            CanRefundHtlc::HaveToWait(to_wait)
+            CanRefundHtlc::HaveToWait(to_wait.max(3600))
         }
     }))
 }

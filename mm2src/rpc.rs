@@ -30,22 +30,23 @@ use futures::future::{join_all, FutureExt, TryFutureExt};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
 use http::{Method, Request, Response};
+use hyper::Body;
 #[cfg(feature = "native")] use hyper::{self, Server};
 use serde_json::{self as json, Value as Json};
 use std::future::Future as Future03;
 use std::net::SocketAddr;
 
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_ordermatch::{buy, cancel_all_orders, cancel_order, my_orders, order_status, orderbook, sell,
-                                set_price};
+use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
+                                orderbook, orderbook_depth_rpc, sell, set_price};
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, coins_needed_for_kick_start, import_swaps,
                           list_banned_pubkeys, max_taker_vol, my_recent_swaps, my_swap_status, recover_funds_of_swap,
                           stats_swap_status, trade_preimage, unban_pubkeys};
 
-#[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 use self::lp_commands::*;
-use hyper::Body;
+
+#[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -112,7 +113,6 @@ fn hyres(handler: impl Future03<Output = Result<Response<Vec<u8>>, String>> + Se
 ///
 /// Returns `None` if the requested "method" wasn't found among the ported RPC methods and has to be handled elsewhere.
 pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
-    //log! ("dispatcher] " (json::to_string (&req) .unwrap()));
     let method = match req["method"].clone() {
         Json::String(method) => method,
         _ => return DispatcherRes::NoMatch(req),
@@ -124,6 +124,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "active_swaps" => hyres(active_swaps_rpc(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "all_swaps_uuids_by_filter" => all_swaps_uuids_by_filter(ctx, req),
+        #[cfg(not(feature = "wallet-only"))]
+        "best_orders" => hyres(best_orders_rpc(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "buy" => hyres(buy(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
@@ -179,6 +181,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "orderbook" => hyres(orderbook(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
+        "orderbook_depth" => hyres(orderbook_depth_rpc(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "sim_panic" => hyres(sim_panic(req)),
         #[cfg(not(feature = "wallet-only"))]
         "recover_funds_of_swap" => {
@@ -191,7 +195,6 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
                 return DispatcherRes::NoMatch(req);
             }
         },
-        // "passphrase" => passphrase (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
         "sell" => hyres(sell(ctx, req)),
         "show_priv_key" => hyres(show_priv_key(ctx, req)),
@@ -280,7 +283,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
                 Err(err) => {
                     log!("RPC error response: "(err));
                     let ebody = err_to_rpc_json_string(&fomat!((err)));
-                    return unwrap!(Response::builder().status(500).body(Body::from(ebody)));
+                    return Response::builder().status(500).body(Body::from(ebody)).unwrap();
                 },
             }
         };
@@ -300,10 +303,11 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
         Err(err) => {
             log!("RPC error response: "(err));
             let ebody = err_to_rpc_json_string(&err);
-            return unwrap!(Response::builder()
+            return Response::builder()
                 .status(500)
                 .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                .body(Body::from(ebody)));
+                .body(Body::from(ebody))
+                .unwrap();
         },
     };
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
@@ -322,11 +326,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // then we might want to refactor into starting it ideomatically in order to benefit from a more graceful shutdown,
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
-    let ctx = unwrap!(MmArc::from_ffi_handle(ctx_h), "No context");
+    let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
 
-    let rpc_ip_port = unwrap!(ctx.rpc_ip_port());
+    let rpc_ip_port = ctx.rpc_ip_port().unwrap();
     CORE.0.enter(|| {
-        let server = unwrap!(Server::try_bind(&rpc_ip_port), "Can't bind on {}", rpc_ip_port);
+        let server = Server::try_bind(&rpc_ip_port).unwrap_or_else(|_| panic!("Can't bind on {}", rpc_ip_port));
         let make_svc = make_service_fn(move |socket: &AddrStream| {
             let remote_addr = socket.remote_addr();
             async move {
@@ -363,7 +367,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
             futures::future::ready(())
         });
 
-        let rpc_ip_port = unwrap!(ctx.rpc_ip_port());
+        let rpc_ip_port = ctx.rpc_ip_port().unwrap();
         CORE.0.spawn({
             log!(">>>>>>>>>> DEX stats " (rpc_ip_port.ip())":"(rpc_ip_port.port()) " \
                 DEX stats API enabled at unixtime." (gstuff::now_ms() / 1000) " <<<<<<<<<");

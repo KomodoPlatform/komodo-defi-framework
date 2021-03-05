@@ -3,6 +3,7 @@
 /// The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
 /// backwards compatibility
 use bigdecimal::BigDecimal;
+use common::mm_number::Fraction;
 use num_rational::BigRational;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{HashMap, HashSet};
@@ -117,19 +118,24 @@ pub struct MakerMatch {
 
 #[derive(Deserialize)]
 pub struct MakerOrderRpcResult {
-    max_base_vol: BigDecimal,
-    max_base_vol_rat: BigRational,
-    min_base_vol: BigDecimal,
-    min_base_vol_rat: BigRational,
-    price: BigDecimal,
-    price_rat: BigRational,
-    created_at: u64,
-    base: String,
-    rel: String,
-    matches: HashMap<Uuid, MakerMatch>,
-    started_swaps: Vec<Uuid>,
-    uuid: Uuid,
-    conf_settings: Option<OrderConfirmationsSettings>,
+    pub max_base_vol: BigDecimal,
+    pub max_base_vol_rat: BigRational,
+    pub min_base_vol: BigDecimal,
+    pub min_base_vol_rat: BigRational,
+    pub price: BigDecimal,
+    pub price_rat: BigRational,
+    pub created_at: u64,
+    pub base: String,
+    pub rel: String,
+    pub matches: HashMap<Uuid, MakerMatch>,
+    pub started_swaps: Vec<Uuid>,
+    pub uuid: Uuid,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
+}
+
+#[derive(Deserialize)]
+pub struct SetPriceResult {
+    pub result: MakerOrderRpcResult,
 }
 
 #[derive(Deserialize)]
@@ -152,4 +158,57 @@ pub struct TakerOrderRpcResult {
 pub struct MyOrdersRpcResult {
     maker_orders: HashMap<Uuid, MakerOrderRpcResult>,
     taker_orders: HashMap<Uuid, TakerOrderRpcResult>,
+}
+
+#[derive(Deserialize)]
+pub struct OrderbookEntry {
+    pub coin: String,
+    pub address: String,
+    pub price: BigDecimal,
+    pub price_rat: BigRational,
+    pub price_fraction: Fraction,
+    #[serde(rename = "maxvolume")]
+    pub max_volume: BigDecimal,
+    pub max_volume_rat: BigRational,
+    pub max_volume_fraction: Fraction,
+    pub min_volume: BigDecimal,
+    pub min_volume_rat: BigRational,
+    pub min_volume_fraction: Fraction,
+    pub pubkey: String,
+    pub age: i64,
+    pub zcredits: u64,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+}
+
+#[derive(Deserialize)]
+pub struct BestOrdersResponse {
+    pub result: HashMap<String, Vec<OrderbookEntry>>,
+}
+
+#[derive(Deserialize)]
+pub struct PairDepth {
+    pub asks: usize,
+    pub bids: usize,
+}
+
+#[derive(Deserialize)]
+pub struct PairWithDepth {
+    pub pair: (String, String),
+    pub depth: PairDepth,
+}
+
+#[derive(Deserialize)]
+pub struct OrderbookDepthResponse {
+    pub result: Vec<PairWithDepth>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EnableElectrumResponse {
+    pub coin: String,
+    pub address: String,
+    pub balance: BigDecimal,
+    pub required_confirmations: u64,
+    pub requires_notarization: bool,
+    pub result: String,
 }

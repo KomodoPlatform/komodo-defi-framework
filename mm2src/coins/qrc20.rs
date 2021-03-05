@@ -262,10 +262,10 @@ impl MutContractCallType {
 
     fn as_function(&self) -> &'static Function {
         match self {
-            MutContractCallType::Transfer => unwrap!(eth::ERC20_CONTRACT.function(self.as_function_name())),
+            MutContractCallType::Transfer => eth::ERC20_CONTRACT.function(self.as_function_name()).unwrap(),
             MutContractCallType::Erc20Payment
             | MutContractCallType::ReceiverSpend
-            | MutContractCallType::SenderRefund => unwrap!(eth::SWAP_CONTRACT.function(self.as_function_name())),
+            | MutContractCallType::SenderRefund => eth::SWAP_CONTRACT.function(self.as_function_name()).unwrap(),
         }
     }
 

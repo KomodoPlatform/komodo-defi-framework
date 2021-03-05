@@ -132,7 +132,7 @@ fn test_extract_secret() {
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let expected_secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
-    let secret = unwrap!(coin.extract_secret(secret_hash, &tx_hex));
+    let secret = coin.extract_secret(secret_hash, &tx_hex).unwrap();
     assert_eq!(secret, expected_secret);
 }
 
@@ -153,7 +153,7 @@ fn test_generate_transaction() {
 
     let generated = block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None, None));
     // must not allow to use output with value < dust
-    unwrap_err!(generated);
+    generated.unwrap_err();
 
     let unspents = vec![UnspentInfo {
         value: 100000,
@@ -166,13 +166,9 @@ fn test_generate_transaction() {
         value: 98001,
     }];
 
-    let generated = unwrap!(block_on(coin.generate_transaction(
-        unspents.clone(),
-        outputs.clone(),
-        FeePolicy::SendExact,
-        None,
-        None,
-    )));
+    let generated =
+        block_on(coin.generate_transaction(unspents.clone(), outputs.clone(), FeePolicy::SendExact, None, None))
+            .unwrap();
     // the change that is less than dust must be included to miner fee
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
@@ -194,13 +190,8 @@ fn test_generate_transaction() {
     }];
 
     // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
-    let generated = unwrap!(block_on(coin.generate_transaction(
-        unspents,
-        outputs,
-        FeePolicy::DeductFromOutput(0),
-        None,
-        None,
-    )));
+    let generated =
+        block_on(coin.generate_transaction(unspents, outputs, FeePolicy::DeductFromOutput(0), None, None)).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
 
     assert_eq!(generated.1.fee_amount, 1000);
@@ -221,13 +212,7 @@ fn test_generate_transaction() {
     }];
 
     // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
-    unwrap_err!(block_on(coin.generate_transaction(
-        unspents,
-        outputs,
-        FeePolicy::SendExact,
-        None,
-        None,
-    )));
+    block_on(coin.generate_transaction(unspents, outputs, FeePolicy::SendExact, None, None)).unwrap_err();
 }
 
 #[test]
@@ -237,13 +222,13 @@ fn test_addresses_from_script() {
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
     let expected_addr: Vec<Address> = vec!["R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW".into()];
-    let actual_addr = unwrap!(coin.addresses_from_script(&script));
+    let actual_addr = coin.addresses_from_script(&script).unwrap();
     assert_eq!(expected_addr, actual_addr);
 
     // P2SH
     let script: Script = "a914e71a6120653ebd526e0f9d7a29cde5969db362d487".into();
     let expected_addr: Vec<Address> = vec!["bZoEPR7DjTqSDiQTeRFNDJuQPTRY2335LD".into()];
-    let actual_addr = unwrap!(coin.addresses_from_script(&script));
+    let actual_addr = coin.addresses_from_script(&script).unwrap();
     assert_eq!(expected_addr, actual_addr);
 }
 
@@ -362,7 +347,8 @@ fn test_wait_for_payment_spend_timeout_native() {
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None);
-    let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
+    let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
+        .unwrap();
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
@@ -384,7 +370,8 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None);
-    let transaction = unwrap!(hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000"));
+    let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
+        .unwrap();
     let wait_until = now_ms() / 1000 - 1;
     let from_block = 1000;
 
@@ -405,20 +392,25 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
     );
 
     // raw tx bytes of https://rick.kmd.dev/tx/ba881ecca15b5d4593f14f25debbcdfe25f101fd2e9cf8d0b5d92d19813d4424
-    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8902e115acc1b9e26a82f8403c9f81785445cc1285093b63b6246cf45aabac5e0865000000006b483045022100ca578f2d6bae02f839f71619e2ced54538a18d7aa92bd95dcd86ac26479ec9f802206552b6c33b533dd6fc8985415a501ebec89d1f5c59d0c923d1de5280e9827858012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffb0721bf69163f7a5033fb3d18ba5768621d8c1347ebaa2fddab0d1f63978ea78020000006b483045022100a3309f99167982e97644dbb5cd7279b86630b35fc34855e843f2c5c0cafdc66d02202a8c3257c44e832476b2e2a723dad1bb4ec1903519502a49b936c155cae382ee012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a91443fde927a77b3c1d104b78155dc389078c4571b0870000000000000000166a14b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc64b8cd736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acba0ce35e000000000000000000000000000000"));
+    let payment_tx_bytes = hex::decode("0400008085202f8902e115acc1b9e26a82f8403c9f81785445cc1285093b63b6246cf45aabac5e0865000000006b483045022100ca578f2d6bae02f839f71619e2ced54538a18d7aa92bd95dcd86ac26479ec9f802206552b6c33b533dd6fc8985415a501ebec89d1f5c59d0c923d1de5280e9827858012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffb0721bf69163f7a5033fb3d18ba5768621d8c1347ebaa2fddab0d1f63978ea78020000006b483045022100a3309f99167982e97644dbb5cd7279b86630b35fc34855e843f2c5c0cafdc66d02202a8c3257c44e832476b2e2a723dad1bb4ec1903519502a49b936c155cae382ee012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a91443fde927a77b3c1d104b78155dc389078c4571b0870000000000000000166a14b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc64b8cd736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acba0ce35e000000000000000000000000000000")
+        .unwrap();
 
     // raw tx bytes of https://rick.kmd.dev/tx/cea8028f93f7556ce0ef96f14b8b5d88ef2cd29f428df5936e02e71ca5b0c795
-    let spend_tx_bytes = unwrap!(hex::decode("0400008085202f890124443d81192dd9b5d0f89c2efd01f125fecdbbde254ff193455d5ba1cc1e88ba00000000d74730440220519d3eed69815a16357ff07bf453b227654dc85b27ffc22a77abe077302833ec02205c27f439ddc542d332504112871ecac310ea710b99e1922f48eb179c045e44ee01200000000000000000000000000000000000000000000000000000000000000000004c6b6304a9e5e25eb1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc6882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68ffffffff0118ddf505000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acbffee25e000000000000000000000000000000"));
-    let spend_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(spend_tx_bytes.as_slice())));
+    let spend_tx_bytes = hex::decode("0400008085202f890124443d81192dd9b5d0f89c2efd01f125fecdbbde254ff193455d5ba1cc1e88ba00000000d74730440220519d3eed69815a16357ff07bf453b227654dc85b27ffc22a77abe077302833ec02205c27f439ddc542d332504112871ecac310ea710b99e1922f48eb179c045e44ee01200000000000000000000000000000000000000000000000000000000000000000004c6b6304a9e5e25eb1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc6882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68ffffffff0118ddf505000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788acbffee25e000000000000000000000000000000")
+        .unwrap();
+    let spend_tx = TransactionEnum::UtxoTx(deserialize(spend_tx_bytes.as_slice()).unwrap());
 
-    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
-        1591928233,
-        &*coin.my_public_key(),
-        &*dhash160(&secret),
-        &payment_tx_bytes,
-        0,
-        &None,
-    )));
+    let found = coin
+        .search_for_swap_tx_spend_my(
+            1591928233,
+            &*coin.my_public_key(),
+            &*dhash160(&secret),
+            &payment_tx_bytes,
+            0,
+            &None,
+        )
+        .unwrap()
+        .unwrap();
     assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
 }
 
@@ -432,20 +424,25 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
     );
 
     // raw tx bytes of https://rick.kmd.dev/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
-    let payment_tx_bytes = unwrap!(hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000"));
+    let payment_tx_bytes = hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000")
+        .unwrap();
 
     // raw tx bytes of https://rick.kmd.dev/tx/65085eacab5af46c24b6633b098512cc455478819f3c40f8826ae2b9c1ac15e1
-    let refund_tx_bytes = unwrap!(hex::decode("0400008085202f8901b0721bf69163f7a5033fb3d18ba5768621d8c1347ebaa2fddab0d1f63978ea7800000000b6473044022052e06c1abf639148229a3991fdc6da15fe51c97577f4fda351d9c606c7cf53670220780186132d67d354564cae710a77d94b6bb07dcbd7162a13bebee261ffc0963601514c6b63041dfae25eb1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a9140000000000000000000000000000000000000000882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68feffffff0118ddf505000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ace6fae25e000000000000000000000000000000"));
-    let refund_tx = TransactionEnum::UtxoTx(unwrap!(deserialize(refund_tx_bytes.as_slice())));
+    let refund_tx_bytes = hex::decode("0400008085202f8901b0721bf69163f7a5033fb3d18ba5768621d8c1347ebaa2fddab0d1f63978ea7800000000b6473044022052e06c1abf639148229a3991fdc6da15fe51c97577f4fda351d9c606c7cf53670220780186132d67d354564cae710a77d94b6bb07dcbd7162a13bebee261ffc0963601514c6b63041dfae25eb1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a9140000000000000000000000000000000000000000882102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac68feffffff0118ddf505000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ace6fae25e000000000000000000000000000000")
+        .unwrap();
+    let refund_tx = TransactionEnum::UtxoTx(deserialize(refund_tx_bytes.as_slice()).unwrap());
 
-    let found = unwrap!(unwrap!(coin.search_for_swap_tx_spend_my(
-        1591933469,
-        coin.as_ref().key_pair.public(),
-        &secret,
-        &payment_tx_bytes,
-        0,
-        &None,
-    )));
+    let found = coin
+        .search_for_swap_tx_spend_my(
+            1591933469,
+            coin.as_ref().key_pair.public(),
+            &secret,
+            &payment_tx_bytes,
+            0,
+            &None,
+        )
+        .unwrap()
+        .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
 }
 
@@ -483,7 +480,7 @@ fn test_withdraw_impl_set_fixed_fee() {
         }
         .into(),
     );
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     assert_eq!(expected, tx_details.fee_details);
 }
 
@@ -524,7 +521,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         }
         .into(),
     );
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     assert_eq!(expected, tx_details.fee_details);
 }
 
@@ -556,7 +553,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
             amount: "0.1".parse().unwrap(),
         }),
     };
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1000 = 0.0211
@@ -599,7 +596,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
             amount: "0.09999999".parse().unwrap(),
         }),
     };
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
     // 0.1 * 211 / 1000 = 0.0211
@@ -642,7 +639,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
             amount: "0.1".parse().unwrap(),
         }),
     };
-    unwrap_err!(coin.withdraw(withdraw_req).wait());
+    coin.withdraw(withdraw_req).wait().unwrap_err();
 }
 
 #[test]
@@ -682,7 +679,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         }
         .into(),
     );
-    let tx_details = unwrap!(coin.withdraw(withdraw_req).wait());
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     assert_eq!(expected, tx_details.fee_details);
 }
 
@@ -719,7 +716,7 @@ fn test_utxo_lock() {
     }
     let results = block_on(join_all(futures));
     for result in results {
-        unwrap!(result);
+        result.unwrap();
     }
 }
 
@@ -727,7 +724,7 @@ fn test_utxo_lock() {
 fn list_since_block_btc_serde() {
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/563
     let input = r#"{"lastblock":"000000000000000000066f896cca2a6c667ca85fff28ed6731d64e3c39ecb119","removed":[],"transactions":[{"abandoned":false,"address":"1Q3kQ1jsB2VyH83PJT1NXJqEaEcR6Yuknn","amount":-0.01788867,"bip125-replaceable":"no","blockhash":"0000000000000000000db4be4c2df08790e1027326832cc90889554bbebc69b7","blockindex":437,"blocktime":1572174214,"category":"send","confirmations":197,"fee":-0.00012924,"involvesWatchonly":true,"time":1572173721,"timereceived":1572173721,"txid":"29606e6780c69a39767b56dc758e6af31ced5232491ad62dcf25275684cb7701","vout":0,"walletconflicts":[]},{"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":0.1995,"bip125-replaceable":"no","blockhash":"0000000000000000000e75b33bbb27e6af2fc3898108c93c03c293fd72a86c6f","blockindex":157,"blocktime":1572179171,"category":"receive","confirmations":190,"label":"","time":1572178251,"timereceived":1572178251,"txid":"da651c6addc8da7c4b2bec21d43022852a93a9f2882a827704b318eb2966b82e","vout":19,"walletconflicts":[]},{"abandoned":false,"address":"14RXkMTyH4NyK48DbhTQyMBoMb2UkbBEPr","amount":-0.0208,"bip125-replaceable":"no","blockhash":"0000000000000000000611bfe0b3f7612239264459f4f6e7169f8d1a67e1b08f","blockindex":286,"blocktime":1572189657,"category":"send","confirmations":178,"fee":-0.0002,"involvesWatchonly":true,"time":1572189100,"timereceived":1572189100,"txid":"8d10920ce70aeb6c7e61c8d47f3cd903fb69946edd08d8907472a90761965943","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"361JVximBAqkLZERT7XB1rykgLePEHAP7B","amount":-0.01801791,"bip125-replaceable":"no","blockhash":"00000000000000000011e9293c1f07f9711e677389ac101b93116d239ac38c33","blockindex":274,"blocktime":1572173649,"category":"send","confirmations":198,"fee":-0.0000965,"involvesWatchonly":true,"label":"361JVximBAqkLZERT7XB1rykgLePEHAP7B","time":1572173458,"timereceived":1572173458,"txid":"7983cae1afeb7fe58e020878aaedea0fee15be9319bc49c81f3b9ad466782950","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":-0.0003447,"bip125-replaceable":"no","blockhash":"00000000000000000011e9293c1f07f9711e677389ac101b93116d239ac38c33","blockindex":274,"blocktime":1572173649,"category":"send","confirmations":198,"fee":-0.0000965,"label":"","time":1572173458,"timereceived":1572173458,"txid":"7983cae1afeb7fe58e020878aaedea0fee15be9319bc49c81f3b9ad466782950","vout":1,"walletconflicts":[]},{"address":"361JVximBAqkLZERT7XB1rykgLePEHAP7B","amount":0.01801791,"bip125-replaceable":"no","blockhash":"00000000000000000011e9293c1f07f9711e677389ac101b93116d239ac38c33","blockindex":274,"blocktime":1572173649,"category":"receive","confirmations":198,"involvesWatchonly":true,"label":"361JVximBAqkLZERT7XB1rykgLePEHAP7B","time":1572173458,"timereceived":1572173458,"txid":"7983cae1afeb7fe58e020878aaedea0fee15be9319bc49c81f3b9ad466782950","vout":0,"walletconflicts":[]},{"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":0.0003447,"bip125-replaceable":"no","blockhash":"00000000000000000011e9293c1f07f9711e677389ac101b93116d239ac38c33","blockindex":274,"blocktime":1572173649,"category":"receive","confirmations":198,"label":"","time":1572173458,"timereceived":1572173458,"txid":"7983cae1afeb7fe58e020878aaedea0fee15be9319bc49c81f3b9ad466782950","vout":1,"walletconflicts":[]},{"abandoned":false,"address":"3B3q1GTLQQ7Fspo6ATy3cd3tg5yu97hkve","amount":-0.021,"bip125-replaceable":"no","blockhash":"0000000000000000000debf11962f89e2ae08f8ff75803b0da6170af6c5c346b","blockindex":2618,"blocktime":1572188894,"category":"send","confirmations":179,"fee":-0.00016026,"involvesWatchonly":true,"label":"3B3q1GTLQQ7Fspo6ATy3cd3tg5yu97hkve","time":1572186009,"timereceived":1572186009,"txid":"54b159ac3a656bbaaf3bf0263b8deafad03b376ec0c2e9c715d0cf1caaf3495e","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":-0.17868444,"bip125-replaceable":"no","blockhash":"0000000000000000000debf11962f89e2ae08f8ff75803b0da6170af6c5c346b","blockindex":2618,"blocktime":1572188894,"category":"send","confirmations":179,"fee":-0.00016026,"label":"","time":1572186009,"timereceived":1572186009,"txid":"54b159ac3a656bbaaf3bf0263b8deafad03b376ec0c2e9c715d0cf1caaf3495e","vout":1,"walletconflicts":[]},{"address":"3B3q1GTLQQ7Fspo6ATy3cd3tg5yu97hkve","amount":0.021,"bip125-replaceable":"no","blockhash":"0000000000000000000debf11962f89e2ae08f8ff75803b0da6170af6c5c346b","blockindex":2618,"blocktime":1572188894,"category":"receive","confirmations":179,"involvesWatchonly":true,"label":"3B3q1GTLQQ7Fspo6ATy3cd3tg5yu97hkve","time":1572186009,"timereceived":1572186009,"txid":"54b159ac3a656bbaaf3bf0263b8deafad03b376ec0c2e9c715d0cf1caaf3495e","vout":0,"walletconflicts":[]},{"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":0.17868444,"bip125-replaceable":"no","blockhash":"0000000000000000000debf11962f89e2ae08f8ff75803b0da6170af6c5c346b","blockindex":2618,"blocktime":1572188894,"category":"receive","confirmations":179,"label":"","time":1572186009,"timereceived":1572186009,"txid":"54b159ac3a656bbaaf3bf0263b8deafad03b376ec0c2e9c715d0cf1caaf3495e","vout":1,"walletconflicts":[]},{"abandoned":false,"address":"3AC6k1Y54knEdkgWjX3TjmWGjDHtJCNZZY","amount":-0.17822795,"bip125-replaceable":"no","blockhash":"00000000000000000009a60478f29f4910e29224ea5ed63d77321ac8c624ec45","blockindex":2377,"blocktime":1572190637,"category":"send","confirmations":177,"fee":-0.00009985,"involvesWatchonly":true,"label":"3AC6k1Y54knEdkgWjX3TjmWGjDHtJCNZZY","time":1572189626,"timereceived":1572189626,"txid":"eabc01e45db89ea8cf623f8e22847e4023c69bed3c7d396d573b89dec3fe17a7","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":-0.00035664,"bip125-replaceable":"no","blockhash":"00000000000000000009a60478f29f4910e29224ea5ed63d77321ac8c624ec45","blockindex":2377,"blocktime":1572190637,"category":"send","confirmations":177,"fee":-0.00009985,"label":"","time":1572189626,"timereceived":1572189626,"txid":"eabc01e45db89ea8cf623f8e22847e4023c69bed3c7d396d573b89dec3fe17a7","vout":1,"walletconflicts":[]},{"address":"3AC6k1Y54knEdkgWjX3TjmWGjDHtJCNZZY","amount":0.17822795,"bip125-replaceable":"no","blockhash":"00000000000000000009a60478f29f4910e29224ea5ed63d77321ac8c624ec45","blockindex":2377,"blocktime":1572190637,"category":"receive","confirmations":177,"involvesWatchonly":true,"label":"3AC6k1Y54knEdkgWjX3TjmWGjDHtJCNZZY","time":1572189626,"timereceived":1572189626,"txid":"eabc01e45db89ea8cf623f8e22847e4023c69bed3c7d396d573b89dec3fe17a7","vout":0,"walletconflicts":[]},{"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":0.00035664,"bip125-replaceable":"no","blockhash":"00000000000000000009a60478f29f4910e29224ea5ed63d77321ac8c624ec45","blockindex":2377,"blocktime":1572190637,"category":"receive","confirmations":177,"label":"","time":1572189626,"timereceived":1572189626,"txid":"eabc01e45db89ea8cf623f8e22847e4023c69bed3c7d396d573b89dec3fe17a7","vout":1,"walletconflicts":[]},{"abandoned":false,"address":"1Q3kQ1jsB2VyH83PJT1NXJqEaEcR6Yuknn","amount":-0.17809412,"bip125-replaceable":"no","blockhash":"000000000000000000125e17a9540ac901d70e92e987d59a1cf87ca36ebca830","blockindex":1680,"blocktime":1572191122,"category":"send","confirmations":176,"fee":-0.00013383,"involvesWatchonly":true,"time":1572190821,"timereceived":1572190821,"txid":"d3579f7be169ea8fd1358d0eda85bad31ce8080a6020dcd224eac8a663dc9bf7","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"326VCyLKV1w4SxeYs81jQU1SC11njcL1eG","amount":-0.039676,"bip125-replaceable":"no","blockhash":"0000000000000000000d61630db06ed5d3054a39bf71a706efeaa9e86866b9d4","blockindex":2193,"blocktime":1572053656,"category":"send","confirmations":380,"fee":-0.00005653,"involvesWatchonly":true,"label":"326VCyLKV1w4SxeYs81jQU1SC11njcL1eG","time":1572052431,"timereceived":1572052431,"txid":"37b57fb36312e21ec7d069a55ab9bffc6abc7fe3731ed38502c5329025a9edf9","vout":0,"walletconflicts":[]},{"abandoned":false,"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":-0.01845911,"bip125-replaceable":"no","blockhash":"0000000000000000000d61630db06ed5d3054a39bf71a706efeaa9e86866b9d4","blockindex":2193,"blocktime":1572053656,"category":"send","confirmations":380,"fee":-0.00005653,"label":"","time":1572052431,"timereceived":1572052431,"txid":"37b57fb36312e21ec7d069a55ab9bffc6abc7fe3731ed38502c5329025a9edf9","vout":1,"walletconflicts":[]},{"address":"326VCyLKV1w4SxeYs81jQU1SC11njcL1eG","amount":0.039676,"bip125-replaceable":"no","blockhash":"0000000000000000000d61630db06ed5d3054a39bf71a706efeaa9e86866b9d4","blockindex":2193,"blocktime":1572053656,"category":"receive","confirmations":380,"involvesWatchonly":true,"label":"326VCyLKV1w4SxeYs81jQU1SC11njcL1eG","time":1572052431,"timereceived":1572052431,"txid":"37b57fb36312e21ec7d069a55ab9bffc6abc7fe3731ed38502c5329025a9edf9","vout":0,"walletconflicts":[]},{"address":"1JsAjr6d21j9T8EMsYnQ6GXf1mM523JAv1","amount":0.01845911,"bip125-replaceable":"no","blockhash":"0000000000000000000d61630db06ed5d3054a39bf71a706efeaa9e86866b9d4","blockindex":2193,"blocktime":1572053656,"category":"receive","confirmations":380,"label":"","time":1572052431,"timereceived":1572052431,"txid":"37b57fb36312e21ec7d069a55ab9bffc6abc7fe3731ed38502c5329025a9edf9","vout":1,"walletconflicts":[]}]}"#;
-    let _res: ListSinceBlockRes = unwrap!(json::from_str(input));
+    let _res: ListSinceBlockRes = json::from_str(input).unwrap();
 }
 
 #[test]
@@ -753,9 +750,10 @@ fn get_tx_details_doge() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     use common::executor::spawn;
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "DOGE", &conf, &req, &[1u8; 32]
-    )));
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "DOGE", &conf, &req, &[1u8; 32],
+    ))
+    .unwrap();
 
     let coin1 = coin.clone();
     let coin2 = coin.clone();
@@ -813,7 +811,7 @@ fn test_electrum_rpc_client_error() {
     let client = electrum_client_for_test(&["electrum1.cipig.net:10060"]);
 
     let empty_hash = H256Json::default();
-    let err = unwrap_err!(client.get_verbose_transaction(empty_hash).wait());
+    let err = client.get_verbose_transaction(empty_hash).wait().unwrap_err();
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
@@ -939,7 +937,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
         Some(ActualTxFee::Dynamic(100)),
         None,
     );
-    let generated = unwrap!(block_on(fut));
+    let generated = block_on(fut).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
 
     // generated transaction fee must be equal to relay fee if calculated dynamic fee is lower than relay
@@ -985,7 +983,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
         Some(ActualTxFee::Dynamic(1000)),
         None,
     );
-    let generated = unwrap!(block_on(fut));
+    let generated = block_on(fut).unwrap();
     assert_eq!(generated.0.outputs.len(), 2);
     assert_eq!(generated.0.inputs.len(), 20);
 
@@ -1104,9 +1102,10 @@ fn test_cashaddresses_in_tx_details_by_hash() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32]
-    )));
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    ))
+    .unwrap();
 
     let hash = hex::decode("0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751").unwrap();
     let fut = async {
@@ -1142,9 +1141,10 @@ fn test_address_from_str_with_cashaddress_activated() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32]
-    )));
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    ))
+    .unwrap();
 
     assert_eq!(
         coin.address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55"),
@@ -1180,9 +1180,10 @@ fn test_address_from_str_with_legacy_address_activated() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32]
-    )));
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    ))
+    .unwrap();
 
     let expected = Address::from_cashaddress(
         "bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55",
@@ -1234,10 +1235,11 @@ fn test_unavailable_electrum_proto_version() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let error = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "RICK", &conf, &req, &[1u8; 32]
+    let error = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "RICK", &conf, &req, &[1u8; 32],
     ))
-    .err());
+    .err()
+    .unwrap();
     log!("Error: "(error));
     assert!(error.contains("There are no Electrums with the required protocol version"));
 }
@@ -1255,13 +1257,14 @@ fn test_spam_rick() {
 
     let key_pair = key_pair_from_seed("my_seed").unwrap();
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
         &ctx,
         "RICK",
         &conf,
         &req,
-        &*key_pair.private().secret
-    )));
+        &*key_pair.private().secret,
+    ))
+    .unwrap();
 
     let output = TransactionOutput {
         value: 1000000,
@@ -1273,7 +1276,7 @@ fn test_spam_rick() {
     }
     let results = block_on(join_all(futures));
     for result in results {
-        unwrap!(result);
+        result.unwrap();
     }
 }
 
@@ -1313,9 +1316,10 @@ fn test_one_unavailable_electrum_proto_version() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = unwrap!(block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BTC", &conf, &req, &[1u8; 32]
-    )));
+    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+        &ctx, "BTC", &conf, &req, &[1u8; 32],
+    ))
+    .unwrap();
 
     block_on(async { Timer::sleep(0.5).await });
 
@@ -1382,9 +1386,7 @@ fn test_qtum_unspendable_balance_failed_once() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
-        &ctx, "tQTUM", &conf, &req, &priv_key
-    )));
+    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(68);
@@ -1431,9 +1433,7 @@ fn test_qtum_unspendable_balance_failed() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
-        &ctx, "tQTUM", &conf, &req, &priv_key
-    )));
+    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
 
     let error = coin.my_balance().wait().err().unwrap();
     log!("error: "[error]);
@@ -1478,9 +1478,7 @@ fn test_qtum_my_balance() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = unwrap!(block_on(qtum_coin_from_conf_and_request(
-        &ctx, "tQTUM", &conf, &req, &priv_key
-    )));
+    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(66);
@@ -2344,4 +2342,18 @@ fn test_generate_tx_doge_fee() {
     let (_, data) = block_on(generate_transaction(&doge, unspents, outputs, policy, None, None)).unwrap();
     let expected_fee = 300000000;
     assert_eq!(expected_fee, data.fee_amount);
+}
+
+#[test]
+fn doge_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10060",
+        "electrum2.cipig.net:10060",
+        "electrum3.cipig.net:10060",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(3631820, NonZeroU64::new(11).unwrap())
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1614849084);
 }

@@ -89,7 +89,7 @@ impl Qrc20Coin {
                 break;
             };
             {
-                let coins_ctx = unwrap!(CoinsContext::from_ctx(&ctx));
+                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
                 let coins = block_on(coins_ctx.coins.lock());
                 if !coins.contains_key(&self.utxo.conf.ticker) {
                     ctx.log
@@ -134,7 +134,7 @@ impl Qrc20Coin {
                         &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Got `history too large`, stopping further attempts to retrieve it"),
                     );
-                    *unwrap!(self.utxo.history_sync_state.lock()) = HistorySyncState::Error(json!({
+                    *self.utxo.history_sync_state.lock().unwrap() = HistorySyncState::Error(json!({
                         "code": HISTORY_TOO_LARGE_ERR_CODE,
                         "message": "Got `history too large` error from Electrum server. History is not available",
                     }));
@@ -180,7 +180,7 @@ impl Qrc20Coin {
                     ord => ord,
                 }
             });
-            self.save_history_to_file(&unwrap!(json::to_vec(&to_write)), &ctx);
+            self.save_history_to_file(&json::to_vec(&to_write).unwrap(), &ctx);
         }
     }
 
@@ -448,7 +448,7 @@ impl Qrc20Coin {
         } else {
             0
         };
-        *unwrap!(self.utxo.history_sync_state.lock()) =
+        *self.utxo.history_sync_state.lock().unwrap() =
             HistorySyncState::InProgress(json!({ "transactions_left": transactions_left }));
 
         let mut updated = false;
@@ -492,14 +492,14 @@ impl Qrc20Coin {
             mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "transfer_details_by_hash");
             if transactions_left > 0 {
                 transactions_left -= 1;
-                *unwrap!(self.utxo.history_sync_state.lock()) =
+                *self.utxo.history_sync_state.lock().unwrap() =
                     HistorySyncState::InProgress(json!({ "transactions_left": transactions_left }));
             }
 
             updated = true;
         }
 
-        *unwrap!(self.utxo.history_sync_state.lock()) = HistorySyncState::Finished;
+        *self.utxo.history_sync_state.lock().unwrap() = HistorySyncState::Finished;
         updated
     }
 

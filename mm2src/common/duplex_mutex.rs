@@ -26,9 +26,7 @@ impl<T> DerefMut for DuplexMutexGuard<'_, T> {
 }
 
 impl<T> Drop for DuplexMutexGuard<'_, T> {
-    fn drop(&mut self) {
-        unwrap!(self.mutex.pimpl.unlock());
-    }
+    fn drop(&mut self) { self.mutex.pimpl.unlock().unwrap(); }
 }
 
 impl<T: fmt::Debug> fmt::Debug for DuplexMutexGuard<'_, T> {

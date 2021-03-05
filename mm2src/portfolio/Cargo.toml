@@ -29,7 +29,6 @@ regex = "1"
 serde = "1"
 serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order"] }
-unwrap = "1.2"
 url = "1.7"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 

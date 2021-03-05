@@ -167,9 +167,9 @@ impl ViewContractCallType {
     fn as_function(&self) -> &'static Function {
         match self {
             ViewContractCallType::BalanceOf | ViewContractCallType::Allowance | ViewContractCallType::Decimals => {
-                unwrap!(eth::ERC20_CONTRACT.function(self.as_function_name()))
+                eth::ERC20_CONTRACT.function(self.as_function_name()).unwrap()
             },
-            ViewContractCallType::Payments => unwrap!(eth::SWAP_CONTRACT.function(self.as_function_name())),
+            ViewContractCallType::Payments => eth::SWAP_CONTRACT.function(self.as_function_name()).unwrap(),
         }
     }
 }

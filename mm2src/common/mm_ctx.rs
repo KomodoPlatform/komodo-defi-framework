@@ -166,7 +166,7 @@ impl MmCtx {
 
     pub fn stop(&self) {
         if self.stop.pin(true).is_ok() {
-            let mut stop_listeners = unwrap!(self.stop_listeners.lock(), "Can't lock stop_listeners");
+            let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
             // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
             // because otherwise there might be reference counting instances remaining in a listener
             // that would prevent the contexts from properly `Drop`ping.
@@ -184,7 +184,7 @@ impl MmCtx {
     /// Register a callback to be invoked when the MM receives the "stop" request.  
     /// The callback is invoked immediately if the MM is stopped already.
     pub fn on_stop(&self, mut cb: Box<dyn FnMut() -> Result<(), String>>) {
-        let mut stop_listeners = unwrap!(self.stop_listeners.lock(), "Can't lock stop_listeners");
+        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         if self.stop.copy_or(false) {
             if let Err(err) = cb() {
                 log! ({"MmCtx::on_stop] Listener error: {}", err})
@@ -484,8 +484,8 @@ impl MmCtxBuilder {
         }
 
         if let Some(key_pair) = self.key_pair {
-            unwrap!(ctx.rmd160.pin(key_pair.public().address_hash()));
-            unwrap!(ctx.secp256k1_key_pair.pin(key_pair));
+            ctx.rmd160.pin(key_pair.public().address_hash()).unwrap();
+            ctx.secp256k1_key_pair.pin(key_pair).unwrap();
         }
 
         MmArc(Arc::new(ctx))

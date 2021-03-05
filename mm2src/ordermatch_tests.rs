@@ -697,7 +697,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     let p2p_ctx = P2PContext::new(tx);
     p2p_ctx.store_to_mm_arc(ctx);
 
-    let ordermatch_ctx = unwrap!(OrdermatchContext::from_ctx(ctx));
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut maker_orders = block_on(ordermatch_ctx.my_maker_orders.lock());
     let mut taker_orders = block_on(ordermatch_ctx.my_taker_orders.lock());
 

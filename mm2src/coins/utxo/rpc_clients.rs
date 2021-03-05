@@ -1038,7 +1038,7 @@ pub fn spawn_electrum(
 ) -> Result<ElectrumConnection, String> {
     use std::net::{IpAddr, Ipv4Addr};
 
-    let args = unwrap!(json::to_vec(req));
+    let args = json::to_vec(req).unwrap();
     let rc = unsafe { host_electrum_connect(args.as_ptr() as *const c_char, args.len() as i32) };
     if rc < 0 {
         panic!("!host_electrum_connect: {}", rc)
@@ -1234,7 +1234,7 @@ lazy_static! {
 #[cfg(not(feature = "native"))]
 pub extern "C" fn electrum_replied(ri: i32, id: i32) {
     //log! ("electrum_replied] " [=ri] ", " [=id]);
-    let mut electrum_replies = unwrap!(ELECTRUM_REPLIES.lock());
+    let mut electrum_replies = ELECTRUM_REPLIES.lock().unwrap();
     if let Some(tx) = electrum_replies.remove(&(ri, id)) {
         let _ = tx.send(());
     }
@@ -1866,7 +1866,9 @@ async fn connect_loop(
 
                 Either::Right(TcpStream::connect(&socket_addr).and_then(move |stream| {
                     // Can use `unwrap` cause `dns_name` is pre-checked.
-                    let dns = unwrap!(DNSNameRef::try_from_ascii_str(&dns_name).map_err(|e| fomat!([e])));
+                    let dns = DNSNameRef::try_from_ascii_str(&dns_name)
+                        .map_err(|e| fomat!([e]))
+                        .unwrap();
                     tls_connector.connect(dns, stream).map_ok(ElectrumStream::Tls)
                 }))
             },

@@ -22,7 +22,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
-    let mut mm_bob = unwrap!(MarketMakerIt::start(
+    let mut mm_bob = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -34,13 +34,12 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         }),
         "pass".to_string(),
         None,
-    ));
+    )
+    .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    unwrap!(block_on(
-        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    let mut mm_alice = unwrap!(MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -52,17 +51,16 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         }),
         "pass".to_string(),
         None,
-    ));
+    )
+    .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    unwrap!(block_on(
-        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
+    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -73,11 +71,12 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "base_nota": maker_settings.base_nota,
         "rel_confs": maker_settings.rel_confs,
         "rel_nota": maker_settings.rel_nota,
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     log!("Maker order "(rc.1));
 
-    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -88,27 +87,25 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         "base_nota": taker_settings.base_nota,
         "rel_confs": taker_settings.rel_confs,
         "rel_nota": taker_settings.rel_nota,
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let rc_json: Json = json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
-    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1")
-    })));
-    unwrap!(block_on(mm_alice.wait_for_log(22., |log| {
-        log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
-    })));
+    block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
+    block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = unwrap!(block_on(mm_bob.rpc(json! ({
+    let maker_status = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
-    }))));
+    })))
+    .unwrap();
     assert!(
         maker_status.0.is_success(),
         "!maker_status of {}: {}",
@@ -138,13 +135,14 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         Some(expected_lock_duration)
     );
 
-    let taker_status = unwrap!(block_on(mm_alice.rpc(json! ({
+    let taker_status = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
-    }))));
+    })))
+    .unwrap();
     assert!(
         taker_status.0.is_success(),
         "!taker_status of {}: {}",
@@ -174,8 +172,8 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         Some(expected_lock_duration)
     );
 
-    unwrap!(block_on(mm_bob.stop()));
-    unwrap!(block_on(mm_alice.stop()));
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
 }
 
 fn test_confirmation_settings_sync_correctly_on_sell(
@@ -191,7 +189,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
-    let mut mm_bob = unwrap!(MarketMakerIt::start(
+    let mut mm_bob = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -203,13 +201,12 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         }),
         "pass".to_string(),
         None,
-    ));
+    )
+    .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    unwrap!(block_on(
-        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    let mut mm_alice = unwrap!(MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -221,17 +218,16 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         }),
         "pass".to_string(),
         None,
-    ));
+    )
+    .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    unwrap!(block_on(
-        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
+    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -242,11 +238,12 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "base_nota": maker_settings.base_nota,
         "rel_confs": maker_settings.rel_confs,
         "rel_nota": maker_settings.rel_nota,
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     log!("Maker order "(rc.1));
 
-    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "sell",
         "base": "MYCOIN1",
@@ -257,27 +254,25 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         "base_nota": taker_settings.base_nota,
         "rel_confs": taker_settings.rel_confs,
         "rel_nota": taker_settings.rel_nota,
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let rc_json: Json = json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
-    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1")
-    })));
-    unwrap!(block_on(mm_alice.wait_for_log(22., |log| {
-        log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")
-    })));
+    block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
+    block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = unwrap!(block_on(mm_bob.rpc(json! ({
+    let maker_status = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
-    }))));
+    })))
+    .unwrap();
     assert!(
         maker_status.0.is_success(),
         "!maker_status of {}: {}",
@@ -307,13 +302,14 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         Some(expected_lock_duration)
     );
 
-    let taker_status = unwrap!(block_on(mm_alice.rpc(json! ({
+    let taker_status = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {
             "uuid": uuid,
         }
-    }))));
+    })))
+    .unwrap();
     assert!(
         taker_status.0.is_success(),
         "!taker_status of {}: {}",
@@ -343,8 +339,8 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         Some(expected_lock_duration)
     );
 
-    unwrap!(block_on(mm_bob.stop()));
-    unwrap!(block_on(mm_alice.stop()));
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
 }
 
 #[test]

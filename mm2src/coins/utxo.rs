@@ -109,7 +109,7 @@ fn get_special_folder_path() -> PathBuf {
     if rc != 1 {
         panic!("!SHGetSpecialFolderPathA")
     }
-    Path::new(unwrap!(unsafe { CStr::from_ptr(buf.as_ptr()) }.to_str())).to_path_buf()
+    Path::new(unsafe { CStr::from_ptr(buf.as_ptr()) }.to_str().unwrap()).to_path_buf()
 }
 
 #[cfg(not(windows))]
@@ -625,12 +625,13 @@ pub fn zcash_params_path() -> PathBuf {
         // >= Vista: c:\Users\$username\AppData\Roaming
         get_special_folder_path().join("ZcashParams")
     } else if cfg!(target_os = "macos") {
-        unwrap!(home_dir())
+        home_dir()
+            .unwrap()
             .join("Library")
             .join("Application Support")
             .join("ZcashParams")
     } else {
-        unwrap!(home_dir()).join(".zcash-params")
+        home_dir().unwrap().join(".zcash-params")
     }
 }
 

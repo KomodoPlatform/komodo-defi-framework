@@ -11,7 +11,7 @@ macro_rules! rpc_func {
     ($selff:ident, $method:expr $(, $arg_name:ident)*) => {{
         let mut params = vec![];
         $(
-            params.push(unwrap!(json::value::to_value($arg_name)));
+            params.push(json::value::to_value($arg_name).unwrap());
         )*
         let request = JsonRpcRequest {
             jsonrpc: $selff.version().into(),
@@ -32,7 +32,7 @@ macro_rules! rpc_func_from {
     ($selff:ident, $address:expr, $method:expr $(, $arg_name:ident)*) => {{
         let mut params = vec![];
         $(
-            params.push(unwrap!(json::value::to_value($arg_name)));
+            params.push(json::value::to_value($arg_name).unwrap());
         )*
         let request = JsonRpcRequest {
             jsonrpc: $selff.version().into(),

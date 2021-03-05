@@ -36,19 +36,21 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
         "i_am_seed": true,
         "dbdir": db_folder.to_str().unwrap(),
     });
-    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    unwrap!(block_on(
-        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+    block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
-    })));
-    unwrap!(block_on(mm_bob.wait_for_log(50., |log| log.contains(
-        "Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 file lock is acquired by another process/thread, aborting"
-    ))));
+    }))
+    .unwrap();
+    block_on(mm_bob.wait_for_log(50., |log| {
+        log.contains(
+            "Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 file lock is acquired by another process/thread, aborting",
+        )
+    }))
+    .unwrap();
 }
 
 #[test]
@@ -78,11 +80,9 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "rpc_password": "pass",
         "i_am_seed": true,
     });
-    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None,));
+    let mut mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    unwrap!(block_on(
-        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let mut alice_conf = json! ({
         "gui": "nogui",
@@ -93,44 +93,50 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "rpc_password": "pass",
         "seednodes": vec![format!("{}", mm_bob.ip)],
     });
-    let mut mm_alice = unwrap!(MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None,));
+    let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    unwrap!(block_on(
-        mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
+    block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", vec![]))]);
-    let rc = unwrap!(block_on(mm_bob.rpc(json! ({
+    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
         "rel": "MYCOIN1",
         "price": 1,
         "max": true,
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc = unwrap!(block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
         "rel": "MYCOIN1",
         "price": 1,
         "volume": "1",
-    }))));
+    })))
+    .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
     let buy: Json = json::from_str(&rc.1).unwrap();
     let uuid = buy["result"]["uuid"].as_str().unwrap().to_owned();
-    unwrap!(block_on(mm_bob.wait_for_log(22., |log| log.contains(&format!(
-        "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-        uuid
-    )))));
-    unwrap!(block_on(mm_alice.wait_for_log(22., |log| log.contains(&format!(
-        "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-        uuid
-    )))));
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains(&format!(
+            "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
+            uuid
+        ))
+    }))
+    .unwrap();
+    block_on(mm_alice.wait_for_log(22., |log| {
+        log.contains(&format!(
+            "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
+            uuid
+        ))
+    }))
+    .unwrap();
     log!("Give swaps some time to start and save the first event by sleeping for 4 seconds");
     thread::sleep(Duration::from_secs(4));
     // mm_bob using same DB dir that should kick start the swap
@@ -138,17 +144,13 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     bob_conf["log"] = mm_bob.folder.join("mm2_dup.log").to_str().unwrap().into();
     // dropping instead of graceful stop to retain swap file locks
     drop(mm_bob);
-    let mut mm_bob_dup = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let mut mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
-    unwrap!(block_on(
-        mm_bob_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
-    log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", vec![]))]);
+    block_on(mm_bob_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+    log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[]))]);
 
-    unwrap!(block_on(mm_bob_dup.wait_for_log(50., |log| {
-        log.contains(&format!("Swap {} kick started.", uuid))
-    })));
+    block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
 
     // mm_alice using same DB dir that should kick start the swap
     alice_conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -156,17 +158,13 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     // dropping instead of graceful stop to retain swap file locks
     drop(mm_alice);
 
-    let mut mm_alice_dup = unwrap!(MarketMakerIt::start(alice_conf, "pass".to_string(), None,));
+    let mut mm_alice_dup = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
     let (_alice_dup_dump_log, _alice_dup_dump_dashboard) = mm_dump(&mm_alice_dup.log_path);
-    unwrap!(block_on(
-        mm_alice_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
-    log!([block_on(enable_native(&mm_alice_dup, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_alice_dup, "MYCOIN1", vec![]))]);
+    block_on(mm_alice_dup.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+    log!([block_on(enable_native(&mm_alice_dup, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_alice_dup, "MYCOIN1", &[]))]);
 
-    unwrap!(block_on(mm_alice_dup.wait_for_log(50., |log| {
-        log.contains(&format!("Swap {} kick started.", uuid))
-    })));
+    block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
 }
 
 fn addr_hash_for_privkey(priv_key: [u8; 32]) -> String {
@@ -208,21 +206,21 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
         "i_am_seed": true,
         "dbdir": db_folder.to_str().unwrap(),
     });
-    let mut mm_bob = unwrap!(MarketMakerIt::start(bob_conf, "pass".to_string(), None,));
+    let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    unwrap!(block_on(
-        mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
-    ));
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", vec![]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", vec![]))]);
-    unwrap!(block_on(mm_bob.wait_for_log(22., |log| {
+    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+    block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("Kick starting the swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15")
-    })));
+    }))
+    .unwrap();
     thread::sleep(Duration::from_secs(10));
     std::fs::write(swap_path, finished_swap_json).unwrap();
-    unwrap!(block_on(mm_bob.wait_for_log(50., |log| log.contains(
-        "Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 has been finished already, aborting."
-    ))));
+    block_on(mm_bob.wait_for_log(50., |log| {
+        log.contains("Swap 5acb0e63-8b26-469e-81df-7dd9e4a9ad15 has been finished already, aborting.")
+    }))
+    .unwrap();
 }
 
 #[test]

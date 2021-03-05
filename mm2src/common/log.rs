@@ -65,7 +65,7 @@ impl Gravity {
     /// `println!` is used for compatibility with unit test stdout capturing.
     #[cfg(feature = "native")]
     fn flush(&self) {
-        let mut tail = unwrap!(self.tail.spinlock(77));
+        let mut tail = self.tail.spinlock(77).unwrap();
         while let Ok(chunk) = self.landing.pop() {
             let logged_with_log_output = LOG_OUTPUT.lock().is_some();
             if !logged_with_log_output {
@@ -156,12 +156,12 @@ macro_rules! log {
         // We can optimize this with a stack-allocated SmallVec from https://github.com/arcnmx/stack-rs,
         // though it doesn't worth the trouble at the moment.
         let mut buf = String::new();
-        unwrap! (wite! (&mut buf,
+        wite! (&mut buf,
             ($crate::log::short_log_time ($crate::now_ms()))
             if cfg! (feature = "native") {", "} else {"ʷ "}
             (::gstuff::filename (file!())) ':' (line!()) "] "
             $($args)+)
-        );
+        .unwrap();
         $crate::log::chunk2log (buf)
     }}
 }
@@ -236,8 +236,8 @@ pub struct Status {
 
 impl Clone for Status {
     fn clone(&self) -> Status {
-        let tags = unwrap!(self.tags.spinlock(77)).clone();
-        let line = unwrap!(self.line.spinlock(77)).clone();
+        let tags = self.tags.spinlock(77).unwrap().clone();
+        let line = self.line.spinlock(77).unwrap().clone();
         Status {
             tags: DuplexMutex::new(tags),
             line: DuplexMutex::new(line),
@@ -269,7 +269,7 @@ impl Status {
         dashboard: &Arc<DuplexMutex<Vec<Arc<Status>>>>,
         tail: &Arc<DuplexMutex<VecDeque<LogEntry>>>,
     ) {
-        let mut dashboard = unwrap!(dashboard.spinlock(77));
+        let mut dashboard = dashboard.spinlock(77).unwrap();
         if let Some(idx) = dashboard.iter().position(|e| Arc::ptr_eq(e, status)) {
             dashboard.swap_remove(idx);
         } else {
@@ -277,13 +277,13 @@ impl Status {
         }
         drop(dashboard);
 
-        let mut tail = unwrap!(tail.spinlock(77));
+        let mut tail = tail.spinlock(77).unwrap();
         if tail.len() == tail.capacity() {
             let _ = tail.pop_front();
         }
         let mut log = LogEntry::default();
-        swap(&mut log.tags, &mut *unwrap!(status.tags.spinlock(77)));
-        swap(&mut log.line, &mut *unwrap!(status.line.spinlock(77)));
+        swap(&mut log.tags, &mut *status.tags.spinlock(77).unwrap());
+        swap(&mut log.line, &mut *status.line.spinlock(77).unwrap());
         let mut chunk = String::with_capacity(256);
         if let Err(err) = log.format(&mut chunk) {
             log! ({"log] Error formatting log entry: {}", err});
@@ -354,12 +354,12 @@ impl StatusHandle {
             .collect();
         if let Some(ref status) = self.status {
             // Skip a status update if it is equal to the previous update.
-            if unwrap!(status.line.spinlock(77)).as_str() == line && *unwrap!(status.tags.spinlock(77)) == tagsʹ {
+            if status.line.spinlock(77).unwrap().as_str() == line && *status.tags.spinlock(77).unwrap() == tagsʹ {
                 return;
             }
 
-            *unwrap!(status.tags.spinlock(77)) = tagsʹ;
-            *unwrap!(status.line.spinlock(77)) = String::from(line);
+            *status.tags.spinlock(77).unwrap() = tagsʹ;
+            *status.line.spinlock(77).unwrap() = String::from(line);
         } else {
             let status = Arc::new(Status {
                 tags: DuplexMutex::new(tagsʹ),
@@ -368,7 +368,7 @@ impl StatusHandle {
                 deadline: Atomic::new(0),
             });
             self.status = Some(status.clone());
-            unwrap!(self.dashboard.spinlock(77)).push(status);
+            self.dashboard.spinlock(77).unwrap().push(status);
         }
     }
 
@@ -376,7 +376,7 @@ impl StatusHandle {
     /// Does nothing if the status handle is empty (if the status wasn't created yet).
     pub fn append(&self, suffix: &str) {
         if let Some(ref status) = self.status {
-            unwrap!(status.line.spinlock(77)).push_str(suffix)
+            status.line.spinlock(77).unwrap().push_str(suffix)
         }
     }
 
@@ -532,7 +532,7 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
     dl.last_hash.store(hash, Ordering::Relaxed);
     dl.last_log_ms.store(now, Ordering::Relaxed);
     let mut buf = String::with_capacity(7777);
-    unwrap!(wite! (buf, "+--- " (short_log_time (now)) " -------"));
+    wite! (buf, "+--- " (short_log_time (now)) " -------").unwrap();
     for status in dashboard.iter() {
         let start = status.start.load(Ordering::Relaxed);
         let deadline = status.deadline.load(Ordering::Relaxed);
@@ -546,11 +546,12 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
             Ok(l) => l.clone(),
             Err(_) => "-locked-".into(),
         };
-        unwrap!(wite! (buf,
+        wite! (buf,
           "\n| (" if passed >= 0 {(passed / 60) ':' {"{:0>2}", passed % 60}} else {'-'}
           if deadline > 0 {'/' (timeframe / 60) ':' {"{:0>2}", timeframe % 60}} ") "
           '[' for t in tags {(t.key) if let Some (ref v) = t.val {'=' (v)}} separated {' '} "] "
-          (line)));
+          (line))
+        .unwrap();
     }
     chunk2log(buf)
 }
@@ -564,7 +565,7 @@ async fn log_dashboard_sometimes(dashboardʷ: Weak<DuplexMutex<Vec<Arc<Status>>>
             Some(arc) => arc,
             None => break,
         };
-        let dashboard = unwrap!(dashboard.sleeplock(77).await);
+        let dashboard = dashboard.sleeplock(77).await.unwrap();
         log_dashboard_sometimesʹ(&*dashboard, &mut dashboard_logging);
     }
 }
@@ -606,7 +607,7 @@ impl LogState {
 
     /// Read-only access to the status dashboard.
     pub fn with_dashboard(&self, cb: &mut dyn FnMut(&[Arc<Status>])) {
-        let dashboard = unwrap!(self.dashboard.spinlock(77));
+        let dashboard = self.dashboard.spinlock(77).unwrap();
         cb(&dashboard[..])
     }
 
@@ -653,9 +654,9 @@ impl LogState {
                 val: t.val(),
             })
             .collect();
-        let dashboard = unwrap!(self.dashboard.spinlock(77));
+        let dashboard = self.dashboard.spinlock(77).unwrap();
         for status_arc in &*dashboard {
-            if *unwrap!(status_arc.tags.spinlock(77)) == tags {
+            if *status_arc.tags.spinlock(77).unwrap() == tags {
                 found.push(StatusHandle {
                     status: Some(status_arc.clone()),
                     dashboard: self.dashboard.clone(),
@@ -679,7 +680,7 @@ impl LogState {
                 val: t.val(),
             })
             .collect();
-        for en in unwrap!(self.tail.spinlock(77)).iter() {
+        for en in self.tail.spinlock(77).unwrap().iter() {
             if en.tags == tags {
                 return true;
             }
@@ -745,7 +746,7 @@ impl LogState {
             return;
         }
 
-        let mut tail = unwrap!(self.tail.spinlock(77));
+        let mut tail = self.tail.spinlock(77).unwrap();
         if tail.len() == tail.capacity() {
             let _ = tail.pop_front();
         }
@@ -844,7 +845,7 @@ impl Drop for LogState {
             gravity.flush()
         }
 
-        let dashboard_copy = unwrap!(self.dashboard.spinlock(77)).clone();
+        let dashboard_copy = self.dashboard.spinlock(77).unwrap().clone();
         if !dashboard_copy.is_empty() {
             log!("--- LogState] Bye! Remaining status entries. ---");
             for status in &*dashboard_copy {
@@ -1011,10 +1012,10 @@ pub mod tests {
             log.with_dashboard(&mut |dashboard| {
                 assert_eq!(dashboard.len(), 1);
                 let status = &dashboard[0];
-                assert!(unwrap!(status.tags.spinlock(77)).iter().any(|tag| tag.key == "tag1"));
-                assert!(unwrap!(status.tags.spinlock(77)).iter().any(|tag| tag.key == "tag2"));
-                assert_eq!(unwrap!(status.tags.spinlock(77)).len(), 2);
-                assert_eq!(*unwrap!(status.line.spinlock(77)), format!("line {}", n));
+                assert!(status.tags.spinlock(77).unwrap().iter().any(|tag| tag.key == "tag1"));
+                assert!(status.tags.spinlock(77).unwrap().iter().any(|tag| tag.key == "tag2"));
+                assert_eq!(status.tags.spinlock(77).unwrap().len(), 2);
+                assert_eq!(*status.line.spinlock(77).unwrap(), format!("line {}", n));
             });
         }
         drop(handle);
@@ -1033,14 +1034,14 @@ pub mod tests {
     pub fn test_printed_dashboard() {
         crate::writeln(""); // Begin from a new line in the --nocapture mode.
         let log = LogState::in_memory();
-        unwrap!(log.thread_gravity_on());
-        unwrap!(log.register_my_thread());
+        log.thread_gravity_on().unwrap();
+        log.register_my_thread().unwrap();
         let mut status = log.status_handle();
         status.status(&[&"tag"], "status 1%…");
         status.timeframe((3 * 60 + 33) * 1000);
 
         {
-            let dashboard = unwrap!(log.dashboard.spinlock(77));
+            let dashboard = log.dashboard.spinlock(77).unwrap();
             let mut dashboard_logging = super::DashboardLogging::default();
             super::log_dashboard_sometimesʹ(&*dashboard, &mut dashboard_logging);
         }
