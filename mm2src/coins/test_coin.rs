@@ -17,7 +17,7 @@ pub struct TestCoin {}
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MarketCoinOps for TestCoin {
-    fn ticker(&self) -> &str { unimplemented!() }
+    fn ticker(&self) -> &str { "test" }
 
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 

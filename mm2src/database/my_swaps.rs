@@ -1,10 +1,9 @@
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::mm2::lp_swap::{my_swaps_dir, MySwapsFilter, PagingOptions, SavedSwap};
-use common::{log::{debug, error},
-             mm_ctx::MmArc,
-             read_dir,
-             rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql},
-             slurp};
+use common::log::{debug, error};
+use common::mm_ctx::MmArc;
+use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use common::{read_dir, slurp};
 use serde_json::{self as json};
 use sql_builder::SqlBuilder;
 use std::convert::TryInto;
@@ -30,12 +29,7 @@ const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, s
 
 pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
-    let conn = ctx
-        .sqlite_connection
-        .as_option()
-        .expect("SQLite connection is not initialized")
-        .lock()
-        .unwrap();
+    let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at];
     conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
 }

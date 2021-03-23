@@ -17,7 +17,7 @@
 #[path = "mm2.rs"] mod mm2;
 
 fn main() {
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         mm2::mm2_main()
     }

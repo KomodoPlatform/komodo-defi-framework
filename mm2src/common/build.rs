@@ -9,7 +9,6 @@
 
 #![allow(uncommon_codepoints)]
 #![feature(non_ascii_idents)]
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 #[macro_use] extern crate fomat_macros;
 
@@ -164,6 +163,37 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
     }
 }
 
+/// The target build architecture.
+///
+/// # Note
+///
+/// Please expand this enum if it is necessary.
+enum TargetArch {
+    Wasm32,
+    Other(String),
+}
+
+impl TargetArch {
+    fn detect() -> Option<TargetArch> {
+        match env::var("CARGO_CFG_TARGET_ARCH") {
+            Ok(arch) => Some(TargetArch::from(arch)),
+            Err(e) => {
+                eprintln!("Error on get CARGO_CFG_TARGET_ARCH env: {}", e);
+                None
+            },
+        }
+    }
+}
+
+impl From<String> for TargetArch {
+    fn from(arch: String) -> Self {
+        match arch.as_str() {
+            "wasm32" => TargetArch::Wasm32,
+            _ => TargetArch::Other(arch),
+        }
+    }
+}
+
 /// Build helper C code.
 ///
 /// I think "git clone ... && cargo build" should be enough to start hacking on the Rust code.
@@ -171,9 +201,12 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
 /// For now we're building the Structured Exception Handling code here,
 /// but in the future we might subsume the rest of the C build under build.rs.
 fn build_c_code() {
-    // Link in the Windows-specific crash handling code.
+    if let Some(TargetArch::Wasm32) = TargetArch::detect() {
+        return;
+    }
 
     if cfg!(windows) {
+        // Link in the Windows-specific crash handling code.
         let lm_seh = last_modified_sec(&"seh.c").expect("Can't stat seh.c");
         let out_dir = var("OUT_DIR").expect("!OUT_DIR");
         let lib_path = Path::new(&out_dir).join("libseh.a");
@@ -183,6 +216,8 @@ fn build_c_code() {
         }
         println!("cargo:rustc-link-lib=static=seh");
         println!("cargo:rustc-link-search=native={}", out_dir);
+    } else {
+        println!("cargo:rustc-link-lib=crypto");
     }
 }
 
@@ -194,9 +229,6 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", path2s(rabs("MM_VERSION")));
     println!("cargo:rerun-if-changed={}", path2s(rabs("MM_DATETIME")));
-    if cfg!(not(feature = "native")) {
-        return;
-    }
     mm_version();
     build_c_code();
 }

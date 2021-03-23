@@ -19,26 +19,25 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
-#![cfg_attr(not(feature = "native"), allow(unused_imports))]
-
 pub mod qtum;
 pub mod rpc_clients;
 pub mod utxo_common;
 pub mod utxo_standard;
 
-#[cfg(feature = "native")] pub mod tx_cache;
+#[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
 
 use async_trait::async_trait;
-use base64::{encode_config as base64_encode, URL_SAFE};
 use bigdecimal::BigDecimal;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::{OutPoint, TransactionInput, TransactionOutput, TxHashAlgo};
 use common::executor::{spawn, Timer};
+#[cfg(not(target_arch = "wasm32"))]
+use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsArc;
-use common::{first_char_to_upper, small_rng, MM_VERSION};
-#[cfg(feature = "native")] use dirs::home_dir;
+use common::{small_rng, MM_VERSION};
+#[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -58,22 +57,23 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::num::NonZeroU64;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))] use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
-use utxo_common::big_decimal_from_sat;
+use utxo_common::{big_decimal_from_sat, display_address};
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, EstimateFeeMethod, EstimateFeeMode, NativeClient,
+use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         UnspentInfo, UtxoRpcClientEnum};
+#[cfg(not(target_arch = "wasm32"))]
+use self::rpc_clients::{NativeClient, NativeClientImpl};
 use super::{CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
             TradePreimageError, Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawFee,
             WithdrawRequest};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClientImpl};
-use crate::utxo::utxo_common::display_address;
 
 #[cfg(test)] pub mod utxo_tests;
 
@@ -93,7 +93,7 @@ const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64
 const DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT: f64 = 0.5;
 
 #[cfg(windows)]
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 fn get_special_folder_path() -> PathBuf {
     use libc::c_char;
     use std::ffi::CStr;
@@ -113,7 +113,7 @@ fn get_special_folder_path() -> PathBuf {
 }
 
 #[cfg(not(windows))]
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 fn get_special_folder_path() -> PathBuf { panic!("!windows") }
 
 impl Transaction for UtxoTx {
@@ -617,7 +617,7 @@ pub struct UtxoFeeDetails {
     pub amount: BigDecimal,
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh#L5
 // https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.bat#L4
 pub fn zcash_params_path() -> PathBuf {
@@ -635,7 +635,7 @@ pub fn zcash_params_path() -> PathBuf {
     }
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     // komodo/util.cpp/GetDefaultDataDir
     let mut data_dir = match dirs::home_dir() {
@@ -671,11 +671,8 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     data_dir
 }
 
-#[cfg(not(feature = "native"))]
-pub fn coin_daemon_data_dir(_name: &str, _is_asset_chain: bool) -> PathBuf { unimplemented!() }
-
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 fn read_native_mode_conf(
     filename: &dyn AsRef<Path>,
     network: &BlockchainNetwork,
@@ -716,14 +713,6 @@ fn read_native_mode_conf(
         filename.as_ref().display()
     )));
     Ok((rpc_port, rpc_user.clone(), rpc_password.clone()))
-}
-
-#[cfg(not(feature = "native"))]
-fn read_native_mode_conf(
-    _filename: &dyn AsRef<Path>,
-    network: &BlockchainNetwork,
-) -> Result<(Option<u16>, String, String), String> {
-    unimplemented!()
 }
 
 /// Electrum protocol version verifier.
@@ -1075,11 +1064,14 @@ pub trait UtxoCoinBuilder {
     async fn rpc_client(&self) -> Result<UtxoRpcClientEnum, String> {
         match self.req()["method"].as_str() {
             Some("enable") => {
-                if cfg!(feature = "native") {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    ERR!("Native UTXO mode is only supported in native mode")
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
                     let native = try_s!(self.native_client());
                     Ok(UtxoRpcClientEnum::Native(native))
-                } else {
-                    return ERR!("Native UTXO mode is not available in non-native build");
                 }
             },
             Some("electrum") => {
@@ -1134,8 +1126,10 @@ pub trait UtxoCoinBuilder {
         Ok(ElectrumClient(client))
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn native_client(&self) -> Result<NativeClient, String> {
+        use base64::{encode_config as base64_encode, URL_SAFE};
+
         let native_conf_path = try_s!(self.confpath());
         let network = try_s!(self.network());
         let (rpc_port, rpc_user, rpc_password) = try_s!(read_native_mode_conf(&native_conf_path, &network));
@@ -1166,7 +1160,7 @@ pub trait UtxoCoinBuilder {
         Ok(NativeClient(client))
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn confpath(&self) -> Result<PathBuf, String> {
         let conf = self.conf();
         // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json

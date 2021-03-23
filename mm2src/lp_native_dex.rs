@@ -16,12 +16,9 @@
 //  lp_native_dex.rs
 //  marketmaker
 //
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
-#![cfg_attr(not(feature = "native"), allow(unused_imports))]
-#![cfg_attr(not(feature = "native"), allow(unused_variables))]
 
 use coins::register_balance_update_handler;
-use mm2_libp2p::start_gossipsub;
+use mm2_libp2p::{start_gossipsub, NodeType};
 use rand::rngs::SmallRng;
 use rand::{random, Rng, SeedableRng};
 use serde_json::{self as json};
@@ -30,12 +27,8 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::path::Path;
 use std::str;
-use std::str::from_utf8;
 
-use crate::common::executor::{spawn, spawn_boxed, Timer};
-use crate::common::mm_ctx::{MmArc, MmCtx};
-use crate::common::privkey::key_pair_from_seed;
-use crate::common::{slurp_url, MM_DATETIME, MM_VERSION};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_network::{p2p_event_process_loop, P2PContext};
@@ -46,6 +39,14 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_order
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use bitcrypto::sha256;
+use common::executor::{spawn, spawn_boxed, Timer};
+use common::log::{error, info, warn};
+use common::mm_ctx::{MmArc, MmCtx};
+use common::privkey::key_pair_from_seed;
+use common::{slurp_url, MM_DATETIME, MM_VERSION};
+
+const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
+const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.kmd.io:0", "seed2.kmd.io:0", "seed3.kmd.io:0"];
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
     const LP_RPCPORT: u16 = 7783;
@@ -68,10 +69,10 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
 /// then prints an error and returns `false` if the directory is not writable.
 fn ensure_dir_is_writable(dir_path: &Path) -> bool {
     if dir_path.exists() && !dir_path.is_dir() {
-        common::log::error!("The {} is not a directory", dir_path.display());
+        error!("The {} is not a directory", dir_path.display());
         return false;
     } else if let Err(e) = std::fs::create_dir_all(dir_path) {
-        common::log::error!("Could not create dir {}, error {}", dir_path.display(), e);
+        error!("Could not create dir {}, error {}", dir_path.display(), e);
         return false;
     }
     let r: [u8; 32] = random();
@@ -80,28 +81,28 @@ fn ensure_dir_is_writable(dir_path: &Path) -> bool {
     let mut fp = match fs::File::create(&fname) {
         Ok(fp) => fp,
         Err(_) => {
-            log! ({"FATAL ERROR cant create {:?}", fname});
+            error!("FATAL cannot create {:?}", fname);
             return false;
         },
     };
     if fp.write_all(&r).is_err() {
-        log! ({"FATAL ERROR writing {:?}", fname});
+        error!("FATAL cannot write to {:?}", fname);
         return false;
     }
     drop(fp);
     let mut fp = match fs::File::open(&fname) {
         Ok(fp) => fp,
         Err(_) => {
-            log! ({"FATAL ERROR cant open {:?}", fname});
+            error!("FATAL cannot open {:?}", fname);
             return false;
         },
     };
     if fp.read_to_end(&mut check).is_err() || check.len() != r.len() {
-        log! ({"FATAL ERROR reading {:?}", fname});
+        error!("FATAL cannot read {:?}", fname);
         return false;
     }
     if check != r {
-        log! ({"FATAL ERROR error comparing {:?} {:?} vs {:?}", fname, r, check});
+        error!("FATAL expect the same {:?} data: {:?} != {:?}", fname, r, check);
         return false;
     }
     true
@@ -126,7 +127,7 @@ fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     let dbdir = ctx.dbdir();
     try_s!(std::fs::create_dir_all(&dbdir));
@@ -177,9 +178,11 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
-    #[cfg_attr(feature = "w-bindgen", wasm_bindgen(raw_module = "../../../js/defined-in-js.js"))]
+    use std::os::raw::c_char;
+
+    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
     extern "C" {
         pub fn host_ensure_dir_is_writable(ptr: *const c_char, len: i32) -> i32;
     }
@@ -187,7 +190,7 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
         ($path: expr) => {
             let path = $path;
             let path = try_s!(path.to_str().ok_or("Non-unicode path"));
-            let rc = unsafe { host_ensure_dir_is_writable(path.as_ptr() as *const c_char, path.len() as i32) };
+            let rc = host_ensure_dir_is_writable(path.as_ptr() as *const c_char, path.len() as i32);
             if rc != 0 {
                 return ERR!("Dir '{}' not writeable: {}", path, rc);
             }
@@ -203,7 +206,7 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(all(feature = "native", not(feature = "wallet-only")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
 fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     let migration_num_path = ctx.dbdir().join(".migration");
     let mut current_migration = match std::fs::read(&migration_num_path) {
@@ -227,7 +230,7 @@ fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(all(feature = "native", not(feature = "wallet-only")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
 fn migration_1(_ctx: &MmArc) -> Result<(), String> { Ok(()) }
 
 /// Resets the context (most of which resides currently in `lp::G` but eventually would move into `MmCtx`).
@@ -268,7 +271,7 @@ pub fn lp_passphrase_init(ctx: &MmArc) -> Result<(), String> {
 /// Dropping or using that Sender will stop the HTTP fallback server.
 ///
 /// Also the port of the HTTP fallback server is returned.
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
     let netid = ctx.netid();
 
@@ -285,7 +288,7 @@ fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
         attempts_left -= 1;
         // TODO: Avoid `mypubport`.
         let port = rng.gen_range(1111, 65535);
-        log! ("test_ip] Trying to bind on " (ip) ':' (port));
+        info!("Trying to bind on {}:{}", ip, port);
         match std::net::TcpListener::bind((ip, port)) {
             Ok(_) => break Ok(()),
             Err(err) => {
@@ -298,13 +301,6 @@ fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
     }
 }
 
-#[cfg(not(feature = "native"))]
-fn test_ip(_ctx: &MmArc, _ip: IpAddr) -> Result<(Sender<()>, u16), String> {
-    // Try to return a simple okay for tests.
-    let (shutdown_tx, _shutdown_rx) = futures01::sync::oneshot::channel::<()>();
-    Ok((shutdown_tx, 80))
-}
-
 fn seed_to_ipv4_string(seed: &str) -> Option<String> {
     match seed.to_socket_addrs() {
         Ok(mut iter) => match iter.next() {
@@ -312,17 +308,17 @@ fn seed_to_ipv4_string(seed: &str) -> Option<String> {
                 if addr.is_ipv4() {
                     Some(addr.ip().to_string())
                 } else {
-                    log!("Seed " (seed) " resolved to IPv6 " (addr) " which is not supported");
+                    warn!("Seed {} resolved to IPv6 {} which is not supported", seed, addr);
                     None
                 }
             },
             None => {
-                log!("Seed " (seed) " to_socket_addrs empty iter");
+                warn!("Seed {} to_socket_addrs empty iter", seed);
                 None
             },
         },
         Err(e) => {
-            log!("Error " (e) " resolving " (seed));
+            error!("Couldn't resolve '{}' seed: {}", seed, e);
             None
         },
     }
@@ -330,27 +326,162 @@ fn seed_to_ipv4_string(seed: &str) -> Option<String> {
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
-    log! ({"lp_init] version: {} DT {}", MM_VERSION, MM_DATETIME});
+    info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
     try_s!(lp_passphrase_init(&ctx));
 
     try_s!(fix_directories(&ctx));
-    try_s!(ctx.init_sqlite_connection());
-    try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()));
-    #[cfg(all(feature = "native", not(feature = "wallet-only")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
     {
+        try_s!(ctx.init_sqlite_connection());
+        try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()));
         try_s!(migrate_db(&ctx));
     }
 
-    fn simple_ip_extractor(ip: &str) -> Result<IpAddr, String> {
-        let ip = ip.trim();
-        Ok(match ip.parse() {
-            Ok(ip) => ip,
-            Err(err) => return ERR!("Error parsing IP address '{}': {}", ip, err),
-        })
+    // #[cfg(not(target_arch = "wasm32"))]
+    try_s!(init_p2p(mypubport, ctx.clone()).await);
+
+    let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
+    register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
+
+    try_s!(ctx.initialized.pin(true));
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // launch kickstart threads before RPC is available, this will prevent the API user to place
+        // an order and start new swap that might get started 2 times because of kick-start
+        let mut coins_needed_for_kick_start = swap_kick_starts(ctx.clone());
+        coins_needed_for_kick_start.extend(try_s!(orders_kick_start(&ctx).await));
+        *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
     }
 
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    spawn(lp_ordermatch_loop(ctx.clone()));
 
+    spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if 1 == 1 {
+            return Ok(());
+        }
+    } // TODO: Gradually move this point further down.
+
+    let ctx_id = try_s!(ctx.ffi_handle());
+
+    spawn_rpc(ctx_id);
+    let ctx_c = ctx.clone();
+    spawn(async move {
+        if let Err(err) = ctx_c.init_metrics() {
+            warn!("Couldn't initialize metrics system: {}", err);
+        }
+    });
+    // In the mobile version we might depend on `lp_init` staying around until the context stops.
+    loop {
+        if ctx.is_stopping() {
+            break;
+        };
+        Timer::sleep(0.2).await
+    }
+
+    // wait for swaps to stop
+    loop {
+        if running_swaps_num(&ctx) == 0 {
+            break;
+        };
+        Timer::sleep(0.2).await
+    }
+    Ok(())
+}
+
+fn simple_ip_extractor(ip: &str) -> Result<IpAddr, String> {
+    let ip = ip.trim();
+    Ok(match ip.parse() {
+        Ok(ip) => ip,
+        Err(err) => return ERR!("Error parsing IP address '{}': {}", ip, err),
+    })
+}
+
+/// Detect the real IP address.
+///
+/// We're detecting the outer IP address, visible to the internet.
+/// Later we'll try to *bind* on this IP address,
+/// and this will break under NAT or forwarding because the internal IP address will be different.
+/// Which might be a good thing, allowing us to detect the likehoodness of NAT early.
+#[cfg(not(target_arch = "wasm32"))]
+async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
+    for url in IP_PROVIDERS.iter() {
+        info!("Trying to fetch the real IP from '{}' ...", url);
+        let (status, _headers, ip) = match slurp_url(url).await {
+            Ok(t) => t,
+            Err(err) => {
+                error!("Failed to fetch IP from '{}': {}", url, err);
+                continue;
+            },
+        };
+        if !status.is_success() {
+            error!("Failed to fetch IP from '{}': status {:?}", url, status);
+            continue;
+        }
+        let ip = match std::str::from_utf8(&ip) {
+            Ok(ip) => ip,
+            Err(err) => {
+                error!("Failed to fetch IP from '{}', not UTF-8: {}", url, err);
+                continue;
+            },
+        };
+        let ip = match simple_ip_extractor(ip) {
+            Ok(ip) => ip,
+            Err(err) => {
+                error!("Failed to parse IP '{}' fetched from '{}': {}", ip, url, err);
+                continue;
+            },
+        };
+
+        // Try to bind on this IP.
+        // If we're not behind a NAT then the bind will likely succeed.
+        // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
+        match test_ip(&ctx, ip) {
+            Ok(_) => {
+                ctx.log.log(
+                    "🙂",
+                    &[&"myipaddr"],
+                    &fomat! (
+                        "We've detected an external IP " (ip) " and we can bind on it"
+                        ", so probably a dedicated IP."),
+                );
+                return Ok(ip);
+            },
+            Err(err) => error!("IP {} not available: {}", ip, err),
+        }
+        let all_interfaces = Ipv4Addr::new(0, 0, 0, 0).into();
+        if test_ip(&ctx, all_interfaces).is_ok() {
+            ctx.log.log ("😅", &[&"myipaddr"], &fomat! (
+                    "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
+            return Ok(all_interfaces);
+        }
+        let localhost = Ipv4Addr::new(127, 0, 0, 1).into();
+        if test_ip(&ctx, localhost).is_ok() {
+            ctx.log.log(
+                "🤫",
+                &[&"myipaddr"],
+                &fomat! (
+                    "We couldn't bind on " (ip) " or 0.0.0.0!"
+                    " Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."),
+            );
+            return Ok(localhost);
+        }
+        ctx.log.log(
+            "🤒",
+            &[&"myipaddr"],
+            &fomat! (
+                "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."),
+        );
+        return Ok(all_interfaces); // Seems like a better default than 127.0.0.1, might still work for other ports.
+    }
+    ERR!("Couldn't fetch the real IP")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     let myipaddr: IpAddr = if Path::new("myipaddr").exists() {
         match fs::File::open("myipaddr") {
             Ok(mut f) => {
@@ -366,96 +497,14 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
         let s = try_s!(ctx.conf["myipaddr"].as_str().ok_or("'myipaddr' is not a string"));
         try_s!(simple_ip_extractor(s))
     } else {
-        // Detect the real IP address.
-        //
-        // We're detecting the outer IP address, visible to the internet.
-        // Later we'll try to *bind* on this IP address,
-        // and this will break under NAT or forwarding because the internal IP address will be different.
-        // Which might be a good thing, allowing us to detect the likehoodness of NAT early.
-
-        type Extractor = fn(&str) -> Result<IpAddr, String>;
-        let ip_providers: [(&'static str, Extractor); 2] = [
-            ("http://checkip.amazonaws.com/", simple_ip_extractor),
-            ("http://api.ipify.org", simple_ip_extractor),
-        ];
-
-        let mut ip_providers_it = ip_providers.iter();
-        loop {
-            let (url, extactor) = match ip_providers_it.next() {
-                Some(t) => t,
-                None => return ERR!("Can't fetch the real IP"),
-            };
-            log! ({"lp_init] Trying to fetch the real IP from '{}' ...", url});
-            let (status, _headers, ip) = match slurp_url(url).await {
-                Ok(t) => t,
-                Err(err) => {
-                    log! ({"lp_init] Failed to fetch IP from '{}': {}", url, err});
-                    continue;
-                },
-            };
-            if !status.is_success() {
-                log! ({"lp_init] Failed to fetch IP from '{}': status {:?}", url, status});
-                continue;
-            }
-            let ip = match from_utf8(&ip) {
-                Ok(ip) => ip,
-                Err(err) => {
-                    log! ({"lp_init] Failed to fetch IP from '{}', not UTF-8: {}", url, err});
-                    continue;
-                },
-            };
-            let ip = match extactor(ip) {
-                Ok(ip) => ip,
-                Err(err) => {
-                    log! ({"lp_init] Failed to parse IP '{}' fetched from '{}': {}", ip, url, err});
-                    continue;
-                },
-            };
-
-            // Try to bind on this IP.
-            // If we're not behind a NAT then the bind will likely suceed.
-            // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
-            match test_ip(&ctx, ip) {
-                Ok(_) => {
-                    ctx.log.log(
-                        "🙂",
-                        &[&"myipaddr"],
-                        &fomat! (
-                        "We've detected an external IP " (ip) " and we can bind on it"
-                        ", so probably a dedicated IP."),
-                    );
-                    break ip;
-                },
-                Err(err) => log! ("IP " (ip) " doesn't check: " (err)),
-            }
-            let all_interfaces = Ipv4Addr::new(0, 0, 0, 0).into();
-            if test_ip(&ctx, all_interfaces).is_ok() {
-                ctx.log.log ("😅", &[&"myipaddr"], &fomat! (
-                    "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
-                break all_interfaces;
-            }
-            let locahost = Ipv4Addr::new(127, 0, 0, 1).into();
-            if test_ip(&ctx, locahost).is_ok() {
-                ctx.log.log(
-                    "🤫",
-                    &[&"myipaddr"],
-                    &fomat! (
-                    "We couldn't bind on " (ip) " or 0.0.0.0!"
-                    " Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."),
-                );
-                break locahost;
-            }
-            ctx.log.log(
-                "🤒",
-                &[&"myipaddr"],
-                &fomat! (
-                "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."),
-            );
-            break all_interfaces; // Seems like a better default than 127.0.0.1, might still work for other ports.
-        }
+        try_s!(detect_myipaddr(ctx).await)
     };
+    Ok(myipaddr)
+}
 
-    const NETID_7777_SEEDNODES: &[&str] = &["seed1.kmd.io:0", "seed2.kmd.io:0", "seed3.kmd.io:0"];
+async fn init_p2p(mypubport: u16, ctx: MmArc) -> Result<(), String> {
+    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+
     let seednodes: Option<Vec<String>> = try_s!(json::from_value(ctx.conf["seednodes"].clone()));
     let seednodes = match seednodes {
         Some(s) => s,
@@ -478,14 +527,27 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     } else {
         None
     };
+
+    let node_type = if i_am_seed {
+        #[cfg(target_arch = "wasm32")]
+        return ERR!("'i_am_seed' is only supported in native mode");
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let ip = try_s!(myipaddr(ctx.clone()).await);
+            NodeType::Relay { ip }
+        }
+    } else {
+        NodeType::Light
+    };
+
     let (cmd_tx, event_rx, peer_id, p2p_abort) = start_gossipsub(
-        myipaddr,
         mypubport,
         ctx.netid(),
         force_p2p_key,
         spawn_boxed,
         seednodes,
-        i_am_seed,
+        node_type,
         move |swarm| {
             mm_gauge!(
                 ctx_on_poll.metrics,
@@ -523,55 +585,5 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     p2p_context.store_to_mm_arc(&ctx);
     spawn(p2p_event_process_loop(ctx.clone(), event_rx, i_am_seed));
 
-    let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
-    register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
-
-    try_s!(ctx.initialized.pin(true));
-
-    #[cfg(all(feature = "native", not(feature = "wallet-only")))]
-    {
-        // launch kickstart threads before RPC is available, this will prevent the API user to place
-        // an order and start new swap that might get started 2 times because of kick-start
-        let mut coins_needed_for_kick_start = swap_kick_starts(ctx.clone());
-        coins_needed_for_kick_start.extend(try_s!(orders_kick_start(&ctx).await));
-        *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
-    }
-
-    spawn(lp_ordermatch_loop(ctx.clone()));
-
-    spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
-
-    #[cfg(not(feature = "native"))]
-    {
-        if 1 == 1 {
-            return Ok(());
-        }
-    } // TODO: Gradually move this point further down.
-
-    let ctx_id = try_s!(ctx.ffi_handle());
-
-    spawn_rpc(ctx_id);
-    let ctx_c = ctx.clone();
-    spawn(async move {
-        if let Err(err) = ctx_c.init_metrics() {
-            log!("Warning: couldn't initialize metrics system: "(err));
-        }
-    });
-    // In the mobile version we might depend on `lp_init` staying around until the context stops.
-    loop {
-        if ctx.is_stopping() {
-            break;
-        };
-        Timer::sleep(0.2).await
-    }
-
-    // wait for swaps to stop
-    #[cfg(not(feature = "wallet-only"))]
-    loop {
-        if running_swaps_num(&ctx) == 0 {
-            break;
-        };
-        Timer::sleep(0.2).await
-    }
     Ok(())
 }

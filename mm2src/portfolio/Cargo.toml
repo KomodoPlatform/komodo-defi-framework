@@ -3,9 +3,6 @@ name = "portfolio"
 version = "0.1.0"
 edition = "2018"
 
-[features]
-native = []
-
 [lib]
 name = "portfolio"
 path = "portfolio.rs"
@@ -31,4 +28,3 @@ serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 url = "1.7"
 uuid = { version = "0.7", features = ["serde", "v4"] }
-

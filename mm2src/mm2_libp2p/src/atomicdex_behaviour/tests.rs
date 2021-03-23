@@ -1,5 +1,4 @@
-use super::start_gossipsub;
-use crate::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse};
+use super::{start_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, NodeType};
 use async_std::task::{block_on, spawn};
 use futures::channel::{mpsc, oneshot};
 use futures::{Future, SinkExt, StreamExt};
@@ -27,8 +26,9 @@ impl Node {
 
         let mut rng = rand::thread_rng();
         let secret = SecretKey::new(&mut rng);
+        let node_type = NodeType::Relay { ip: my_address };
         let (cmd_tx, mut event_rx, peer_id, _) =
-            start_gossipsub(my_address, port, 333, None, spawn_boxed, seednodes, true, |_| {});
+            start_gossipsub(port, 333, None, spawn_boxed, seednodes, node_type, |_| {});
 
         // spawn a response future
         let cmd_tx_fut = cmd_tx.clone();

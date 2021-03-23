@@ -556,6 +556,12 @@ pub fn p2sh_spending_tx(
     sequence: u32,
     lock_time: u32,
 ) -> Result<UtxoTx, String> {
+    let lock_time_by_now = if coin.conf.ticker == "KMD" {
+        (now_ms() / 1000) as u32 - 3600 + 2 * 777
+    } else {
+        (now_ms() / 1000) as u32 - 3600
+    };
+    let lock_time = lock_time_by_now.max(lock_time);
     let n_time = if coin.conf.is_pos {
         Some((now_ms() / 1000) as u32)
     } else {
@@ -881,7 +887,7 @@ where
 fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
+            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
                 Some(bytes) => try_s!(Signature::parse_der(&bytes[..bytes.len() - 1])),
                 None => return ERR!("No data at instruction 0 of script {:?}", script),
             },
@@ -2122,7 +2128,7 @@ pub fn is_unspent_mature(mature_confirmations: u32, output: &RpcTransaction) -> 
     !output.is_coinbase() || output.confirmations >= mature_confirmations
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn get_verbose_transaction_from_cache_or_rpc(
     coin: &UtxoCoinFields,
     txid: H256Json,
@@ -2147,7 +2153,7 @@ pub async fn get_verbose_transaction_from_cache_or_rpc(
     Ok(VerboseTransactionFrom::Rpc(tx))
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 pub async fn get_verbose_transaction_from_cache_or_rpc(
     coin: &UtxoCoinFields,
     txid: H256Json,
@@ -2156,7 +2162,7 @@ pub async fn get_verbose_transaction_from_cache_or_rpc(
     Ok(VerboseTransactionFrom::Rpc(tx))
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn cache_transaction_if_possible(coin: &UtxoCoinFields, tx: &RpcTransaction) -> Result<(), String> {
     let tx_cache_path = match &coin.tx_cache_directory {
         Some(p) => p.clone(),
@@ -2176,7 +2182,7 @@ pub async fn cache_transaction_if_possible(coin: &UtxoCoinFields, tx: &RpcTransa
         .map_err(|e| ERRL!("Error {:?} on caching transaction {:?}", e, tx.txid))
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 pub async fn cache_transaction_if_possible(_coin: &UtxoCoinFields, _tx: &RpcTransaction) -> Result<(), String> {
     Ok(())
 }

@@ -30,7 +30,7 @@ macro_rules! construct_detailed {
     ($name: ident, $base_field: ident) => {
         $crate::mm_number::paste! {
             #[derive(Clone, Debug, Serialize)]
-            struct $name {
+            pub struct $name {
                 $base_field: BigDecimal,
                 [<$base_field _fraction>]: Fraction,
                 [<$base_field _rat>]: BigRational,

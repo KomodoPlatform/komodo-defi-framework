@@ -1,12 +1,10 @@
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
-
 use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, check_my_coin_balance_for_swap,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, my_swap_file_path, my_swaps_dir, recv_swap_msg, swap_topic, AtomicSwap,
-            CheckBalanceError, DetailedTakerFee, DetailedVolume, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedTradeFee, SwapConfirmationsSettings, SwapError,
-            SwapMsg, SwapsContext, TakerFeeAdditionalInfo, TradeFeeResponse, TradePreimageMethod,
-            TradePreimageRequest, TradePreimageResponse, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            CheckBalanceError, LockedAmount, MySwapInfo, NegotiationDataMsg, RecoveredSwap, RecoveredSwapAction,
+            SavedSwap, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
+            TakerFeeAdditionalInfo, TradePreimageMethod, TradePreimageRequest, TransactionIdentifier,
+            WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
@@ -39,6 +37,7 @@ fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEven
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
+            my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
             taker_amount: Some(swap.taker_amount.to_decimal()),
@@ -129,6 +128,7 @@ impl TakerSavedEvent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
+    my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     maker_amount: Option<BigDecimal>,
     maker_coin: Option<String>,
@@ -439,6 +439,7 @@ pub struct TakerSwap {
     my_persistent_pub: H264,
     maker: bits256,
     uuid: Uuid,
+    my_order_uuid: Option<Uuid>,
     maker_payment_lock: Atomic<u64>,
     maker_payment_confirmed: Atomic<bool>,
     errors: PaMutex<Vec<SwapError>>,
@@ -634,6 +635,7 @@ impl TakerSwap {
         taker_amount: MmNumber,
         my_persistent_pub: H264,
         uuid: Uuid,
+        my_order_uuid: Option<Uuid>,
         conf_settings: SwapConfirmationsSettings,
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
@@ -648,6 +650,7 @@ impl TakerSwap {
             my_persistent_pub,
             maker,
             uuid,
+            my_order_uuid,
             maker_payment_confirmed: Atomic::new(false),
             finished_at: Atomic::new(0),
             maker_payment_lock: Atomic::new(0),
@@ -1243,6 +1246,7 @@ impl TakerSwap {
             data.taker_amount.clone().into(),
             my_persistent_pub,
             saved.uuid,
+            Some(saved.uuid),
             conf_settings,
             maker_coin,
             taker_coin,
@@ -1518,10 +1522,18 @@ pub async fn check_balance_for_taker_swap(
     Ok(())
 }
 
-pub async fn taker_swap_trade_preimage(
-    ctx: &MmArc,
-    req: TradePreimageRequest,
-) -> Result<TradePreimageResponse, String> {
+pub struct TakerTradePreimage {
+    /// The fee is paid per swap concerning the `base` coin.
+    pub base_coin_fee: TradeFee,
+    /// The fee is paid per swap concerning the `rel` coin.
+    pub rel_coin_fee: TradeFee,
+    /// The dex fee to be paid by taker coin.
+    pub taker_fee: TradeFee,
+    /// The miner fee is paid to send the dex fee.
+    pub fee_to_send_taker_fee: TradeFee,
+}
+
+pub async fn taker_swap_trade_preimage(ctx: &MmArc, req: TradePreimageRequest) -> Result<TakerTradePreimage, String> {
     let (my_coin_ticker, other_coin_ticker) = match req.swap_method {
         TradePreimageMethod::SetPrice => return ERR!("Internal error: expected 'sell' or 'buy' method"),
         TradePreimageMethod::Sell => (req.base, req.rel),
@@ -1538,22 +1550,39 @@ pub async fn taker_swap_trade_preimage(
         Err(err) => return ERR!("!lp_coinfind({}): {}", other_coin_ticker, err),
     };
 
+    if req.max {
+        return ERR!("'max' cannot be used with 'sell' or 'buy' method");
+    }
+
+    if req.price.is_zero() {
+        return ERR!("Expected non-zero 'price'");
+    }
+
+    if req.volume.is_zero() {
+        return ERR!("Expected non-zero 'volume'");
+    }
+
     let stage = FeeApproxStage::TradePreimage;
-    let volume = if req.max {
-        try_s!(calc_max_taker_vol(&ctx, &my_coin, &other_coin_ticker, stage.clone()).await)
-    } else {
-        req.volume
+    let my_coin_volume = match req.swap_method {
+        TradePreimageMethod::SetPrice => return ERR!("Internal error: expected 'sell' or 'buy' method"),
+        TradePreimageMethod::Sell => req.volume,
+        TradePreimageMethod::Buy => req.price * req.volume,
     };
 
-    let dex_amount = dex_fee_amount_from_taker_coin(&my_coin, &other_coin_ticker, &volume);
-    let fee_to_send_dex_fee = try_s!(
+    let dex_amount = dex_fee_amount_from_taker_coin(&my_coin, &other_coin_ticker, &my_coin_volume);
+    let taker_fee = TradeFee {
+        coin: my_coin_ticker,
+        amount: dex_amount.clone(),
+    };
+
+    let fee_to_send_taker_fee = try_s!(
         my_coin
             .get_fee_to_send_taker_fee(dex_amount.to_decimal(), stage.clone())
             .compat()
             .await
     );
 
-    let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
+    let preimage_value = TradePreimageValue::Exact(my_coin_volume.to_decimal());
     let my_coin_trade_fee = try_s!(
         my_coin
             .get_sender_trade_fee(preimage_value, stage.clone())
@@ -1566,17 +1595,11 @@ pub async fn taker_swap_trade_preimage(
         TradePreimageMethod::Sell => (my_coin_trade_fee, other_coin_trade_fee),
         _ => (other_coin_trade_fee, my_coin_trade_fee),
     };
-    let volume = if req.max {
-        Some(DetailedVolume::from(volume))
-    } else {
-        None
-    };
-    Ok(TradePreimageResponse {
-        base_coin_fee: TradeFeeResponse::from(base_coin_fee),
-        rel_coin_fee: TradeFeeResponse::from(rel_coin_fee),
-        volume,
-        taker_fee: Some(DetailedTakerFee::from(dex_amount)),
-        fee_to_send_taker_fee: Some(TradeFeeResponse::from(fee_to_send_dex_fee)),
+    Ok(TakerTradePreimage {
+        base_coin_fee,
+        rel_coin_fee,
+        taker_fee,
+        fee_to_send_taker_fee,
     })
 }
 

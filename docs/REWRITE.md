@@ -81,7 +81,7 @@ c) Probably mark as stateful the `sleep`ing functions, because `sleep` can be se
 Above in the [Rewrite goals](#rewrite-goals) section we have identified some of the goals that we pursue with this rewrite.
 These goals constitute the Value (in the Lean Production terms) that we are going to create.
 
-For a project to suceed it is usually important to make shorter the path the Value takes to the users.
+For a project to succeed it is usually important to make shorter the path the Value takes to the users.
 (Inventory is waste. If we have created the Value but the users can't get their hands on it, we're wasting that Value).
 
 Hence we're going to start with a gradual rewrite. Keeping the version under rewrite immediately avaliable to the users willing to experiment with it.

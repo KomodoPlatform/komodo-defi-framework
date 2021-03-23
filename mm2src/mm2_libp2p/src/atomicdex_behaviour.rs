@@ -1,14 +1,14 @@
 use crate::{adex_ping::AdexPing,
             peers_exchange::{PeerAddresses, PeersExchange},
             request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
-                               RequestResponseBehaviourEvent, RequestResponseSender}};
+                               RequestResponseBehaviourEvent, RequestResponseSender},
+            runtime::{SwarmRuntimeOps, SWARM_RUNTIME}};
 use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, GossipsubMessage, MessageId, Topic,
                           TopicHash};
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
               future::{abortable, join_all, poll_fn, AbortHandle},
               Future, SinkExt, StreamExt};
-use lazy_static::lazy_static;
 use libp2p::swarm::{IntoProtocolsHandler, NetworkBehaviour, ProtocolsHandler};
 use libp2p::{core::{ConnectedPoint, Multiaddr, Transport},
              identity,
@@ -25,11 +25,9 @@ use std::{collections::hash_map::{DefaultHasher, HashMap},
           hash::{Hash, Hasher},
           iter::{self, FromIterator},
           net::IpAddr,
-          pin::Pin,
           str::FromStr,
           task::{Context, Poll},
           time::Duration};
-use tokio::runtime::Runtime;
 use void::Void;
 use wasm_timer::{Instant, Interval};
 
@@ -38,22 +36,12 @@ pub type AdexEventRx = Receiver<AdexBehaviourEvent>;
 
 #[cfg(test)] mod tests;
 
-struct SwarmRuntime(Runtime);
-
 pub const PEERS_TOPIC: &str = "PEERS";
 const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 const NETID_7777: u16 = 7777;
-
-impl libp2p::core::Executor for &SwarmRuntime {
-    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.0.spawn(future); }
-}
-
-lazy_static! {
-    static ref SWARM_RUNTIME: SwarmRuntime = SwarmRuntime(Runtime::new().unwrap());
-}
 
 /// Returns info about connected peers
 pub async fn get_peers_info(mut cmd_tx: AdexCmdTx) -> HashMap<String, Vec<String>> {
@@ -585,6 +573,15 @@ const ALL_NETID_7777_SEEDNODES: &[(&str, &str)] = &[
     ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18"),
 ];
 
+pub enum NodeType {
+    Light,
+    Relay { ip: IpAddr },
+}
+
+impl NodeType {
+    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay {..}) }
+}
+
 /// Creates and spawns new AdexBehaviour Swarm returning:
 /// 1. tx to send control commands
 /// 2. rx emitting gossip events to processing side
@@ -592,15 +589,15 @@ const ALL_NETID_7777_SEEDNODES: &[(&str, &str)] = &[
 /// 4. abort handle to stop the P2P processing fut
 #[allow(clippy::too_many_arguments)]
 pub fn start_gossipsub(
-    ip: IpAddr,
     port: u16,
     netid: u16,
     force_key: Option<[u8; 32]>,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
     to_dial: Vec<String>,
-    i_am_relay: bool,
+    node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle) {
+    let i_am_relay = node_type.is_relay();
     let local_key = match force_key {
         Some(mut key) => {
             let secret = identity::ed25519::SecretKey::from_bytes(&mut key).expect("Secret length is 32 bytes");
@@ -612,7 +609,13 @@ pub fn start_gossipsub(
     let local_peer_id = PeerId::from(local_key.public());
     info!("Local peer id: {:?}", local_peer_id);
 
-    // Set up an encrypted TCP Transport over the Mplex protocol
+    #[cfg(target_arch = "wasm32")]
+    let transport = {
+        let websocket = libp2p::wasm_ext::ffi::websocket_transport();
+        libp2p::wasm_ext::ExtTransport::new(websocket)
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
     let transport = {
         let tcp = libp2p::tcp::TokioTcpConfig::new().nodelay(true);
         let transport = libp2p::dns::DnsConfig::new(tcp).unwrap();
@@ -624,6 +627,7 @@ pub fn start_gossipsub(
         .into_authentic(&local_key)
         .expect("Signing libp2p-noise static DH keypair failed.");
 
+    // Set up an encrypted Transport over the Mplex protocol
     let transport = transport
         .upgrade(libp2p::core::upgrade::Version::V1)
         .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
@@ -701,10 +705,12 @@ pub fn start_gossipsub(
             .build()
     };
     swarm.floodsub.subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
-    let addr = format!("/ip4/{}/tcp/{}", ip, port);
-    if i_am_relay {
+
+    if let NodeType::Relay { ip } = node_type {
+        let addr = format!("/ip4/{}/tcp/{}", ip, port);
         libp2p::Swarm::listen_on(&mut swarm, addr.parse().unwrap()).unwrap();
     }
+
     for relay in bootstrap.choose_multiple(&mut thread_rng(), mesh_n) {
         match libp2p::Swarm::dial_addr(&mut swarm, relay.clone()) {
             Ok(_) => info!("Dialed {}", relay),
@@ -756,7 +762,7 @@ pub fn start_gossipsub(
     });
 
     let (polling_fut, abort_handle) = abortable(polling_fut);
-    SWARM_RUNTIME.0.spawn(polling_fut);
+    SWARM_RUNTIME.spawn(polling_fut);
 
     (cmd_tx, event_rx, local_peer_id, abort_handle)
 }

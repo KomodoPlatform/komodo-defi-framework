@@ -1,9 +1,9 @@
 use gstuff::Constructible;
-#[cfg(not(feature = "native"))] use http::Response;
+#[cfg(target_arch = "wasm32")] use http::Response;
 use keys::KeyPair;
 use primitives::hash::H160;
 use rand::Rng;
-use rusqlite::Connection;
+#[cfg(not(target_arch = "wasm32"))] use rusqlite::Connection;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::any::Any;
@@ -11,14 +11,16 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
 use std::net::IpAddr;
-#[cfg(feature = "native")] use std::net::SocketAddr;
+#[cfg(not(target_arch = "wasm32"))] use std::net::SocketAddr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use crate::executor::Timer;
 use crate::log::{self, LogState};
-use crate::mm_metrics::{prometheus, MetricsArc};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::mm_metrics::prometheus;
+use crate::mm_metrics::{MetricsArc, MetricsOps};
 use crate::{bits256, small_rng};
 
 /// Default interval to export and record metrics to log.
@@ -82,8 +84,10 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Mutex<Connection>>,
 }
+
 impl MmCtx {
     pub fn with_log_state(log: LogState) -> MmCtx {
         MmCtx {
@@ -103,6 +107,7 @@ impl MmCtx {
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
         }
     }
@@ -114,7 +119,7 @@ impl MmCtx {
         self.rmd160.or(&|| &*DEFAULT)
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = self.conf["rpcport"].as_u64().unwrap_or(7783);
         if port < 1000 {
@@ -219,6 +224,7 @@ impl MmCtx {
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn init_sqlite_connection(&self) -> Result<(), String> {
         let sqlite_file_path = self.dbdir().join("MM2.db");
         log::debug!("Trying to open SQLite database file {}", sqlite_file_path.display());
@@ -227,6 +233,7 @@ impl MmCtx {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
         self.sqlite_connection
             .or(&|| panic!("sqlite_connection is not initialized"))
@@ -234,6 +241,7 @@ impl MmCtx {
             .unwrap()
     }
 }
+
 impl Default for MmCtx {
     fn default() -> Self { Self::with_log_state(LogState::in_memory()) }
 }
@@ -337,35 +345,7 @@ impl MmArc {
         }
     }
 
-    #[cfg(not(feature = "native"))]
-    pub async fn send_to_helpers(&self) -> Result<(), String> {
-        use crate::helperᶜ;
-
-        let ctxʷ = PortableCtx {
-            conf: try_s!(json::to_string(&self.conf)),
-            secp256k1_key_pair: match self.secp256k1_key_pair.as_option() {
-                Some(k) => ByteBuf::from(k.private().layout()),
-                None => ByteBuf::new(),
-            },
-            ffi_handle: self.ffi_handle.as_option().copied(),
-        };
-        let ctxᵇ = try_s!(bencode(&ctxʷ));
-        let hr = try_s!(helperᶜ("ctx2helpers", ctxᵇ).await);
-
-        // Remember the context ID used by the native helpers in order to simplify consecutive syncs.
-        let ctxⁿ: NativeCtx = try_s!(bdecode(&hr));
-        if let Some(ffi_handle) = self.ffi_handle.as_option().copied() {
-            if ffi_handle != ctxⁿ.ffi_handle {
-                return ERR!("ffi_handle mismatch");
-            }
-        } else {
-            try_s!(self.ffi_handle.pin(ctxⁿ.ffi_handle));
-        }
-
-        Ok(())
-    }
-
-    /// Tries getting access to the MM context.
+    /// Tries getting access to the MM context.  
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {
         if ffi_handle == 0 {
@@ -399,6 +379,14 @@ impl MmArc {
             try_s!(self.metrics.init_with_dashboard(self.log.weak(), interval));
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
+        try_s!(self.spawn_prometheus_exporter());
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn spawn_prometheus_exporter(&self) -> Result<(), String> {
         let prometheusport = match self.conf["prometheusport"].as_u64() {
             Some(port) => port,
             _ => return Ok(()),

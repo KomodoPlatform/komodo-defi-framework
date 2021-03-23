@@ -1,9 +1,9 @@
-use super::{OrderbookEntry, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf};
+use common::log;
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
-use common::{log, now_ms};
 use http::Response;
 use num_rational::BigRational;
 use num_traits::Zero;
@@ -46,7 +46,10 @@ pub async fn process_best_orders_p2p_request(
         None => return Ok(None),
     };
     let mut result = HashMap::new();
-    let pairs = tickers.iter().map(|ticker| (coin.clone(), ticker.clone()));
+    let pairs = tickers.iter().map(|ticker| match action {
+        BestOrdersAction::Buy => (coin.clone(), ticker.clone()),
+        BestOrdersAction::Sell => (ticker.clone(), coin.clone()),
+    });
     for pair in pairs {
         let orders = match orderbook.ordered.get(&pair) {
             Some(orders) => orders,
@@ -65,6 +68,7 @@ pub async fn process_best_orders_p2p_request(
                         BestOrdersAction::Sell => &o.min_volume * &o.price,
                     };
                     if min_volume > required_volume {
+                        log::debug!("Order {} min_vol {:?} > {:?}", o.uuid, min_volume, required_volume);
                         continue;
                     }
 
@@ -90,7 +94,10 @@ pub async fn process_best_orders_p2p_request(
                 },
             };
         }
-        result.insert(pair.1, best_orders);
+        match action {
+            BestOrdersAction::Buy => result.insert(pair.1, best_orders),
+            BestOrdersAction::Sell => result.insert(pair.0, best_orders),
+        };
     }
     let response = BestOrdersRes { orders: result };
     let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
@@ -125,29 +132,9 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                         continue;
                     },
                 };
-                let price_mm: MmNumber = match req.action {
-                    BestOrdersAction::Buy => order.price.into(),
-                    BestOrdersAction::Sell => order.price.recip().into(),
-                };
-                let max_vol_mm: MmNumber = order.max_volume.into();
-                let min_vol_mm: MmNumber = order.min_volume.into();
-                let entry = OrderbookEntry {
-                    coin: coin.clone(),
-                    address,
-                    price: price_mm.to_decimal(),
-                    price_rat: price_mm.to_ratio(),
-                    price_fraction: price_mm.to_fraction(),
-                    max_volume: max_vol_mm.to_decimal(),
-                    max_volume_rat: max_vol_mm.to_ratio(),
-                    max_volume_fraction: max_vol_mm.to_fraction(),
-                    min_volume: min_vol_mm.to_decimal(),
-                    min_volume_rat: min_vol_mm.to_ratio(),
-                    min_volume_fraction: min_vol_mm.to_fraction(),
-                    pubkey: order.pubkey,
-                    age: (now_ms() as i64 / 1000),
-                    zcredits: 0,
-                    uuid: order.uuid,
-                    is_mine: false,
+                let entry = match req.action {
+                    BestOrdersAction::Buy => order.as_rpc_entry_ask(address, false),
+                    BestOrdersAction::Sell => order.as_rpc_entry_bid(address, false),
                 };
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }

@@ -200,28 +200,30 @@ fn test_match_maker_order_and_taker_request() {
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
 #[test]
 fn maker_order_match_with_request_zero_volumes() {
-    let maker_order = MakerOrderBuilder::default()
+    let coin = MmCoinEnum::Test(TestCoin {});
+
+    let maker_order = MakerOrderBuilder::new(&coin, &coin)
         .with_max_base_vol(1.into())
         .with_price(1.into())
         .build_unchecked();
 
-    // default taker request has empty coins and zero amounts so it should pass to the price calculation stage (division)
-    let taker_request = TakerRequestBuilder::default()
+    // default taker order has empty coins and zero amounts so it should pass to the price calculation stage (division)
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_rel_amount(1.into())
         .build_unchecked();
 
     let expected = OrderMatchResult::NotMatched;
-    let actual = maker_order.match_with_request(&taker_request);
+    let actual = maker_order.match_with_request(&taker_order.request);
     assert_eq!(expected, actual);
 
-    // default taker request has empty coins and zero amounts so it should pass to the price calculation stage (division)
-    let taker_request = TakerRequestBuilder::default()
+    // default taker order has empty coins and zero amounts so it should pass to the price calculation stage (division)
+    let taker_request = TakerOrderBuilder::new(&coin, &coin)
         .with_base_amount(1.into())
         .with_action(TakerAction::Sell)
         .build_unchecked();
 
     let expected = OrderMatchResult::NotMatched;
-    let actual = maker_order.match_with_request(&taker_request);
+    let actual = maker_order.match_with_request(&taker_request.request);
     assert_eq!(expected, actual);
 }
 
@@ -324,6 +326,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -359,6 +362,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -394,6 +398,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -429,6 +434,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -464,6 +470,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -499,6 +506,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -534,6 +542,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -569,6 +578,7 @@ fn test_taker_match_reserved() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -604,6 +614,7 @@ fn test_taker_match_reserved() {
         matches: HashMap::new(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -642,6 +653,7 @@ fn test_taker_order_cancellable() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     assert!(order.is_cancellable());
@@ -665,6 +677,7 @@ fn test_taker_order_cancellable() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     order.matches.insert(Uuid::new_v4(), TakerMatch {
@@ -754,6 +767,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
         },
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     });
     rx
 }
@@ -842,6 +856,7 @@ fn test_taker_order_match_by() {
         created_at: now_ms(),
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
+        timeout: 30,
     };
 
     let reserved = MakerReserved {
@@ -934,12 +949,12 @@ fn should_process_request_only_once() {
 
 #[test]
 fn test_choose_maker_confs_settings() {
-    // no confs set
-    let taker_request = TakerRequestBuilder::default().build_unchecked();
     let coin = TestCoin {}.into();
+    // no confs set
+    let taker_order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
     TestCoin::requires_notarization.mock_safe(|_| MockResult::Return(true));
     TestCoin::required_confirmations.mock_safe(|_| MockResult::Return(8));
-    let settings = choose_maker_confs_and_notas(None, &taker_request, &coin, &coin);
+    let settings = choose_maker_confs_and_notas(None, &taker_order.request, &coin, &coin);
     // should pick settings from coin configuration
     assert!(settings.maker_coin_nota);
     assert_eq!(settings.maker_coin_confs, 8);
@@ -953,8 +968,8 @@ fn test_choose_maker_confs_settings() {
         rel_nota: false,
     };
     // no confs set
-    let taker_request = TakerRequestBuilder::default().build_unchecked();
-    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_request, &coin, &coin);
+    let taker_order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
+    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_order.request, &coin, &coin);
     // should pick settings from maker order
     assert!(!settings.maker_coin_nota);
     assert_eq!(settings.maker_coin_confs, 1);
@@ -973,10 +988,10 @@ fn test_choose_maker_confs_settings() {
         rel_confs: 5,
         rel_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
-    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_request, &coin, &coin);
+    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_order.request, &coin, &coin);
     // should pick settings from taker request because taker will wait less time for our
     // payment confirmation
     assert!(!settings.maker_coin_nota);
@@ -996,10 +1011,10 @@ fn test_choose_maker_confs_settings() {
         rel_confs: 1000,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
-    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_request, &coin, &coin);
+    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_order.request, &coin, &coin);
     // keep using our settings allowing taker to wait for our payment conf as much as he likes
     assert!(!settings.maker_coin_nota);
     assert_eq!(settings.maker_coin_confs, 10);
@@ -1019,10 +1034,10 @@ fn test_choose_maker_confs_settings() {
         base_confs: 1,
         base_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
-    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_request, &coin, &coin);
+    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_order.request, &coin, &coin);
 
     // Taker conf settings should not have any effect on maker conf requirements for taker payment
     assert!(settings.taker_coin_nota);
@@ -1041,11 +1056,11 @@ fn test_choose_maker_confs_settings() {
         base_confs: 5,
         base_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .with_action(TakerAction::Sell)
         .build_unchecked();
-    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_request, &coin, &coin);
+    let settings = choose_maker_confs_and_notas(Some(maker_conf_settings), &taker_order.request, &coin, &coin);
     // should pick settings from taker request because taker will wait less time for our
     // payment confirmation
     assert!(!settings.maker_coin_nota);
@@ -1056,14 +1071,15 @@ fn test_choose_maker_confs_settings() {
 
 #[test]
 fn test_choose_taker_confs_settings_buy_action() {
+    let coin = TestCoin {}.into();
+
     // no confs and notas set
-    let taker_request = TakerRequestBuilder::default().build_unchecked();
+    let taker_order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
     // no confs and notas set
     let maker_reserved = MakerReserved::default();
-    let coin = TestCoin {}.into();
     TestCoin::requires_notarization.mock_safe(|_| MockResult::Return(true));
     TestCoin::required_confirmations.mock_safe(|_| MockResult::Return(8));
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from coins
     assert!(settings.taker_coin_nota);
     assert_eq!(settings.taker_coin_confs, 8);
@@ -1076,12 +1092,12 @@ fn test_choose_taker_confs_settings_buy_action() {
         rel_confs: 4,
         rel_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
     // no confs and notas set
     let maker_reserved = MakerReserved::default();
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from taker request
     // as action is buy my_coin is rel and other coin is base
     assert!(!settings.taker_coin_nota);
@@ -1095,7 +1111,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         rel_confs: 2,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
     let mut maker_reserved = MakerReserved::default();
@@ -1106,7 +1122,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         base_nota: true,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from maker reserved if he requires less confs
     // as action is buy my_coin is rel and other coin is base in request
     assert!(!settings.taker_coin_nota);
@@ -1120,7 +1136,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         rel_confs: 1,
         rel_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
     let mut maker_reserved = MakerReserved::default();
@@ -1131,7 +1147,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         base_nota: true,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should allow maker to use more confirmations than we require, but it shouldn't affect our settings
     // as action is buy my_coin is rel and other coin is base in request
     assert!(!settings.taker_coin_nota);
@@ -1145,7 +1161,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         rel_confs: 1,
         rel_nota: false,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
     let mut maker_reserved = MakerReserved::default();
@@ -1156,7 +1172,7 @@ fn test_choose_taker_confs_settings_buy_action() {
         rel_nota: true,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // maker settings should have no effect on other_coin_confs and other_coin_nota
     // as action is buy my_coin is rel and other coin is base in request
     assert!(!settings.taker_coin_nota);
@@ -1167,16 +1183,17 @@ fn test_choose_taker_confs_settings_buy_action() {
 
 #[test]
 fn test_choose_taker_confs_settings_sell_action() {
+    let coin = TestCoin {}.into();
+
     // no confs and notas set
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_action(TakerAction::Sell)
         .build_unchecked();
     // no confs and notas set
     let maker_reserved = MakerReserved::default();
-    let coin = TestCoin {}.into();
     TestCoin::requires_notarization.mock_safe(|_| MockResult::Return(true));
     TestCoin::required_confirmations.mock_safe(|_| MockResult::Return(8));
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from coins
     assert!(settings.taker_coin_nota);
     assert_eq!(settings.taker_coin_confs, 8);
@@ -1189,13 +1206,13 @@ fn test_choose_taker_confs_settings_sell_action() {
         rel_confs: 5,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_action(TakerAction::Sell)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
     // no confs and notas set
     let maker_reserved = MakerReserved::default();
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from taker request
     // as action is sell my_coin is base and other coin is rel in request
     assert!(!settings.taker_coin_nota);
@@ -1209,7 +1226,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         rel_confs: 2,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_action(TakerAction::Sell)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
@@ -1221,7 +1238,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         rel_nota: false,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should pick settings from maker reserved if he requires less confs
     // as action is sell my_coin is base and other coin is rel in request
     assert!(!settings.taker_coin_nota);
@@ -1235,7 +1252,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         rel_confs: 2,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_action(TakerAction::Sell)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
@@ -1247,7 +1264,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         base_nota: false,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // should allow maker to use more confirmations than we require, but it shouldn't affect our settings
     // as action is sell my_coin is base and other coin is rel in request
     assert!(!settings.taker_coin_nota);
@@ -1261,7 +1278,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         rel_confs: 2,
         rel_nota: true,
     };
-    let taker_request = TakerRequestBuilder::default()
+    let taker_order = TakerOrderBuilder::new(&coin, &coin)
         .with_action(TakerAction::Sell)
         .with_conf_settings(taker_conf_settings)
         .build_unchecked();
@@ -1273,7 +1290,7 @@ fn test_choose_taker_confs_settings_sell_action() {
         base_nota: false,
     };
     maker_reserved.conf_settings = Some(maker_conf_settings);
-    let settings = choose_taker_confs_and_notas(&taker_request, &maker_reserved, &coin, &coin);
+    let settings = choose_taker_confs_and_notas(&taker_order.request, &maker_reserved, &coin, &coin);
     // maker settings should have no effect on other_coin_confs and other_coin_nota
     // as action is sell my_coin is base and other coin is rel in request
     assert!(!settings.taker_coin_nota);
@@ -1839,6 +1856,50 @@ fn test_subscribe_to_ordermatch_topic_subscribed_filled() {
     assert_eq!(actual, expected);
 }
 */
+#[test]
+fn test_taker_request_can_match_with_maker_pubkey() {
+    let coin = TestCoin {}.into();
+
+    let maker_pubkey = H256Json::default();
+
+    // default has MatchBy::Any
+    let mut order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
+    assert!(order.request.can_match_with_maker_pubkey(&maker_pubkey));
+
+    // the uuids of orders is checked in another method
+    order.request.match_by = MatchBy::Orders(HashSet::new());
+    assert!(order.request.can_match_with_maker_pubkey(&maker_pubkey));
+
+    let mut set = HashSet::new();
+    set.insert(maker_pubkey.clone());
+    order.request.match_by = MatchBy::Pubkeys(set);
+    assert!(order.request.can_match_with_maker_pubkey(&maker_pubkey));
+
+    order.request.match_by = MatchBy::Pubkeys(HashSet::new());
+    assert!(!order.request.can_match_with_maker_pubkey(&maker_pubkey));
+}
+
+#[test]
+fn test_taker_request_can_match_with_uuid() {
+    let uuid = Uuid::new_v4();
+    let coin = MmCoinEnum::Test(TestCoin {});
+
+    // default has MatchBy::Any
+    let mut order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
+    assert!(order.request.can_match_with_uuid(&uuid));
+
+    // the uuids of orders is checked in another method
+    order.request.match_by = MatchBy::Pubkeys(HashSet::new());
+    assert!(order.request.can_match_with_uuid(&uuid));
+
+    let mut set = HashSet::new();
+    set.insert(uuid);
+    order.request.match_by = MatchBy::Orders(set);
+    assert!(order.request.can_match_with_uuid(&uuid));
+
+    order.request.match_by = MatchBy::Orders(HashSet::new());
+    assert!(!order.request.can_match_with_uuid(&uuid));
+}
 
 #[test]
 fn test_orderbook_insert_or_update_order() {

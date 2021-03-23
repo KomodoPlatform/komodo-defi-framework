@@ -1,18 +1,15 @@
+use super::*;
 use crate::executor::{spawn, Timer};
-use crate::log::{LogArc, LogWeak, Tag};
-use gstuff::Constructible;
 use hdrhistogram::Histogram;
 use itertools::Itertools;
 use metrics_core::{Builder, Drain, Key, Label, Observe, Observer, ScopedString};
-pub use metrics_runtime::Sink;
 use metrics_runtime::{observers::PrometheusBuilder, Receiver};
 use metrics_util::{parse_quantiles, Quantile};
-use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::fmt::Write as WriteFmt;
-use std::ops::Deref;
 use std::slice::Iter;
-use std::sync::{Arc, Weak};
+
+pub use metrics_runtime::Sink;
 
 /// Increment counter if an MmArc is not dropped yet and metrics system is initialized already.
 #[macro_export]
@@ -22,11 +19,10 @@ macro_rules! mm_counter {
             sink.increment_counter($name, $value);
         }
     }};
-
-    ($metrics:expr, $name:expr, $value:expr, $($labels:tt)*) => {{
+    ($metrics:expr, $name:expr, $value:expr, $($label_key:expr => $label_val:expr),+) => {{
         use metrics::labels;
         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($labels)* );
+            let labels = labels!( $($label_key => $label_val),+ );
             sink.increment_counter_with_labels($name, $value, labels);
         }
     }};
@@ -41,10 +37,10 @@ macro_rules! mm_gauge {
         }
     }};
 
-    ($metrics:expr, $name:expr, $value:expr, $($labels:tt)*) => {{
+    ($metrics:expr, $name:expr, $value:expr, $($label_key:expr => $label_val:expr),+) => {{
         use metrics::labels;
         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($labels)* );
+            let labels = labels!( $($label_key => $label_val),+ );
             sink.update_gauge_with_labels($name, $value, labels);
         }
     }};
@@ -59,139 +55,44 @@ macro_rules! mm_timing {
         }
     }};
 
-    ($metrics:expr, $name:expr, $start:expr, $end:expr, $($labels:tt)*) => {{
+    ($metrics:expr, $name:expr, $start:expr, $end:expr, $($label_key:expr => $label_val:expr),+) => {{
         use metrics::labels;
         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($labels)* );
+            let labels = labels!( $($label_key => $label_val),+ );
             sink.record_timing_with_labels($name, $start, $end, labels);
         }
     }};
 }
 
-#[cfg(feature = "native")]
-pub mod prometheus {
-    use super::*;
-    use futures::future::{Future, FutureExt};
-    use hyper::http::{self, header, Request, Response, StatusCode};
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Server};
-    use std::convert::Infallible;
-    use std::net::SocketAddr;
-
-    #[derive(Clone)]
-    pub struct PrometheusCredentials {
-        pub userpass: String,
-    }
-
-    pub fn spawn_prometheus_exporter(
-        metrics: MetricsWeak,
-        address: SocketAddr,
-        shutdown_detector: impl Future<Output = ()> + 'static + Send,
-        credentials: Option<PrometheusCredentials>,
-    ) -> Result<(), String> {
-        let make_svc = make_service_fn(move |_conn| {
-            let metrics = metrics.clone();
-            let credentials = credentials.clone();
-            futures::future::ready(Ok::<_, Infallible>(service_fn(move |req| {
-                futures::future::ready(scrape_handle(req, metrics.clone(), credentials.clone()))
-            })))
-        });
-
-        let server = try_s!(Server::try_bind(&address))
-            .http1_half_close(false) // https://github.com/hyperium/hyper/issues/1764
-            .serve(make_svc)
-            .with_graceful_shutdown(shutdown_detector);
-
-        let server = server.then(|r| {
-            if let Err(err) = r {
-                log!((err));
-            };
-            futures::future::ready(())
-        });
-
-        spawn(server);
-        Ok(())
-    }
-
-    fn scrape_handle(
-        req: Request<Body>,
-        metrics: MetricsWeak,
-        credentials: Option<PrometheusCredentials>,
-    ) -> Result<Response<Body>, http::Error> {
-        fn on_error(status: StatusCode, error: String) -> Result<Response<Body>, http::Error> {
-            log!((error));
-            Response::builder().status(status).body(Body::empty()).map_err(|err| {
-                log!((err));
-                err
-            })
-        }
-
-        if req.uri() != "/metrics" {
-            return on_error(
-                StatusCode::BAD_REQUEST,
-                ERRL!("Warning Prometheus: unexpected URI {}", req.uri()),
-            );
-        }
-
-        if let Some(credentials) = credentials {
-            if let Err(err) = check_auth_credentials(&req, credentials) {
-                return on_error(StatusCode::UNAUTHORIZED, err);
-            }
-        }
-
-        let metrics = match MetricsArc::from_weak(&metrics) {
-            Some(m) => m,
-            _ => {
-                return on_error(
-                    StatusCode::BAD_REQUEST,
-                    ERRL!("Warning Prometheus: metrics system unavailable"),
-                )
-            },
-        };
-
-        let body = match metrics.collect_prometheus_format() {
-            Ok(body) => Body::from(body),
-            _ => {
-                return on_error(
-                    StatusCode::BAD_REQUEST,
-                    ERRL!("Warning Prometheus: metrics system is not initialized yet"),
-                )
-            },
-        };
-
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/plain")
-            .body(body)
-            .map_err(|err| {
-                log!((err));
-                err
-            })
-    }
-
-    fn check_auth_credentials(req: &Request<Body>, expected: PrometheusCredentials) -> Result<(), String> {
-        let header_value = req
-            .headers()
-            .get(header::AUTHORIZATION)
-            .ok_or(ERRL!("Warning Prometheus: authorization required"))
-            .and_then(|header| Ok(try_s!(header.to_str())))?;
-
-        let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
-
-        if header_value != expected {
-            return Err(format!("Warning Prometheus: invalid credentials: {}", header_value));
-        }
-
-        Ok(())
-    }
-}
+/// Default quantiles are "min" and "max"
+const QUANTILES: &[f64] = &[0.0, 1.0];
 
 pub trait TrySink {
     fn try_sink(&self) -> Option<Sink>;
 }
 
-/// Default quantiles are "min" and "max"
-const QUANTILES: &[f64] = &[0.0, 1.0];
+impl TrySink for MetricsArc {
+    fn try_sink(&self) -> Option<Sink> { self.0.sink().ok() }
+}
+
+impl TrySink for MetricsWeak {
+    fn try_sink(&self) -> Option<Sink> {
+        let metrics = MetricsArc::from_weak(&self)?;
+        metrics.0.sink().ok()
+    }
+}
+
+pub struct Clock {
+    sink: Sink,
+}
+
+impl From<Sink> for Clock {
+    fn from(sink: Sink) -> Self { Clock { sink } }
+}
+
+impl ClockOps for Clock {
+    fn now(&self) -> u64 { self.sink.now() }
+}
 
 #[derive(Default)]
 pub struct Metrics {
@@ -200,9 +101,8 @@ pub struct Metrics {
     receiver: Constructible<Receiver>,
 }
 
-impl Metrics {
-    /// If the instance was not initialized yet, create the `receiver` else return an error.
-    pub fn init(&self) -> Result<(), String> {
+impl MetricsOps for Metrics {
+    fn init(&self) -> Result<(), String> {
         if self.receiver.is_some() {
             return ERR!("metrics system is initialized already");
         }
@@ -213,8 +113,7 @@ impl Metrics {
         Ok(())
     }
 
-    /// Create new Metrics instance and spawn the metrics recording into the log, else return an error.
-    pub fn init_with_dashboard(&self, log_state: LogWeak, record_interval: f64) -> Result<(), String> {
+    fn init_with_dashboard(&self, log_state: LogWeak, record_interval: f64) -> Result<(), String> {
         self.init()?;
 
         let controller = self.receiver.as_option().unwrap().controller();
@@ -231,11 +130,9 @@ impl Metrics {
         Ok(())
     }
 
-    /// Handle for sending metric samples.
-    pub fn sink(&self) -> Result<Sink, String> { Ok(try_s!(self.try_receiver()).sink()) }
+    fn clock(&self) -> Result<Clock, String> { self.sink().map_err(|e| ERRL!("{}", e)).map(Clock::from) }
 
-    /// Collect the metrics as Json.
-    pub fn collect_json(&self) -> Result<Json, String> {
+    fn collect_json(&self) -> Result<Json, String> {
         let receiver = try_s!(self.try_receiver());
         let controller = receiver.controller();
 
@@ -245,6 +142,15 @@ impl Metrics {
 
         observer.into_json()
     }
+}
+
+impl Metrics {
+    /// Try get receiver.
+    fn try_receiver(&self) -> Result<&Receiver, String> {
+        self.receiver.ok_or("metrics system is not initialized yet".into())
+    }
+
+    fn sink(&self) -> Result<Sink, String> { Ok(try_s!(self.try_receiver()).sink()) }
 
     /// Collect the metrics in Prometheus format.
     pub fn collect_prometheus_format(&self) -> Result<String, String> {
@@ -256,78 +162,6 @@ impl Metrics {
 
         Ok(observer.drain())
     }
-
-    /// Try get receiver.
-    fn try_receiver(&self) -> Result<&Receiver, String> {
-        self.receiver.ok_or("metrics system is not initialized yet".into())
-    }
-}
-
-#[derive(Serialize, Debug, Default, Deserialize)]
-pub struct MetricsJson {
-    pub metrics: Vec<MetricType>,
-}
-
-#[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(tag = "type")]
-pub enum MetricType {
-    Counter {
-        key: String,
-        labels: HashMap<String, String>,
-        value: u64,
-    },
-    Gauge {
-        key: String,
-        labels: HashMap<String, String>,
-        value: i64,
-    },
-    Histogram {
-        key: String,
-        labels: HashMap<String, String>,
-        #[serde(flatten)]
-        quantiles: HashMap<String, u64>,
-    },
-}
-
-#[derive(Clone, Default)]
-pub struct MetricsArc(pub Arc<Metrics>);
-
-impl Deref for MetricsArc {
-    type Target = Metrics;
-    fn deref(&self) -> &Metrics { &*self.0 }
-}
-
-impl TrySink for MetricsArc {
-    fn try_sink(&self) -> Option<Sink> { self.sink().ok() }
-}
-
-impl MetricsArc {
-    /// Create new `Metrics` instance
-    pub fn new() -> MetricsArc { MetricsArc(Arc::new(Default::default())) }
-
-    /// Try to obtain the `Metrics` from the weak pointer.
-    pub fn from_weak(weak: &MetricsWeak) -> Option<MetricsArc> { weak.0.upgrade().map(MetricsArc) }
-
-    /// Create a weak pointer from `MetricsWeak`.
-    pub fn weak(&self) -> MetricsWeak { MetricsWeak(Arc::downgrade(&self.0)) }
-}
-
-#[derive(Clone, Default)]
-pub struct MetricsWeak(pub Weak<Metrics>);
-
-impl TrySink for MetricsWeak {
-    fn try_sink(&self) -> Option<Sink> {
-        let metrics = MetricsArc::from_weak(&self)?;
-        metrics.sink().ok()
-    }
-}
-
-impl MetricsWeak {
-    /// Create a default MmWeak without allocating any memory.
-    pub fn new() -> MetricsWeak { MetricsWeak::default() }
-
-    pub fn dropped(&self) -> bool { self.0.strong_count() == 0 }
 }
 
 type MetricName = ScopedString;
@@ -636,11 +470,128 @@ fn hist_to_message(hist: &Histogram<u64>, quantiles: &[Quantile]) -> String {
     }
 }
 
+pub mod prometheus {
+    use super::*;
+    use futures::future::{Future, FutureExt};
+    use hyper::http::{self, header, Request, Response, StatusCode};
+    use hyper::service::{make_service_fn, service_fn};
+    use hyper::{Body, Server};
+    use std::convert::Infallible;
+    use std::net::SocketAddr;
+
+    #[derive(Clone)]
+    pub struct PrometheusCredentials {
+        pub userpass: String,
+    }
+
+    pub fn spawn_prometheus_exporter(
+        metrics: MetricsWeak,
+        address: SocketAddr,
+        shutdown_detector: impl Future<Output = ()> + 'static + Send,
+        credentials: Option<PrometheusCredentials>,
+    ) -> Result<(), String> {
+        let make_svc = make_service_fn(move |_conn| {
+            let metrics = metrics.clone();
+            let credentials = credentials.clone();
+            futures::future::ready(Ok::<_, Infallible>(service_fn(move |req| {
+                futures::future::ready(scrape_handle(req, metrics.clone(), credentials.clone()))
+            })))
+        });
+
+        let server = try_s!(Server::try_bind(&address))
+            .http1_half_close(false) // https://github.com/hyperium/hyper/issues/1764
+            .serve(make_svc)
+            .with_graceful_shutdown(shutdown_detector);
+
+        let server = server.then(|r| {
+            if let Err(err) = r {
+                log!((err));
+            };
+            futures::future::ready(())
+        });
+
+        spawn(server);
+        Ok(())
+    }
+
+    fn scrape_handle(
+        req: Request<Body>,
+        metrics: MetricsWeak,
+        credentials: Option<PrometheusCredentials>,
+    ) -> Result<Response<Body>, http::Error> {
+        fn on_error(status: StatusCode, error: String) -> Result<Response<Body>, http::Error> {
+            log!((error));
+            Response::builder().status(status).body(Body::empty()).map_err(|err| {
+                log!((err));
+                err
+            })
+        }
+
+        if req.uri() != "/metrics" {
+            return on_error(
+                StatusCode::BAD_REQUEST,
+                ERRL!("Warning Prometheus: unexpected URI {}", req.uri()),
+            );
+        }
+
+        if let Some(credentials) = credentials {
+            if let Err(err) = check_auth_credentials(&req, credentials) {
+                return on_error(StatusCode::UNAUTHORIZED, err);
+            }
+        }
+
+        let metrics = match MetricsArc::from_weak(&metrics) {
+            Some(m) => m,
+            _ => {
+                return on_error(
+                    StatusCode::BAD_REQUEST,
+                    ERRL!("Warning Prometheus: metrics system unavailable"),
+                )
+            },
+        };
+
+        let body = match metrics.0.collect_prometheus_format() {
+            Ok(body) => Body::from(body),
+            _ => {
+                return on_error(
+                    StatusCode::BAD_REQUEST,
+                    ERRL!("Warning Prometheus: metrics system is not initialized yet"),
+                )
+            },
+        };
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(body)
+            .map_err(|err| {
+                log!((err));
+                err
+            })
+    }
+
+    fn check_auth_credentials(req: &Request<Body>, expected: PrometheusCredentials) -> Result<(), String> {
+        let header_value = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .ok_or(ERRL!("Warning Prometheus: authorization required"))
+            .and_then(|header| Ok(try_s!(header.to_str())))?;
+
+        let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
+
+        if header_value != expected {
+            return Err(format!("Warning Prometheus: invalid credentials: {}", header_value));
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block_on;
     use crate::log::LogState;
-    use crate::{block_on, log::LogArc};
 
     #[test]
     fn test_initialization() {
@@ -648,13 +599,13 @@ mod tests {
         let metrics = MetricsArc::new();
 
         // metrics system is not initialized yet
-        assert!(metrics.sink().is_err());
+        assert!(metrics.try_sink().is_none());
 
         metrics.init().unwrap();
         assert!(metrics.init().is_err());
         assert!(metrics.init_with_dashboard(log_state.weak(), 1.).is_err());
 
-        let _ = metrics.sink().unwrap();
+        assert!(metrics.try_sink().is_some());
     }
 
     #[test]
@@ -664,9 +615,9 @@ mod tests {
         let metrics = MetricsArc::new();
 
         metrics.init_with_dashboard(log_state.weak(), 5.).unwrap();
-        let sink = metrics.sink().unwrap();
+        let clock = metrics.clock().unwrap();
 
-        let start = sink.now();
+        let start = clock.now();
 
         mm_counter!(metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
         mm_counter!(metrics, "rpc.traffic.rx", 105, "coin"=> "BTC");
@@ -676,7 +627,7 @@ mod tests {
 
         mm_gauge!(metrics, "rpc.connection.count", 3, "coin" => "KMD");
 
-        let end = sink.now();
+        let end = clock.now();
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    start,
@@ -691,7 +642,7 @@ mod tests {
 
         mm_gauge!(metrics, "rpc.connection.count", 5, "coin" => "KMD");
 
-        let end = sink.now();
+        let end = clock.now();
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    start,
@@ -702,7 +653,7 @@ mod tests {
         // measure without labels
         mm_counter!(metrics, "test.counter", 0);
         mm_gauge!(metrics, "test.gauge", 1);
-        let end = sink.now();
+        let end = clock.now();
         mm_timing!(metrics, "test.uptime", start, end);
 
         block_on(async { Timer::sleep(6.).await });
@@ -713,7 +664,6 @@ mod tests {
         let metrics = MetricsArc::new();
 
         metrics.init().unwrap();
-        let mut sink = metrics.sink().unwrap();
 
         mm_counter!(metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
         mm_counter!(metrics, "rpc.traffic.rx", 105, "coin" => "BTC");
@@ -727,7 +677,7 @@ mod tests {
         mm_gauge!(metrics, "rpc.connection.count", 3, "coin" => "KMD");
 
         // counter, gauge and timing may be collected also by sink API
-        sink.update_gauge_with_labels("rpc.connection.count", 5, &[("coin", "KMD")]);
+        mm_gauge!(metrics, "rpc.connection.count", 5, "coin" => "KMD");
 
         mm_timing!(metrics,
                    "rpc.query.spent_time",

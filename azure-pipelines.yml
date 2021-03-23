@@ -10,8 +10,6 @@ trigger:
   branches:
     include:
       - refs/heads/*
-    exclude:
-      - refs/heads/qrc20
   paths:
     exclude:
       - README.md

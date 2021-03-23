@@ -130,7 +130,7 @@ fn test_crash_handling() {
 
 /// Setup the crash handlers.
 #[allow(dead_code)]
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn init_crash_reports() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -156,7 +156,7 @@ pub fn init_crash_reports() {
     })
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 pub fn init_crash_reports() { unimplemented!() }
 
 // Make sure Rust panics still work in the presence of the VEH handler.

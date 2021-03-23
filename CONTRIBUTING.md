@@ -8,7 +8,7 @@ Please note we have a code of conduct, please follow it in all your interactions
 Before uploading any changes, please make sure that the test suite passes locally before submitting a pull request with your changes.
 
 ```
-cargo test --all --features native
+cargo test --all
 ```
 
 We also use [Clippy](https://github.com/rust-lang/rust-clippy) to avoid common mistakes
@@ -25,5 +25,5 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
     ```
 1. Make sure there are no warnings and errors. Run the Clippy:
     ```
-    cargo clippy --features native -- -D warnings
+    cargo clippy -- -D warnings
     ```

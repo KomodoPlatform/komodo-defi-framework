@@ -8,14 +8,13 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-async-std = "1.6.2"
+async-std = { version = "1.6.2", features = ["unstable"] }
 atomicdex-gossipsub = { path = "../gossipsub" }
 libp2p-floodsub = { path = "../floodsub" }
 env_logger = "0.7.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 hex = "0.4.2"
 lazy_static = "1.4.0"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns", "floodsub", "mplex", "noise", "ping", "request-response", "tcp-tokio", "secp256k1", "websocket"] }
 secp256k1 = { git = "https://github.com/artemii235/rust-secp256k1.git", features = ["endomorphism", "rand"] }
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
@@ -25,6 +24,12 @@ rmp-serde = "0.14.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.5"
 sha2 = "0.9.0"
-tokio = { version = "0.2.22", features = ["rt-threaded"] }
 void = "1.0"
 wasm-timer = "0.2.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "0.2.22", features = ["rt-threaded"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }

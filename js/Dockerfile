@@ -65,7 +65,7 @@ RUN cargo install rustfilt
 RUN cd /mm2 &&\
     cargo build --target=wasm32-unknown-unknown --release &&\
     mv target/wasm32-unknown-unknown/release/mm2.wasm js/ &&\
-    cargo build --features native --bin mm2 &&\
+    cargo build --bin mm2 &&\
     cp target/debug/mm2 js/ &&\
     rm -rf target
 

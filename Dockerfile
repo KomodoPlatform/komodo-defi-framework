@@ -51,10 +51,10 @@ RUN cd /mm2 && cargo fetch
 # Build MM1 and MM2.
 # Increased verbosity here allows us to see the MM1 CMake logs.
 RUN cd /mm2 &&\
-    cargo build --features native -vv &&\
+    cargo build -vv &&\
     mv target/debug/mm2 /usr/local/bin/marketmaker-mainnet &&\
     # We currently need BOB_PASSPHRASE, BOB_USERPASS, ALICE_PASSPHRASE and ALICE_USERPASS for the tests…
-    #cargo test --features native &&\
+    #cargo test &&\
     cargo clean
 
 CMD marketmaker-testnet

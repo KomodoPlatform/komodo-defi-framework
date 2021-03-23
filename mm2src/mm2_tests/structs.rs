@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(tag = "type", content = "data")]
-enum OrderType {
+pub enum OrderType {
     FillOrKill,
     GoodTillCancelled,
 }
@@ -39,21 +39,29 @@ pub enum MatchBy {
 }
 
 #[derive(Deserialize)]
+pub struct BuyOrSellRpcRes {
+    pub base: String,
+    pub rel: String,
+    pub base_amount: BigDecimal,
+    pub base_amount_rat: BigRational,
+    pub rel_amount: BigDecimal,
+    pub rel_amount_rat: BigRational,
+    pub min_volume: BigDecimal,
+    pub min_volume_rat: BigRational,
+    pub min_volume_fraction: Fraction,
+    pub action: TakerAction,
+    pub uuid: Uuid,
+    pub method: String,
+    pub sender_pubkey: H256Json,
+    pub dest_pub_key: H256Json,
+    pub match_by: MatchBy,
+    pub conf_settings: OrderConfirmationsSettings,
+    pub order_type: OrderType,
+}
+
+#[derive(Deserialize)]
 pub struct BuyOrSellRpcResult {
-    base: String,
-    rel: String,
-    base_amount: BigDecimal,
-    base_amount_rat: BigRational,
-    rel_amount: BigDecimal,
-    rel_amount_rat: BigRational,
-    action: TakerAction,
-    uuid: Uuid,
-    method: String,
-    sender_pubkey: H256Json,
-    dest_pub_key: H256Json,
-    match_by: MatchBy,
-    conf_settings: OrderConfirmationsSettings,
-    order_type: OrderType,
+    pub result: BuyOrSellRpcRes,
 }
 
 #[derive(Deserialize)]
@@ -155,12 +163,17 @@ pub struct TakerOrderRpcResult {
 }
 
 #[derive(Deserialize)]
-pub struct MyOrdersRpcResult {
-    maker_orders: HashMap<Uuid, MakerOrderRpcResult>,
-    taker_orders: HashMap<Uuid, TakerOrderRpcResult>,
+pub struct MyOrdersRpc {
+    pub maker_orders: HashMap<Uuid, MakerOrderRpcResult>,
+    pub taker_orders: HashMap<Uuid, TakerOrderRpcResult>,
 }
 
 #[derive(Deserialize)]
+pub struct MyOrdersRpcResult {
+    pub result: MyOrdersRpc,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct OrderbookEntry {
     pub coin: String,
     pub address: String,
@@ -171,6 +184,18 @@ pub struct OrderbookEntry {
     pub max_volume: BigDecimal,
     pub max_volume_rat: BigRational,
     pub max_volume_fraction: Fraction,
+    pub base_max_volume: BigDecimal,
+    pub base_max_volume_rat: BigRational,
+    pub base_max_volume_fraction: Fraction,
+    pub base_min_volume: BigDecimal,
+    pub base_min_volume_rat: BigRational,
+    pub base_min_volume_fraction: Fraction,
+    pub rel_max_volume: BigDecimal,
+    pub rel_max_volume_rat: BigRational,
+    pub rel_max_volume_fraction: Fraction,
+    pub rel_min_volume: BigDecimal,
+    pub rel_min_volume_rat: BigRational,
+    pub rel_min_volume_fraction: Fraction,
     pub min_volume: BigDecimal,
     pub min_volume_rat: BigRational,
     pub min_volume_fraction: Fraction,
@@ -184,6 +209,14 @@ pub struct OrderbookEntry {
 #[derive(Deserialize)]
 pub struct BestOrdersResponse {
     pub result: HashMap<String, Vec<OrderbookEntry>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OrderbookResponse {
+    #[serde(rename = "askdepth")]
+    pub ask_depth: usize,
+    pub asks: Vec<OrderbookEntry>,
+    pub bids: Vec<OrderbookEntry>,
 }
 
 #[derive(Deserialize)]

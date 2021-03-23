@@ -900,7 +900,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         RawEntryMut::Vacant(ve) => ve.insert(ticker.to_string(), coin.clone()),
     };
     let history = req["tx_history"].as_bool().unwrap_or(false);
-    #[cfg(not(feature = "native"))]
+    #[cfg(target_arch = "wasm32")]
     let history = {
         if history {
             ctx.log.log(

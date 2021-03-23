@@ -1,11 +1,7 @@
 use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
-use common::executor::Timer;
-use common::wio::slurp_reqʹ;
-use futures::compat::Compat;
-use futures::future::{select, Either};
+#[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
+use futures::TryFutureExt;
 use futures01::{Future, Poll};
-use gstuff::binprint;
-use http::header::HeaderValue;
 use jsonrpc_core::{Call, Response};
 use serde_json::Value as Json;
 use std::ops::Deref;
@@ -87,19 +83,17 @@ impl Transport for Web3Transport {
         (id, request)
     }
 
-    #[cfg(not(feature = "w-bindgen"))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        Box::new(Compat::new(Box::pin(sendʹ(
-            request,
-            self.uris.clone(),
-            self.event_handlers.clone(),
-        ))))
+        Box::new(
+            sendʹ(request, self.uris.clone(), self.event_handlers.clone())
+                .boxed()
+                .compat(),
+        )
     }
 
-    #[cfg(feature = "w-bindgen")]
+    #[cfg(target_arch = "wasm32")]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        use js_sys;
-        use js_sys::Promise;
         use wasm_bindgen::prelude::*;
         use wasm_bindgen::JsCast;
         use wasm_bindgen_futures::JsFuture;
@@ -121,7 +115,6 @@ impl Transport for Web3Transport {
 
         let window = web_sys::window().unwrap();
         let request_promise = window.fetch_with_request(&request);
-        use web_sys::console;
 
         let future = JsFuture::from(request_promise);
         let event_handlers = self.event_handlers.clone();
@@ -141,11 +134,18 @@ impl Transport for Web3Transport {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn sendʹ(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
+    use common::executor::Timer;
+    use common::wio::slurp_reqʹ;
+    use futures::future::{select, Either};
+    use gstuff::binprint;
+    use http::header::HeaderValue;
+
     let mut errors = Vec::new();
     for uri in uris.iter() {
         let request = to_string(&request);

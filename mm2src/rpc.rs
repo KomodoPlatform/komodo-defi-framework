@@ -16,22 +16,21 @@
 //
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
-#![cfg_attr(not(feature = "native"), allow(unused_imports))]
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
 
 use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
             send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
             validate_address, withdraw};
 use common::mm_ctx::MmArc;
-#[cfg(feature = "native")] use common::wio::{CORE, CPUPOOL};
+#[cfg(not(target_arch = "wasm32"))]
+use common::wio::{CORE, CPUPOOL};
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HyRes};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, FutureExt, TryFutureExt};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
 use http::{Method, Request, Response};
-use hyper::Body;
-#[cfg(feature = "native")] use hyper::{self, Server};
+#[cfg(not(target_arch = "wasm32"))]
+use hyper::{self, Body, Server};
 use serde_json::{self as json, Value as Json};
 use std::future::Future as Future03;
 use std::net::SocketAddr;
@@ -45,7 +44,6 @@ use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, coins_nee
                           stats_swap_status, trade_preimage, unban_pubkeys};
 
 use self::lp_commands::*;
-
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
@@ -152,11 +150,11 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "help" => help(),
         #[cfg(not(feature = "wallet-only"))]
         "import_swaps" => {
-            #[cfg(feature = "native")]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 Box::new(CPUPOOL.spawn_fn(move || hyres(import_swaps(ctx, req))))
             }
-            #[cfg(not(feature = "native"))]
+            #[cfg(target_arch = "wasm32")]
             {
                 return DispatcherRes::NoMatch(req);
             }
@@ -186,11 +184,11 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "sim_panic" => hyres(sim_panic(req)),
         #[cfg(not(feature = "wallet-only"))]
         "recover_funds_of_swap" => {
-            #[cfg(feature = "native")]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 Box::new(CPUPOOL.spawn_fn(move || hyres(recover_funds_of_swap(ctx, req))))
             }
-            #[cfg(not(feature = "native"))]
+            #[cfg(target_arch = "wasm32")]
             {
                 return DispatcherRes::NoMatch(req);
             }
@@ -222,15 +220,13 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
 async fn process_rpc_request(
     ctx: MmArc,
     req: Parts,
-    req_body: Body,
+    req_json: Json,
     client: SocketAddr,
 ) -> Result<Response<Vec<u8>>, String> {
     if req.method != Method::POST {
         return ERR!("Only POST requests are supported!");
     }
 
-    let req_bytes = try_s!(hyper::body::to_bytes(req_body).await);
-    let req_json: Json = try_s!(json::from_slice(&req_bytes));
     match req_json.as_array() {
         Some(requests) => {
             let mut futures = Vec::with_capacity(requests.len());
@@ -274,16 +270,19 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
     Ok(res)
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Response<Body> {
+    /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
     macro_rules! try_sf {
-        ($value: expr) => {
+        ($value: expr $(, $header_key:expr => $header_val:expr)*) => {
             match $value {
                 Ok(ok) => ok,
                 Err(err) => {
                     log!("RPC error response: "(err));
                     let ebody = err_to_rpc_json_string(&fomat!((err)));
-                    return Response::builder().status(500).body(Body::from(ebody)).unwrap();
+                    // generate a `Response` with the headers specified in `$header_key` and `$header_val`
+                    let response = Response::builder().status(500) $(.header($header_key, $header_val))* .body(Body::from(ebody)).unwrap();
+                    return response;
                 },
             }
         };
@@ -298,23 +297,16 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
     // Convert the native Hyper stream into a portable stream of `Bytes`.
     let (req, req_body) = req.into_parts();
-    let (mut parts, body) = match process_rpc_request(ctx, req, req_body, client).await {
-        Ok(r) => r.into_parts(),
-        Err(err) => {
-            log!("RPC error response: "(err));
-            let ebody = err_to_rpc_json_string(&err);
-            return Response::builder()
-                .status(500)
-                .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                .body(Body::from(ebody))
-                .unwrap();
-        },
-    };
+    let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+    let req_json: Json = try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+
+    let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+    let (mut parts, body) = res.into_parts();
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
     Response::from_parts(parts, Body::from(body))
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 pub extern "C" fn spawn_rpc(ctx_h: u32) {
     use hyper::server::conn::AddrStream;
     use hyper::service::{make_service_fn, service_fn};
@@ -377,10 +369,10 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     });
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 pub extern "C" fn spawn_rpc(_ctx_h: u32) { unimplemented!() }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 pub fn init_header_slots() {
     use common::header::RPC_SERVICE;
     use std::pin::Pin;
@@ -388,7 +380,7 @@ pub fn init_header_slots() {
     fn rpc_service_fn(
         ctx: MmArc,
         req: Parts,
-        req_body: Box<dyn Stream<Item = Bytes, Error = String> + Send>,
+        req_body: Json,
         client: SocketAddr,
     ) -> Pin<Box<dyn Future03<Output = Result<Response<Vec<u8>>, String>> + Send>> {
         Box::pin(process_rpc_request(ctx, req, req_body, client))

@@ -19,13 +19,12 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
-#![cfg_attr(not(feature = "native"), allow(unused_imports))]
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
 use common::crash_reports::init_crash_reports;
-use common::log::unified_log::{LevelFilter, UnifiedLoggerBuilder};
 use common::mm_ctx::MmCtxBuilder;
-use common::{block_on, double_panic_crash, safe_slurp, MM_DATETIME, MM_VERSION};
+use common::{block_on, double_panic_crash, MM_DATETIME, MM_VERSION};
 
 use gstuff::slurp;
 
@@ -42,7 +41,10 @@ use std::str;
 use self::lp_native_dex::{lp_init, lp_ports};
 use coins::update_coins_config;
 
-#[path = "database.rs"] pub mod database;
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "database.rs"]
+pub mod database;
+
 #[cfg(not(feature = "wallet-only"))]
 #[path = "lp_network.rs"]
 pub mod lp_network;
@@ -55,20 +57,15 @@ pub mod lp_ordermatch;
 pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
 
-#[cfg(any(test, not(feature = "native")))]
+#[cfg(any(test, target_arch = "wasm32"))]
 #[path = "mm2_tests.rs"]
 mod mm2_tests;
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub fn lp_main(conf: Json, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     // std::env::set_var("RUST_LOG", "debug");
-    if let Err(e) = UnifiedLoggerBuilder::default()
-        .level_filter_from_env_or_default(LevelFilter::Info)
-        .console(false)
-        .mm_log(true)
-        .try_init()
-    {
-        log!("Unified logger initialization failed: "(e))
+    if let Err(e) = init_logger() {
+        log!("Logger initialization failed: "(e))
     }
 
     // std::env::set_var("RUST_LOG", "debug");
@@ -173,7 +170,7 @@ fn help() {
         )
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)] // Not used by mm2_lib.
 pub fn mm2_main() {
     use libc::c_char;
@@ -281,11 +278,12 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn on_update_config(args: &[OsString]) -> Result<(), String> {
     let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
     let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;
 
-    let config = try_s!(safe_slurp(src_path));
+    let config = try_s!(common::safe_slurp(src_path));
     let mut config: Json = try_s!(json::from_slice(&config));
 
     let result = if config.is_array() {
@@ -306,3 +304,18 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
     try_s!(std::fs::write(&dst_path, ser.into_inner()));
     Ok(())
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn init_logger() -> Result<(), String> {
+    use common::log::unified_log::UnifiedLoggerBuilder;
+    use common::log::LogLevel;
+
+    UnifiedLoggerBuilder::default()
+        .level_filter_from_env_or_default(LogLevel::Info)
+        .console(false)
+        .mm_log(true)
+        .try_init()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn init_logger() -> Result<(), String> { Ok(()) }

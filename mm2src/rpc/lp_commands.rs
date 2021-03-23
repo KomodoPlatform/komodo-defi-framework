@@ -17,13 +17,11 @@
 //  marketmaker
 //
 
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
-#![cfg_attr(not(feature = "native"), allow(unused_imports))]
-
 use bigdecimal::BigDecimal;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
+use common::mm_metrics::MetricsOps;
 use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
 use futures::compat::Future01CompatExt;
 use http::Response;

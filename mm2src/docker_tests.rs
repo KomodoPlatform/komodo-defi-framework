@@ -18,7 +18,7 @@ extern crate fomat_macros;
 #[cfg(test)]
 #[macro_use]
 extern crate gstuff;
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[macro_use]
 extern crate lazy_static;
 #[cfg(test)]
@@ -52,7 +52,31 @@ mod swaps_file_lock_tests;
 #[path = "docker_tests/qrc20_tests.rs"]
 mod qrc20_tests;
 
-#[cfg(all(test, feature = "native"))]
+#[cfg(all(test, target_arch = "wasm32"))]
+mod docker_tests {
+    use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
+
+    pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
+        let owned_tests: Vec<_> = tests
+            .iter()
+            .map(|t| match t.testfn {
+                StaticTestFn(f) => TestDescAndFn {
+                    testfn: StaticTestFn(f),
+                    desc: t.desc.clone(),
+                },
+                StaticBenchFn(f) => TestDescAndFn {
+                    testfn: StaticBenchFn(f),
+                    desc: t.desc.clone(),
+                },
+                _ => panic!("non-static tests passed to lp_coins test runner"),
+            })
+            .collect();
+        let args: Vec<String> = std::env::args().collect();
+        let _exit_code = test_main(&args, owned_tests, None);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod docker_tests {
     #[rustfmt::skip]
     mod swaps_confs_settings_sync_tests;
@@ -1438,8 +1462,34 @@ mod docker_tests {
         block_on(mm_alice.stop()).unwrap();
     }
 
+    fn assert_eq_trade_preimages(mut actual: Json, mut expected: Json) {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        struct TradeFeeHelper {
+            coin: String,
+            amount: Json,
+            amount_fraction: Json,
+            amount_rat: Json,
+        }
+
+        // `total_fees` are arrays, they can be in a different order.
+        // Extract them and sort by coins before the comparison
+
+        let actual_total_fees = actual["result"]["total_fees"].take();
+        let mut actual_total_fees: Vec<TradeFeeHelper> = json::from_value(actual_total_fees.clone())
+            .expect(&format!("Expected an array of fees, found {:?}", actual_total_fees));
+        actual_total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin));
+
+        let expected_total_fees = expected["result"]["total_fees"].take();
+        let mut expected_total_fees: Vec<TradeFeeHelper> = json::from_value(expected_total_fees.clone())
+            .expect(&format!("Expected an array of fees, found {:?}", expected_total_fees));
+        expected_total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin));
+
+        assert_eq!(actual_total_fees, expected_total_fees);
+        assert_eq!(actual, expected);
+    }
+
     #[test]
-    fn test_trade_preimage() {
+    fn test_maker_trade_preimage() {
         let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
         let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", &priv_key);
         let my_address = mycoin.my_address().expect("!my_address");
@@ -1499,10 +1549,18 @@ mod docker_tests {
                 },
                 "volume": "9.99999",
                 "volume_fraction": { "numer": "999999", "denom": "100000" },
-                "volume_rat": [[1,[999999]],[1,[100000]]]
+                "volume_rat": [[1,[999999]],[1,[100000]]],
+                "total_fees": [
+                    {
+                        "coin": "MYCOIN",
+                        "amount": "0.00001",
+                        "amount_fraction": { "numer": "1", "denom": "100000" },
+                        "amount_rat": [[1,[1]],[1,[100000]]]
+                    },
+                ],
             }
         });
-        assert_eq!(actual, expected);
+        assert_eq_trade_preimages(actual, expected);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1531,10 +1589,18 @@ mod docker_tests {
                 },
                 "volume": "19.99998",
                 "volume_fraction": { "numer": "999999", "denom": "50000" },
-                "volume_rat": [[1,[999999]],[1,[50000]]]
+                "volume_rat": [[1,[999999]],[1,[50000]]],
+                "total_fees": [
+                    {
+                        "coin": "MYCOIN1",
+                        "amount": "0.00002",
+                        "amount_fraction": { "numer": "1", "denom": "50000" },
+                        "amount_rat": [[1,[1]],[1,[50000]]]
+                    }
+                ],
             }
         });
-        assert_eq!(actual, expected);
+        assert_eq_trade_preimages(actual, expected);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1561,36 +1627,54 @@ mod docker_tests {
                     "amount_fraction": { "numer": "0", "denom": "1" },
                     "amount_rat": [[0,[]],[1,[1]]]
                 },
+                "total_fees": [
+                    {
+                        "coin": "MYCOIN1",
+                        "amount": "0.00002",
+                        "amount_fraction": { "numer": "1", "denom": "50000" },
+                        "amount_rat": [[1,[1]],[1,[50000]]]
+                    }
+                ],
             }
         });
-        assert_eq!(actual, expected);
+        assert_eq_trade_preimages(actual, expected);
+    }
 
-        let dex_fee_threshold = MmNumber::from("0.0001");
+    #[test]
+    fn test_taker_trade_preimage() {
+        let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+        let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", &priv_key);
+        let my_address = mycoin.my_address().expect("!my_address");
+        fill_address(&mycoin, &my_address, 10.into(), 30);
+        let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", &priv_key);
+        let my_address = mycoin1.my_address().expect("!my_address");
+        fill_address(&mycoin1, &my_address, 20.into(), 30);
 
-        let rc = block_on(mm.rpc(json!({
-            "userpass": mm.userpass,
-            "method": "max_taker_vol",
-            "coin": "MYCOIN",
-        })))
+        let coins = json!([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_see": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
         .unwrap();
-        assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
-        let json: Json = json::from_str(&rc.1).unwrap();
-        let mycoin_max_vol: MmNumber =
-            json::from_value(json["result"].clone()).expect("Expected a number in fraction representation");
-        let mycoin_taker_fee = dex_fee_amount("MYCOIN", "MYCOIN1", &mycoin_max_vol, &dex_fee_threshold);
+        let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
+        block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-        let rc = block_on(mm.rpc(json!({
-            "userpass": mm.userpass,
-            "method": "max_taker_vol",
-            "coin": "MYCOIN1",
-        })))
-        .unwrap();
-        assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
-        let json: Json = json::from_str(&rc.1).unwrap();
-        let mycoin1_max_vol: MmNumber =
-            json::from_value(json["result"].clone()).expect("Expected a number in fraction representation");
-        let mycoin1_taker_fee = dex_fee_amount("MYCOIN", "MYCOIN1", &mycoin1_max_vol, &dex_fee_threshold);
+        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
+        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
 
+        // `max` field is not supported for `buy/sell` swap methods
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
             "method": "trade_preimage",
@@ -1598,6 +1682,30 @@ mod docker_tests {
             "rel": "MYCOIN1",
             "swap_method": "sell",
             "max": true,
+        })))
+        .unwrap();
+        assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
+
+        // `price` field is missing
+        let rc = block_on(mm.rpc(json!({
+            "userpass": mm.userpass,
+            "method": "trade_preimage",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "swap_method": "sell",
+            "volume": "10",
+        })))
+        .unwrap();
+        assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
+
+        let rc = block_on(mm.rpc(json!({
+            "userpass": mm.userpass,
+            "method": "trade_preimage",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "swap_method": "sell",
+            "volume": "7.77",
+            "price": "2",
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
@@ -1616,18 +1724,26 @@ mod docker_tests {
                     "amount_fraction": { "numer": "0", "denom": "1" },
                     "amount_rat": [[0,[]],[1,[1]]]
                 },
-                "volume": mycoin_max_vol.to_decimal(),
-                "volume_fraction": mycoin_max_vol.to_fraction(),
-                "volume_rat": mycoin_max_vol.to_ratio(),
-                "taker_fee": mycoin_taker_fee.to_decimal(),
-                "taker_fee_fraction": mycoin_taker_fee.to_fraction(),
-                "taker_fee_rat": mycoin_taker_fee.to_ratio(),
+                "taker_fee": {
+                    "coin": "MYCOIN",
+                    "amount": "0.01",
+                    "amount_fraction": { "numer": "1", "denom": "100" },
+                    "amount_rat": [[1,[1]],[1,[100]]]
+                },
                 "fee_to_send_taker_fee": {
                     "coin": "MYCOIN",
                     "amount": "0.00001",
                     "amount_fraction": { "numer": "1", "denom": "100000" },
                     "amount_rat": [[1,[1]],[1,[100000]]]
-                }
+                },
+                "total_fees": [
+                    {
+                        "coin": "MYCOIN",
+                        "amount": "0.01002",
+                        "amount_fraction": { "numer": "501", "denom": "50000" },
+                        "amount_rat": [[1,[501]],[1,[50000]]]
+                    }
+                ],
             }
         });
         assert_eq!(actual, expected);
@@ -1638,7 +1754,8 @@ mod docker_tests {
             "base": "MYCOIN",
             "rel": "MYCOIN1",
             "swap_method": "buy",
-            "max": true,
+            "volume": "7.77",
+            "price": "2",
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
@@ -1657,18 +1774,26 @@ mod docker_tests {
                     "amount_fraction": { "numer": "1", "denom": "50000" },
                     "amount_rat": [[1,[1]],[1,[50000]]]
                 },
-                "volume": mycoin1_max_vol.to_decimal(),
-                "volume_fraction": mycoin1_max_vol.to_fraction(),
-                "volume_rat": mycoin1_max_vol.to_ratio(),
-                "taker_fee": mycoin1_taker_fee.to_decimal(),
-                "taker_fee_fraction": mycoin1_taker_fee.to_fraction(),
-                "taker_fee_rat": mycoin1_taker_fee.to_ratio(),
+                "taker_fee": {
+                    "coin": "MYCOIN1",
+                    "amount": "0.02", // volume(7.77) * price(2) / 777
+                    "amount_fraction": { "numer": "1", "denom": "50" },
+                    "amount_rat": [[1,[1]],[1,[50]]]
+                },
                 "fee_to_send_taker_fee": {
                     "coin": "MYCOIN1",
                     "amount": "0.00002",
                     "amount_fraction": { "numer": "1", "denom": "50000" },
                     "amount_rat": [[1,[1]],[1,[50000]]]
-                }
+                },
+                "total_fees": [
+                    {
+                        "coin": "MYCOIN1",
+                        "amount": "0.02004",
+                        "amount_fraction": { "numer": "501", "denom": "25000" },
+                        "amount_rat": [[1,[501]],[1,[25000]]]
+                    }
+                ],
             }
         });
         assert_eq!(actual, expected);
@@ -2472,12 +2597,13 @@ mod docker_tests {
             "rel": "MYCOIN1",
             "price": 1,
             "volume": 1,
+            "timeout": 2,
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!sell: {}", rc.1);
 
-        log!("Give Bob 35 seconds to convert order to maker");
-        thread::sleep(Duration::from_secs(35));
+        log!("Give Bob 4 seconds to convert order to maker");
+        thread::sleep(Duration::from_secs(4));
 
         let rc = block_on(mm_alice.rpc(json! ({
             "userpass": mm_alice.userpass,

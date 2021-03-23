@@ -36,6 +36,8 @@ lazy_static! {
 
 pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_after(0., future) }
 
+pub fn spawn_boxed(future: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn(future); }
+
 /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
 pub fn spawn_after(utc: f64, future: impl Future<Output = ()> + Send + 'static) {
     let future = future.boxed();

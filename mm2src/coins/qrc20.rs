@@ -4,9 +4,9 @@ use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc2
 use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub};
-use crate::utxo::{coin_daemon_data_dir, qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy,
-                  GenerateTransactionError, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps,
-                  UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
+use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTransactionError,
+                  RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
+                  VerboseTransactionFrom, UTXO_LOCK};
 use crate::{CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee,
             TradePreimageError, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
             ValidateAddressResult, WithdrawFee, WithdrawRequest};
@@ -36,7 +36,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::deserialize;
 use serialization::serialize;
 use std::ops::{Deref, Neg};
-use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -139,8 +139,10 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
 
     fn dust_amount(&self) -> u64 { QRC20_DUST }
 
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn confpath(&self) -> Result<PathBuf, String> {
+        use crate::utxo::coin_daemon_data_dir;
+
         // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
         // "USERHOME/" prefix should be replaced with the user's home folder.
         let declared_confpath = match self.conf()["confpath"].as_str() {

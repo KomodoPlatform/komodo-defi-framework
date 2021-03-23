@@ -4,13 +4,6 @@ version = "0.1.0"
 links = "marketmaker-mainnet-lib"
 edition = "2018"
 
-[features]
-native = [
-    "hyper", "hyper-rustls", "libc", "tokio"
-]
-
-w-bindgen = ["wasm-bindgen", "web-sys"]
-
 [lib]
 name = "common"
 path = "common.rs"
@@ -19,7 +12,7 @@ doctest = false
 [dependencies]
 arrayref = "0.3"
 async-std = { version = "1.5", features = ["unstable"] }
-atomic = "^0.4.6"
+atomic = { version = "^0.4.6", features = ["nightly"] }
 async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.10.0"
@@ -35,22 +28,13 @@ futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 futures-cpupool = "0.1"
 gstuff = { version = "0.6", features = ["nightly"] }
-hdrhistogram = "7.0"
 hex = "0.3.2"
 http = "0.2"
 http-body = "0.1"
-hyper = { version = "0.13", optional = true }
-hyper-rustls = { version = "0.20", optional = true }
 itertools = "0.8"
 keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
-lazy_static = "1.3"
-libc = { version = "0.2", optional = true }
+lazy_static = "1.2"
 log = "0.4.8"
-log4rs = "0.13"
-metrics = "0.12"
-metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }
-metrics-core = "0.5"
-metrics-util = "0.3"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
@@ -60,26 +44,33 @@ paste = "1.0"
 primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
-rusqlite = { version = "0.24.2", features = ["bundled"] }
 serde = "1"
 serde_bytes = "0.11"
 serde_derive = "1"
 serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 term = "0.5"
-tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"], optional = true }
 uuid = { version = "0.7", features = ["serde", "v4"] }
-wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"], optional = true }
 winapi = "0.3"
 
-[dependencies.web-sys]
-version = "0.3.4"
-features = [
-    'console',
-]
-optional = true
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+serde_bencode = "0.2"
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
+web-sys = { version = "0.3.4", features = ["console"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
+hyper = { version = "0.13" }
+hyper-rustls = { version = "0.20" }
+libc = { version = "0.2" }
+log4rs = { version = "0.13" }
+metrics = { version = "0.12" }
+metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }
+metrics-core = { version = "0.5" }
+metrics-util = { version = "0.3" }
+rusqlite = { version = "0.24.2", features = ["bundled"] }
+tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"] }
 
 [build-dependencies]
-bindgen = "0.43"
 bzip2 = "0.3"
 cc = "1.0"
 chrono = "0.4"
@@ -89,8 +80,6 @@ futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 glob = "0.3"
 gstuff = { version = "0.6", features = ["nightly", "term"] }
-hyper = "0.13"
-hyper-rustls = "0.20"
 itertools = "0.8"
 libflate = "0.1"
 num_cpus = "1.10"

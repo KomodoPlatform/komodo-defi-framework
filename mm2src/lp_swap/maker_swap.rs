@@ -1,11 +1,9 @@
-#![cfg_attr(not(feature = "native"), allow(dead_code))]
-
 use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, check_base_coin_balance_for_swap,
             check_my_coin_balance_for_swap, check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin,
             get_locked_amount, my_swap_file_path, my_swaps_dir, recv_swap_msg, swap_topic, AtomicSwap,
-            CheckBalanceError, DetailedVolume, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TradeFeeResponse,
-            TradePreimageRequest, TradePreimageResponse, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            CheckBalanceError, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedTradeFee,
+            SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TradePreimageRequest, TransactionIdentifier,
+            WAIT_CONFIRM_INTERVAL};
 
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::NegotiationDataMsg};
 use atomic::Atomic;
@@ -38,6 +36,7 @@ fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEven
     let swap: SavedSwap = if content.is_empty() {
         SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
+            my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
             taker_amount: Some(swap.taker_amount.clone()),
@@ -147,6 +146,7 @@ pub struct MakerSwap {
     my_persistent_pub: H264,
     taker: bits256,
     uuid: Uuid,
+    my_order_uuid: Option<Uuid>,
     taker_payment_lock: Atomic<u64>,
     taker_payment_confirmed: Atomic<bool>,
     errors: PaMutex<Vec<SwapError>>,
@@ -159,6 +159,20 @@ pub struct MakerSwap {
 impl MakerSwap {
     fn w(&self) -> RwLockWriteGuard<MakerSwapMut> { self.mutable.write().unwrap() }
     fn r(&self) -> RwLockReadGuard<MakerSwapMut> { self.mutable.read().unwrap() }
+
+    #[cfg(target_arch = "wasm32")]
+    fn generate_secret(&self) -> [u8; 32] {
+        // TODO small rng uses now_ms() as seed which is completely insecure to generate the secret
+        // for swap, we must consider refactoring
+        let mut rng = common::small_rng();
+        rng.gen()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn generate_secret(&self) -> [u8; 32] {
+        let mut rng = rand::thread_rng();
+        rng.gen()
+    }
 
     fn wait_refund_until(&self) -> u64 { self.r().data.maker_payment_lock + 3700 }
 
@@ -224,6 +238,7 @@ impl MakerSwap {
         taker_amount: BigDecimal,
         my_persistent_pub: H264,
         uuid: Uuid,
+        my_order_uuid: Option<Uuid>,
         conf_settings: SwapConfirmationsSettings,
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
@@ -238,6 +253,7 @@ impl MakerSwap {
             my_persistent_pub,
             taker,
             uuid,
+            my_order_uuid,
             taker_payment_lock: Atomic::new(0),
             errors: PaMutex::new(Vec::new()),
             finished_at: Atomic::new(0),
@@ -301,16 +317,7 @@ impl MakerSwap {
             },
         };
 
-        let secret: [u8; 32] = {
-            #[cfg(feature = "native")]
-            let mut rng = rand::thread_rng();
-            // TODO small rng uses now_ms() as seed which is completely insecure to generate the secret
-            // for swap, we must consider refactoring
-            #[cfg(not(feature = "native"))]
-            let mut rng = common::small_rng();
-
-            rng.gen()
-        };
+        let secret = self.generate_secret();
         let started_at = now_ms() / 1000;
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
@@ -870,6 +877,7 @@ impl MakerSwap {
             data.taker_amount.clone(),
             my_persistent_pub,
             saved.uuid,
+            saved.my_order_uuid,
             conf_settings,
             maker_coin,
             taker_coin,
@@ -1201,6 +1209,7 @@ impl MakerSavedEvent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
+    my_order_uuid: Option<Uuid>,
     events: Vec<MakerSavedEvent>,
     maker_amount: Option<BigDecimal>,
     maker_coin: Option<String>,
@@ -1501,10 +1510,16 @@ pub async fn check_balance_for_maker_swap(
     Ok(())
 }
 
-pub async fn maker_swap_trade_preimage(
-    ctx: &MmArc,
-    req: TradePreimageRequest,
-) -> Result<TradePreimageResponse, String> {
+pub struct MakerTradePreimage {
+    /// The fee is paid per swap concerning the `base` coin.
+    pub base_coin_fee: TradeFee,
+    /// The fee is paid per swap concerning the `rel` coin.
+    pub rel_coin_fee: TradeFee,
+    /// The max available volume that can be traded (in decimal representation). Empty if the `max` argument is missing or false.
+    pub volume: Option<MmNumber>,
+}
+
+pub async fn maker_swap_trade_preimage(ctx: &MmArc, req: TradePreimageRequest) -> Result<MakerTradePreimage, String> {
     let base_coin = match lp_coinfind(&ctx, &req.base).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", req.base),
@@ -1520,6 +1535,9 @@ pub async fn maker_swap_trade_preimage(
         let balance = try_s!(base_coin.my_spendable_balance().compat().await);
         try_s!(calc_max_maker_vol(&ctx, &base_coin, &balance, FeeApproxStage::TradePreimage).await)
     } else {
+        if req.volume.is_zero() {
+            return ERR!("Expected non-zero 'volume'");
+        }
         req.volume
     };
 
@@ -1537,17 +1555,11 @@ pub async fn maker_swap_trade_preimage(
             .await
     );
 
-    let volume = if req.max {
-        Some(DetailedVolume::from(volume))
-    } else {
-        None
-    };
-    Ok(TradePreimageResponse {
-        base_coin_fee: TradeFeeResponse::from(base_coin_fee),
-        rel_coin_fee: TradeFeeResponse::from(rel_coin_fee),
+    let volume = if req.max { Some(volume) } else { None };
+    Ok(MakerTradePreimage {
+        base_coin_fee,
+        rel_coin_fee,
         volume,
-        taker_fee: None,
-        fee_to_send_taker_fee: None,
     })
 }
 

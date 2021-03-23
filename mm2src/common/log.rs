@@ -27,9 +27,8 @@ use std::thread;
 
 pub use log::{debug, error, info, trace, warn};
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 lazy_static! {
-    static ref PRINTF_LOCK: Mutex<()> = Mutex::new(());
     /// If this C callback is present then all the logging output should happen through it
     /// (and leaving stdout untouched).
     /// The *gravity* logging still gets a copy in order for the log-based tests to work.
@@ -48,14 +47,14 @@ struct Gravity {
 
 impl Gravity {
     /// Files a log chunk to be logged from the center of gravity thread.
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn chunk2log(&self, chunk: String) {
         self.landing.push(chunk);
         if thread::current().id() == self.target_thread_id {
             self.flush()
         }
     }
-    #[cfg(not(feature = "native"))]
+    #[cfg(target_arch = "wasm32")]
     fn chunk2log(&self, chunk: String) {
         writeln(&chunk);
         self.landing.push(chunk);
@@ -63,7 +62,7 @@ impl Gravity {
 
     /// Prints the collected log chunks.  
     /// `println!` is used for compatibility with unit test stdout capturing.
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     fn flush(&self) {
         let mut tail = self.tail.spinlock(77).unwrap();
         while let Ok(chunk) = self.landing.pop() {
@@ -77,7 +76,7 @@ impl Gravity {
             tail.push_back(chunk)
         }
     }
-    #[cfg(not(feature = "native"))]
+    #[cfg(target_arch = "wasm32")]
     fn flush(&self) {}
 }
 
@@ -86,7 +85,7 @@ thread_local! {
     static GRAVITY: RefCell<Option<Weak<Gravity>>> = RefCell::new (None)
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 #[doc(hidden)]
 pub fn chunk2log(mut chunk: String) {
     let used_log_output = if let Some(log_cb) = *LOG_OUTPUT.lock() {
@@ -123,7 +122,7 @@ pub fn chunk2log(mut chunk: String) {
     writeln(&chunk)
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub fn chunk2log(chunk: String) { writeln(&chunk) }
 
@@ -158,7 +157,7 @@ macro_rules! log {
         let mut buf = String::new();
         wite! (&mut buf,
             ($crate::log::short_log_time ($crate::now_ms()))
-            if cfg! (feature = "native") {", "} else {"ʷ "}
+            if cfg! (target_arch = "wasm32") {"ʷ "} else {", "}
             (::gstuff::filename (file!())) ':' (line!()) "] "
             $($args)+)
         .unwrap();
@@ -788,7 +787,7 @@ impl LogState {
     /// Useful for unit tests, since they can only capture the output made from the initial test thread
     /// (https://github.com/rust-lang/rust/issues/12309,
     ///  https://github.com/rust-lang/rust/issues/50297#issuecomment-388988381).
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn thread_gravity_on(&self) -> Result<(), String> {
         let mut gravity = try_s!(self.gravity.spinlock(77));
         if let Some(ref gravity) = *gravity {
@@ -806,11 +805,11 @@ impl LogState {
             Ok(())
         }
     }
-    #[cfg(not(feature = "native"))]
+    #[cfg(target_arch = "wasm32")]
     pub fn thread_gravity_on(&self) -> Result<(), String> { Ok(()) }
 
     /// Start intercepting the `log!` invocations happening on the current thread.
-    #[cfg(feature = "native")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn register_my_thread(&self) -> Result<(), String> {
         let gravity = try_s!(self.gravity.spinlock(77));
         if let Some(ref gravity) = *gravity {
@@ -823,11 +822,11 @@ impl LogState {
         }
         Ok(())
     }
-    #[cfg(not(feature = "native"))]
+    #[cfg(target_arch = "wasm32")]
     pub fn register_my_thread(&self) -> Result<(), String> { Ok(()) }
 }
 
-#[cfg(feature = "native")]
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for LogState {
     fn drop(&mut self) {
         // Make sure to log the chunks received from the satellite threads.
@@ -857,8 +856,39 @@ impl Drop for LogState {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum LogLevel {
+    /// A level lower than all log levels.
+    Off,
+    /// Corresponds to the `ERROR` log level.
+    Error,
+    /// Corresponds to the `WARN` log level.
+    Warn,
+    /// Corresponds to the `INFO` log level.
+    Info,
+    /// Corresponds to the `DEBUG` log level.
+    Debug,
+    /// Corresponds to the `TRACE` log level.
+    Trace,
+}
+
+impl LogLevel {
+    pub fn from_env() -> Option<LogLevel> {
+        match std::env::var("RUST_LOG").ok()?.to_lowercase().as_str() {
+            "off" => Some(LogLevel::Off),
+            "error" => Some(LogLevel::Error),
+            "warn" => Some(LogLevel::Warn),
+            "info" => Some(LogLevel::Info),
+            "debug" => Some(LogLevel::Debug),
+            "trace" => Some(LogLevel::Trace),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub mod unified_log {
-    use super::chunk2log;
+    use super::{chunk2log, LogLevel};
     pub use log::LevelFilter;
     use log::Record;
     use log4rs::{append, config,
@@ -866,7 +896,7 @@ pub mod unified_log {
 
     const MM_FORMAT: &str = "{d(%d %H:%M:%S)(utc)}, {f}:{L}] {l} {m}";
     const DEFAULT_FORMAT: &str = "[{d(%Y-%m-%d %H:%M:%S %Z)(utc)} {h({l})} {M}:{f}:{L}] {m}";
-    const DEFAULT_LEVEL_FILTER: LevelFilter = LevelFilter::Info;
+    const DEFAULT_LEVEL_FILTER: LogLevel = LogLevel::Info;
 
     pub struct UnifiedLoggerBuilder {
         console_format: String,
@@ -901,12 +931,12 @@ pub mod unified_log {
             self
         }
 
-        pub fn level_filter(mut self, filter: LevelFilter) -> UnifiedLoggerBuilder {
+        pub fn level_filter(mut self, filter: LogLevel) -> UnifiedLoggerBuilder {
             self.filter = LevelPolicy::Exact(filter);
             self
         }
 
-        pub fn level_filter_from_env_or_default(mut self, default: LevelFilter) -> UnifiedLoggerBuilder {
+        pub fn level_filter_from_env_or_default(mut self, default: LogLevel) -> UnifiedLoggerBuilder {
             self.filter = LevelPolicy::FromEnvOrDefault(default);
             self
         }
@@ -925,7 +955,7 @@ pub mod unified_log {
             let mut appenders = Vec::new();
             let level_filter = match self.filter {
                 LevelPolicy::Exact(l) => l,
-                LevelPolicy::FromEnvOrDefault(default) => Self::get_level_filter_from_env().unwrap_or(default),
+                LevelPolicy::FromEnvOrDefault(default) => LogLevel::from_env().unwrap_or(default),
             };
 
             if self.mm_log {
@@ -944,29 +974,32 @@ pub mod unified_log {
             }
 
             let app_names: Vec<_> = appenders.iter().map(|app| app.name()).collect();
-            let root = config::Root::builder().appenders(app_names).build(level_filter);
+            let root = config::Root::builder()
+                .appenders(app_names)
+                .build(LevelFilter::from(level_filter));
             let config = try_s!(config::Config::builder().appenders(appenders).build(root));
 
             try_s!(log4rs::init_config(config));
             Ok(())
         }
+    }
 
-        fn get_level_filter_from_env() -> Option<LevelFilter> {
-            match std::env::var("RUST_LOG").ok()?.to_lowercase().as_str() {
-                "off" => Some(LevelFilter::Off),
-                "error" => Some(LevelFilter::Error),
-                "warn" => Some(LevelFilter::Warn),
-                "info" => Some(LevelFilter::Info),
-                "debug" => Some(LevelFilter::Debug),
-                "trace" => Some(LevelFilter::Trace),
-                _ => None,
+    impl From<LogLevel> for LevelFilter {
+        fn from(level: LogLevel) -> Self {
+            match level {
+                LogLevel::Off => LevelFilter::Off,
+                LogLevel::Error => LevelFilter::Error,
+                LogLevel::Warn => LevelFilter::Warn,
+                LogLevel::Info => LevelFilter::Info,
+                LogLevel::Debug => LevelFilter::Debug,
+                LogLevel::Trace => LevelFilter::Trace,
             }
         }
     }
 
     enum LevelPolicy {
-        Exact(LevelFilter),
-        FromEnvOrDefault(LevelFilter),
+        Exact(LogLevel),
+        FromEnvOrDefault(LogLevel),
     }
 
     #[derive(Debug)]

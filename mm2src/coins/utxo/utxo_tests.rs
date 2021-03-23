@@ -1,10 +1,11 @@
 use super::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumBasedCoin, QtumCoin};
+use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{generate_transaction, UtxoArcBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-use crate::{CoinBalance, SwapOps, TradePreimageValue, WithdrawFee};
+#[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
+use crate::{CoinBalance, SwapOps, TradePreimageValue};
 use bigdecimal::BigDecimal;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
@@ -15,7 +16,6 @@ use gstuff::now_ms;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::deserialize;
-use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
@@ -46,6 +46,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
+#[cfg(not(target_arch = "wasm32"))]
 fn native_client_for_test() -> NativeClient { NativeClient(Arc::new(NativeClientImpl::default())) }
 
 fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&str>) -> UtxoCoinFields {
@@ -337,6 +338,7 @@ fn test_sat_from_big_decimal() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl::default();
 
@@ -447,6 +449,7 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_set_fixed_fee() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -485,6 +488,7 @@ fn test_withdraw_impl_set_fixed_fee() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -526,6 +530,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -569,6 +574,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -612,6 +618,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -643,6 +650,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_max() {
     UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
@@ -906,6 +914,7 @@ fn test_network_info_deserialization() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/617
 fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     let client = NativeClientImpl::default();
@@ -949,6 +958,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/617
 fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     let client = NativeClientImpl::default();
@@ -1024,6 +1034,7 @@ fn test_get_median_time_past_from_electrum_btc() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_median_time_past_from_native_has_median_in_get_block() {
     let client = native_client_for_test();
     NativeClientImpl::get_block_hash.mock_safe(|_, block_num| {
@@ -1047,7 +1058,10 @@ fn test_get_median_time_past_from_native_has_median_in_get_block() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
+    use std::collections::HashMap;
+
     let blocks_json_str = r#"
     [
         {"hash":"00000000000000000002eb7892b8fdfd7b8e0f089e5cdf96436de680b7e695e3","confirmations":1,"strippedsize":833287,"size":1493229,"weight":3993090,"height":632858,"version":549453824,"versionHex":"20c00000","merkleroot":"7e20760d227465d2a84fbb2617b2962f77364daa66f06b48d1010fa27923b940","tx":[],"time":1591173090,"nonce":"1594651477","bits":"171297f6","difficulty":15138043247082.88,"chainwork":"00000000000000000000000000000000000000000fff2e35384d3c16f53adda4","nTx":1601,"previousblockhash":"00000000000000000009a54084d9f4eafa3ca07af646ff8fa9031d0ac72a92aa"},
@@ -1488,6 +1502,7 @@ fn test_qtum_my_balance() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_tx_history_path_colon_should_be_escaped_for_cash_address() {
     let mut coin = utxo_coin_fields_for_test(native_client_for_test().into(), None);
     coin.conf.address_format = UtxoAddressFormat::CashAddress {
@@ -1679,6 +1694,7 @@ fn test_ordered_mature_unspents_from_cache() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_client_unspents_filtered_using_tx_cache_single_tx_in_cache() {
     let client = native_client_for_test();
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None);
@@ -1725,6 +1741,7 @@ fn test_native_client_unspents_filtered_using_tx_cache_single_tx_in_cache() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_client_unspents_filtered_using_tx_cache_single_several_chained_txs_in_cache() {
     let client = native_client_for_test();
     let coin = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None);
@@ -1869,6 +1886,7 @@ fn get_address_info_format() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_validate_address_is_mine() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -1891,6 +1909,7 @@ fn test_native_is_address_imported_validate_address_is_mine() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_validate_address_is_watch_only() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -1913,6 +1932,7 @@ fn test_native_is_address_imported_validate_address_is_watch_only() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_validate_address_false() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -1935,6 +1955,7 @@ fn test_native_is_address_imported_validate_address_false() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_fallback_to_address_info_is_mine() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -1965,6 +1986,7 @@ fn test_native_is_address_imported_fallback_to_address_info_is_mine() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_fallback_to_address_info_is_watch_only() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -1995,6 +2017,7 @@ fn test_native_is_address_imported_fallback_to_address_info_is_watch_only() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_native_is_address_imported_fallback_to_address_info_false() {
     let client = native_client_for_test();
     NativeClientImpl::validate_address.mock_safe(|_, _| {
@@ -2027,6 +2050,7 @@ fn test_native_is_address_imported_fallback_to_address_info_false() {
 /// Test if the [`NativeClient::find_output_spend`] handle the conflicting transactions correctly.
 /// https://github.com/KomodoPlatform/atomicDEX-API/pull/775
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_find_output_spend_skips_conflicting_transactions() {
     const LIST_SINCE_BLOCK_JSON: &str = r#"{"transactions":[{"involvesWatchonly":true,"account":"","address":"RAsbVN52LC2hEp3UWWSLbV8pJ8CneKjW9F","category":"send","amount":-0.01537462,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"220c337006b2581c3da734ef9f1106601e8538ebab823d0dd6719a4d4580fd04","walletconflicts":["a2144bee4eac4b41ab1aed2dd8f854785b3ddebd617d48696dd84e62d129544b"],"time":1607831631,"timereceived":1607831631,"vjoinsplit":[],"size":320},{"involvesWatchonly":true,"account":"","address":"RAsbVN52LC2hEp3UWWSLbV8pJ8CneKjW9F","category":"send","amount":-0.01537462,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"6fb83afb1bf309515fa429814bf07552eea951656fdee913f3aa687d513cd720","walletconflicts":["4aad6471f59e5912349cd7679bc029bfbd5da54d34c235d20500249f98f549e4"],"time":1607831556,"timereceived":1607831556,"vjoinsplit":[],"size":320},{"account":"","address":"RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","category":"receive","amount":0.54623851,"vout":2,"rawconfirmations":1617,"confirmations":1617,"blockhash":"000000000c33a387d73180220a5a8f2fe6081bad9bdfc0dba5a9985abcee8294","blockindex":7,"blocktime":1607957613,"expiryheight":0,"txid":"45e4900a2b330800a356a74ce2a97370596ad3a25e689e3ed5c36e421d12bbf7","walletconflicts":[],"time":1607957175,"timereceived":1607957175,"vjoinsplit":[],"size":567},{"involvesWatchonly":true,"account":"","address":"RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","category":"send","amount":-0.00797200,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"bfc99c06d1a060cdbeba05620dc1c6fdb7351eb4c04b7aae578688ca6aeaeafd","walletconflicts":[],"time":1607957792,"timereceived":1607957792,"vjoinsplit":[],"size":286}],"lastblock":"06082d363f78174fd13b126994210d3c3ad9d073ee3983ad59fe8b76e6e3e071"}"#;
     // in the json above this transaction is only one not conflicting
@@ -2068,7 +2092,9 @@ fn test_find_output_spend_skips_conflicting_transactions() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_qtum_is_unspent_mature() {
+    use crate::utxo::qtum::QtumBasedCoin;
     use rpc::v1::types::{ScriptType, SignedTransactionOutput, TransactionOutputScript};
 
     let mut coin_fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(native_client_for_test()), None);
@@ -2216,6 +2242,25 @@ fn test_validate_fee_min_block() {
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/857
+fn test_validate_fee_bch_70_bytes_signature() {
+    let rpc_client = electrum_client_for_test(&[
+        "electrum1.cipig.net:10055",
+        "electrum2.cipig.net:10055",
+        "electrum3.cipig.net:10055",
+    ]);
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None);
+    // https://blockchair.com/bitcoin-cash/transaction/ccee05a6b5bbc6f50d2a65a5a3a04690d3e2d81082ad57d3ab471189f53dd70d
+    let tx_bytes = hex::decode("0100000002cae89775f264e50f14238be86a7184b7f77bfe26f54067b794c546ec5eb9c91a020000006b483045022100d6ed080f722a0637a37552382f462230cc438984bc564bdb4b7094f06cfa38fa022062304a52602df1fbb3bebac4f56e1632ad456f62d9031f4983f07e546c8ec4d8412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff11f386a6fe8f0431cb84f549b59be00f05e78f4a8a926c5e023a0d5f9112e8200000000069463043021f17eb93ed20a6f2cd357eabb41a4ec6329000ddc6d5b42ecbe642c5d41b206a022026bc4920c4ce3af751283574baa8e4a3efd4dad0d8fe6ba3ddf5d75628d36fda412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac57481c00000000001976a914bac11ce4cd2b1df2769c470d09b54f86df737e3c88ac035b4a60").unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
+    let amount: BigDecimal = "0.0001".parse().unwrap();
+    let sender_pub = hex::decode("02ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521").unwrap();
+    coin.validate_fee(&taker_fee_tx, &sender_pub, &*DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0)
+        .wait()
+        .unwrap();
 }
 
 #[test]
