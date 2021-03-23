@@ -175,7 +175,7 @@ enum TargetArch {
 
 impl TargetArch {
     fn detect() -> Option<TargetArch> {
-        match env::var("CARGO_CFG_TARGET_ARCH") {
+        match var("CARGO_CFG_TARGET_ARCH") {
             Ok(arch) => Some(TargetArch::from(arch)),
             Err(e) => {
                 eprintln!("Error on get CARGO_CFG_TARGET_ARCH env: {}", e);
