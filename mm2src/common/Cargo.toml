@@ -60,7 +60,9 @@ web-sys = { version = "0.3.4", features = ["console"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
 hyper = { version = "0.13" }
-hyper-rustls = { version = "0.20" }
+# using webpki-tokio to avoid rejecting valid certificates
+# got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
+hyper-rustls = { version = "0.20", default-features = false, features = ["webpki-tokio"] }
 libc = { version = "0.2" }
 log4rs = { version = "0.13" }
 metrics = { version = "0.12" }

@@ -1,0 +1,3 @@
+#!/bin/bash
+source userpass
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"BNBT\",\"urls\":[\"https://data-seed-prebsc-1-s2.binance.org:8545\"],\"swap_contract_address\":\"0xcCD17C913aD7b772755Ad4F0BDFF7B34C6339150\"}"

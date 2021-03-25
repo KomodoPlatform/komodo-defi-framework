@@ -132,7 +132,6 @@ jobs:
         inputs:
           action: edit
           gitHubConnection: artemii235
-          isPreRelease: true
           assets: 'upload/*'
           assetUploadMode: replace
           tagSource: manual

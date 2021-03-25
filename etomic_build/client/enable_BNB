@@ -1,0 +1,3 @@
+#!/bin/bash
+source userpass
+curl --url "http://127.0.0.1:7783" --data "{\"userpass\":\"$userpass\",\"method\":\"enable\",\"coin\":\"BNB\",\"urls\":[\"https://bsc-dataseed.binance.org\"],\"swap_contract_address\":\"0xeDc5b89Fe1f0382F9E4316069971D90a0951DB31\"}"

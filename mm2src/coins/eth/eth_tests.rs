@@ -822,7 +822,7 @@ fn test_get_fee_to_send_taker_fee() {
 
     EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
     EthCoinImpl::estimate_gas
-        .mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(TRANSFER_GAS_LIMIT.into()))));
+        .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(TRANSFER_GAS_LIMIT.into()))));
 
     // fee to send taker fee is `TRANSFER_GAS_LIMIT * gas_price` always.
     let amount = u256_to_big_decimal((TRANSFER_GAS_LIMIT * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");

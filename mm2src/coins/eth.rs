@@ -292,12 +292,9 @@ impl EthCoinImpl {
         Box::new(fut)
     }
 
-    fn estimate_gas(
-        &self,
-        req: CallRequest,
-        block: Option<BlockNumber>,
-    ) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
-        Box::new(self.web3.eth().estimate_gas(req, block))
+    fn estimate_gas(&self, req: CallRequest) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
+        // always using None block number as old Geth version accept only single argument in this RPC
+        Box::new(self.web3.eth().estimate_gas(req, None))
     }
 
     /// Gets `ReceiverSpent` events from etomic swap smart contract since `from_block`
@@ -425,8 +422,14 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
         Some(_) => return ERR!("Unsupported input fee type"),
         None => {
             let gas_price = try_s!(coin.get_gas_price().compat().await);
+            // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
+            let eth_value_for_estimate = if req.max && coin.coin_type == EthCoinType::Eth {
+                eth_value - gas_price * U256::from(21000)
+            } else {
+                eth_value
+            };
             let estimate_gas_req = CallRequest {
-                value: Some(eth_value),
+                value: Some(eth_value_for_estimate),
                 data: Some(data.clone().into()),
                 from: Some(coin.my_address),
                 to: call_addr,
@@ -435,7 +438,7 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
                 // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
                 gas_price: Some(gas_price),
             };
-            let gas_fut = coin.estimate_gas(estimate_gas_req, None).compat();
+            let gas_fut = coin.estimate_gas(estimate_gas_req).compat();
             (try_s!(gas_fut.await), gas_price)
         },
     };
@@ -2602,10 +2605,9 @@ impl MmCoin for EthCoin {
             // Please note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
             // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
             let gas_limit = try_map!(
-                coin.estimate_gas(estimate_gas_req, None).compat().await,
+                coin.estimate_gas(estimate_gas_req).compat().await,
                 TradePreimageError::Other
             );
-
             let total_fee = gas_limit * gas_price;
             let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
             Ok(TradeFee {
