@@ -16,7 +16,7 @@ We need the Nightly revision of Rust, such as
 
 ### Get the source code
 
-    git clone --depth=1 git@gitlab.com:artemciy/supernet.git -b mm2-cross
+    git clone --depth=1 git@gitlab.com:KomodoPlatform/supernet.git -b mm2.1-cross
     cd supernet
     git log --pretty=format:'%h' -n 1 > MM_VERSION
     git log --pretty=format:'%cI' -n 1 > MM_DATETIME
