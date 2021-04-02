@@ -138,7 +138,7 @@ where
 {
     path.as_ref()
         .to_str()
-        .unwrap_or_else(|| panic!("Non-stringy path {:?}", path))
+        .unwrap_or_else(|| panic!("Non-stringy path {:?}", path.as_ref().display()))
         .into()
 }
 
