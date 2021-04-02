@@ -7,9 +7,8 @@ use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_sw
                         find_metrics_in_json, from_env_file, get_passphrase, mm_spat, LocalStart, MarketMakerIt,
                         RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::mm_metrics::{MetricType, MetricsJson};
-use common::mm_number::Fraction;
+use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
-use common::BigInt;
 use common::{block_on, slurp};
 use http::StatusCode;
 #[cfg(not(target_arch = "wasm32"))]
@@ -25,7 +24,7 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[path = "mm2_tests/structs.rs"] mod structs;
+#[path = "mm2_tests/structs.rs"] pub mod structs;
 use structs::*;
 
 // TODO: Consider and/or try moving the integration tests into separate Rust files.
@@ -2043,7 +2042,8 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn orderbook_should_display_rational_amounts() {
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/859
+fn orderbook_extended_data() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","protocol":{"type":"UTXO"}},
@@ -2082,21 +2082,28 @@ fn orderbook_should_display_rational_amounts() {
         "electrum1.cipig.net:10018",
     ]));
 
-    let price = BigRational::new(9.into(), 10.into());
-    let volume = BigRational::new(9.into(), 10.into());
+    let bob_orders = &[
+        // (base, rel, price, volume)
+        ("RICK", "MORTY", "0.9", "0.9"),
+        ("RICK", "MORTY", "0.8", "0.9"),
+        ("RICK", "MORTY", "0.7", "0.9"),
+        ("MORTY", "RICK", "0.8", "0.9"),
+        ("MORTY", "RICK", "1", "0.9"),
+    ];
 
-    // create order with rational amount and price
-    let rc = block_on(mm.rpc(json! ({
-        "userpass": mm.userpass,
-        "method": "setprice",
-        "base": "RICK",
-        "rel": "MORTY",
-        "price": price,
-        "volume": volume,
-        "cancel_previous": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    for (base, rel, price, volume) in bob_orders {
+        let rc = block_on(mm.rpc(json!({
+            "userpass": mm.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
 
     thread::sleep(Duration::from_secs(1));
     log!("Get RICK/MORTY orderbook");
@@ -2110,44 +2117,41 @@ fn orderbook_should_display_rational_amounts() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
-    assert_eq!(orderbook.asks.len(), 1, "RICK/MORTY orderbook must have exactly 1 ask");
-    assert_eq!(price, orderbook.asks[0].price_rat);
-    assert_eq!(volume, orderbook.asks[0].max_volume_rat);
+    log!("orderbook "[rc.1]);
+    let expected_total_asks_base_vol = MmNumber::from("2.7");
+    assert_eq!(expected_total_asks_base_vol.to_decimal(), orderbook.total_asks_base_vol);
 
-    let nine = BigInt::from(9);
-    let ten = BigInt::from(10);
-    // should also display fraction
-    assert_eq!(nine, *orderbook.asks[0].price_fraction.numer());
-    assert_eq!(ten, *orderbook.asks[0].price_fraction.denom());
+    let expected_total_bids_base_vol = MmNumber::from("1.62");
+    assert_eq!(expected_total_bids_base_vol.to_decimal(), orderbook.total_bids_base_vol);
 
-    assert_eq!(nine, *orderbook.asks[0].max_volume_fraction.numer());
-    assert_eq!(ten, *orderbook.asks[0].max_volume_fraction.denom());
+    let expected_total_asks_rel_vol = MmNumber::from("2.16");
+    assert_eq!(expected_total_asks_rel_vol.to_decimal(), orderbook.total_asks_rel_vol);
 
-    log!("Get MORTY/RICK orderbook");
-    let rc = block_on(mm.rpc(json! ({
-        "userpass": mm.userpass,
-        "method": "orderbook",
-        "base": "MORTY",
-        "rel": "RICK",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+    let expected_total_bids_rel_vol = MmNumber::from("1.8");
+    assert_eq!(expected_total_bids_rel_vol.to_decimal(), orderbook.total_bids_rel_vol);
 
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
-    assert_eq!(orderbook.bids.len(), 1, "MORTY/RICK orderbook must have exactly 1 bid");
+    fn check_price_and_vol_aggr(
+        order: &OrderbookEntryAggregate,
+        price: &'static str,
+        base_aggr: &'static str,
+        rel_aggr: &'static str,
+    ) {
+        let price = MmNumber::from(price);
+        assert_eq!(price.to_decimal(), order.price);
 
-    let price = BigRational::new(10.into(), 9.into());
-    assert_eq!(price, orderbook.bids[0].price_rat);
-    assert_eq!(volume, orderbook.bids[0].max_volume_rat);
+        let base_aggr = MmNumber::from(base_aggr);
+        assert_eq!(base_aggr.to_decimal(), order.base_max_volume_aggr);
 
-    // should also display fraction
-    assert_eq!(ten, *orderbook.bids[0].price_fraction.numer());
-    assert_eq!(nine, *orderbook.bids[0].price_fraction.denom());
+        let rel_aggr = MmNumber::from(rel_aggr);
+        assert_eq!(rel_aggr.to_decimal(), order.rel_max_volume_aggr);
+    }
 
-    assert_eq!(nine, *orderbook.bids[0].max_volume_fraction.numer());
-    assert_eq!(ten, *orderbook.bids[0].max_volume_fraction.denom());
+    check_price_and_vol_aggr(&orderbook.asks[0], "0.9", "2.7", "2.16");
+    check_price_and_vol_aggr(&orderbook.asks[1], "0.8", "1.8", "1.35");
+    check_price_and_vol_aggr(&orderbook.asks[2], "0.7", "0.9", "0.63");
+
+    check_price_and_vol_aggr(&orderbook.bids[0], "1.25", "0.72", "0.9");
+    check_price_and_vol_aggr(&orderbook.bids[1], "1", "1.62", "1.8");
 }
 
 #[test]
@@ -3750,7 +3754,7 @@ fn test_convert_eth_address() {
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":500,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4051,7 +4055,7 @@ fn test_validateaddress() {
 fn qrc20_activate_electrum() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":500,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4095,7 +4099,7 @@ fn test_qrc20_withdraw() {
     // corresponding private key: [3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72, 172, 110, 180, 13, 123, 179, 10, 49]
     let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":500,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4173,7 +4177,7 @@ fn test_qrc20_withdraw() {
 fn test_qrc20_withdraw_error() {
     let passphrase = "album hollow help heart use bird response large lounge fat elbow coral";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":500,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4285,7 +4289,7 @@ fn test_qrc20_withdraw_error() {
 fn test_qrc20_tx_history() {
     let passphrase = "daring blind measure rebuild grab boost fix favorite nurse stereo april rookie";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":500,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -5303,7 +5307,7 @@ fn test_setprice_min_volume_dust() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let response: SetPriceResult = json::from_str(&rc.1).unwrap();
+    let response: SetPriceResponse = json::from_str(&rc.1).unwrap();
     let expected_min = BigDecimal::from(1);
     assert_eq!(expected_min, response.result.min_base_vol);
 }

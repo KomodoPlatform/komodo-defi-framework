@@ -2160,7 +2160,7 @@ fn test_qtum_is_unspent_mature() {
 
 #[test]
 #[ignore]
-// TODO it fails in certain cases of the tx fee, need to investigate
+// TODO it fails at least when fee is 2055837 sat per kbyte, need to investigate
 fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let rpc_client = electrum_client_for_test(&["95.217.83.126:10001"]);
     let mut coin_fields = utxo_coin_fields_for_test(

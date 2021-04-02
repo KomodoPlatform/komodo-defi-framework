@@ -24,8 +24,7 @@ use bigdecimal::BigDecimal;
 use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
-use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, lp_coinfind, BalanceTradeFeeUpdatedHandler,
-            FeeApproxStage, MmCoinEnum};
+use coins::{lp_coinfind, BalanceTradeFeeUpdatedHandler, FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
@@ -64,12 +63,14 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           SwapConfirmationsSettings, TakerSwap};
 pub use best_orders::best_orders_rpc;
 pub use orderbook_depth::orderbook_depth_rpc;
+pub use orderbook_rpc::orderbook_rpc;
 
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
 #[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
 #[path = "lp_ordermatch/order_requests_tracker.rs"]
 mod order_requests_tracker;
 #[path = "lp_ordermatch/orderbook_depth.rs"] mod orderbook_depth;
+#[path = "lp_ordermatch/orderbook_rpc.rs"] mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
 mod ordermatch_tests;
@@ -3585,7 +3586,7 @@ pub async fn cancel_all_orders(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>
 /// # Safety
 ///
 /// The function locks [`MmCtx::p2p_ctx`] and [`MmCtx::ordermatch_ctx`]
-async fn subscribe_to_orderbook_topic(
+pub(self) async fn subscribe_to_orderbook_topic(
     ctx: &MmArc,
     base: &str,
     rel: &str,
@@ -3667,110 +3668,6 @@ pub struct RpcOrderbookEntry {
     rel_max_volume: DetailedRelMaxVolume,
     #[serde(flatten)]
     rel_min_volume: DetailedRelMinVolume,
-}
-
-#[derive(Debug, Serialize)]
-pub struct OrderbookResponse {
-    #[serde(rename = "askdepth")]
-    ask_depth: u32,
-    asks: Vec<RpcOrderbookEntry>,
-    base: String,
-    #[serde(rename = "biddepth")]
-    bid_depth: u32,
-    bids: Vec<RpcOrderbookEntry>,
-    netid: u16,
-    #[serde(rename = "numasks")]
-    num_asks: usize,
-    #[serde(rename = "numbids")]
-    num_bids: usize,
-    rel: String,
-    timestamp: u64,
-}
-
-#[derive(Deserialize)]
-struct OrderbookReq {
-    base: String,
-    rel: String,
-}
-
-pub async fn orderbook(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: OrderbookReq = try_s!(json::from_value(req));
-    if req.base == req.rel {
-        return ERR!("Base and rel must be different coins");
-    }
-    let base_coin_conf = coin_conf(&ctx, &req.base);
-    if base_coin_conf.is_null() {
-        return ERR!("Coin {} is not found in config", req.base);
-    }
-    let rel_coin_conf = coin_conf(&ctx, &req.rel);
-    if rel_coin_conf.is_null() {
-        return ERR!("Coin {} is not found in config", req.rel);
-    }
-    let request_orderbook = true;
-    try_s!(subscribe_to_orderbook_topic(&ctx, &req.base, &req.rel, request_orderbook).await);
-    let ordermatch_ctx: Arc<OrdermatchContext> = try_s!(OrdermatchContext::from_ctx(&ctx));
-    let orderbook = ordermatch_ctx.orderbook.lock().await;
-    let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
-
-    let mut asks = match orderbook.unordered.get(&(req.base.clone(), req.rel.clone())) {
-        Some(uuids) => {
-            let mut orderbook_entries = Vec::new();
-            for uuid in uuids {
-                let ask = orderbook.order_set.get(uuid).ok_or(ERRL!(
-                    "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",
-                    uuid
-                ))?;
-
-                let address = try_s!(address_by_coin_conf_and_pubkey_str(
-                    &req.base,
-                    &base_coin_conf,
-                    &ask.pubkey
-                ));
-                let is_mine = my_pubsecp == ask.pubkey;
-                orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
-            }
-            orderbook_entries
-        },
-        None => Vec::new(),
-    };
-    asks.sort_unstable_by(|ask1, ask2| ask2.price_rat.cmp(&ask1.price_rat));
-
-    let mut bids = match orderbook.unordered.get(&(req.rel.clone(), req.base.clone())) {
-        Some(uuids) => {
-            let mut orderbook_entries = vec![];
-            for uuid in uuids {
-                let bid = orderbook.order_set.get(uuid).ok_or(ERRL!(
-                    "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",
-                    uuid
-                ))?;
-                let address = try_s!(address_by_coin_conf_and_pubkey_str(
-                    &req.rel,
-                    &rel_coin_conf,
-                    &bid.pubkey
-                ));
-                let is_mine = my_pubsecp == bid.pubkey;
-                orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
-            }
-            orderbook_entries
-        },
-        None => vec![],
-    };
-    bids.sort_unstable_by(|bid1, bid2| bid2.price_rat.cmp(&bid1.price_rat));
-
-    let response = OrderbookResponse {
-        num_asks: asks.len(),
-        num_bids: bids.len(),
-        ask_depth: 0,
-        asks,
-        base: req.base,
-        bid_depth: 0,
-        bids,
-        netid: ctx.netid(),
-        rel: req.rel,
-        timestamp: now_ms() / 1000,
-    };
-    let response = try_s!(json::to_vec(&response));
-    Ok(try_s!(Response::builder().body(response)))
 }
 
 fn choose_maker_confs_and_notas(

@@ -2488,6 +2488,7 @@ impl MmCoin for EthCoin {
             Ok(TradeFee {
                 coin: fee_coin.into(),
                 amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
+                paid_from_trading_vol: false,
             })
         }))
     }
@@ -2535,6 +2536,7 @@ impl MmCoin for EthCoin {
             Ok(TradeFee {
                 coin: fee_coin.into(),
                 amount: amount.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())
@@ -2557,6 +2559,7 @@ impl MmCoin for EthCoin {
             Ok(TradeFee {
                 coin: fee_coin.into(),
                 amount: amount.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())
@@ -2613,6 +2616,7 @@ impl MmCoin for EthCoin {
             Ok(TradeFee {
                 coin: fee_coin.into(),
                 amount: amount.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())

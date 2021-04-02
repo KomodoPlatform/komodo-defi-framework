@@ -1852,6 +1852,7 @@ where
         Ok(TradeFee {
             coin: ticker,
             amount: big_decimal_from_sat(amount as i64, decimals).into(),
+            paid_from_trading_vol: false,
         })
     };
     Box::new(fut.boxed().compat())
@@ -1972,22 +1973,27 @@ where
         Ok(TradeFee {
             coin: coin.as_ref().conf.ticker.clone(),
             amount: fee_amount.into(),
+            paid_from_trading_vol: false,
         })
     };
     Box::new(fut.boxed().compat())
 }
 
-/// Payment sender should not pay fee for sending Maker Payment.
-/// Even if refund will be required the fee will be deducted from P2SH input.
-pub fn get_receiver_trade_fee<T>(coin: &T) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send>
+/// The fee to spend (receive) other payment is deducted from the trading amount so we should display it
+pub fn get_receiver_trade_fee<T>(coin: T) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send>
 where
-    T: AsRef<UtxoCoinFields>,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    let trade_fee = TradeFee {
-        coin: coin.as_ref().conf.ticker.clone(),
-        amount: 0.into(),
+    let fut = async move {
+        let amount_sat = try_map!(get_htlc_spend_fee(&coin).await, TradePreimageError::Other);
+        let amount = big_decimal_from_sat_unsigned(amount_sat, coin.as_ref().decimals).into();
+        Ok(TradeFee {
+            coin: coin.as_ref().conf.ticker.clone(),
+            amount,
+            paid_from_trading_vol: true,
+        })
     };
-    Box::new(futures01::future::ok(trade_fee))
+    Box::new(fut.boxed().compat())
 }
 
 pub fn get_fee_to_send_taker_fee<T>(
@@ -2016,6 +2022,7 @@ where
         Ok(TradeFee {
             coin: coin.ticker().to_owned(),
             amount: fee_amount.into(),
+            paid_from_trading_vol: false,
         })
     };
     Box::new(fut.boxed().compat())
@@ -2226,6 +2233,10 @@ pub fn swap_contract_address() -> Option<BytesJson> { None }
 
 /// Convert satoshis to BigDecimal amount of coin units
 pub fn big_decimal_from_sat(satoshis: i64, decimals: u8) -> BigDecimal {
+    BigDecimal::from(satoshis) / BigDecimal::from(10u64.pow(decimals as u32))
+}
+
+pub fn big_decimal_from_sat_unsigned(satoshis: u64, decimals: u8) -> BigDecimal {
     BigDecimal::from(satoshis) / BigDecimal::from(10u64.pow(decimals as u32))
 }
 

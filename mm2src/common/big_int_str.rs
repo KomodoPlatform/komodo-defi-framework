@@ -3,7 +3,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
 /// BigInt wrapper de/serializable from/to string representation
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct BigIntStr(BigInt);
 
 impl fmt::Debug for BigIntStr {

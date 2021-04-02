@@ -37,7 +37,7 @@ use std::net::SocketAddr;
 
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
-                                orderbook, orderbook_depth_rpc, sell, set_price};
+                                orderbook_depth_rpc, orderbook_rpc, sell, set_price};
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, coins_needed_for_kick_start, import_swaps,
                           list_banned_pubkeys, max_taker_vol, my_recent_swaps, my_swap_status, recover_funds_of_swap,
@@ -177,7 +177,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "order_status" => hyres(order_status(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
-        "orderbook" => hyres(orderbook(ctx, req)),
+        "orderbook" => hyres(orderbook_rpc(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "orderbook_depth" => hyres(orderbook_depth_rpc(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]

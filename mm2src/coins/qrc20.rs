@@ -948,6 +948,7 @@ impl MmCoin for Qrc20Coin {
             Ok(TradeFee {
                 coin: selfi.platform.clone(),
                 amount: big_decimal_from_sat(fee as i64, selfi.utxo.decimals).into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())
@@ -1016,6 +1017,7 @@ impl MmCoin for Qrc20Coin {
             Ok(TradeFee {
                 coin: selfi.platform.clone(),
                 amount: total_fee.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())
@@ -1046,6 +1048,7 @@ impl MmCoin for Qrc20Coin {
             Ok(TradeFee {
                 coin: selfi.platform.clone(),
                 amount: total_fee.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())
@@ -1077,6 +1080,7 @@ impl MmCoin for Qrc20Coin {
             Ok(TradeFee {
                 coin: selfi.platform.clone(),
                 amount: total_fee.into(),
+                paid_from_trading_vol: false,
             })
         };
         Box::new(fut.boxed().compat())

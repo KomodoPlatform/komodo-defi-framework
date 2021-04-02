@@ -353,11 +353,11 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
         .flatten()
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
-                total_amount = total_amount + locked.amount;
+                total_amount += locked.amount;
             }
             if let Some(trade_fee) = locked.trade_fee {
-                if trade_fee.coin == coin {
-                    total_amount = total_amount + trade_fee.amount;
+                if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                    total_amount += trade_fee.amount;
                 }
             }
             total_amount
@@ -387,11 +387,11 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
         .flatten()
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
-                total_amount = total_amount + locked.amount;
+                total_amount += locked.amount;
             }
             if let Some(trade_fee) = locked.trade_fee {
-                if trade_fee.coin == coin {
-                    total_amount = total_amount + trade_fee.amount;
+                if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                    total_amount += trade_fee.amount;
                 }
             }
             total_amount
@@ -437,6 +437,9 @@ pub async fn check_other_coin_balance_for_swap(
     swap_uuid: Option<&Uuid>,
     trade_fee: TradeFee,
 ) -> Result<(), CheckBalanceError> {
+    if trade_fee.paid_from_trading_vol {
+        return Ok(());
+    }
     let ticker = coin.ticker();
     info!("Check other_coin '{}' balance for swap", ticker);
     let balance = MmNumber::from(try_map!(
@@ -525,7 +528,7 @@ pub async fn check_my_coin_balance_for_swap(
                 return Err(CheckBalanceError::Other(err));
             }
             // increase `trade_fee` by the `fee_to_send_dex_fee`
-            trade_fee.amount = trade_fee.amount + fee_to_send_dex_fee.amount;
+            trade_fee.amount += fee_to_send_dex_fee.amount;
             dex_fee
         },
         None => MmNumber::from(0),
@@ -925,13 +928,17 @@ impl SavedSwap {
 pub struct SavedTradeFee {
     coin: String,
     amount: BigDecimal,
+    #[serde(default)]
+    paid_from_trading_vol: bool,
 }
 
 impl From<SavedTradeFee> for TradeFee {
     fn from(orig: SavedTradeFee) -> Self {
+        // used to calculate locked amount so paid_from_trading_vol doesn't matter here
         TradeFee {
             coin: orig.coin,
             amount: orig.amount.into(),
+            paid_from_trading_vol: orig.paid_from_trading_vol,
         }
     }
 }
@@ -940,7 +947,8 @@ impl From<TradeFee> for SavedTradeFee {
     fn from(orig: TradeFee) -> Self {
         SavedTradeFee {
             coin: orig.coin,
-            amount: orig.amount.to_decimal(),
+            amount: orig.amount.into(),
+            paid_from_trading_vol: orig.paid_from_trading_vol,
         }
     }
 }
@@ -1077,14 +1085,14 @@ pub enum TradePreimageResponse {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(flatten)]
         volume: Option<DetailedVolume>,
-        total_fees: Vec<TradeFeeResponse>,
+        total_fees: Vec<TotalTradeFeeResponse>,
     },
     TakerPreimage {
         base_coin_fee: TradeFeeResponse,
         rel_coin_fee: TradeFeeResponse,
         taker_fee: TradeFeeResponse,
         fee_to_send_taker_fee: TradeFeeResponse,
-        total_fees: Vec<TradeFeeResponse>,
+        total_fees: Vec<TotalTradeFeeResponse>,
     },
 }
 
@@ -1100,7 +1108,7 @@ impl From<MakerTradePreimage> for TradePreimageResponse {
 
         let total_fees = total_fees
             .into_iter()
-            .filter_map(TradePreimageResponse::filter_zero_fees)
+            .filter_map(TradePreimageResponse::filter_zero_total_fees)
             .collect();
         let volume = maker.volume.map(DetailedVolume::from);
         TradePreimageResponse::MakerPreimage {
@@ -1130,7 +1138,7 @@ impl From<TakerTradePreimage> for TradePreimageResponse {
 
         let total_fees = total_fees
             .into_iter()
-            .filter_map(TradePreimageResponse::filter_zero_fees)
+            .filter_map(TradePreimageResponse::filter_zero_total_fees)
             .collect();
         TradePreimageResponse::TakerPreimage {
             base_coin_fee,
@@ -1143,24 +1151,23 @@ impl From<TakerTradePreimage> for TradePreimageResponse {
 }
 
 impl TradePreimageResponse {
-    fn accumulate_total_fees(total_fees: &mut HashMap<String, TradeFee>, fee: TradeFee) {
+    fn accumulate_total_fees(total_fees: &mut HashMap<String, TotalTradeFee>, fee: TradeFee) {
         use std::collections::hash_map::Entry;
         match total_fees.entry(fee.coin.clone()) {
             Entry::Occupied(mut entry) => {
-                let total_fee = entry.get_mut();
-                total_fee.amount = &total_fee.amount + &fee.amount;
+                entry.get_mut().add_trade_fee(fee.amount, fee.paid_from_trading_vol);
             },
             Entry::Vacant(entry) => {
-                entry.insert(fee);
+                entry.insert(fee.into());
             },
         }
     }
 
-    fn filter_zero_fees((_coin, fee): (String, TradeFee)) -> Option<TradeFeeResponse> {
+    fn filter_zero_total_fees((_coin, fee): (String, TotalTradeFee)) -> Option<TotalTradeFeeResponse> {
         if fee.amount.is_zero() {
             None
         } else {
-            Some(TradeFeeResponse::from(fee))
+            Some(TotalTradeFeeResponse::from(fee))
         }
     }
 }
@@ -1170,6 +1177,7 @@ pub struct TradeFeeResponse {
     coin: String,
     #[serde(flatten)]
     amount: DetailedAmount,
+    paid_from_trading_vol: bool,
 }
 
 impl From<TradeFee> for TradeFeeResponse {
@@ -1177,12 +1185,64 @@ impl From<TradeFee> for TradeFeeResponse {
         TradeFeeResponse {
             coin: orig.coin,
             amount: DetailedAmount::from(orig.amount),
+            paid_from_trading_vol: orig.paid_from_trading_vol,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TotalTradeFee {
+    coin: String,
+    amount: MmNumber,
+    required_balance: MmNumber,
+}
+
+impl TotalTradeFee {
+    fn add_trade_fee(&mut self, amount: MmNumber, paid_from_trading_vol: bool) {
+        self.amount += &amount;
+        if !paid_from_trading_vol {
+            self.required_balance += amount;
+        }
+    }
+}
+
+impl From<TradeFee> for TotalTradeFee {
+    fn from(orig: TradeFee) -> TotalTradeFee {
+        let required_balance = if orig.paid_from_trading_vol {
+            0.into()
+        } else {
+            orig.amount.clone()
+        };
+        TotalTradeFee {
+            coin: orig.coin,
+            amount: orig.amount,
+            required_balance,
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct TotalTradeFeeResponse {
+    coin: String,
+    #[serde(flatten)]
+    amount: DetailedAmount,
+    #[serde(flatten)]
+    required_balance: DetailedRequiredBalance,
+}
+
+impl From<TotalTradeFee> for TotalTradeFeeResponse {
+    fn from(orig: TotalTradeFee) -> Self {
+        TotalTradeFeeResponse {
+            coin: orig.coin,
+            amount: orig.amount.into(),
+            required_balance: orig.required_balance.into(),
         }
     }
 }
 
 construct_detailed!(DetailedAmount, amount);
 construct_detailed!(DetailedVolume, volume);
+construct_detailed!(DetailedRequiredBalance, required_balance);
 
 pub async fn trade_preimage(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: TradePreimageRequest = try_s!(json::from_value(req));

@@ -430,6 +430,7 @@ impl TransactionDetails {
 pub struct TradeFee {
     pub coin: String,
     pub amount: MmNumber,
+    pub paid_from_trading_vol: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]

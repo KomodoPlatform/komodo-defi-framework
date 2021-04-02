@@ -1573,6 +1573,7 @@ pub async fn taker_swap_trade_preimage(ctx: &MmArc, req: TradePreimageRequest) -
     let taker_fee = TradeFee {
         coin: my_coin_ticker,
         amount: dex_amount.clone(),
+        paid_from_trading_vol: false,
     };
 
     let fee_to_send_taker_fee = try_s!(
@@ -1742,11 +1743,12 @@ pub fn max_taker_vol_from_available(
 #[cfg(test)]
 mod taker_swap_tests {
     use super::*;
-    use crate::mm2::lp_swap::dex_fee_amount;
+    use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
     use common::mm_ctx::MmCtxBuilder;
+    use common::new_uuid;
     use common::privkey::key_pair_from_seed;
     use mocktopus::mocking::*;
 
@@ -1785,8 +1787,8 @@ mod taker_swap_tests {
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
         TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _| MockResult::Return(Ok(None)));
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         let actual = taker_swap.recover_funds().unwrap();
         let expected = RecoveredSwap {
@@ -1827,8 +1829,8 @@ mod taker_swap_tests {
             unsafe { TAKER_PAYMENT_REFUND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         let actual = taker_swap.recover_funds().unwrap();
         let expected = RecoveredSwap {
@@ -1875,8 +1877,8 @@ mod taker_swap_tests {
             unsafe { MAKER_PAYMENT_SPEND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         let actual = taker_swap.recover_funds().unwrap();
         let expected = RecoveredSwap {
@@ -1913,8 +1915,8 @@ mod taker_swap_tests {
             unsafe { REFUND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         let actual = taker_swap.recover_funds().unwrap();
         let expected = RecoveredSwap {
@@ -1944,8 +1946,8 @@ mod taker_swap_tests {
             unsafe { SEARCH_TX_SPEND_CALLED = true };
             MockResult::Return(Ok(None))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         taker_swap.w().data.taker_payment_lock = (now_ms() / 1000) - 3690;
         assert!(taker_swap.recover_funds().is_err());
@@ -1979,8 +1981,8 @@ mod taker_swap_tests {
             unsafe { MAKER_PAYMENT_SPEND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         let actual = taker_swap.recover_funds().unwrap();
         let expected = RecoveredSwap {
@@ -2005,8 +2007,8 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
         assert!(taker_swap.recover_funds().is_err());
     }
@@ -2045,8 +2047,8 @@ mod taker_swap_tests {
             unsafe { SWAP_CONTRACT_ADDRESS_CALLED += 1 };
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) =
             TakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, taker_saved_swap).unwrap();
 
@@ -2077,8 +2079,8 @@ mod taker_swap_tests {
             unsafe { SWAP_CONTRACT_ADDRESS_CALLED += 1 };
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin {});
-        let taker_coin = MmCoinEnum::Test(TestCoin {});
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) =
             TakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, taker_saved_swap).unwrap();
 
@@ -2169,5 +2171,89 @@ mod taker_swap_tests {
             max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &dex_fee_threshold)
                 .expect_err("!max_taker_vol_from_available success but should be error");
         }
+    }
+
+    #[test]
+    fn locked_amount_should_not_use_paid_from_trading_vol_fee() {
+        use crate::mm2::lp_swap::get_locked_amount;
+
+        let taker_saved_json = r#"{
+            "type": "Taker",
+            "uuid": "af5e0383-97f6-4408-8c03-a8eb8d17e46d",
+            "my_order_uuid": "af5e0383-97f6-4408-8c03-a8eb8d17e46d",
+            "events": [
+                {
+                    "timestamp": 1617096259172,
+                    "event": {
+                        "type": "Started",
+                        "data": {
+                            "taker_coin": "MORTY",
+                            "maker_coin": "RICK",
+                            "maker": "15d9c51c657ab1be4ae9d3ab6e76a619d3bccfe830d5363fa168424c0d044732",
+                            "my_persistent_pub": "03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa",
+                            "lock_duration": 7800,
+                            "maker_amount": "0.1",
+                            "taker_amount": "0.11",
+                            "maker_payment_confirmations": 1,
+                            "maker_payment_requires_nota": false,
+                            "taker_payment_confirmations": 1,
+                            "taker_payment_requires_nota": false,
+                            "taker_payment_lock": 1617104058,
+                            "uuid": "af5e0383-97f6-4408-8c03-a8eb8d17e46d",
+                            "started_at": 1617096258,
+                            "maker_payment_wait": 1617099378,
+                            "maker_coin_start_block": 865240,
+                            "taker_coin_start_block": 869167,
+                            "fee_to_send_taker_fee": {
+                                "coin": "MORTY",
+                                "amount": "0.00001",
+                                "paid_from_trading_vol": false
+                            },
+                            "taker_payment_trade_fee": {
+                                "coin": "MORTY",
+                                "amount": "0.00001",
+                                "paid_from_trading_vol": false
+                            },
+                            "maker_payment_spend_trade_fee": {
+                                "coin": "RICK",
+                                "amount": "0.00001",
+                                "paid_from_trading_vol": true
+                            }
+                        }
+                    }
+                }
+            ],
+            "maker_amount": "0.1",
+            "maker_coin": "RICK",
+            "taker_amount": "0.11",
+            "taker_coin": "MORTY",
+            "gui": null,
+            "mm_version": "21867da64",
+            "success_events": [],
+            "error_events": []
+        }"#;
+        let taker_saved_swap: TakerSavedSwap = json::from_str(taker_saved_json).unwrap();
+        let key_pair =
+            key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid")
+                .unwrap();
+        let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
+
+        let maker_coin = MmCoinEnum::Test(TestCoin::new("RICK"));
+        let taker_coin = MmCoinEnum::Test(TestCoin::new("MORTY"));
+
+        TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(BigDecimal::from(0)));
+
+        let (swap, _) = TakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, taker_saved_swap).unwrap();
+        let swaps_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+        let arc = Arc::new(swap);
+        let weak_ref = Arc::downgrade(&arc);
+        swaps_ctx.running_swaps.lock().unwrap().push(weak_ref);
+
+        let actual = get_locked_amount(&ctx, "RICK");
+        assert_eq!(actual, MmNumber::from(0));
+
+        let actual = get_locked_amount_by_other_swaps(&ctx, &new_uuid(), "RICK");
+        assert_eq!(actual, MmNumber::from(0));
     }
 }

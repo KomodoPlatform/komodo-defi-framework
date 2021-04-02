@@ -425,7 +425,7 @@ impl MmCoin for UtxoStandardCoin {
         &self,
         _stage: FeeApproxStage,
     ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
-        utxo_common::get_receiver_trade_fee(&self)
+        utxo_common::get_receiver_trade_fee(self.clone())
     }
 
     fn get_fee_to_send_taker_fee(

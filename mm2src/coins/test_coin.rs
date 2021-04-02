@@ -12,12 +12,22 @@ use serde_json::Value as Json;
 /// Dummy coin struct used in tests which functions are unimplemented but then mocked
 /// in specific test to emulate the required behaviour
 #[derive(Clone, Debug)]
-pub struct TestCoin {}
+pub struct TestCoin {
+    ticker: String,
+}
+
+impl Default for TestCoin {
+    fn default() -> Self { TestCoin { ticker: "test".into() } }
+}
+
+impl TestCoin {
+    pub fn new(ticker: &str) -> TestCoin { TestCoin { ticker: ticker.into() } }
+}
 
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MarketCoinOps for TestCoin {
-    fn ticker(&self) -> &str { "test" }
+    fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 

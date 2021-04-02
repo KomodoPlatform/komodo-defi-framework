@@ -136,8 +136,10 @@ fn path2s<P>(path: P) -> String
 where
     P: AsRef<Path>,
 {
-    let path: &Path = path.as_ref();
-    path.to_str().expect(&format!("Non-stringy path {:?}", path)).into()
+    path.as_ref()
+        .to_str()
+        .unwrap_or_else(|| panic!("Non-stringy path {:?}", path))
+        .into()
 }
 
 /// Loads the `path`, runs `update` on it and saves back the result if it differs.

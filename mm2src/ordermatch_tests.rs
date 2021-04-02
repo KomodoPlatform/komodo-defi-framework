@@ -200,7 +200,7 @@ fn test_match_maker_order_and_taker_request() {
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
 #[test]
 fn maker_order_match_with_request_zero_volumes() {
-    let coin = MmCoinEnum::Test(TestCoin {});
+    let coin = MmCoinEnum::Test(TestCoin::default());
 
     let maker_order = MakerOrderBuilder::new(&coin, &coin)
         .with_max_base_vol(1.into())
@@ -949,7 +949,7 @@ fn should_process_request_only_once() {
 
 #[test]
 fn test_choose_maker_confs_settings() {
-    let coin = TestCoin {}.into();
+    let coin = TestCoin::default().into();
     // no confs set
     let taker_order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
     TestCoin::requires_notarization.mock_safe(|_| MockResult::Return(true));
@@ -1071,7 +1071,7 @@ fn test_choose_maker_confs_settings() {
 
 #[test]
 fn test_choose_taker_confs_settings_buy_action() {
-    let coin = TestCoin {}.into();
+    let coin = TestCoin::default().into();
 
     // no confs and notas set
     let taker_order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();
@@ -1183,7 +1183,7 @@ fn test_choose_taker_confs_settings_buy_action() {
 
 #[test]
 fn test_choose_taker_confs_settings_sell_action() {
-    let coin = TestCoin {}.into();
+    let coin = TestCoin::default().into();
 
     // no confs and notas set
     let taker_order = TakerOrderBuilder::new(&coin, &coin)
@@ -1858,7 +1858,7 @@ fn test_subscribe_to_ordermatch_topic_subscribed_filled() {
 */
 #[test]
 fn test_taker_request_can_match_with_maker_pubkey() {
-    let coin = TestCoin {}.into();
+    let coin = TestCoin::default().into();
 
     let maker_pubkey = H256Json::default();
 
@@ -1882,7 +1882,7 @@ fn test_taker_request_can_match_with_maker_pubkey() {
 #[test]
 fn test_taker_request_can_match_with_uuid() {
     let uuid = Uuid::new_v4();
-    let coin = MmCoinEnum::Test(TestCoin {});
+    let coin = MmCoinEnum::Test(TestCoin::default());
 
     // default has MatchBy::Any
     let mut order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();

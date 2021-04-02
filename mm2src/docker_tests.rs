@@ -86,6 +86,7 @@ mod docker_tests {
     mod qrc20_tests;
 
     use crate::mm2::lp_swap::dex_fee_amount;
+    use crate::mm2::mm2_tests::structs::*;
     use bigdecimal::BigDecimal;
     use bitcrypto::ChecksumType;
     use chain::OutPoint;
@@ -1462,32 +1463,6 @@ mod docker_tests {
         block_on(mm_alice.stop()).unwrap();
     }
 
-    fn assert_eq_trade_preimages(mut actual: Json, mut expected: Json) {
-        #[derive(Debug, Deserialize, Eq, PartialEq)]
-        struct TradeFeeHelper {
-            coin: String,
-            amount: Json,
-            amount_fraction: Json,
-            amount_rat: Json,
-        }
-
-        // `total_fees` are arrays, they can be in a different order.
-        // Extract them and sort by coins before the comparison
-
-        let actual_total_fees = actual["result"]["total_fees"].take();
-        let mut actual_total_fees: Vec<TradeFeeHelper> = json::from_value(actual_total_fees.clone())
-            .expect(&format!("Expected an array of fees, found {:?}", actual_total_fees));
-        actual_total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin));
-
-        let expected_total_fees = expected["result"]["total_fees"].take();
-        let mut expected_total_fees: Vec<TradeFeeHelper> = json::from_value(expected_total_fees.clone())
-            .expect(&format!("Expected an array of fees, found {:?}", expected_total_fees));
-        expected_total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin));
-
-        assert_eq!(actual_total_fees, expected_total_fees);
-        assert_eq!(actual, expected);
-    }
-
     #[test]
     fn test_maker_trade_preimage() {
         let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
@@ -1532,35 +1507,25 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-        let actual: Json = json::from_str(&rc.1).unwrap();
-        let expected = json!({
-            "result": {
-                "base_coin_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0.00001",
-                    "amount_fraction": { "numer": "1", "denom": "100000" },
-                    "amount_rat": [[1,[1]],[1,[100000]]]
-                },
-                "rel_coin_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0",
-                    "amount_fraction": { "numer": "0", "denom": "1" },
-                    "amount_rat": [[0,[]],[1,[1]]]
-                },
-                "volume": "9.99999",
-                "volume_fraction": { "numer": "999999", "denom": "100000" },
-                "volume_rat": [[1,[999999]],[1,[100000]]],
-                "total_fees": [
-                    {
-                        "coin": "MYCOIN",
-                        "amount": "0.00001",
-                        "amount_fraction": { "numer": "1", "denom": "100000" },
-                        "amount_rat": [[1,[1]],[1,[100000]]]
-                    },
-                ],
-            }
+        let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
+        let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", true);
+        let volume = MmNumber::from("9.99999");
+
+        let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0.00001");
+        let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0");
+
+        let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
+            base_coin_fee: base_coin_fee.clone(),
+            rel_coin_fee: rel_coin_fee.clone(),
+            volume: Some(volume.to_decimal()),
+            volume_rat: Some(volume.to_ratio()),
+            volume_fraction: Some(volume.to_fraction()),
+            total_fees: vec![my_coin_total, my_coin1_total],
         });
-        assert_eq_trade_preimages(actual, expected);
+
+        let mut actual: TradePreimageResponse = json::from_str(&rc.1).unwrap();
+        actual.sort_total_fees();
+        assert_eq!(expected, actual.result);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1572,35 +1537,26 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-        let actual: Json = json::from_str(&rc.1).unwrap();
-        let expected = json!({
-            "result": {
-                "base_coin_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0.00002",
-                    "amount_fraction": { "numer": "1", "denom": "50000" },
-                    "amount_rat": [[1,[1]],[1,[50000]]]
-                },
-                "rel_coin_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0",
-                    "amount_fraction": { "numer": "0", "denom": "1" },
-                    "amount_rat": [[0,[]],[1,[1]]]
-                },
-                "volume": "19.99998",
-                "volume_fraction": { "numer": "999999", "denom": "50000" },
-                "volume_rat": [[1,[999999]],[1,[50000]]],
-                "total_fees": [
-                    {
-                        "coin": "MYCOIN1",
-                        "amount": "0.00002",
-                        "amount_fraction": { "numer": "1", "denom": "50000" },
-                        "amount_rat": [[1,[1]],[1,[50000]]]
-                    }
-                ],
-            }
+        let mut actual: TradePreimageResponse = json::from_str(&rc.1).unwrap();
+        actual.sort_total_fees();
+
+        let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+        let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
+        let volume = MmNumber::from("19.99998");
+
+        let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
+        let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0.00002");
+        let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
+            base_coin_fee: base_coin_fee.clone(),
+            rel_coin_fee: rel_coin_fee.clone(),
+            volume: Some(volume.to_decimal()),
+            volume_rat: Some(volume.to_ratio()),
+            volume_fraction: Some(volume.to_fraction()),
+            total_fees: vec![my_coin_total, my_coin1_total],
         });
-        assert_eq_trade_preimages(actual, expected);
+
+        actual.sort_total_fees();
+        assert_eq!(expected, actual.result);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1612,32 +1568,26 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-        let actual: Json = json::from_str(&rc.1).unwrap();
-        let expected = json!({
-            "result": {
-                "base_coin_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0.00002",
-                    "amount_fraction": { "numer": "1", "denom": "50000" },
-                    "amount_rat": [[1,[1]],[1,[50000]]]
-                },
-                "rel_coin_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0",
-                    "amount_fraction": { "numer": "0", "denom": "1" },
-                    "amount_rat": [[0,[]],[1,[1]]]
-                },
-                "total_fees": [
-                    {
-                        "coin": "MYCOIN1",
-                        "amount": "0.00002",
-                        "amount_fraction": { "numer": "1", "denom": "50000" },
-                        "amount_rat": [[1,[1]],[1,[50000]]]
-                    }
-                ],
-            }
+        let mut actual: TradePreimageResponse = json::from_str(&rc.1).unwrap();
+        actual.sort_total_fees();
+
+        let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+        let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
+
+        let total_my_coin = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
+        let total_my_coin1 = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0.00002");
+
+        let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
+            base_coin_fee: base_coin_fee.clone(),
+            rel_coin_fee: rel_coin_fee.clone(),
+            volume: None,
+            volume_rat: None,
+            volume_fraction: None,
+            total_fees: vec![total_my_coin, total_my_coin1],
         });
-        assert_eq_trade_preimages(actual, expected);
+
+        actual.sort_total_fees();
+        assert_eq!(expected, actual.result);
     }
 
     #[test]
@@ -1709,44 +1659,26 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-        let actual: Json = json::from_str(&rc.1).unwrap();
-        let expected = json!({
-            "result": {
-                "base_coin_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0.00001",
-                    "amount_fraction": { "numer": "1", "denom": "100000" },
-                    "amount_rat": [[1,[1]],[1,[100000]]]
-                },
-                "rel_coin_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0",
-                    "amount_fraction": { "numer": "0", "denom": "1" },
-                    "amount_rat": [[0,[]],[1,[1]]]
-                },
-                "taker_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0.01",
-                    "amount_fraction": { "numer": "1", "denom": "100" },
-                    "amount_rat": [[1,[1]],[1,[100]]]
-                },
-                "fee_to_send_taker_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0.00001",
-                    "amount_fraction": { "numer": "1", "denom": "100000" },
-                    "amount_rat": [[1,[1]],[1,[100000]]]
-                },
-                "total_fees": [
-                    {
-                        "coin": "MYCOIN",
-                        "amount": "0.01002",
-                        "amount_fraction": { "numer": "501", "denom": "50000" },
-                        "amount_rat": [[1,[501]],[1,[50000]]]
-                    }
-                ],
-            }
+
+        let mut actual: TradePreimageResponse = json::from_str(&rc.1).unwrap();
+        actual.sort_total_fees();
+
+        let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
+        let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", true);
+        let taker_fee = TradeFeeForTest::new("MYCOIN", "0.01", false);
+        let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
+
+        let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.01002", "0.01002");
+        let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0");
+
+        let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
+            base_coin_fee,
+            rel_coin_fee,
+            taker_fee,
+            fee_to_send_taker_fee,
+            total_fees: vec![my_coin_total_fee, my_coin1_total_fee],
         });
-        assert_eq!(actual, expected);
+        assert_eq!(expected, actual.result);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1759,44 +1691,25 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-        let actual: Json = json::from_str(&rc.1).unwrap();
-        let expected = json!({
-            "result": {
-                "base_coin_fee": {
-                    "coin": "MYCOIN",
-                    "amount": "0",
-                    "amount_fraction": { "numer": "0", "denom": "1" },
-                    "amount_rat": [[0,[]],[1,[1]]]
-                },
-                "rel_coin_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0.00002",
-                    "amount_fraction": { "numer": "1", "denom": "50000" },
-                    "amount_rat": [[1,[1]],[1,[50000]]]
-                },
-                "taker_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0.02", // volume(7.77) * price(2) / 777
-                    "amount_fraction": { "numer": "1", "denom": "50" },
-                    "amount_rat": [[1,[1]],[1,[50]]]
-                },
-                "fee_to_send_taker_fee": {
-                    "coin": "MYCOIN1",
-                    "amount": "0.00002",
-                    "amount_fraction": { "numer": "1", "denom": "50000" },
-                    "amount_rat": [[1,[1]],[1,[50000]]]
-                },
-                "total_fees": [
-                    {
-                        "coin": "MYCOIN1",
-                        "amount": "0.02004",
-                        "amount_fraction": { "numer": "501", "denom": "25000" },
-                        "amount_rat": [[1,[501]],[1,[25000]]]
-                    }
-                ],
-            }
+        let mut actual: TradePreimageResponse = json::from_str(&rc.1).unwrap();
+        actual.sort_total_fees();
+
+        let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
+        let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+        let taker_fee = TradeFeeForTest::new("MYCOIN1", "0.02", false);
+        let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+
+        let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
+        let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.02004", "0.02004");
+
+        let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
+            base_coin_fee,
+            rel_coin_fee,
+            taker_fee,
+            fee_to_send_taker_fee,
+            total_fees: vec![my_coin_total_fee, my_coin1_total_fee],
         });
-        assert_eq!(actual, expected);
+        assert_eq!(expected, actual.result);
     }
 
     #[test]
