@@ -4,7 +4,7 @@ use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
 use serde_json::Value as Json;
-use std::ops::Deref;
+#[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use web3::error::{Error, ErrorKind};
@@ -13,6 +13,7 @@ use web3::{RequestId, Transport};
 
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
+#[cfg(not(target_arch = "wasm32"))]
 fn single_response<T: Deref<Target = [u8]>>(response: T) -> Result<Json, Error> {
     let response =
         serde_json::from_slice(&*response).map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}", e))))?;
@@ -86,7 +87,7 @@ impl Transport for Web3Transport {
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
-            sendʹ(request, self.uris.clone(), self.event_handlers.clone())
+            send_request(request, self.uris.clone(), self.event_handlers.clone())
                 .boxed()
                 .compat(),
         )
@@ -94,48 +95,13 @@ impl Transport for Web3Transport {
 
     #[cfg(target_arch = "wasm32")]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        use wasm_bindgen::prelude::*;
-        use wasm_bindgen::JsCast;
-        use wasm_bindgen_futures::JsFuture;
-        use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
-
-        let body = to_string(&request);
-        self.event_handlers.on_outgoing_request(body.as_bytes());
-
-        let mut opts = RequestInit::new();
-        opts.method("POST");
-        opts.mode(RequestMode::Cors);
-        opts.body(Some(&JsValue::from_str(&body)));
-
-        let request = Request::new_with_str_and_init("http://195.201.0.6:8565", &opts).unwrap();
-
-        request.headers().set("Accept", "application/json").unwrap();
-
-        request.headers().set("Content-Type", "application/json").unwrap();
-
-        let window = web_sys::window().unwrap();
-        let request_promise = window.fetch_with_request(&request);
-
-        let future = JsFuture::from(request_promise);
-        let event_handlers = self.event_handlers.clone();
-        let res = async move {
-            let resp_value = future.await.unwrap();
-            assert!(resp_value.is_instance_of::<JsResponse>());
-            let resp: JsResponse = resp_value.dyn_into().unwrap();
-            let json_value = JsFuture::from(resp.json().unwrap()).await.unwrap();
-            let response: Json = json_value.into_serde().unwrap();
-
-            let response = serde_json::to_vec(&response).unwrap();
-            event_handlers.on_incoming_response(&response);
-
-            single_response(response)
-        };
-        Box::new(SendFuture(Box::pin(res).compat()))
+        let fut = send_request(request, self.uris.clone(), self.event_handlers.clone());
+        Box::new(SendFuture(Box::pin(fut).compat()))
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn sendʹ(
+async fn send_request(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
@@ -189,4 +155,91 @@ async fn sendʹ(
         for err in errors {(err)} sep {"; "}
     ))
     .into())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn send_request(
+    request: Call,
+    uris: Vec<http::Uri>,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+) -> Result<Json, Error> {
+    let request_payload = to_string(&request);
+
+    let mut transport_errors = Vec::new();
+    for uri in uris {
+        match send_request_once(&request_payload, &uri, &event_handlers).await {
+            Ok(response_json) => return Ok(response_json),
+            Err(Error(ErrorKind::Transport(e), _)) => {
+                transport_errors.push(e.to_string());
+            },
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(ErrorKind::Transport(fomat!(
+        "request " [request] " failed: "
+        for err in transport_errors {(err)} sep {"; "}
+    ))
+    .into())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn send_request_once(
+    request_payload: &String,
+    uri: &http::Uri,
+    event_handlers: &Vec<RpcTransportEventHandlerShared>,
+) -> Result<Json, Error> {
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
+
+    macro_rules! try_or {
+        ($exp:expr, $errkind:ident) => {
+            match $exp {
+                Ok(x) => x,
+                Err(e) => return Err(Error::from(ErrorKind::$errkind(ERRL!("{:?}", e)))),
+            }
+        };
+    }
+
+    let window = web_sys::window().expect("!window");
+
+    // account for outgoing traffic
+    event_handlers.on_outgoing_request(request_payload.as_bytes());
+
+    let mut opts = RequestInit::new();
+    opts.method("POST");
+    opts.mode(RequestMode::Cors);
+    opts.body(Some(&JsValue::from_str(&request_payload)));
+
+    let request = try_or!(Request::new_with_str_and_init(&uri.to_string(), &opts), Transport);
+
+    request.headers().set("Accept", "application/json").unwrap();
+    request.headers().set("Content-Type", "application/json").unwrap();
+
+    let request_promise = window.fetch_with_request(&request);
+
+    let future = JsFuture::from(request_promise);
+    let resp_value = try_or!(future.await, Transport);
+    let js_response: JsResponse = try_or!(resp_value.dyn_into(), Transport);
+
+    let resp_txt_fut = try_or!(js_response.text(), Transport);
+    let resp_txt = try_or!(JsFuture::from(resp_txt_fut).await, Transport);
+
+    let resp_str = resp_txt.as_string().ok_or_else(|| {
+        Error::from(ErrorKind::Transport(ERRL!(
+            "Expected a UTF-8 string JSON, found {:?}",
+            resp_txt
+        )))
+    })?;
+    event_handlers.on_incoming_response(resp_str.as_bytes());
+
+    let response: Response = try_or!(serde_json::from_str(&resp_str), InvalidResponse);
+    match response {
+        Response::Single(output) => to_result_from_output(output),
+        Response::Batch(_) => Err(Error::from(ErrorKind::InvalidResponse(
+            "Expected single, got batch.".to_owned(),
+        ))),
+    }
 }

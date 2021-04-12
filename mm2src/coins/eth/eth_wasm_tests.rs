@@ -1,9 +1,10 @@
 use super::*;
 use crate::lp_coininit;
 use common::mm_ctx::MmCtxBuilder;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::*;
 use web_sys::console;
+
+wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
 fn pass() {
@@ -12,36 +13,8 @@ fn pass() {
     assert_eq!(1, 1);
 }
 
-#[wasm_bindgen]
-extern "C" {
-    fn setInterval(closure: &Closure<dyn FnMut()>, millis: u32) -> f64;
-    fn cancelInterval(token: f64);
-}
-
-wasm_bindgen_test_configure!(run_in_browser);
-
-pub struct Interval {
-    closure: Closure<dyn FnMut()>,
-}
-
-impl Interval {
-    fn new() -> Interval {
-        let closure = Closure::new(common::executor::run);
-        Interval { closure }
-    }
-}
-
-unsafe impl Send for Interval {}
-
-unsafe impl Sync for Interval {}
-
-lazy_static! {
-    static ref EXECUTOR_INTERVAL: Interval = Interval::new();
-}
-
 #[wasm_bindgen_test]
 async fn test_send() {
-    setInterval(&EXECUTOR_INTERVAL.closure, 200);
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
@@ -86,7 +59,6 @@ async fn test_send() {
 async fn test_init_eth_coin() {
     use common::privkey::key_pair_from_seed;
 
-    setInterval(&EXECUTOR_INTERVAL.closure, 200);
     let key_pair =
         key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
     let conf = json!({

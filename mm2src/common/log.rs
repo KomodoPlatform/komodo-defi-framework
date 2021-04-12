@@ -8,6 +8,7 @@ use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
 use crossbeam::queue::SegQueue;
+use log::Record;
 use parking_lot::Mutex;
 use serde_json::Value as Json;
 use std::cell::RefCell;
@@ -19,20 +20,48 @@ use std::fmt::Write as WriteFmt;
 use std::hash::{Hash, Hasher};
 use std::mem::swap;
 use std::ops::Deref;
-use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::thread;
 
-pub use log::{debug, error, info, trace, warn};
+pub use log::{debug, error, info, trace, warn, LevelFilter};
+
+#[cfg(target_arch = "wasm32")]
+#[path = "log/wasm_log.rs"]
+pub mod wasm_log;
+#[cfg(target_arch = "wasm32")]
+pub use wasm_log::{LogLevel, WasmCallback, WasmLoggerBuilder};
 
 #[cfg(not(target_arch = "wasm32"))]
+#[path = "log/native_log.rs"]
+mod native_log;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native_log::{FfiCallback, LogLevel, UnifiedLoggerBuilder};
+
 lazy_static! {
     /// If this C callback is present then all the logging output should happen through it
     /// (and leaving stdout untouched).
     /// The *gravity* logging still gets a copy in order for the log-based tests to work.
-    pub static ref LOG_OUTPUT: Mutex<Option<extern fn (line: *const c_char)>> = Mutex::new (None);
+    pub static ref LOG_CALLBACK: Mutex<Option<LogCallbackBoxed>> = Mutex::new(None);
+}
+
+pub type LogCallbackBoxed = Box<dyn LogCallback>;
+
+pub trait LogCallback: Send + Sync + 'static {
+    fn callback(&mut self, level: LogLevel, line: String);
+
+    fn into_boxed(self) -> LogCallbackBoxed
+    where
+        Self: Sized,
+    {
+        Box::new(self)
+    }
+}
+
+pub fn register_callback(callback: impl LogCallback) {
+    let mut log_callback = LOG_CALLBACK.lock();
+    *log_callback = Some(callback.into_boxed());
 }
 
 /// Initialized and used when there's a need to chute the logging into a given thread.
@@ -55,10 +84,7 @@ impl Gravity {
         }
     }
     #[cfg(target_arch = "wasm32")]
-    fn chunk2log(&self, chunk: String) {
-        writeln(&chunk);
-        self.landing.push(chunk);
-    }
+    fn chunk2log(&self, chunk: String) { self.landing.push(chunk); }
 
     /// Prints the collected log chunks.  
     /// `println!` is used for compatibility with unit test stdout capturing.
@@ -66,7 +92,7 @@ impl Gravity {
     fn flush(&self) {
         let mut tail = self.tail.spinlock(77).unwrap();
         while let Ok(chunk) = self.landing.pop() {
-            let logged_with_log_output = LOG_OUTPUT.lock().is_some();
+            let logged_with_log_output = LOG_CALLBACK.lock().is_some();
             if !logged_with_log_output {
                 writeln(&chunk)
             }
@@ -85,12 +111,10 @@ thread_local! {
     static GRAVITY: RefCell<Option<Weak<Gravity>>> = RefCell::new (None)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[doc(hidden)]
-pub fn chunk2log(mut chunk: String) {
-    let used_log_output = if let Some(log_cb) = *LOG_OUTPUT.lock() {
-        chunk.push('\0');
-        log_cb(chunk.as_ptr() as *const c_char);
+pub fn chunk2log(mut chunk: String, level: LogLevel) {
+    let used_log_callback = if let Some(ref mut log_cb) = *LOG_CALLBACK.lock() {
+        log_cb.callback(level, chunk.clone());
         true
     } else {
         false
@@ -115,16 +139,10 @@ pub fn chunk2log(mut chunk: String) {
         return;
     }
 
-    if used_log_output {
-        return;
+    if !used_log_callback {
+        writeln(&chunk)
     }
-
-    writeln(&chunk)
 }
-
-#[cfg(target_arch = "wasm32")]
-#[doc(hidden)]
-pub fn chunk2log(chunk: String) { writeln(&chunk) }
 
 #[doc(hidden)]
 pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
@@ -161,7 +179,7 @@ macro_rules! log {
             (::gstuff::filename (file!())) ':' (line!()) "] "
             $($args)+)
         .unwrap();
-        $crate::log::chunk2log (buf)
+        $crate::log::chunk2log(buf, $crate::log::LogLevel::Info)
     }}
 }
 
@@ -290,7 +308,7 @@ impl Status {
         tail.push_back(log);
         drop(tail);
 
-        self::chunk2log(chunk)
+        self::chunk2log(chunk, LogLevel::Info)
     }
 }
 
@@ -552,7 +570,7 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
           (line))
         .unwrap();
     }
-    chunk2log(buf)
+    chunk2log(buf, LogLevel::Info)
 }
 
 async fn log_dashboard_sometimes(dashboardʷ: Weak<DuplexMutex<Vec<Arc<Status>>>>) {
@@ -756,7 +774,7 @@ impl LogState {
     }
 
     fn chunk2log(&self, chunk: String) {
-        self::chunk2log(chunk)
+        self::chunk2log(chunk, LogLevel::Info)
         /*
         match self.log_file {
             Some (ref f) => match f.lock() {
@@ -856,176 +874,79 @@ impl Drop for LogState {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum LogLevel {
-    /// A level lower than all log levels.
-    Off,
-    /// Corresponds to the `ERROR` log level.
-    Error,
-    /// Corresponds to the `WARN` log level.
-    Warn,
-    /// Corresponds to the `INFO` log level.
-    Info,
-    /// Corresponds to the `DEBUG` log level.
-    Debug,
-    /// Corresponds to the `TRACE` log level.
-    Trace,
-}
-
-impl LogLevel {
-    pub fn from_env() -> Option<LogLevel> {
-        match std::env::var("RUST_LOG").ok()?.to_lowercase().as_str() {
-            "off" => Some(LogLevel::Off),
-            "error" => Some(LogLevel::Error),
-            "warn" => Some(LogLevel::Warn),
-            "info" => Some(LogLevel::Info),
-            "debug" => Some(LogLevel::Debug),
-            "trace" => Some(LogLevel::Trace),
-            _ => None,
+impl From<log::Level> for LogLevel {
+    fn from(orig: log::Level) -> Self {
+        use log::Level;
+        match orig {
+            Level::Error => LogLevel::Error,
+            Level::Warn => LogLevel::Warn,
+            Level::Info => LogLevel::Info,
+            Level::Debug => LogLevel::Debug,
+            Level::Trace => LogLevel::Trace,
         }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub mod unified_log {
-    use super::{chunk2log, LogLevel};
-    pub use log::LevelFilter;
-    use log::Record;
-    use log4rs::{append, config,
-                 encode::{pattern, writer::simple}};
-
-    const MM_FORMAT: &str = "{d(%d %H:%M:%S)(utc)}, {f}:{L}] {l} {m}";
-    const DEFAULT_FORMAT: &str = "[{d(%Y-%m-%d %H:%M:%S %Z)(utc)} {h({l})} {M}:{f}:{L}] {m}";
-    const DEFAULT_LEVEL_FILTER: LogLevel = LogLevel::Info;
-
-    pub struct UnifiedLoggerBuilder {
-        console_format: String,
-        mm_format: String,
-        filter: LevelPolicy,
-        console: bool,
-        mm_log: bool,
-    }
-
-    impl Default for UnifiedLoggerBuilder {
-        fn default() -> UnifiedLoggerBuilder {
-            UnifiedLoggerBuilder {
-                console_format: DEFAULT_FORMAT.to_owned(),
-                mm_format: MM_FORMAT.to_owned(),
-                filter: LevelPolicy::Exact(DEFAULT_LEVEL_FILTER),
-                console: true,
-                mm_log: false,
-            }
+impl From<LogLevel> for LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Off => LevelFilter::Off,
+            LogLevel::Error => LevelFilter::Error,
+            LogLevel::Warn => LevelFilter::Warn,
+            LogLevel::Info => LevelFilter::Info,
+            LogLevel::Debug => LevelFilter::Debug,
+            LogLevel::Trace => LevelFilter::Trace,
         }
     }
+}
 
-    impl UnifiedLoggerBuilder {
-        pub fn new() -> UnifiedLoggerBuilder { UnifiedLoggerBuilder::default() }
+impl fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let level = match self {
+            LogLevel::Off => "OFF",
+            LogLevel::Error => "ERROR",
+            LogLevel::Warn => "WARN",
+            LogLevel::Info => "INFO",
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Trace => "TRACE",
+        };
+        write!(f, "{}", level)
+    }
+}
 
-        pub fn console_format(mut self, console_format: &str) -> UnifiedLoggerBuilder {
-            self.console_format = console_format.to_owned();
-            self
-        }
+/// It's the temporary `log::Record` formatter.
+/// Format: `{d(%d %H:%M:%S)(utc)}, {f}:{L}] {l} {m}`
+pub fn format_record(record: &Record) -> String {
+    const DATE_FORMAT: &str = "%d %H:%M:%S";
 
-        pub fn mm_format(mut self, mm_format: &str) -> UnifiedLoggerBuilder {
-            self.mm_format = mm_format.to_owned();
-            self
-        }
-
-        pub fn level_filter(mut self, filter: LogLevel) -> UnifiedLoggerBuilder {
-            self.filter = LevelPolicy::Exact(filter);
-            self
-        }
-
-        pub fn level_filter_from_env_or_default(mut self, default: LogLevel) -> UnifiedLoggerBuilder {
-            self.filter = LevelPolicy::FromEnvOrDefault(default);
-            self
-        }
-
-        pub fn console(mut self, console: bool) -> UnifiedLoggerBuilder {
-            self.console = console;
-            self
-        }
-
-        pub fn mm_log(mut self, mm_log: bool) -> UnifiedLoggerBuilder {
-            self.mm_log = mm_log;
-            self
-        }
-
-        pub fn try_init(self) -> Result<(), String> {
-            let mut appenders = Vec::new();
-            let level_filter = match self.filter {
-                LevelPolicy::Exact(l) => l,
-                LevelPolicy::FromEnvOrDefault(default) => LogLevel::from_env().unwrap_or(default),
-            };
-
-            if self.mm_log {
-                let appender = MmLogAppender::new(&self.mm_format);
-                appenders.push(config::Appender::builder().build("mm_log", Box::new(appender)));
-            }
-
-            // TODO console appender prints without '/n'
-            if self.console {
-                let encoder = Box::new(pattern::PatternEncoder::new(&self.console_format));
-                let appender = append::console::ConsoleAppender::builder()
-                    .encoder(encoder)
-                    .target(append::console::Target::Stdout)
-                    .build();
-                appenders.push(config::Appender::builder().build("console", Box::new(appender)));
-            }
-
-            let app_names: Vec<_> = appenders.iter().map(|app| app.name()).collect();
-            let root = config::Root::builder()
-                .appenders(app_names)
-                .build(LevelFilter::from(level_filter));
-            let config = try_s!(config::Config::builder().appenders(appenders).build(root));
-
-            try_s!(log4rs::init_config(config));
-            Ok(())
+    fn extract_crate_name(module_path: &str) -> &str {
+        match module_path.find("::") {
+            Some(ofs) => &module_path[0..ofs],
+            None => module_path,
         }
     }
 
-    impl From<LogLevel> for LevelFilter {
-        fn from(level: LogLevel) -> Self {
-            match level {
-                LogLevel::Off => LevelFilter::Off,
-                LogLevel::Error => LevelFilter::Error,
-                LogLevel::Warn => LevelFilter::Warn,
-                LogLevel::Info => LevelFilter::Info,
-                LogLevel::Debug => LevelFilter::Debug,
-                LogLevel::Trace => LevelFilter::Trace,
-            }
-        }
-    }
+    let metadata = record.metadata();
+    let level = metadata.level();
+    let date = Utc::now().format(DATE_FORMAT);
+    let line = record.line().unwrap_or(0);
+    let file = record.file().map(gstuff::filename).unwrap_or("???");
+    let module = record.module_path().unwrap_or("");
+    let message = record.args();
 
-    enum LevelPolicy {
-        Exact(LogLevel),
-        FromEnvOrDefault(LogLevel),
-    }
-
-    #[derive(Debug)]
-    struct MmLogAppender {
-        pattern: Box<dyn log4rs::encode::Encode>,
-    }
-
-    impl MmLogAppender {
-        fn new(pattern: &str) -> MmLogAppender {
-            MmLogAppender {
-                pattern: Box::new(pattern::PatternEncoder::new(pattern)),
-            }
-        }
-    }
-
-    impl append::Append for MmLogAppender {
-        fn append(&self, record: &Record) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
-            let mut buf = Vec::new();
-            self.pattern.encode(&mut simple::SimpleWriter(&mut buf), record)?;
-            let as_string = String::from_utf8(buf).map_err(Box::new)?;
-            chunk2log(as_string);
-            Ok(())
-        }
-
-        fn flush(&self) {}
-    }
+    let file = if module.contains("mm2") {
+        file.to_owned()
+    } else {
+        format!("{}:{}", extract_crate_name(module), file)
+    };
+    format!(
+        "{d}, {f}:{L}] {l} {m}",
+        d = date,
+        f = file,
+        L = line,
+        l = level,
+        m = message
+    )
 }
 
 #[doc(hidden)]

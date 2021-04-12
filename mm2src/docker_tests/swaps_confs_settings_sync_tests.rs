@@ -37,7 +37,6 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let mut mm_alice = MarketMakerIt::start(
         json! ({
@@ -54,7 +53,6 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     )
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
@@ -204,7 +202,6 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let mut mm_alice = MarketMakerIt::start(
         json! ({
@@ -221,7 +218,6 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     )
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);

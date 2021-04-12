@@ -8,7 +8,7 @@ use std::fmt;
 /// Generates params vector from input args, builds the request and sends it.
 #[macro_export]
 macro_rules! rpc_func {
-    ($selff:ident, $method:expr $(, $arg_name:ident)*) => {{
+    ($selff:ident, $method:expr $(, $arg_name:expr)*) => {{
         let mut params = vec![];
         $(
             params.push(json::value::to_value($arg_name).unwrap());

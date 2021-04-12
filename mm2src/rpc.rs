@@ -20,6 +20,8 @@
 use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
             send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
             validate_address, withdraw};
+#[cfg(not(target_arch = "wasm32"))] use common::log::warn;
+use common::log::{error, info};
 use common::mm_ctx::MmArc;
 #[cfg(not(target_arch = "wasm32"))]
 use common::wio::{CORE, CPUPOOL};
@@ -39,9 +41,9 @@ use std::net::SocketAddr;
 use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
                                 orderbook_depth_rpc, orderbook_rpc, sell, set_price};
 #[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, coins_needed_for_kick_start, import_swaps,
-                          list_banned_pubkeys, max_taker_vol, my_recent_swaps, my_swap_status, recover_funds_of_swap,
-                          stats_swap_status, trade_preimage, unban_pubkeys};
+use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
+                          import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
+                          recover_funds_of_swap, stats_swap_status, trade_preimage, unban_pubkeys_rpc};
 
 use self::lp_commands::*;
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
@@ -123,6 +125,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "all_swaps_uuids_by_filter" => all_swaps_uuids_by_filter(ctx, req),
         #[cfg(not(feature = "wallet-only"))]
+        "ban_pubkey" => hyres(ban_pubkey_rpc(ctx, req)),
+        #[cfg(not(feature = "wallet-only"))]
         "best_orders" => hyres(best_orders_rpc(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "buy" => hyres(buy(ctx, req)),
@@ -162,10 +166,12 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "kmd_rewards_info" => hyres(kmd_rewards_info(ctx)),
         // "inventory" => inventory (ctx, req),
         #[cfg(not(feature = "wallet-only"))]
-        "list_banned_pubkeys" => hyres(list_banned_pubkeys(ctx)),
+        "list_banned_pubkeys" => hyres(list_banned_pubkeys_rpc(ctx)),
         #[cfg(not(feature = "wallet-only"))]
         "max_taker_vol" => hyres(max_taker_vol(ctx, req)),
         "metrics" => metrics(ctx),
+        #[cfg(not(feature = "wallet-only"))]
+        "min_trading_vol" => hyres(min_trading_vol(ctx, req)),
         "my_balance" => hyres(my_balance(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
         "my_orders" => hyres(my_orders(ctx)),
@@ -209,7 +215,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         #[cfg(not(feature = "wallet-only"))]
         "trade_preimage" => hyres(trade_preimage(ctx, req)),
         #[cfg(not(feature = "wallet-only"))]
-        "unban_pubkeys" => hyres(unban_pubkeys(ctx, req)),
+        "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
         "validateaddress" => hyres(validate_address(ctx, req)),
         "version" => version(),
         "withdraw" => hyres(withdraw(ctx, req)),
@@ -217,41 +223,49 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
     })
 }
 
-async fn process_rpc_request(
-    ctx: MmArc,
-    req: Parts,
-    req_json: Json,
-    client: SocketAddr,
-) -> Result<Response<Vec<u8>>, String> {
-    if req.method != Method::POST {
-        return ERR!("Only POST requests are supported!");
+async fn process_json_batch_requests(ctx: MmArc, requests: &[Json], client: SocketAddr) -> Result<Json, String> {
+    let mut futures = Vec::with_capacity(requests.len());
+    for request in requests {
+        futures.push(process_single_request(ctx.clone(), request.clone(), client));
+    }
+    let results = join_all(futures).await;
+    let responses: Vec<_> = results
+        .into_iter()
+        .map(|resp| match resp {
+            Ok(r) => match json::from_slice(r.body()) {
+                Ok(j) => j,
+                Err(e) => {
+                    error!("Response {:?} is not a valid JSON, error: {}", r, e);
+                    Json::Null
+                },
+            },
+            Err(e) => err_tp_rpc_json(e),
+        })
+        .collect();
+    Ok(Json::Array(responses))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn process_json_request(ctx: MmArc, req_json: Json, client: SocketAddr) -> Result<Json, String> {
+    if let Some(requests) = req_json.as_array() {
+        return process_json_batch_requests(ctx, &requests, client)
+            .await
+            .map_err(|e| ERRL!("{}", e));
     }
 
-    match req_json.as_array() {
-        Some(requests) => {
-            let mut futures = Vec::with_capacity(requests.len());
-            for request in requests {
-                futures.push(process_single_request(ctx.clone(), request.clone(), client));
-            }
-            let results = join_all(futures).await;
-            let responses: Vec<_> = results
-                .into_iter()
-                .map(|resp| match resp {
-                    Ok(r) => match json::from_slice(r.body()) {
-                        Ok(j) => j,
-                        Err(e) => {
-                            log!("Response " [r] " is not a valid JSON, err " (e));
-                            Json::Null
-                        },
-                    },
-                    Err(e) => err_tp_rpc_json(e),
-                })
-                .collect();
-            let res = try_s!(json::to_vec(&responses));
-            Ok(try_s!(Response::builder().body(res)))
-        },
-        None => process_single_request(ctx, req_json, client).await,
+    let r = try_s!(process_single_request(ctx, req_json, client).await);
+    json::from_slice(r.body()).map_err(|e| ERRL!("Response {:?} is not a valid JSON, error: {}", r, e))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn process_json_request(ctx: MmArc, req_json: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
+    if let Some(requests) = req_json.as_array() {
+        let response = try_s!(process_json_batch_requests(ctx, &requests, client).await);
+        let res = try_s!(json::to_vec(&response));
+        return Ok(try_s!(Response::builder().body(res)));
     }
+
+    process_single_request(ctx, req_json, client).await
 }
 
 async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
@@ -278,7 +292,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
             match $value {
                 Ok(ok) => ok,
                 Err(err) => {
-                    log!("RPC error response: "(err));
+                    error!("RPC error response: {}", err);
                     let ebody = err_to_rpc_json_string(&fomat!((err)));
                     // generate a `Response` with the headers specified in `$header_key` and `$header_val`
                     let response = Response::builder().status(500) $(.header($header_key, $header_val))* .body(Body::from(ebody)).unwrap();
@@ -286,6 +300,19 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
                 },
             }
         };
+    }
+
+    async fn process_rpc_request(
+        ctx: MmArc,
+        req: Parts,
+        req_json: Json,
+        client: SocketAddr,
+    ) -> Result<Response<Vec<u8>>, String> {
+        if req.method != Method::POST {
+            return ERR!("Only POST requests are supported!");
+        }
+
+        process_json_request(ctx, req_json, client).await
     }
 
     let ctx = try_sf!(MmArc::from_ffi_handle(ctx_h));
@@ -337,9 +364,9 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         let mut shutdown_tx = Some(shutdown_tx);
         ctx.on_stop(Box::new(move || {
             if let Some(shutdown_tx) = shutdown_tx.take() {
-                log!("on_stop] firing shutdown_tx!");
+                info!("on_stop] firing shutdown_tx!");
                 if shutdown_tx.send(()).is_err() {
-                    log!("on_stop] Warning, shutdown_tx already closed")
+                    warn!("on_stop] shutdown_tx already closed");
                 }
                 Ok(())
             } else {
@@ -354,15 +381,19 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
         let server = server.then(|r| {
             if let Err(err) = r {
-                log!((err));
+                error!("{}", err);
             };
             futures::future::ready(())
         });
 
         let rpc_ip_port = ctx.rpc_ip_port().unwrap();
         CORE.0.spawn({
-            log!(">>>>>>>>>> DEX stats " (rpc_ip_port.ip())":"(rpc_ip_port.port()) " \
-                DEX stats API enabled at unixtime." (gstuff::now_ms() / 1000) " <<<<<<<<<");
+            info!(
+                ">>>>>>>>>> DEX stats {}:{} DEX stats API enabled at unixtime.{}  <<<<<<<<<",
+                rpc_ip_port.ip(),
+                rpc_ip_port.port(),
+                gstuff::now_ms() / 1000
+            );
             let _ = ctx.rpc_started.pin(true);
             server
         });
@@ -370,20 +401,45 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub extern "C" fn spawn_rpc(_ctx_h: u32) { unimplemented!() }
+pub fn spawn_rpc(ctx_h: u32) {
+    use common::wasm_rpc;
+    use futures::StreamExt;
+    use std::sync::Mutex;
 
-#[cfg(target_arch = "wasm32")]
-pub fn init_header_slots() {
-    use common::header::RPC_SERVICE;
-    use std::pin::Pin;
-
-    fn rpc_service_fn(
-        ctx: MmArc,
-        req: Parts,
-        req_body: Json,
-        client: SocketAddr,
-    ) -> Pin<Box<dyn Future03<Output = Result<Response<Vec<u8>>, String>> + Send>> {
-        Box::pin(process_rpc_request(ctx, req, req_body, client))
+    let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
+    if ctx.wasm_rpc.is_some() {
+        error!("RPC is initialized already");
+        return;
     }
-    let _ = RPC_SERVICE.pin(rpc_service_fn);
+
+    let client: SocketAddr = "127.0.0.1:1"
+        .parse()
+        .expect("'127.0.0.1:1' must be valid socket address");
+
+    let (request_tx, mut request_rx) = wasm_rpc::channel();
+    let ctx_c = ctx.clone();
+    let fut = async move {
+        while let Some((request_json, response_tx)) = request_rx.next().await {
+            let response = process_json_request(ctx_c.clone(), request_json, client).await;
+            if let Err(e) = response_tx.send(response) {
+                error!("Response is not processed: {:?}", e);
+            }
+        }
+    };
+    common::executor::spawn(fut);
+
+    // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
+    if let Err(e) = ctx.wasm_rpc.pin(request_tx) {
+        error!("'MmCtx::wasm_rpc' is initialized already: {}", e);
+        return;
+    };
+    if let Err(e) = ctx.rpc_started.pin(true) {
+        error!("'MmCtx::rpc_started' is set already: {}", e);
+        return;
+    }
+
+    info!(
+        ">>>>>>>>>> DEX stats API enabled at unixtime.{}  <<<<<<<<<",
+        common::now_ms() / 1000
+    );
 }

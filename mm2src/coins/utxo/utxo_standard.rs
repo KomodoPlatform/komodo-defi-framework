@@ -1,6 +1,7 @@
 use super::*;
 use crate::{CanRefundHtlc, CoinBalance, SwapOps, TradePreimageError, TradePreimageValue, ValidateAddressResult};
 use common::mm_metrics::MetricsArc;
+use common::mm_number::MmNumber;
 use futures::{FutureExt, TryFutureExt};
 
 #[derive(Clone, Debug)]
@@ -386,6 +387,8 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
+
+    fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 }
 
 impl MmCoin for UtxoStandardCoin {

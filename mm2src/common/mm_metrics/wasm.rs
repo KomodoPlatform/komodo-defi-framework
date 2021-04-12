@@ -60,5 +60,5 @@ impl MetricsOps for Metrics {
 
     fn clock(&self) -> Result<Clock, String> { Ok(Clock::default()) }
 
-    fn collect_json(&self) -> Result<Json, String> { Ok(Json::default()) }
+    fn collect_json(&self) -> Result<Json, String> { Ok(Json::Array(Vec::new())) }
 }

@@ -298,6 +298,9 @@ pub trait MarketCoinOps {
 
     /// Get the minimum amount to send.
     fn min_tx_amount(&self) -> BigDecimal;
+
+    /// Get the minimum amount to trade.
+    fn min_trading_vol(&self) -> MmNumber;
 }
 
 #[derive(Deserialize)]
@@ -1054,8 +1057,8 @@ pub fn my_tx_history(ctx: MmArc, req: Json) -> HyRes {
     // Should remove `block_on` when my_tx_history is async.
     let coin = match block_on(lp_coinfind(&ctx, &request.coin)) {
         Ok(Some(t)) => t,
-        Ok(None) => return rpc_err_response(500, &fomat!("No such coin: "(request.coin))),
-        Err(err) => return rpc_err_response(500, &fomat!("!lp_coinfind(" (request.coin) "): " (err))),
+        Ok(None) => return rpc_err_response(500, &format!("No such coin: {}", request.coin)),
+        Err(err) => return rpc_err_response(500, &format!("!lp_coinfind({}): {}", request.coin, err)),
     };
     let file_path = coin.tx_history_path(&ctx);
     let content = slurp(&file_path);

@@ -25,7 +25,6 @@ use std::time::Duration;
 
 use crate::executor::Timer;
 #[cfg(target_arch = "wasm32")] use crate::helperᶜ;
-#[cfg(not(target_arch = "wasm32"))] use crate::log::LogLevel;
 use crate::log::{dashboard_path, LogState};
 use crate::mm_ctx::MmArc;
 use crate::mm_metrics::{MetricType, MetricsJson};
@@ -216,7 +215,25 @@ impl MarketMakerIt {
     /// * `local` - Function to start the MarketMaker in a local thread, instead of spawning a process.
     /// It's required to manually add 127.0.0.* IPs aliases on Mac to make it properly work.
     /// cf. https://superuser.com/a/458877, https://superuser.com/a/635327
-    pub fn start(mut conf: Json, userpass: String, local: Option<LocalStart>) -> Result<MarketMakerIt, String> {
+    pub fn start(conf: Json, userpass: String, local: Option<LocalStart>) -> Result<MarketMakerIt, String> {
+        MarketMakerIt::start_with_envs(conf, userpass, local, &[])
+    }
+
+    /// Create a new temporary directory and start a new MarketMaker process there.
+    ///
+    /// * `conf` - The command-line configuration passed to the MarketMaker.
+    ///            Unique local IP address is injected as "myipaddr" unless this field is already present.
+    /// * `userpass` - RPC API key. We should probably extract it automatically from the MM log.
+    /// * `local` - Function to start the MarketMaker in a local thread, instead of spawning a process.
+    /// * `envs` - The enviroment variables passed to the process
+    /// It's required to manually add 127.0.0.* IPs aliases on Mac to make it properly work.
+    /// cf. https://superuser.com/a/458877, https://superuser.com/a/635327
+    pub fn start_with_envs(
+        mut conf: Json,
+        userpass: String,
+        local: Option<LocalStart>,
+        envs: &[(&str, &str)],
+    ) -> Result<MarketMakerIt, String> {
         let ip: IpAddr = if conf["myipaddr"].is_null() {
             // Generate an unique IP.
             let mut attempts = 0;
@@ -289,7 +306,7 @@ impl MarketMakerIt {
             // Note that this should only be used while running a single test,
             // using this option while running multiple tests (or multiple MarketMaker instances) is currently UB.
             let pc = if let Some(local) = local {
-                local(folder.clone(), log_path.clone(), conf);
+                local(folder.clone(), log_path.clone(), conf.clone());
                 None
             } else {
                 let executable = try_s!(env::args().next().ok_or("No program name"));
@@ -301,19 +318,41 @@ impl MarketMakerIt {
                     .current_dir(&folder)
                     .env("_MM2_TEST_CONF", try_s!(json::to_string(&conf)))
                     .env("MM2_UNBUFFERED_OUTPUT", "1")
+                    .env("RUST_LOG", "debug")
+                    .envs(envs.to_vec())
                     .stdout(try_s!(log.try_clone()))
                     .stderr(log)
                     .spawn());
                 Some(RaiiKill::from_handle(child))
             };
 
-            Ok(MarketMakerIt {
+            let mut mm = MarketMakerIt {
                 folder,
                 ip,
                 log_path,
                 pc,
                 userpass,
-            })
+            };
+
+            let skip_startup_checks = conf["skip_startup_checks"].as_bool().unwrap_or_default();
+            if !skip_startup_checks {
+                let is_seed = conf["i_am_seed"].as_bool().unwrap_or_default();
+                if is_seed {
+                    try_s!(block_on(mm.wait_for_log(22., |log| log.contains("INFO Listening on"))));
+                }
+                try_s!(block_on(
+                    mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+                ));
+
+                let skip_seednodes_check = conf["skip_seednodes_check"].as_bool().unwrap_or_default();
+                if conf["seednodes"].as_array().is_some() && !skip_seednodes_check {
+                    // wait for at least 1 node to be added to relay mesh
+                    try_s!(block_on(mm.wait_for_log(22., |log| {
+                        log.contains("Completed IAmrelay handling for peer")
+                    })));
+                }
+            }
+            Ok(mm)
         }
     }
 
@@ -393,18 +432,24 @@ impl MarketMakerIt {
     /// Invokes the locally running MM and returns its reply.
     #[cfg(target_arch = "wasm32")]
     pub async fn rpc(&self, payload: Json) -> Result<(StatusCode, String, HeaderMap), String> {
-        let uri = format!("http://{}:7783", self.ip);
-        log!("sending rpc request " (json::to_string(&payload).unwrap()) " to " (uri));
-        let empty_payload: Vec<u8> = Vec::new();
-        let request = try_s!(Request::builder().method("POST").uri(uri).body(empty_payload));
-        let (parts, _) = request.into_parts();
-
-        let rpc_service = try_s!(crate::header::RPC_SERVICE.as_option().ok_or("!RPC_SERVICE"));
-        let client: SocketAddr = try_s!("127.0.0.1:1".parse());
-        let f = rpc_service(self.ctx.clone(), parts, payload, client);
-        let response = try_s!(f.await);
-        let (parts, body) = response.into_parts();
-        Ok((parts.status, try_s!(String::from_utf8(body)), parts.headers))
+        let wasm_rpc = self
+            .ctx
+            .wasm_rpc
+            .as_option()
+            .expect("'MmCtx::rpc' must be initialized already");
+        match wasm_rpc.request(payload).await {
+            // Please note a new type of error will be introduced soon.
+            Ok(body) => {
+                let status_code = if body["error"].is_null() {
+                    StatusCode::OK
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                };
+                let body_str = json::to_string(&body).expect(&format!("Response {:?} is not a valid JSON", body));
+                Ok((status_code, body_str, HeaderMap::new()))
+            },
+            Err(e) => Ok((StatusCode::INTERNAL_SERVER_ERROR, e, HeaderMap::new())),
+        }
     }
 
     /// Invokes the locally running MM and returns its reply.
@@ -848,26 +893,4 @@ pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
     let swaps_response: Json = json::from_str(&response.1).unwrap();
     let swaps: &Vec<Json> = swaps_response["result"]["swaps"].as_array().unwrap();
     assert_eq!(expected_len, swaps.len());
-}
-
-/// Ensure the `RUST_LOG` environment variable is expected.
-///
-/// # Panic
-///
-/// Panic if the `RUST_LOG` environment variable doesn't equal to the `required_level`.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn require_log_level(expected: &[LogLevel]) {
-    let actual = match LogLevel::from_env() {
-        Some(level) => level,
-        None => panic!(
-            "Expected one of the {:?} log levels. It seems `RUST_LOG` env is not set",
-            expected
-        ),
-    };
-    assert!(
-        expected.contains(&actual),
-        "Expected one of {:?} log levels, found '{:?}'",
-        expected,
-        actual,
-    );
 }

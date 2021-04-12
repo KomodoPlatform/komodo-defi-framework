@@ -38,15 +38,20 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_order
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
+use crate::mm2::{MM_DATETIME, MM_VERSION};
 use bitcrypto::sha256;
 use common::executor::{spawn, spawn_boxed, Timer};
 use common::log::{error, info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
 use common::privkey::key_pair_from_seed;
-use common::{slurp_url, MM_DATETIME, MM_VERSION};
+use common::slurp_url;
 
 const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
-const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.kmd.io:0", "seed2.kmd.io:0", "seed3.kmd.io:0"];
+const NETID_7777_SEEDNODES: [&str; 3] = [
+    "seed1.defimania.live:0",
+    "seed2.defimania.live:0",
+    "seed3.defimania.live:0",
+];
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
     const LP_RPCPORT: u16 = 7783;
@@ -324,6 +329,7 @@ fn seed_to_ipv4_string(seed: &str) -> Option<String> {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
@@ -337,7 +343,7 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
         try_s!(migrate_db(&ctx));
     }
 
-    // #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     try_s!(init_p2p(mypubport, ctx.clone()).await);
 
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
@@ -357,13 +363,6 @@ pub async fn lp_init(mypubport: u16, ctx: MmArc) -> Result<(), String> {
     spawn(lp_ordermatch_loop(ctx.clone()));
 
     spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if 1 == 1 {
-            return Ok(());
-        }
-    } // TODO: Gradually move this point further down.
 
     let ctx_id = try_s!(ctx.ffi_handle());
 

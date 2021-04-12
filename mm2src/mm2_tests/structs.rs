@@ -456,3 +456,9 @@ impl TradePreimageResponse {
         }
     }
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaxTakerVolResponse {
+    pub result: Fraction,
+}

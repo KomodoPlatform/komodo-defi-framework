@@ -1388,7 +1388,11 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         .expect("!send_taker_payment");
 
     let my_balance = coin.my_spendable_balance().wait().expect("!my_balance");
-    assert_eq!(my_balance, 0.into());
+    assert_eq!(
+        my_balance,
+        0.into(),
+        "NOT AN ERROR, but it would be better if the balance remained zero"
+    );
 }
 
 /// Generate the Qtum coin with a random balance and start the `test_get_max_taker_vol_and_trade_with_dynamic_trade_fee` test.

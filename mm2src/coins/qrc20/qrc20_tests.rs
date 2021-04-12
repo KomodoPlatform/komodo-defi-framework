@@ -21,6 +21,7 @@ pub fn qrc20_coin_for_test(priv_key: &[u8]) -> (MmArc, Qrc20Coin) {
         "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
+        "dust":72800,
     });
     let req = json!({
         "method": "electrum",

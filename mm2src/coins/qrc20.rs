@@ -18,6 +18,7 @@ use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
+use common::mm_number::MmNumber;
 use common::{block_on, Traceable};
 use ethabi::{Function, Token};
 use ethereum_types::{H160, U256};
@@ -914,6 +915,11 @@ impl MarketCoinOps for Qrc20Coin {
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
+
+    fn min_trading_vol(&self) -> MmNumber {
+        let pow = self.utxo.decimals / 3;
+        MmNumber::from(1) / MmNumber::from(10u64.pow(pow as u32))
+    }
 }
 
 impl MmCoin for Qrc20Coin {

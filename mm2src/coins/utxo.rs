@@ -36,7 +36,7 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsArc;
-use common::{small_rng, MM_VERSION};
+use common::small_rng;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
@@ -66,8 +66,8 @@ use utxo_common::{big_decimal_from_sat, display_address};
 
 pub use chain::Transaction as UtxoTx;
 
-use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        UnspentInfo, UtxoRpcClientEnum};
+use self::rpc_clients::{ConcurrentRequestMap, ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest,
+                        EstimateFeeMethod, EstimateFeeMode, UnspentInfo, UtxoRpcClientEnum};
 #[cfg(not(target_arch = "wasm32"))]
 use self::rpc_clients::{NativeClient, NativeClientImpl};
 use super::{CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
@@ -1115,7 +1115,7 @@ pub trait UtxoCoinBuilder {
         let client = Arc::new(client);
 
         let weak_client = Arc::downgrade(&client);
-        let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), MM_VERSION);
+        let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
         spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
 
         try_s!(wait_for_protocol_version_checked(&client).await);
@@ -1153,8 +1153,7 @@ pub trait UtxoCoinBuilder {
             auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
             event_handlers,
             request_id: 0u64.into(),
-            list_unspent_in_progress: false.into(),
-            list_unspent_subs: AsyncMutex::new(Vec::new()),
+            list_unspent_concurrent_map: ConcurrentRequestMap::new(),
         });
 
         Ok(NativeClient(client))

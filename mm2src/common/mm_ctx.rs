@@ -1,3 +1,11 @@
+use crate::executor::Timer;
+use crate::log::{self, LogState};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::mm_metrics::prometheus;
+use crate::mm_metrics::{MetricsArc, MetricsOps};
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_rpc::WasmRpcSender;
+use crate::{bits256, small_rng};
 use gstuff::Constructible;
 #[cfg(target_arch = "wasm32")] use http::Response;
 use keys::KeyPair;
@@ -15,13 +23,6 @@ use std::net::IpAddr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
-
-use crate::executor::Timer;
-use crate::log::{self, LogState};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::mm_metrics::prometheus;
-use crate::mm_metrics::{MetricsArc, MetricsOps};
-use crate::{bits256, small_rng};
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
@@ -84,8 +85,12 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// The RPC sender forwarding requests to writing part of underlying stream.
+    #[cfg(target_arch = "wasm32")]
+    pub wasm_rpc: Constructible<WasmRpcSender>,
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Mutex<Connection>>,
+    pub mm_version: String,
 }
 
 impl MmCtx {
@@ -107,8 +112,11 @@ impl MmCtx {
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
+            #[cfg(target_arch = "wasm32")]
+            wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
+            mm_version: "".into(),
         }
     }
 
@@ -223,6 +231,8 @@ impl MmCtx {
     }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
+
+    pub fn mm_version(&self) -> &str { &self.mm_version }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn init_sqlite_connection(&self) -> Result<(), String> {
@@ -443,6 +453,7 @@ where
 pub struct MmCtxBuilder {
     conf: Option<Json>,
     key_pair: Option<KeyPair>,
+    version: String,
 }
 
 impl MmCtxBuilder {
@@ -458,6 +469,11 @@ impl MmCtxBuilder {
         self
     }
 
+    pub fn with_version(mut self, version: String) -> Self {
+        self.version = version;
+        self
+    }
+
     pub fn into_mm_arc(self) -> MmArc {
         // NB: We avoid recreating LogState
         // in order not to interfere with the integration tests checking LogState drop on shutdown.
@@ -467,6 +483,7 @@ impl MmCtxBuilder {
             LogState::in_memory()
         };
         let mut ctx = MmCtx::with_log_state(log);
+        ctx.mm_version = self.version;
         if let Some(conf) = self.conf {
             ctx.conf = conf
         }

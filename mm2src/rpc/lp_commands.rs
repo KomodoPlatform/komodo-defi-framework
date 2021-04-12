@@ -22,7 +22,7 @@ use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinE
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsOps;
-use common::{rpc_err_response, rpc_response, HyRes, MM_DATETIME, MM_VERSION};
+use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
 use serde_json::{self as json, Value as Json};
@@ -32,6 +32,7 @@ use std::borrow::Cow;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 #[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::active_swaps_using_coin;
+use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -130,6 +131,18 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     Ok(try_s!(Response::builder().body(res)))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn help() -> HyRes {
+    rpc_response(
+        500,
+        json!({
+            "error":"'help' is only supported in native mode"
+        })
+        .to_string(),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn help() -> HyRes {
     rpc_response(
         200,
@@ -300,6 +313,35 @@ pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
         "result": peer_id,
     });
     let res = try_s!(json::to_vec(&result));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+construct_detailed!(DetailedMinTradingVol, min_trading_vol);
+
+#[derive(Serialize)]
+struct MinTradingVolResponse<'a> {
+    coin: &'a str,
+    #[serde(flatten)]
+    volume: DetailedMinTradingVol,
+}
+
+/// Get min_trading_vol of a coin
+pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let coin = match lp_coinfind(&ctx, &ticker).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
+    };
+    let min_trading_vol = coin.min_trading_vol();
+    let response = MinTradingVolResponse {
+        coin: &ticker,
+        volume: min_trading_vol.into(),
+    };
+    let res = json!({
+        "result": response,
+    });
+    let res = try_s!(json::to_vec(&res));
     Ok(try_s!(Response::builder().body(res)))
 }
 

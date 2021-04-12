@@ -30,7 +30,7 @@ use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
 use common::{bits256, json_dir_entries, log, new_uuid, now_ms, remove_file, write};
-use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt};
+use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use gstuff::slurp;
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::{Hasher, EMPTY_PREFIX};
@@ -40,7 +40,6 @@ use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, 
 use num_rational::BigRational;
 use num_traits::identities::Zero;
 use order_requests_tracker::OrderRequestsTracker;
-use parity_util_mem::malloc_size;
 use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, DBValue, HashDBT, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash,
@@ -61,6 +60,7 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
                           CheckBalanceError, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
                           SwapConfirmationsSettings, TakerSwap};
+
 pub use best_orders::best_orders_rpc;
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::orderbook_rpc;
@@ -81,7 +81,6 @@ const MAKER_ORDER_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 3;
 const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
-const MIN_TRADING_VOL: &str = "0.00777";
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
 
 /// Alphabetically ordered orderbook pair
@@ -252,6 +251,17 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
 
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
+        let pubkey_bytes = match hex::decode(&pubkey) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("Error {} decoding pubkey {}", e, pubkey);
+                continue;
+            },
+        };
+        if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
+            log::warn!("Pubkey {} is banned", pubkey);
+            continue;
+        }
         let _new_root = process_pubkey_full_trie(&mut orderbook, &pubkey, &alb_pair, orders);
     }
 
@@ -337,40 +347,46 @@ fn remove_and_purge_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, 
 /// Attempts to decode a message and process it returning whether the message is valid and worth rebroadcasting
 pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, msg: &[u8], i_am_relay: bool) -> bool {
     match decode_signed::<new_protocol::OrdermatchMessage>(msg) {
-        Ok((message, _sig, pubkey)) => match message {
-            new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
-                let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
-                insert_or_update_order(&ctx, order).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
-                process_orders_keep_alive(ctx, from_peer, pubkey.to_hex(), keep_alive, i_am_relay).await
-            },
-            new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
-                let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
-                process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
-                let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
-                process_maker_reserved(ctx, pubkey.unprefixed().into(), msg).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
-                process_taker_connect(ctx, pubkey.unprefixed().into(), taker_connect.into()).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::MakerConnected(maker_connected) => {
-                process_maker_connected(ctx, pubkey.unprefixed().into(), maker_connected.into()).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
-                delete_order(&ctx, &pubkey.to_hex(), cancelled_msg.uuid.into()).await;
-                true
-            },
-            new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
-                process_maker_order_updated(ctx, pubkey.to_hex(), updated_msg).await
-            },
+        Ok((message, _sig, pubkey)) => {
+            if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
+                log::warn!("Pubkey {} is banned", pubkey.to_hex());
+                return false;
+            }
+            match message {
+                new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
+                    let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
+                    insert_or_update_order(&ctx, order).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
+                    process_orders_keep_alive(ctx, from_peer, pubkey.to_hex(), keep_alive, i_am_relay).await
+                },
+                new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
+                    let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
+                    process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
+                    let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
+                    process_maker_reserved(ctx, pubkey.unprefixed().into(), msg).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
+                    process_taker_connect(ctx, pubkey.unprefixed().into(), taker_connect.into()).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::MakerConnected(maker_connected) => {
+                    process_maker_connected(ctx, pubkey.unprefixed().into(), maker_connected.into()).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
+                    delete_order(&ctx, &pubkey.to_hex(), cancelled_msg.uuid.into()).await;
+                    true
+                },
+                new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
+                    process_maker_order_updated(ctx, pubkey.to_hex(), updated_msg).await
+                },
+            }
         },
         Err(e) => {
             log::error!("Error {} while decoding signed message", e);
@@ -941,6 +957,11 @@ enum TakerOrderBuildError {
         actual: MmNumber,
         threshold: MmNumber,
     },
+    /// Max vol below min base vol
+    MaxBaseVolBelowMinBaseVol {
+        max: MmNumber,
+        min: MmNumber,
+    },
     SenderPubkeyIsZero,
     ConfsSettingsNotSet,
 }
@@ -966,6 +987,12 @@ impl fmt::Display for TakerOrderBuildError {
                 "Min volume {} is too low, required: {}",
                 actual.to_decimal(),
                 threshold.to_decimal()
+            ),
+            TakerOrderBuildError::MaxBaseVolBelowMinBaseVol { min, max } => write!(
+                f,
+                "Max base vol {} is below min base vol: {}",
+                max.to_decimal(),
+                min.to_decimal()
             ),
             TakerOrderBuildError::SenderPubkeyIsZero => write!(f, "Sender pubkey can not be zero"),
             TakerOrderBuildError::ConfsSettingsNotSet => write!(f, "Confirmation settings must be set"),
@@ -1037,11 +1064,8 @@ impl<'a> TakerOrderBuilder<'a> {
 
     /// Validate fields and build
     fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
-        let min_vol_threshold = MmNumber::from(MIN_TRADING_VOL);
-        let min_tx_multiplier = MmNumber::from(10);
-        let min_base_amount =
-            (&self.base_coin.min_tx_amount().into() * &min_tx_multiplier).max(min_vol_threshold.clone());
-        let min_rel_amount = (&self.rel_coin.min_tx_amount().into() * &min_tx_multiplier).max(min_vol_threshold);
+        let min_base_amount = self.base_coin.min_trading_vol();
+        let min_rel_amount = self.rel_coin.min_trading_vol();
 
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(TakerOrderBuildError::BaseEqualRel);
@@ -1069,12 +1093,23 @@ impl<'a> TakerOrderBuilder<'a> {
             return Err(TakerOrderBuildError::ConfsSettingsNotSet);
         }
 
-        let min_volume = self.min_volume.unwrap_or_else(|| min_base_amount.clone());
+        let price = &self.rel_amount / &self.base_amount;
+        let base_min_by_rel = &min_rel_amount / &price;
+        let base_min_vol_threshold = min_base_amount.max(base_min_by_rel);
 
-        if min_volume < min_base_amount {
+        let min_volume = self.min_volume.unwrap_or_else(|| base_min_vol_threshold.clone());
+
+        if min_volume < base_min_vol_threshold {
             return Err(TakerOrderBuildError::MinVolumeTooLow {
                 actual: min_volume,
-                threshold: min_base_amount,
+                threshold: base_min_vol_threshold,
+            });
+        }
+
+        if self.base_amount < min_volume {
+            return Err(TakerOrderBuildError::MaxBaseVolBelowMinBaseVol {
+                max: self.base_amount,
+                min: min_volume,
             });
         }
 
@@ -1346,11 +1381,8 @@ impl<'a> MakerOrderBuilder<'a> {
     /// Validate fields and build
     fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
-        let min_vol_threshold = MmNumber::from(MIN_TRADING_VOL);
-        let min_tx_multiplier = MmNumber::from(10);
-        let min_base_amount =
-            (&self.base_coin.min_tx_amount().into() * &min_tx_multiplier).max(min_vol_threshold.clone());
-        let min_rel_amount = (&self.rel_coin.min_tx_amount().into() * &min_tx_multiplier).max(min_vol_threshold);
+        let min_base_amount = self.base_coin.min_trading_vol();
+        let min_rel_amount = self.rel_coin.min_trading_vol();
 
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);
@@ -1378,11 +1410,14 @@ impl<'a> MakerOrderBuilder<'a> {
             });
         }
 
-        let min_base_vol = self.min_base_vol.unwrap_or_else(|| min_base_amount.clone());
-        if min_base_vol < min_base_amount {
+        let base_min_by_rel = &min_rel_amount / &self.price;
+        let base_min_vol_threshold = min_base_amount.max(base_min_by_rel);
+
+        let min_base_vol = self.min_base_vol.unwrap_or_else(|| base_min_vol_threshold.clone());
+        if min_base_vol < base_min_vol_threshold {
             return Err(MakerOrderBuildError::MinBaseVolTooLow {
                 actual: min_base_vol,
-                threshold: min_base_amount,
+                threshold: base_min_vol_threshold,
             });
         }
 
@@ -1418,7 +1453,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel: self.rel_coin.ticker().to_owned(),
             created_at: now_ms(),
             max_base_vol: self.max_base_vol,
-            min_base_vol: self.min_base_vol.unwrap_or(MIN_TRADING_VOL.into()),
+            min_base_vol: self.min_base_vol.unwrap_or(self.base_coin.min_trading_vol()),
             price: self.price,
             matches: HashMap::new(),
             started_swaps: Vec::new(),
@@ -1817,7 +1852,14 @@ fn populate_trie<'db, T: TrieConfiguration>(
     Ok(t)
 }
 
+/// `parity_util_mem::malloc_size` crushes for some reason on wasm32
+#[cfg(target_arch = "wasm32")]
+fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
+    use parity_util_mem::malloc_size;
+
     fn history_committed_changes(history: &HashMap<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
         let total = history
             .iter()
@@ -2415,11 +2457,6 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         return;
     }
 
-    if is_pubkey_banned(&ctx, &reserved_msg.sender_pubkey) {
-        log::info!("Sender pubkey {:?} is banned", reserved_msg.sender_pubkey);
-        return;
-    }
-
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order = match my_taker_orders.entry(reserved_msg.taker_order_uuid) {
         Entry::Vacant(_) => return,
@@ -2492,11 +2529,6 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
         return;
     }
     log::debug!("Processing request {:?}", taker_request);
-
-    if is_pubkey_banned(&ctx, &taker_request.sender_pubkey) {
-        log::info!("Sender pubkey {:?} is banned", taker_request.sender_pubkey);
-        return;
-    }
 
     if !taker_request.can_match_with_maker_pubkey(&our_public_id) {
         return;
@@ -3106,6 +3138,38 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
     }
 }
 
+/// Cancels the orders in case of error on different checks
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/794
+async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) -> Result<T, E> {
+    if req.cancel_previous {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut my_orders = ordermatch_ctx.my_maker_orders.lock().await;
+
+        let mut cancelled = vec![];
+        // remove the previous orders if there're some to allow multiple setprice call per pair
+        // it's common use case now as `autoprice` doesn't work with new ordermatching and
+        // MM2 users request the coins price from aggregators by their own scripts issuing
+        // repetitive setprice calls with new price
+        *my_orders = my_orders
+            .drain()
+            .filter_map(|(uuid, order)| {
+                let to_delete = order.base == req.base && order.rel == req.rel;
+                if to_delete {
+                    delete_my_maker_order(&ctx, &order);
+                    cancelled.push(order);
+                    None
+                } else {
+                    Some((uuid, order))
+                }
+            })
+            .collect();
+        for order in cancelled {
+            maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
+        }
+    }
+    Err(error)
+}
+
 pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: SetPriceReq = try_s!(json::from_value(req));
 
@@ -3126,8 +3190,54 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         return ERR!("Rel coin is wallet only");
     }
 
+    let my_balance = try_s!(
+        base_coin
+            .my_spendable_balance()
+            .compat()
+            .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+            .await
+    );
+    let volume = if req.max {
+        // first check if `rel_coin` balance is sufficient
+        let rel_coin_trade_fee = try_s!(
+            rel_coin
+                .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
+                .compat()
+                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+                .await
+        );
+        try_s!(
+            check_other_coin_balance_for_swap(&ctx, &rel_coin, None, rel_coin_trade_fee)
+                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+                .await
+        );
+        // calculate max maker volume
+        // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
+        try_s!(
+            calc_max_maker_vol(&ctx, &base_coin, &my_balance, FeeApproxStage::OrderIssue)
+                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+                .await
+        )
+    } else {
+        try_s!(
+            check_balance_for_maker_swap(
+                &ctx,
+                &base_coin,
+                &rel_coin,
+                req.volume.clone(),
+                None,
+                None,
+                FeeApproxStage::OrderIssue
+            )
+            .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+            .await
+        );
+        req.volume.clone()
+    };
+
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let mut my_orders = ordermatch_ctx.my_maker_orders.lock().await;
+
     if req.cancel_previous {
         let mut cancelled = vec![];
         // remove the previous orders if there're some to allow multiple setprice call per pair
@@ -3151,35 +3261,6 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
             maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
         }
     }
-
-    let my_balance = try_s!(base_coin.my_spendable_balance().compat().await);
-    let volume = if req.max {
-        // first check if `rel_coin` balance is sufficient
-        let rel_coin_trade_fee = try_s!(
-            rel_coin
-                .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
-                .compat()
-                .await
-        );
-        try_s!(check_other_coin_balance_for_swap(&ctx, &rel_coin, None, rel_coin_trade_fee).await);
-        // calculate max maker volume
-        // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
-        try_s!(calc_max_maker_vol(&ctx, &base_coin, &my_balance, FeeApproxStage::OrderIssue).await)
-    } else {
-        try_s!(
-            check_balance_for_maker_swap(
-                &ctx,
-                &base_coin,
-                &rel_coin,
-                req.volume.clone(),
-                None,
-                None,
-                FeeApproxStage::OrderIssue
-            )
-            .await
-        );
-        req.volume
-    };
 
     let conf_settings = OrderConfirmationsSettings {
         base_confs: req.base_confs.unwrap_or_else(|| base_coin.required_confirmations()),

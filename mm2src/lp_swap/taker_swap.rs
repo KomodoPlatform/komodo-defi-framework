@@ -1,4 +1,4 @@
-use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, check_my_coin_balance_for_swap,
+use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_my_coin_balance_for_swap,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, my_swap_file_path, my_swaps_dir, recv_swap_msg, swap_topic, AtomicSwap,
             CheckBalanceError, LockedAmount, MySwapInfo, NegotiationDataMsg, RecoveredSwap, RecoveredSwapAction,
@@ -6,6 +6,7 @@ use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, 
             TakerFeeAdditionalInfo, TradePreimageMethod, TradePreimageRequest, TransactionIdentifier,
             WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::MM_VERSION;
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue};
@@ -13,7 +14,7 @@ use common::executor::Timer;
 use common::log::{debug, error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
-use common::{bits256, file_lock::FileLock, now_ms, slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY, MM_VERSION};
+use common::{bits256, file_lock::FileLock, now_ms, slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use futures01::Future;
 use http::Response;
@@ -24,6 +25,8 @@ use serde_json::{self as json, Value as Json};
 use std::path::PathBuf;
 use std::sync::{atomic::Ordering, Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
+
+use super::pubkey_banning::ban_pubkey_on_failed_swap;
 
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
 
@@ -349,7 +352,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 
                     save_my_taker_swap_event(&ctx, &running_swap, to_save).expect("!save_my_taker_swap_event");
                     if event.should_ban_maker() {
-                        ban_pubkey(
+                        ban_pubkey_on_failed_swap(
                             &ctx,
                             running_swap.maker.bytes.into(),
                             &running_swap.uuid,
@@ -528,8 +531,7 @@ impl TakerSwapEvent {
 
     fn should_ban_maker(&self) -> bool {
         matches!(self,
-            TakerSwapEvent::NegotiateFailed(_)
-            | TakerSwapEvent::MakerPaymentValidateFailed(_)
+            TakerSwapEvent::MakerPaymentValidateFailed(_)
             | TakerSwapEvent::TakerPaymentWaitForSpendFailed(_))
     }
 
@@ -673,8 +675,9 @@ impl TakerSwap {
     }
 
     async fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        // do not use self.r().data here as it is not initialized at this step yet
         let stage = FeeApproxStage::StartSwap;
-        let dex_fee = dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
+        let dex_fee = dex_fee_amount_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_amount);
         let preimage_value = TradePreimageValue::Exact(self.taker_amount.to_decimal());
 
         let fee_to_send_dex_fee_fut = self
@@ -1518,7 +1521,11 @@ pub async fn check_balance_for_taker_swap(
         )
         .await
     );
-    try_s!(check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, params.maker_payment_spend_trade_fee).await);
+    if !params.maker_payment_spend_trade_fee.paid_from_trading_vol {
+        try_s!(
+            check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, params.maker_payment_spend_trade_fee).await
+        );
+    }
     Ok(())
 }
 
@@ -2020,9 +2027,6 @@ mod taker_swap_tests {
 
         let event = TakerSwapEvent::MakerPaymentWaitConfirmFailed("err".into());
         assert!(!event.should_ban_maker());
-
-        let event = TakerSwapEvent::NegotiateFailed("err".into());
-        assert!(event.should_ban_maker());
 
         let event = TakerSwapEvent::MakerPaymentValidateFailed("err".into());
         assert!(event.should_ban_maker());

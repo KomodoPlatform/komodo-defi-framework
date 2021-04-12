@@ -1,9 +1,6 @@
 use super::{subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
-use bigdecimal::BigDecimal;
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf};
-use common::{mm_ctx::MmArc,
-             mm_number::{Fraction, MmNumber},
-             now_ms};
+use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
 use http::Response;
 use num_rational::BigRational;
 use num_traits::Zero;

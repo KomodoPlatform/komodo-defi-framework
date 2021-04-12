@@ -62,6 +62,7 @@ pub use rlp;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
+use common::mm_number::MmNumber;
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
@@ -1084,6 +1085,11 @@ impl MarketCoinOps for EthCoin {
     fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
+
+    fn min_trading_vol(&self) -> MmNumber {
+        let pow = self.decimals / 3;
+        MmNumber::from(1) / MmNumber::from(10u64.pow(pow as u32))
+    }
 }
 
 pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {

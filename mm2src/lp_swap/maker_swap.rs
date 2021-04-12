@@ -1,28 +1,30 @@
-use super::{ban_pubkey, broadcast_my_swap_status, broadcast_swap_message_every, check_base_coin_balance_for_swap,
+use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_base_coin_balance_for_swap,
             check_my_coin_balance_for_swap, check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin,
             get_locked_amount, my_swap_file_path, my_swaps_dir, recv_swap_msg, swap_topic, AtomicSwap,
             CheckBalanceError, LockedAmount, MySwapInfo, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedTradeFee,
             SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TradePreimageRequest, TransactionIdentifier,
             WAIT_CONFIRM_INTERVAL};
 
-use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::NegotiationDataMsg};
+use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::NegotiationDataMsg, MM_VERSION};
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue,
             TransactionEnum};
 use common::{bits256, executor::Timer, file_lock::FileLock, log::error, mm_ctx::MmArc, mm_number::MmNumber, now_ms,
-             slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY, MM_VERSION};
+             slurp, write, Traceable, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use futures01::Future;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
-use serde_json::{self as json};
+use serde_json as json;
 use std::path::PathBuf;
 use std::sync::{atomic::Ordering, Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
+
+use super::pubkey_banning::ban_pubkey_on_failed_swap;
 
 pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("MAKER") }
 
@@ -273,6 +275,7 @@ impl MakerSwap {
     }
 
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
         let stage = FeeApproxStage::StartSwap;
         let get_sender_trade_fee_fut = self.maker_coin.get_sender_trade_fee(preimage_value, stage.clone());
@@ -1145,8 +1148,7 @@ impl MakerSwapEvent {
 
     fn should_ban_taker(&self) -> bool {
         matches!(self,
-            MakerSwapEvent::NegotiateFailed(_)
-            | MakerSwapEvent::TakerFeeValidateFailed(_)
+            MakerSwapEvent::TakerFeeValidateFailed(_)
             | MakerSwapEvent::TakerPaymentValidateFailed(_))
     }
 
@@ -1440,7 +1442,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 
                     save_my_maker_swap_event(&ctx, &running_swap, to_save).expect("!save_my_maker_swap_event");
                     if event.should_ban_taker() {
-                        ban_pubkey(
+                        ban_pubkey_on_failed_swap(
                             &ctx,
                             running_swap.taker.bytes.into(),
                             &running_swap.uuid,
@@ -2023,9 +2025,6 @@ mod maker_swap_tests {
 
         let event = MakerSwapEvent::MakerPaymentWaitConfirmFailed("err".into());
         assert!(!event.should_ban_taker());
-
-        let event = MakerSwapEvent::NegotiateFailed("err".into());
-        assert!(event.should_ban_taker());
 
         let event = MakerSwapEvent::TakerFeeValidateFailed("err".into());
         assert!(event.should_ban_taker());

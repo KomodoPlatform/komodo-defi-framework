@@ -28,7 +28,7 @@ path = "mm2src/docker_tests.rs"
 [lib]
 name = "mm2"
 path = "mm2src/mm2_lib.rs"
-crate-type = ["staticlib"]
+crate-type = ["cdylib", "staticlib"]
 test = false
 doctest = false
 bench = false
@@ -131,6 +131,11 @@ mocktopus = "0.7.0"
 rand4 = { version = "0.4", package = "rand" }
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
 winapi = "0.3"
+
+[build-dependencies]
+chrono = "0.4"
+gstuff = { version = "0.6", features = ["nightly", "term"] }
+regex = "1"
 
 [workspace]
 members = [

@@ -19,8 +19,6 @@ base64 = "0.10.0"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 bytes = "0.4"
-# Using the `chrono` because the `time` formatting has serious limits, like the lack of subsecond support, IIRC.
-chrono = "0.4"
 crossbeam = "0.7"
 findshlibs = "0.5"
 fomat-macros = "0.2"
@@ -48,16 +46,21 @@ serde = "1"
 serde_bytes = "0.11"
 serde_derive = "1"
 serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+serde_repr = "0.1.6"
 term = "0.5"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 winapi = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+chrono = { version = "0.4", features = ["wasmbind"] }
+js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
+wasm-bindgen-futures = "0.4.21"
 web-sys = { version = "0.3.4", features = ["console"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+chrono = "0.4"
 hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
 hyper = { version = "0.13" }
 # using webpki-tokio to avoid rejecting valid certificates
@@ -73,19 +76,6 @@ rusqlite = { version = "0.24.2", features = ["bundled"] }
 tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"] }
 
 [build-dependencies]
-bzip2 = "0.3"
 cc = "1.0"
-chrono = "0.4"
 fomat-macros = "0.3"
-futures = { version = "0.3", package = "futures" }
-futures01 = { version = "0.1", package = "futures" }
-futures-cpupool = "0.1"
-glob = "0.3"
 gstuff = { version = "0.6", features = ["nightly", "term"] }
-itertools = "0.8"
-libflate = "0.1"
-num_cpus = "1.10"
-regex = "1"
-sysinfo = "0.9"
-tar = "0.4"
-winapi = "0.3"

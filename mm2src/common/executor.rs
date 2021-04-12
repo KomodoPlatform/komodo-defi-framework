@@ -1,122 +1,114 @@
-// "It is the executor’s job to call `poll` on the task until `Ready(())` is returned."
-// -- https://tokio.rs/docs/internals/runtime-model/
-
-// Invoked from HTTP server the helpers will enjoy full native support for futures and threads.
-// The portable code, on the other hand, will need this module
-// in order to work with futures without the native threads and I/O.
-
 use crate::now_float;
-use atomic::Atomic;
-use futures::executor::enter;
-use futures::future::BoxFuture;
-use futures::task::{waker_ref, ArcWake, Context, Poll};
+use futures::task::{Context, Poll};
 use futures::FutureExt;
 use std::future::Future;
-use std::mem::swap;
 use std::pin::Pin;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use std::task::Waker;
+use std::time::Duration;
+use wasm_bindgen::prelude::*;
 
-struct Task {
-    future: Mutex<BoxFuture<'static, ()>>,
-    /// We can skip running the task till its alarm clock goes off.
-    alarm_clock: Atomic<f64>,
+#[wasm_bindgen]
+extern "C" {
+    /// https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout
+    fn setTimeout(closure: &Closure<dyn FnMut()>, delay_ms: u32) -> i32;
+
+    /// https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/clearTimeout
+    fn clearTimeout(id: i32);
 }
 
-impl ArcWake for Task {
-    fn wake_by_ref(arc_self: &Arc<Self>) { arc_self.alarm_clock.store(0., Ordering::Relaxed) }
-}
+pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_local(future) }
 
-lazy_static! {
-    static ref TASKS: Mutex<Vec<Arc<Task>>> = Mutex::new (Vec::new());
-    /// Spawned tasks go into this separate queue first
-    /// in order to allow the running tasks to spawn new tasks and not upset the `TASKS` lock.
-    static ref NEW_TASKS: Mutex<Vec<Arc<Task>>> = Mutex::new (Vec::new());
-}
+pub fn spawn_boxed(future: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn_local(future) }
 
-pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_after(0., future) }
+pub fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_futures::spawn_local(future) }
 
-pub fn spawn_boxed(future: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn(future); }
-
-/// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
-pub fn spawn_after(utc: f64, future: impl Future<Output = ()> + Send + 'static) {
-    let future = future.boxed();
-    let task = Arc::new(Task {
-        future: Mutex::new(future),
-        alarm_clock: Atomic::new(utc),
-    });
-    NEW_TASKS.lock().unwrap().push(task)
-}
-
-pub fn run() {
-    let mut new_tasks = Vec::new();
-    swap(&mut new_tasks, &mut *NEW_TASKS.lock().unwrap());
-
-    let mut tasks = TASKS.lock().unwrap();
-    for new_task in new_tasks {
-        tasks.push(new_task)
-    }
-    let enter = enter().expect("!enter");
-    let now = now_float();
-    tasks.retain(|task| {
-        // As an optimization, and in order to maintain the proper task waking logic,
-        // we're going to skip the tasks which aren't quite ready to run yet.
-        let alarm_clock = task.alarm_clock.load(Ordering::Relaxed);
-        if now < alarm_clock {
-            return true;
-        } // See you later.
-
-        // Pre-schedule the task into waking up a bit later.
-        // The underlying task future can speed things up by using the `Waker`.
-        let later = now + 2.; // Bump this up to test the `Waker` code.
-        let _ = task
-            .alarm_clock
-            .compare_exchange(alarm_clock, later, Ordering::Relaxed, Ordering::Relaxed);
-
-        let mut future = task.future.lock().unwrap();
-        let waker = waker_ref(&task);
-        let context = &mut Context::from_waker(&*waker);
-        if let Poll::Pending = future.as_mut().poll(context) {
-            true // Retain, we're not done yet.
-        } else {
-            false // Evict, we're done here.
-        }
-    });
-    drop(enter)
-}
-
-/// This native export allows the WASM host to run the executor via the WASM FFI.  
-/// TODO: Start a thread from the `start_helpers` instead.
-#[no_mangle]
-pub unsafe extern "C" fn run_executor() { run() }
-
-/// A future that completes at a given time.  
+/// The timer uses [`setTimeout`] and [`clearTimeout`] for scheduling.
+/// See the [example](https://rustwasm.github.io/docs/wasm-bindgen/reference/passing-rust-closures-to-js.html#heap-allocated-closures).
+///
+/// According to the [blogpost](https://rustwasm.github.io/2018/10/24/multithreading-rust-and-wasm.html),
+/// very few types in [`wasm_bindgen`] are `Send` and `Sync`, and [`wasm_bindgen::closure::Closure`] is not an exception.
+/// Although wasm is currently single-threaded, we can implement the `Send` trait for the `Timer`,
+/// but it won't be safe when wasm becomes multi-threaded.
+#[must_use = "futures do nothing unless polled"]
 pub struct Timer {
-    till_utc: f64,
+    timeout_id: i32,
+    closure: Closure<dyn FnMut()>,
+    state: Arc<Mutex<TimerState>>,
 }
+
+unsafe impl Send for Timer {}
 
 impl Timer {
-    pub fn till(till_utc: f64) -> Timer { Timer { till_utc } }
-    pub fn sleep(seconds: f64) -> Timer {
+    pub fn till(till_utc: f64) -> Timer {
+        let secs = till_utc - now_float();
+        Timer::sleep(secs)
+    }
+
+    pub fn sleep(secs: f64) -> Timer {
+        let dur = Duration::from_secs_f64(secs);
+        let delay_ms = gstuff::duration_to_ms(dur) as u32;
+        Timer::sleep_ms(delay_ms)
+    }
+
+    pub fn sleep_ms(delay_ms: u32) -> Timer {
+        fn on_timeout(state: &Arc<Mutex<TimerState>>) {
+            let mut state = match state.lock() {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("!on_timeout: {}", e);
+                    return;
+                },
+            };
+            state.completed = true;
+            if let Some(waker) = state.waker.take() {
+                waker.wake();
+            }
+        }
+
+        let state = Arc::new(Mutex::new(TimerState::default()));
+        let state_c = state.clone();
+        // we should hold the closure until the callback function is called
+        let closure = Closure::new(move || on_timeout(&state_c));
+
+        let timeout_id = setTimeout(&closure, delay_ms);
         Timer {
-            till_utc: now_float() + seconds,
+            timeout_id,
+            closure,
+            state,
         }
     }
-    pub fn till_utc(&self) -> f64 { self.till_utc }
+}
+
+/// When the `Timer` is destroyed, cancel its `setTimeout` timer.
+impl Drop for Timer {
+    fn drop(&mut self) { clearTimeout(self.timeout_id) }
 }
 
 impl Future for Timer {
     type Output = ();
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if self.till_utc - now_float() <= 0. {
+        let mut state = match self.state.lock() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("!Timer::poll: {}", e);
+                // if the mutex is poisoned, this error will appear every poll iteration
+                return Poll::Ready(());
+            },
+        };
+        if state.completed {
             return Poll::Ready(());
         }
 
         // NB: We should get a new `Waker` on every `poll` in case the future migrates between executors.
         // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
-        let waker = cx.waker().clone();
-        spawn_after(self.till_utc, async { waker.wake() });
-
+        state.waker = Some(cx.waker().clone());
         Poll::Pending
     }
+}
+
+#[derive(Default)]
+struct TimerState {
+    completed: bool,
+    waker: Option<Waker>,
 }
