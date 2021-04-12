@@ -13,7 +13,7 @@
 #[macro_use] extern crate fomat_macros;
 
 use gstuff::{last_modified_sec, slurp};
-use std::env::{self};
+use std::env::var;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
