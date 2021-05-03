@@ -1,5 +1,5 @@
 use super::{subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
-use coins::{address_by_coin_conf_and_pubkey_str, coin_conf};
+use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
 use http::Response;
 use num_rational::BigRational;
@@ -82,9 +82,15 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if base_coin_conf.is_null() {
         return ERR!("Coin {} is not found in config", req.base);
     }
+    if is_wallet_only_conf(&base_coin_conf) {
+        return ERR!("Base Coin {} is wallet only", req.base);
+    }
     let rel_coin_conf = coin_conf(&ctx, &req.rel);
     if rel_coin_conf.is_null() {
         return ERR!("Coin {} is not found in config", req.rel);
+    }
+    if is_wallet_only_conf(&rel_coin_conf) {
+        return ERR!("Base Coin {} is wallet only", req.rel);
     }
     let request_orderbook = true;
     try_s!(subscribe_to_orderbook_topic(&ctx, &req.base, &req.rel, request_orderbook).await);

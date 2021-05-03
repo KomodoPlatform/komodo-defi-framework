@@ -65,11 +65,14 @@ fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
 
 fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
 
+fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_split_tickers() }
+
 fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx)),
         2 => Some(migration_2(ctx)),
         3 => Some(migration_3()),
+        4 => Some(migration_4()),
         _ => None,
     }
 }

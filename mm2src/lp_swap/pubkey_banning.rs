@@ -8,6 +8,7 @@ use std::collections::hash_map::{Entry, HashMap};
 use uuid::Uuid;
 
 #[derive(Serialize)]
+#[serde(tag = "type")]
 #[allow(clippy::large_enum_variant)]
 pub enum BanReason {
     Manual {

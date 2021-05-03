@@ -7,8 +7,30 @@ use bigdecimal::BigDecimal;
 use common::mm_number::{Fraction, MmNumber};
 use num_rational::BigRational;
 use rpc::v1::types::H256 as H256Json;
+use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RpcSuccessResponse<T> {
+    pub mmrpc: String,
+    pub result: T,
+    pub id: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RpcErrorResponse<E> {
+    pub mmrpc: String,
+    /// The legacy error description
+    pub error: String,
+    pub error_path: String,
+    pub error_trace: String,
+    pub error_type: String,
+    pub error_data: Option<E>,
+    pub id: Option<usize>,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -438,19 +460,13 @@ pub enum TradePreimageResult {
     MakerPreimage(MakerPreimage),
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TradePreimageResponse {
-    pub result: TradePreimageResult,
-}
-
-impl TradePreimageResponse {
+impl TradePreimageResult {
     pub fn sort_total_fees(&mut self) {
-        match &mut self.result {
-            TradePreimageResult::MakerPreimage(preimage) => {
+        match self {
+            TradePreimageResult::MakerPreimage(ref mut preimage) => {
                 preimage.total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin))
             },
-            TradePreimageResult::TakerPreimage(preimage) => {
+            TradePreimageResult::TakerPreimage(ref mut preimage) => {
                 preimage.total_fees.sort_by(|fee1, fee2| fee1.coin.cmp(&fee2.coin))
             },
         }
@@ -459,6 +475,84 @@ impl TradePreimageResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct TradePreimageResponse {
+    pub result: TradePreimageResult,
+}
+
+impl TradePreimageResponse {
+    pub fn sort_total_fees(&mut self) { self.result.sort_total_fees() }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MaxTakerVolResponse {
     pub result: Fraction,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransactionDetails {
+    pub tx_hex: String,
+    pub tx_hash: String,
+    pub from: Vec<String>,
+    pub to: Vec<String>,
+    pub total_amount: BigDecimal,
+    pub spent_by_me: BigDecimal,
+    pub received_by_me: BigDecimal,
+    pub my_balance_change: BigDecimal,
+    pub block_height: u64,
+    pub timestamp: u64,
+    pub fee_details: Json,
+    pub coin: String,
+    pub internal_id: String,
+}
+
+pub mod withdraw_error {
+    use bigdecimal::BigDecimal;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct NotSufficientBalance {
+        pub coin: String,
+        pub available: BigDecimal,
+        pub required: BigDecimal,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AmountIsTooSmall {
+        pub amount: BigDecimal,
+    }
+}
+
+pub mod trade_preimage_error {
+    use bigdecimal::BigDecimal;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct NotSufficientBalance {
+        pub coin: String,
+        pub available: BigDecimal,
+        pub required: BigDecimal,
+        pub locked_by_swaps: Option<BigDecimal>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct VolumeIsTooSmall {
+        pub volume: BigDecimal,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct NoSuchCoin {
+        pub coin: String,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct InvalidParam {
+        pub param: String,
+        pub reason: String,
+    }
 }

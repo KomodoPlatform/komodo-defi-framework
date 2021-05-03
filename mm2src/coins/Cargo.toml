@@ -17,6 +17,7 @@ byteorder = "1.2.2"
 bytes = "0.4"
 chain = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 common = { path = "../common" }
+derive_more = "0.99"
 ethabi = { git = "https://github.com/artemii235/ethabi" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
@@ -49,6 +50,8 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 serialization = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
 sha2 = "0.8"
 sha3 = "0.8"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.

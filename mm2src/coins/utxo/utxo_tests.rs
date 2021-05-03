@@ -1391,7 +1391,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"95.217.83.126:10001"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1438,7 +1438,7 @@ fn test_qtum_unspendable_balance_failed() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"95.217.83.126:10001"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1451,7 +1451,8 @@ fn test_qtum_unspendable_balance_failed() {
 
     let error = coin.my_balance().wait().err().unwrap();
     log!("error: "[error]);
-    assert!(error.contains("Spendable balance 69 greater than total balance 68"));
+    let expected_error = BalanceError::Internal("Spendable balance 69 greater than total balance 68".to_owned());
+    assert_eq!(error.get_inner(), &expected_error);
 }
 
 #[test]
@@ -1483,7 +1484,7 @@ fn test_qtum_my_balance() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"95.217.83.126:10001"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -2417,4 +2418,14 @@ fn firo_mtp() {
         .wait()
         .unwrap();
     assert_eq!(mtp, 1616492629);
+}
+
+#[test]
+fn verus_mtp() {
+    let electrum = electrum_client_for_test(&["el0.verus.io:17485", "el1.verus.io:17485", "el2.verus.io:17485"]);
+    let mtp = electrum
+        .get_median_time_past(1480113, NonZeroU64::new(11).unwrap())
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1618579909);
 }

@@ -1,0 +1,10 @@
+#!/bin/bash
+source userpass
+curl --url "http://127.0.0.1:7783" --data '
+{
+  "userpass":"'$userpass'",
+  "method":"ban_pubkey",
+  "pubkey":"'$1'",
+  "reason":"'$2'"
+}
+'

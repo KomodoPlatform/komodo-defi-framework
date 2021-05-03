@@ -822,6 +822,117 @@ fn test_rpc_password_from_json() {
     );
 }
 
+/// Currently only `withdraw` RPC call supports V2.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_mmrpc_v2() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+
+    let _electrum = block_on(enable_electrum(&mm, "RICK", false, &[
+        "electrum3.cipig.net:10017",
+        "electrum2.cipig.net:10017",
+        "electrum1.cipig.net:10017",
+    ]));
+
+    // no `userpass`
+    let withdraw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
+        "method": "withdraw",
+        "params": {
+            "coin": "RICK",
+            "to": "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+            "amount": 0.001,
+        },
+    })))
+    .unwrap();
+    assert!(
+        withdraw.0.is_client_error(),
+        "withdraw should have failed, but got: {}",
+        withdraw.1
+    );
+    let withdraw_error: RpcErrorResponse<()> = json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse'");
+    assert_eq!(withdraw_error.error_type, "UserpassIsNotSet");
+    assert!(withdraw_error.error_data.is_none());
+
+    // invalid `userpass`
+    let withdraw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
+        "userpass": "another password",
+        "method": "withdraw",
+        "params": {
+            "coin": "RICK",
+            "to": "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+            "amount": 0.001,
+        },
+    })))
+    .unwrap();
+    assert!(
+        withdraw.0.is_client_error(),
+        "withdraw should have failed, but got: {}",
+        withdraw.1
+    );
+    let withdraw_error: RpcErrorResponse<Json> = json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse'");
+    assert_eq!(withdraw_error.error_type, "UserpassIsInvalid");
+    assert!(withdraw_error.error_data.is_none());
+
+    // invalid `mmrpc` version
+    let withdraw = block_on(mm.rpc(json! ({
+        "mmrpc": "1.0",
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "params": {
+            "coin": "RICK",
+            "to": "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+            "amount": 0.001,
+        },
+    })))
+    .unwrap();
+    assert!(
+        withdraw.0.is_client_error(),
+        "withdraw should have failed, but got: {}",
+        withdraw.1
+    );
+    log!([withdraw.1]);
+    let withdraw_error: RpcErrorResponse<String> = json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse'");
+    assert_eq!(withdraw_error.error_type, "InvalidMmRpcVersion");
+
+    // 'id' = 3
+    let withdraw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "params": {
+            "coin": "RICK",
+            "to": "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+            "amount": 0.001,
+        },
+        "id": 3,
+    })))
+    .unwrap();
+    assert!(withdraw.0.is_success(), "!withdraw: {}", withdraw.1);
+    let withdraw_ok: RpcSuccessResponse<TransactionDetails> =
+        json::from_str(&withdraw.1).expect("Expected 'RpcSuccessResponse<TransactionDetails>'");
+    assert_eq!(withdraw_ok.id, Some(3));
+}
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_rpc_password_from_json_no_userpass() {
@@ -1127,33 +1238,41 @@ fn withdraw_and_send(
     enable_res: &HashMap<&'static str, EnableElectrumResponse>,
     expected_bal_change: &str,
 ) {
-    let addr = addr_from_enable(enable_res, coin);
-
     let withdraw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "withdraw",
-        "coin": coin,
-        "to": to,
-        "amount": 0.001
+        "params": {
+            "coin": coin,
+            "to": to,
+            "amount": 0.001,
+        },
+        "id": 0,
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_success(), "!{} withdraw: {}", coin, withdraw.1);
-    let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    assert_eq!(Some(&vec![Json::from(to)]), withdraw_json["to"].as_array());
-    assert_eq!(Json::from(expected_bal_change), withdraw_json["my_balance_change"]);
-    assert_eq!(Some(&vec![Json::from(addr)]), withdraw_json["from"].as_array());
+    assert!(withdraw.0.is_success(), "!withdraw: {}", withdraw.1);
+    let res: RpcSuccessResponse<TransactionDetails> =
+        json::from_str(&withdraw.1).expect("Expected 'RpcSuccessResponse<TransactionDetails>'");
+    let tx_details = res.result;
+
+    let from = addr_from_enable(enable_res, coin).to_owned();
+    let expected_bal_change = BigDecimal::from_str(expected_bal_change).expect("!BigDecimal::from_str");
+
+    assert_eq!(tx_details.to, vec![to.to_owned()]);
+    assert_eq!(tx_details.my_balance_change, expected_bal_change);
+    assert_eq!(tx_details.from, vec![from]);
 
     let send = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": coin,
-        "tx_hex": withdraw_json["tx_hex"]
+        "tx_hex": tx_details.tx_hex,
     })))
     .unwrap();
     assert!(send.0.is_success(), "!{} send: {}", coin, send.1);
     let send_json: Json = json::from_str(&send.1).unwrap();
-    assert_eq!(withdraw_json["tx_hash"], send_json["tx_hash"]);
+    assert_eq!(tx_details.tx_hash, send_json["tx_hash"]);
 }
 
 #[test]
@@ -1236,27 +1355,33 @@ fn test_withdraw_and_send() {
     // must not allow to withdraw to non-P2PKH addresses
     let withdraw = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
+        "mmrpc": "2.0",
         "method": "withdraw",
-        "coin": "MORTY",
-        "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
-        "amount": "0.001"
+        "params": {
+            "coin": "MORTY",
+            "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
+            "amount": "0.001",
+        },
+        "id": 0,
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_server_error(), "MORTY withdraw: {}", withdraw.1);
-    let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    assert!(withdraw_json["error"]
-        .as_str()
-        .unwrap()
-        .contains("Address bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q has invalid format"));
+    assert!(withdraw.0.is_client_error(), "MORTY withdraw: {}", withdraw.1);
+    let res: RpcErrorResponse<String> = json::from_str(&withdraw.1).unwrap();
+    assert_eq!(res.error_type, "InvalidAddress");
+    assert_eq!(res.error_data, Some("Expected either P2PKH or P2SH".to_owned()));
 
     // but must allow to withdraw to P2SH addresses if Segwit flag is true
     let withdraw = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
+        "mmrpc": "2.0",
         "method": "withdraw",
-        "coin": "MORTY_SEGWIT",
-        "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
-        "amount": "0.001"
+        "params": {
+            "coin": "MORTY_SEGWIT",
+            "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
+            "amount": "0.001",
+        },
+        "id": 0,
     })))
     .unwrap();
 
@@ -1265,19 +1390,134 @@ fn test_withdraw_and_send() {
     // must not allow to withdraw to invalid checksum address
     let withdraw = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
+        "mmrpc": "2.0",
         "method": "withdraw",
-        "coin": "ETH",
-        "to": "0x657980d55733b41c0c64c06003864e1aad917ca7",
-        "amount": "0.001"
+        "params": {
+            "coin": "ETH",
+            "to": "0x657980d55733b41c0c64c06003864e1aad917ca7",
+            "amount": "0.001",
+        },
+        "id": 0,
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_server_error(), "ETH withdraw: {}", withdraw.1);
-    let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    assert!(withdraw_json["error"]
+    assert!(withdraw.0.is_client_error(), "ETH withdraw: {}", withdraw.1);
+    let res: RpcErrorResponse<String> = json::from_str(&withdraw.1).unwrap();
+    assert_eq!(res.error_type, "InvalidAddress");
+    assert!(res.error.contains("Invalid address checksum"));
+
+    // must not allow to withdraw too small amount 0.000005 (less than 0.00001 dust)
+    let small_amount = BigDecimal::from(1) / BigDecimal::from(200000);
+    let withdraw = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "mmrpc": "2.0",
+        "method": "withdraw",
+        "params": {
+            "coin": "MORTY",
+            "to": "RHzSYSHv3G6J8xL3MyGH3y2gU588VCTC7X",
+            "amount": small_amount,
+        },
+        "id": 0,
+    })))
+    .unwrap();
+
+    assert!(withdraw.0.is_client_error(), "MORTY withdraw: {}", withdraw.1);
+    log!("error: "[withdraw.1]);
+    let error: RpcErrorResponse<withdraw_error::AmountIsTooSmall> = json::from_str(&withdraw.1).unwrap();
+    let expected_error = withdraw_error::AmountIsTooSmall { amount: small_amount };
+    assert_eq!(error.error_type, "AmountIsTooSmall");
+    assert_eq!(error.error_data, Some(expected_error));
+
+    block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_withdraw_legacy() {
+    let (alice_file_passphrase, _alice_file_userpass) = from_env_file(slurp(&".env.client").unwrap());
+
+    let alice_passphrase = var("ALICE_PASSPHRASE")
+        .ok()
+        .or(alice_file_passphrase)
+        .expect("No ALICE_PASSPHRASE or .env.client/PASSPHRASE");
+
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    let mm_alice = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 8100,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "alice" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+
+    // wait until RPC API is active
+
+    // Enable coins. Print the replies in case we need the address.
+    let mut enable_res = block_on(enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]));
+    enable_res.insert(
+        "MORTY_SEGWIT",
+        block_on(enable_electrum(&mm_alice, "MORTY_SEGWIT", false, &[
+            "electrum1.cipig.net:10018",
+            "electrum2.cipig.net:10018",
+            "electrum3.cipig.net:10018",
+        ])),
+    );
+    log!("enable_coins (alice): "[enable_res]);
+
+    let withdraw = block_on(mm_alice.rpc(json!({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "MORTY",
+        "to": "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
+        "amount": 0.001,
+    })))
+    .unwrap();
+    assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
+    let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
+
+    // must not allow to withdraw to non-P2PKH addresses
+    let withdraw = block_on(mm_alice.rpc(json!({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "MORTY",
+        "to": "bUN5nesdt1xsAjCtAaYUnNbQhGqUWwQT1Q",
+        "amount": "0.001",
+    })))
+    .unwrap();
+
+    assert!(withdraw.0.is_server_error(), "MORTY withdraw: {}", withdraw.1);
+    log!([withdraw.1]);
+    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
+    assert!(withdraw_error["error"]
         .as_str()
-        .unwrap()
-        .contains("Invalid address checksum"));
+        .expect("Expected 'error' field")
+        .contains("Expected either P2PKH or P2SH"));
+    assert!(withdraw_error.get("error_path").is_none());
+    assert!(withdraw_error.get("error_trace").is_none());
+    assert!(withdraw_error.get("error_type").is_none());
+    assert!(withdraw_error.get("error_data").is_none());
+
     block_on(mm_alice.stop()).unwrap();
 }
 
@@ -3416,7 +3656,7 @@ fn spin_n_nodes(seednodes: &[&str], coins: &Json, n: usize) -> Vec<(MarketMakerI
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_cashaddresses() {
     let coins = json!([
-        {"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"UTXO"},
+        {"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id": "0x40","protocol":{"type":"UTXO"},
          "address_format":{"format":"cashaddress","network":"bchtest"}},
     ]);
 
@@ -4311,7 +4551,7 @@ fn test_qrc20_withdraw_error() {
     log!([withdraw.1]);
     assert!(withdraw
         .1
-        .contains("The amount 11 to withdraw is larger than balance 10"));
+        .contains("Not enough QRC20 to withdraw: available 10, required at least 11"));
 
     // try to transfer with zero QTUM balance
     let withdraw = block_on(mm.rpc(json! ({
@@ -4320,6 +4560,11 @@ fn test_qrc20_withdraw_error() {
         "coin": "QRC20",
         "to": "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs",
         "amount": "2",
+        "fee": {
+            "type": "Qrc20Gas",
+            "gas_limit": 100_000,
+            "gas_price": 40,
+        }
     })))
     .unwrap();
     assert!(
@@ -4328,9 +4573,10 @@ fn test_qrc20_withdraw_error() {
         withdraw
     );
     log!([withdraw.1]);
+    // 0.04 = 100_000 * 40 / 100_000_000
     assert!(withdraw
         .1
-        .contains("Not enough QTUM to Pay Fee: Couldn't generate tx from empty UTXOs set"));
+        .contains("Not enough QTUM to withdraw: available 0, required at least 0.04"));
 }
 
 #[test]
@@ -5591,6 +5837,123 @@ fn test_best_orders() {
     assert_eq!(expected_price, best_morty_orders[0].price);
     assert_eq!("MORTY", best_morty_orders[0].coin);
     assert_eq!(1, best_morty_orders.len());
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_best_orders_filter_response() {
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+
+    let bob_coins_config = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    // alice defined MORTY as "wallet_only" in config
+    let alice_coins_config = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"wallet_only": true,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    // start bob and immediately place the orders
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": bob_coins_config,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    log!({ "enable_coins (bob): {:?}", bob_coins });
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell requests");
+
+    let bob_orders = [
+        // (base, rel, price, volume, min_volume)
+        ("RICK", "MORTY", "0.9", "0.9", None),
+        ("RICK", "MORTY", "0.8", "0.9", None),
+        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
+        ("RICK", "ETH", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.9", "0.9", None),
+        ("ETH", "RICK", "0.8", "0.9", None),
+        ("MORTY", "ETH", "0.8", "0.8", None),
+        ("MORTY", "ETH", "0.7", "0.8", Some("0.8")),
+    ];
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    let mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": alice_coins_config,
+            "seednodes": [fomat!((mm_bob.ip))],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("alice"),
+    )
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
+    }))
+    .unwrap();
+
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "coin": "RICK",
+        "action": "buy",
+        "volume": "0.1",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let response: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let empty_vec = Vec::new();
+    let best_morty_orders = response.result.get("MORTY").unwrap_or(&empty_vec);
+    assert_eq!(0, best_morty_orders.len());
+    let best_eth_orders = response.result.get("ETH").unwrap();
+    assert_eq!(1, best_eth_orders.len());
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();

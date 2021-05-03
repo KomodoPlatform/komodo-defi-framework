@@ -17,36 +17,30 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 
-use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
-            send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
-            validate_address, withdraw};
 #[cfg(not(target_arch = "wasm32"))] use common::log::warn;
 use common::log::{error, info};
 use common::mm_ctx::MmArc;
-#[cfg(not(target_arch = "wasm32"))]
-use common::wio::{CORE, CPUPOOL};
-use common::{err_to_rpc_json_string, err_tp_rpc_json, HyRes};
-use futures::compat::Future01CompatExt;
-use futures::future::{join_all, FutureExt, TryFutureExt};
+use common::mm_error::prelude::*;
+use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode};
+use derive_more::Display;
+use futures::future::{join_all, FutureExt};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
-use http::{Method, Request, Response};
+use http::{Method, Request, Response, StatusCode};
 #[cfg(not(target_arch = "wasm32"))]
 use hyper::{self, Body, Server};
+use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::future::Future as Future03;
 use std::net::SocketAddr;
 
-#[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
-                                orderbook_depth_rpc, orderbook_rpc, sell, set_price};
-#[cfg(not(feature = "wallet-only"))]
-use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
-                          import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
-                          recover_funds_of_swap, stats_swap_status, trade_preimage, unban_pubkeys_rpc};
+#[path = "rpc/dispatcher/dispatcher_legacy.rs"]
+mod dispatcher_legacy;
 
-use self::lp_commands::*;
+#[path = "rpc/dispatcher/dispatcher_v2.rs"] mod dispatcher_v2;
+
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
+#[path = "rpc/lp_protocol.rs"] mod lp_protocol;
+use self::lp_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -70,6 +64,42 @@ const PUBLIC_METHODS: &[Option<&str>] = &[
     None,
 ];
 
+pub type DispatcherResult<T> = Result<T, MmError<DispatcherError>>;
+
+#[derive(Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum DispatcherError {
+    #[display(fmt = "No such method: {:?}", method)]
+    NoSuchMethod { method: String },
+    #[display(fmt = "Error parsing request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Selected method can be called from localhost only!")]
+    LocalHostOnly,
+    #[display(fmt = "Userpass is not set!")]
+    UserpassIsNotSet,
+    #[display(fmt = "Userpass is invalid!")]
+    UserpassIsInvalid,
+    #[display(fmt = "Error parsing mmrpc version: {}", _0)]
+    InvalidMmRpcVersion(String),
+}
+
+impl HttpStatusCode for DispatcherError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            DispatcherError::NoSuchMethod { .. }
+            | DispatcherError::InvalidRequest(_)
+            | DispatcherError::InvalidMmRpcVersion(_) => StatusCode::BAD_REQUEST,
+            DispatcherError::LocalHostOnly | DispatcherError::UserpassIsNotSet | DispatcherError::UserpassIsInvalid => {
+                StatusCode::FORBIDDEN
+            },
+        }
+    }
+}
+
+impl From<serde_json::Error> for DispatcherError {
+    fn from(e: serde_json::Error) -> Self { DispatcherError::InvalidRequest(e.to_string()) }
+}
+
 #[allow(unused_macros)]
 macro_rules! unwrap_or_err_response {
     ($e:expr, $($args:tt)*) => {
@@ -78,149 +108,6 @@ macro_rules! unwrap_or_err_response {
             Err(err) => return rpc_err_response(500, &ERRL!("{}", err)),
         }
     };
-}
-
-fn auth(json: &Json, ctx: &MmArc) -> Result<(), &'static str> {
-    if !PUBLIC_METHODS.contains(&json["method"].as_str()) {
-        if !json["userpass"].is_string() {
-            return Err("Userpass is not set!");
-        }
-
-        if json["userpass"] != ctx.conf["rpc_password"] {
-            return Err("Userpass is invalid!");
-        }
-    }
-    Ok(())
-}
-
-/// Result of `fn dispatcher`.
-pub enum DispatcherRes {
-    /// `fn dispatcher` has found a Rust handler for the RPC "method".
-    Match(HyRes),
-    /// No handler found by `fn dispatcher`. Returning the `Json` request in order for it to be handled elsewhere.
-    NoMatch(Json),
-}
-
-/// Using async/await (futures 0.3) in `dispatcher`
-/// will pave the way for porting the remaining system threading code to async/await green threads.
-fn hyres(handler: impl Future03<Output = Result<Response<Vec<u8>>, String>> + Send + 'static) -> HyRes {
-    Box::new(handler.boxed().compat())
-}
-
-/// The dispatcher, with full control over the HTTP result and the way we run the `Future` producing it.
-///
-/// Invoked both directly from the HTTP endpoint handler below and in a delayed fashion from `lp_command_q_loop`.
-///
-/// Returns `None` if the requested "method" wasn't found among the ported RPC methods and has to be handled elsewhere.
-pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
-    let method = match req["method"].clone() {
-        Json::String(method) => method,
-        _ => return DispatcherRes::NoMatch(req),
-    };
-    DispatcherRes::Match(match &method[..] {
-        // Sorted alphanumerically (on the first latter) for readability.
-        // "autoprice" => lp_autoprice (ctx, req),
-        #[cfg(not(feature = "wallet-only"))]
-        "active_swaps" => hyres(active_swaps_rpc(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "all_swaps_uuids_by_filter" => all_swaps_uuids_by_filter(ctx, req),
-        #[cfg(not(feature = "wallet-only"))]
-        "ban_pubkey" => hyres(ban_pubkey_rpc(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "best_orders" => hyres(best_orders_rpc(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "buy" => hyres(buy(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "cancel_all_orders" => hyres(cancel_all_orders(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "cancel_order" => hyres(cancel_order(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
-        "convertaddress" => hyres(convert_address(ctx, req)),
-        "convert_utxo_address" => hyres(convert_utxo_address(ctx, req)),
-        "disable_coin" => hyres(disable_coin(ctx, req)),
-        "electrum" => hyres(electrum(ctx, req)),
-        "enable" => hyres(enable(ctx, req)),
-        "get_enabled_coins" => hyres(get_enabled_coins(ctx)),
-        "get_gossip_mesh" => hyres(get_gossip_mesh(ctx)),
-        "get_gossip_peer_topics" => hyres(get_gossip_peer_topics(ctx)),
-        "get_gossip_topic_peers" => hyres(get_gossip_topic_peers(ctx)),
-        "get_my_peer_id" => hyres(get_my_peer_id(ctx)),
-        "get_peers_info" => hyres(get_peers_info(ctx)),
-        "get_relay_mesh" => hyres(get_relay_mesh(ctx)),
-        #[cfg(not(feature = "wallet-only"))]
-        "get_trade_fee" => hyres(get_trade_fee(ctx, req)),
-        // "fundvalue" => lp_fundvalue (ctx, req, false),
-        "help" => help(),
-        #[cfg(not(feature = "wallet-only"))]
-        "import_swaps" => {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                Box::new(CPUPOOL.spawn_fn(move || hyres(import_swaps(ctx, req))))
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                return DispatcherRes::NoMatch(req);
-            }
-        },
-        "kmd_rewards_info" => hyres(kmd_rewards_info(ctx)),
-        // "inventory" => inventory (ctx, req),
-        #[cfg(not(feature = "wallet-only"))]
-        "list_banned_pubkeys" => hyres(list_banned_pubkeys_rpc(ctx)),
-        #[cfg(not(feature = "wallet-only"))]
-        "max_taker_vol" => hyres(max_taker_vol(ctx, req)),
-        "metrics" => metrics(ctx),
-        #[cfg(not(feature = "wallet-only"))]
-        "min_trading_vol" => hyres(min_trading_vol(ctx, req)),
-        "my_balance" => hyres(my_balance(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "my_orders" => hyres(my_orders(ctx)),
-        #[cfg(not(feature = "wallet-only"))]
-        "my_recent_swaps" => my_recent_swaps(ctx, req),
-        #[cfg(not(feature = "wallet-only"))]
-        "my_swap_status" => my_swap_status(ctx, req),
-        "my_tx_history" => my_tx_history(ctx, req),
-        #[cfg(not(feature = "wallet-only"))]
-        "order_status" => hyres(order_status(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "orderbook" => hyres(orderbook_rpc(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "orderbook_depth" => hyres(orderbook_depth_rpc(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "sim_panic" => hyres(sim_panic(req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "recover_funds_of_swap" => {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                Box::new(CPUPOOL.spawn_fn(move || hyres(recover_funds_of_swap(ctx, req))))
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                return DispatcherRes::NoMatch(req);
-            }
-        },
-        #[cfg(not(feature = "wallet-only"))]
-        "sell" => hyres(sell(ctx, req)),
-        "show_priv_key" => hyres(show_priv_key(ctx, req)),
-        "send_raw_transaction" => hyres(send_raw_transaction(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "set_requires_notarization" => hyres(set_requires_notarization(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "setprice" => hyres(set_price(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "stats_swap_status" => stats_swap_status(ctx, req),
-        "stop" => stop(ctx),
-        #[cfg(not(feature = "wallet-only"))]
-        "trade_preimage" => hyres(trade_preimage(ctx, req)),
-        #[cfg(not(feature = "wallet-only"))]
-        "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
-        "validateaddress" => hyres(validate_address(ctx, req)),
-        "version" => version(),
-        "withdraw" => hyres(withdraw(ctx, req)),
-        _ => return DispatcherRes::NoMatch(req),
-    })
 }
 
 async fn process_json_batch_requests(ctx: MmArc, requests: &[Json], client: SocketAddr) -> Result<Json, String> {
@@ -268,20 +155,41 @@ async fn process_json_request(ctx: MmArc, req_json: Json, client: SocketAddr) ->
     process_single_request(ctx, req_json, client).await
 }
 
-async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
-    // https://github.com/artemii235/SuperNET/issues/368
-    let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
-    if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains(&req["method"].as_str()) {
-        return ERR!("Selected method can be called from localhost only!");
-    }
-    try_s!(auth(&req, &ctx));
+fn response_from_dispatcher_error(
+    error: MmError<DispatcherError>,
+    version: MmRpcVersion,
+    id: Option<usize>,
+) -> Response<Vec<u8>> {
+    error!("RPC dispatcher error: {}", error);
+    let response: MmRpcResponse<(), _> = MmRpcBuilder::err(error).version(version).id(id).build();
+    response.serialize_http_response()
+}
 
-    let handler = match dispatcher(req, ctx.clone()) {
-        DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(req) => return ERR!("No such method: {:?}", req["method"]),
+async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
+    let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
+    if req["mmrpc"].is_null() {
+        return dispatcher_legacy::process_single_request(ctx, req, client, local_only)
+            .await
+            .map_err(|e| ERRL!("{}", e));
+    }
+
+    let id = req["id"].as_u64().map(|id| id as usize);
+    let version: MmRpcVersion = match json::from_value(req["mmrpc"].clone()) {
+        Ok(v) => v,
+        Err(e) => {
+            let error = MmError::new(DispatcherError::InvalidMmRpcVersion(e.to_string()));
+            // use the latest `MmRpcVersion` if the version is not recognized
+            return Ok(response_from_dispatcher_error(error, MmRpcVersion::V2, id));
+        },
     };
-    let res = try_s!(handler.compat().await);
-    Ok(res)
+
+    match dispatcher_v2::process_single_request(ctx, req, client, local_only).await {
+        Ok(response) => Ok(response),
+        Err(e) => {
+            // return always serialized response
+            return Ok(response_from_dispatcher_error(e, version, id));
+        },
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -335,6 +243,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
 #[cfg(not(target_arch = "wasm32"))]
 pub extern "C" fn spawn_rpc(ctx_h: u32) {
+    use common::wio::CORE;
     use hyper::server::conn::AddrStream;
     use hyper::service::{make_service_fn, service_fn};
     use std::convert::Infallible;

@@ -58,14 +58,13 @@
 use crate::mm2::lp_network::broadcast_p2p_msg;
 use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
-use coins::{lp_coinfind, MmCoinEnum, TradeFee, TradePreimageError, TransactionEnum};
+use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::{bits256, block_on, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber,
-             now_ms, read_dir, rpc_response, slurp, var, write, HyRes, TraceSource, Traceable};
-use futures::compat::Future01CompatExt;
+             now_ms, read_dir, rpc_response, slurp, var, write, HyRes};
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
@@ -79,8 +78,8 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
+use std::thread;
 use std::time::Duration;
-use std::{fmt, thread};
 use uuid::Uuid;
 
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
@@ -89,16 +88,20 @@ use uuid::Uuid;
 
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
 
+#[path = "lp_swap/check_balance.rs"] mod check_balance;
+#[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
+
+pub use check_balance::check_other_coin_balance_for_swap;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      stats_maker_swap_dir, MakerSavedSwap, MakerSwap, MakerTradePreimage, RunMakerSwapInput};
 use maker_swap::{stats_maker_swap_file_path, MakerSwapEvent};
+use pubkey_banning::BanReason;
+pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, stats_taker_swap_dir, taker_swap_trade_preimage, RunTakerSwapInput,
                      TakerSavedSwap, TakerSwap, TakerSwapPreparedParams, TakerTradePreimage};
 use taker_swap::{stats_taker_swap_file_path, TakerSwapEvent};
-
-use pubkey_banning::BanReason;
-pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
+pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
@@ -380,223 +383,6 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
             }
             total_amount
         })
-}
-
-#[derive(Debug)]
-pub enum CheckBalanceError {
-    NotSufficientBalance(String),
-    Other(String),
-}
-
-impl fmt::Display for CheckBalanceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CheckBalanceError::NotSufficientBalance(e) => write!(f, "Not sufficient balance: {}", e),
-            CheckBalanceError::Other(e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl Traceable for CheckBalanceError {
-    fn trace(self, source: TraceSource) -> Self {
-        match self {
-            CheckBalanceError::NotSufficientBalance(e) => CheckBalanceError::NotSufficientBalance(source.with_msg(&e)),
-            CheckBalanceError::Other(e) => CheckBalanceError::Other(source.with_msg(&e)),
-        }
-    }
-}
-
-impl From<TradePreimageError> for CheckBalanceError {
-    fn from(orig: TradePreimageError) -> Self {
-        match orig {
-            TradePreimageError::NotSufficientBalance(e) => CheckBalanceError::NotSufficientBalance(e),
-            TradePreimageError::Other(e) => CheckBalanceError::Other(e),
-        }
-    }
-}
-
-pub async fn check_other_coin_balance_for_swap(
-    ctx: &MmArc,
-    coin: &MmCoinEnum,
-    swap_uuid: Option<&Uuid>,
-    trade_fee: TradeFee,
-) -> Result<(), CheckBalanceError> {
-    if trade_fee.paid_from_trading_vol {
-        return Ok(());
-    }
-    let ticker = coin.ticker();
-    info!("Check other_coin '{}' balance for swap", ticker);
-    let balance = MmNumber::from(try_map!(
-        coin.my_spendable_balance().compat().await,
-        CheckBalanceError::Other
-    ));
-
-    let locked = match swap_uuid {
-        Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),
-        None => get_locked_amount(ctx, ticker),
-    };
-
-    if ticker == trade_fee.coin {
-        let available = &balance - &locked;
-        let required = trade_fee.amount;
-        info!(
-            "{} balance {:?}, locked {:?}, required {:?}",
-            ticker,
-            balance.to_fraction(),
-            locked.to_fraction(),
-            required.to_fraction(),
-        );
-        if available < required {
-            let err = ERRL!(
-                "The total required {} amount {} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}",
-                ticker,
-                required,
-                available,
-                balance,
-                locked
-            );
-            return Err(CheckBalanceError::NotSufficientBalance(err));
-        }
-    } else {
-        let base_coin_balance = MmNumber::from(try_map!(
-            coin.base_coin_balance().compat().await,
-            CheckBalanceError::Other
-        ));
-        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid)
-            .await
-            .trace(source!())?;
-    }
-
-    Ok(())
-}
-
-pub struct TakerFeeAdditionalInfo {
-    dex_fee: MmNumber,
-    fee_to_send_dex_fee: TradeFee,
-}
-
-/// Check the coin balance before the swap has started.
-///
-/// `swap_uuid` is used if our swap is running already and we should except this swap locked amount from the following calculations.
-pub async fn check_my_coin_balance_for_swap(
-    ctx: &MmArc,
-    coin: &MmCoinEnum,
-    swap_uuid: Option<&Uuid>,
-    volume: MmNumber,
-    mut trade_fee: TradeFee,
-    taker_fee: Option<TakerFeeAdditionalInfo>,
-) -> Result<(), CheckBalanceError> {
-    let ticker = coin.ticker();
-    info!("Check my_coin '{}' balance for swap", ticker);
-    let balance = MmNumber::from(try_map!(
-        coin.my_spendable_balance().compat().await,
-        CheckBalanceError::Other
-    ));
-
-    let locked = match swap_uuid {
-        Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),
-        None => get_locked_amount(ctx, ticker),
-    };
-
-    let dex_fee = match taker_fee {
-        Some(TakerFeeAdditionalInfo {
-            dex_fee,
-            fee_to_send_dex_fee,
-        }) => {
-            if fee_to_send_dex_fee.coin != trade_fee.coin {
-                let err = ERRL!(
-                    "Internal error: trade_fee {:?} and fee_to_send_dex_fee {:?} coins are expected to be the same",
-                    trade_fee.coin,
-                    fee_to_send_dex_fee.coin
-                );
-                return Err(CheckBalanceError::Other(err));
-            }
-            // increase `trade_fee` by the `fee_to_send_dex_fee`
-            trade_fee.amount += fee_to_send_dex_fee.amount;
-            dex_fee
-        },
-        None => MmNumber::from(0),
-    };
-
-    let total_trade_fee = if ticker == trade_fee.coin {
-        trade_fee.amount
-    } else {
-        let base_coin_balance = MmNumber::from(try_map!(
-            coin.base_coin_balance().compat().await,
-            CheckBalanceError::Other
-        ));
-        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid)
-            .await
-            .trace(source!())?;
-        MmNumber::from(0)
-    };
-
-    info!(
-        "{} balance {:?}, locked {:?}, volume {:?}, fee {:?}, dex_fee {:?}",
-        ticker,
-        balance.to_fraction(),
-        locked.to_fraction(),
-        volume.to_fraction(),
-        total_trade_fee.to_fraction(),
-        dex_fee.to_fraction()
-    );
-
-    let required = volume + total_trade_fee + dex_fee;
-    let available = &balance - &locked;
-
-    if available < required {
-        let err = ERRL!(
-            "The total required {} amount {} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}",
-            ticker,
-            required,
-            available,
-            balance,
-            locked
-        );
-        return Err(CheckBalanceError::NotSufficientBalance(err));
-    }
-
-    Ok(())
-}
-
-pub async fn check_base_coin_balance_for_swap(
-    ctx: &MmArc,
-    balance: &MmNumber,
-    trade_fee: TradeFee,
-    swap_uuid: Option<&Uuid>,
-) -> Result<(), CheckBalanceError> {
-    let ticker = trade_fee.coin.as_str();
-    let trade_fee_fraction = trade_fee.amount.to_fraction();
-    info!(
-        "Check if the base coin '{}' has sufficient balance to pay the trade fee {:?}",
-        ticker, trade_fee_fraction
-    );
-
-    let required = trade_fee.amount;
-    let locked = match swap_uuid {
-        Some(uuid) => get_locked_amount_by_other_swaps(ctx, uuid, ticker),
-        None => get_locked_amount(ctx, ticker),
-    };
-    let available = balance - &locked;
-
-    info!(
-        "{} balance {:?}, locked {:?}",
-        ticker,
-        balance.to_fraction(),
-        locked.to_fraction()
-    );
-    if available < required {
-        let err =  ERRL!(
-            "The total base coin '{}' required amount {} is larger than available {:.8}, balance: {}, locked by swaps: {:.8}",
-            ticker,
-            required,
-            available,
-            balance,
-            locked
-        );
-        return Err(CheckBalanceError::NotSufficientBalance(err));
-    }
-    Ok(())
 }
 
 pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, String> {
@@ -1034,216 +820,6 @@ pub fn stats_swap_status(ctx: MmArc, req: Json) -> HyRes {
         })
         .to_string(),
     )
-}
-
-#[derive(Deserialize)]
-pub struct TradePreimageRequest {
-    /// The base currency of the request.
-    base: String,
-    /// The rel currency of the request.
-    rel: String,
-    /// The name of the method whose preimage is requested.
-    swap_method: TradePreimageMethod,
-    /// The price in `rel` the user is willing to receive per one unit of the `base` coin.
-    #[serde(default)]
-    price: MmNumber,
-    /// The amount the user is willing to trade.
-    /// Ignored if `max = true`.
-    #[serde(default)]
-    volume: MmNumber,
-    /// Whether to return the maximum available volume for setprice method
-    #[serde(default)]
-    max: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TradePreimageMethod {
-    SetPrice,
-    Buy,
-    Sell,
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-#[allow(clippy::large_enum_variant)]
-pub enum TradePreimageResponse {
-    MakerPreimage {
-        base_coin_fee: TradeFeeResponse,
-        rel_coin_fee: TradeFeeResponse,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(flatten)]
-        volume: Option<DetailedVolume>,
-        total_fees: Vec<TotalTradeFeeResponse>,
-    },
-    TakerPreimage {
-        base_coin_fee: TradeFeeResponse,
-        rel_coin_fee: TradeFeeResponse,
-        taker_fee: TradeFeeResponse,
-        fee_to_send_taker_fee: TradeFeeResponse,
-        total_fees: Vec<TotalTradeFeeResponse>,
-    },
-}
-
-impl From<MakerTradePreimage> for TradePreimageResponse {
-    fn from(maker: MakerTradePreimage) -> Self {
-        let mut total_fees = HashMap::new();
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, maker.base_coin_fee.clone());
-        let base_coin_fee = TradeFeeResponse::from(maker.base_coin_fee);
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, maker.rel_coin_fee.clone());
-        let rel_coin_fee = TradeFeeResponse::from(maker.rel_coin_fee);
-
-        let total_fees = total_fees
-            .into_iter()
-            .filter_map(TradePreimageResponse::filter_zero_total_fees)
-            .collect();
-        let volume = maker.volume.map(DetailedVolume::from);
-        TradePreimageResponse::MakerPreimage {
-            base_coin_fee,
-            rel_coin_fee,
-            volume,
-            total_fees,
-        }
-    }
-}
-
-impl From<TakerTradePreimage> for TradePreimageResponse {
-    fn from(taker: TakerTradePreimage) -> Self {
-        let mut total_fees = HashMap::new();
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, taker.base_coin_fee.clone());
-        let base_coin_fee = TradeFeeResponse::from(taker.base_coin_fee);
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, taker.rel_coin_fee.clone());
-        let rel_coin_fee = TradeFeeResponse::from(taker.rel_coin_fee);
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, taker.taker_fee.clone());
-        let taker_fee = TradeFeeResponse::from(taker.taker_fee);
-
-        TradePreimageResponse::accumulate_total_fees(&mut total_fees, taker.fee_to_send_taker_fee.clone());
-        let fee_to_send_taker_fee = TradeFeeResponse::from(taker.fee_to_send_taker_fee);
-
-        let total_fees = total_fees
-            .into_iter()
-            .filter_map(TradePreimageResponse::filter_zero_total_fees)
-            .collect();
-        TradePreimageResponse::TakerPreimage {
-            base_coin_fee,
-            rel_coin_fee,
-            taker_fee,
-            fee_to_send_taker_fee,
-            total_fees,
-        }
-    }
-}
-
-impl TradePreimageResponse {
-    fn accumulate_total_fees(total_fees: &mut HashMap<String, TotalTradeFee>, fee: TradeFee) {
-        use std::collections::hash_map::Entry;
-        match total_fees.entry(fee.coin.clone()) {
-            Entry::Occupied(mut entry) => {
-                entry.get_mut().add_trade_fee(fee.amount, fee.paid_from_trading_vol);
-            },
-            Entry::Vacant(entry) => {
-                entry.insert(fee.into());
-            },
-        }
-    }
-
-    fn filter_zero_total_fees((_coin, fee): (String, TotalTradeFee)) -> Option<TotalTradeFeeResponse> {
-        if fee.amount.is_zero() {
-            None
-        } else {
-            Some(TotalTradeFeeResponse::from(fee))
-        }
-    }
-}
-
-#[derive(Clone, Serialize)]
-pub struct TradeFeeResponse {
-    coin: String,
-    #[serde(flatten)]
-    amount: DetailedAmount,
-    paid_from_trading_vol: bool,
-}
-
-impl From<TradeFee> for TradeFeeResponse {
-    fn from(orig: TradeFee) -> Self {
-        TradeFeeResponse {
-            coin: orig.coin,
-            amount: DetailedAmount::from(orig.amount),
-            paid_from_trading_vol: orig.paid_from_trading_vol,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct TotalTradeFee {
-    coin: String,
-    amount: MmNumber,
-    required_balance: MmNumber,
-}
-
-impl TotalTradeFee {
-    fn add_trade_fee(&mut self, amount: MmNumber, paid_from_trading_vol: bool) {
-        self.amount += &amount;
-        if !paid_from_trading_vol {
-            self.required_balance += amount;
-        }
-    }
-}
-
-impl From<TradeFee> for TotalTradeFee {
-    fn from(orig: TradeFee) -> TotalTradeFee {
-        let required_balance = if orig.paid_from_trading_vol {
-            0.into()
-        } else {
-            orig.amount.clone()
-        };
-        TotalTradeFee {
-            coin: orig.coin,
-            amount: orig.amount,
-            required_balance,
-        }
-    }
-}
-
-#[derive(Clone, Serialize)]
-pub struct TotalTradeFeeResponse {
-    coin: String,
-    #[serde(flatten)]
-    amount: DetailedAmount,
-    #[serde(flatten)]
-    required_balance: DetailedRequiredBalance,
-}
-
-impl From<TotalTradeFee> for TotalTradeFeeResponse {
-    fn from(orig: TotalTradeFee) -> Self {
-        TotalTradeFeeResponse {
-            coin: orig.coin,
-            amount: orig.amount.into(),
-            required_balance: orig.required_balance.into(),
-        }
-    }
-}
-
-construct_detailed!(DetailedAmount, amount);
-construct_detailed!(DetailedVolume, volume);
-construct_detailed!(DetailedRequiredBalance, required_balance);
-
-pub async fn trade_preimage(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: TradePreimageRequest = try_s!(json::from_value(req));
-    let result: TradePreimageResponse = match req.swap_method {
-        TradePreimageMethod::SetPrice => try_s!(maker_swap_trade_preimage(&ctx, req).await).into(),
-        TradePreimageMethod::Buy | TradePreimageMethod::Sell => {
-            try_s!(taker_swap_trade_preimage(&ctx, req).await).into()
-        },
-    };
-    let res = json!({ "result": result });
-    let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
 }
 
 #[derive(Debug, Deserialize, Serialize)]

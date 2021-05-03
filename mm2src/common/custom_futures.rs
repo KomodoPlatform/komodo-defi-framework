@@ -203,15 +203,15 @@ impl<T> TimedAsyncMutex<T> {
     /// `tick` returns a time till the next tick, or an error to abort the locking attempt.  
     /// `tick` parameters are the time when the locking attempt has started and the current time
     /// (they are equal on the first invocation of `tick`).
-    pub async fn lock<F>(&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, String>
+    pub async fn lock<F, E>(&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, E>
     where
-        F: FnMut(f64, f64) -> Result<f64, String>,
+        F: FnMut(f64, f64) -> Result<f64, E>,
     {
         let start = now_float();
         let mut now = start;
         let mut l = self.0.lock();
         let l = loop {
-            let tick_after = try_s!(tick(start, now));
+            let tick_after = tick(start, now)?;
             let t = Timer::till(now + tick_after);
             let rc = select(l, t).await;
             match rc {

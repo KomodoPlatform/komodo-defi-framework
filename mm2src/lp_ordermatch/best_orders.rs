@@ -1,6 +1,6 @@
 use super::{OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-use coins::{address_by_coin_conf_and_pubkey_str, coin_conf};
+use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
@@ -106,6 +106,9 @@ pub async fn process_best_orders_p2p_request(
 
 pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: BestOrdersRequest = try_s!(json::from_value(req));
+    if is_wallet_only_ticker(&ctx, &req.coin) {
+        return ERR!("Coin {} is wallet only", &req.coin);
+    }
     let p2p_request = OrdermatchRequest::BestOrders {
         coin: req.coin,
         action: req.action,
@@ -121,6 +124,13 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
                 log::warn!("Coin {} is not found in config", coin);
+                continue;
+            }
+            if is_wallet_only_conf(&coin_conf) {
+                log::warn!(
+                    "Coin {} was removed from best orders because it's defined as wallet only in config",
+                    coin
+                );
                 continue;
             }
             for order_w_proof in orders_w_proofs {

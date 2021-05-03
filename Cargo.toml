@@ -58,6 +58,7 @@ common = { path = "mm2src/common" }
 crc = "1.8"
 crc32fast = { version = "1.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
+derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 enum-primitive-derive = "0.1"
@@ -99,6 +100,8 @@ serde = "1.0"
 serde_bencode = "0.2"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_derive = "1.0"
+ser_error = { path = "mm2src/derives/ser_error" }
+ser_error_derive = { path = "mm2src/derives/ser_error_derive" }
 serialization = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 serialization_derive = { git = "https://github.com/artemii235/parity-bitcoin.git" }
 sp-trie = "2.0.0"
@@ -143,6 +146,8 @@ members = [
     "mm2src/floodsub",
     "mm2src/mm2_libp2p",
     "mm2src/gossipsub",
+    "mm2src/derives/ser_error",
+    "mm2src/derives/ser_error_derive",
 ]
 
 # The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function

@@ -55,6 +55,7 @@ impl Node {
     async fn send_cmd(&mut self, cmd: AdexBehaviourCmd) { self.cmd_tx.send(cmd).await.unwrap(); }
 
     async fn wait_peers(&mut self, number: usize) {
+        let mut attempts = 0;
         loop {
             let (tx, rx) = oneshot::channel();
             self.cmd_tx
@@ -69,6 +70,10 @@ impl Node {
                     async_std::task::sleep(Duration::from_millis(500)).await;
                 },
                 Err(e) => panic!("{}", e),
+            }
+            attempts += 1;
+            if attempts >= 10 {
+                panic!("wait_peers {} attempts exceeded", attempts);
             }
         }
     }

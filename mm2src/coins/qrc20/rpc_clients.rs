@@ -1,5 +1,14 @@
 use super::*;
+use crate::utxo::rpc_clients::{UtxoRpcError, UtxoRpcFut};
 use rpc::v1::types::H256;
+
+impl From<ethabi::Error> for UtxoRpcError {
+    fn from(e: ethabi::Error) -> Self {
+        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+        // It's an internal error if there are any issues during working with a smart contract ABI.
+        UtxoRpcError::Internal(e.to_string())
+    }
+}
 
 pub mod for_tests {
     use super::*;
@@ -360,7 +369,7 @@ pub trait Qrc20RpcOps {
         func: ViewContractCallType,
         contract_addr: &H160,
         tokens: &[Token],
-    ) -> Box<dyn Future<Item = Vec<Token>, Error = String> + Send>;
+    ) -> UtxoRpcFut<Vec<Token>>;
 
     fn token_decimals(&self, token_address: &H160) -> Box<dyn Future<Item = u8, Error = String> + Send>;
 }
@@ -378,19 +387,24 @@ impl Qrc20RpcOps for UtxoRpcClientEnum {
         func: ViewContractCallType,
         contract_addr: &H160,
         tokens: &[Token],
-    ) -> Box<dyn Future<Item = Vec<Token>, Error = String> + Send> {
+    ) -> UtxoRpcFut<Vec<Token>> {
         let function = func.as_function().clone();
-        let params = try_fus!(function.encode_input(tokens));
+        let params = try_f!(function.encode_input(tokens).map_to_mm(UtxoRpcError::from));
         let contract_addr = contract_addr_into_rpc_format(contract_addr);
 
-        let fut = match self {
-            UtxoRpcClientEnum::Native(native) => native.call_contract(&contract_addr, params.into()),
-            UtxoRpcClientEnum::Electrum(electrum) => electrum.blockchain_contract_call(&contract_addr, params.into()),
+        let rpc_client = self.clone();
+        let fut = async move {
+            let fut = match rpc_client {
+                UtxoRpcClientEnum::Native(native) => native.call_contract(&contract_addr, params.into()),
+                UtxoRpcClientEnum::Electrum(electrum) => {
+                    electrum.blockchain_contract_call(&contract_addr, params.into())
+                },
+            };
+            let result = fut.compat().await?;
+            let decoded = function.decode_output(&result.execution_result.output)?;
+            Ok(decoded)
         };
-        let fut = fut
-            .map_err(|e| ERRL!("{}", e))
-            .and_then(move |result| Ok(try_s!(function.decode_output(&result.execution_result.output))));
-        Box::new(fut)
+        Box::new(fut.boxed().compat())
     }
 
     fn token_decimals(&self, token_address: &H160) -> Box<dyn Future<Item = u8, Error = String> + Send> {

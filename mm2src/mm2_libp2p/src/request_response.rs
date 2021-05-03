@@ -12,11 +12,13 @@ use libp2p::request_response::{ProtocolName, ProtocolSupport, RequestId, Request
 use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
 use libp2p::NetworkBehaviour;
 use libp2p::PeerId;
-use log::{debug, error};
+use log::{debug, error, warn};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::io;
+use std::time::Duration;
+use wasm_timer::{Instant, Interval};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
 
@@ -33,12 +35,17 @@ pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
     let (tx, rx) = mpsc::unbounded();
     let pending_requests = HashMap::new();
     let events = VecDeque::new();
+    let timeout = Duration::from_secs(10);
+    let timeout_interval = Interval::new(Duration::from_secs(1));
+
     RequestResponseBehaviour {
         tx,
         rx,
         pending_requests,
         events,
         inner,
+        timeout,
+        timeout_interval,
     }
 }
 
@@ -50,6 +57,11 @@ pub enum RequestResponseBehaviourEvent {
     },
 }
 
+struct PendingRequest {
+    tx: oneshot::Sender<PeerResponse>,
+    initiated_at: Instant,
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "RequestResponseBehaviourEvent")]
 #[behaviour(poll_method = "poll_event")]
@@ -59,10 +71,16 @@ pub struct RequestResponseBehaviour {
     #[behaviour(ignore)]
     tx: RequestResponseSender,
     #[behaviour(ignore)]
-    pending_requests: HashMap<RequestId, oneshot::Sender<PeerResponse>>,
+    pending_requests: HashMap<RequestId, PendingRequest>,
     /// Events that need to be yielded to the outside when polling.
     #[behaviour(ignore)]
     events: VecDeque<RequestResponseBehaviourEvent>,
+    /// Timeout for pending requests
+    #[behaviour(ignore)]
+    timeout: Duration,
+    /// Interval for request timeout check
+    #[behaviour(ignore)]
+    timeout_interval: Interval,
     /// The inner RequestResponse network behaviour.
     inner: RequestResponse<Codec<Protocol, PeerRequest, PeerResponse>>,
 }
@@ -81,7 +99,11 @@ impl RequestResponseBehaviour {
         response_tx: oneshot::Sender<PeerResponse>,
     ) -> RequestId {
         let request_id = self.inner.send_request(&peer_id, request);
-        assert!(self.pending_requests.insert(request_id, response_tx).is_none());
+        let pending_request = PendingRequest {
+            tx: response_tx,
+            initiated_at: Instant::now(),
+        };
+        assert!(self.pending_requests.insert(request_id, pending_request).is_none());
         request_id
     }
 
@@ -106,6 +128,18 @@ impl RequestResponseBehaviour {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(event));
         }
 
+        while let Poll::Ready(Some(())) = self.timeout_interval.poll_next_unpin(cx) {
+            let now = Instant::now();
+            let timeout = self.timeout;
+            self.pending_requests.retain(|request_id, pending_request| {
+                let retain = now.duration_since(pending_request.initiated_at) < timeout;
+                if !retain {
+                    warn!("Request {} timed out", request_id);
+                }
+                retain
+            });
+        }
+
         Poll::Pending
     }
 
@@ -124,8 +158,8 @@ impl RequestResponseBehaviour {
 
     fn process_response(&mut self, request_id: RequestId, response: PeerResponse) {
         match self.pending_requests.remove(&request_id) {
-            Some(tx) => {
-                if let Err(e) = tx.send(response) {
+            Some(pending) => {
+                if let Err(e) = pending.tx.send(response) {
                     error!("{:?}. Request {:?} is not processed", e, request_id);
                 }
             },

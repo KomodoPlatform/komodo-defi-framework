@@ -29,19 +29,22 @@
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
+#[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, ParseBigDecimalError};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc};
+use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
-use common::{block_on, calc_total_pages, now_ms, rpc_err_response, rpc_response, HyRes, TraceSource, Traceable};
+use common::{block_on, calc_total_pages, now_ms, rpc_err_response, rpc_response, HttpStatusCode, HyRes};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
 use gstuff::slurp;
-use http::Response;
+use http::{Response, StatusCode};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Deserializer};
 use serde_json::{self as json, Value as Json};
@@ -63,22 +66,44 @@ macro_rules! try_fus {
     };
 }
 
+macro_rules! try_f {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(e) => return Box::new(futures01::future::err(e)),
+        }
+    };
+}
+
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
 
 pub mod eth;
-use self::eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+
 pub mod utxo;
-use self::utxo::qtum::{self, qtum_coin_from_conf_and_request, QtumCoin};
-use self::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-use self::utxo::{GenerateTransactionError, UtxoFeeDetails, UtxoTx};
+use utxo::qtum::{self, qtum_coin_from_conf_and_request, QtumCoin};
+use utxo::utxo_common::big_decimal_from_sat_unsigned;
+use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
+use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
+
 pub mod qrc20;
 use qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
+
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
 pub use test_coin::TestCoin;
+
+pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
+pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
+pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
+pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
+pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
+pub type TradePreimageResult<T> = Result<T, MmError<TradePreimageError>>;
+pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePreimageError>> + Send>;
+pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 
 pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -259,14 +284,14 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> Result<String, String>;
 
-    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send>;
+    fn my_balance(&self) -> BalanceFut<CoinBalance>;
 
-    fn my_spendable_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
+    fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
     }
 
     /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
-    fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send>;
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal>;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
@@ -303,7 +328,7 @@ pub trait MarketCoinOps {
     fn min_trading_vol(&self) -> MmNumber;
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum WithdrawFee {
     UtxoFixed {
@@ -461,43 +486,217 @@ pub enum TradePreimageValue {
     UpperBound(BigDecimal),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum TradePreimageError {
-    NotSufficientBalance(String),
-    Other(String),
+    #[display(
+        fmt = "Not enough {} to preimage the trade: available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalance {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+    #[display(fmt = "The amount {} is too small", amount)]
+    AmountIsTooSmall { amount: BigDecimal },
+    #[display(fmt = "The max available amount {} is too small", amount)]
+    UpperBoundAmountIsTooSmall { amount: BigDecimal },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
 }
 
-impl fmt::Display for TradePreimageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TradePreimageError::NotSufficientBalance(e) => write!(f, "Not sufficient balance: {}", e),
-            TradePreimageError::Other(e) => write!(f, "{}", e),
-        }
-    }
+impl From<NumConversError> for TradePreimageError {
+    fn from(e: NumConversError) -> Self { TradePreimageError::InternalError(e.to_string()) }
 }
 
-impl Traceable for TradePreimageError {
-    fn trace(self, source: TraceSource) -> Self {
-        match self {
-            TradePreimageError::NotSufficientBalance(e) => {
-                TradePreimageError::NotSufficientBalance(source.with_msg(&e))
+impl TradePreimageError {
+    /// Construct [`TradePreimageError`] from [`GenerateTxError`] using additional `coin` and `decimals`.
+    pub fn from_generate_tx_error(
+        gen_tx_err: GenerateTxError,
+        coin: String,
+        decimals: u8,
+        is_upper_bound: bool,
+    ) -> TradePreimageError {
+        match gen_tx_err {
+            GenerateTxError::EmptyUtxoSet { required } => {
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                TradePreimageError::NotSufficientBalance {
+                    coin,
+                    available: BigDecimal::from(0),
+                    required,
+                }
             },
-            TradePreimageError::Other(e) => TradePreimageError::Other(source.with_msg(&e)),
+            GenerateTxError::EmptyOutputs => TradePreimageError::InternalError(gen_tx_err.to_string()),
+            GenerateTxError::OutputValueLessThanDust { value, .. } => {
+                let amount = big_decimal_from_sat_unsigned(value, decimals);
+                if is_upper_bound {
+                    TradePreimageError::UpperBoundAmountIsTooSmall { amount }
+                } else {
+                    TradePreimageError::AmountIsTooSmall { amount }
+                }
+            },
+            GenerateTxError::DeductFeeFromOutputFailed {
+                output_value, required, ..
+            } => {
+                let available = big_decimal_from_sat_unsigned(output_value, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                TradePreimageError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::NotEnoughUtxos { sum_utxos, required } => {
+                let available = big_decimal_from_sat_unsigned(sum_utxos, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                TradePreimageError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::Transport(e) => TradePreimageError::Transport(e),
+            GenerateTxError::Internal(e) => TradePreimageError::InternalError(e),
         }
     }
 }
 
-impl From<GenerateTransactionError> for TradePreimageError {
-    fn from(e: GenerateTransactionError) -> Self {
+/// The reason of unsuccessful conversion of two internal numbers, e.g. `u64` from `BigNumber`.
+#[derive(Debug, Display)]
+pub struct NumConversError(String);
+
+impl From<ParseBigDecimalError> for NumConversError {
+    fn from(e: ParseBigDecimalError) -> Self { NumConversError::new(e.to_string()) }
+}
+
+impl NumConversError {
+    pub fn new(description: String) -> NumConversError { NumConversError(description) }
+
+    pub fn description(&self) -> &str { &self.0 }
+}
+
+#[derive(Debug, Display, PartialEq)]
+pub enum BalanceError {
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+impl From<NumConversError> for BalanceError {
+    fn from(e: NumConversError) -> Self { BalanceError::Internal(e.to_string()) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum WithdrawError {
+    #[display(
+        fmt = "Not enough {} to withdraw: available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalance {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+    #[display(fmt = "Balance is zero")]
+    ZeroBalanceToWithdrawMax,
+    #[display(fmt = "The amount {} is too small", amount)]
+    AmountIsTooSmall { amount: BigDecimal },
+    #[display(fmt = "Invalid address: {}", _0)]
+    InvalidAddress(String),
+    #[display(fmt = "Invalid fee policy: {}", _0)]
+    InvalidFeePolicy(String),
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl HttpStatusCode for WithdrawError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            WithdrawError::NotSufficientBalance { .. }
+            | WithdrawError::ZeroBalanceToWithdrawMax
+            | WithdrawError::AmountIsTooSmall { .. }
+            | WithdrawError::InvalidAddress(_)
+            | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::NoSuchCoin { .. } => StatusCode::BAD_REQUEST,
+            WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<NumConversError> for WithdrawError {
+    fn from(e: NumConversError) -> Self { WithdrawError::InternalError(e.to_string()) }
+}
+
+impl From<BalanceError> for WithdrawError {
+    fn from(e: BalanceError) -> Self {
         match e {
-            GenerateTransactionError::EmptyUtxoSet => {
-                TradePreimageError::NotSufficientBalance(GenerateTransactionError::EmptyUtxoSet.to_string())
+            BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => WithdrawError::Transport(error),
+            BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
+        }
+    }
+}
+
+impl From<CoinFindError> for WithdrawError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
+        }
+    }
+}
+
+impl WithdrawError {
+    /// Construct [`WithdrawError`] from [`GenerateTxError`] using additional `coin` and `decimals`.
+    pub fn from_generate_tx_error(gen_tx_err: GenerateTxError, coin: String, decimals: u8) -> WithdrawError {
+        match gen_tx_err {
+            GenerateTxError::EmptyUtxoSet { required } => {
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                WithdrawError::NotSufficientBalance {
+                    coin,
+                    available: BigDecimal::from(0),
+                    required,
+                }
             },
-            GenerateTransactionError::NotSufficientBalance { description }
-            | GenerateTransactionError::DeductFeeFromOutputFailed { description } => {
-                TradePreimageError::NotSufficientBalance(description)
+            GenerateTxError::EmptyOutputs => WithdrawError::InternalError(gen_tx_err.to_string()),
+            GenerateTxError::OutputValueLessThanDust { value, .. } => {
+                let amount = big_decimal_from_sat_unsigned(value, decimals);
+                WithdrawError::AmountIsTooSmall { amount }
             },
-            e => TradePreimageError::Other(e.to_string()),
+            GenerateTxError::DeductFeeFromOutputFailed {
+                output_value, required, ..
+            } => {
+                let available = big_decimal_from_sat_unsigned(output_value, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                WithdrawError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::NotEnoughUtxos { sum_utxos, required } => {
+                let available = big_decimal_from_sat_unsigned(sum_utxos, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                WithdrawError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::Transport(e) => WithdrawError::Transport(e),
+            GenerateTxError::Internal(e) => WithdrawError::InternalError(e),
         }
     }
 }
@@ -513,9 +712,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn is_asset_chain(&self) -> bool;
 
     /// The coin can be initialized, but it cannot participate in the swaps.
-    fn wallet_only(&self) -> bool;
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        let coin_conf = coin_conf(&ctx, &self.ticker());
+        coin_conf["wallet_only"].as_bool().unwrap_or(false)
+    }
 
-    fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send>;
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
@@ -579,24 +781,17 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap using the sending value and check if the wallet has sufficient balance to pay the fee.
-    fn get_sender_trade_fee(
-        &self,
-        value: TradePreimageValue,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send>;
+    fn get_sender_trade_fee(&self, value: TradePreimageValue, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
 
     /// Get fee to be paid by receiver per whole swap and check if the wallet has sufficient balance to pay the fee.
-    fn get_receiver_trade_fee(
-        &self,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send>;
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
 
     /// Get transaction fee the Taker has to pay to send a `TakerFee` transaction and check if the wallet has sufficient balance to pay the fee.
     fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send>;
+    ) -> TradePreimageFut<TradeFee>;
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -828,6 +1023,13 @@ pub fn coin_conf(ctx: &MmArc, ticker: &str) -> Json {
     }
 }
 
+pub fn is_wallet_only_conf(conf: &Json) -> bool { conf["wallet_only"].as_bool().unwrap_or(false) }
+
+pub fn is_wallet_only_ticker(ctx: &MmArc, ticker: &str) -> bool {
+    let coin_conf = coin_conf(ctx, ticker);
+    coin_conf["wallet_only"].as_bool().unwrap_or(false)
+}
+
 /// Adds a new currency into the list of currencies configured.
 ///
 /// Returns an error if the currency already exists. Initializing the same currency twice is a bad habit
@@ -935,6 +1137,22 @@ pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>
     Ok(coins.get(ticker).cloned())
 }
 
+#[derive(Display)]
+pub enum CoinFindError {
+    #[display(fmt = "No such coin: {}", coin)]
+    NoSuchCoin { coin: String },
+}
+
+pub async fn lp_coinfind_or_err(ctx: &MmArc, ticker: &str) -> CoinFindResult<MmCoinEnum> {
+    match lp_coinfind(ctx, ticker).await {
+        Ok(Some(coin)) => Ok(coin),
+        Ok(None) => MmError::err(CoinFindError::NoSuchCoin {
+            coin: ticker.to_owned(),
+        }),
+        Err(e) => panic!("Unexpected error: {}", e),
+    }
+}
+
 #[derive(Deserialize)]
 struct ConvertAddressReq {
     coin: String,
@@ -1000,17 +1218,9 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(body)))
 }
 
-pub async fn withdraw(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
-    };
-    let withdraw_req: WithdrawRequest = try_s!(json::from_value(req));
-    let res = try_s!(coin.withdraw(withdraw_req).compat().await);
-    let body = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(body)))
+pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    coin.withdraw(req).compat().await
 }
 
 pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {

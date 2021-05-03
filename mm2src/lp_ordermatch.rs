@@ -57,9 +57,8 @@ use uuid::Uuid;
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          CheckBalanceError, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
-                          SwapConfirmationsSettings, TakerSwap};
+                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
+                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::best_orders_rpc;
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -235,9 +234,6 @@ async fn process_maker_order_updated(
 ///
 /// The function locks [`MmCtx::p2p_ctx`] and [`MmCtx::ordermatch_ctx`]
 async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Result<(), String> {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock().await;
-
     let request = OrdermatchRequest::GetOrderbook {
         base: base.to_string(),
         rel: rel.to_string(),
@@ -248,6 +244,9 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         Some((GetOrderbookRes { pubkey_orders }, _peer_id)) => pubkey_orders,
         None => return Ok(()),
     };
+
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let mut orderbook = ordermatch_ctx.orderbook.lock().await;
 
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
@@ -794,7 +793,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
         let new_volume = match calc_max_maker_vol(&self.ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
             Ok(v) => v,
-            Err(CheckBalanceError::NotSufficientBalance(_)) => MmNumber::from(0),
+            Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
                 log::warn!("Couldn't handle the 'balance_updated' event: {}", e);
                 return;
@@ -2676,11 +2675,11 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    if base_coin.wallet_only() {
-        return ERR!("Base coin is wallet only");
+    if base_coin.wallet_only(&ctx) {
+        return ERR!("Base coin {} is wallet only", input.base);
     }
-    if rel_coin.wallet_only() {
-        return ERR!("Rel coin is wallet only");
+    if rel_coin.wallet_only(&ctx) {
+        return ERR!("Rel coin {} is wallet only", input.rel);
     }
     let my_amount = &input.volume * &input.price;
     try_s!(
@@ -2708,11 +2707,11 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    if base_coin.wallet_only() {
-        return ERR!("Base coin is wallet only");
+    if base_coin.wallet_only(&ctx) {
+        return ERR!("Base coin {} is wallet only", input.base);
     }
-    if rel_coin.wallet_only() {
-        return ERR!("Rel coin is wallet only");
+    if rel_coin.wallet_only(&ctx) {
+        return ERR!("Rel coin {} is wallet only", input.rel);
     }
     try_s!(
         check_balance_for_taker_swap(
@@ -3183,11 +3182,11 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
 
-    if base_coin.wallet_only() {
-        return ERR!("Base coin is wallet only");
+    if base_coin.wallet_only(&ctx) {
+        return ERR!("Base coin {} is wallet only", req.base);
     }
-    if rel_coin.wallet_only() {
-        return ERR!("Rel coin is wallet only");
+    if rel_coin.wallet_only(&ctx) {
+        return ERR!("Rel coin {} is wallet only", req.rel);
     }
 
     let my_balance = try_s!(

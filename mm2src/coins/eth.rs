@@ -23,7 +23,9 @@ use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
+use common::mm_error::prelude::*;
 use common::{block_on, now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, U256};
@@ -53,10 +55,12 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
 
-use super::{CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SwapOps, TradeFee, TradePreimageError, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawFee, WithdrawRequest};
+use super::{BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NumConversError, NumConversResult,
+            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageValue, Transaction, TransactionDetails,
+            TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
@@ -99,6 +103,99 @@ const APPROVE_GAS_LIMIT: u64 = 50_000;
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
     pub static ref ERC20_CONTRACT: Contract = Contract::load(ERC20_ABI.as_bytes()).unwrap();
+}
+
+pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
+pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
+
+#[derive(Debug, Display)]
+pub enum Web3RpcError {
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+impl From<serde_json::Error> for Web3RpcError {
+    fn from(e: serde_json::Error) -> Self { Web3RpcError::InvalidResponse(e.to_string()) }
+}
+
+impl From<web3::Error> for Web3RpcError {
+    fn from(e: web3::Error) -> Self {
+        let error_str = e.to_string();
+        match e.kind() {
+            web3::ErrorKind::InvalidResponse(_)
+            | web3::ErrorKind::Decoder(_)
+            | web3::ErrorKind::Msg(_)
+            | web3::ErrorKind::Rpc(_) => Web3RpcError::InvalidResponse(error_str),
+            web3::ErrorKind::Transport(_) | web3::ErrorKind::Io(_) => Web3RpcError::Transport(error_str),
+            _ => Web3RpcError::Internal(error_str),
+        }
+    }
+}
+
+impl From<ethabi::Error> for Web3RpcError {
+    fn from(e: ethabi::Error) -> Web3RpcError {
+        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+        // It's an internal error if there are any issues during working with a smart contract ABI.
+        Web3RpcError::Internal(e.to_string())
+    }
+}
+
+impl From<ethabi::Error> for WithdrawError {
+    fn from(e: ethabi::Error) -> Self {
+        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+        // It's an internal error if there are any issues during working with a smart contract ABI.
+        WithdrawError::InternalError(e.to_string())
+    }
+}
+
+impl From<web3::Error> for WithdrawError {
+    fn from(e: web3::Error) -> Self { WithdrawError::Transport(e.to_string()) }
+}
+
+impl From<Web3RpcError> for WithdrawError {
+    fn from(e: Web3RpcError) -> Self {
+        match e {
+            Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => WithdrawError::Transport(err),
+            Web3RpcError::Internal(internal) => WithdrawError::InternalError(internal),
+        }
+    }
+}
+
+impl From<web3::Error> for TradePreimageError {
+    fn from(e: web3::Error) -> Self { TradePreimageError::Transport(e.to_string()) }
+}
+
+impl From<Web3RpcError> for TradePreimageError {
+    fn from(e: Web3RpcError) -> Self {
+        match e {
+            Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => TradePreimageError::Transport(err),
+            Web3RpcError::Internal(internal) => TradePreimageError::InternalError(internal),
+        }
+    }
+}
+
+impl From<ethabi::Error> for TradePreimageError {
+    fn from(e: ethabi::Error) -> Self {
+        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+        // It's an internal error if there are any issues during working with a smart contract ABI.
+        TradePreimageError::InternalError(e.to_string())
+    }
+}
+
+impl From<ethabi::Error> for BalanceError {
+    fn from(e: ethabi::Error) -> Self {
+        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+        // It's an internal error if there are any issues during working with a smart contract ABI.
+        BalanceError::Internal(e.to_string())
+    }
+}
+
+impl From<web3::Error> for BalanceError {
+    fn from(e: web3::Error) -> Self { BalanceError::Transport(e.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -282,13 +379,13 @@ impl EthCoinImpl {
     }
 
     /// Get gas price
-    fn get_gas_price(&self) -> Box<dyn Future<Item = U256, Error = String> + Send> {
+    fn get_gas_price(&self) -> Web3RpcFut<U256> {
         let fut = if let Some(url) = &self.gas_station_url {
             Either01::A(
                 GasStationData::get_gas_price(&url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
             )
         } else {
-            Either01::B(self.web3.eth().gas_price().map_err(|e| ERRL!("{}", e)))
+            Either01::B(self.web3.eth().gas_price().map_to_mm_fut(Web3RpcError::from))
         };
         Box::new(fut)
     }
@@ -398,31 +495,47 @@ impl EthCoinImpl {
     }
 }
 
-async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Result<TransactionDetails, String> {
-    let to_addr = try_s!(coin.address_from_str(&req.to));
-    let my_balance = try_s!(coin.my_balance().compat().await);
-    let mut wei_amount = if req.max {
-        my_balance
+async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
+    let to_addr = coin
+        .address_from_str(&req.to)
+        .map_to_mm(WithdrawError::InvalidAddress)?;
+    let my_balance = coin.my_balance().compat().await?;
+    let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
+
+    let (mut wei_amount, dec_amount) = if req.max {
+        (my_balance, my_balance_dec.clone())
     } else {
-        try_s!(wei_from_big_decimal(&req.amount, coin.decimals))
+        let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals)?;
+        (wei_amount, req.amount.clone())
     };
     if wei_amount > my_balance {
-        return ERR!("The amount {} to withdraw is larger than balance", req.amount);
+        return MmError::err(WithdrawError::NotSufficientBalance {
+            coin: coin.ticker.clone(),
+            available: my_balance_dec.clone(),
+            required: dec_amount,
+        });
     };
     let (mut eth_value, data, call_addr, fee_coin) = match &coin.coin_type {
         EthCoinType::Eth => (wei_amount, vec![], to_addr, coin.ticker()),
         EthCoinType::Erc20 { platform, token_addr } => {
-            let function = try_s!(ERC20_CONTRACT.function("transfer"));
-            let data = try_s!(function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)]));
+            let function = ERC20_CONTRACT.function("transfer")?;
+            let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
             (0.into(), data, *token_addr, platform.as_str())
         },
     };
+    let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
 
     let (gas, gas_price) = match req.fee {
-        Some(WithdrawFee::EthGas { gas_price, gas }) => (gas.into(), try_s!(wei_from_big_decimal(&gas_price, 9))),
-        Some(_) => return ERR!("Unsupported input fee type"),
+        Some(WithdrawFee::EthGas { gas_price, gas }) => {
+            let gas_price = wei_from_big_decimal(&gas_price, 9)?;
+            (gas.into(), gas_price)
+        },
+        Some(fee_policy) => {
+            let error = format!("Expected 'EthGas' fee type, found {:?}", fee_policy);
+            return MmError::err(WithdrawError::InvalidFeePolicy(error));
+        },
         None => {
-            let gas_price = try_s!(coin.get_gas_price().compat().await);
+            let gas_price = coin.get_gas_price().compat().await?;
             // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
             let eth_value_for_estimate = if req.max && coin.coin_type == EthCoinType::Eth {
                 eth_value - gas_price * U256::from(21000)
@@ -439,33 +552,34 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
                 // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
                 gas_price: Some(gas_price),
             };
-            let gas_fut = coin.estimate_gas(estimate_gas_req).compat();
-            (try_s!(gas_fut.await), gas_price)
+            // TODO Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
+            // TODO Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
+            let gas_limit = coin.estimate_gas(estimate_gas_req).compat().await?;
+            (gas_limit, gas_price)
         },
     };
     let total_fee = gas * gas_price;
 
     if req.max && coin.coin_type == EthCoinType::Eth {
         if eth_value < total_fee || wei_amount < total_fee {
-            return ERR!("The value {} to withdraw is lower than fee {}", eth_value, total_fee);
+            return MmError::err(WithdrawError::AmountIsTooSmall { amount: eth_value_dec });
         }
         eth_value -= total_fee;
         wei_amount -= total_fee;
     };
-    let _nonce_lock = try_s!(
-        NONCE_LOCK
-            .lock(|_start, _now| {
-                if ctx.is_stopping() {
-                    return ERR!("MM is stopping, aborting withdraw_impl in NONCE_LOCK");
-                }
-                Ok(0.5)
-            })
-            .await
-    );
+    let _nonce_lock = NONCE_LOCK
+        .lock(|_start, _now| {
+            if ctx.is_stopping() {
+                let error = "MM is stopping, aborting withdraw_impl in NONCE_LOCK".to_owned();
+                return MmError::err(WithdrawError::InternalError(error));
+            }
+            Ok(0.5)
+        })
+        .await?;
     let nonce_fut = get_addr_nonce(coin.my_address, coin.web3_instances.clone()).compat();
     let nonce = match select(nonce_fut, Timer::sleep(30.)).await {
-        Either::Left((nonce_res, _)) => try_s!(nonce_res),
-        Either::Right(_) => return ERR!("Get address nonce timed out"),
+        Either::Left((nonce_res, _)) => nonce_res.map_to_mm(WithdrawError::Transport)?,
+        Either::Right(_) => return MmError::err(WithdrawError::Transport("Get address nonce timed out".to_owned())),
     };
     let tx = UnSignedEthTx {
         nonce,
@@ -478,20 +592,21 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Resul
 
     let signed = tx.sign(coin.key_pair.secret(), None);
     let bytes = rlp::encode(&signed);
-    let amount_decimal = try_s!(u256_to_big_decimal(wei_amount, coin.decimals));
+    let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
     let mut spent_by_me = amount_decimal.clone();
     let received_by_me = if to_addr == coin.my_address {
         amount_decimal.clone()
     } else {
         0.into()
     };
-    let fee_details = try_s!(EthTxFeeDetails::new(gas, gas_price, fee_coin));
+    let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
+    let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-        from: vec![try_s!(coin.my_address())],
+        from: vec![my_address],
         total_amount: amount_decimal,
         my_balance_change: &received_by_me - &spent_by_me,
         spent_by_me,
@@ -887,11 +1002,11 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
 
-    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send> {
+    fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals;
         let fut = self
             .my_balance()
-            .and_then(move |result| Ok(try_s!(u256_to_big_decimal(result, decimals))))
+            .and_then(move |result| Ok(u256_to_big_decimal(result, decimals)?))
             .map(|spendable| CoinBalance {
                 spendable,
                 unspendable: BigDecimal::from(0),
@@ -899,10 +1014,10 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut)
     }
 
-    fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> {
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(
             self.eth_balance()
-                .and_then(move |result| Ok(try_s!(u256_to_big_decimal(result, 18)))),
+                .and_then(move |result| Ok(u256_to_big_decimal(result, 18)?)),
         )
     }
 
@@ -1239,7 +1354,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let allowance_fut = self.allowance(swap_contract_address);
+                let allowance_fut = self.allowance(swap_contract_address).map_err(|e| ERRL!("{}", e));
 
                 let function = try_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let data = try_fus!(function.encode_input(&[
@@ -1255,7 +1370,7 @@ impl EthCoin {
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
                     if allowed < value {
                         let balance_f = arc.my_balance();
-                        Box::new(balance_f.and_then(move |balance| {
+                        Box::new(balance_f.map_err(|e| ERRL!("{}", e)).and_then(move |balance| {
                             arc.approve(swap_contract_address, balance).and_then(move |_approved| {
                                 arc.sign_and_send_transaction(
                                     0.into(),
@@ -1426,41 +1541,41 @@ impl EthCoin {
         }
     }
 
-    fn my_balance(&self) -> Box<dyn Future<Item = U256, Error = String> + Send> {
-        match &self.coin_type {
-            EthCoinType::Eth => Box::new(
-                self.web3
+    fn my_balance(&self) -> BalanceFut<U256> {
+        let coin = self.clone();
+        let fut = async move {
+            match coin.coin_type {
+                EthCoinType::Eth => Ok(coin
+                    .web3
                     .eth()
-                    .balance(self.my_address, Some(BlockNumber::Latest))
-                    .map_err(|e| ERRL!("{}", e)),
-            ),
-            EthCoinType::Erc20 {
-                platform: _,
-                token_addr,
-            } => {
-                let function = try_fus!(ERC20_CONTRACT.function("balanceOf"));
-                let data = try_fus!(function.encode_input(&[Token::Address(self.my_address),]));
+                    .balance(coin.my_address, Some(BlockNumber::Latest))
+                    .compat()
+                    .await?),
+                EthCoinType::Erc20 { ref token_addr, .. } => {
+                    let function = ERC20_CONTRACT.function("balanceOf")?;
+                    let data = function.encode_input(&[Token::Address(coin.my_address)])?;
 
-                let call_fut = self.call_request(*token_addr, None, Some(data.into()));
-
-                Box::new(call_fut.and_then(move |res| {
-                    let decoded = try_s!(function.decode_output(&res.0));
-
+                    let res = coin.call_request(*token_addr, None, Some(data.into())).compat().await?;
+                    let decoded = function.decode_output(&res.0)?;
                     match decoded[0] {
                         Token::Uint(number) => Ok(number),
-                        _ => ERR!("Expected U256 as balanceOf result but got {:?}", decoded),
+                        _ => {
+                            let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
+                            MmError::err(BalanceError::InvalidResponse(error))
+                        },
                     }
-                }))
-            },
-        }
+                },
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
-    fn eth_balance(&self) -> Box<dyn Future<Item = U256, Error = String> + Send> {
+    fn eth_balance(&self) -> BalanceFut<U256> {
         Box::new(
             self.web3
                 .eth()
                 .balance(self.my_address, Some(BlockNumber::Latest))
-                .map_err(|e| ERRL!("{}", e)),
+                .map_to_mm_fut(BalanceError::from),
         )
     }
 
@@ -1469,7 +1584,7 @@ impl EthCoin {
         to: Address,
         value: Option<U256>,
         data: Option<Bytes>,
-    ) -> impl Future<Item = Bytes, Error = String> {
+    ) -> impl Future<Item = Bytes, Error = web3::Error> {
         let request = CallRequest {
             from: Some(self.my_address),
             to,
@@ -1479,35 +1594,34 @@ impl EthCoin {
             data,
         };
 
-        self.web3
-            .eth()
-            .call(request, Some(BlockNumber::Latest))
-            .map_err(|e| ERRL!("{}", e))
+        self.web3.eth().call(request, Some(BlockNumber::Latest))
     }
 
-    fn allowance(&self, spender: Address) -> Box<dyn Future<Item = U256, Error = String> + Send + 'static> {
-        match &self.coin_type {
-            EthCoinType::Eth => panic!(),
-            EthCoinType::Erc20 {
-                platform: _,
-                token_addr,
-            } => {
-                let function = try_fus!(ERC20_CONTRACT.function("allowance"));
-                let data =
-                    try_fus!(function.encode_input(&[Token::Address(self.my_address), Token::Address(spender),]));
+    fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
+        let coin = self.clone();
+        let fut = async move {
+            match coin.coin_type {
+                EthCoinType::Eth => MmError::err(Web3RpcError::Internal(
+                    "'allowance' must not be called for ETH coin".to_owned(),
+                )),
+                EthCoinType::Erc20 { ref token_addr, .. } => {
+                    let function = ERC20_CONTRACT.function("allowance")?;
+                    let data = function.encode_input(&[Token::Address(coin.my_address), Token::Address(spender)])?;
 
-                let call_fut = self.call_request(*token_addr, None, Some(data.into()));
-
-                Box::new(call_fut.and_then(move |res| {
-                    let decoded = try_s!(function.decode_output(&res.0));
+                    let res = coin.call_request(*token_addr, None, Some(data.into())).compat().await?;
+                    let decoded = function.decode_output(&res.0)?;
 
                     match decoded[0] {
                         Token::Uint(number) => Ok(number),
-                        _ => ERR!("Expected U256 as allowance result but got {:?}", decoded),
+                        _ => {
+                            let error = format!("Expected U256 as allowance result but got {:?}", decoded);
+                            MmError::err(Web3RpcError::InvalidResponse(error))
+                        },
                     }
-                }))
-            },
-        }
+                },
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
@@ -1714,6 +1828,7 @@ impl EthCoin {
 
         Box::new(
             self.call_request(swap_contract_address, None, Some(data.into()))
+                .map_err(|e| ERRL!("{}", e))
                 .and_then(move |bytes| {
                     let decoded_tokens = try_s!(function.decode_output(&bytes.0));
                     match decoded_tokens[2] {
@@ -2424,11 +2539,11 @@ pub struct EthTxFeeDetails {
 }
 
 impl EthTxFeeDetails {
-    fn new(gas: U256, gas_price: U256, coin: &str) -> Result<EthTxFeeDetails, String> {
+    fn new(gas: U256, gas_price: U256, coin: &str) -> NumConversResult<EthTxFeeDetails> {
         let total_fee = gas * gas_price;
         // Fees are always paid in ETH, can use 18 decimals by default
-        let total_fee = try_s!(u256_to_big_decimal(total_fee, 18));
-        let gas_price = try_s!(u256_to_big_decimal(gas_price, 18));
+        let total_fee = u256_to_big_decimal(total_fee, 18)?;
+        let gas_price = u256_to_big_decimal(gas_price, 18)?;
 
         Ok(EthTxFeeDetails {
             coin: coin.to_owned(),
@@ -2442,10 +2557,8 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn wallet_only(&self) -> bool { false }
-
-    fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("!ctx"));
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
+        let ctx = try_f!(MmArc::from_weak(&self.ctx).or_mm_err(|| WithdrawError::InternalError("!ctx".to_owned())));
         Box::new(Box::pin(withdraw_impl(ctx, self.clone(), req)).compat())
     }
 
@@ -2485,28 +2598,28 @@ impl MmCoin for EthCoin {
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         let coin = self.clone();
-        Box::new(self.get_gas_price().and_then(move |gas_price| {
-            let fee = gas_price * U256::from(150_000);
-            let fee_coin = match &coin.coin_type {
-                EthCoinType::Eth => &coin.ticker,
-                EthCoinType::Erc20 { platform, .. } => platform,
-            };
-            Ok(TradeFee {
-                coin: fee_coin.into(),
-                amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
-                paid_from_trading_vol: false,
-            })
-        }))
+        Box::new(
+            self.get_gas_price()
+                .map_err(|e| e.to_string())
+                .and_then(move |gas_price| {
+                    let fee = gas_price * U256::from(150_000);
+                    let fee_coin = match &coin.coin_type {
+                        EthCoinType::Eth => &coin.ticker,
+                        EthCoinType::Erc20 { platform, .. } => platform,
+                    };
+                    Ok(TradeFee {
+                        coin: fee_coin.into(),
+                        amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
+                        paid_from_trading_vol: false,
+                    })
+                }),
+        )
     }
 
-    fn get_sender_trade_fee(
-        &self,
-        value: TradePreimageValue,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+    fn get_sender_trade_fee(&self, value: TradePreimageValue, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
-            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = coin.get_gas_price().compat().await?;
             let gas_price = increase_gas_price_by_stage(gas_price, &stage);
             let gas_limit = match coin.coin_type {
                 EthCoinType::Eth => {
@@ -2516,13 +2629,10 @@ impl MmCoin for EthCoin {
                 EthCoinType::Erc20 { .. } => {
                     let value = match value {
                         TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
-                            try_map!(wei_from_big_decimal(&value, coin.decimals), TradePreimageError::Other)
+                            wei_from_big_decimal(&value, coin.decimals)?
                         },
                     };
-                    let allowed = try_map!(
-                        coin.allowance(coin.swap_contract_address).compat().await,
-                        TradePreimageError::Other
-                    );
+                    let allowed = coin.allowance(coin.swap_contract_address).compat().await?;
                     if allowed < value {
                         // this gas_limit includes gas for `approve`, `erc20Payment` and `senderRefund` contract calls
                         U256::from(300_000 + APPROVE_GAS_LIMIT)
@@ -2534,7 +2644,7 @@ impl MmCoin for EthCoin {
             };
 
             let total_fee = gas_limit * gas_price;
-            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            let amount = u256_to_big_decimal(total_fee, 18)?;
             let fee_coin = match &coin.coin_type {
                 EthCoinType::Eth => &coin.ticker,
                 EthCoinType::Erc20 { platform, .. } => platform,
@@ -2548,16 +2658,13 @@ impl MmCoin for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_receiver_trade_fee(
-        &self,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
-            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = coin.get_gas_price().compat().await?;
             let gas_price = increase_gas_price_by_stage(gas_price, &stage);
             let total_fee = gas_price * U256::from(150_000);
-            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            let amount = u256_to_big_decimal(total_fee, 18)?;
             let fee_coin = match &coin.coin_type {
                 EthCoinType::Eth => &coin.ticker,
                 EthCoinType::Erc20 { platform, .. } => platform,
@@ -2575,13 +2682,10 @@ impl MmCoin for EthCoin {
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+    ) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
-            let dex_fee_amount = try_map!(
-                wei_from_big_decimal(&dex_fee_amount, coin.decimals),
-                TradePreimageError::Other
-            );
+            let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount, coin.decimals)?;
 
             // pass the dummy params
             let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)
@@ -2589,16 +2693,13 @@ impl MmCoin for EthCoin {
             let (eth_value, data, call_addr, fee_coin) = match &coin.coin_type {
                 EthCoinType::Eth => (dex_fee_amount, Vec::new(), &to_addr, &coin.ticker),
                 EthCoinType::Erc20 { platform, token_addr } => {
-                    let function = try_map!(ERC20_CONTRACT.function("transfer"), TradePreimageError::Other);
-                    let data = try_map!(
-                        function.encode_input(&[Token::Address(to_addr), Token::Uint(dex_fee_amount)]),
-                        TradePreimageError::Other
-                    );
+                    let function = ERC20_CONTRACT.function("transfer")?;
+                    let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(dex_fee_amount)])?;
                     (0.into(), data, token_addr, platform)
                 },
             };
 
-            let gas_price = try_map!(coin.get_gas_price().compat().await, TradePreimageError::Other);
+            let gas_price = coin.get_gas_price().compat().await?;
             let gas_price = increase_gas_price_by_stage(gas_price, &stage);
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value),
@@ -2613,12 +2714,9 @@ impl MmCoin for EthCoin {
 
             // Please note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
             // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
-            let gas_limit = try_map!(
-                coin.estimate_gas(estimate_gas_req).compat().await,
-                TradePreimageError::Other
-            );
+            let gas_limit = coin.estimate_gas(estimate_gas_req).compat().await?;
             let total_fee = gas_limit * gas_price;
-            let amount = try_map!(u256_to_big_decimal(total_fee, 18), TradePreimageError::Other);
+            let amount = u256_to_big_decimal(total_fee, 18)?;
             Ok(TradeFee {
                 coin: fee_coin.into(),
                 amount: amount.into(),
@@ -2688,12 +2786,12 @@ fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {
     string.trim_end_matches('0').into()
 }
 
-pub fn u256_to_big_decimal(number: U256, decimals: u8) -> Result<BigDecimal, String> {
+pub fn u256_to_big_decimal(number: U256, decimals: u8) -> NumConversResult<BigDecimal> {
     let string = display_u256_with_decimal_point(number, decimals);
-    Ok(try_s!(string.parse()))
+    Ok(string.parse::<BigDecimal>()?)
 }
 
-pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, String> {
+pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
     let mut amount = amount.to_string();
     let dot = amount.find(|c| c == '.');
     let decimals = decimals as usize;
@@ -2709,7 +2807,9 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> Result<U256, S
     } else {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
-    Ok(try_s!(U256::from_dec_str(&amount).map_err(|e| ERRL!("{:?}", e))))
+    U256::from_dec_str(&amount)
+        .map_err(|e| format!("{:?}", e))
+        .map_to_mm(NumConversError::new)
 }
 
 impl Transaction for SignedEthTx {
@@ -2767,17 +2867,23 @@ impl GasStationData {
         U256::from(self.average as u64) * U256::exp10(8)
     }
 
-    fn get_gas_price(uri: &str) -> Box<dyn Future<Item = U256, Error = String> + Send> {
+    fn get_gas_price(uri: &str) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
         let fut = async move { slurp_url(&uri).await };
-        Box::new(fut.boxed().compat().and_then(|res| -> Result<U256, String> {
-            if res.0 != StatusCode::OK {
-                return ERR!("Gas price request failed with status code {}", res.0);
-            }
+        Box::new(
+            fut.boxed()
+                .compat()
+                .map_to_mm_fut(Web3RpcError::Transport)
+                .and_then(|res| -> Web3RpcResult<U256> {
+                    if res.0 != StatusCode::OK {
+                        let error = format!("Gas price request failed with status code {}", res.0);
+                        return MmError::err(Web3RpcError::Transport(error));
+                    }
 
-            let result: GasStationData = try_s!(json::from_slice(&res.2));
-            Ok(result.average_gwei())
-        }))
+                    let result: GasStationData = json::from_slice(&res.2)?;
+                    Ok(result.average_gwei())
+                }),
+        )
     }
 }
 

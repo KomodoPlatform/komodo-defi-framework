@@ -1,7 +1,6 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionDetails,
-            TransactionEnum, TransactionFut};
-use crate::{FeeApproxStage, FoundSwapTxSpend, TradePreimageError, TradePreimageValue, ValidateAddressResult,
-            WithdrawRequest};
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, TradePreimageFut, TradePreimageValue, ValidateAddressResult,
+            WithdrawFut, WithdrawRequest};
 use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
@@ -32,9 +31,9 @@ impl MarketCoinOps for TestCoin {
 
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 
-    fn my_balance(&self) -> Box<dyn Future<Item = CoinBalance, Error = String> + Send> { unimplemented!() }
+    fn my_balance(&self) -> BalanceFut<CoinBalance> { unimplemented!() }
 
-    fn base_coin_balance(&self) -> Box<dyn Future<Item = BigDecimal, Error = String> + Send> { unimplemented!() }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
@@ -222,11 +221,7 @@ impl SwapOps for TestCoin {
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
-    fn wallet_only(&self) -> bool { unimplemented!() }
-
-    fn withdraw(&self, req: WithdrawRequest) -> Box<dyn Future<Item = TransactionDetails, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
 
     fn decimals(&self) -> u8 { unimplemented!() }
 
@@ -241,26 +236,17 @@ impl MmCoin for TestCoin {
     /// Get fee to be paid per 1 swap transaction
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
 
-    fn get_sender_trade_fee(
-        &self,
-        value: TradePreimageValue,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+    fn get_sender_trade_fee(&self, value: TradePreimageValue, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(
-        &self,
-        stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
-        unimplemented!()
-    }
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
-    ) -> Box<dyn Future<Item = TradeFee, Error = TradePreimageError> + Send> {
+    ) -> TradePreimageFut<TradeFee> {
         unimplemented!()
     }
 

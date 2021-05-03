@@ -22,14 +22,41 @@ const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
 
 const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     maker_coin,
+    maker_coin_ticker,
+    maker_coin_platform,
     taker_coin,
-    uuid, 
-    started_at, 
-    finished_at, 
-    maker_amount, 
+    taker_coin_ticker,
+    taker_coin_platform,
+    uuid,
+    started_at,
+    finished_at,
+    maker_amount,
     taker_amount,
     is_success
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
+
+const ADD_SPLIT_TICKERS: &[&str] = &[
+    "ALTER TABLE stats_swaps ADD COLUMN maker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
+    "ALTER TABLE stats_swaps ADD COLUMN maker_coin_platform VARCHAR(255) NOT NULL DEFAULT '';",
+    "ALTER TABLE stats_swaps ADD COLUMN taker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
+    "ALTER TABLE stats_swaps ADD COLUMN taker_coin_platform VARCHAR(255) NOT NULL DEFAULT '';",
+    "UPDATE stats_swaps SET maker_coin_ticker = CASE instr(maker_coin, '-') \
+        WHEN 0 THEN maker_coin \
+        ELSE substr(maker_coin, 0, instr(maker_coin, '-')) \
+        END;",
+    "UPDATE stats_swaps SET maker_coin_platform = CASE instr(maker_coin, '-') \
+        WHEN 0 THEN '' \
+        ELSE substr(maker_coin, instr(maker_coin, '-') + 1) \
+        END;",
+    "UPDATE stats_swaps SET taker_coin_ticker = CASE instr(taker_coin, '-') \
+        WHEN 0 THEN taker_coin \
+        ELSE substr(taker_coin, 0, instr(taker_coin, '-')) \
+        END;",
+    "UPDATE stats_swaps SET taker_coin_platform = CASE instr(taker_coin, '-') \
+        WHEN 0 THEN '' \
+        ELSE substr(taker_coin, instr(taker_coin, '-') + 1) \
+        END;",
+];
 
 pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
 
@@ -106,6 +133,13 @@ pub fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'s
     result
 }
 
+fn split_coin(coin: &str) -> (String, String) {
+    let mut split = coin.split('-');
+    let ticker = split.next().expect("split returns empty string at least").into();
+    let platform = split.next().map_or("".into(), |platform| platform.into());
+    (ticker, platform)
+}
+
 fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
@@ -124,9 +158,17 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, V
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
+
+    let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
+    let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
+
     let params = vec![
         swap_data.maker_coin.clone(),
+        maker_coin_ticker,
+        maker_coin_platform,
         swap_data.taker_coin.clone(),
+        taker_coin_ticker,
+        taker_coin_platform,
         swap.uuid.to_string(),
         swap_data.started_at.to_string(),
         finished_at,
@@ -155,9 +197,17 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, V
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
+
+    let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
+    let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
+
     let params = vec![
         swap_data.maker_coin.clone(),
+        maker_coin_ticker,
+        maker_coin_platform,
         swap_data.taker_coin.clone(),
+        taker_coin_ticker,
+        taker_coin_platform,
         swap.uuid.to_string(),
         swap_data.started_at.to_string(),
         finished_at,
@@ -196,4 +246,31 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     if let Err(e) = conn.execute(sql, &params) {
         error!("Error {} on query {} with params {:?}", e, sql, params);
     };
+}
+
+pub fn add_and_split_tickers() -> Vec<(&'static str, Vec<String>)> {
+    ADD_SPLIT_TICKERS.iter().map(|sql| (*sql, vec![])).collect()
+}
+
+#[test]
+fn test_split_coin() {
+    let input = "";
+    let expected = ("".into(), "".into());
+    let actual = split_coin(input);
+    assert_eq!(expected, actual);
+
+    let input = "RICK";
+    let expected = ("RICK".into(), "".into());
+    let actual = split_coin(input);
+    assert_eq!(expected, actual);
+
+    let input = "RICK-BEP20";
+    let expected = ("RICK".into(), "BEP20".into());
+    let actual = split_coin(input);
+    assert_eq!(expected, actual);
+
+    let input = "RICK-";
+    let expected = ("RICK".into(), "".into());
+    let actual = split_coin(input);
+    assert_eq!(expected, actual);
 }
