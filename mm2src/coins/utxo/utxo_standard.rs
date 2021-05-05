@@ -93,7 +93,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         lock_time: u32,
     ) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(
-            &self.utxo_arc,
+            self,
             prev_transaction,
             redeem_script,
             outputs,
@@ -142,6 +142,10 @@ impl UtxoCommonOps for UtxoStandardCoin {
 
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64 {
         utxo_common::increase_dynamic_fee_by_stage(self, dynamic_fee, stage)
+    }
+
+    fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> u32 {
+        utxo_common::p2sh_tx_locktime(&self.utxo_arc.conf.ticker, htlc_locktime)
     }
 }
 

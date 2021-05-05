@@ -20,6 +20,17 @@ const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
     is_success INTEGER NOT NULL
 );";
 
+const INSERT_STATS_SWAP_ON_INIT: &str = "INSERT INTO stats_swaps (
+    maker_coin,
+    taker_coin,
+    uuid,
+    started_at,
+    finished_at,
+    maker_amount,
+    taker_amount,
+    is_success
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+
 const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     maker_coin,
     maker_coin_ticker,
@@ -72,7 +83,7 @@ pub fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'s
         let content = slurp(&file).expect("slurp should not fail at this point");
         match json::from_slice(&content) {
             Ok(swap) => {
-                if let Some(sql_with_params) = insert_stats_maker_swap_sql(&swap) {
+                if let Some(sql_with_params) = insert_stats_maker_swap_sql_init(&swap) {
                     inserted_maker_uuids.insert(swap.uuid);
                     result.push(sql_with_params);
                 }
@@ -118,7 +129,7 @@ pub fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'s
         let content = slurp(&file).expect("slurp should not fail at this point");
         match json::from_slice(&content) {
             Ok(swap) => {
-                if let Some(sql_with_params) = insert_stats_taker_swap_sql(&swap) {
+                if let Some(sql_with_params) = insert_stats_taker_swap_sql_init(&swap) {
                     result.push(sql_with_params);
                 }
             },
@@ -179,6 +190,38 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, V
     Some((INSERT_STATS_SWAP, params))
 }
 
+fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+    let swap_data = match swap.swap_data() {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Error {} on getting swap {} data", e, swap.uuid);
+            return None;
+        },
+    };
+    let finished_at = match swap.finished_at() {
+        Ok(t) => t.to_string(),
+        Err(e) => {
+            error!("Error {} on getting swap {} finished_at", e, swap.uuid);
+            return None;
+        },
+    };
+    let is_success = swap
+        .is_success()
+        .expect("is_success can return error only when swap is not finished");
+
+    let params = vec![
+        swap_data.maker_coin.clone(),
+        swap_data.taker_coin.clone(),
+        swap.uuid.to_string(),
+        swap_data.started_at.to_string(),
+        finished_at,
+        swap_data.maker_amount.to_string(),
+        swap_data.taker_amount.to_string(),
+        (is_success as u32).to_string(),
+    ];
+    Some((INSERT_STATS_SWAP_ON_INIT, params))
+}
+
 fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
@@ -216,6 +259,38 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, V
         (is_success as u32).to_string(),
     ];
     Some((INSERT_STATS_SWAP, params))
+}
+
+fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+    let swap_data = match swap.swap_data() {
+        Ok(d) => d,
+        Err(e) => {
+            error!("Error {} on getting swap {} data", e, swap.uuid);
+            return None;
+        },
+    };
+    let finished_at = match swap.finished_at() {
+        Ok(t) => t.to_string(),
+        Err(e) => {
+            error!("Error {} on getting swap {} finished_at", e, swap.uuid);
+            return None;
+        },
+    };
+    let is_success = swap
+        .is_success()
+        .expect("is_success can return error only when swap is not finished");
+
+    let params = vec![
+        swap_data.maker_coin.clone(),
+        swap_data.taker_coin.clone(),
+        swap.uuid.to_string(),
+        swap_data.started_at.to_string(),
+        finished_at,
+        swap_data.maker_amount.to_string(),
+        swap_data.taker_amount.to_string(),
+        (is_success as u32).to_string(),
+    ];
+    Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
 pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {

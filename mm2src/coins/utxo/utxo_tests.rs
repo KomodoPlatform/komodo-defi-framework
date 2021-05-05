@@ -2429,3 +2429,31 @@ fn verus_mtp() {
         .unwrap();
     assert_eq!(mtp, 1618579909);
 }
+
+#[test]
+fn sys_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10064",
+        "electrum2.cipig.net:10064",
+        "electrum3.cipig.net:10064",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(1006678, NonZeroU64::new(11).unwrap())
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1620019628);
+}
+
+#[test]
+fn btc_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10000",
+        "electrum2.cipig.net:10000",
+        "electrum3.cipig.net:10000",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(681659, NonZeroU64::new(11).unwrap())
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1620019527);
+}

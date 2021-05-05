@@ -533,37 +533,35 @@ where
     Ok((unsigned, data))
 }
 
-pub fn p2sh_spending_tx(
-    coin: &UtxoCoinFields,
+pub fn p2sh_spending_tx<T>(
+    coin: &T,
     prev_transaction: UtxoTx,
     redeem_script: Bytes,
     outputs: Vec<TransactionOutput>,
     script_data: Script,
     sequence: u32,
     lock_time: u32,
-) -> Result<UtxoTx, String> {
-    let lock_time_by_now = if coin.conf.ticker == "KMD" {
-        (now_ms() / 1000) as u32 - 3600 + 2 * 777
-    } else {
-        (now_ms() / 1000) as u32 - 3600
-    };
-    let lock_time = lock_time_by_now.max(lock_time);
-    let n_time = if coin.conf.is_pos {
+) -> Result<UtxoTx, String>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
+    let lock_time = coin.p2sh_tx_locktime(lock_time);
+    let n_time = if coin.as_ref().conf.is_pos {
         Some((now_ms() / 1000) as u32)
     } else {
         None
     };
-    let str_d_zeel = if coin.conf.ticker == "NAV" {
+    let str_d_zeel = if coin.as_ref().conf.ticker == "NAV" {
         Some("".into())
     } else {
         None
     };
-    let hash_algo = coin.tx_hash_algo.into();
+    let hash_algo = coin.as_ref().tx_hash_algo.into();
     let unsigned = TransactionInputSigner {
         lock_time,
-        version: coin.conf.tx_version,
+        version: coin.as_ref().conf.tx_version,
         n_time,
-        overwintered: coin.conf.overwintered,
+        overwintered: coin.as_ref().conf.overwintered,
         inputs: vec![UnsignedTransactionInput {
             sequence,
             previous_output: OutPoint {
@@ -578,20 +576,20 @@ pub fn p2sh_spending_tx(
         shielded_spends: vec![],
         shielded_outputs: vec![],
         value_balance: 0,
-        version_group_id: coin.conf.version_group_id,
-        consensus_branch_id: coin.conf.consensus_branch_id,
-        zcash: coin.conf.zcash,
+        version_group_id: coin.as_ref().conf.version_group_id,
+        consensus_branch_id: coin.as_ref().conf.consensus_branch_id,
+        zcash: coin.as_ref().conf.zcash,
         str_d_zeel,
         hash_algo,
     };
     let signed_input = try_s!(p2sh_spend(
         &unsigned,
         0,
-        &coin.key_pair,
+        &coin.as_ref().key_pair,
         script_data,
         redeem_script.into(),
-        coin.conf.signature_version,
-        coin.conf.fork_id
+        coin.as_ref().conf.signature_version,
+        coin.as_ref().conf.fork_id
     ));
     Ok(UtxoTx {
         version: unsigned.version,
@@ -605,11 +603,11 @@ pub fn p2sh_spending_tx(
         shielded_spends: vec![],
         shielded_outputs: vec![],
         value_balance: 0,
-        version_group_id: coin.conf.version_group_id,
+        version_group_id: coin.as_ref().conf.version_group_id,
         binding_sig: H512::default(),
         join_split_sig: H512::default(),
         join_split_pubkey: H256::default(),
-        zcash: coin.conf.zcash,
+        zcash: coin.as_ref().conf.zcash,
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
     })
@@ -2623,20 +2621,30 @@ where
         let to_wait = locktime - now + 1;
         return Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(to_wait.max(3600))));
     }
+    let locktime = coin.p2sh_tx_locktime(locktime as u32);
     Box::new(
         coin.get_current_mtp()
             .compat()
             .map(move |mtp| {
-                let mtp = mtp as u64;
+                let mtp = mtp;
                 if locktime < mtp {
                     CanRefundHtlc::CanRefundNow
                 } else {
-                    let to_wait = locktime - mtp + 1;
+                    let to_wait = (locktime - mtp + 1) as u64;
                     CanRefundHtlc::HaveToWait(to_wait.max(3600))
                 }
             })
             .map_err(|e| ERRL!("{}", e)),
     )
+}
+
+pub fn p2sh_tx_locktime(ticker: &str, htlc_locktime: u32) -> u32 {
+    let lock_time_by_now = if ticker == "KMD" {
+        (now_ms() / 1000) as u32 - 3600 + 2 * 777
+    } else {
+        (now_ms() / 1000) as u32 - 3600
+    };
+    lock_time_by_now.max(htlc_locktime)
 }
 
 #[test]

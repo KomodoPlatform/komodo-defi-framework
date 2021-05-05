@@ -542,6 +542,8 @@ pub trait UtxoCommonOps {
     /// Increase the given `dynamic_fee` according to the fee approximation `stage`.
     /// The method is used to predict a possible increase in dynamic fee.
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64;
+
+    fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> u32;
 }
 
 #[async_trait]
