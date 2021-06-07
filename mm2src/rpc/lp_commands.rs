@@ -20,6 +20,7 @@
 use bigdecimal::BigDecimal;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
+use common::log::error;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsOps;
 use common::{rpc_err_response, rpc_response, HyRes};
@@ -196,7 +197,9 @@ pub fn stop(ctx: MmArc) -> HyRes {
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
     spawn(async move {
         Timer::sleep(0.05).await;
-        ctx.stop();
+        if let Err(e) = ctx.stop() {
+            error!("Error stopping MmCtx: {}", e);
+        }
     });
     rpc_response(200, r#"{"result": "success"}"#)
 }

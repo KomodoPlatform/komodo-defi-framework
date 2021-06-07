@@ -1485,6 +1485,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
             "base": "QTUM",
             "rel": "MYCOIN",
             "swap_method": "setprice",
+            "price": 1,
             "volume": qtum_balance,
         },
     })))
@@ -1496,6 +1497,68 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
     assert_eq!(data.coin, "QTUM");
     assert_eq!(data.available, qtum_balance);
     assert!(data.required > qtum_balance);
+}
+
+/// If we try to deduct a transaction fee from `output = 0.00073`, the remaining value less than `dust = 0.000728`,
+/// so we have to receive the `NotSufficientBalance` error.
+#[test]
+fn test_trade_preimage_deduct_fee_from_output_failed() {
+    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.00073 Qtums (that is little greater than dust 0.000728)
+    let qtum_balance = MmNumber::from("0.00073").to_decimal();
+    let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", qtum_balance.clone(), Some(0));
+
+    let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
+    let coins = json! ([
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}},
+    ]);
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_see": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
+    block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+
+    let rc = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "trade_preimage",
+        "params": {
+            "base": "QTUM",
+            "rel": "MYCOIN",
+            "swap_method": "setprice",
+            "price": 1,
+            "max": true,
+        },
+    })))
+    .unwrap();
+    assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
+    let actual: RpcErrorResponse<trade_preimage_error::NotSufficientBalance> = json::from_str(&rc.1).unwrap();
+    assert_eq!(actual.error_type, "NotSufficientBalance");
+    let trade_preimage_error::NotSufficientBalance {
+        coin: actual_coin,
+        available: actual_available,
+        required: actual_required,
+        ..
+    } = actual.error_data.expect("Expected NotSufficientBalance error data");
+    assert_eq!(actual_coin, "QTUM");
+    assert_eq!(actual_available, qtum_balance);
+    assert!(actual_required > qtum_balance);
 }
 
 #[test]

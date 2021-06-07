@@ -1,0 +1,9 @@
+[package]
+name = "primitives"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+rustc-hex = "2"
+byteorder = "1.0"
+bigint = { version = "4.4.1", features = ["std"] }

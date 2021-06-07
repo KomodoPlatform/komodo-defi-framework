@@ -30,6 +30,7 @@ use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
 use common::{bits256, json_dir_entries, log, new_uuid, now_ms, remove_file, write};
+use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use gstuff::slurp;
 use hash256_std_hasher::Hash256StdHasher;
@@ -807,12 +808,12 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                 if order.base == coin.ticker() {
                     if new_volume < order.min_base_vol {
                         let ctx = self.ctx.clone();
-                        delete_my_maker_order(&ctx, &order);
+                        delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::InsufficientBalance);
                         spawn(async move { maker_order_cancelled_p2p_notify(ctx, &order).await });
                         None
                     } else if new_volume < order.available_amount() {
-                        let update_msg =
-                            new_protocol::MakerOrderUpdated::new(order.uuid).with_new_max_volume(new_volume.to_ratio());
+                        let mut update_msg = new_protocol::MakerOrderUpdated::new(order.uuid);
+                        update_msg.with_new_max_volume(new_volume.to_ratio());
                         let base = order.base.to_owned();
                         let rel = order.rel.to_owned();
                         let ctx = self.ctx.clone();
@@ -835,7 +836,7 @@ pub enum TakerAction {
     Sell,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct OrderConfirmationsSettings {
     pub base_confs: u64,
@@ -857,11 +858,11 @@ impl OrderConfirmationsSettings {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TakerRequest {
-    base: String,
-    rel: String,
-    base_amount: MmNumber,
-    rel_amount: MmNumber,
-    action: TakerAction,
+    pub base: String,
+    pub rel: String,
+    pub base_amount: MmNumber,
+    pub rel_amount: MmNumber,
+    pub action: TakerAction,
     uuid: Uuid,
     sender_pubkey: H256Json,
     dest_pub_key: H256Json,
@@ -925,7 +926,7 @@ impl TakerRequest {
     fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
 }
 
-struct TakerOrderBuilder<'a> {
+pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
     base_amount: MmNumber,
@@ -939,7 +940,7 @@ struct TakerOrderBuilder<'a> {
     timeout: u64,
 }
 
-enum TakerOrderBuildError {
+pub enum TakerOrderBuildError {
     BaseEqualRel,
     /// Base amount too low with threshold
     BaseAmountTooLow {
@@ -1000,7 +1001,7 @@ impl fmt::Display for TakerOrderBuildError {
 }
 
 impl<'a> TakerOrderBuilder<'a> {
-    fn new(base_coin: &'a MmCoinEnum, rel_coin: &'a MmCoinEnum) -> TakerOrderBuilder<'a> {
+    pub fn new(base_coin: &'a MmCoinEnum, rel_coin: &'a MmCoinEnum) -> TakerOrderBuilder<'a> {
         TakerOrderBuilder {
             base_coin,
             rel_coin,
@@ -1016,27 +1017,27 @@ impl<'a> TakerOrderBuilder<'a> {
         }
     }
 
-    fn with_base_amount(mut self, vol: MmNumber) -> Self {
+    pub fn with_base_amount(mut self, vol: MmNumber) -> Self {
         self.base_amount = vol;
         self
     }
 
-    fn with_rel_amount(mut self, vol: MmNumber) -> Self {
+    pub fn with_rel_amount(mut self, vol: MmNumber) -> Self {
         self.rel_amount = vol;
         self
     }
 
-    fn with_min_volume(mut self, vol: Option<MmNumber>) -> Self {
+    pub fn with_min_volume(mut self, vol: Option<MmNumber>) -> Self {
         self.min_volume = vol;
         self
     }
 
-    fn with_action(mut self, action: TakerAction) -> Self {
+    pub fn with_action(mut self, action: TakerAction) -> Self {
         self.action = action;
         self
     }
 
-    fn with_match_by(mut self, match_by: MatchBy) -> Self {
+    pub fn with_match_by(mut self, match_by: MatchBy) -> Self {
         self.match_by = match_by;
         self
     }
@@ -1046,23 +1047,23 @@ impl<'a> TakerOrderBuilder<'a> {
         self
     }
 
-    fn with_conf_settings(mut self, settings: OrderConfirmationsSettings) -> Self {
+    pub fn with_conf_settings(mut self, settings: OrderConfirmationsSettings) -> Self {
         self.conf_settings = Some(settings);
         self
     }
 
-    fn with_sender_pubkey(mut self, sender_pubkey: H256Json) -> Self {
+    pub fn with_sender_pubkey(mut self, sender_pubkey: H256Json) -> Self {
         self.sender_pubkey = sender_pubkey;
         self
     }
 
-    fn with_timeout(mut self, timeout: u64) -> Self {
+    pub fn with_timeout(mut self, timeout: u64) -> Self {
         self.timeout = timeout;
         self
     }
 
     /// Validate fields and build
-    fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
+    pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
         let min_rel_amount = self.rel_coin.min_trading_vol();
 
@@ -1182,9 +1183,9 @@ impl Default for OrderType {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct TakerOrder {
-    created_at: u64,
-    request: TakerRequest,
+pub struct TakerOrder {
+    pub created_at: u64,
+    pub request: TakerRequest,
     matches: HashMap<Uuid, TakerMatch>,
     min_volume: MmNumber,
     order_type: OrderType,
@@ -1260,15 +1261,18 @@ pub struct MakerOrder {
     pub min_base_vol: MmNumber,
     pub price: MmNumber,
     pub created_at: u64,
+    pub updated_at: Option<u64>,
     pub base: String,
     pub rel: String,
     matches: HashMap<Uuid, MakerMatch>,
     started_swaps: Vec<Uuid>,
     uuid: Uuid,
     conf_settings: Option<OrderConfirmationsSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changes_history: Option<Vec<HistoricalOrder>>,
 }
 
-struct MakerOrderBuilder<'a> {
+pub struct MakerOrderBuilder<'a> {
     max_base_vol: MmNumber,
     min_base_vol: Option<MmNumber>,
     price: MmNumber,
@@ -1277,7 +1281,7 @@ struct MakerOrderBuilder<'a> {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-enum MakerOrderBuildError {
+pub enum MakerOrderBuildError {
     BaseEqualRel,
     /// Max base vol too low with threshold
     MaxBaseVolTooLow {
@@ -1345,8 +1349,72 @@ impl fmt::Display for MakerOrderBuildError {
     }
 }
 
+fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
+    let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
+
+    if price < min_price {
+        return Err(MakerOrderBuildError::PriceTooLow {
+            actual: price,
+            threshold: min_price,
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_and_get_min_vol(
+    min_base_amount: MmNumber,
+    min_rel_amount: MmNumber,
+    min_base_vol: Option<MmNumber>,
+    price: MmNumber,
+) -> Result<MmNumber, MakerOrderBuildError> {
+    let base_min_by_rel = min_rel_amount / price;
+    let base_min_vol_threshold = min_base_amount.max(base_min_by_rel);
+    let actual_min_base_vol = min_base_vol.unwrap_or_else(|| base_min_vol_threshold.clone());
+
+    if actual_min_base_vol < base_min_vol_threshold {
+        return Err(MakerOrderBuildError::MinBaseVolTooLow {
+            actual: actual_min_base_vol,
+            threshold: base_min_vol_threshold,
+        });
+    }
+
+    Ok(actual_min_base_vol)
+}
+
+fn validate_max_vol(
+    min_base_amount: MmNumber,
+    min_rel_amount: MmNumber,
+    max_base_vol: MmNumber,
+    min_base_vol: Option<MmNumber>,
+    price: MmNumber,
+) -> Result<(), MakerOrderBuildError> {
+    if let Some(min) = min_base_vol {
+        if max_base_vol < min {
+            return Err(MakerOrderBuildError::MaxBaseVolBelowMinBaseVol { min, max: max_base_vol });
+        }
+    }
+
+    if max_base_vol < min_base_amount {
+        return Err(MakerOrderBuildError::MaxBaseVolTooLow {
+            actual: max_base_vol,
+            threshold: min_base_amount,
+        });
+    }
+
+    let rel_vol = max_base_vol * price;
+    if rel_vol < min_rel_amount {
+        return Err(MakerOrderBuildError::RelVolTooLow {
+            actual: rel_vol,
+            threshold: min_rel_amount,
+        });
+    }
+
+    Ok(())
+}
+
 impl<'a> MakerOrderBuilder<'a> {
-    fn new(base_coin: &'a MmCoinEnum, rel_coin: &'a MmCoinEnum) -> MakerOrderBuilder<'a> {
+    pub fn new(base_coin: &'a MmCoinEnum, rel_coin: &'a MmCoinEnum) -> MakerOrderBuilder<'a> {
         MakerOrderBuilder {
             base_coin,
             rel_coin,
@@ -1357,91 +1425,69 @@ impl<'a> MakerOrderBuilder<'a> {
         }
     }
 
-    fn with_max_base_vol(mut self, vol: MmNumber) -> Self {
+    pub fn with_max_base_vol(mut self, vol: MmNumber) -> Self {
         self.max_base_vol = vol;
         self
     }
 
-    fn with_min_base_vol(mut self, vol: Option<MmNumber>) -> Self {
+    pub fn with_min_base_vol(mut self, vol: Option<MmNumber>) -> Self {
         self.min_base_vol = vol;
         self
     }
 
-    fn with_price(mut self, price: MmNumber) -> Self {
+    pub fn with_price(mut self, price: MmNumber) -> Self {
         self.price = price;
         self
     }
 
-    fn with_conf_settings(mut self, conf_settings: OrderConfirmationsSettings) -> Self {
+    pub fn with_conf_settings(mut self, conf_settings: OrderConfirmationsSettings) -> Self {
         self.conf_settings = Some(conf_settings);
         self
     }
 
-    /// Validate fields and build
-    fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
-        let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
-        let min_base_amount = self.base_coin.min_trading_vol();
-        let min_rel_amount = self.rel_coin.min_trading_vol();
-
+    /// Build MakerOrder
+    pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);
-        }
-
-        if self.max_base_vol < min_base_amount {
-            return Err(MakerOrderBuildError::MaxBaseVolTooLow {
-                actual: self.max_base_vol,
-                threshold: min_base_amount,
-            });
-        }
-
-        if self.price < min_price {
-            return Err(MakerOrderBuildError::PriceTooLow {
-                actual: self.price,
-                threshold: min_price,
-            });
-        }
-
-        let rel_vol = &self.max_base_vol * &self.price;
-        if rel_vol < min_rel_amount {
-            return Err(MakerOrderBuildError::RelVolTooLow {
-                actual: rel_vol,
-                threshold: min_rel_amount,
-            });
-        }
-
-        let base_min_by_rel = &min_rel_amount / &self.price;
-        let base_min_vol_threshold = min_base_amount.max(base_min_by_rel);
-
-        let min_base_vol = self.min_base_vol.unwrap_or_else(|| base_min_vol_threshold.clone());
-        if min_base_vol < base_min_vol_threshold {
-            return Err(MakerOrderBuildError::MinBaseVolTooLow {
-                actual: min_base_vol,
-                threshold: base_min_vol_threshold,
-            });
-        }
-
-        if self.max_base_vol < min_base_vol {
-            return Err(MakerOrderBuildError::MaxBaseVolBelowMinBaseVol {
-                min: min_base_vol,
-                max: self.max_base_vol,
-            });
         }
 
         if self.conf_settings.is_none() {
             return Err(MakerOrderBuildError::ConfSettingsNotSet);
         }
 
+        let min_base_amount = self.base_coin.min_trading_vol();
+        let min_rel_amount = self.rel_coin.min_trading_vol();
+
+        validate_price(self.price.clone())?;
+
+        let actual_min_base_vol = validate_and_get_min_vol(
+            min_base_amount.clone(),
+            min_rel_amount.clone(),
+            self.min_base_vol.clone(),
+            self.price.clone(),
+        )?;
+
+        validate_max_vol(
+            min_base_amount,
+            min_rel_amount,
+            self.max_base_vol.clone(),
+            self.min_base_vol.clone(),
+            self.price.clone(),
+        )?;
+
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
             created_at: now_ms(),
+            updated_at: Some(now_ms()),
             max_base_vol: self.max_base_vol,
-            min_base_vol,
+            min_base_vol: actual_min_base_vol,
             price: self.price,
             matches: HashMap::new(),
             started_swaps: Vec::new(),
             uuid: new_uuid(),
             conf_settings: self.conf_settings,
+            changes_history: None,
         })
     }
 
@@ -1451,6 +1497,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
             created_at: now_ms(),
+            updated_at: Some(now_ms()),
             max_base_vol: self.max_base_vol,
             min_base_vol: self.min_base_vol.unwrap_or(self.base_coin.min_trading_vol()),
             price: self.price,
@@ -1458,6 +1505,7 @@ impl<'a> MakerOrderBuilder<'a> {
             started_swaps: Vec::new(),
             uuid: new_uuid(),
             conf_settings: self.conf_settings,
+            changes_history: None,
         }
     }
 }
@@ -1466,12 +1514,13 @@ impl<'a> MakerOrderBuilder<'a> {
 fn zero_rat() -> BigRational { BigRational::zero() }
 
 impl MakerOrder {
-    fn available_amount(&self) -> MmNumber {
-        let reserved: MmNumber = self.matches.iter().fold(
+    fn available_amount(&self) -> MmNumber { &self.max_base_vol - &self.reserved_amount() }
+
+    fn reserved_amount(&self) -> MmNumber {
+        self.matches.iter().fold(
             MmNumber::from(BigRational::from_integer(0.into())),
             |reserved, (_, order_match)| &reserved + order_match.reserved.get_base_amount(),
-        );
-        &self.max_base_vol - &reserved
+        )
     }
 
     fn is_cancellable(&self) -> bool { !self.has_ongoing_matches() }
@@ -1525,6 +1574,26 @@ impl MakerOrder {
             },
         }
     }
+
+    fn apply_updated(&mut self, msg: &new_protocol::MakerOrderUpdated) {
+        if let Some(new_price) = msg.new_price() {
+            self.price = new_price;
+        }
+
+        if let Some(new_max_volume) = msg.new_max_volume() {
+            self.max_base_vol = new_max_volume;
+        }
+
+        if let Some(new_min_volume) = msg.new_min_volume() {
+            self.min_base_vol = new_min_volume;
+        }
+
+        if let Some(conf_settings) = msg.new_conf_settings() {
+            self.conf_settings = conf_settings.into();
+        }
+
+        self.updated_at = Some(now_ms());
+    }
 }
 
 impl Into<MakerOrder> for TakerOrder {
@@ -1535,12 +1604,14 @@ impl Into<MakerOrder> for TakerOrder {
                 max_base_vol: self.request.get_base_amount().clone(),
                 min_base_vol: self.min_volume,
                 created_at: now_ms(),
+                updated_at: Some(now_ms()),
                 base: self.request.base,
                 rel: self.request.rel,
                 matches: HashMap::new(),
                 started_swaps: Vec::new(),
                 uuid: self.request.uuid,
                 conf_settings: self.request.conf_settings,
+                changes_history: None,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -1551,12 +1622,14 @@ impl Into<MakerOrder> for TakerOrder {
                     max_base_vol: self.request.get_rel_amount().clone(),
                     min_base_vol,
                     created_at: now_ms(),
+                    updated_at: Some(now_ms()),
                     base: self.request.rel,
                     rel: self.request.base,
                     matches: HashMap::new(),
                     started_swaps: Vec::new(),
                     uuid: self.request.uuid,
                     conf_settings: self.request.conf_settings.map(|s| s.reversed()),
+                    changes_history: None,
                 }
             },
         }
@@ -2349,17 +2422,22 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 .drain()
                 .filter_map(|(uuid, order)| {
                     if order.created_at + order.timeout * 1000 < now_ms() {
-                        delete_my_taker_order(&ctx, &uuid);
                         if order.matches.is_empty() && order.order_type == OrderType::GoodTillCancelled {
+                            delete_my_taker_order(&ctx, &order, TakerOrderCancellationReason::ToMaker);
                             let maker_order: MakerOrder = order.into();
                             my_maker_orders.insert(uuid, maker_order.clone());
                             save_my_maker_order(&ctx, &maker_order);
+                            if let Err(e) = update_was_taker_in_db(&ctx, uuid) {
+                                error!("Error {} on order update", e);
+                            }
                             spawn({
                                 let ctx = ctx.clone();
                                 async move {
                                     maker_order_created_p2p_notify(ctx, &maker_order).await;
                                 }
                             });
+                        } else {
+                            delete_my_taker_order(&ctx, &order, TakerOrderCancellationReason::TimedOut);
                         }
                         None
                     } else {
@@ -2382,7 +2460,11 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     let ctx = ctx.clone();
                     async move {
                         if order.available_amount() < order.min_base_vol && !order.has_ongoing_matches() {
-                            delete_my_maker_order(&ctx, &order);
+                            if order.matches.is_empty() {
+                                delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::InsufficientBalance);
+                            } else {
+                                delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::Fulfilled);
+                            }
                             maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
                             None
                         } else {
@@ -2517,7 +2599,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     // alice
     lp_connected_alice(ctx.clone(), my_order_entry.get().request.clone(), order_match.clone());
     // remove the matched order immediately
-    delete_my_taker_order(&ctx, &my_order_entry.get().request.uuid);
+    delete_my_taker_order(&ctx, &my_order_entry.get(), TakerOrderCancellationReason::Fulfilled);
     my_order_entry.remove();
 }
 
@@ -2632,8 +2714,8 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
 
         // If volume is less order will be cancelled a bit later
         if my_order.available_amount() >= my_order.min_base_vol {
-            let updated_msg = new_protocol::MakerOrderUpdated::new(my_order.uuid)
-                .with_new_max_volume(my_order.available_amount().into());
+            let mut updated_msg = new_protocol::MakerOrderUpdated::new(my_order.uuid);
+            updated_msg.with_new_max_volume(my_order.available_amount().into());
             maker_order_updated_p2p_notify(ctx.clone(), &my_order.base, &my_order.rel, updated_msg).await;
         }
         save_my_maker_order(&ctx, &my_order);
@@ -2847,7 +2929,7 @@ pub async fn lp_auto_buy(
         order_type: order.order_type,
         min_volume: order.min_volume.clone().into(),
     } });
-    save_my_taker_order(ctx, &order);
+    save_my_new_taker_order(ctx, &order);
     my_taker_orders.insert(order.request.uuid, order);
     Ok(result.to_string())
 }
@@ -2998,6 +3080,19 @@ struct SetPriceReq {
     rel_nota: Option<bool>,
 }
 
+#[derive(Deserialize)]
+struct MakerOrderUpdateReq {
+    uuid: Uuid,
+    new_price: Option<MmNumber>,
+    max: Option<bool>,
+    volume_delta: Option<MmNumber>,
+    min_volume: Option<MmNumber>,
+    base_confs: Option<u64>,
+    base_nota: Option<bool>,
+    rel_confs: Option<u64>,
+    rel_nota: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MakerReservedForRpc<'a> {
     base: &'a str,
@@ -3107,10 +3202,13 @@ struct MakerOrderForRpc<'a> {
     min_base_vol: BigDecimal,
     min_base_vol_rat: &'a MmNumber,
     created_at: u64,
+    updated_at: Option<u64>,
     matches: HashMap<Uuid, MakerMatchForRpc<'a>>,
     started_swaps: &'a [Uuid],
     uuid: Uuid,
     conf_settings: &'a Option<OrderConfirmationsSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changes_history: &'a Option<Vec<HistoricalOrder>>,
 }
 
 impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
@@ -3125,6 +3223,7 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
             min_base_vol: order.min_base_vol.to_decimal(),
             min_base_vol_rat: &order.min_base_vol,
             created_at: order.created_at,
+            updated_at: order.updated_at,
             matches: order
                 .matches
                 .iter()
@@ -3133,6 +3232,7 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
             started_swaps: &order.started_swaps,
             uuid: order.uuid,
             conf_settings: &order.conf_settings,
+            changes_history: &order.changes_history,
         }
     }
 }
@@ -3154,7 +3254,7 @@ async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) 
             .filter_map(|(uuid, order)| {
                 let to_delete = order.base == req.base && order.rel == req.rel;
                 if to_delete {
-                    delete_my_maker_order(&ctx, &order);
+                    delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::Cancelled);
                     cancelled.push(order);
                     None
                 } else {
@@ -3167,6 +3267,23 @@ async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) 
         }
     }
     Err(error)
+}
+
+async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEnum) -> Result<MmNumber, String> {
+    let my_balance = try_s!(my_coin.my_spendable_balance().compat().await);
+    // first check if `rel_coin` balance is sufficient
+    let other_coin_trade_fee = try_s!(
+        other_coin
+            .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
+            .compat()
+            .await
+    );
+    try_s!(check_other_coin_balance_for_swap(&ctx, &other_coin, None, other_coin_trade_fee).await);
+    // calculate max maker volume
+    // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
+    Ok(try_s!(
+        calc_max_maker_vol(&ctx, &my_coin, &my_balance, FeeApproxStage::OrderIssue).await
+    ))
 }
 
 pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -3189,31 +3306,9 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         return ERR!("Rel coin {} is wallet only", req.rel);
     }
 
-    let my_balance = try_s!(
-        base_coin
-            .my_spendable_balance()
-            .compat()
-            .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
-            .await
-    );
     let volume = if req.max {
-        // first check if `rel_coin` balance is sufficient
-        let rel_coin_trade_fee = try_s!(
-            rel_coin
-                .get_receiver_trade_fee(FeeApproxStage::OrderIssue)
-                .compat()
-                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
-                .await
-        );
         try_s!(
-            check_other_coin_balance_for_swap(&ctx, &rel_coin, None, rel_coin_trade_fee)
-                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
-                .await
-        );
-        // calculate max maker volume
-        // note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient
-        try_s!(
-            calc_max_maker_vol(&ctx, &base_coin, &my_balance, FeeApproxStage::OrderIssue)
+            get_max_volume(&ctx, &base_coin, &rel_coin)
                 .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
                 .await
         )
@@ -3248,7 +3343,7 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
             .filter_map(|(uuid, order)| {
                 let to_delete = order.base == req.base && order.rel == req.rel;
                 if to_delete {
-                    delete_my_maker_order(&ctx, &order);
+                    delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::Cancelled);
                     cancelled.push(order);
                     None
                 } else {
@@ -3276,11 +3371,154 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let new_order = try_s!(builder.build());
     let request_orderbook = false;
     try_s!(subscribe_to_orderbook_topic(&ctx, &new_order.base, &new_order.rel, request_orderbook).await);
-    save_my_maker_order(&ctx, &new_order);
+    save_my_new_maker_order(&ctx, &new_order);
     maker_order_created_p2p_notify(ctx.clone(), &new_order).await;
     let rpc_result = MakerOrderForRpc::from(&new_order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     my_orders.insert(new_order.uuid, new_order);
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
+
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+    let my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
+
+    let (base_coin, rel_coin, original_price, original_volume, updated_conf_settings, matches, reserved_amount) =
+        match my_maker_orders.get(&req.uuid) {
+            Some(order) => {
+                if order.has_ongoing_matches() {
+                    return ERR!("Can't update an order that has ongoing matches");
+                }
+                let base = order.base.as_str();
+                let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, base).await) {
+                    Some(coin) => coin,
+                    None => return ERR!("Base coin {} has been removed from config", base),
+                };
+
+                let rel = order.rel.as_str();
+                let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, rel).await) {
+                    Some(coin) => coin,
+                    None => return ERR!("Rel coin {} has been removed from config", rel),
+                };
+
+                let original_conf_settings = order.conf_settings.unwrap();
+
+                let updated_conf_settings = OrderConfirmationsSettings {
+                    base_confs: req.base_confs.unwrap_or(original_conf_settings.base_confs),
+                    base_nota: req.base_nota.unwrap_or(original_conf_settings.base_nota),
+                    rel_confs: req.rel_confs.unwrap_or(original_conf_settings.rel_confs),
+                    rel_nota: req.rel_nota.unwrap_or(original_conf_settings.rel_nota),
+                };
+
+                (
+                    base_coin,
+                    rel_coin,
+                    order.price.clone(),
+                    order.max_base_vol.clone(),
+                    updated_conf_settings,
+                    order.matches.clone(),
+                    order.reserved_amount(),
+                )
+            },
+            None => return ERR!("There is no order with UUID {}", req.uuid),
+        };
+
+    drop(my_maker_orders);
+
+    let mut update_msg = new_protocol::MakerOrderUpdated::new(req.uuid);
+    update_msg.with_new_conf_settings(updated_conf_settings);
+
+    // Validate and Add new_price to update_msg if new_price is found in the request
+    let new_price = match req.new_price {
+        Some(new_price) => {
+            try_s!(validate_price(new_price.clone()));
+            update_msg.with_new_price(new_price.clone().into());
+            new_price
+        },
+        None => original_price,
+    };
+
+    let min_base_amount = base_coin.min_trading_vol();
+    let min_rel_amount = rel_coin.min_trading_vol();
+
+    // Add min_volume to update_msg if min_volume is found in the request
+    if let Some(min_volume) = req.min_volume.clone() {
+        // Validate and Ca lculate Minimum Volume
+        let actual_min_vol = try_s!(validate_and_get_min_vol(
+            min_base_amount.clone(),
+            min_rel_amount.clone(),
+            Some(min_volume),
+            new_price.clone()
+        ));
+        update_msg.with_new_min_volume(actual_min_vol.into());
+    }
+
+    // Calculate order volume and add to update_msg if new_volume is found in the request
+    let new_volume = if req.max.unwrap_or(false) {
+        let max_volume = try_s!(get_max_volume(&ctx, &base_coin, &rel_coin).await) + reserved_amount.clone();
+        update_msg.with_new_max_volume(max_volume.clone().into());
+        max_volume
+    } else if Option::is_some(&req.volume_delta) {
+        let volume = original_volume + req.volume_delta.unwrap();
+        if volume <= MmNumber::from("0") {
+            return ERR!("New volume {} should be more than zero", volume);
+        }
+        try_s!(
+            check_balance_for_maker_swap(
+                &ctx,
+                &base_coin,
+                &rel_coin,
+                volume.clone(),
+                None,
+                None,
+                FeeApproxStage::OrderIssue
+            )
+            .await
+        );
+        update_msg.with_new_max_volume(volume.clone().into());
+        volume
+    } else {
+        original_volume
+    };
+
+    if new_volume <= reserved_amount {
+        return ERR!(
+            "New volume {} should be more than reserved amount for order matches {}",
+            new_volume,
+            reserved_amount
+        );
+    }
+
+    // Validate Order Volume
+    try_s!(validate_max_vol(
+        min_base_amount.clone(),
+        min_rel_amount.clone(),
+        new_volume.clone() - reserved_amount.clone(),
+        req.min_volume.clone(),
+        new_price
+    ));
+
+    let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
+    let (rpc_result, base, rel) = match my_maker_orders.get_mut(&req.uuid) {
+        None => return ERR!("Order with UUID: {} has been deleted", req.uuid),
+        Some(order) => {
+            if order.matches.len() != matches.len() || !order.matches.keys().all(|k| matches.contains_key(k)) {
+                return ERR!("Order {} is being matched now, can't update", req.uuid);
+            }
+
+            let new_change = HistoricalOrder::build(&update_msg, &order);
+            order.apply_updated(&update_msg);
+            order.changes_history.get_or_insert(Vec::new()).push(new_change);
+            save_maker_order_on_update(&ctx, &order);
+            update_msg.with_new_max_volume((new_volume - reserved_amount).into());
+            (MakerOrderForRpc::from(&*order), order.base.as_str(), order.rel.as_str())
+        },
+    };
+    let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
+    maker_order_updated_p2p_notify(ctx.clone(), base, rel, update_msg).await;
+
     Ok(try_s!(Response::builder().body(res)))
 }
 
@@ -3324,6 +3562,14 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             .map_err(|e| ERRL!("{}", e));
     }
 
+    let order_path = my_orders_history_dir(&ctx).join(req.uuid.to_string() + ".json");
+
+    if let Ok(order) = json::from_slice::<Order>(&slurp(&order_path)) {
+        return Response::builder()
+            .body(json::to_vec(&OrderForRpc::from(&order)).expect("Serialization failed"))
+            .map_err(|e| ERRL!("{}", e));
+    }
+
     let res = json!({
         "error": format!("Order with uuid {} is not found", req.uuid),
     });
@@ -3331,6 +3577,140 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         .status(404)
         .body(json::to_vec(&res).expect("Serialization failed"))
         .map_err(|e| ERRL!("{}", e))
+}
+
+#[derive(Display)]
+enum MakerOrderCancellationReason {
+    Fulfilled,
+    InsufficientBalance,
+    Cancelled,
+}
+
+#[derive(Display)]
+enum TakerOrderCancellationReason {
+    Fulfilled,
+    ToMaker,
+    TimedOut,
+    Cancelled,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MyOrdersFilter {
+    pub order_type: Option<String>,
+    pub initial_action: Option<String>,
+    pub base: Option<String>,
+    pub rel: Option<String>,
+    pub from_price: Option<MmNumber>,
+    pub to_price: Option<MmNumber>,
+    pub from_volume: Option<MmNumber>,
+    pub to_volume: Option<MmNumber>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+    pub was_taker: Option<bool>,
+    pub status: Option<String>,
+    #[serde(default)]
+    pub include_details: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "type", content = "order")]
+enum Order {
+    Maker(MakerOrder),
+    Taker(TakerOrder),
+}
+
+impl<'a> From<&'a Order> for OrderForRpc<'a> {
+    fn from(order: &'a Order) -> OrderForRpc {
+        match order {
+            Order::Maker(o) => OrderForRpc::Maker(MakerOrderForRpc::from(o)),
+            Order::Taker(o) => OrderForRpc::Taker(TakerOrderForRpc::from(o)),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct UuidParseError {
+    uuid: String,
+    warning: String,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn orders_history_by_filter(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
+    let res = json!({
+        "error": format!("'orders_history_by_filter' is only supported in native mode yet"),
+    });
+    Response::builder()
+        .status(404)
+        .body(json::to_vec(&res).expect("Serialization failed"))
+        .map_err(|e| ERRL!("{}", e))
+}
+
+/// Returns *all* uuids of swaps, which match the selected filter.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    use crate::mm2::database::my_orders::select_orders_by_filter;
+
+    let filter: MyOrdersFilter = try_s!(json::from_value(req));
+    let db_result = try_s!(select_orders_by_filter(&ctx.sqlite_connection(), &filter, None));
+    let mut warnings = vec![];
+
+    let rpc_orders = if filter.include_details {
+        let mut vec = Vec::with_capacity(db_result.result.len());
+        for order in db_result.result.iter() {
+            let uuid = match Uuid::parse_str(order.uuid.as_str()) {
+                Ok(uuid) => uuid,
+                Err(e) => {
+                    let warning = format!(
+                        "Order details for Uuid {} were skipped because uuid could not be parsed",
+                        order.uuid
+                    );
+                    log::warn!("{}, error {}", warning, e);
+                    warnings.push(UuidParseError {
+                        uuid: order.uuid.clone(),
+                        warning,
+                    });
+                    continue;
+                },
+            };
+            let order_path = my_orders_history_dir(&ctx).join(order.uuid.clone() + ".json");
+            let content = slurp(&order_path);
+            if let Ok(order) = json::from_slice::<Order>(&content) {
+                vec.push(order);
+                continue;
+            }
+
+            let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+            if order.order_type == *"Maker" {
+                let maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
+                if let Some(maker_order) = maker_orders.get(&uuid) {
+                    vec.push(Order::Maker(maker_order.to_owned()));
+                }
+                continue;
+            }
+
+            let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+            if let Some(taker_order) = taker_orders.get(&uuid) {
+                vec.push(Order::Taker(taker_order.to_owned()));
+            }
+        }
+        vec
+    } else {
+        vec![]
+    };
+
+    let details: Vec<_> = rpc_orders.iter().map(OrderForRpc::from).collect();
+
+    let json = json!({
+    "result": {
+        "orders": db_result.result,
+        "details": details,
+        "found_records": db_result.total_count,
+        "warnings": warnings,
+    }});
+
+    let res = try_s!(json::to_vec(&json));
+
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 #[derive(Deserialize)]
@@ -3349,7 +3729,7 @@ pub async fn cancel_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 return ERR!("Order {} is being matched now, can't cancel", req.uuid);
             }
             let order = order.remove();
-            delete_my_maker_order(&ctx, &order);
+            delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::Cancelled);
             maker_order_cancelled_p2p_notify(ctx, &order).await;
             let res = json!({
                 "result": "success"
@@ -3369,7 +3749,7 @@ pub async fn cancel_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 return ERR!("Order {} is being matched now, can't cancel", req.uuid);
             }
             let order = order.remove();
-            delete_my_taker_order(&ctx, &order.request.uuid);
+            delete_my_taker_order(&ctx, &order, TakerOrderCancellationReason::Cancelled);
             let res = json!({
                 "result": "success"
             });
@@ -3452,6 +3832,13 @@ impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
     }
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", content = "order")]
+enum OrderForRpc<'a> {
+    Maker(MakerOrderForRpc<'a>),
+    Taker(TakerOrderForRpc<'a>),
+}
+
 pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
@@ -3475,9 +3862,51 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
         .map_err(|e| ERRL!("{}", e))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn insert_maker_order_to_db(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> Result<(), String> {
+    crate::mm2::database::my_orders::insert_maker_order(ctx, uuid, order).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn insert_maker_order_to_db(_ctx: &MmArc, _uuid: Uuid, _order: &MakerOrder) -> Result<(), String> { Ok(()) }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn insert_taker_order_to_db(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> Result<(), String> {
+    crate::mm2::database::my_orders::insert_taker_order(ctx, uuid, order).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn insert_taker_order_to_db(_ctx: &MmArc, _uuid: Uuid, _order: &TakerOrder) -> Result<(), String> { Ok(()) }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_maker_order_in_db(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> Result<(), String> {
+    crate::mm2::database::my_orders::update_maker_order(ctx, uuid, order).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_maker_order_in_db(_ctx: &MmArc, _uuid: Uuid, _order: &MakerOrder) -> Result<(), String> { Ok(()) }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_was_taker_in_db(ctx: &MmArc, uuid: Uuid) -> Result<(), String> {
+    crate::mm2::database::my_orders::update_was_taker(ctx, uuid).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_was_taker_in_db(_ctx: &MmArc, _uuid: Uuid) -> Result<(), String> { Ok(()) }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_order_status_in_db(ctx: &MmArc, uuid: Uuid, status: String) -> Result<(), String> {
+    crate::mm2::database::my_orders::update_order_status(ctx, uuid, status).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_order_status_in_db(_ctx: &MmArc, _uuid: Uuid, _status: String) -> Result<(), String> { Ok(()) }
+
 pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("MAKER") }
 
 fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("TAKER") }
+
+fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("HISTORY") }
 
 pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
@@ -3487,10 +3916,76 @@ fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
 }
 
+fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
+    my_orders_history_dir(ctx).join(format!("{}.json", uuid))
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct HistoricalOrder {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_base_vol: Option<MmNumber>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_base_vol: Option<MmNumber>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price: Option<MmNumber>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updated_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conf_settings: Option<OrderConfirmationsSettings>,
+}
+
+impl HistoricalOrder {
+    fn build(new_order: &new_protocol::MakerOrderUpdated, old_order: &MakerOrder) -> HistoricalOrder {
+        HistoricalOrder {
+            max_base_vol: if new_order.new_max_volume().is_some() {
+                Some(old_order.max_base_vol.clone())
+            } else {
+                None
+            },
+            min_base_vol: if new_order.new_min_volume().is_some() {
+                Some(old_order.min_base_vol.clone())
+            } else {
+                None
+            },
+            price: if new_order.new_price().is_some() {
+                Some(old_order.price.clone())
+            } else {
+                None
+            },
+            updated_at: old_order.updated_at,
+            conf_settings: if let Some(settings) = new_order.new_conf_settings() {
+                if Some(settings) == old_order.conf_settings {
+                    None
+                } else {
+                    old_order.conf_settings
+                }
+            } else {
+                None
+            },
+        }
+    }
+}
+
 fn save_my_maker_order(ctx: &MmArc, order: &MakerOrder) {
     let path = my_maker_order_file_path(ctx, &order.uuid);
     let content = json::to_vec(order).unwrap();
     write(&path, &content).unwrap();
+}
+
+fn save_my_new_maker_order(ctx: &MmArc, order: &MakerOrder) {
+    save_my_maker_order(ctx, order);
+
+    if let Err(e) = insert_maker_order_to_db(&ctx, order.uuid, &order) {
+        error!("Error {} on new order insertion", e);
+    }
+}
+
+fn save_maker_order_on_update(ctx: &MmArc, order: &MakerOrder) {
+    save_my_maker_order(ctx, order);
+
+    if let Err(e) = update_maker_order_in_db(&ctx, order.uuid, &order) {
+        error!("Error {} on order update", e);
+    }
 }
 
 fn save_my_taker_order(ctx: &MmArc, order: &TakerOrder) {
@@ -3499,21 +3994,50 @@ fn save_my_taker_order(ctx: &MmArc, order: &TakerOrder) {
     write(&path, &content).unwrap();
 }
 
+fn save_my_new_taker_order(ctx: &MmArc, order: &TakerOrder) {
+    save_my_taker_order(ctx, order);
+    if let Err(e) = insert_taker_order_to_db(&ctx, order.request.uuid, &order) {
+        error!("Error {} on new order insertion", e);
+    }
+}
+
+fn save_my_order_in_history(ctx: &MmArc, order: &Order) {
+    let path = match order {
+        Order::Maker(o) => my_order_history_file_path(ctx, &o.uuid),
+        Order::Taker(o) => my_order_history_file_path(ctx, &o.request.uuid),
+    };
+    let content = json::to_vec(order).unwrap();
+    write(&path, &content).unwrap();
+}
+
 #[cfg_attr(test, mockable)]
-fn delete_my_maker_order(ctx: &MmArc, order: &MakerOrder) {
+fn delete_my_maker_order(ctx: &MmArc, order: &MakerOrder, reason: MakerOrderCancellationReason) {
     let path = my_maker_order_file_path(ctx, &order.uuid);
     match remove_file(&path) {
         Ok(_) => (),
         Err(e) => log::warn!("Could not remove order file {}, error {}", path.display(), e),
     }
+    save_my_order_in_history(ctx, &Order::Maker(order.clone()));
+
+    if let Err(e) = update_order_status_in_db(ctx, order.uuid, reason.to_string()) {
+        error!("Error {} on order update", e);
+    }
 }
 
 #[cfg_attr(test, mockable)]
-fn delete_my_taker_order(ctx: &MmArc, uuid: &Uuid) {
-    let path = my_taker_order_file_path(ctx, uuid);
+fn delete_my_taker_order(ctx: &MmArc, order: &TakerOrder, reason: TakerOrderCancellationReason) {
+    let path = my_taker_order_file_path(ctx, &order.request.uuid);
     match remove_file(&path) {
         Ok(_) => (),
         Err(e) => log::warn!("Could not remove order file {}, error {}", path.display(), e),
+    }
+    match reason {
+        TakerOrderCancellationReason::ToMaker => (),
+        _ => save_my_order_in_history(ctx, &Order::Taker(order.clone())),
+    }
+
+    if let Err(e) = update_order_status_in_db(ctx, order.request.uuid, reason.to_string()) {
+        error!("Error {} on order update", e);
     }
 }
 
@@ -3568,7 +4092,7 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
         ($e: expr, $uuid: ident, $order: ident) => {
             if $e {
                 if $order.is_cancellable() {
-                    delete_my_maker_order(&ctx, &$order);
+                    delete_my_maker_order(&ctx, &$order, MakerOrderCancellationReason::Cancelled);
                     cancelled_maker_orders.push($order);
                     cancelled.push($uuid);
                     None
@@ -3586,7 +4110,7 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
         ($e: expr, $uuid: ident, $order: ident) => {
             if $e {
                 if $order.is_cancellable() {
-                    delete_my_taker_order(&ctx, &$order.request.uuid);
+                    delete_my_taker_order(&ctx, &$order, TakerOrderCancellationReason::Cancelled);
                     cancelled.push($uuid);
                     None
                 } else {

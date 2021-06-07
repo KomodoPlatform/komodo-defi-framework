@@ -4,11 +4,12 @@ use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_coin_balance_for_swap,
             dex_fee_amount_from_taker_coin, get_locked_amount, my_swap_file_path, my_swaps_dir, recv_swap_msg,
-            swap_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            swap_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg, NegotiationDataV2, RecoveredSwap,
+            RecoveredSwapAction, SavedSwap, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 
 use crate::mm2::lp_network::subscribe_to_topic;
+use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::MM_VERSION;
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
@@ -96,6 +97,8 @@ fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEven
 pub struct TakerNegotiationData {
     pub taker_payment_locktime: u64,
     pub taker_pubkey: H264Json,
+    pub maker_coin_swap_contract_addr: Option<BytesJson>,
+    pub taker_coin_swap_contract_addr: Option<BytesJson>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -188,6 +191,13 @@ impl MakerSwap {
                 self.taker_payment_lock
                     .store(data.taker_payment_locktime, Ordering::Relaxed);
                 self.w().other_persistent_pub = data.taker_pubkey.into();
+                if data.maker_coin_swap_contract_addr.is_some() {
+                    self.w().data.maker_coin_swap_contract_address = data.maker_coin_swap_contract_addr;
+                }
+
+                if data.taker_coin_swap_contract_addr.is_some() {
+                    self.w().data.taker_coin_swap_contract_address = data.taker_coin_swap_contract_addr;
+                }
             },
             MakerSwapEvent::NegotiateFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::TakerFeeValidated(tx) => self.w().taker_fee = Some(tx),
@@ -374,12 +384,14 @@ impl MakerSwap {
     }
 
     async fn negotiate(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let maker_negotiation_data = SwapMsg::Negotiation(NegotiationDataMsg {
+        let maker_negotiation_data = SwapMsg::Negotiation(NegotiationDataMsg::V2(NegotiationDataV2 {
             started_at: self.r().data.started_at,
             payment_locktime: self.r().data.maker_payment_lock,
-            secret_hash: dhash160(&self.r().data.secret.0).take(),
+            secret_hash: dhash160(&self.r().data.secret.0).take().to_vec(),
             persistent_pubkey: self.my_persistent_pub.to_vec(),
-        });
+            maker_coin_swap_contract: self.maker_coin.swap_contract_address().map_or(vec![], |addr| addr.0),
+            taker_coin_swap_contract: self.taker_coin.swap_contract_address().map_or(vec![], |addr| addr.0),
+        }));
         const NEGOTIATION_TIMEOUT: u64 = 90;
 
         let send_abort_handle = broadcast_swap_message_every(
@@ -403,29 +415,55 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
-        let time_dif = (self.r().data.started_at as i64 - taker_data.started_at as i64).abs();
+        let time_dif = (self.r().data.started_at as i64 - taker_data.started_at() as i64).abs();
         if time_dif > 60 {
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("Started_at time_dif over 60 {}", time_dif).into(),
             )]));
         }
 
-        let expected_lock_time = taker_data.started_at + self.r().data.lock_duration;
-        if taker_data.payment_locktime != expected_lock_time {
+        let expected_lock_time = taker_data.started_at() + self.r().data.lock_duration;
+        if taker_data.payment_locktime() != expected_lock_time {
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!(
                     "taker_data.payment_locktime {} not equal to expected {}",
-                    taker_data.payment_locktime,
+                    taker_data.payment_locktime(),
                     expected_lock_time
                 )
                 .into(),
             )]));
         }
 
+        let maker_coin_swap_contract_addr = match self
+            .maker_coin
+            .negotiate_swap_contract_addr(taker_data.maker_coin_swap_contract())
+        {
+            Ok(addr) => addr,
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("!maker_coin.negotiate_swap_contract_addr {}", e).into(),
+                )]))
+            },
+        };
+
+        let taker_coin_swap_contract_addr = match self
+            .taker_coin
+            .negotiate_swap_contract_addr(taker_data.taker_coin_swap_contract())
+        {
+            Ok(addr) => addr,
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("!taker_coin.negotiate_swap_contract_addr {}", e).into(),
+                )]))
+            },
+        };
+
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
-                taker_payment_locktime: taker_data.payment_locktime,
-                taker_pubkey: taker_data.persistent_pubkey.as_slice().into(),
+                taker_payment_locktime: taker_data.payment_locktime(),
+                taker_pubkey: taker_data.persistent_pubkey().into(),
+                maker_coin_swap_contract_addr,
+                taker_coin_swap_contract_addr,
             }),
         ]))
     }
@@ -1149,23 +1187,26 @@ impl MakerSwapEvent {
     }
 
     fn should_ban_taker(&self) -> bool {
-        matches!(self,
-            MakerSwapEvent::TakerFeeValidateFailed(_)
-            | MakerSwapEvent::TakerPaymentValidateFailed(_))
+        matches!(
+            self,
+            MakerSwapEvent::TakerFeeValidateFailed(_) | MakerSwapEvent::TakerPaymentValidateFailed(_)
+        )
     }
 
     fn is_success(&self) -> bool {
-        matches!(self, MakerSwapEvent::Started(_)
-            | MakerSwapEvent::Negotiated(_)
-            | MakerSwapEvent::TakerFeeValidated(_)
-            | MakerSwapEvent::MakerPaymentSent(_)
-            | MakerSwapEvent::TakerPaymentReceived(_)
-            | MakerSwapEvent::TakerPaymentWaitConfirmStarted
-            | MakerSwapEvent::TakerPaymentValidatedAndConfirmed
-            | MakerSwapEvent::TakerPaymentSpent(_)
-            | MakerSwapEvent::TakerPaymentSpendConfirmStarted
-            | MakerSwapEvent::TakerPaymentSpendConfirmed
-            | MakerSwapEvent::Finished
+        matches!(
+            self,
+            MakerSwapEvent::Started(_)
+                | MakerSwapEvent::Negotiated(_)
+                | MakerSwapEvent::TakerFeeValidated(_)
+                | MakerSwapEvent::MakerPaymentSent(_)
+                | MakerSwapEvent::TakerPaymentReceived(_)
+                | MakerSwapEvent::TakerPaymentWaitConfirmStarted
+                | MakerSwapEvent::TakerPaymentValidatedAndConfirmed
+                | MakerSwapEvent::TakerPaymentSpent(_)
+                | MakerSwapEvent::TakerPaymentSpendConfirmStarted
+                | MakerSwapEvent::TakerPaymentSpendConfirmed
+                | MakerSwapEvent::Finished
         )
     }
 
@@ -1490,7 +1531,7 @@ pub async fn check_balance_for_maker_swap(
     swap_uuid: Option<&Uuid>,
     prepared_params: Option<MakerSwapPreparedParams>,
     stage: FeeApproxStage,
-) -> Result<(), String> {
+) -> CheckBalanceResult<()> {
     let (maker_payment_trade_fee, taker_payment_spend_trade_fee) = match prepared_params {
         Some(MakerSwapPreparedParams {
             maker_payment_trade_fee,
@@ -1498,19 +1539,22 @@ pub async fn check_balance_for_maker_swap(
         }) => (maker_payment_trade_fee, taker_payment_spend_trade_fee),
         None => {
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
-            let maker_payment_trade_fee = try_s!(
-                my_coin
-                    .get_sender_trade_fee(preimage_value, stage.clone())
-                    .compat()
-                    .await
-            );
-            let taker_payment_spend_trade_fee = try_s!(other_coin.get_receiver_trade_fee(stage).compat().await);
+            let maker_payment_trade_fee = my_coin
+                .get_sender_trade_fee(preimage_value, stage.clone())
+                .compat()
+                .await
+                .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
+            let taker_payment_spend_trade_fee = other_coin
+                .get_receiver_trade_fee(stage)
+                .compat()
+                .await
+                .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
             (maker_payment_trade_fee, taker_payment_spend_trade_fee)
         },
     };
 
-    try_s!(check_my_coin_balance_for_swap(ctx, my_coin, swap_uuid, volume, maker_payment_trade_fee, None).await);
-    try_s!(check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, taker_payment_spend_trade_fee).await);
+    check_my_coin_balance_for_swap(ctx, my_coin, swap_uuid, volume, maker_payment_trade_fee, None).await?;
+    check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, taker_payment_spend_trade_fee).await?;
     Ok(())
 }
 
@@ -1529,13 +1573,18 @@ pub async fn maker_swap_trade_preimage(
     base_coin: MmCoinEnum,
     rel_coin: MmCoinEnum,
 ) -> TradePreimageRpcResult<MakerTradePreimage> {
+    let base_coin_ticker = base_coin.ticker();
+    let rel_coin_ticker = rel_coin.ticker();
     let volume = if req.max {
         let balance = base_coin.my_spendable_balance().compat().await?;
         calc_max_maker_vol(&ctx, &base_coin, &balance, FeeApproxStage::TradePreimage).await?
     } else {
+        let threshold = base_coin.min_trading_vol().to_decimal();
         if req.volume.is_zero() {
-            return MmError::err(TradePreimageRpcError::VolumeIsTooSmall {
+            return MmError::err(TradePreimageRpcError::VolumeTooLow {
+                coin: base_coin_ticker.to_owned(),
                 volume: req.volume.to_decimal(),
+                threshold,
             });
         }
         req.volume
@@ -1546,12 +1595,48 @@ pub async fn maker_swap_trade_preimage(
         .get_sender_trade_fee(preimage_value, FeeApproxStage::TradePreimage)
         .compat()
         .await
-        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin.ticker()))?;
+        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin_ticker))?;
     let rel_coin_fee = rel_coin
         .get_receiver_trade_fee(FeeApproxStage::TradePreimage)
         .compat()
         .await
-        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, rel_coin.ticker()))?;
+        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, rel_coin_ticker))?;
+
+    if req.max {
+        // Note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient.
+        // So we have to check the balance of the other coin only.
+        check_other_coin_balance_for_swap(ctx, &rel_coin, None, rel_coin_fee.clone()).await?
+    } else {
+        let prepared_params = MakerSwapPreparedParams {
+            maker_payment_trade_fee: base_coin_fee.clone(),
+            taker_payment_spend_trade_fee: rel_coin_fee.clone(),
+        };
+        check_balance_for_maker_swap(
+            ctx,
+            &base_coin,
+            &rel_coin,
+            volume.clone(),
+            None,
+            Some(prepared_params),
+            FeeApproxStage::TradePreimage,
+        )
+        .await?
+    }
+
+    let conf_settings = OrderConfirmationsSettings {
+        base_confs: base_coin.required_confirmations(),
+        base_nota: base_coin.requires_notarization(),
+        rel_confs: rel_coin.required_confirmations(),
+        rel_nota: rel_coin.requires_notarization(),
+    };
+    let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
+        .with_max_base_vol(volume.clone())
+        .with_price(req.price)
+        .with_conf_settings(conf_settings);
+    // perform an additional validation
+    let _order = builder
+        .build()
+        .map_to_mm(|e| TradePreimageRpcError::from_maker_order_build_error(e, base_coin_ticker, rel_coin_ticker))?;
 
     let volume = if req.max { Some(volume) } else { None };
     Ok(MakerTradePreimage {
@@ -1572,7 +1657,8 @@ pub async fn calc_max_maker_vol(
 ) -> CheckBalanceResult<MmNumber> {
     let ticker = coin.ticker();
     let locked = get_locked_amount(ctx, ticker);
-    let mut vol = &MmNumber::from(balance.clone()) - &locked;
+    let available = &MmNumber::from(balance.clone()) - &locked;
+    let mut vol = available.clone();
 
     let preimage_value = TradePreimageValue::UpperBound(vol.to_decimal());
     let trade_fee = coin
@@ -1581,18 +1667,21 @@ pub async fn calc_max_maker_vol(
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, ticker))?;
 
+    let mut required_to_pay_fee = MmNumber::from(0);
     if trade_fee.coin == ticker {
-        vol = vol - trade_fee.amount;
+        vol = &vol - &trade_fee.amount;
+        required_to_pay_fee = trade_fee.amount;
     } else {
         let base_coin_balance = coin.base_coin_balance().compat().await?;
-        check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee, None).await?;
+        check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
     }
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
     if vol < min_tx_amount {
+        let required = min_tx_amount + required_to_pay_fee;
         return MmError::err(CheckBalanceError::NotSufficientBalance {
             coin: ticker.to_owned(),
-            available: balance.clone(),
-            required: min_tx_amount.to_decimal(),
+            available: available.to_decimal(),
+            required: required.to_decimal(),
             locked_by_swaps: Some(locked.to_decimal()),
         });
     }

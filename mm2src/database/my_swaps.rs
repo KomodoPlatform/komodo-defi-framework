@@ -1,5 +1,5 @@
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
-use crate::mm2::lp_swap::{my_swaps_dir, MySwapsFilter, PagingOptions, SavedSwap};
+use crate::mm2::lp_swap::{my_swaps_dir, MySwapsFilter, SavedSwap};
 use common::log::{debug, error};
 use common::mm_ctx::MmArc;
 use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
@@ -8,6 +8,8 @@ use serde_json::{self as json};
 use sql_builder::SqlBuilder;
 use std::convert::TryInto;
 use uuid::Uuid;
+
+use super::database_common::{offset_by_uuid, PagingOptions};
 
 const MY_SWAPS_TABLE: &str = "my_swaps";
 
@@ -98,48 +100,6 @@ pub struct RecentSwapsSelectSqlResult {
     pub total_count: usize,
     /// The number of skipped UUIDs
     pub skipped: usize,
-}
-
-/// Calculates the offset to skip records by uuid of swap.
-/// Expects `query_builder` to have where clauses applied *before* calling this fn.
-fn offset_by_uuid(
-    conn: &Connection,
-    query_builder: &SqlBuilder,
-    params: &[(&str, String)],
-    uuid: &Uuid,
-) -> SqlResult<usize> {
-    // building following query to determine offset by from_uuid
-    // select row from (
-    //     select uuid, ROW_NUMBER() OVER (ORDER BY started_at DESC) AS row
-    //     from my_swaps
-    //     where ... filtering options here ...
-    // ) where uuid = "from_uuid";
-    let subquery = query_builder
-        .clone()
-        .field("ROW_NUMBER() OVER (ORDER BY started_at DESC) AS row")
-        .field("uuid")
-        .subquery()
-        .expect("SQL query builder should never fail here");
-
-    let external_query = SqlBuilder::select_from(subquery)
-        .field("row")
-        .and_where("uuid = :uuid")
-        .sql()
-        .expect("SQL query builder should never fail here");
-
-    let mut params_for_offset = params.to_owned();
-    params_for_offset.push((":uuid", uuid.to_string()));
-    let params_as_trait: Vec<_> = params_for_offset
-        .iter()
-        .map(|(key, value)| (*key, value as &dyn ToSql))
-        .collect();
-    debug!(
-        "Trying to execute SQL query {} with params {:?}",
-        external_query, params_for_offset
-    );
-    let mut stmt = conn.prepare(&external_query)?;
-    let offset: isize = stmt.query_row_named(params_as_trait.as_slice(), |row| row.get(0))?;
-    Ok(offset.try_into().expect("row index should be always above zero"))
 }
 
 /// Adds where clauses determined by MySwapsFilter

@@ -1,7 +1,9 @@
 /// The module responsible to work with SQLite database
-
-#[path = "database/my_swaps.rs"]
-pub mod my_swaps;
+///
+#[path = "database/database_common.rs"]
+pub mod database_common;
+#[path = "database/my_orders.rs"] pub mod my_orders;
+#[path = "database/my_swaps.rs"] pub mod my_swaps;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
 use crate::CREATE_MY_SWAPS_TABLE;
@@ -67,12 +69,15 @@ fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_ST
 
 fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_split_tickers() }
 
+fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
+
 fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx)),
         2 => Some(migration_2(ctx)),
         3 => Some(migration_3()),
         4 => Some(migration_4()),
+        5 => Some(migration_5()),
         _ => None,
     }
 }

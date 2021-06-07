@@ -4,26 +4,6 @@
 export function host_ensure_dir_is_writable(ptr, len) {
 }
 
-// fn host_electrum_connect(ptr: *const c_char, len: i32) -> i32;
-export function host_electrum_connect(ptr, len) {
-    return 0;
-}
-
-// fn host_electrum_is_connected(ri: i32) -> i32;
-export function host_electrum_is_connected(ri) {
-    return 0;
-}
-
-// fn host_electrum_request(ri: i32, ptr: *const c_char, len: i32) -> i32;
-export function host_electrum_request(ri, ptr, len) {
-    return 0;
-}
-
-// fn host_electrum_reply(ri: i32, id: i32, rbuf: *mut c_char, rcap: i32) -> i32;
-export function host_electrum_reply(ri, id, rbuf, rcap) {
-    return 0;
-}
-
 // pub fn host_env(name: *const c_char, nameˡ: i32, rbuf: *mut c_char, rcap: i32) -> i32;
 export function host_env(name, name2, rbuf, rcap) {
     return 0;

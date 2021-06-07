@@ -66,6 +66,7 @@ pub fn register_callback(callback: impl LogCallback) {
 
 /// Initialized and used when there's a need to chute the logging into a given thread.
 struct Gravity {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     /// The center of gravity, the thread where the logging should reach the `println!` output.
     target_thread_id: thread::ThreadId,
     /// Log chunks received from satellite threads.

@@ -2,8 +2,9 @@ use super::*;
 use common::crash_reports::init_crash_reports;
 use common::log::{register_callback, FfiCallback};
 use common::mm_ctx::MmArc;
+use common::now_float;
 use futures01::Future;
-use gstuff::{any_to_str, now_float};
+use gstuff::any_to_str;
 use libc::c_char;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
@@ -196,4 +197,47 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     RUNNING.store(false, Ordering::Relaxed);
     log!("mm2_test] All done, passing the torch.");
     torch
+}
+
+#[derive(Debug, PartialEq, Primitive)]
+enum StopErr {
+    Ok = 0,
+    NotRunning = 1,
+    ErrorStopping = 2,
+}
+
+/// Stop an MM2 instance or reset the static variables.
+#[no_mangle]
+pub extern "C" fn mm2_stop() -> i8 {
+    // The log callback might be initialized already, so try to use the common logs.
+    use common::log::{error, warn};
+
+    if !LP_MAIN_RUNNING.load(Ordering::Relaxed) {
+        return StopErr::NotRunning as i8;
+    }
+
+    let ctx = CTX.load(Ordering::Relaxed);
+    if ctx == 0 {
+        warn!("mm2_stop] lp_main is running without ctx");
+        LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+        return StopErr::Ok as i8;
+    }
+
+    let ctx = match MmArc::from_ffi_handle(ctx) {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            warn!("mm2_stop] lp_main is still running, although ctx has already been dropped");
+            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+            // there is no need to rewrite the `CTX`, because it will be removed on `mm2_main`
+            return StopErr::Ok as i8;
+        },
+    };
+
+    match ctx.stop() {
+        Ok(()) => StopErr::Ok as i8,
+        Err(e) => {
+            error!("mm2_stop] {}", e);
+            StopErr::ErrorStopping as i8
+        },
+    }
 }

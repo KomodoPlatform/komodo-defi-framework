@@ -296,7 +296,7 @@ pub trait Qrc20NativeOps {
         to_block: Option<u64>,
         addresses: Vec<H160Json>,
         topics: Vec<TopicFilter>,
-    ) -> RpcRes<Vec<TxReceipt>>;
+    ) -> UtxoRpcFut<Vec<TxReceipt>>;
 }
 
 impl Qrc20NativeOps for NativeClient {
@@ -314,7 +314,7 @@ impl Qrc20NativeOps for NativeClient {
         to_block: Option<u64>,
         addresses: Vec<H160Json>,
         topics: Vec<TopicFilter>,
-    ) -> RpcRes<Vec<TxReceipt>> {
+    ) -> UtxoRpcFut<Vec<TxReceipt>> {
         let to_block = to_block.map(|x| x as i64).unwrap_or(-1);
         let addr_block = json!({ "addresses": addresses });
         let topics: Vec<Json> = topics
@@ -327,7 +327,10 @@ impl Qrc20NativeOps for NativeClient {
         let topic_block = json!({
             "topics": topics,
         });
-        rpc_func!(self, "searchlogs", from_block, to_block, addr_block, topic_block)
+        Box::new(
+            rpc_func!(self, "searchlogs", from_block, to_block, addr_block, topic_block)
+                .map_to_mm_fut(UtxoRpcError::from),
+        )
     }
 }
 

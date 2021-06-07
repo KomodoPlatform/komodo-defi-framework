@@ -1,36 +1,43 @@
 //! Helpers used in the unit and integration tests.
 
-use crate::block_on;
 use bigdecimal::BigDecimal;
-use bytes::Bytes;
 use chrono::{Local, TimeZone};
-use futures::channel::oneshot::channel;
-use futures::task::SpawnExt;
-use gstuff::ISATTY;
-use http::{HeaderMap, Request, StatusCode};
+use http::{HeaderMap, StatusCode};
 use rand::Rng;
-use regex::Regex;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::io::Write;
-#[cfg(target_arch = "wasm32")] use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::Child;
 use std::sync::Mutex;
-use std::thread::sleep;
-use std::time::Duration;
 
 use crate::executor::Timer;
-#[cfg(target_arch = "wasm32")] use crate::helperᶜ;
-use crate::log::{dashboard_path, LogState};
 use crate::mm_ctx::MmArc;
 use crate::mm_metrics::{MetricType, MetricsJson};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::wio::{slurp_req, POOL};
 use crate::{now_float, slurp};
+
+cfg_wasm32! {
+    use crate::log::LogLevel;
+    use crate::helperᶜ;
+}
+
+cfg_native! {
+    use crate::block_on;
+    use crate::log::{dashboard_path, LogState};
+    use crate::wio::{slurp_req, POOL};
+    use bytes::Bytes;
+    use futures::channel::oneshot;
+    use futures::task::SpawnExt;
+    use gstuff::ISATTY;
+    use http::Request;
+    use regex::Regex;
+    use std::env;
+    use std::fs;
+    use std::io::Write;
+    use std::process::Command;
+    use std::thread;
+    use std::time::Duration;
+}
 
 pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
@@ -567,7 +574,7 @@ pub fn wait_for_log(log: &LogState, timeout_sec: f64, pred: &dyn Fn(&str) -> boo
         if now_float() - start > timeout_sec {
             return ERR!("Timeout expired waiting for a log condition");
         }
-        sleep(Duration::from_millis(ms));
+        thread::sleep(Duration::from_millis(ms));
     }
 }
 
@@ -585,7 +592,7 @@ pub async fn common_wait_for_log_re(req: Bytes) -> Result<Vec<u8>, String> {
     let re = try_s!(Regex::new(&args.re_pred));
 
     // Run the blocking `wait_for_log` in the `POOL`.
-    let (tx, rx) = channel();
+    let (tx, rx) = oneshot::channel();
     try_s!(try_s!(POOL.lock()).spawn(async move {
         let _ = tx.send(wait_for_log(&ctx.log, args.timeout_sec, &|line| re.is_match(line)));
     }));
@@ -667,6 +674,15 @@ pub fn mm_spat(
     unimplemented!()
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn register_wasm_log(level: LogLevel) {
+    use crate::log::{register_callback, WasmCallback, WasmLoggerBuilder};
+
+    register_callback(WasmCallback::console_log());
+    // a log is initialized already if [`WasmLoggerBuilder::try_init`] fails
+    let _ = WasmLoggerBuilder::default().level_filter(level).try_init();
+}
+
 /// Asks MM to enable the given currency in electrum mode
 /// fresh list of servers at https://github.com/jl777/coins/blob/master/electrums/.
 pub async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> Json {
@@ -735,8 +751,6 @@ pub fn from_env_file(env: Vec<u8>) -> (Option<String>, Option<String>) {
     }
     (passphrase, userpass)
 }
-
-#[cfg(target_arch = "wasm32")] use std::os::raw::c_char;
 
 /// Reads passphrase from file or environment.
 pub fn get_passphrase(path: &dyn AsRef<Path>, env: &str) -> Result<String, String> {

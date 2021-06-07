@@ -176,6 +176,9 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     if !ensure_dir_is_writable(&dbdir.join("ORDERS").join("MY").join("TAKER")) {
         return ERR!("ORDERS/MY/TAKER db dir is not writable");
     }
+    if !ensure_dir_is_writable(&dbdir.join("ORDERS").join("MY").join("HISTORY")) {
+        return ERR!("ORDERS/MY/HISTORY db dir is not writable");
+    }
     if !ensure_dir_is_writable(&dbdir.join("TX_CACHE")) {
         return ERR!("TX_CACHE db dir is not writable");
     }

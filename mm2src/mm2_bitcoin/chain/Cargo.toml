@@ -1,0 +1,11 @@
+[package]
+name = "chain"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+rustc-hex = "2"
+bitcrypto = { path = "../crypto" }
+primitives = { path = "../primitives" }
+serialization = { path = "../serialization" }
+serialization_derive = { path = "../serialization_derive" }

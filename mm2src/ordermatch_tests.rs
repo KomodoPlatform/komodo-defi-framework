@@ -2,6 +2,7 @@ use super::*;
 use crate::mm2::lp_network::P2PContext;
 use crate::mm2::lp_ordermatch::new_protocol::PubkeyKeepAlive;
 use coins::{MmCoin, TestCoin};
+use common::rusqlite::Connection;
 use common::{block_on,
              executor::spawn,
              mm_ctx::{MmArc, MmCtx, MmCtxBuilder},
@@ -13,6 +14,7 @@ use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::collections::HashSet;
 use std::iter::{self, FromIterator};
+use std::sync::Mutex;
 
 #[test]
 fn test_match_maker_order_and_taker_request() {
@@ -20,6 +22,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 10.into(),
         min_base_vol: 0.into(),
         price: 1.into(),
@@ -27,6 +30,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -50,6 +54,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 10.into(),
         min_base_vol: 0.into(),
         price: "0.5".into(),
@@ -57,6 +62,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -80,6 +86,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 10.into(),
         min_base_vol: 0.into(),
         price: "0.5".into(),
@@ -87,6 +94,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -110,6 +118,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 10.into(),
         min_base_vol: 0.into(),
         price: "0.5".into(),
@@ -117,6 +126,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -140,6 +150,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 20.into(),
         min_base_vol: 0.into(),
         price: "0.5".into(),
@@ -147,6 +158,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -170,6 +182,7 @@ fn test_match_maker_order_and_taker_request() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 1.into(),
         min_base_vol: 0.into(),
         price: "1".into(),
@@ -177,6 +190,7 @@ fn test_match_maker_order_and_taker_request() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
 
     let request = TakerRequest {
@@ -233,6 +247,7 @@ fn test_maker_order_available_amount() {
         base: "BASE".into(),
         rel: "REL".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         max_base_vol: 10.into(),
         min_base_vol: 0.into(),
         price: 1.into(),
@@ -240,6 +255,7 @@ fn test_maker_order_available_amount() {
         started_swaps: Vec::new(),
         uuid: Uuid::new_v4(),
         conf_settings: None,
+        changes_history: None,
     };
     maker.matches.insert(Uuid::new_v4(), MakerMatch {
         request: TakerRequest {
@@ -719,36 +735,42 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
         base: "RICK".into(),
         rel: "MORTY".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         matches: HashMap::new(),
         max_base_vol: 0.into(),
         min_base_vol: 0.into(),
         price: 0.into(),
         started_swaps: vec![],
         conf_settings: None,
+        changes_history: None,
     });
     maker_orders.insert(Uuid::from_bytes([1; 16]), MakerOrder {
         uuid: Uuid::from_bytes([1; 16]),
         base: "MORTY".into(),
         rel: "RICK".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         matches: HashMap::new(),
         max_base_vol: 0.into(),
         min_base_vol: 0.into(),
         price: 0.into(),
         started_swaps: vec![],
         conf_settings: None,
+        changes_history: None,
     });
     maker_orders.insert(Uuid::from_bytes([2; 16]), MakerOrder {
         uuid: Uuid::from_bytes([2; 16]),
         base: "MORTY".into(),
         rel: "ETH".into(),
         created_at: now_ms(),
+        updated_at: Some(now_ms()),
         matches: HashMap::new(),
         max_base_vol: 0.into(),
         min_base_vol: 0.into(),
         price: 0.into(),
         started_swaps: vec![],
         conf_settings: None,
+        changes_history: None,
     });
     taker_orders.insert(Uuid::from_bytes([3; 16]), TakerOrder {
         matches: HashMap::new(),
@@ -779,8 +801,11 @@ fn test_cancel_by_single_coin() {
         .into_mm_arc();
     let rx = prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
+
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "RICK".into() })).unwrap();
     block_on(rx.take(2).collect::<Vec<_>>());
@@ -797,8 +822,11 @@ fn test_cancel_by_pair() {
         .into_mm_arc();
     let rx = prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
+
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Pair {
         base: "RICK".into(),
@@ -819,8 +847,11 @@ fn test_cancel_by_all() {
         .into_mm_arc();
     let rx = prepare_for_cancel_by(&ctx);
 
-    delete_my_maker_order.mock_safe(|_, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _| MockResult::Return(()));
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
+
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::All)).unwrap();
     block_on(rx.take(3).collect::<Vec<_>>());
@@ -891,7 +922,7 @@ fn test_taker_order_match_by() {
 
 #[test]
 fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected() {
-    let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
+    let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"updated_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
     let ctx = MmCtxBuilder::default()
         .with_secp256k1_key_pair(
@@ -915,7 +946,7 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
 
 #[test]
 fn should_process_request_only_once() {
-    let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
+    let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"updated_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
     let uuid = maker_order.uuid;
     let ctx = MmCtxBuilder::default()

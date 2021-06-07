@@ -55,6 +55,8 @@
 //  marketmaker
 //
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::mm2::database::database_common::PagingOptions;
 use crate::mm2::lp_network::broadcast_p2p_msg;
 use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
@@ -74,7 +76,6 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
@@ -523,12 +524,73 @@ pub fn dex_fee_amount_from_taker_coin(taker_coin: &MmCoinEnum, maker_coin: &str,
     dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &dex_fee_threshold)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NegotiationDataMsg {
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataV1 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: [u8; 20],
     persistent_pubkey: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataV2 {
+    started_at: u64,
+    payment_locktime: u64,
+    secret_hash: Vec<u8>,
+    persistent_pubkey: Vec<u8>,
+    maker_coin_swap_contract: Vec<u8>,
+    taker_coin_swap_contract: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum NegotiationDataMsg {
+    V1(NegotiationDataV1),
+    V2(NegotiationDataV2),
+}
+
+impl NegotiationDataMsg {
+    pub fn started_at(&self) -> u64 {
+        match self {
+            NegotiationDataMsg::V1(v1) => v1.started_at,
+            NegotiationDataMsg::V2(v2) => v2.started_at,
+        }
+    }
+
+    pub fn payment_locktime(&self) -> u64 {
+        match self {
+            NegotiationDataMsg::V1(v1) => v1.payment_locktime,
+            NegotiationDataMsg::V2(v2) => v2.payment_locktime,
+        }
+    }
+
+    pub fn secret_hash(&self) -> &[u8] {
+        match self {
+            NegotiationDataMsg::V1(v1) => &v1.secret_hash,
+            NegotiationDataMsg::V2(v2) => &v2.secret_hash,
+        }
+    }
+
+    pub fn persistent_pubkey(&self) -> &[u8] {
+        match self {
+            NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
+            NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
+        }
+    }
+
+    pub fn maker_coin_swap_contract(&self) -> Option<&[u8]> {
+        match self {
+            NegotiationDataMsg::V1(_) => None,
+            NegotiationDataMsg::V2(v2) => Some(&v2.maker_coin_swap_contract),
+        }
+    }
+
+    pub fn taker_coin_swap_contract(&self) -> Option<&[u8]> {
+        match self {
+            NegotiationDataMsg::V1(_) => None,
+            NegotiationDataMsg::V2(v2) => Some(&v2.taker_coin_swap_contract),
+        }
+    }
 }
 
 /// Data to be exchanged and validated on swap start, the replacement of LP_pubkeys_data, LP_choosei_data, etc.
@@ -847,10 +909,6 @@ fn broadcast_my_swap_status(uuid: &Uuid, ctx: &MmArc) -> Result<(), String> {
     Ok(())
 }
 
-const fn ten() -> usize { 10 }
-
-fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
-
 #[derive(Debug, Deserialize)]
 pub struct MySwapsFilter {
     pub my_coin: Option<String>,
@@ -866,6 +924,8 @@ pub fn all_swaps_uuids_by_filter(_ctx: MmArc, _req: Json) -> HyRes {
     )))
 }
 
+// TODO: Should return the result from SQL like in order history. So it can be clear the exact started_at time
+// and the coins if they are not included in the filter request
 /// Returns *all* uuids of swaps, which match the selected filter.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn all_swaps_uuids_by_filter(ctx: MmArc, req: Json) -> HyRes {
@@ -890,15 +950,7 @@ pub fn all_swaps_uuids_by_filter(ctx: MmArc, req: Json) -> HyRes {
     )
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PagingOptions {
-    #[serde(default = "ten")]
-    pub limit: usize,
-    #[serde(default = "one")]
-    pub page_number: NonZeroUsize,
-    pub from_uuid: Option<Uuid>,
-}
-
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Deserialize)]
 pub struct MyRecentSwapsReq {
     #[serde(flatten)]
@@ -1389,5 +1441,68 @@ mod lp_swap_tests {
         let expected = PAYMENT_LOCKTIME * 10;
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn check_negotiation_data_serde() {
+        // old message format should be deserialized to NegotiationDataMsg::V1
+        let v1 = NegotiationDataV1 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: [0; 20],
+            persistent_pubkey: vec![1; 33],
+        };
+
+        let expected = NegotiationDataMsg::V1(NegotiationDataV1 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: [0; 20],
+            persistent_pubkey: vec![1; 33],
+        });
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // new message format should be deserialized to old
+        let v2 = NegotiationDataMsg::V2(NegotiationDataV2 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: vec![0; 20],
+            persistent_pubkey: vec![1; 33],
+            maker_coin_swap_contract: vec![1; 20],
+            taker_coin_swap_contract: vec![1; 20],
+        });
+
+        let expected = NegotiationDataV1 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: [0; 20],
+            persistent_pubkey: vec![1; 33],
+        };
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: NegotiationDataV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // new message format should be deserialized to new
+        let v2 = NegotiationDataMsg::V2(NegotiationDataV2 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: vec![0; 20],
+            persistent_pubkey: vec![1; 33],
+            maker_coin_swap_contract: vec![1; 20],
+            taker_coin_swap_contract: vec![1; 20],
+        });
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v2);
     }
 }

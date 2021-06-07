@@ -10,7 +10,8 @@ use std::net::SocketAddr;
 
 use super::lp_commands::*;
 use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
-                                orderbook_depth_rpc, orderbook_rpc, sell, set_price};
+                                orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
+                                update_maker_order};
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
                           import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
                           recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
@@ -101,7 +102,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "my_orders" => hyres(my_orders(ctx)),
         "my_recent_swaps" => my_recent_swaps(ctx, req),
         "my_swap_status" => my_swap_status(ctx, req),
-        "my_tx_history" => my_tx_history(ctx, req),
+        "my_tx_history" => hyres(my_tx_history(ctx, req)),
+        "orders_history_by_filter" => hyres(orders_history_by_filter(ctx, req)),
         "order_status" => hyres(order_status(ctx, req)),
         "orderbook" => hyres(orderbook_rpc(ctx, req)),
         "orderbook_depth" => hyres(orderbook_depth_rpc(ctx, req)),
@@ -126,6 +128,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "stop" => stop(ctx),
         "trade_preimage" => hyres(into_legacy::trade_preimage(ctx, req)),
         "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
+        "update_maker_order" => hyres(update_maker_order(ctx, req)),
         "validateaddress" => hyres(validate_address(ctx, req)),
         "version" => version(),
         "withdraw" => hyres(into_legacy::withdraw(ctx, req)),

@@ -1,19 +1,16 @@
 use super::*;
+use crate::tx_history_db::TxHistoryResult;
 use crate::utxo::{RequestTxHistoryResult, UtxoFeeDetails};
 use crate::CoinsContext;
 use crate::TxFeeDetails;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::lazy::LazyLocal;
 use common::mm_metrics::MetricsArc;
-use futures01::Future as Future01;
 use itertools::Itertools;
 use script_pubkey::{extract_contract_call_from_script, extract_gas_from_script, ExtractGasEnum};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::thread;
-use std::time::Duration;
 use utxo_common::{HISTORY_TOO_LARGE_ERROR, HISTORY_TOO_LARGE_ERR_CODE};
 
 type TxTransferMap = HashMap<TxInternalId, TransactionDetails>;
@@ -79,10 +76,20 @@ enum ProcessCachedTransferMapResult {
 }
 
 impl Qrc20Coin {
-    pub fn history_loop(&self, ctx: MmArc) {
-        let mut my_balance: Option<CoinBalance> = None;
-        let mut history_map = self.try_load_history_from_file(&ctx);
+    pub async fn history_loop(self, ctx: MmArc) {
+        let mut history_map = match self.try_load_history_from_file(&ctx).await {
+            Ok(history) => history,
+            Err(e) => {
+                ctx.log.log(
+                    "😟",
+                    &[&"tx_history", &self.utxo.conf.ticker],
+                    &ERRL!("Error {} on load history from file, stop the history loop", e),
+                );
+                return;
+            },
+        };
 
+        let mut my_balance: Option<CoinBalance> = None;
         let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() {
@@ -90,7 +97,7 @@ impl Qrc20Coin {
             };
             {
                 let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-                let coins = block_on(coins_ctx.coins.lock());
+                let coins = coins_ctx.coins.lock().await;
                 if !coins.contains_key(&self.utxo.conf.ticker) {
                     ctx.log
                         .log("", &[&"tx_history", &self.utxo.conf.ticker], "Loop stopped");
@@ -98,7 +105,7 @@ impl Qrc20Coin {
                 };
             }
 
-            let actual_balance = match self.my_balance().wait() {
+            let actual_balance = match self.my_balance().compat().await {
                 Ok(b) => b,
                 Err(err) => {
                     ctx.log.log(
@@ -106,18 +113,19 @@ impl Qrc20Coin {
                         &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on getting balance", err),
                     );
-                    thread::sleep(Duration::from_secs(10));
+                    Timer::sleep(10.).await;
                     continue;
                 },
             };
 
             let need_update = self.check_if_history_update_is_needed(&history_map, &my_balance, &actual_balance);
             if !need_update {
-                thread::sleep(Duration::from_secs(30));
+                Timer::sleep(30.).await;
                 continue;
             }
 
-            let tx_ids = match self.request_tx_history(ctx.metrics.clone()) {
+            let metrics = ctx.metrics.clone();
+            let tx_ids = match self.request_tx_history(metrics).await {
                 RequestTxHistoryResult::Ok(tx_ids) => tx_ids,
                 RequestTxHistoryResult::Retry { error } => {
                     ctx.log.log(
@@ -125,7 +133,7 @@ impl Qrc20Coin {
                         &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("{}, retrying", error),
                     );
-                    thread::sleep(Duration::from_secs(10));
+                    Timer::sleep(10.).await;
                     continue;
                 },
                 RequestTxHistoryResult::HistoryTooLarge => {
@@ -150,7 +158,7 @@ impl Qrc20Coin {
                 },
             };
 
-            let updated = self.process_tx_ids(&ctx, &mut history_map, tx_ids);
+            let updated = self.process_tx_ids(&ctx, &mut history_map, tx_ids).await;
             if success_iteration == 0 {
                 ctx.log.log(
                     "😅",
@@ -167,11 +175,11 @@ impl Qrc20Coin {
             }
 
             // `history_map` has been updated.
-            let mut to_write: Vec<&TransactionDetails> = history_map
+            let mut to_write: Vec<TransactionDetails> = history_map
                 .iter()
                 .map(|(_, value)| value)
                 .flatten()
-                .map(|(_tx_id, tx)| tx)
+                .map(|(_tx_id, tx)| tx.clone())
                 .collect();
             to_write.sort_unstable_by(|a, b| {
                 match sort_newest_to_oldest(a.block_height, b.block_height) {
@@ -180,7 +188,14 @@ impl Qrc20Coin {
                     ord => ord,
                 }
             });
-            self.save_history_to_file(&json::to_vec(&to_write).unwrap(), &ctx);
+            if let Err(e) = self.save_history_to_file(&ctx, to_write).compat().await {
+                ctx.log.log(
+                    "",
+                    &[&"tx_history", &self.as_ref().conf.ticker],
+                    &ERRL!("Error {} on 'save_history_to_file', stop the history loop", e),
+                );
+                return;
+            }
         }
     }
 
@@ -326,25 +341,34 @@ impl Qrc20Coin {
         Ok(details)
     }
 
-    fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
+    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
         mm_counter!(metrics, "tx.history.request.count", 1,
                     "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
-        let history_res = block_on(TransferHistoryBuilder::new(self.clone()).build_tx_idents());
+        let history_res = TransferHistoryBuilder::new(self.clone()).build_tx_idents().await;
         let history = match history_res {
             Ok(h) => h,
-            Err(e) => match &e.error {
-                JsonRpcErrorType::Transport(e) | JsonRpcErrorType::Parse(_, e) => {
+            Err(e) => match e.into_inner() {
+                UtxoRpcError::Transport(json_rpc_e) | UtxoRpcError::ResponseParseError(json_rpc_e) => {
+                    match json_rpc_e.error {
+                        JsonRpcErrorType::Response(_addr, err) => {
+                            return if HISTORY_TOO_LARGE_ERROR.eq(&err) {
+                                RequestTxHistoryResult::HistoryTooLarge
+                            } else {
+                                RequestTxHistoryResult::Retry {
+                                    error: ERRL!("Error {:?} on blockchain_contract_event_get_history", err),
+                                }
+                            }
+                        },
+                        JsonRpcErrorType::Transport(err) | JsonRpcErrorType::Parse(_, err) => {
+                            return RequestTxHistoryResult::Retry {
+                                error: ERRL!("Error {} on blockchain_contract_event_get_history", err),
+                            };
+                        },
+                    }
+                },
+                UtxoRpcError::InvalidResponse(e) | UtxoRpcError::Internal(e) => {
                     return RequestTxHistoryResult::Retry {
                         error: ERRL!("Error {} on blockchain_contract_event_get_history", e),
-                    };
-                },
-                JsonRpcErrorType::Response(_addr, err) => {
-                    return if HISTORY_TOO_LARGE_ERROR.eq(err) {
-                        RequestTxHistoryResult::HistoryTooLarge
-                    } else {
-                        RequestTxHistoryResult::Retry {
-                            error: ERRL!("Error {:?} on blockchain_contract_event_get_history", e),
-                        }
                     }
                 },
             },
@@ -379,32 +403,33 @@ impl Qrc20Coin {
     }
 
     /// Returns true if the `history_map` has been updated.
-    fn process_cached_tx_transfer_map(
+    async fn process_cached_tx_transfer_map(
         &self,
         ctx: &MmArc,
         tx_hash: &H256Json,
         tx_height: u64,
         transfer_map: &mut TxTransferMap,
     ) -> ProcessCachedTransferMapResult {
-        // `qtum_details` will be initialized once on first LazyLocal::[get, get_mut] call.
-        // Note if `utxo_common::tx_details_by_hash` failed for some reason then LazyLocal::get will return None.
-        let mut qtum_details = LazyLocal::with_constructor(move || {
-            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
-            match block_on(utxo_common::tx_details_by_hash(self, &tx_hash.0)) {
+        async fn tx_details_by_hash(coin: &Qrc20Coin, ctx: &MmArc, tx_hash: &H256Json) -> Option<TransactionDetails> {
+            mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => coin.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
+            match utxo_common::tx_details_by_hash(coin, &tx_hash.0).await {
                 Ok(d) => {
-                    mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
+                    mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.utxo.conf.ticker.clone(), "method" => "tx_detail_by_hash");
                     Some(d)
                 },
                 Err(e) => {
                     ctx.log.log(
                         "😟",
-                        &[&"tx_history", &self.utxo.conf.ticker],
+                        &[&"tx_history", &coin.utxo.conf.ticker],
                         &ERRL!("Error {:?} on tx_details_by_hash for {:?} tx", e, tx_hash),
                     );
                     None
                 },
             }
-        });
+        }
+
+        // `qtum_details` will be initialized once if it's required
+        let mut qtum_details = None;
 
         let mut updated = false;
         for (id, tx) in transfer_map {
@@ -427,7 +452,10 @@ impl Qrc20Coin {
                 updated = true;
             }
             if tx.should_update_timestamp() {
-                if let Some(qtum_details) = qtum_details.get() {
+                if qtum_details.is_none() {
+                    qtum_details = tx_details_by_hash(self, ctx, tx_hash).await;
+                }
+                if let Some(ref qtum_details) = qtum_details {
                     tx.timestamp = qtum_details.timestamp;
                     updated = true;
                 } // else `utxo_common::tx_details_by_hash` failed for some reason
@@ -442,7 +470,7 @@ impl Qrc20Coin {
     }
 
     /// Returns true if the `history_map` has been updated.
-    fn process_tx_ids(&self, ctx: &MmArc, history_map: &mut HistoryMapByHash, tx_ids: TxIds) -> bool {
+    async fn process_tx_ids(&self, ctx: &MmArc, history_map: &mut HistoryMapByHash, tx_ids: TxIds) -> bool {
         let mut transactions_left = if history_map.len() < tx_ids.len() {
             tx_ids.len() - history_map.len()
         } else {
@@ -456,7 +484,10 @@ impl Qrc20Coin {
             // first check if the `transfer` details are initialized for the `tx_hash`
             if let Some(tx_hash_history) = history_map.get_mut(&tx_hash) {
                 // we should check if the cached `transfer` details are up-to-date (timestamp and blockheight are not zeros)
-                match self.process_cached_tx_transfer_map(&ctx, &tx_hash, height, tx_hash_history) {
+                match self
+                    .process_cached_tx_transfer_map(&ctx, &tx_hash, height, tx_hash_history)
+                    .await
+                {
                     ProcessCachedTransferMapResult::Updated => {
                         updated = true;
                         continue;
@@ -469,7 +500,7 @@ impl Qrc20Coin {
             // `transfer` details are not initialized for the `tx_hash`
             // or there is an error in cached `tx_hash_history`
             mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "transfer_details_by_hash");
-            let tx_hash_history = match block_on(self.transfer_details_by_hash(tx_hash.clone())) {
+            let tx_hash_history = match self.transfer_details_by_hash(tx_hash.clone()).await {
                 Ok(d) => d,
                 Err(e) => {
                     ctx.log.log(
@@ -503,8 +534,8 @@ impl Qrc20Coin {
         updated
     }
 
-    fn try_load_history_from_file(&self, ctx: &MmArc) -> HistoryMapByHash {
-        let history = self.load_history_from_file(&ctx);
+    async fn try_load_history_from_file(&self, ctx: &MmArc) -> TxHistoryResult<HistoryMapByHash> {
+        let history = self.load_history_from_file(&ctx).compat().await?;
         let mut history_map: HistoryMapByHash = HashMap::default();
 
         for tx in history {
@@ -516,7 +547,7 @@ impl Qrc20Coin {
                         &[&"tx_history", &self.utxo.conf.ticker],
                         &ERRL!("Error {:?} on load history from file", e),
                     );
-                    return HistoryMapByHash::default();
+                    return Ok(HistoryMapByHash::default());
                 },
             };
             let tx_hash_history = history_map.entry(id.tx_hash.clone()).or_insert_with(HashMap::default);
@@ -526,11 +557,11 @@ impl Qrc20Coin {
                     &[&"tx_history", &self.utxo.conf.ticker],
                     &ERRL!("History file contains entries with the same 'internal_id'"),
                 );
-                return HistoryMapByHash::default();
+                return Ok(HistoryMapByHash::default());
             }
         }
 
-        history_map
+        Ok(history_map)
     }
 }
 
@@ -574,32 +605,38 @@ impl TransferHistoryBuilder {
         self
     }
 
-    pub async fn build(self) -> Result<Vec<TxReceipt>, JsonRpcError> {
+    pub async fn build(self) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>> {
         self.coin.utxo.rpc_client.build(self.params).await
     }
 
-    pub async fn build_tx_idents(self) -> Result<Vec<(H256Json, u64)>, JsonRpcError> {
+    pub async fn build_tx_idents(self) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>> {
         self.coin.utxo.rpc_client.build_tx_idents(self.params).await
     }
 }
 
 #[async_trait]
 trait BuildTransferHistory {
-    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, JsonRpcError>;
+    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>>;
 
-    async fn build_tx_idents(&self, params: TransferHistoryParams) -> Result<Vec<(H256Json, u64)>, JsonRpcError>;
+    async fn build_tx_idents(
+        &self,
+        params: TransferHistoryParams,
+    ) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>>;
 }
 
 #[async_trait]
 impl BuildTransferHistory for UtxoRpcClientEnum {
-    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, JsonRpcError> {
+    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>> {
         match self {
             UtxoRpcClientEnum::Native(native) => native.build(params).await,
             UtxoRpcClientEnum::Electrum(electrum) => electrum.build(params).await,
         }
     }
 
-    async fn build_tx_idents(&self, params: TransferHistoryParams) -> Result<Vec<(H256Json, u64)>, JsonRpcError> {
+    async fn build_tx_idents(
+        &self,
+        params: TransferHistoryParams,
+    ) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>> {
         match self {
             UtxoRpcClientEnum::Native(native) => native.build_tx_idents(params).await,
             UtxoRpcClientEnum::Electrum(electrum) => electrum.build_tx_idents(params).await,
@@ -609,7 +646,7 @@ impl BuildTransferHistory for UtxoRpcClientEnum {
 
 #[async_trait]
 impl BuildTransferHistory for ElectrumClient {
-    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, JsonRpcError> {
+    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>> {
         let tx_idents = self.build_tx_idents(params).await?;
 
         let mut receipts = Vec::new();
@@ -623,7 +660,10 @@ impl BuildTransferHistory for ElectrumClient {
         Ok(receipts)
     }
 
-    async fn build_tx_idents(&self, params: TransferHistoryParams) -> Result<Vec<(H256Json, u64)>, JsonRpcError> {
+    async fn build_tx_idents(
+        &self,
+        params: TransferHistoryParams,
+    ) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>> {
         let address = contract_addr_into_rpc_format(&params.address);
         let token_address = contract_addr_into_rpc_format(&params.token_address);
         let history = self
@@ -642,7 +682,7 @@ impl BuildTransferHistory for ElectrumClient {
 
 #[async_trait]
 impl BuildTransferHistory for NativeClient {
-    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, JsonRpcError> {
+    async fn build(&self, params: TransferHistoryParams) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>> {
         const SEARCH_LOGS_STEP: u64 = 100;
 
         let token_address = contract_addr_into_rpc_format(&params.token_address);
@@ -680,7 +720,10 @@ impl BuildTransferHistory for NativeClient {
         Ok(result)
     }
 
-    async fn build_tx_idents(&self, params: TransferHistoryParams) -> Result<Vec<(H256Json, u64)>, JsonRpcError> {
+    async fn build_tx_idents(
+        &self,
+        params: TransferHistoryParams,
+    ) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>> {
         let receipts = self.build(params).await?;
         Ok(receipts
             .into_iter()
@@ -785,7 +828,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
         ctx.metrics.init().unwrap();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
@@ -797,8 +840,8 @@ mod tests {
 
         let mut transfer_map = transfer_map_expected.clone();
         assert_eq!(
-            ProcessCachedTransferMapResult::UpdateIsNotNeeded,
-            coin.process_cached_tx_transfer_map(&ctx, &tx_hash, tx_height, &mut transfer_map)
+            block_on(coin.process_cached_tx_transfer_map(&ctx, &tx_hash, tx_height, &mut transfer_map)),
+            ProcessCachedTransferMapResult::UpdateIsNotNeeded
         );
         assert_eq!(transfer_map, transfer_map_expected);
 
@@ -817,7 +860,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
         ctx.metrics.init().unwrap();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
@@ -836,8 +879,8 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            ProcessCachedTransferMapResult::Updated,
-            coin.process_cached_tx_transfer_map(&ctx, &tx_hash, tx_height, &mut transfer_map_zero_timestamp)
+            block_on(coin.process_cached_tx_transfer_map(&ctx, &tx_hash, tx_height, &mut transfer_map_zero_timestamp)),
+            ProcessCachedTransferMapResult::Updated
         );
         assert_eq!(transfer_map_zero_timestamp, transfer_map_expected);
 
@@ -856,7 +899,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
         ctx.metrics.init().unwrap();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
@@ -878,10 +921,13 @@ mod tests {
                 (id, tx)
             })
             .collect();
-        assert_eq!(
-            ProcessCachedTransferMapResult::ReloadIsRequired,
-            coin.process_cached_tx_transfer_map(&ctx, &tx_hash, tx_height, &mut transfer_map_unexpected_tx_id)
-        );
+        let actual_res = block_on(coin.process_cached_tx_transfer_map(
+            &ctx,
+            &tx_hash,
+            tx_height,
+            &mut transfer_map_unexpected_tx_id,
+        ));
+        assert_eq!(actual_res, ProcessCachedTransferMapResult::ReloadIsRequired);
 
         let value: MetricsJson = json::from_value(ctx.metrics.collect_json().unwrap()).unwrap();
         let found = find_metrics_in_json(value, "tx.history.request.count", &[("method", "tx_detail_by_hash")]);
@@ -895,7 +941,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
         let tx_hash: H256Json = hex::decode("35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac")
             .unwrap()
@@ -908,7 +954,8 @@ mod tests {
 
         let tx_ids = vec![(tx_hash, tx_height)];
         let mut history_map = HistoryMapByHash::new();
-        assert!(coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        let updated = block_on(coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        assert!(updated);
         assert_eq!(history_map, history_map_expected);
     }
 
@@ -919,7 +966,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
             .unwrap()
@@ -932,7 +979,8 @@ mod tests {
 
         let tx_ids = vec![(tx_hash, tx_height)];
         let mut history_map = history_map_expected.clone();
-        assert!(!coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        let updated = block_on(coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        assert!(!updated);
         assert_eq!(history_map, history_map_expected);
     }
 
@@ -943,7 +991,7 @@ mod tests {
             3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144,
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
-        let (ctx, coin) = qrc20_coin_for_test(&priv_key);
+        let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
         let metrics = MetricsArc::new();
         metrics.init().unwrap();
@@ -964,7 +1012,8 @@ mod tests {
 
         let tx_ids = vec![(tx_hash, tx_height), (tx_hash_invalid, tx_height)];
         let mut history_map = HistoryMapByHash::default();
-        assert!(coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        let updated = block_on(coin.process_tx_ids(&ctx, &mut history_map, tx_ids));
+        assert!(updated);
         assert_eq!(history_map, history_map_expected);
     }
 }

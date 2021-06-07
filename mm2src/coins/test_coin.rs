@@ -1,8 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, TradePreimageFut, TradePreimageValue, ValidateAddressResult,
-            WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, TradePreimageFut,
+            TradePreimageValue, ValidateAddressResult, WithdrawFut, WithdrawRequest};
 use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
+use common::mm_error::MmError;
 use common::mm_number::MmNumber;
 use futures01::Future;
 use mocktopus::macros::*;
@@ -214,6 +215,13 @@ impl SwapOps for TestCoin {
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+
+    fn negotiate_swap_contract_addr(
+        &self,
+        other_side_address: Option<&[u8]>,
+    ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
+        unimplemented!()
+    }
 }
 
 #[mockable]
@@ -229,7 +237,7 @@ impl MmCoin for TestCoin {
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { unimplemented!() }
 
-    fn process_history_loop(&self, ctx: MmArc) { unimplemented!() }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { unimplemented!() }
 
     fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 

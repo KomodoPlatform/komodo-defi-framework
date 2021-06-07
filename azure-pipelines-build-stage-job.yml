@@ -56,7 +56,7 @@ jobs:
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
           RUST_LOG: debug
-        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ) )
+        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           cargo clippy -- -D warnings
         displayName: 'Check Clippy warnings'

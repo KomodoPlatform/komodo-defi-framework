@@ -84,7 +84,7 @@
 //!  }
 //! ```
 
-use crate::HttpStatusCode;
+use crate::{HttpStatusCode, NotSame};
 use derive_more::Display;
 use http::StatusCode;
 use itertools::Itertools;
@@ -107,10 +107,7 @@ mod map_to_mm;
 mod map_to_mm_fut;
 mod or_mm_error;
 
-pub auto trait NotSame {}
 pub auto trait NotMmError {}
-
-impl<X> !NotSame for (X, X) {}
 
 impl<E> !NotMmError for MmError<E> {}
 

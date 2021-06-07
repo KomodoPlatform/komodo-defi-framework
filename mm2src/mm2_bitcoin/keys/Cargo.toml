@@ -1,0 +1,13 @@
+[package]
+name = "keys"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+rustc-hex = "2"
+base58 = "0.1"
+bech32 = "0.8.0"
+libsecp256k1 = "0.2.2"
+bitcrypto = { path = "../crypto" }
+primitives = { path = "../primitives" }
+serde = "1.0"

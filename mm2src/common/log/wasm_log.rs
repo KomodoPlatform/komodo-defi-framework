@@ -1,5 +1,5 @@
 use super::{LogCallback, LOG_CALLBACK};
-use crate::executor::{spawn, spawn_local};
+use crate::executor::spawn_local;
 use crate::log::format_record;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -84,6 +84,20 @@ impl WasmCallback {
                 if let Err(e) = cb.call2(&this, &level, &line) {
                     console_err!("Couldn't invoke a JS callback: {:?}", e);
                 }
+            }
+        };
+        spawn_local(fut);
+        WasmCallback { tx }
+    }
+
+    pub fn console_log() -> WasmCallback {
+        let (tx, mut rx) = mpsc::channel(CHANNEL_BUF_SIZE);
+        let fut = async move {
+            // read until the channel is closed
+            // pass the line to `console_log` always, because the `wasm_bindgen_tests` prints logs from `console_log` only
+            while let Some(CallbackMsg { line, .. }) = rx.next().await {
+                let msg_js = JsValue::from(line);
+                console::log_1(&msg_js);
             }
         };
         spawn_local(fut);

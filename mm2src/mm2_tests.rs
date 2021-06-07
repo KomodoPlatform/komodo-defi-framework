@@ -67,6 +67,8 @@ async fn enable_coins_eth_electrum(
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls).await);
     replies.insert("JST", enable_native(mm, "JST", eth_urls).await);
+    #[cfg(feature = "zhtlc")]
+    replies.insert("ZOMBIE", enable_native(mm, "ZOMBIE", eth_urls).await);
     replies
 }
 
@@ -596,6 +598,83 @@ fn test_my_balance() {
     assert_eq!(my_address, "RRnMcSeKiLrNdbp91qNVQwwXx5azD4S4CD");
 }
 
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_p2wpkh_my_balance() {
+    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
+
+    let coins = json! ([
+        {
+            "coin": "tBTC",
+            "name": "tbitcoin",
+            "fname": "tBitcoin",
+            "rpcport": 18332,
+            "pubtype": 111,
+            "p2shtype": 196,
+            "wiftype": 239,
+            "segwit": true,
+            "bech32_hrp": "tb",
+            "txfee": 0,
+            "estimate_fee_mode": "ECONOMICAL",
+            "mm2": 1,
+            "required_confirmations": 0,
+            "protocol": {
+                "type": "UTXO"
+            }
+        }
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "address_format": {
+            "format": "segwit",
+        },
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+
+    let my_balance = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "tBTC",
+    })))
+    .unwrap();
+    let json: Json = json::from_str(&my_balance.1).unwrap();
+    let my_balance = json["balance"].as_str().unwrap();
+    assert_eq!(my_balance, "0.002");
+    let my_unspendable_balance = json["unspendable_balance"].as_str().unwrap();
+    assert_eq!(my_unspendable_balance, "0");
+    let my_address = json["address"].as_str().unwrap();
+    assert_eq!(my_address, "tb1qssfmay8nnghx7ynlznejnjxn6m4pemz9v7fsxy");
+}
+
 fn check_set_price_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
     let rc = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,
@@ -973,7 +1052,7 @@ fn test_rpc_password_from_json_no_userpass() {
 
 /// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
-async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
+async fn trade_base_rel_electrum(pairs: &[(&'static str, &'static str)]) {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
 
@@ -981,6 +1060,7 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"}},
         {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
     ]);
 
@@ -1139,12 +1219,12 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
 
     for uuid in uuids.iter() {
         mm_bob
-            .wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
         mm_alice
-            .wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
@@ -1217,7 +1297,14 @@ async fn trade_base_rel_electrum(pairs: Vec<(&'static str, &'static str)>) {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn trade_test_electrum_and_eth_coins() { block_on(trade_base_rel_electrum(vec![("ETH", "JST")])); }
+fn trade_test_electrum_and_eth_coins() {
+    let pairs: &[_] = if cfg!(feature = "zhtlc") {
+        &[("ETH", "JST"), ("RICK", "ZOMBIE")]
+    } else {
+        &[("ETH", "JST")]
+    };
+    block_on(trade_base_rel_electrum(pairs));
+}
 
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
@@ -1225,8 +1312,8 @@ pub extern "C" fn trade_test_electrum_and_eth_coins(cb_id: i32) {
     use std::ptr::null;
 
     common::executor::spawn(async move {
-        let pairs = vec![("ETH", "JST")];
-        trade_base_rel_electrum(pairs).await;
+        let pairs = [("ETH", "JST")];
+        trade_base_rel_electrum(&pairs).await;
         call_back(cb_id, null(), 0)
     })
 }
@@ -1408,7 +1495,7 @@ fn test_withdraw_and_send() {
     assert!(res.error.contains("Invalid address checksum"));
 
     // must not allow to withdraw too small amount 0.000005 (less than 0.00001 dust)
-    let small_amount = BigDecimal::from(1) / BigDecimal::from(200000);
+    let small_amount = MmNumber::from("0.000005").to_decimal();
     let withdraw = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1424,9 +1511,13 @@ fn test_withdraw_and_send() {
 
     assert!(withdraw.0.is_client_error(), "MORTY withdraw: {}", withdraw.1);
     log!("error: "[withdraw.1]);
-    let error: RpcErrorResponse<withdraw_error::AmountIsTooSmall> = json::from_str(&withdraw.1).unwrap();
-    let expected_error = withdraw_error::AmountIsTooSmall { amount: small_amount };
-    assert_eq!(error.error_type, "AmountIsTooSmall");
+    let error: RpcErrorResponse<withdraw_error::AmountTooLow> = json::from_str(&withdraw.1).unwrap();
+    let threshold = MmNumber::from("0.00001").to_decimal();
+    let expected_error = withdraw_error::AmountTooLow {
+        amount: small_amount,
+        threshold,
+    };
+    assert_eq!(error.error_type, "AmountTooLow");
     assert_eq!(error.error_data, Some(expected_error));
 
     block_on(mm_alice.stop()).unwrap();
@@ -4187,6 +4278,101 @@ fn test_convert_qrc20_address() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_switch_legacy_to_segwit_address() {
+    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
+
+    let coins = json! ([
+        {
+            "coin": "tBTC",
+            "name": "tbitcoin",
+            "fname": "tBitcoin",
+            "rpcport": 18332,
+            "pubtype": 111,
+            "p2shtype": 196,
+            "wiftype": 239,
+            "segwit": true,
+            "bech32_hrp": "tb",
+            "txfee": 0,
+            "estimate_fee_mode": "ECONOMICAL",
+            "mm2": 1,
+            "required_confirmations": 0,
+            "protocol": {
+                "type": "UTXO"
+            }
+        }
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    //Enable tBTC in Legacy Mode
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    let json: Json = json::from_str(&electrum.1).unwrap();
+    let my_address = json["address"].as_str().unwrap();
+    assert_eq!(my_address, "msZK9EuTh7ouM4kJ6jkRuCrDSABq9nER97");
+
+    //Disable tBTC to enable in Segwit Mode
+    let rc = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC",
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
+
+    //Enable tBTC in Segwit Mode
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "address_format": {
+            "format": "segwit",
+        },
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    let json: Json = json::from_str(&electrum.1).unwrap();
+    let my_address = json["address"].as_str().unwrap();
+    assert_eq!(my_address, "tb1qssfmay8nnghx7ynlznejnjxn6m4pemz9v7fsxy");
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_validateaddress() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
@@ -4500,40 +4686,6 @@ fn test_qrc20_withdraw_error() {
     ));
     let balance = electrum_json["balance"].as_str().unwrap();
     assert_eq!(balance, "10");
-
-    // try to transfer too low amount
-    let withdraw = block_on(mm.rpc(json! ({
-        "userpass": mm.userpass,
-        "method": "withdraw",
-        "coin": "QRC20",
-        "to": "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs",
-        "amount": 0,
-    })))
-    .unwrap();
-    assert!(
-        withdraw.0.is_server_error(),
-        "withdraw should have failed, but got {:?}",
-        withdraw
-    );
-    log!([withdraw.1]);
-    assert!(withdraw.1.contains("The amount 0 is too small"));
-
-    // try to transfer amount with more than 8 decimals
-    let withdraw = block_on(mm.rpc(json! ({
-        "userpass": mm.userpass,
-        "method": "withdraw",
-        "coin": "QRC20",
-        "to": "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs",
-        "amount": "0.0000000001",
-    })))
-    .unwrap();
-    assert!(
-        withdraw.0.is_server_error(),
-        "withdraw should have failed, but got {:?}",
-        withdraw
-    );
-    log!([withdraw.1]);
-    assert!(withdraw.1.contains("The amount 0.0000000001 is too small"));
 
     // try to transfer more than balance
     let withdraw = block_on(mm.rpc(json! ({
@@ -5187,6 +5339,430 @@ fn test_set_price_conf_settings() {
     assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
     assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
     assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_update_maker_order() {
+    let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
+
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}},"required_confirmations":2}
+    ]);
+
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 8999,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log! ({"Bob log path: {}", mm_bob.log_path.display()});
+    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
+        "http://195.201.0.6:8565"
+    ]))]);
+
+    log!("Get bob balance");
+    let my_balance = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "my_balance",
+        "coin": "RICK",
+    })))
+    .unwrap();
+    assert!(my_balance.0.is_success(), "!my_balance: {}", my_balance.1);
+    let my_balance_json: Json = json::from_str(&my_balance.1).unwrap();
+    let balance: BigDecimal = json::from_value(my_balance_json["balance"].clone()).unwrap();
+
+    log!("Get RICK trade fee");
+    let get_trade_fee = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "get_trade_fee",
+        "coin": "RICK",
+    })))
+    .unwrap();
+    assert!(get_trade_fee.0.is_success(), "!get_trade_fee: {}", get_trade_fee.1);
+    let get_trade_fee_json: Json = json::from_str(&get_trade_fee.1).unwrap();
+    let trade_fee: BigDecimal = json::from_value(get_trade_fee_json["result"]["amount"].clone()).unwrap();
+    let max_volume = balance - trade_fee;
+
+    log!("Issue bob sell request");
+    let setprice = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "MORTY",
+        "price": 1,
+        "volume": 2,
+        "min_volume": 1,
+        "base_confs": 5,
+        "base_nota": true,
+        "rel_confs": 4,
+        "rel_nota": false,
+    })))
+    .unwrap();
+    assert!(setprice.0.is_success(), "!setprice: {}", setprice.1);
+    let setprice_json: Json = json::from_str(&setprice.1).unwrap();
+    let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
+
+    log!("Issue bob update maker order request");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "new_price": 2,
+    })))
+    .unwrap();
+    assert!(
+        update_maker_order.0.is_success(),
+        "!update_maker_order: {}",
+        update_maker_order.1
+    );
+    let update_maker_order_json: Json = json::from_str(&update_maker_order.1).unwrap();
+    assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
+    assert_eq!(update_maker_order_json["result"]["max_base_vol"], Json::from("2"));
+    assert_eq!(update_maker_order_json["result"]["min_base_vol"], Json::from("1"));
+
+    log!("Issue another bob update maker order request");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "volume_delta": 2,
+    })))
+    .unwrap();
+    assert!(
+        update_maker_order.0.is_success(),
+        "!update_maker_order: {}",
+        update_maker_order.1
+    );
+    let update_maker_order_json: Json = json::from_str(&update_maker_order.1).unwrap();
+    assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
+    assert_eq!(update_maker_order_json["result"]["max_base_vol"], Json::from("4"));
+    assert_eq!(update_maker_order_json["result"]["min_base_vol"], Json::from("1"));
+
+    log!("Issue another bob update maker order request");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "max": true,
+    })))
+    .unwrap();
+    assert!(
+        update_maker_order.0.is_success(),
+        "!update_maker_order: {}",
+        update_maker_order.1
+    );
+    let update_maker_order_json: Json = json::from_str(&update_maker_order.1).unwrap();
+    let max_base_vol =
+        BigDecimal::from_str(update_maker_order_json["result"]["max_base_vol"].as_str().unwrap()).unwrap();
+    assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
+    assert_eq!(max_base_vol, max_volume);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_update_maker_order_fail() {
+    let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
+
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}},"required_confirmations":2}
+    ]);
+
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 8999,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log! ({"Bob log path: {}", mm_bob.log_path.display()});
+    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
+        "http://195.201.0.6:8565"
+    ]))]);
+
+    log!("Issue bob sell request");
+    let setprice = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "MORTY",
+        "price": 1,
+        "volume": 0.1,
+        "base_confs": 5,
+        "base_nota": true,
+        "rel_confs": 4,
+        "rel_nota": false,
+    })))
+    .unwrap();
+    assert!(setprice.0.is_success(), "!setprice: {}", setprice.1);
+    let setprice_json: Json = json::from_str(&setprice.1).unwrap();
+    let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
+
+    log!("Issue bob update maker order request that should fail because price is too low");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "new_price": 0.0000000099,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob update maker order request that should fail because New Volume is Less than Zero");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "volume_delta": -0.11,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob update maker order request that should fail because Min base vol is too low");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "new_price": 2,
+        "min_volume": 0.000099,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob update maker order request that should fail because Max base vol is below Min base vol");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "volume_delta": -0.0999,
+        "min_volume": 0.0002,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob update maker order request that should fail because Max base vol is too low");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "new_price": 2,
+        "volume_delta": -0.099901,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob update maker order request that should fail because Max rel vol is too low");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "new_price": 0.5,
+        "volume_delta": -0.099802,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue bob batch update maker order and cancel order request that should make update maker order fail because Order with UUID has been deleted");
+    let batch_json = json!([
+        {
+            "userpass": mm_bob.userpass,
+            "method": "update_maker_order",
+            "uuid": uuid,
+            "new_price": 1,
+            "volume_delta": 2.9,
+        },
+        {
+            "userpass": mm_bob.userpass,
+            "method": "cancel_order",
+            "uuid": uuid,
+        },
+    ]);
+
+    let rc = block_on(mm_bob.rpc(batch_json)).unwrap();
+    assert!(rc.0.is_success(), "!batch: {}", rc.1);
+    log!((rc.1));
+    let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
+    if responses[1]["result"] == Json::from("success") {
+        assert_eq!(responses[0].get("result"), None);
+    }
+}
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_update_maker_order_after_matched() {
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
+
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    let mut mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "seednodes": vec![format!("{}", mm_bob.ip)],
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+
+    // Enable coins on Bob side. Print the replies in case we need the address.
+    let rc = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    log! ({"enable_coins (bob): {:?}", rc});
+    // Enable coins on Alice side. Print the replies in case we need the address.
+    let rc = block_on(enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]));
+    log! ({"enable_coins (alice): {:?}", rc});
+
+    let rc = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "ETH",
+        "rel": "JST",
+        "price": 1,
+        "volume": 2,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    let setprice_json: Json = json::from_str(&rc.1).unwrap();
+    let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
+
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": "JST",
+        "price": 1,
+        "volume": 1,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+    block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop ETH/JST"))).unwrap();
+    block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop ETH/JST"))).unwrap();
+
+    log!("Issue bob update maker order request that should fail because new volume is less than reserved amount");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "volume_delta": -1.5,
+    })))
+    .unwrap();
+    assert!(
+        !update_maker_order.0.is_success(),
+        "update_maker_order success, but should be error {}",
+        update_maker_order.1
+    );
+
+    log!("Issue another bob update maker order request");
+    let update_maker_order = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "update_maker_order",
+        "uuid": uuid,
+        "volume_delta": 2,
+    })))
+    .unwrap();
+    assert!(
+        update_maker_order.0.is_success(),
+        "!update_maker_order: {}",
+        update_maker_order.1
+    );
+    let update_maker_order_json: Json = json::from_str(&update_maker_order.1).unwrap();
+    log!((update_maker_order.1));
+    assert_eq!(update_maker_order_json["result"]["max_base_vol"], Json::from("4"));
+
+    log!("Issue bob my_orders request");
+    let rc = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "my_orders",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+
+    let _: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/683

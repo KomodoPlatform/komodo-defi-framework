@@ -51,6 +51,16 @@ pub struct OrderConfirmationsSettings {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct HistoricalOrder {
+    max_base_vol: Option<MmNumber>,
+    min_base_vol: Option<MmNumber>,
+    price: Option<MmNumber>,
+    updated_at: Option<u64>,
+    conf_settings: Option<OrderConfirmationsSettings>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum TakerAction {
     Buy,
     Sell,
@@ -168,12 +178,14 @@ pub struct MakerOrderRpcResult {
     pub price: BigDecimal,
     pub price_rat: BigRational,
     pub created_at: u64,
+    pub updated_at: Option<u64>,
     pub base: String,
     pub rel: String,
     pub matches: HashMap<Uuid, MakerMatch>,
     pub started_swaps: Vec<Uuid>,
     pub uuid: Uuid,
     pub conf_settings: Option<OrderConfirmationsSettings>,
+    changes_history: Option<Vec<HistoricalOrder>>,
     pub cancellable: bool,
     pub available_amount: BigDecimal,
 }
@@ -188,6 +200,7 @@ pub struct SetPriceResult {
     pub price: BigDecimal,
     pub price_rat: BigRational,
     pub created_at: u64,
+    pub updated_at: Option<u64>,
     pub base: String,
     pub rel: String,
     pub matches: HashMap<Uuid, MakerMatch>,
@@ -520,8 +533,9 @@ pub mod withdraw_error {
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
-    pub struct AmountIsTooSmall {
+    pub struct AmountTooLow {
         pub amount: BigDecimal,
+        pub threshold: BigDecimal,
     }
 }
 
@@ -539,8 +553,10 @@ pub mod trade_preimage_error {
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
-    pub struct VolumeIsTooSmall {
+    pub struct VolumeTooLow {
+        pub coin: String,
         pub volume: BigDecimal,
+        pub threshold: BigDecimal,
     }
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -554,5 +570,12 @@ pub mod trade_preimage_error {
     pub struct InvalidParam {
         pub param: String,
         pub reason: String,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct PriceTooLow {
+        pub price: BigDecimal,
+        pub threshold: BigDecimal,
     }
 }

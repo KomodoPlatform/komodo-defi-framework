@@ -1,3 +1,4 @@
+use super::taker_swap::MaxTakerVolumeLessThanDust;
 use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 use bigdecimal::BigDecimal;
 use coins::{BalanceError, MmCoinEnum, TradeFee, TradePreimageError};
@@ -198,10 +199,17 @@ pub enum CheckBalanceError {
         required: BigDecimal,
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(fmt = "Max volume {} less than minimum transaction amount", volume)]
-    MaxVolumeLessThanDust { volume: BigDecimal },
-    #[display(fmt = "The volume {} is too small", volume)]
-    VolumeIsTooSmall { volume: BigDecimal },
+    #[display(
+        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
+        volume,
+        coin,
+        threshold
+    )]
+    VolumeTooLow {
+        coin: String,
+        volume: BigDecimal,
+        threshold: BigDecimal,
+    },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -221,10 +229,9 @@ impl From<BalanceError> for CheckBalanceError {
 
 impl CheckBalanceError {
     pub fn not_sufficient_balance(&self) -> bool {
-        matches!(self,
-            CheckBalanceError::NotSufficientBalance {..}
-            | CheckBalanceError::NotSufficientBaseCoinBalance {..}
-            | CheckBalanceError::MaxVolumeLessThanDust {..}
+        matches!(
+            self,
+            CheckBalanceError::NotSufficientBalance { .. } | CheckBalanceError::NotSufficientBaseCoinBalance { .. }
         )
     }
 
@@ -253,12 +260,26 @@ impl CheckBalanceError {
                     }
                 }
             },
-            TradePreimageError::UpperBoundAmountIsTooSmall { amount } => {
-                CheckBalanceError::MaxVolumeLessThanDust { volume: amount }
+            TradePreimageError::AmountIsTooSmall { amount, threshold } => CheckBalanceError::VolumeTooLow {
+                coin: ticker.to_owned(),
+                volume: amount,
+                threshold,
             },
-            TradePreimageError::AmountIsTooSmall { amount } => CheckBalanceError::VolumeIsTooSmall { volume: amount },
             TradePreimageError::Transport(transport) => CheckBalanceError::Transport(transport),
             TradePreimageError::InternalError(internal) => CheckBalanceError::InternalError(internal),
+        }
+    }
+
+    pub fn from_max_taker_vol_error(
+        max_vol_err: MaxTakerVolumeLessThanDust,
+        coin: String,
+        locked_by_swaps: BigDecimal,
+    ) -> CheckBalanceError {
+        CheckBalanceError::NotSufficientBalance {
+            coin,
+            available: max_vol_err.max_vol.to_decimal(),
+            required: max_vol_err.min_tx_amount.to_decimal(),
+            locked_by_swaps: Some(locked_by_swaps),
         }
     }
 }

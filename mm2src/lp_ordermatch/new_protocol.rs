@@ -137,52 +137,111 @@ pub struct MakerOrderCancelled {
     pub pair_trie_root: H64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MakerOrderUpdated {
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct MakerOrderUpdatedV1 {
     uuid: CompactUuid,
-    new_price: Option<BigRational>,
-    new_max_volume: Option<BigRational>,
-    new_min_volume: Option<BigRational>,
+    pub new_price: Option<BigRational>,
+    pub new_max_volume: Option<BigRational>,
+    pub new_min_volume: Option<BigRational>,
     timestamp: u64,
     pair_trie_root: H64,
 }
 
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct MakerOrderUpdatedV2 {
+    uuid: CompactUuid,
+    pub new_price: Option<BigRational>,
+    pub new_max_volume: Option<BigRational>,
+    pub new_min_volume: Option<BigRational>,
+    timestamp: u64,
+    pair_trie_root: H64,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum MakerOrderUpdated {
+    V1(MakerOrderUpdatedV1),
+    V2(MakerOrderUpdatedV2),
+}
+
 impl MakerOrderUpdated {
     pub fn new(uuid: Uuid) -> Self {
-        MakerOrderUpdated {
+        MakerOrderUpdated::V2(MakerOrderUpdatedV2 {
             uuid: uuid.into(),
             new_price: None,
             new_max_volume: None,
             new_min_volume: None,
+            conf_settings: None,
             timestamp: now_ms() / 1000,
             pair_trie_root: H64::default(),
+        })
+    }
+
+    pub fn with_new_price(&mut self, new_price: BigRational) {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_price = Some(new_price),
+            MakerOrderUpdated::V2(v2) => v2.new_price = Some(new_price),
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_new_price(mut self, new_price: BigRational) -> Self {
-        self.new_price = Some(new_price);
-        self
+    pub fn with_new_max_volume(&mut self, new_max_volume: BigRational) {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_max_volume = Some(new_max_volume),
+            MakerOrderUpdated::V2(v2) => v2.new_max_volume = Some(new_max_volume),
+        }
     }
 
-    pub fn with_new_max_volume(mut self, new_max_volume: BigRational) -> Self {
-        self.new_max_volume = Some(new_max_volume);
-        self
+    pub fn with_new_min_volume(&mut self, new_min_volume: BigRational) {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_min_volume = Some(new_min_volume),
+            MakerOrderUpdated::V2(v2) => v2.new_min_volume = Some(new_min_volume),
+        }
     }
 
-    #[allow(dead_code)]
-    pub fn with_new_min_volume(mut self, new_min_volume: BigRational) -> Self {
-        self.new_min_volume = Some(new_min_volume);
-        self
+    pub fn with_new_conf_settings(&mut self, conf_settings: OrderConfirmationsSettings) {
+        match self {
+            MakerOrderUpdated::V1(_) => {},
+            MakerOrderUpdated::V2(v2) => {
+                v2.conf_settings = Some(conf_settings);
+            },
+        }
     }
 
-    pub fn new_price(&self) -> Option<MmNumber> { self.new_price.as_ref().map(|num| num.clone().into()) }
+    pub fn new_price(&self) -> Option<MmNumber> {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_price.as_ref().map(|num| num.clone().into()),
+            MakerOrderUpdated::V2(v2) => v2.new_price.as_ref().map(|num| num.clone().into()),
+        }
+    }
 
-    pub fn new_max_volume(&self) -> Option<MmNumber> { self.new_max_volume.as_ref().map(|num| num.clone().into()) }
+    pub fn new_max_volume(&self) -> Option<MmNumber> {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_max_volume.as_ref().map(|num| num.clone().into()),
+            MakerOrderUpdated::V2(v2) => v2.new_max_volume.as_ref().map(|num| num.clone().into()),
+        }
+    }
 
-    pub fn new_min_volume(&self) -> Option<MmNumber> { self.new_min_volume.as_ref().map(|num| num.clone().into()) }
+    pub fn new_min_volume(&self) -> Option<MmNumber> {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.new_min_volume.as_ref().map(|num| num.clone().into()),
+            MakerOrderUpdated::V2(v2) => v2.new_min_volume.as_ref().map(|num| num.clone().into()),
+        }
+    }
 
-    pub fn uuid(&self) -> Uuid { self.uuid.into() }
+    pub fn new_conf_settings(&self) -> Option<OrderConfirmationsSettings> {
+        match self {
+            MakerOrderUpdated::V1(_) => None,
+            MakerOrderUpdated::V2(v2) => v2.conf_settings,
+        }
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        match self {
+            MakerOrderUpdated::V1(v1) => v1.uuid.into(),
+            MakerOrderUpdated::V2(v2) => v2.uuid.into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -218,4 +277,90 @@ pub struct TakerConnect {
 pub struct MakerConnected {
     pub taker_order_uuid: CompactUuid,
     pub maker_order_uuid: CompactUuid,
+}
+
+#[cfg(test)]
+mod new_protocol_tests {
+    use common::new_uuid;
+
+    use super::*;
+
+    #[test]
+    fn check_maker_order_updated_serde() {
+        let uuid = CompactUuid::from(new_uuid());
+        let timestamp = now_ms() / 1000;
+        let conf_settings = Some(OrderConfirmationsSettings {
+            base_confs: 5,
+            base_nota: true,
+            rel_confs: 5,
+            rel_nota: true,
+        });
+        // old format should be deserialized to MakerOrderUpdated::V1
+        let v1 = MakerOrderUpdatedV1 {
+            uuid,
+            new_price: Some(BigRational::from_integer(2.into())),
+            new_max_volume: Some(BigRational::from_integer(3.into())),
+            new_min_volume: Some(BigRational::from_integer(1.into())),
+            timestamp,
+            pair_trie_root: H64::default(),
+        };
+
+        let expected = MakerOrderUpdated::V1(MakerOrderUpdatedV1 {
+            uuid,
+            new_price: Some(BigRational::from_integer(2.into())),
+            new_max_volume: Some(BigRational::from_integer(3.into())),
+            new_min_volume: Some(BigRational::from_integer(1.into())),
+            timestamp,
+            pair_trie_root: H64::default(),
+        });
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // new format should be deserialized to old
+        let v2 = MakerOrderUpdated::V2(MakerOrderUpdatedV2 {
+            uuid,
+            new_price: Some(BigRational::from_integer(2.into())),
+            new_max_volume: Some(BigRational::from_integer(3.into())),
+            new_min_volume: Some(BigRational::from_integer(1.into())),
+            timestamp,
+            pair_trie_root: H64::default(),
+            conf_settings,
+        });
+
+        let expected = MakerOrderUpdatedV1 {
+            uuid,
+            new_price: Some(BigRational::from_integer(2.into())),
+            new_max_volume: Some(BigRational::from_integer(3.into())),
+            new_min_volume: Some(BigRational::from_integer(1.into())),
+            timestamp,
+            pair_trie_root: H64::default(),
+        };
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: MakerOrderUpdatedV1 = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // new format should be deserialized to new
+        let v2 = MakerOrderUpdated::V2(MakerOrderUpdatedV2 {
+            uuid,
+            new_price: Some(BigRational::from_integer(2.into())),
+            new_max_volume: Some(BigRational::from_integer(3.into())),
+            new_min_volume: Some(BigRational::from_integer(1.into())),
+            timestamp,
+            pair_trie_root: H64::default(),
+            conf_settings,
+        });
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: MakerOrderUpdated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v2);
+    }
 }

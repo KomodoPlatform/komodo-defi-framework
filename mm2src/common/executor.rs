@@ -1,6 +1,5 @@
 use crate::now_float;
 use futures::task::{Context, Poll};
-use futures::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -33,7 +32,7 @@ pub fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_fu
 #[must_use = "futures do nothing unless polled"]
 pub struct Timer {
     timeout_id: i32,
-    closure: Closure<dyn FnMut()>,
+    _closure: Closure<dyn FnMut()>,
     state: Arc<Mutex<TimerState>>,
 }
 
@@ -74,7 +73,7 @@ impl Timer {
         let timeout_id = setTimeout(&closure, delay_ms);
         Timer {
             timeout_id,
-            closure,
+            _closure: closure,
             state,
         }
     }

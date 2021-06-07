@@ -579,7 +579,7 @@ pub enum NodeType {
 }
 
 impl NodeType {
-    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay {..}) }
+    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. }) }
 }
 
 /// Creates and spawns new AdexBehaviour Swarm returning:

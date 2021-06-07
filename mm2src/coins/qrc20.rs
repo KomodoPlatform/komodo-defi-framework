@@ -9,9 +9,9 @@ use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, Gener
                   RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
                   VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+            MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
+            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -23,6 +23,7 @@ use common::log::{error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
+use common::now_ms;
 use derive_more::Display;
 use ethabi::{Function, Token};
 use ethereum_types::{H160, U256};
@@ -30,7 +31,6 @@ use futures::compat::Future01CompatExt;
 use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use gstuff::now_ms;
 use keys::bytes::Bytes as ScriptBytes;
 use keys::{Address as UtxoAddress, Address, Public};
 #[cfg(test)] use mocktopus::macros::*;
@@ -104,6 +104,15 @@ impl Qrc20CoinBuilder<'_> {
             None => return ERR!("\"swap_contract_address\" field is expected"),
         }
     }
+
+    fn fallback_swap_contract(&self) -> Result<Option<H160>, String> {
+        match self.req()["fallback_swap_contract"].as_str() {
+            Some(address) => qtum::contract_addr_from_str(address)
+                .map_err(|e| ERRL!("{}", e))
+                .map(Some),
+            None => Ok(None),
+        }
+    }
 }
 
 #[async_trait]
@@ -112,12 +121,14 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
 
     async fn build(self) -> Result<Self::ResultCoin, String> {
         let swap_contract_address = try_s!(self.swap_contract_address());
+        let fallback_swap_contract = try_s!(self.fallback_swap_contract());
         let utxo = try_s!(self.build_utxo_fields().await);
         let inner = Qrc20CoinFields {
             utxo,
             platform: self.platform,
             contract_address: self.contract_address,
             swap_contract_address,
+            fallback_swap_contract,
         };
         Ok(Qrc20Coin(Arc::new(inner)))
     }
@@ -200,6 +211,7 @@ pub struct Qrc20CoinFields {
     pub platform: String,
     pub contract_address: H160,
     pub swap_contract_address: H160,
+    pub fallback_swap_contract: Option<H160>,
 }
 
 #[derive(Clone, Debug)]
@@ -493,7 +505,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
     }
 
-    fn p2sh_spending_tx(
+    async fn p2sh_spending_tx(
         &self,
         prev_transaction: UtxoTx,
         redeem_script: ScriptBytes,
@@ -511,6 +523,7 @@ impl UtxoCommonOps for Qrc20Coin {
             sequence,
             lock_time,
         )
+        .await
     }
 
     async fn ordered_mature_unspents<'a>(
@@ -554,8 +567,8 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::increase_dynamic_fee_by_stage(self, dynamic_fee, stage)
     }
 
-    fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> u32 {
-        utxo_common::p2sh_tx_locktime(&self.utxo.conf.ticker, htlc_locktime)
+    async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>> {
+        utxo_common::p2sh_tx_locktime(self, &self.utxo.conf.ticker, htlc_locktime).await
     }
 }
 
@@ -844,6 +857,32 @@ impl SwapOps for Qrc20Coin {
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         self.extract_secret_impl(secret_hash, spend_tx)
     }
+
+    fn negotiate_swap_contract_addr(
+        &self,
+        other_side_address: Option<&[u8]>,
+    ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
+        match other_side_address {
+            Some(bytes) => {
+                if bytes.len() != 20 {
+                    return MmError::err(NegotiateSwapContractAddrErr::InvalidOtherAddrLen(bytes.into()));
+                }
+                let other_addr = H160::from(bytes);
+                if other_addr == self.swap_contract_address {
+                    return Ok(Some(self.swap_contract_address.to_vec().into()));
+                }
+
+                if Some(other_addr) == self.fallback_swap_contract {
+                    return Ok(self.fallback_swap_contract.map(|addr| addr.to_vec().into()));
+                }
+                MmError::err(NegotiateSwapContractAddrErr::UnexpectedOtherAddr(bytes.into()))
+            },
+            None => self
+                .fallback_swap_contract
+                .map(|addr| Some(addr.to_vec().into()))
+                .ok_or_else(|| MmError::new(NegotiateSwapContractAddrErr::NoOtherAddrAndNoFallback)),
+        }
+    }
 }
 
 impl MarketCoinOps for Qrc20Coin {
@@ -962,7 +1001,9 @@ impl MmCoin for Qrc20Coin {
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
 
-    fn process_history_loop(&self, ctx: MmArc) { self.history_loop(ctx) }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(self.clone().history_loop(ctx).map(|_| Ok(())).boxed().compat())
+    }
 
     fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo) }
 
@@ -1160,12 +1201,6 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         (amount, qrc20_balance.clone())
     } else {
         let amount_sat = wei_from_big_decimal(&req.amount, coin.utxo.decimals)?;
-        if amount_sat.is_zero() {
-            return MmError::err(WithdrawError::AmountIsTooSmall {
-                amount: req.amount.clone(),
-            });
-        }
-
         if req.amount > qrc20_balance {
             return MmError::err(WithdrawError::NotSufficientBalance {
                 coin: coin.ticker().to_owned(),

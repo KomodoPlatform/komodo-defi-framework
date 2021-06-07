@@ -18,8 +18,6 @@
 #![feature(optin_builtin_traits)]
 #![feature(drain_filter)]
 #![feature(const_fn)]
-#![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
-#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate fomat_macros;
@@ -61,6 +59,28 @@ macro_rules! ifrom {
     };
 }
 
+#[macro_export]
+macro_rules! cfg_wasm32 {
+    ($($tokens:tt)*) => {
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "wasm32")] {
+                $($tokens)*
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! cfg_native {
+    ($($tokens:tt)*) => {
+        cfg_if::cfg_if! {
+            if #[cfg(not(target_arch = "wasm32"))] {
+                $($tokens)*
+            }
+        }
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -80,54 +100,62 @@ pub mod mm_ctx;
 pub mod mm_number;
 pub mod privkey;
 pub mod seri;
+#[path = "patterns/state_machine.rs"] pub mod state_machine;
+
+#[cfg(target_arch = "wasm32")] pub mod wasm_indexed_db;
 #[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
+#[cfg(target_arch = "wasm32")]
+#[path = "transport/wasm_ws.rs"]
+pub mod wasm_ws;
 
 use atomic::Atomic;
 use bigdecimal::BigDecimal;
-#[cfg(all(not(target_arch = "wasm32"), not(windows)))]
-use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
 use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
 use futures::task::Waker;
-#[cfg(target_arch = "wasm32")]
-use futures::task::{Context, Poll as Poll03};
 use futures01::{future, task::Task, Future};
 use gstuff::binprint;
-#[cfg(not(target_arch = "wasm32"))]
-pub use gstuff::{now_float, now_ms};
 use hex::FromHex;
 use http::header::{HeaderValue, CONTENT_TYPE};
 use http::{HeaderMap, Request, Response, StatusCode};
-#[cfg(not(target_arch = "wasm32"))] use libc::{free, malloc};
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::env::{self, args};
 use std::ffi::{CStr, OsStr};
 use std::fmt::{self, Write as FmtWrite};
 use std::fs;
 use std::fs::DirEntry;
 use std::future::Future as Future03;
-use std::intrinsics::copy;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem::{forget, size_of, zeroed};
 use std::net::SocketAddr;
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
-#[cfg(target_arch = "wasm32")] use std::pin::Pin;
 use std::ptr::read_volatile;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
 use uuid::Uuid;
-#[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
 
-pub use num_bigint::BigInt;
-#[cfg(not(target_arch = "wasm32"))] pub use rusqlite;
+cfg_native! {
+    pub use gstuff::{now_float, now_ms};
+    pub use rusqlite;
+
+    #[cfg(not(windows))]
+    use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
+    use libc::{free, malloc};
+    use std::env;
+    use std::io::Read;
+}
+
+cfg_wasm32! {
+    use futures::task::{Context, Poll as Poll03};
+    use std::pin::Pin;
+    use wasm_bindgen::prelude::*;
+}
 
 pub const SATOSHIS: u64 = 100_000_000;
 
@@ -136,6 +164,9 @@ lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
 }
+
+pub auto trait NotSame {}
+impl<X> !NotSame for (X, X) {}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
@@ -274,7 +305,7 @@ pub fn str_to_malloc(s: &str) -> *mut c_char { slice_to_malloc(s.as_bytes()) as 
 pub fn slice_to_malloc(bytes: &[u8]) -> *mut u8 {
     unsafe {
         let buf = malloc(bytes.len() + 1) as *mut u8;
-        copy(bytes.as_ptr(), buf, bytes.len());
+        std::intrinsics::copy(bytes.as_ptr(), buf, bytes.len());
         *buf.add(bytes.len()) = 0;
         buf
     }
@@ -531,7 +562,7 @@ pub fn is_a_test_drill() -> bool {
         return false;
     }
 
-    if let Some(executable) = args().next() {
+    if let Some(executable) = std::env::args().next() {
         if executable.ends_with(r"\mm2.exe") {
             return false;
         }
@@ -577,18 +608,10 @@ struct HostedHttpResponse {
 #[cfg(target_arch = "wasm32")]
 pub mod wio {
     use super::SlurpRes;
-    use futures::channel::oneshot::{channel, Receiver, Sender};
-    use futures::compat::Compat;
-    use futures::future::FutureExt;
-    use futures::lock::Mutex;
-    use futures01::future::IntoFuture;
     use http::header::{HeaderName, HeaderValue};
-    use http::{HeaderMap, Method, Request, StatusCode};
-    use rand::Rng;
+    use http::{HeaderMap, Request, StatusCode};
     use serde_bencode::de::from_bytes as bdecode;
     use serde_bencode::ser::to_bytes as bencode;
-    use std::collections::HashMap;
-    use std::os::raw::c_char;
     use std::str::FromStr;
 
     pub async fn slurp_reqʹ(request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
@@ -1369,15 +1392,6 @@ impl<R: Send + 'static> RefreshedExternalResource<R> {
     }
 }
 
-/// From<io::Error> is required to be implemented by futures-timer timeout.
-/// We can't implement it for String directly due to Rust restrictions.
-/// So this solution looks like simplest at least for now. We have to remap errors to get proper type.
-pub struct StringError(pub String);
-
-impl From<std::io::Error> for StringError {
-    fn from(e: std::io::Error) -> StringError { StringError(ERRL!("{}", e)) }
-}
-
 #[derive(Clone, Debug)]
 pub struct P2PMessage {
     pub from: SocketAddr,
@@ -1429,7 +1443,6 @@ pub fn var(name: &str) -> Result<String, String> {
     #[cfg(target_arch = "wasm32")]
     {
         // Get the environment variable from the host.
-        use std::mem::zeroed;
         use std::str::from_utf8;
 
         let mut buf: [u8; 4096] = unsafe { zeroed() };
@@ -1447,6 +1460,8 @@ pub fn var(name: &str) -> Result<String, String> {
     }
 }
 
+/// TODO make it wasm32 only
+/// #[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(f: F) -> F::Output
 where
     F: Future03,
@@ -1536,8 +1551,6 @@ pub fn remove_file(path: &dyn AsRef<Path>) -> Result<(), String> {
 
 #[cfg(target_arch = "wasm32")]
 pub fn remove_file(path: &dyn AsRef<Path>) -> Result<(), String> {
-    use std::os::raw::c_char;
-
     #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
     extern "C" {
         pub fn host_rm(ptr: *const c_char, len: i32) -> i32;
@@ -1559,8 +1572,6 @@ pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), S
 
 #[cfg(target_arch = "wasm32")]
 pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
-    use std::os::raw::c_char;
-
     #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
     extern "C" {
         pub fn host_write(path_p: *const c_char, path_l: i32, ptr: *const c_char, len: i32) -> i32;
@@ -1583,6 +1594,8 @@ pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), S
 /// Read a folder and return a list of files with their last-modified ms timestamps.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
+    use std::time::UNIX_EPOCH;
+
     let entries = try_s!(dir.as_ref().read_dir())
         .filter_map(|dir_entry| {
             let entry = match dir_entry {
@@ -1659,6 +1672,7 @@ pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
 /// If the `MM_LOG` variable is present then tries to open that file.  
 /// Prints a warning to `stdout` if there's a problem opening the file.  
 /// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
+#[cfg(not(target_arch = "wasm32"))]
 fn open_log_file() -> Option<fs::File> {
     let mm_log = match var("MM_LOG") {
         Ok(v) => v,
@@ -1747,7 +1761,6 @@ pub fn writeln(line: &str) {
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub extern "C" fn set_panic_hook() {
-    use gstuff::filename;
     use std::panic::{set_hook, PanicInfo};
 
     set_hook(Box::new(|info: &PanicInfo| {
@@ -1832,7 +1845,6 @@ pub async fn helperᶜ(helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, S
     );
 
     struct HelperReply {
-        helper: &'static str,
         helper_request_id: i32,
     }
     impl std::future::Future for HelperReply {
@@ -1859,13 +1871,7 @@ pub async fn helperᶜ(helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, S
     impl Drop for HelperReply {
         fn drop(&mut self) { HELPER_REQUESTS.lock().unwrap().remove(&self.helper_request_id); }
     }
-    let rv: Vec<u8> = try_s!(
-        HelperReply {
-            helper,
-            helper_request_id
-        }
-        .await
-    );
+    let rv: Vec<u8> = try_s!(HelperReply { helper_request_id }.await);
     let rv: HelperResponse = try_s!(bdecode(&rv));
     if rv.status != 200 {
         return ERR!("!{}: {}", helper, rv);
@@ -2037,6 +2043,135 @@ pub fn new_uuid() -> Uuid {
         .set_variant(Variant::RFC4122)
         .set_version(Version::Random)
         .build()
+}
+
+/// Get only the first line of the error.
+/// Generally, the `JsValue` error contains the stack trace of an error.
+/// This function cuts off the stack trace.
+#[cfg(target_arch = "wasm32")]
+pub fn stringify_js_error(error: &JsValue) -> String {
+    format!("{:?}", error)
+        .lines()
+        .next()
+        .map(|e| e.to_owned())
+        .unwrap_or_default()
+}
+
+/// The function helper for the `WasmUnwrapExt`, `WasmUnwrapErrExt` traits.
+#[cfg(target_arch = "wasm32")]
+#[track_caller]
+fn caller_file_line() -> (&'static str, u32) {
+    let location = std::panic::Location::caller();
+    let file = gstuff::filename(location.file());
+    let line = location.line();
+    (file, line)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub trait WasmUnwrapExt<T> {
+    fn unwrap_w(self) -> T;
+    fn expect_w(self, description: &str) -> T;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub trait WasmUnwrapErrExt<E> {
+    fn unwrap_err_w(self) -> E;
+    fn expect_err_w(self, description: &str) -> E;
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<T, E: fmt::Debug> WasmUnwrapExt<T> for Result<T, E> {
+    #[track_caller]
+    fn unwrap_w(self) -> T {
+        match self {
+            Ok(t) => t,
+            Err(e) => {
+                let (file, line) = caller_file_line();
+                let error = format!(
+                    "{}:{}] 'Result::unwrap_w' called on an 'Err' value: {:?}",
+                    file, line, e
+                );
+                wasm_bindgen::throw_str(&error)
+            },
+        }
+    }
+
+    #[track_caller]
+    fn expect_w(self, description: &str) -> T {
+        match self {
+            Ok(t) => t,
+            Err(e) => {
+                let (file, line) = caller_file_line();
+                let error = format!("{}:{}] {}: {:?}", file, line, description, e);
+                wasm_bindgen::throw_str(&error)
+            },
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<T> WasmUnwrapExt<T> for Option<T> {
+    #[track_caller]
+    fn unwrap_w(self) -> T {
+        match self {
+            Some(t) => t,
+            None => {
+                let (file, line) = caller_file_line();
+                let error = format!("{}:{}] 'Option::unwrap_w' called on a 'None' value", file, line);
+                wasm_bindgen::throw_str(&error)
+            },
+        }
+    }
+
+    #[track_caller]
+    fn expect_w(self, description: &str) -> T {
+        match self {
+            Some(t) => t,
+            None => {
+                let (file, line) = caller_file_line();
+                let error = format!("{}:{}] {}", file, line, description);
+                wasm_bindgen::throw_str(&error)
+            },
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
+    #[track_caller]
+    fn unwrap_err_w(self) -> E {
+        match self {
+            Ok(t) => {
+                let (file, line) = caller_file_line();
+                let error = format!(
+                    "{}:{}] 'Result::unwrap_err_w' called on an 'Ok' value: {:?}",
+                    file, line, t
+                );
+                wasm_bindgen::throw_str(&error)
+            },
+            Err(e) => e,
+        }
+    }
+
+    #[track_caller]
+    fn expect_err_w(self, description: &str) -> E {
+        match self {
+            Ok(t) => {
+                let (file, line) = caller_file_line();
+                let error = format!("{}:{}] {}: {:?}", file, line, description, t);
+                wasm_bindgen::throw_str(&error)
+            },
+            Err(e) => e,
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[track_caller]
+pub fn panic_w(description: &str) {
+    let (file, line) = caller_file_line();
+    let error = format!("{}:{}] 'panic_w' called: {:?}", file, line, description);
+    wasm_bindgen::throw_str(&error)
 }
 
 pub fn first_char_to_upper(input: &str) -> String {

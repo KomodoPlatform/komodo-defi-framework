@@ -1,0 +1,13 @@
+[package]
+name = "bitcrypto"
+version = "0.1.0"
+authors = ["debris <marek.kotewicz@gmail.com>"]
+
+[dependencies]
+groestl = "0.8.0"
+primitives = { path = "../primitives" }
+ripemd160 = "0.8.0"
+sha-1 = "0.8.1"
+sha2 = "0.8.0"
+sha3 = "0.8.1"
+siphasher = "0.1.1"

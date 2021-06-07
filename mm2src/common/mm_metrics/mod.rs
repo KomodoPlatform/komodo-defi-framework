@@ -1,6 +1,5 @@
-use crate::log::{LogArc, LogWeak, Tag};
-use gstuff::Constructible;
-use serde_json::{self as json, Value as Json, Value};
+use crate::log::LogWeak;
+use serde_json::{Value as Json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 

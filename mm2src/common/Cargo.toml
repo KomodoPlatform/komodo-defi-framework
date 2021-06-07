@@ -17,8 +17,9 @@ async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.10.0"
 bigdecimal = { version = "0.1", features = ["serde"] }
-bitcrypto = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+bitcrypto = { path = "../mm2_bitcoin/crypto" }
 bytes = "0.4"
+cfg-if = "1.0"
 crossbeam = "0.7"
 derive_more = "0.99"
 findshlibs = "0.5"
@@ -31,7 +32,7 @@ hex = "0.3.2"
 http = "0.2"
 http-body = "0.1"
 itertools = "0.8"
-keys = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.2"
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
@@ -40,7 +41,7 @@ num-traits = "0.2"
 parking_lot = { version = "0.11", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
-primitives = { git = "https://github.com/artemii235/parity-bitcoin.git" }
+primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
 serde = "1"
@@ -60,7 +61,8 @@ js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
 wasm-bindgen-futures = "0.4.21"
-web-sys = { version = "0.3.4", features = ["console"] }
+wasm-bindgen-test = { version = "0.3.2" }
+web-sys = { version = "0.3.4", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 chrono = "0.4"
