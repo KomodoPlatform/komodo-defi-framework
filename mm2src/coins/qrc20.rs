@@ -38,8 +38,7 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as 
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
-use serialization::deserialize;
-use serialization::serialize;
+use serialization::{deserialize, serialize, CoinVariant};
 use std::ops::{Deref, Neg};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
@@ -480,7 +479,9 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::address_from_str(&self.utxo.conf, address)
     }
 
-    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> { utxo_common::get_current_mtp(&self.utxo).await }
+    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
+        utxo_common::get_current_mtp(&self.utxo, CoinVariant::Qtum).await
+    }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
 

@@ -16,7 +16,7 @@ use futures::future::join_all;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use script::Opcode;
-use serialization::deserialize;
+use serialization::{deserialize, CoinVariant};
 use std::thread;
 use std::time::Duration;
 
@@ -1016,7 +1016,7 @@ fn test_get_median_time_past_from_electrum_kmd() {
     ]);
 
     let mtp = client
-        .get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT)
+        .get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)
         .wait()
         .unwrap();
     // the MTP is block time of 1773385 in this case
@@ -1031,7 +1031,10 @@ fn test_get_median_time_past_from_electrum_btc() {
         "electrum3.cipig.net:10000",
     ]);
 
-    let mtp = client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT).wait().unwrap();
+    let mtp = client
+        .get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)
+        .wait()
+        .unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1055,7 +1058,10 @@ fn test_get_median_time_past_from_native_has_median_in_get_block() {
         )
     });
 
-    let mtp = client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT).wait().unwrap();
+    let mtp = client
+        .get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)
+        .wait()
+        .unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1098,7 +1104,10 @@ fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
         MockResult::Return(Box::new(futures01::future::ok(block)))
     });
 
-    let mtp = client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT).wait().unwrap();
+    let mtp = client
+        .get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)
+        .wait()
+        .unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -2389,7 +2398,7 @@ fn doge_mtp() {
         "electrum3.cipig.net:10060",
     ]);
     let mtp = electrum
-        .get_median_time_past(3631820, NonZeroU64::new(11).unwrap())
+        .get_median_time_past(3631820, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
         .wait()
         .unwrap();
     assert_eq!(mtp, 1614849084);
@@ -2403,7 +2412,7 @@ fn firo_mtp() {
         "electrumx03.firo.org:50001",
     ]);
     let mtp = electrum
-        .get_median_time_past(356730, NonZeroU64::new(11).unwrap())
+        .get_median_time_past(356730, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
         .wait()
         .unwrap();
     assert_eq!(mtp, 1616492629);
@@ -2413,7 +2422,7 @@ fn firo_mtp() {
 fn verus_mtp() {
     let electrum = electrum_client_for_test(&["el0.verus.io:17485", "el1.verus.io:17485", "el2.verus.io:17485"]);
     let mtp = electrum
-        .get_median_time_past(1480113, NonZeroU64::new(11).unwrap())
+        .get_median_time_past(1480113, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
         .wait()
         .unwrap();
     assert_eq!(mtp, 1618579909);
@@ -2533,7 +2542,7 @@ fn sys_mtp() {
         "electrum3.cipig.net:10064",
     ]);
     let mtp = electrum
-        .get_median_time_past(1006678, NonZeroU64::new(11).unwrap())
+        .get_median_time_past(1006678, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
         .wait()
         .unwrap();
     assert_eq!(mtp, 1620019628);
@@ -2547,10 +2556,38 @@ fn btc_mtp() {
         "electrum3.cipig.net:10000",
     ]);
     let mtp = electrum
-        .get_median_time_past(681659, NonZeroU64::new(11).unwrap())
+        .get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
         .wait()
         .unwrap();
     assert_eq!(mtp, 1620019527);
+}
+
+#[test]
+fn qtum_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10050",
+        "electrum2.cipig.net:10050",
+        "electrum3.cipig.net:10050",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Qtum)
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1598854128);
+}
+
+#[test]
+fn zer_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10065",
+        "electrum2.cipig.net:10065",
+        "electrum3.cipig.net:10065",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(1130915, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1623240214);
 }
 
 #[test]
@@ -2653,4 +2690,12 @@ fn send_and_redeem_dex_fee() {
     let tx = serialize(&refund);
     let tx_hash = coin.send_raw_tx(&hex::encode(tx.take())).wait().unwrap();
     println!("redeem {}", tx_hash);
+}
+
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/966
+#[test]
+fn test_parse_tx_with_huge_locktime() {
+    let verbose = r#"{"hex":"0400008085202f89010c03a2b3d8f97139a623f0759224c657513752b705b5c689a256d52b8f8279f200000000d8483045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d2660120bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b004c6b63046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68ffffffff014ddbf305000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88acf5b98899000000000000000000000000000000","txid":"3b666753b77e28da8a4d858339825315f32516cc147fa743329c7248bd0c6902","overwintered":true,"version":4,"versiongroupid":"892f2085","locktime":2575874549,"expiryheight":0,"vin":[{"txid":"f279828f2bd556a289c6b505b752375157c6249275f023a63971f9d8b3a2030c","vout":0,"scriptSig":{"asm":"3045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d266[ALL]bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b063046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68","hex":"483045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d2660120bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b004c6b63046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68"},"sequence":4294967295}],"vout":[{"value":0.99867469,"valueZat":99867469,"valueSat":99867469,"n":0,"scriptPubKey":{"asm":"OP_DUPOP_HASH160c3f710deb7320b0efa6edb14e3ebeeb9155fa90dOP_EQUALVERIFYOP_CHECKSIG","hex":"76a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac","reqSigs":1,"type":"pubkeyhash","addresses":["t1bjmkBWkzLWk3mHFoybXE5daGRY9pk1fxF"]}}],"vjoinsplit":[],"valueBalance":0.0,"valueBalanceZat":0,"vShieldedSpend":[],"vShieldedOutput":[],"blockhash":"0000077e33e838d9967427018a6e7049d8619ae556acb3e80c070990e90b67fc","height":1127478,"confirmations":2197,"time":1622825622,"blocktime":1622825622}"#;
+    let verbose_tx: RpcTransaction = json::from_str(verbose).expect("!json::from_str");
+    let _: UtxoTx = deserialize(verbose_tx.hex.as_slice()).unwrap();
 }

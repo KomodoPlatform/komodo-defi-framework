@@ -4,6 +4,7 @@ use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, T
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use futures::{FutureExt, TryFutureExt};
+use serialization::CoinVariant;
 
 #[derive(Clone, Debug)]
 pub struct UtxoStandardCoin {
@@ -58,7 +59,9 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::address_from_str(&self.utxo_arc.conf, address)
     }
 
-    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> { utxo_common::get_current_mtp(&self.utxo_arc).await }
+    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
+        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+    }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
         utxo_common::is_unspent_mature(self.utxo_arc.conf.mature_confirmations, output)

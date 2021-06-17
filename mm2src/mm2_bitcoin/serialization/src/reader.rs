@@ -46,16 +46,42 @@ pub trait Deserializable {
         T: io::Read;
 }
 
+#[derive(Debug)]
+pub enum CoinVariant {
+    Standard,
+    Qtum,
+}
+
+impl CoinVariant {
+    pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
+}
+
 /// Bitcoin structures reader.
 #[derive(Debug)]
 pub struct Reader<T> {
     buffer: T,
     peeked: Option<u8>,
+    coin_variant: CoinVariant,
 }
 
 impl<'a> Reader<&'a [u8]> {
     /// Convenient way of creating for slice of bytes
-    pub fn new(buffer: &'a [u8]) -> Self { Reader { buffer, peeked: None } }
+    pub fn new(buffer: &'a [u8]) -> Self {
+        Reader {
+            buffer,
+            peeked: None,
+            coin_variant: CoinVariant::Standard,
+        }
+    }
+
+    /// Convenient way of creating for slice of bytes
+    pub fn new_with_coin_variant(buffer: &'a [u8], coin_variant: CoinVariant) -> Self {
+        Reader {
+            buffer,
+            peeked: None,
+            coin_variant,
+        }
+    }
 }
 
 impl<T> io::Read for Reader<T>
@@ -88,6 +114,7 @@ where
         Reader {
             buffer: read,
             peeked: None,
+            coin_variant: CoinVariant::Standard,
         }
     }
 
@@ -158,6 +185,8 @@ where
             Err(_) => true,
         }
     }
+
+    pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
 }
 
 /// Should be used to iterate over structures of the same type

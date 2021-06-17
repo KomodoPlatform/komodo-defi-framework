@@ -22,7 +22,7 @@ use script::{Builder, Opcode, Script, ScriptAddress, SignatureVersion, Transacti
              UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize};
+use serialization::{deserialize, serialize, CoinVariant};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -253,10 +253,10 @@ pub fn address_from_str(conf: &UtxoCoinConf, address: &str) -> Result<Address, S
     }
 }
 
-pub async fn get_current_mtp(coin: &UtxoCoinFields) -> UtxoRpcResult<u32> {
+pub async fn get_current_mtp(coin: &UtxoCoinFields, coin_variant: CoinVariant) -> UtxoRpcResult<u32> {
     let current_block = coin.rpc_client.get_block_count().compat().await?;
     coin.rpc_client
-        .get_median_time_past(current_block, coin.conf.mtp_block_count)
+        .get_median_time_past(current_block, coin.conf.mtp_block_count, coin_variant)
         .compat()
         .await
 }

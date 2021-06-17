@@ -5,6 +5,7 @@ use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
+use serialization::CoinVariant;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
 
@@ -166,7 +167,9 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::address_from_str(&self.utxo_arc.conf, address)
     }
 
-    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> { utxo_common::get_current_mtp(&self.utxo_arc).await }
+    async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
+        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Qtum).await
+    }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
 

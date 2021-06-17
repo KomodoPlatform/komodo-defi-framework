@@ -167,7 +167,7 @@ pub struct Transaction {
     /// The version
     pub version: i32,
     /// The lock time
-    pub locktime: i32,
+    pub locktime: u32,
     /// Transaction inputs
     pub vin: Vec<TransactionInputEnum>,
     /// Transaction outputs
