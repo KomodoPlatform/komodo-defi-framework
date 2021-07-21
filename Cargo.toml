@@ -73,7 +73,7 @@ hex-literal = "0.3.1"
 http = "0.2"
 itertools = "0.9"
 keys = { path = "mm2src/mm2_bitcoin/keys" }
-lazy_static = "1.3"
+lazy_static = "1.4"
 libc = "0.2"
 metrics = "0.12"
 mm2-libp2p = { path = "mm2src/mm2_libp2p" }
@@ -127,9 +127,9 @@ tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
 [dev-dependencies]
 bitcoin-cash-slp = "0.3.1"
-libsecp256k1 = "0.2.2"
 mocktopus = "0.7.0"
-rand4 = { version = "0.4", package = "rand" }
+rand6 = { version = "0.6", package = "rand" }
+secp256k1 = { version = "0.20", features = ["rand"] }
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
 winapi = "0.3"
 

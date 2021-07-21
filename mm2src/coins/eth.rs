@@ -2937,8 +2937,8 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
 }
 
 pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
-    let pubkey = try_s!(PublicKey::parse_slice(pubkey, None).map_err(|e| ERRL!("{:?}", e)));
-    let eth_public = Public::from(&pubkey.serialize()[1..65]);
+    let pubkey = try_s!(PublicKey::from_slice(pubkey).map_err(|e| ERRL!("{:?}", e)));
+    let eth_public = Public::from(&pubkey.serialize_uncompressed()[1..65]);
     Ok(public_to_address(&eth_public))
 }
 

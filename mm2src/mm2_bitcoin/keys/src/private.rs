@@ -1,10 +1,11 @@
 //! Secret with additional network identifier and format type
 
+use crate::SECP_SIGN;
 use address::detect_checksum;
 use base58::{FromBase58, ToBase58};
 use crypto::{checksum, ChecksumType};
 use hex::ToHex;
-use secp256k1::{sign, Message as SecpMessage, SecretKey};
+use secp256k1::{Message as SecpMessage, SecretKey};
 use std::fmt;
 use std::str::FromStr;
 use {DisplayLayout, Error, Message, Secret, Signature};
@@ -24,9 +25,9 @@ pub struct Private {
 
 impl Private {
     pub fn sign(&self, message: &Message) -> Result<Signature, Error> {
-        let secret = SecretKey::parse_slice(&*self.secret)?;
-        let message = SecpMessage::parse_slice(&**message)?;
-        let (signature, _) = sign(&message, &secret)?;
+        let secret = SecretKey::from_slice(&*self.secret)?;
+        let message = SecpMessage::from_slice(&**message)?;
+        let signature = SECP_SIGN.sign(&message, &secret);
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
     }

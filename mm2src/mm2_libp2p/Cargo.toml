@@ -14,8 +14,8 @@ libp2p-floodsub = { path = "../floodsub" }
 env_logger = "0.7.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 hex = "0.4.2"
-lazy_static = "1.4.0"
-secp256k1 = { git = "https://github.com/artemii235/rust-secp256k1.git", features = ["endomorphism", "rand"] }
+lazy_static = "1.4"
+secp256k1 = { version = "0.20", features = ["rand"] }
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }

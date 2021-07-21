@@ -974,9 +974,12 @@ fn validate_dex_fee_invalid_sender_erc() {
 }
 
 fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
-    let raw_pubkey = tx.public.unwrap();
-    let secp_public = PublicKey::parse_slice(&raw_pubkey, None).unwrap();
-    secp_public.serialize_compressed()
+    let tx_pubkey = tx.public.unwrap();
+    let mut raw_pubkey = [0; 65];
+    raw_pubkey[0] = 0x04;
+    raw_pubkey[1..].copy_from_slice(&tx_pubkey);
+    let secp_public = PublicKey::from_slice(&raw_pubkey).unwrap();
+    secp_public.serialize()
 }
 
 #[test]

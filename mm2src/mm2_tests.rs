@@ -3979,7 +3979,13 @@ fn test_withdraw_cashaddresses() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
     })))
     .unwrap();
@@ -4099,7 +4105,13 @@ fn test_withdraw_cashaddresses() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "address_format":{"format":"standard"},
         "mm2": 1,
     })))
@@ -4189,7 +4201,13 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
     })))
     .unwrap();
@@ -4248,13 +4266,20 @@ fn test_common_cashaddresses() {
 
     // Enable BCH electrum client with tx_history loop.
     // Enable RICK electrum client with tx_history loop.
-    let electrum = block_on(mm.rpc (json! ({
+    let electrum = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+        "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     assert_eq!(
         electrum.0,
@@ -4332,6 +4357,8 @@ fn test_convert_utxo_address() {
     log!({ "log path: {}", mm.log_path.display() });
 
     let _electrum = block_on(enable_electrum(&mm, "BCH", false, &[
+        "electroncash.de:50003",
+        "tbch.loping.net:60001",
         "blackie.c3-soft.com:60001",
         "bch0.kister.net:51001",
         "testnet.imaginary.cash:50001",

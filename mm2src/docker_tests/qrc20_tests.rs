@@ -15,7 +15,7 @@ use common::mm_ctx::MmArc;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
 use http::StatusCode;
-use rand4::Rng;
+use rand6::Rng;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -121,16 +121,13 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> UtxoDockerNode {
 fn qrc20_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, Qrc20Coin) {
     let (contract_address, swap_contract_address) = unsafe {
         let contract_address = match ticker {
-            "QICK" => QICK_TOKEN_ADDRESS
-                .expect("QICK_TOKEN_ADDRESS must be set already"),
-            "QORTY" => QORTY_TOKEN_ADDRESS
-                .expect("QORTY_TOKEN_ADDRESS must be set already"),
+            "QICK" => QICK_TOKEN_ADDRESS.expect("QICK_TOKEN_ADDRESS must be set already"),
+            "QORTY" => QORTY_TOKEN_ADDRESS.expect("QORTY_TOKEN_ADDRESS must be set already"),
             _ => panic!("Expected QICK or QORTY ticker"),
         };
         (
             contract_address,
-            QRC20_SWAP_CONTRACT_ADDRESS
-                .expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already"),
+            QRC20_SWAP_CONTRACT_ADDRESS.expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already"),
         )
     };
     let platform = "QTUM";
@@ -175,14 +172,14 @@ fn generate_qrc20_coin_with_random_privkey(
     qtum_balance: BigDecimal,
     qrc20_balance: BigDecimal,
 ) -> (MmArc, Qrc20Coin, [u8; 32]) {
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let (ctx, coin) = qrc20_coin_from_privkey(ticker, &priv_key);
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let (ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key.as_ref());
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, qtum_balance, timeout);
     fill_qrc20_address(&coin, qrc20_balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 fn generate_qtum_coin_with_random_privkey(
@@ -208,14 +205,21 @@ fn generate_qtum_coin_with_random_privkey(
         "dust": 72800,
     });
     let req = json!({"method": "enable"});
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "QTUM", &conf, &req, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "QTUM",
+        &conf,
+        &req,
+        priv_key.as_ref(),
+    ))
+    .unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 fn generate_segwit_qtum_coin_with_random_privkey(
@@ -245,14 +249,21 @@ fn generate_segwit_qtum_coin_with_random_privkey(
         },
     });
     let req = json!({"method": "enable"});
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "QTUM", &conf, &req, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "QTUM",
+        &conf,
+        &req,
+        priv_key.as_ref(),
+    ))
+    .unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 /// Get only one address assigned the specified label.
@@ -311,10 +322,8 @@ fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
 }
 
 pub async fn enable_qrc20_native(mm: &MarketMakerIt, coin: &str) -> Json {
-    let swap_contract_address = unsafe {
-        QRC20_SWAP_CONTRACT_ADDRESS
-            .expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already")
-    };
+    let swap_contract_address =
+        unsafe { QRC20_SWAP_CONTRACT_ADDRESS.expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already") };
 
     let native = mm
         .rpc(json! ({
@@ -348,8 +357,8 @@ fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
         EstimateSmartFeeState::Idle => log!("Start wait_for_estimate_smart_fee"),
     }
 
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &priv_key);
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key.as_ref());
     let timeout = now_ms() / 1000 + timeout;
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
@@ -372,10 +381,8 @@ fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
 fn qrc20_coin_conf_item(ticker: &str) -> Json {
     let contract_address = unsafe {
         match ticker {
-            "QICK" => QICK_TOKEN_ADDRESS
-                .expect("QICK_TOKEN_ADDRESS must be set already"),
-            "QORTY" => QORTY_TOKEN_ADDRESS
-                .expect("QORTY_TOKEN_ADDRESS must be set already"),
+            "QICK" => QICK_TOKEN_ADDRESS.expect("QICK_TOKEN_ADDRESS must be set already"),
+            "QORTY" => QORTY_TOKEN_ADDRESS.expect("QORTY_TOKEN_ADDRESS must be set already"),
             _ => panic!("Expected either QICK or QORTY ticker, found {}", ticker),
         }
     };
@@ -409,25 +416,25 @@ fn trade_base_rel((base, rel): (&str, &str)) {
                 priv_key
             },
             "QICK" | "QORTY" => {
-                let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-                let (_ctx, coin) = qrc20_coin_from_privkey(ticker, &priv_key);
+                let priv_key = SecretKey::new(&mut rand6::thread_rng());
+                let (_ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
                 fill_qrc20_address(&coin, 10.into(), timeout);
 
-                priv_key
+                *priv_key.as_ref()
             },
             "MYCOIN" | "MYCOIN1" => {
-                let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-                let (_ctx, coin) = utxo_coin_from_privkey(ticker, &priv_key);
+                let priv_key = SecretKey::new(&mut rand6::thread_rng());
+                let (_ctx, coin) = utxo_coin_from_privkey(ticker, priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
                 // also fill the Qtum
-                let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &priv_key);
+                let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
 
-                priv_key
+                *priv_key.as_ref()
             },
             _ => panic!("Expected either QICK or QORTY or MYCOIN or MYCOIN1, found {}", ticker),
         }
@@ -920,13 +927,7 @@ fn test_check_if_my_payment_sent() {
     let amount = BigDecimal::from_str("0.2").unwrap();
 
     let payment = coin
-        .send_maker_payment(
-            timelock,
-            &taker_pub,
-            secret_hash,
-            amount,
-            &coin.swap_contract_address(),
-        )
+        .send_maker_payment(timelock, &taker_pub, secret_hash, amount, &coin.swap_contract_address())
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -1222,26 +1223,26 @@ fn test_wait_for_tx_spend() {
 
 #[test]
 fn test_check_balance_on_order_post_base_coin_locked() {
-    let bob_priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let alice_priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let bob_priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let alice_priv_key = SecretKey::new(&mut rand6::thread_rng());
     let timeout = 30; // timeout if test takes more than 80 seconds to run
 
     // fill the Bob address by 0.05 Qtum
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &bob_priv_key);
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 0.05.into(), timeout);
     // fill the Bob address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", &bob_priv_key);
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
     // fill the Alice address by 10 Qtum and 10 QICK
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &alice_priv_key);
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", alice_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
     fill_qrc20_address(&coin, 10.into(), timeout);
     // fill the Alice address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", &alice_priv_key);
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", alice_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
@@ -1260,7 +1261,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+            "passphrase": format!("0x{}", hex::encode(bob_priv_key.as_ref())),
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
@@ -1283,7 +1284,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+            "passphrase": format!("0x{}", hex::encode(alice_priv_key.as_ref())),
             "coins": coins,
             "seednodes": [fomat!((mm_bob.ip))],
             "rpc_password": "pass",
@@ -1484,7 +1485,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
     let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 2.into(), Some(0));
     let my_address = coin.my_address().expect("!my_address");
-    let mut rng = rand4::thread_rng();
+    let mut rng = rand6::thread_rng();
     let mut qtum_balance = BigDecimal::from(2);
     let mut qtum_balance_steps = "2".to_owned();
     for _ in 0..4 {

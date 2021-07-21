@@ -1,5 +1,6 @@
 //! Bitcoin key pair.
 
+use crate::SECP_SIGN;
 use crypto::ChecksumType;
 use hash::{H264, H520};
 use secp256k1::{PublicKey, SecretKey};
@@ -32,17 +33,17 @@ impl KeyPair {
     pub fn public(&self) -> &Public { &self.public }
 
     pub fn from_private(private: Private) -> Result<KeyPair, Error> {
-        let s: SecretKey = SecretKey::parse_slice(&*private.secret)?;
-        let pub_key = PublicKey::from_secret_key(&s);
+        let s: SecretKey = SecretKey::from_slice(&*private.secret)?;
+        let pub_key = PublicKey::from_secret_key(&SECP_SIGN, &s);
 
         let public = if private.compressed {
             let mut public = H264::default();
-            let serialized = pub_key.serialize_compressed();
+            let serialized = pub_key.serialize();
             public.copy_from_slice(&serialized[0..33]);
             Public::Compressed(public)
         } else {
             let mut public = H520::default();
-            let serialized = pub_key.serialize();
+            let serialized = pub_key.serialize_uncompressed();
             public.copy_from_slice(&serialized[0..65]);
             Public::Normal(public)
         };
@@ -53,9 +54,9 @@ impl KeyPair {
     }
 
     pub fn from_keypair(sec: SecretKey, public: PublicKey, prefix: u8) -> Self {
-        let serialized = public.serialize();
+        let serialized = public.serialize_uncompressed();
         let mut secret = Secret::default();
-        secret.copy_from_slice(&sec.serialize());
+        secret.copy_from_slice(&sec[..]);
         let mut public = H520::default();
         public.copy_from_slice(&serialized[0..65]);
 
