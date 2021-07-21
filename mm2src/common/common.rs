@@ -1724,7 +1724,7 @@ pub fn writeln(line: &str) {
 static mut PROCESS_LOG_TAIL: [u8; 0x10000] = [0; 0x10000];
 
 #[cfg(target_arch = "wasm32")]
-static TAIL_CUR: Atomic<usize> = Atomic::new(0);
+static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
 
 /// Keep a tail of the log in RAM for the integration tests.
 #[cfg(target_arch = "wasm32")]

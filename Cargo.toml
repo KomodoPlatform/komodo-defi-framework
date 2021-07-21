@@ -151,6 +151,8 @@ members = [
     "mm2src/derives/ser_error",
     "mm2src/derives/ser_error_derive",
 ]
+# https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
+resolver = "2"
 
 # The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function
 # names being printed, but dl_iterate_phdr is present since API version 21 https://github.com/rust-lang/rust/issues/17520#issuecomment-344885468

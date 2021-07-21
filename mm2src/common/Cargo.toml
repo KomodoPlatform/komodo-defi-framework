@@ -20,14 +20,12 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 bytes = "0.4"
 cfg-if = "1.0"
 crossbeam = "0.7"
-crossterm = "0.20"
 derive_more = "0.99"
 findshlibs = "0.5"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 futures-cpupool = "0.1"
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
 hex = "0.3.2"
 http = "0.2"
 http-body = "0.1"
@@ -57,6 +55,7 @@ winapi = "0.3"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
 getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
+gstuff = { version = "0.7", features = ["nightly"] }
 js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
@@ -67,6 +66,8 @@ web-sys = { version = "0.3.4", features = ["console", "CloseEvent", "DomExceptio
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "1.0"
 chrono = "0.4"
+crossterm = "0.20"
+gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
 hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
 hyper = { version = "0.14", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
