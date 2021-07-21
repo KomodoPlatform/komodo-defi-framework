@@ -140,6 +140,9 @@ pub struct RaiiDump {
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for RaiiDump {
     fn drop(&mut self) {
+        use crossterm::execute;
+        use crossterm::style::{Color, Print, SetForegroundColor};
+
         // `term` bypasses the stdout capturing, we should only use it if the capturing was disabled.
         let nocapture = env::args().any(|a| a == "--nocapture");
 
@@ -150,13 +153,15 @@ impl Drop for RaiiDump {
         let log = String::from_utf8_lossy(&log);
         let log = log.trim();
 
-        if let (true, true, Some(mut t)) = (nocapture, *ISATTY, term::stdout()) {
-            let _ = t.fg(term::color::BRIGHT_YELLOW);
-            let _ = t.write(format!("vvv {:?} vvv\n", self.log_path).as_bytes());
-            let _ = t.fg(term::color::YELLOW);
-            let _ = t.write(log.as_bytes());
-            let _ = t.write(b"\n");
-            let _ = t.reset();
+        if let (true, true, mut stdout) = (nocapture, *ISATTY, std::io::stdout()) {
+            execute!(
+                stdout,
+                SetForegroundColor(Color::DarkYellow),
+                Print(format!("vvv {:?} vvv\n", self.log_path)),
+                SetForegroundColor(Color::Yellow),
+                Print(log),
+            )
+            .expect("Printing to stdout failed");
         } else {
             log! ({"vvv {:?} vvv\n{}", self.log_path, log});
         }
