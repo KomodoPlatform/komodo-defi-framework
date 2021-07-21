@@ -1451,13 +1451,9 @@ fn test_process_get_orderbook_request() {
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
     drop(orderbook);
 
-    let encoded = block_on(process_get_orderbook_request(
-        ctx,
-        "RICK".into(),
-        "MORTY".into(),
-    ))
-    .unwrap()
-    .unwrap();
+    let encoded = block_on(process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into()))
+        .unwrap()
+        .unwrap();
 
     let orderbook = decode_message::<GetOrderbookRes>(&encoded).unwrap();
     for (pubkey, item) in orderbook.pubkey_orders {
@@ -1497,13 +1493,9 @@ fn test_process_get_orderbook_request_limit() {
     // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
     drop(orderbook);
 
-    let err = block_on(process_get_orderbook_request(
-        ctx,
-        "RICK".into(),
-        "MORTY".into(),
-    ))
-    .err()
-    .expect("Expected an error");
+    let err = block_on(process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into()))
+        .err()
+        .expect("Expected an error");
 
     log!("error: "(err));
     assert!(err.contains("Orderbook too large"));
