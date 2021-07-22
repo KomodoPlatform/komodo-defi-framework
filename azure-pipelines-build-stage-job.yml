@@ -62,6 +62,10 @@ jobs:
         displayName: 'Check Clippy warnings'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
+          cargo deny check advisories
+        displayName: 'Check Cargo deny advisories'
+        condition: eq( variables['Agent.OS'], 'Linux' )
+      - bash: |
           cargo fmt -- --check
         displayName: 'Check rustfmt warnings'
         condition: eq( variables['Agent.OS'], 'Linux' )
