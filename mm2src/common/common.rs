@@ -17,7 +17,6 @@
 #![feature(negative_impls)]
 #![feature(auto_traits)]
 #![feature(drain_filter)]
-#![feature(try_trait_v2)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate fomat_macros;
