@@ -1218,10 +1218,6 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str, _addr_format: &str) -> Result<String, String> {
-        addr_from_pubkey_str(pubkey)
-    }
-
     fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }

@@ -7520,7 +7520,7 @@ fn test_best_orders_segwit() {
     let best_orders = response.result.get("tBTC").unwrap();
     assert_eq!(1, best_orders.len());
     assert_eq!(best_orders[0].coin, "tBTC");
-    // assert_eq!(best_orders[0].address, tbtc_segwit_address);
+    assert_eq!(best_orders[0].address, tbtc_segwit_address);
 
     let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,

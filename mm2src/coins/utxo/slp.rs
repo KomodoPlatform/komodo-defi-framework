@@ -887,8 +887,6 @@ impl MarketCoinOps for SlpToken {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_utxo.current_block() }
 
-    fn address_from_pubkey_str(&self, _pubkey: &str, _addr_format: &str) -> Result<String, String> { unimplemented!() }
-
     fn display_priv_key(&self) -> String { self.platform_utxo.display_priv_key() }
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }

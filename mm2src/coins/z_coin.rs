@@ -186,8 +186,6 @@ impl MarketCoinOps for ZCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, _pubkey: &str, _addr_format: &str) -> Result<String, String> { todo!() }
-
     fn display_priv_key(&self) -> String {
         encode_extended_spending_key(
             z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,

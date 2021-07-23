@@ -988,10 +988,6 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::current_block(&self.utxo)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str, addr_format: &str) -> Result<String, String> {
-        utxo_common::address_from_pubkey_str(self, pubkey, addr_format)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }

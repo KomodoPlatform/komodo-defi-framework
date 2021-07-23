@@ -170,6 +170,8 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
 #[cfg(test)]
 mod best_orders_tests {
     use common::new_uuid;
+    use keys::AddressFormat;
+    use rmp_serde::decode::Error;
     use uuid::Uuid;
 
     use super::super::OrderbookItem;
@@ -253,5 +255,31 @@ mod best_orders_tests {
         let serialized = rmp_serde::to_vec(&best_order_res_old).unwrap();
         let deserialized: BestOrdersRes = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
         assert_eq!(best_order_res_new, deserialized);
+
+        let mut best_order_res_new_orders = HashMap::new();
+        best_order_res_new_orders.insert(String::from("RICK"), vec![OrderbookItemWithProof {
+            order: OrderbookItem {
+                pubkey: "03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed".into(),
+                base: "tBTC".into(),
+                rel: "RICK".into(),
+                price: BigRational::from_integer(1.into()),
+                max_volume: BigRational::from_integer(2.into()),
+                min_volume: BigRational::from_integer(1.into()),
+                uuid,
+                created_at: 1626959392,
+                base_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Segwit).unwrap()),
+                rel_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Standard).unwrap()),
+            },
+            last_message_payload: vec![],
+            proof: vec![],
+        }]);
+        let best_order_res_new = BestOrdersRes {
+            orders: best_order_res_new_orders,
+        };
+
+        // old format can't be deserialized from new when protocol_infos are present
+        let serialized = rmp_serde::to_vec(&best_order_res_new).unwrap();
+        let deserialized: Result<BestOrdersResOld, Error> = rmp_serde::from_read_ref(serialized.as_slice());
+        assert!(deserialized.is_err());
     }
 }

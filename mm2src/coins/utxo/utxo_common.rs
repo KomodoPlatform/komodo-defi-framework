@@ -1350,24 +1350,6 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
     Box::new(coin.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
 }
 
-pub fn address_from_pubkey_str<T>(coin: &T, pubkey: &str, addr_format: &str) -> Result<String, String>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
-{
-    let pubkey_bytes = try_s!(hex::decode(pubkey));
-    let addr_format = json::from_str::<UtxoAddressFormat>(addr_format)
-        .unwrap_or_else(|_| coin.as_ref().my_address.addr_format.clone());
-    let addr = try_s!(address_from_raw_pubkey(
-        &pubkey_bytes,
-        coin.as_ref().conf.pub_addr_prefix,
-        coin.as_ref().conf.pub_t_addr_prefix,
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        addr_format
-    ));
-    addr.display_address()
-}
-
 pub fn display_priv_key(coin: &UtxoCoinFields) -> String { format!("{}", coin.key_pair.private()) }
 
 pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {

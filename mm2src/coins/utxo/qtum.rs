@@ -565,10 +565,6 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str, addr_format: &str) -> Result<String, String> {
-        utxo_common::address_from_pubkey_str(self, pubkey, addr_format)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }

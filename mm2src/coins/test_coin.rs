@@ -64,8 +64,6 @@ impl MarketCoinOps for TestCoin {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { unimplemented!() }
 
-    fn address_from_pubkey_str(&self, pubkey: &str, addr_format: &str) -> Result<String, String> { unimplemented!() }
-
     fn display_priv_key(&self) -> String { unimplemented!() }
 
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }

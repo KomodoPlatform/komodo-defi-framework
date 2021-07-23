@@ -342,8 +342,6 @@ pub trait MarketCoinOps {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 
-    fn address_from_pubkey_str(&self, pubkey: &str, addr_format: &str) -> Result<String, String>;
-
     fn display_priv_key(&self) -> String;
 
     /// Get the minimum amount to send.
