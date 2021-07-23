@@ -8,6 +8,7 @@ use common::{block_on,
              mm_ctx::{MmArc, MmCtx, MmCtxBuilder},
              privkey::key_pair_from_seed};
 use futures::{channel::mpsc, lock::Mutex as AsyncMutex, StreamExt};
+use keys::AddressFormat;
 use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
 use mocktopus::mocking::*;
@@ -1458,6 +1459,38 @@ fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: Str
     orders
 }
 
+fn make_random_orders_segwit(
+    pubkey: String,
+    _secret: &[u8; 32],
+    base: String,
+    rel: String,
+    n: usize,
+) -> Vec<OrderbookItem> {
+    let mut rng = rand::thread_rng();
+    let mut orders = Vec::with_capacity(n);
+    for _i in 0..n {
+        let numer: u64 = rng.gen_range(2000, 10000000);
+        let order = new_protocol::MakerOrderCreated {
+            uuid: Uuid::new_v4().into(),
+            base: base.clone(),
+            rel: rel.clone(),
+            price: BigRational::new(numer.into(), 1000000.into()),
+            max_volume: BigRational::from_integer(1.into()),
+            min_volume: BigRational::from_integer(0.into()),
+            conf_settings: OrderConfirmationsSettings::default(),
+            created_at: now_ms() / 1000,
+            timestamp: now_ms() / 1000,
+            pair_trie_root: H64::default(),
+            base_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Segwit).unwrap()),
+            rel_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Standard).unwrap()),
+        };
+
+        orders.push((order, pubkey.clone()).into());
+    }
+
+    orders
+}
+
 fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
     let key_pair = key_pair_from_seed(passphrase).unwrap();
     let pubkey = hex::encode(&**key_pair.public());
@@ -1525,6 +1558,76 @@ fn test_process_get_orderbook_request() {
         ctx.clone(),
         "RICK".into(),
         "MORTY".into(),
+        OrdermatchRequestVersion::V2,
+    ))
+    .unwrap()
+    .unwrap();
+
+    let orderbook = decode_message::<GetOrderbookRes>(&encoded).unwrap();
+    for (pubkey, item) in orderbook.pubkey_orders {
+        let expected = orders_by_pubkeys
+            .get(&pubkey)
+            .expect(&format!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
+
+        let mut actual: Vec<OrderbookItem> = item.orders.iter().map(|(_uuid, order)| order.clone()).collect();
+        actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+        log!([pubkey]"-"[actual.len()]);
+        assert_eq!(actual, *expected);
+    }
+}
+
+#[test]
+fn test_process_get_orderbook_request_with_old_nodes() {
+    const ORDERS_NUMBER: usize = 10;
+
+    let (ctx, _pubkey, _secret) = make_ctx_for_tests();
+    let (pubkey1, secret1) = pubkey_and_secret_for_test("passphrase-1");
+    let (pubkey2, secret2) = pubkey_and_secret_for_test("passphrase-2");
+    let (pubkey3, secret3) = pubkey_and_secret_for_test("passphrase-3");
+
+    let mut pubkey1_orders =
+        make_random_orders(pubkey1.clone(), &secret1, "RICK".into(), "MORTY".into(), ORDERS_NUMBER);
+    // orders that use segwit which should be removed by process_get_orderbook_request when orderbook is requested from old nodes
+    let mut pubkey2_orders =
+        make_random_orders_segwit(pubkey2.clone(), &secret2, "MORTY".into(), "RICK".into(), ORDERS_NUMBER);
+    let mut pubkey3_orders =
+        make_random_orders(pubkey3.clone(), &secret3, "RICK".into(), "MORTY".into(), ORDERS_NUMBER);
+    pubkey3_orders.extend_from_slice(&make_random_orders(
+        pubkey3.clone(),
+        &secret3,
+        "MORTY".into(),
+        "RICK".into(),
+        ORDERS_NUMBER,
+    ));
+
+    pubkey1_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+    pubkey2_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+    pubkey3_orders.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
+
+    // will be use for expected orders which should not have pubkey2_orders in them
+    let mut orders_by_pubkeys = HashMap::new();
+    orders_by_pubkeys.insert(pubkey1, pubkey1_orders);
+    orders_by_pubkeys.insert(pubkey3, pubkey3_orders);
+
+    let ordermatch_ctx = Arc::new(OrdermatchContext::default());
+    let ordermatch_ctx_clone = ordermatch_ctx.clone();
+    OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
+
+    let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
+
+    for order in orders_by_pubkeys.iter().map(|(_pubkey, orders)| orders).flatten() {
+        orderbook.insert_or_update_order_update_trie(order.clone());
+    }
+
+    // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
+    drop(orderbook);
+
+    // using OrdermatchRequestVersion::V1 mimicking old nodes
+    let encoded = block_on(process_get_orderbook_request(
+        ctx.clone(),
+        "RICK".into(),
+        "MORTY".into(),
+        OrdermatchRequestVersion::V1,
     ))
     .unwrap()
     .unwrap();
@@ -1571,6 +1674,7 @@ fn test_process_get_orderbook_request_limit() {
         ctx.clone(),
         "RICK".into(),
         "MORTY".into(),
+        OrdermatchRequestVersion::V2,
     ))
     .err()
     .expect("Expected an error");
@@ -1616,6 +1720,7 @@ fn test_request_and_fill_orderbook() {
     let expected_request = P2PRequest::Ordermatch(OrdermatchRequest::GetOrderbook {
         base: "RICK".into(),
         rel: "MORTY".into(),
+        version: OrdermatchRequestVersion::V2,
     });
 
     let orders = expected_orders.clone();

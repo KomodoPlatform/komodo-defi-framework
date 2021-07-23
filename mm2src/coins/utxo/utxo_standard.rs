@@ -4,7 +4,6 @@ use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, T
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use futures::{FutureExt, TryFutureExt};
-use keys::AddressFormat;
 use serialization::CoinVariant;
 
 #[derive(Clone, Debug)]
@@ -504,14 +503,9 @@ impl MmCoin for UtxoStandardCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
-    fn coin_protocol_info(&self) -> Option<Vec<u8>> {
-        Some(serde_json::to_vec(&self.utxo_arc.my_address.addr_format).unwrap())
-    }
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo_arc) }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
-        match info {
-            Some(format) => json::from_slice::<AddressFormat>(format).is_ok(),
-            None => !&self.utxo_arc.my_address.addr_format.is_segwit(),
-        }
+        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
     }
 }

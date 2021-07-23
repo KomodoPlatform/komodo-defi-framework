@@ -877,6 +877,7 @@ dependencies = [
  "primitives",
  "rand 0.7.3",
  "rlp 0.3.0",
+ "rmp-serde",
  "rpc",
  "rust-ini",
  "rustls",

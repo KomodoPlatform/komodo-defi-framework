@@ -300,7 +300,6 @@ pub struct MakerConnected {
 #[cfg(test)]
 mod new_protocol_tests {
     use common::new_uuid;
-    use serde_json::{self as json};
 
     use super::*;
 
@@ -385,6 +384,20 @@ mod new_protocol_tests {
 
     #[test]
     fn check_maker_order_created_serde() {
+        #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+        struct MakerOrderCreatedOld {
+            uuid: CompactUuid,
+            base: String,
+            rel: String,
+            price: BigRational,
+            max_volume: BigRational,
+            min_volume: BigRational,
+            created_at: u64,
+            conf_settings: OrderConfirmationsSettings,
+            timestamp: u64,
+            pair_trie_root: H64,
+        }
+
         let uuid = Uuid::parse_str("fe5144b8-cb21-4bb8-b235-97211023abd6").unwrap();
         let compact_uuid = CompactUuid::from(uuid);
         let conf_settings = OrderConfirmationsSettings {
@@ -393,7 +406,7 @@ mod new_protocol_tests {
             rel_confs: 5,
             rel_nota: true,
         };
-        // New format should be serialized to old format when protocol_info is None
+
         let maker_order_created_new = MakerOrderCreated {
             uuid: compact_uuid,
             base: "BASE".into(),
@@ -409,10 +422,50 @@ mod new_protocol_tests {
             rel_protocol_info: None,
         };
 
-        let old_format_str = r#"{"uuid":[254,81,68,184,203,33,75,184,178,53,151,33,16,35,171,214],"base":"BASE","rel":"REL","price":[[1,[2]],[1,[1]]],"max_volume":[[1,[3]],[1,[1]]],"min_volume":[[1,[1]],[1,[1]]],"created_at":1626639468,"conf_settings":{"base_confs":5,"base_nota":true,"rel_confs":5,"rel_nota":true},"timestamp":1626639468,"pair_trie_root":[0,0,0,0,0,0,0,0]}"#;
+        let maker_order_created_old = MakerOrderCreatedOld {
+            uuid: compact_uuid,
+            base: "BASE".into(),
+            rel: "REL".into(),
+            price: BigRational::from_integer(2.into()),
+            max_volume: BigRational::from_integer(3.into()),
+            min_volume: BigRational::from_integer(1.into()),
+            created_at: 1626639468,
+            conf_settings,
+            timestamp: 1626639468,
+            pair_trie_root: H64::default(),
+        };
 
-        let new_format_str = json::to_string(&maker_order_created_new).unwrap();
+        // new format should be deserialized to old when protocol info is none
+        let serialized = rmp_serde::to_vec(&maker_order_created_new).unwrap();
+        let deserialized: MakerOrderCreatedOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
 
-        assert_eq!(new_format_str, old_format_str);
+        assert_eq!(maker_order_created_old, deserialized);
+
+        // old format should be deserialized to new with protocol info none
+        let serialized = rmp_serde::to_vec(&maker_order_created_old).unwrap();
+        let deserialized: MakerOrderCreated = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(maker_order_created_new, deserialized);
+
+        let maker_order_created_with_protocol_info = MakerOrderCreated {
+            uuid: compact_uuid,
+            base: "BASE".into(),
+            rel: "REL".into(),
+            price: BigRational::from_integer(2.into()),
+            max_volume: BigRational::from_integer(3.into()),
+            min_volume: BigRational::from_integer(1.into()),
+            created_at: 1626639468,
+            conf_settings,
+            timestamp: 1626639468,
+            pair_trie_root: H64::default(),
+            base_protocol_info: Some(vec![0]),
+            rel_protocol_info: Some(vec![0]),
+        };
+
+        // new format should be deserialized to old when protocol info is Some
+        let serialized = rmp_serde::to_vec(&maker_order_created_with_protocol_info).unwrap();
+        let deserialized: MakerOrderCreatedOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(maker_order_created_old, deserialized)
     }
 }

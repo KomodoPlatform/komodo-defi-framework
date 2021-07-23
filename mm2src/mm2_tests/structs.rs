@@ -119,12 +119,6 @@ pub struct TakerRequest {
     dest_pub_key: H256Json,
     match_by: MatchBy,
     conf_settings: OrderConfirmationsSettings,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -142,12 +136,6 @@ pub struct MakerReserved {
     sender_pubkey: H256Json,
     dest_pub_key: H256Json,
     conf_settings: OrderConfirmationsSettings,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
