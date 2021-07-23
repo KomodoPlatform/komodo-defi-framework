@@ -1249,7 +1249,13 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1289,7 +1295,13 @@ fn test_address_from_str_with_cashaddress_activated() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1317,7 +1329,13 @@ fn test_address_from_str_with_legacy_address_activated() {
     });
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+         "servers": [
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -2798,6 +2816,8 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
 #[test]
 fn test_tx_details_bch_no_rewards() {
     let electrum = electrum_client_for_test(&[
+        "electroncash.de:50003",
+        "tbch.loping.net:60001",
         "blackie.c3-soft.com:60001",
         "bch0.kister.net:51001",
         "testnet.imaginary.cash:50001",
