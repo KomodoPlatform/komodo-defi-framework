@@ -1250,12 +1250,12 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     let req = json!({
          "method": "electrum",
          "servers": [
-            {"url":"electroncash.de:50003"},
-            {"url":"tbch.loping.net:60001"},
-            {"url":"blackie.c3-soft.com:60001"},
-            {"url":"bch0.kister.net:51001"},
-            {"url":"testnet.imaginary.cash:50001"}
-        ],
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1296,12 +1296,12 @@ fn test_address_from_str_with_cashaddress_activated() {
     let req = json!({
          "method": "electrum",
          "servers": [
-            {"url":"electroncash.de:50003"},
-            {"url":"tbch.loping.net:60001"},
-            {"url":"blackie.c3-soft.com:60001"},
-            {"url":"bch0.kister.net:51001"},
-            {"url":"testnet.imaginary.cash:50001"}
-        ],
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1330,12 +1330,12 @@ fn test_address_from_str_with_legacy_address_activated() {
     let req = json!({
          "method": "electrum",
          "servers": [
-            {"url":"electroncash.de:50003"},
-            {"url":"tbch.loping.net:60001"},
-            {"url":"blackie.c3-soft.com:60001"},
-            {"url":"bch0.kister.net:51001"},
-            {"url":"testnet.imaginary.cash:50001"}
-        ],
+             {"url":"electroncash.de:50003"},
+             {"url":"tbch.loping.net:60001"},
+             {"url":"blackie.c3-soft.com:60001"},
+             {"url":"bch0.kister.net:51001"},
+             {"url":"testnet.imaginary.cash:50001"}
+         ],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();

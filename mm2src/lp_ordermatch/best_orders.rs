@@ -1,4 +1,5 @@
-use super::{OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{addr_format_from_protocol_info, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest,
+            OrdermatchRequestVersion};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
@@ -24,7 +25,7 @@ struct BestOrdersRequest {
     volume: MmNumber,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct BestOrdersRes {
     orders: HashMap<String, Vec<OrderbookItemWithProof>>,
 }
@@ -34,6 +35,7 @@ pub async fn process_best_orders_p2p_request(
     coin: String,
     action: BestOrdersAction,
     required_volume: BigRational,
+    version: OrdermatchRequestVersion,
 ) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
     let orderbook = ordermatch_ctx.orderbook.lock().await;
@@ -63,6 +65,13 @@ pub async fn process_best_orders_p2p_request(
         for ordered in orders {
             match orderbook.order_set.get(&ordered.uuid) {
                 Some(o) => {
+                    if version == OrdermatchRequestVersion::V1
+                        && (o.base_protocol_info.is_some() || o.base_protocol_info.is_some())
+                    {
+                        log::debug!("Order {} address format is not supported by receiver", o.uuid);
+                        continue;
+                    }
+
                     let min_volume = match action {
                         BestOrdersAction::Buy => o.min_volume.clone(),
                         BestOrdersAction::Sell => &o.min_volume * &o.price,
@@ -109,6 +118,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
         coin: req.coin,
         action: req.action,
         volume: req.volume.into(),
+        version: OrdermatchRequestVersion::V2,
     };
 
     let best_orders_res =
@@ -131,7 +141,11 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                let address = match address_by_coin_conf_and_pubkey_str(&coin, &coin_conf, &order.pubkey) {
+                let addr_format = match req.action {
+                    BestOrdersAction::Buy => addr_format_from_protocol_info(&order.rel_protocol_info),
+                    BestOrdersAction::Sell => addr_format_from_protocol_info(&order.base_protocol_info),
+                };
+                let address = match address_by_coin_conf_and_pubkey_str(&coin, &coin_conf, &order.pubkey, addr_format) {
                     Ok(a) => a,
                     Err(e) => {
                         log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);
@@ -139,8 +153,8 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                     },
                 };
                 let entry = match req.action {
-                    BestOrdersAction::Buy => order.as_rpc_entry_ask(address, false),
-                    BestOrdersAction::Sell => order.as_rpc_entry_bid(address, false),
+                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, false),
+                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, false),
                 };
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
@@ -151,4 +165,121 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     Response::builder()
         .body(json::to_vec(&res).expect("Serialization failed"))
         .map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(test)]
+mod best_orders_tests {
+    use common::new_uuid;
+    use keys::AddressFormat;
+    use rmp_serde::decode::Error;
+    use uuid::Uuid;
+
+    use super::super::OrderbookItem;
+    use super::*;
+
+    #[test]
+    fn check_best_orders_res_deserialize_to_old() {
+        type TrieProof = Vec<Vec<u8>>;
+        #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+        struct OrderbookItemOld {
+            pubkey: String,
+            base: String,
+            rel: String,
+            price: BigRational,
+            max_volume: BigRational,
+            min_volume: BigRational,
+            uuid: Uuid,
+            created_at: u64,
+        }
+
+        #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+        struct OrderbookItemWithProofOld {
+            order: OrderbookItemOld,
+            last_message_payload: Vec<u8>,
+            proof: TrieProof,
+        }
+
+        #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+        struct BestOrdersResOld {
+            orders: HashMap<String, Vec<OrderbookItemWithProofOld>>,
+        }
+
+        let uuid = new_uuid();
+
+        let mut best_order_res_new_orders = HashMap::new();
+        best_order_res_new_orders.insert(String::from("RICK"), vec![OrderbookItemWithProof {
+            order: OrderbookItem {
+                pubkey: "03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed".into(),
+                base: "tBTC".into(),
+                rel: "RICK".into(),
+                price: BigRational::from_integer(1.into()),
+                max_volume: BigRational::from_integer(2.into()),
+                min_volume: BigRational::from_integer(1.into()),
+                uuid,
+                created_at: 1626959392,
+                base_protocol_info: None,
+                rel_protocol_info: None,
+            },
+            last_message_payload: vec![],
+            proof: vec![],
+        }]);
+        let best_order_res_new = BestOrdersRes {
+            orders: best_order_res_new_orders,
+        };
+
+        let mut best_order_res_old_orders = HashMap::new();
+        best_order_res_old_orders.insert(String::from("RICK"), vec![OrderbookItemWithProofOld {
+            order: OrderbookItemOld {
+                pubkey: "03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed".into(),
+                base: "tBTC".into(),
+                rel: "RICK".into(),
+                price: BigRational::from_integer(1.into()),
+                max_volume: BigRational::from_integer(2.into()),
+                min_volume: BigRational::from_integer(1.into()),
+                uuid,
+                created_at: 1626959392,
+            },
+            last_message_payload: vec![],
+            proof: vec![],
+        }]);
+        let best_order_res_old = BestOrdersResOld {
+            orders: best_order_res_old_orders,
+        };
+
+        // new format should be deserialized to old when protocol_infos are None
+        let serialized = rmp_serde::to_vec(&best_order_res_new).unwrap();
+        let deserialized: BestOrdersResOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        assert_eq!(best_order_res_old, deserialized);
+
+        // old format should be deserialized to new with protocol_infos as None
+        let serialized = rmp_serde::to_vec(&best_order_res_old).unwrap();
+        let deserialized: BestOrdersRes = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+        assert_eq!(best_order_res_new, deserialized);
+
+        let mut best_order_res_new_orders = HashMap::new();
+        best_order_res_new_orders.insert(String::from("RICK"), vec![OrderbookItemWithProof {
+            order: OrderbookItem {
+                pubkey: "03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed".into(),
+                base: "tBTC".into(),
+                rel: "RICK".into(),
+                price: BigRational::from_integer(1.into()),
+                max_volume: BigRational::from_integer(2.into()),
+                min_volume: BigRational::from_integer(1.into()),
+                uuid,
+                created_at: 1626959392,
+                base_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Segwit).unwrap()),
+                rel_protocol_info: Some(rmp_serde::to_vec(&AddressFormat::Standard).unwrap()),
+            },
+            last_message_payload: vec![],
+            proof: vec![],
+        }]);
+        let best_order_res_new = BestOrdersRes {
+            orders: best_order_res_new_orders,
+        };
+
+        // old format can't be deserialized from new when protocol_infos are present
+        let serialized = rmp_serde::to_vec(&best_order_res_new).unwrap();
+        let deserialized: Result<BestOrdersResOld, Error> = rmp_serde::from_read_ref(serialized.as_slice());
+        assert!(deserialized.is_err());
+    }
 }

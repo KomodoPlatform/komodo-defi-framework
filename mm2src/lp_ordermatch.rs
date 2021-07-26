@@ -36,6 +36,7 @@ use gstuff::slurp;
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::{Hasher, EMPTY_PREFIX};
 use http::Response;
+use keys::AddressFormat;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use num_rational::BigRational;
@@ -100,7 +101,19 @@ impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
             min_volume: order.min_volume,
             uuid: order.uuid.into(),
             created_at: order.created_at,
+            base_protocol_info: order.base_protocol_info,
+            rel_protocol_info: order.rel_protocol_info,
         }
+    }
+}
+
+pub fn addr_format_from_protocol_info(protocol_info: &Option<Vec<u8>>) -> AddressFormat {
+    match protocol_info {
+        Some(info) => match rmp_serde::from_read_ref::<_, AddressFormat>(info) {
+            Ok(format) => format,
+            Err(_) => AddressFormat::Standard,
+        },
+        None => AddressFormat::Standard,
     }
 }
 
@@ -238,6 +251,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let request = OrdermatchRequest::GetOrderbook {
         base: base.to_string(),
         rel: rel.to_string(),
+        version: OrdermatchRequestVersion::V2,
     };
 
     let response = try_s!(request_any_relay::<GetOrderbookRes>(ctx.clone(), P2PRequest::Ordermatch(request)).await);
@@ -396,11 +410,23 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum OrdermatchRequestVersion {
+    V1,
+    V2,
+}
+
+impl Default for OrdermatchRequestVersion {
+    fn default() -> Self { OrdermatchRequestVersion::V1 }
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum OrdermatchRequest {
     /// Get an orderbook for the given pair.
     GetOrderbook {
         base: String,
         rel: String,
+        #[serde(default)]
+        version: OrdermatchRequestVersion,
     },
     /// Sync specific pubkey orderbook state if our known Patricia trie state doesn't match the latest keep alive message
     SyncPubkeyOrderbookState {
@@ -412,6 +438,8 @@ pub enum OrdermatchRequest {
         coin: String,
         action: BestOrdersAction,
         volume: BigRational,
+        #[serde(default)]
+        version: OrdermatchRequestVersion,
     },
     OrderbookDepth {
         pairs: Vec<(String, String)>,
@@ -458,14 +486,19 @@ impl TryFromBytes for Uuid {
 pub async fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
     log::debug!("Got ordermatch request {:?}", request);
     match request {
-        OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel).await,
+        OrdermatchRequest::GetOrderbook { base, rel, version } => {
+            process_get_orderbook_request(ctx, base, rel, version).await
+        },
         OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
             let response = process_sync_pubkey_orderbook_state(ctx, pubkey, trie_roots).await;
             response.map(|res| res.map(|r| encode_message(&r).expect("Serialization failed")))
         },
-        OrdermatchRequest::BestOrders { coin, action, volume } => {
-            best_orders::process_best_orders_p2p_request(ctx, coin, action, volume).await
-        },
+        OrdermatchRequest::BestOrders {
+            coin,
+            action,
+            volume,
+            version,
+        } => best_orders::process_best_orders_p2p_request(ctx, coin, action, volume, version).await,
         OrdermatchRequest::OrderbookDepth { pairs } => {
             orderbook_depth::process_orderbook_depth_p2p_request(ctx, pairs).await
         },
@@ -490,7 +523,12 @@ struct GetOrderbookRes {
     pubkey_orders: HashMap<String, GetOrderbookPubkeyItem>,
 }
 
-async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Result<Option<Vec<u8>>, String> {
+async fn process_get_orderbook_request(
+    ctx: MmArc,
+    base: String,
+    rel: String,
+    version: OrdermatchRequestVersion,
+) -> Result<Option<Vec<u8>>, String> {
     fn get_pubkeys_orders(orderbook: &Orderbook, base: String, rel: String) -> (usize, HashMap<String, PubkeyOrders>) {
         let asks = orderbook.unordered.get(&(base.clone(), rel.clone()));
         let bids = orderbook.unordered.get(&(rel, base));
@@ -531,9 +569,23 @@ async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) ->
                 pubkey
             ))?;
 
+            let filtered_orders: Vec<(Uuid, OrderbookItem)> = orders
+                .into_iter()
+                .filter_map(|(uuid, order)| {
+                    if version == OrdermatchRequestVersion::V1
+                        && (order.base_protocol_info.is_some() || order.base_protocol_info.is_some())
+                    {
+                        log::debug!("Order {} address format is not supported by receiver", order.uuid);
+                        None
+                    } else {
+                        Some((uuid, order))
+                    }
+                })
+                .collect::<Vec<_>>();
+
             let item = GetOrderbookPubkeyItem {
                 last_keep_alive: pubkey_state.last_keep_alive,
-                orders,
+                orders: filtered_orders,
                 // TODO save last signed payload to pubkey state
                 last_signed_pubkey_payload: vec![],
             };
@@ -721,7 +773,12 @@ fn test_parse_orderbook_pair_from_topic() {
     assert_eq!(None, parse_orderbook_pair_from_topic("orbk/BTC:"));
 }
 
-async fn maker_order_created_p2p_notify(ctx: MmArc, order: &MakerOrder) {
+async fn maker_order_created_p2p_notify(
+    ctx: MmArc,
+    order: &MakerOrder,
+    base_protocol_info: Option<Vec<u8>>,
+    rel_protocol_info: Option<Vec<u8>>,
+) {
     let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
     let message = new_protocol::MakerOrderCreated {
         uuid: order.uuid.into(),
@@ -734,6 +791,8 @@ async fn maker_order_created_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         created_at: now_ms() / 1000,
         timestamp: now_ms() / 1000,
         pair_trie_root: H64::default(),
+        base_protocol_info,
+        rel_protocol_info,
     };
 
     let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
@@ -869,6 +928,12 @@ pub struct TakerRequest {
     #[serde(default)]
     match_by: MatchBy,
     conf_settings: Option<OrderConfirmationsSettings>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 impl TakerRequest {
@@ -887,6 +952,8 @@ impl TakerRequest {
             dest_pub_key: Default::default(),
             match_by: message.match_by.into(),
             conf_settings: Some(message.conf_settings),
+            base_protocol_info: message.base_protocol_info,
+            rel_protocol_info: message.rel_protocol_info,
         }
     }
 
@@ -916,6 +983,8 @@ impl From<TakerRequest> for new_protocol::OrdermatchMessage {
             uuid: taker_request.uuid.into(),
             match_by: taker_request.match_by.into(),
             conf_settings: taker_request.conf_settings.unwrap(),
+            base_protocol_info: taker_request.base_protocol_info,
+            rel_protocol_info: taker_request.rel_protocol_info,
         })
     }
 }
@@ -1133,6 +1202,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
+                base_protocol_info: self.base_coin.coin_protocol_info(),
+                rel_protocol_info: self.rel_coin.coin_protocol_info(),
             },
             matches: Default::default(),
             min_volume,
@@ -1158,6 +1229,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
+                base_protocol_info: self.base_coin.coin_protocol_info(),
+                rel_protocol_info: self.rel_coin.coin_protocol_info(),
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -1718,6 +1791,12 @@ pub struct MakerReserved {
     sender_pubkey: H256Json,
     dest_pub_key: H256Json,
     conf_settings: Option<OrderConfirmationsSettings>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 impl MakerReserved {
@@ -1741,6 +1820,8 @@ impl MakerReserved {
             sender_pubkey,
             dest_pub_key: Default::default(),
             conf_settings: Some(message.conf_settings),
+            base_protocol_info: message.base_protocol_info,
+            rel_protocol_info: message.rel_protocol_info,
         }
     }
 }
@@ -1755,6 +1836,8 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             taker_order_uuid: maker_reserved.taker_order_uuid.into(),
             maker_order_uuid: maker_reserved.maker_order_uuid.into(),
             conf_settings: maker_reserved.conf_settings.unwrap(),
+            base_protocol_info: maker_reserved.base_protocol_info,
+            rel_protocol_info: maker_reserved.rel_protocol_info,
         })
     }
 }
@@ -2471,7 +2554,17 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             spawn({
                                 let ctx = ctx.clone();
                                 async move {
-                                    maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                    if let Ok(Some((base, rel))) =
+                                        find_pair(&ctx, &maker_order.base, &maker_order.rel).await
+                                    {
+                                        maker_order_created_p2p_notify(
+                                            ctx,
+                                            &maker_order,
+                                            base.coin_protocol_info(),
+                                            rel.coin_protocol_info(),
+                                        )
+                                        .await;
+                                    }
                                 }
                             });
                         } else {
@@ -2564,7 +2657,13 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                                 log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
                             }
                         }
-                        maker_order_created_p2p_notify(ctx.clone(), order).await;
+                        maker_order_created_p2p_notify(
+                            ctx.clone(),
+                            order,
+                            base.coin_protocol_info(),
+                            rel.coin_protocol_info(),
+                        )
+                        .await;
                     }
                 }
             }
@@ -2593,10 +2692,17 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         Entry::Vacant(_) => return,
         Entry::Occupied(entry) => entry.into_mut(),
     };
+    let (base_coin, rel_coin) = match find_pair(&ctx, &reserved_msg.base, &reserved_msg.rel).await {
+        Ok(Some(c)) => c,
+        _ => return, // attempt to match with deactivated coin
+    };
 
     // send "connect" message if reserved message targets our pubkey AND
     // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
-    if my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty() {
+    if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
+        && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info)
+        && rel_coin.is_coin_protocol_supported(&reserved_msg.rel_protocol_info)
+    {
         let connect = TakerConnect {
             sender_pubkey: H256Json::from(our_public_id.bytes),
             dest_pub_key: reserved_msg.sender_pubkey.clone(),
@@ -2673,16 +2779,15 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 
     for (uuid, order) in filtered {
         if let OrderMatchResult::Matched((base_amount, rel_amount)) = order.match_with_request(&taker_request) {
-            let base_coin = match lp_coinfind(&ctx, &order.base).await {
-                Ok(Some(c)) => c,
-                _ => return, // attempt to match with deactivated coin
-            };
-            let rel_coin = match lp_coinfind(&ctx, &order.rel).await {
+            let (base_coin, rel_coin) = match find_pair(&ctx, &taker_request.base, &taker_request.rel).await {
                 Ok(Some(c)) => c,
                 _ => return, // attempt to match with deactivated coin
             };
 
-            if !order.matches.contains_key(&taker_request.uuid) {
+            if !order.matches.contains_key(&taker_request.uuid)
+                && base_coin.is_coin_protocol_supported(&taker_request.base_protocol_info)
+                && rel_coin.is_coin_protocol_supported(&taker_request.rel_protocol_info)
+            {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey.clone(),
                     sender_pubkey: our_public_id,
@@ -2700,6 +2805,8 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
+                    base_protocol_info: base_coin.coin_protocol_info(),
+                    rel_protocol_info: rel_coin.coin_protocol_info(),
                 };
                 let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -2997,6 +3104,12 @@ struct OrderbookItem {
     min_volume: BigRational,
     uuid: Uuid,
     created_at: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -3041,6 +3154,74 @@ impl OrderbookItem {
 
         if let Some(new_min_volume) = msg.new_min_volume() {
             self.min_volume = new_min_volume.into();
+        }
+    }
+
+    fn as_rpc_best_orders_buy(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+        let price_mm = MmNumber::from(self.price.clone());
+        let max_vol_mm = MmNumber::from(self.max_volume.clone());
+        let min_vol_mm = MmNumber::from(self.min_volume.clone());
+
+        let base_max_volume = max_vol_mm.clone().into();
+        let base_min_volume = min_vol_mm.clone().into();
+        let rel_max_volume = (&max_vol_mm * &price_mm).into();
+        let rel_min_volume = (&min_vol_mm * &price_mm).into();
+
+        RpcOrderbookEntry {
+            coin: self.rel.clone(),
+            address,
+            price: price_mm.to_decimal(),
+            price_rat: price_mm.to_ratio(),
+            price_fraction: price_mm.to_fraction(),
+            max_volume: max_vol_mm.to_decimal(),
+            max_volume_rat: max_vol_mm.to_ratio(),
+            max_volume_fraction: max_vol_mm.to_fraction(),
+            min_volume: min_vol_mm.to_decimal(),
+            min_volume_rat: min_vol_mm.to_ratio(),
+            min_volume_fraction: min_vol_mm.to_fraction(),
+            pubkey: self.pubkey.clone(),
+            age: (now_ms() as i64 / 1000),
+            zcredits: 0,
+            uuid: self.uuid,
+            is_mine,
+            base_max_volume,
+            base_min_volume,
+            rel_max_volume,
+            rel_min_volume,
+        }
+    }
+
+    fn as_rpc_best_orders_sell(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+        let price_mm = MmNumber::from(1i32) / self.price.clone().into();
+        let max_vol_mm = MmNumber::from(self.max_volume.clone());
+        let min_vol_mm = MmNumber::from(self.min_volume.clone());
+
+        let base_max_volume = (&max_vol_mm / &price_mm).into();
+        let base_min_volume = (&min_vol_mm / &price_mm).into();
+        let rel_max_volume = max_vol_mm.clone().into();
+        let rel_min_volume = min_vol_mm.clone().into();
+
+        RpcOrderbookEntry {
+            coin: self.base.clone(),
+            address,
+            price: price_mm.to_decimal(),
+            price_rat: price_mm.to_ratio(),
+            price_fraction: price_mm.to_fraction(),
+            max_volume: max_vol_mm.to_decimal(),
+            max_volume_rat: max_vol_mm.to_ratio(),
+            max_volume_fraction: max_vol_mm.to_fraction(),
+            min_volume: min_vol_mm.to_decimal(),
+            min_volume_rat: min_vol_mm.to_ratio(),
+            min_volume_fraction: min_vol_mm.to_fraction(),
+            pubkey: self.pubkey.clone(),
+            age: (now_ms() as i64 / 1000),
+            zcredits: 0,
+            uuid: self.uuid,
+            is_mine,
+            base_max_volume,
+            base_min_volume,
+            rel_max_volume,
+            rel_min_volume,
         }
     }
 
@@ -3429,7 +3610,13 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let request_orderbook = false;
     try_s!(subscribe_to_orderbook_topic(&ctx, &new_order.base, &new_order.rel, request_orderbook).await);
     save_my_new_maker_order(&ctx, &new_order);
-    maker_order_created_p2p_notify(ctx.clone(), &new_order).await;
+    maker_order_created_p2p_notify(
+        ctx.clone(),
+        &new_order,
+        base_coin.coin_protocol_info(),
+        rel_coin.coin_protocol_info(),
+    )
+    .await;
     let rpc_result = MakerOrderForRpc::from(&new_order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     my_orders.insert(new_order.uuid, new_order);

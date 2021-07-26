@@ -1350,22 +1350,6 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
     Box::new(coin.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
 }
 
-pub fn address_from_pubkey_str<T>(coin: &T, pubkey: &str) -> Result<String, String>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
-{
-    let pubkey_bytes = try_s!(hex::decode(pubkey));
-    let addr = try_s!(address_from_raw_pubkey(
-        &pubkey_bytes,
-        coin.as_ref().conf.pub_addr_prefix,
-        coin.as_ref().conf.pub_t_addr_prefix,
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        coin.as_ref().my_address.addr_format.clone()
-    ));
-    addr.display_address()
-}
-
 pub fn display_priv_key(coin: &UtxoCoinFields) -> String { format!("{}", coin.key_pair.private()) }
 
 pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
@@ -2291,6 +2275,17 @@ pub fn set_requires_notarization(coin: &UtxoCoinFields, requires_nota: bool) {
     coin.conf
         .requires_notarization
         .store(requires_nota, AtomicOrderding::Relaxed);
+}
+
+pub fn coin_protocol_info(coin: &UtxoCoinFields) -> Option<Vec<u8>> {
+    Some(rmp_serde::to_vec(&coin.my_address.addr_format).unwrap())
+}
+
+pub fn is_coin_protocol_supported(coin: &UtxoCoinFields, info: &Option<Vec<u8>>) -> bool {
+    match info {
+        Some(format) => rmp_serde::from_read_ref::<_, UtxoAddressFormat>(format).is_ok(),
+        None => !coin.my_address.addr_format.is_segwit(),
+    }
 }
 
 #[allow(clippy::needless_lifetimes)]

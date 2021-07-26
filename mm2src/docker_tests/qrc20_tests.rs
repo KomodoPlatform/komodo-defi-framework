@@ -1828,6 +1828,86 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
 }
 
+pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
+    let native = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "address_format": {
+                "format": "segwit",
+            },
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
+    json::from_str(&native.1).unwrap()
+}
+
+#[test]
+fn segwit_address_in_the_orderbook() {
+    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
+    let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+
+    let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
+    let coins = json! ([
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt"},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+    ]);
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
+    block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+    let enable_qtum_res = block_on(enable_native_segwit(&mm, "QTUM"));
+    let enable_qtum_res: EnableElectrumResponse = json::from_value(enable_qtum_res).unwrap();
+    let segwit_addr = enable_qtum_res.address;
+
+    fill_address(&coin, &segwit_addr, 1000.into(), 30);
+
+    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "QTUM",
+        "rel": "MYCOIN",
+        "price": 1,
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let orderbook = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "QTUM",
+        "rel": "MYCOIN",
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", rc.1);
+
+    let orderbook: OrderbookResponse = json::from_str(&orderbook.1).unwrap();
+    assert_eq!(orderbook.asks[0].coin, "QTUM");
+    assert_eq!(orderbook.asks[0].address, segwit_addr);
+    block_on(mm.stop()).unwrap();
+}
+
 #[test]
 fn test_trade_qrc20() { trade_base_rel(("QICK", "QORTY")); }
 

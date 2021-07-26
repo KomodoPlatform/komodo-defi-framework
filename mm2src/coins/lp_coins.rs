@@ -44,6 +44,7 @@ use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMut
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
+use keys::AddressFormat as UtxoAddressFormat;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Deserializer};
 use serde_json::{self as json, Value as Json};
@@ -339,8 +340,6 @@ pub trait MarketCoinOps {
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
-
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
 
     fn display_priv_key(&self) -> String;
 
@@ -886,6 +885,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
+
+    /// Get some of the coin config info in serialized format for p2p messaging.
+    fn coin_protocol_info(&self) -> Option<Vec<u8>>;
+
+    /// Check if serialized coin protocol info is supported by current version.
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
 #[derive(Clone, Debug)]
@@ -1671,14 +1676,19 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
     Ok(try_s!(Response::builder().body(response)))
 }
 
-pub fn address_by_coin_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+pub fn address_by_coin_conf_and_pubkey_str(
+    coin: &str,
+    conf: &Json,
+    pubkey: &str,
+    addr_format: UtxoAddressFormat,
+) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } => {
-            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey)
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey),
+        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),
     }
 }

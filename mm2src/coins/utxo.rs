@@ -1996,7 +1996,12 @@ pub fn output_script(address: &Address) -> Script {
     }
 }
 
-pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+pub fn address_by_conf_and_pubkey_str(
+    coin: &str,
+    conf: &Json,
+    pubkey: &str,
+    addr_format: UtxoAddressFormat,
+) -> Result<String, String> {
     let null = Json::Null;
     let conf_builder = UtxoConfBuilder::new(conf, &null, coin);
     let utxo_conf = try_s!(conf_builder.build());
@@ -2008,8 +2013,8 @@ pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> 
         t_addr_prefix: utxo_conf.pub_t_addr_prefix,
         hash,
         checksum_type: utxo_conf.checksum_type,
-        hrp: utxo_conf.bech32_hrp.clone(),
-        addr_format: utxo_conf.default_address_format,
+        hrp: utxo_conf.bech32_hrp,
+        addr_format,
     };
     address.display_address()
 }
