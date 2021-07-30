@@ -3804,7 +3804,7 @@ struct OrderForRpcWithCancellationReason<'a> {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+pub async fn order_status(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
     let res = json!({
         "error": format!("'order_status' is only supported in native mode"),
     });

@@ -42,16 +42,24 @@ fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: &NodeVersionSt
     crate::mm2::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| ERRL!("{}", e))
 }
 
+#[cfg(target_arch = "wasm32")]
+fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
+
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
     crate::mm2::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| ERRL!("{}", e))
 }
 
 #[cfg(target_arch = "wasm32")]
-fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
-
-#[cfg(target_arch = "wasm32")]
-pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {}
+pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
+    let res = json!({
+        "error": format!("'add_node_to_version_stat' is only supported in native mode"),
+    });
+    Response::builder()
+        .status(404)
+        .body(json::to_vec(&res).expect("Serialization failed"))
+        .map_err(|e| ERRL!("{}", e))
+}
 
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
@@ -81,7 +89,15 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> Result<Response<
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {}
+pub async fn remove_node_from_version_stat(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
+    let res = json!({
+        "error": format!("'remove_node_from_version_stat' is only supported in native mode"),
+    });
+    Response::builder()
+        .status(404)
+        .body(json::to_vec(&res).expect("Serialization failed"))
+        .map_err(|e| ERRL!("{}", e))
+}
 
 /// Removes node info. from db to skip collecting stats for this node
 #[cfg(not(target_arch = "wasm32"))]
@@ -124,7 +140,15 @@ pub async fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Re
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {}
+pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
+    let res = json!({
+        "error": format!("'start_version_stat_collection' is only supported in native mode"),
+    });
+    Response::builder()
+        .status(404)
+        .body(json::to_vec(&res).expect("Serialization failed"))
+        .map_err(|e| ERRL!("{}", e))
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -140,6 +164,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> Result<Resp
         .map_err(|e| ERRL!("{}", e))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
     use crate::mm2::database::stats_nodes::{select_peers_addresses, select_peers_names};
 
