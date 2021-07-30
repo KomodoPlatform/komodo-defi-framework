@@ -39,7 +39,7 @@ use std::ptr::null;
 use std::str;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
-use self::lp_native_dex::{lp_init, lp_ports};
+use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -51,6 +51,9 @@ pub mod database;
 #[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
 #[path = "lp_swap.rs"] pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
+
+#[path = "lp_stats.rs"] pub mod lp_stats;
+use self::lp_stats::lp_ports;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 #[path = "mm2_tests.rs"]

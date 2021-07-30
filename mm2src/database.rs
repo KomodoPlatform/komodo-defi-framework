@@ -4,6 +4,7 @@
 pub mod database_common;
 #[path = "database/my_orders.rs"] pub mod my_orders;
 #[path = "database/my_swaps.rs"] pub mod my_swaps;
+#[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
 use crate::CREATE_MY_SWAPS_TABLE;
@@ -71,6 +72,13 @@ fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_spli
 
 fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
 
+fn migration_6() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        (stats_nodes::CREATE_NODES_TABLE, vec![]),
+        (stats_nodes::CREATE_STATS_NODES_TABLE, vec![]),
+    ]
+}
+
 fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx)),
@@ -78,6 +86,7 @@ fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(
         3 => Some(migration_3()),
         4 => Some(migration_4()),
         5 => Some(migration_5()),
+        6 => Some(migration_6()),
         _ => None,
     }
 }

@@ -117,6 +117,12 @@ pub enum AdexBehaviourCmd {
         req: Vec<u8>,
         response_tx: oneshot::Sender<Vec<(PeerId, AdexResponse)>>,
     },
+    /// Add addresses to peer exchange then request peers and collect all their responses.
+    RequestAddresses {
+        req: Vec<u8>,
+        peers_addresses: Vec<(String, String)>,
+        response_tx: oneshot::Sender<Vec<(PeerId, AdexResponse)>>,
+    },
     /// Send a response using a `response_channel`.
     SendResponse {
         /// Response to a request.
@@ -284,6 +290,36 @@ impl AtomicDexBehaviour {
                 let relays = self.gossipsub.get_relay_mesh();
                 // spawn the `request_peers` future
                 let future = request_peers(relays, req, self.request_response.sender(), response_tx);
+                self.spawn(future);
+            },
+            AdexBehaviourCmd::RequestAddresses {
+                req,
+                peers_addresses,
+                response_tx,
+            } => {
+                let peers = peers_addresses
+                    .into_iter()
+                    .filter_map(|(peer, address)| match peer.parse() {
+                        Ok(p) => {
+                            let multi_address = match Multiaddr::from_str(&address) {
+                                Ok(addr) => addr,
+                                Err(e) => {
+                                    error!("Error on parse address {}: {:?}", address, e);
+                                    return None;
+                                },
+                            };
+                            let mut addresses = HashSet::new();
+                            addresses.insert(multi_address);
+                            self.peers_exchange.add_peer_addresses(&p, addresses);
+                            Some(p)
+                        },
+                        Err(e) => {
+                            error!("Error on parse peer id {:?}: {:?}", peer, e);
+                            None
+                        },
+                    })
+                    .collect();
+                let future = request_peers(peers, req, self.request_response.sender(), response_tx);
                 self.spawn(future);
             },
             AdexBehaviourCmd::SendResponse { res, response_channel } => {
@@ -770,7 +806,7 @@ pub fn start_gossipsub(
 /// If te `addr` is in the "/ip4/{addr}/tcp/{port}" format then parse the `addr` immediately to the `Multiaddr`,
 /// else construct the "/ip4/{addr}/tcp/{port}" from `addr` and `port` values.
 #[cfg(test)]
-fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
+pub fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
     if addr.contains("/ip4/") && addr.contains("/tcp/") {
         addr.parse().unwrap()
     } else {
@@ -780,7 +816,9 @@ fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
 
 /// The addr is expected to be an IP of the relay
 #[cfg(not(test))]
-fn parse_relay_address(addr: String, port: u16) -> Multiaddr { format!("/ip4/{}/tcp/{}", addr, port).parse().unwrap() }
+pub fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
+    format!("/ip4/{}/tcp/{}", addr, port).parse().unwrap()
+}
 
 /// Request the peers sequential until a `PeerResponse::Ok()` will not be received.
 async fn request_any_peer(

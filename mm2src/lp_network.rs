@@ -28,11 +28,12 @@ use mm2_libp2p::{decode_message, encode_message, GossipsubMessage, MessageId, Pe
 use serde::de;
 use std::sync::Arc;
 
-use crate::mm2::{lp_ordermatch, lp_swap};
+use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 
 #[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
 pub enum P2PRequest {
     Ordermatch(lp_ordermatch::OrdermatchRequest),
+    NetworkInfo(lp_stats::NetworkInfoRequest),
 }
 
 pub struct P2PContext {
@@ -142,6 +143,7 @@ async fn process_p2p_request(
     let request = try_s!(decode_message::<P2PRequest>(&request));
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req).await,
+        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).await,
     };
 
     let res = match result {
@@ -219,6 +221,25 @@ pub async fn request_relays<T: de::DeserializeOwned>(
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd = AdexBehaviourCmd::RequestRelays {
         req: encoded,
+        response_tx,
+    };
+    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
+    let responses = try_s!(response_rx.await);
+    Ok(parse_peers_responses(responses))
+}
+
+pub async fn request_addresses<T: de::DeserializeOwned>(
+    ctx: MmArc,
+    req: P2PRequest,
+    peers_addresses: Vec<(String, String)>,
+) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
+    let encoded = try_s!(encode_message(&req));
+
+    let (response_tx, response_rx) = oneshot::channel();
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd = AdexBehaviourCmd::RequestAddresses {
+        req: encoded,
+        peers_addresses,
         response_tx,
     };
     try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
