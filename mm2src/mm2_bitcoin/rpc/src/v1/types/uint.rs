@@ -25,6 +25,7 @@ macro_rules! impl_uint {
             fn from_str(s: &str) -> Result<Self, Self::Err> { $other::from_str(s).map($name) }
         }
 
+        #[allow(clippy::from_over_into)]
         impl Into<$other> for $name {
             fn into(self) -> $other { self.0 }
         }

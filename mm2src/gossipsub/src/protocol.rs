@@ -115,7 +115,7 @@ impl Encoder for GossipsubCodec {
             .messages
             .into_iter()
             .map(|message| rpc_proto::Message {
-                from: Some(message.source.into_bytes()),
+                from: Some(message.source.to_bytes()),
                 data: Some(message.data),
                 seqno: Some(message.sequence_number.to_be_bytes().to_vec()),
                 topic_ids: message.topics.into_iter().map(TopicHash::into_string).collect(),
@@ -231,7 +231,7 @@ impl Decoder for GossipsubCodec {
                 ));
             }
             messages.push(GossipsubMessage {
-                source: PeerId::from_bytes(publish.from.unwrap_or_default())
+                source: PeerId::from_bytes(&publish.from.unwrap_or_default())
                     .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid Peer Id"))?,
                 data: publish.data.unwrap_or_default(),
                 sequence_number: BigEndian::read_u64(&seq_no),
@@ -324,8 +324,8 @@ impl std::fmt::Display for MessageId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) }
 }
 
-impl Into<String> for MessageId {
-    fn into(self) -> String { self.0 }
+impl From<MessageId> for String {
+    fn from(mid: MessageId) -> Self { mid.0 }
 }
 
 /// A message received by the gossipsub system.

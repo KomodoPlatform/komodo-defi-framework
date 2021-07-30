@@ -276,12 +276,12 @@ pub enum SwapEvent {
     Taker(TakerSwapEvent),
 }
 
-impl Into<SwapEvent> for MakerSwapEvent {
-    fn into(self) -> SwapEvent { SwapEvent::Maker(self) }
+impl From<MakerSwapEvent> for SwapEvent {
+    fn from(maker_event: MakerSwapEvent) -> Self { SwapEvent::Maker(maker_event) }
 }
 
-impl Into<SwapEvent> for TakerSwapEvent {
-    fn into(self) -> SwapEvent { SwapEvent::Taker(self) }
+impl From<TakerSwapEvent> for SwapEvent {
+    fn from(taker_event: TakerSwapEvent) -> Self { SwapEvent::Taker(taker_event) }
 }
 
 struct SwapsContext {
@@ -424,14 +424,7 @@ impl SwapConfirmationsSettings {
     pub fn requires_notarization(&self) -> bool { self.maker_coin_nota || self.taker_coin_nota }
 }
 
-fn coin_with_4x_locktime(ticker: &str) -> bool {
-    match ticker {
-        "BCH" => true,
-        "BTG" => true,
-        "SBTC" => true,
-        _ => false,
-    }
-}
+fn coin_with_4x_locktime(ticker: &str) -> bool { matches!(ticker, "BCH" | "BTG" | "SBTC") }
 
 #[derive(Debug)]
 pub enum AtomicLocktimeVersion {
@@ -795,12 +788,12 @@ pub struct SwapError {
     error: String,
 }
 
-impl Into<SwapError> for String {
-    fn into(self) -> SwapError { SwapError { error: self } }
+impl From<String> for SwapError {
+    fn from(error: String) -> Self { SwapError { error } }
 }
 
-impl Into<SwapError> for &str {
-    fn into(self) -> SwapError { SwapError { error: self.into() } }
+impl From<&str> for SwapError {
+    fn from(e: &str) -> Self { SwapError { error: e.to_owned() } }
 }
 
 #[derive(Serialize)]

@@ -95,6 +95,7 @@ pub struct ShieldedOutput {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum JoinSplitProof {
+    #[allow(clippy::upper_case_acronyms)]
     PHGR(ZkProof),
     Groth(ZkProofSapling),
 }
@@ -194,6 +195,7 @@ impl From<&'static str> for Transaction {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxHashAlgo {
     DSHA256,

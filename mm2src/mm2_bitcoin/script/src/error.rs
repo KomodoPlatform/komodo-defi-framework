@@ -62,6 +62,7 @@ pub enum Error {
     WitnessProgramWitnessEmpty,
     WitnessProgramMismatch,
     WitnessMalleated,
+    #[allow(clippy::upper_case_acronyms)]
     WitnessMalleatedP2SH,
     WitnessUnexpected,
     WitnessPubKeyType,

@@ -45,6 +45,7 @@ use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMut
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
+use keys::AddressFormat as UtxoAddressFormat;
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Deserializer};
 use serde_json::{self as json, Value as Json};
@@ -100,6 +101,7 @@ use tx_history_db::{TxHistoryDb, TxHistoryError, TxHistoryOps, TxHistoryResult};
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
+use crate::utxo::UnsupportedAddr;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 use z_coin::{z_coin_from_conf_and_request, ZCoin};
 
@@ -340,8 +342,6 @@ pub trait MarketCoinOps {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
-
     fn display_priv_key(&self) -> String;
 
     /// Get the minimum amount to send.
@@ -428,16 +428,16 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
     }
 }
 
-impl Into<TxFeeDetails> for EthTxFeeDetails {
-    fn into(self: EthTxFeeDetails) -> TxFeeDetails { TxFeeDetails::Eth(self) }
+impl From<EthTxFeeDetails> for TxFeeDetails {
+    fn from(eth_details: EthTxFeeDetails) -> Self { TxFeeDetails::Eth(eth_details) }
 }
 
-impl Into<TxFeeDetails> for UtxoFeeDetails {
-    fn into(self: UtxoFeeDetails) -> TxFeeDetails { TxFeeDetails::Utxo(self) }
+impl From<UtxoFeeDetails> for TxFeeDetails {
+    fn from(utxo_details: UtxoFeeDetails) -> Self { TxFeeDetails::Utxo(utxo_details) }
 }
 
-impl Into<TxFeeDetails> for Qrc20FeeDetails {
-    fn into(self: Qrc20FeeDetails) -> TxFeeDetails { TxFeeDetails::Qrc20(self) }
+impl From<Qrc20FeeDetails> for TxFeeDetails {
+    fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -731,6 +731,10 @@ impl From<CoinFindError> for WithdrawError {
     }
 }
 
+impl From<UnsupportedAddr> for WithdrawError {
+    fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
 impl WithdrawError {
     /// Construct [`WithdrawError`] from [`GenerateTxError`] using additional `coin` and `decimals`.
     pub fn from_generate_tx_error(gen_tx_err: GenerateTxError, coin: String, decimals: u8) -> WithdrawError {
@@ -882,6 +886,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
+
+    /// Get some of the coin config info in serialized format for p2p messaging.
+    fn coin_protocol_info(&self) -> Option<Vec<u8>>;
+
+    /// Check if serialized coin protocol info is supported by current version.
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
 #[derive(Clone, Debug)]
@@ -988,6 +998,7 @@ impl CoinsContext {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
@@ -1667,14 +1678,19 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
     Ok(try_s!(Response::builder().body(response)))
 }
 
-pub fn address_by_coin_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+pub fn address_by_coin_conf_and_pubkey_str(
+    coin: &str,
+    conf: &Json,
+    pubkey: &str,
+    addr_format: UtxoAddressFormat,
+) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } => {
-            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey)
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey),
+        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),
     }
 }

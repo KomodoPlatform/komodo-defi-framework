@@ -24,12 +24,12 @@ pub trait SwarmRuntimeOps {
 impl SwarmRuntimeOps for SwarmRuntime {
     fn new() -> Self { SwarmRuntime {} }
 
-    fn spawn<F>(&self, _future: F)
+    fn spawn<F>(&self, future: F)
     where
-        F: Future + Send + 'static,
+        F: Future + futures::FutureExt + Send + 'static,
         F::Output: Send + 'static,
     {
-        todo!()
+        wasm_bindgen_futures::spawn_local(future.map(|_| ()))
     }
 }
 

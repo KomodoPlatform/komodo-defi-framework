@@ -1,7 +1,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
-use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
+use crate::utxo::{output_script, sat_from_big_decimal};
 use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use bigdecimal::BigDecimal;
 use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
@@ -29,9 +29,9 @@ use http::{Request, StatusCode};
 use keys::Address;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
-use script::Builder;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, CoinVariant, CompactInteger, Reader};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
+                    SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
 use std::collections::hash_map::{Entry, HashMap};
 use std::fmt;
@@ -48,7 +48,7 @@ cfg_native! {
     use futures::io::Error;
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
     use tokio::net::TcpStream;
     use tokio_rustls::{client::TlsStream, TlsConnector};
     use tokio_rustls::webpki::DNSNameRef;
@@ -236,8 +236,7 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
 
     fn get_block_count(&self) -> UtxoRpcFut<u64>;
 
-    fn display_balance(&self, address: Address, address_format: &UtxoAddressFormat, decimals: u8)
-        -> RpcRes<BigDecimal>;
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
     fn estimate_fee_sat(
@@ -583,7 +582,11 @@ impl UtxoRpcClientOps for NativeClient {
     }
 
     fn send_transaction(&self, tx: &UtxoTx) -> Box<dyn Future<Item = H256Json, Error = String> + Send + 'static> {
-        let tx_bytes = BytesJson::from(serialize(tx));
+        let tx_bytes = if tx.has_witness() {
+            BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
+        } else {
+            BytesJson::from(serialize(tx))
+        };
         Box::new(self.send_raw_transaction(tx_bytes).map_err(|e| ERRL!("{}", e)))
     }
 
@@ -604,12 +607,7 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(self.0.get_block_count().map_to_mm_fut(UtxoRpcError::from))
     }
 
-    fn display_balance(
-        &self,
-        address: Address,
-        _address_format: &UtxoAddressFormat,
-        _decimals: u8,
-    ) -> RpcRes<BigDecimal> {
+    fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(
             self.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
                 .map(|unspents| {
@@ -950,6 +948,7 @@ pub enum ElectrumBlockHeader {
     V14(ElectrumBlockHeaderV14),
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum EstimateFeeMode {
     ECONOMICAL,
@@ -991,6 +990,7 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     result
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Deserialize, Serialize)]
 /// Deserializable Electrum protocol representation for RPC
 pub enum ElectrumProtocol {
@@ -1033,6 +1033,7 @@ pub struct ElectrumRpcRequest {
 }
 
 /// Electrum client configuration
+#[allow(clippy::upper_case_acronyms)]
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, Serialize)]
 enum ElectrumConfig {
@@ -1477,7 +1478,7 @@ impl ElectrumClient {
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for ElectrumClient {
     fn list_unspent(&self, address: &Address, _decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
-        let script = Builder::build_p2pkh(&address.hash);
+        let script = output_script(address);
         let script_hash = electrum_script_hash(&script);
         Box::new(
             self.scripthash_list_unspent(&hex::encode(script_hash))
@@ -1499,7 +1500,11 @@ impl UtxoRpcClientOps for ElectrumClient {
     }
 
     fn send_transaction(&self, tx: &UtxoTx) -> Box<dyn Future<Item = H256Json, Error = String> + Send + 'static> {
-        let bytes = BytesJson::from(serialize(tx));
+        let bytes = if tx.has_witness() {
+            BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
+        } else {
+            BytesJson::from(serialize(tx))
+        };
         Box::new(self.blockchain_transaction_broadcast(bytes).map_err(|e| ERRL!("{}", e)))
     }
 
@@ -1532,16 +1537,8 @@ impl UtxoRpcClientOps for ElectrumClient {
         )
     }
 
-    fn display_balance(
-        &self,
-        address: Address,
-        address_format: &UtxoAddressFormat,
-        decimals: u8,
-    ) -> RpcRes<BigDecimal> {
-        let hash = match address_format {
-            UtxoAddressFormat::Segwit => electrum_script_hash(&Builder::build_p2wpkh(&address.hash)),
-            _ => electrum_script_hash(&Builder::build_p2pkh(&address.hash)),
-        };
+    fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
+        let hash = electrum_script_hash(&output_script(&address));
         let hash_str = hex::encode(hash);
         Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
             BigDecimal::from(result.confirmed + result.unconfirmed) / BigDecimal::from(10u64.pow(decimals as u32))
@@ -1770,7 +1767,7 @@ impl AsRef<TcpStream> for ElectrumStream {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl AsyncRead for ElectrumStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             ElectrumStream::Tcp(stream) => AsyncRead::poll_read(Pin::new(stream), cx, buf),
             ElectrumStream::Tls(stream) => AsyncRead::poll_read(Pin::new(stream), cx, buf),
@@ -1929,9 +1926,9 @@ async fn connect_loop(
         }
 
         select! {
-            last_chunk = last_chunk_f => { reset_tx_and_continue!(); },
-            recv = recv_f => { reset_tx_and_continue!(); },
-            send = send_f => { reset_tx_and_continue!(); },
+            _last_chunk = last_chunk_f => { reset_tx_and_continue!(); },
+            _recv = recv_f => { reset_tx_and_continue!(); },
+            _send = send_f => { reset_tx_and_continue!(); },
         }
     }
 }
@@ -2029,9 +2026,9 @@ async fn connect_loop(
         }
 
         select! {
-            last_chunk = last_chunk_fut => { reset_tx_and_continue!(); },
-            incoming = incoming_fut => { reset_tx_and_continue!(); },
-            outgoing = outgoing_fut => { reset_tx_and_continue!(); },
+            _last_chunk = last_chunk_fut => { reset_tx_and_continue!(); },
+            _incoming = incoming_fut => { reset_tx_and_continue!(); },
+            _outgoing = outgoing_fut => { reset_tx_and_continue!(); },
         }
     }
 }

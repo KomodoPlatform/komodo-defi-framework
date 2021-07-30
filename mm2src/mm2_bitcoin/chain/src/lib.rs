@@ -28,4 +28,4 @@ pub use transaction::{JoinSplit, OutPoint, ShieldedOutput, ShieldedSpend, Transa
 
 pub use read_and_hash::{HashedData, ReadAndHash};
 
-pub type ShortTransactionID = hash::H48;
+pub type ShortTransactionId = hash::H48;

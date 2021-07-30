@@ -186,8 +186,6 @@ impl MarketCoinOps for ZCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, _pubkey: &str) -> Result<String, String> { todo!() }
-
     fn display_priv_key(&self) -> String {
         encode_extended_spending_key(
             z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,
@@ -510,6 +508,12 @@ impl MmCoin for ZCoin {
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+    }
 }
 
 #[async_trait]
@@ -526,12 +530,8 @@ impl UtxoCommonOps for ZCoin {
 
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
-    fn display_address(&self, address: &Address) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo_arc.conf, address)
-    }
-
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::address_from_str(&self.utxo_arc.conf, address)
+        utxo_common::checked_address_from_str(&self.utxo_arc.conf, address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> { utxo_common::get_current_mtp(&self.utxo_arc).await }

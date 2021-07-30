@@ -5,6 +5,7 @@ use std::fmt;
 /// Script opcodes.
 #[repr(u8)]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum Opcode {
     // push value

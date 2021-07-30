@@ -78,7 +78,7 @@ impl Floodsub {
 
         for peer in self.connected_peers.keys() {
             self.events.push_back(NetworkBehaviourAction::NotifyHandler {
-                peer_id: peer.clone(),
+                peer_id: *peer,
                 handler: NotifyHandler::Any,
                 event: FloodsubRpc {
                     messages: Vec::new(),
@@ -109,7 +109,7 @@ impl Floodsub {
 
         for peer in self.connected_peers.keys() {
             self.events.push_back(NetworkBehaviourAction::NotifyHandler {
-                peer_id: peer.clone(),
+                peer_id: *peer,
                 handler: NotifyHandler::Any,
                 event: FloodsubRpc {
                     messages: Vec::new(),
@@ -154,7 +154,7 @@ impl Floodsub {
         check_self_subscriptions: bool,
     ) {
         let message = FloodsubMessage {
-            source: self.config.local_peer_id.clone(),
+            source: self.config.local_peer_id,
             data: data.into(),
             // If the sequence numbers are predictable, then an attacker could flood the network
             // with packets with the predetermined sequence numbers and absorb our legitimate
@@ -189,7 +189,7 @@ impl Floodsub {
             }
 
             self.events.push_back(NetworkBehaviourAction::NotifyHandler {
-                peer_id: peer_id.clone(),
+                peer_id: *peer_id,
                 handler: NotifyHandler::Any,
                 event: FloodsubRpc {
                     subscriptions: Vec::new(),
@@ -212,7 +212,7 @@ impl NetworkBehaviour for Floodsub {
         // We need to send our subscriptions to the newly-connected node.
         for topic in self.subscribed_topics.iter().cloned() {
             self.events.push_back(NetworkBehaviourAction::NotifyHandler {
-                peer_id: id.clone(),
+                peer_id: *id,
                 handler: NotifyHandler::Any,
                 event: FloodsubRpc {
                     messages: Vec::new(),
@@ -224,7 +224,7 @@ impl NetworkBehaviour for Floodsub {
             });
         }
 
-        self.connected_peers.insert(id.clone(), SmallVec::new());
+        self.connected_peers.insert(*id, SmallVec::new());
     }
 
     fn inject_disconnected(&mut self, id: &PeerId) {
@@ -251,7 +251,7 @@ impl NetworkBehaviour for Floodsub {
                     }
                     self.events
                         .push_back(NetworkBehaviourAction::GenerateEvent(FloodsubEvent::Subscribed {
-                            peer_id: propagation_source.clone(),
+                            peer_id: propagation_source,
                             topic: subscription.topic,
                         }));
                 },
@@ -261,7 +261,7 @@ impl NetworkBehaviour for Floodsub {
                     }
                     self.events
                         .push_back(NetworkBehaviourAction::GenerateEvent(FloodsubEvent::Unsubscribed {
-                            peer_id: propagation_source.clone(),
+                            peer_id: propagation_source,
                             topic: subscription.topic,
                         }));
                 },
@@ -302,7 +302,7 @@ impl NetworkBehaviour for Floodsub {
                     if let Some(pos) = rpcs_to_dispatch.iter().position(|(p, _)| p == peer_id) {
                         rpcs_to_dispatch[pos].1.messages.push(message.clone());
                     } else {
-                        rpcs_to_dispatch.push((peer_id.clone(), FloodsubRpc {
+                        rpcs_to_dispatch.push((*peer_id, FloodsubRpc {
                             subscriptions: Vec::new(),
                             messages: vec![message.clone()],
                         }));

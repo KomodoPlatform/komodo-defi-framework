@@ -465,7 +465,7 @@ impl Qrc20Coin {
     }
 
     /// Generate a UTXO output with a script_pubkey that calls standard QRC20 `approve` function.
-    pub fn approve_output(&self, spender: H160, amount: U256) -> Qrc20ABIResult<ContractCallOutput> {
+    pub fn approve_output(&self, spender: H160, amount: U256) -> Qrc20AbiResult<ContractCallOutput> {
         let function = eth::ERC20_CONTRACT.function("approve")?;
         let params = function.encode_input(&[Token::Address(spender), Token::Uint(amount)])?;
 
@@ -491,7 +491,7 @@ impl Qrc20Coin {
         secret_hash: &[u8],
         receiver_addr: H160,
         swap_contract_address: &H160,
-    ) -> Qrc20ABIResult<ContractCallOutput> {
+    ) -> Qrc20AbiResult<ContractCallOutput> {
         let params = self.erc20_payment_call_bytes(id, value, time_lock, secret_hash, receiver_addr)?;
 
         let gas_limit = QRC20_PAYMENT_GAS_LIMIT;
@@ -519,7 +519,7 @@ impl Qrc20Coin {
         time_lock: u32,
         secret_hash: &[u8],
         receiver_addr: H160,
-    ) -> Qrc20ABIResult<Vec<u8>> {
+    ) -> Qrc20AbiResult<Vec<u8>> {
         let function = eth::SWAP_CONTRACT.function("erc20Payment")?;
         Ok(function.encode_input(&[
             Token::FixedBytes(id),
@@ -539,7 +539,7 @@ impl Qrc20Coin {
         value: U256,
         secret: Vec<u8>,
         sender_addr: H160,
-    ) -> Qrc20ABIResult<ContractCallOutput> {
+    ) -> Qrc20AbiResult<ContractCallOutput> {
         let function = eth::SWAP_CONTRACT.function("receiverSpend")?;
         let params = function.encode_input(&[
             Token::FixedBytes(id),
@@ -574,7 +574,7 @@ impl Qrc20Coin {
         value: U256,
         secret_hash: Vec<u8>,
         receiver: H160,
-    ) -> Qrc20ABIResult<ContractCallOutput> {
+    ) -> Qrc20AbiResult<ContractCallOutput> {
         let function = eth::SWAP_CONTRACT.function("senderRefund")?;
 
         let params = function.encode_input(&[

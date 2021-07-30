@@ -15,7 +15,7 @@
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(negative_impls)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(drain_filter)]
 #![feature(const_fn)]
 
@@ -678,13 +678,13 @@ pub mod wio {
     use std::time::Duration;
     use tokio::runtime::Runtime;
 
-    fn start_core_thread() -> MM2Runtime { MM2Runtime(Runtime::new().unwrap()) }
+    fn start_core_thread() -> Mm2Runtime { Mm2Runtime(Runtime::new().unwrap()) }
 
-    pub struct MM2Runtime(pub Runtime);
+    pub struct Mm2Runtime(pub Runtime);
 
     lazy_static! {
         /// Shared asynchronous reactor.
-        pub static ref CORE: MM2Runtime = start_core_thread();
+        pub static ref CORE: Mm2Runtime = start_core_thread();
         /// Shared CPU pool to run intensive/sleeping requests on a separate thread.
         ///
         /// Deprecated, prefer the futures 0.3 `POOL` instead.
@@ -696,7 +696,7 @@ pub mod wio {
             .create().expect("!ThreadPool"));
     }
 
-    impl<Fut: std::future::Future<Output = ()> + Send + 'static> hyper::rt::Executor<Fut> for &MM2Runtime {
+    impl<Fut: std::future::Future<Output = ()> + Send + 'static> hyper::rt::Executor<Fut> for &Mm2Runtime {
         fn execute(&self, fut: Fut) { self.0.spawn(fut); }
     }
 
@@ -831,7 +831,8 @@ pub mod wio {
     lazy_static! {
         /// NB: With a shared client there is a possibility that keep-alive connections will be reused.
         pub static ref HYPER: Client<HttpsConnector<HttpConnector>> = {
-            let https = HttpsConnector::new();
+            // Please note there was a problem on iOS if [`HttpsConnector::with_native_roots`] is used instead.
+            let https = HttpsConnector::with_webpki_roots();
             Client::builder()
                 .executor(&*CORE)
                 // Hyper had a lot of Keep-Alive bugs over the years and I suspect
@@ -845,7 +846,7 @@ pub mod wio {
                 // Performance of Keep-Alive in the Hyper client is questionable as well,
                 // should measure it on a case-by-case basis when we need it.
                 .pool_max_idle_per_host(0)
-                .build (https)
+                .build(https)
         };
     }
 
@@ -1182,7 +1183,7 @@ pub async fn slurp_url(url: &str) -> SlurpRes {
 #[test]
 fn test_slurp_req() {
     let (status, headers, body) = block_on(slurp_url("https://httpbin.org/get")).unwrap();
-    assert!(status.is_success(), format!("{:?} {:?} {:?}", status, headers, body));
+    assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
 }
 
 /// Fetch URL by HTTPS and parse JSON response

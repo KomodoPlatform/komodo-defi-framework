@@ -36,8 +36,7 @@ impl DisplayLayout for Private {
     type Target = Vec<u8>;
 
     fn layout(&self) -> Self::Target {
-        let mut result = vec![];
-        result.push(self.prefix);
+        let mut result = vec![self.prefix];
         result.extend(&*self.secret);
         if self.compressed {
             result.push(1);

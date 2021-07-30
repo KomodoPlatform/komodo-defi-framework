@@ -42,7 +42,7 @@ parking_lot = { version = "0.11", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
 primitives = { path = "../mm2_bitcoin/primitives" }
-rand = { version = "0.7", features = ["std", "small_rng"] }
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
 serde = "1"
 serde_bytes = "0.11"
@@ -57,6 +57,7 @@ winapi = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
+getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
@@ -67,10 +68,10 @@ web-sys = { version = "0.3.4", features = ["console", "CloseEvent", "DomExceptio
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 chrono = "0.4"
 hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
-hyper = { version = "0.13" }
+hyper = { version = "0.14", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.20", default-features = false, features = ["webpki-tokio"] }
+hyper-rustls = { version = "0.22", default-features = false, features = ["webpki-tokio"] }
 libc = { version = "0.2" }
 log4rs = { version = "0.13" }
 metrics = { version = "0.12" }
@@ -78,7 +79,7 @@ metrics-runtime = { version = "0.13", default-features = false, features = ["met
 metrics-core = { version = "0.5" }
 metrics-util = { version = "0.3" }
 rusqlite = { version = "0.24.2", features = ["bundled"] }
-tokio = { version = "0.2.22", features = ["io-util", "rt-threaded", "stream", "tcp"] }
+tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
 [build-dependencies]
 cc = "1.0"

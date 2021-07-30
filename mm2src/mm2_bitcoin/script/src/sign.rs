@@ -99,6 +99,7 @@ pub struct UnsignedTransactionInput {
     pub previous_output: OutPoint,
     pub sequence: u32,
     pub amount: u64,
+    pub witness: Vec<Vec<u8>>,
 }
 
 /// Used for resigning and loading test transactions
@@ -108,10 +109,12 @@ impl From<TransactionInput> for UnsignedTransactionInput {
             previous_output: i.previous_output,
             sequence: i.sequence,
             amount: 0,
+            witness: i.script_witness.into_iter().map(Vec::from).collect(),
         }
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug)]
 pub enum SignerHashAlgo {
     SHA256,
@@ -127,9 +130,9 @@ impl From<TxHashAlgo> for SignerHashAlgo {
     }
 }
 
-impl Into<TxHashAlgo> for SignerHashAlgo {
-    fn into(self) -> TxHashAlgo {
-        match self {
+impl From<SignerHashAlgo> for TxHashAlgo {
+    fn from(algo: SignerHashAlgo) -> Self {
+        match algo {
             SignerHashAlgo::DSHA256 => TxHashAlgo::DSHA256,
             SignerHashAlgo::SHA256 => TxHashAlgo::SHA256,
         }
@@ -623,6 +626,7 @@ mod tests {
                 hash: previous_tx_hash,
             },
             amount: 0,
+            witness: vec![Vec::new()],
         };
 
         let output = TransactionOutput {

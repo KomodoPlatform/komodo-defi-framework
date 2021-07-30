@@ -105,7 +105,7 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
 
     register_callback(WasmCallback::with_js_function(log_cb));
     let fut = async move {
-        if LP_MAIN_RUNNING.compare_and_swap(false, true, Ordering::Relaxed) {
+        if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
             console_err!("lp_main already started!");
             return;
         }

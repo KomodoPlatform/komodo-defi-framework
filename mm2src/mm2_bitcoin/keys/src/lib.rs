@@ -3,10 +3,12 @@
 extern crate base58;
 extern crate bech32;
 extern crate bitcrypto as crypto;
+extern crate derive_more;
 extern crate primitives;
 extern crate rustc_hex as hex;
 extern crate secp256k1;
 extern crate serde;
+extern crate serde_derive;
 
 mod address;
 mod cashaddress;
@@ -21,7 +23,7 @@ mod signature;
 
 pub use primitives::{bytes, hash};
 
-pub use address::{Address, Type};
+pub use address::{Address, AddressFormat, Type};
 pub use cashaddress::{AddressType as CashAddrType, CashAddress};
 pub use display::DisplayLayout;
 pub use error::Error;

@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 const DEFAULT_PREFIX: NetworkPrefix = NetworkPrefix::BitcoinCash;
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AddressType {
     /// Pay to PubKey Hash

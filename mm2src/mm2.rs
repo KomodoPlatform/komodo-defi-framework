@@ -49,11 +49,9 @@ pub mod database;
 #[path = "lp_network.rs"] pub mod lp_network;
 
 #[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
+#[path = "lp_stats.rs"] pub mod lp_stats;
 #[path = "lp_swap.rs"] pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
-
-#[path = "lp_stats.rs"] pub mod lp_stats;
-use self::lp_stats::lp_ports;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 #[path = "mm2_tests.rs"]
@@ -96,14 +94,12 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
     }
 
     if conf["passphrase"].is_string() {
-        let netid = conf["netid"].as_u64().unwrap_or(0) as u16;
-        let (_, pubport, _) = try_s!(lp_ports(netid));
         let ctx = MmCtxBuilder::new()
             .with_conf(conf)
             .with_version(MM_VERSION.into())
             .into_mm_arc();
         ctx_cb(try_s!(ctx.ffi_handle()));
-        try_s!(lp_init(pubport, ctx).await);
+        try_s!(lp_init(ctx).await);
         Ok(())
     } else {
         ERR!("!passphrase")

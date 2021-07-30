@@ -56,7 +56,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
 
     register_callback(FfiCallback::with_ffi_function(log_cb));
     let rc = thread::Builder::new().name("lp_main".into()).spawn(move || {
-        if LP_MAIN_RUNNING.compare_and_swap(false, true, Ordering::Relaxed) {
+        if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
             log!("lp_main already started!");
             return;
         }
@@ -97,7 +97,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     register_callback(FfiCallback::with_ffi_function(log_cb));
 
     static RUNNING: AtomicBool = AtomicBool::new(false);
-    if RUNNING.compare_and_swap(false, true, Ordering::Relaxed) {
+    if let Err(true) = RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
         log!("mm2_test] Running already!");
         return -1;
     }

@@ -27,11 +27,7 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
         let balance = self
             .as_ref()
             .rpc_client
-            .display_balance(
-                self.as_ref().my_address.clone(),
-                &self.as_ref().conf.address_format,
-                self.as_ref().decimals,
-            )
+            .display_balance(self.as_ref().my_address.clone(), self.as_ref().decimals)
             .compat()
             .await?;
 
@@ -63,13 +59,30 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             },
             Err(e) => e.to_string(),
         };
+        let utxo_segwit_err = match Address::from_segwitaddress(
+            from,
+            self.as_ref().conf.checksum_type,
+            self.as_ref().my_address.prefix,
+            self.as_ref().my_address.t_addr_prefix,
+        ) {
+            Ok(addr) => {
+                let is_segwit =
+                    addr.hrp.is_some() && addr.hrp == self.as_ref().conf.bech32_hrp && self.as_ref().conf.segwit;
+                if is_segwit {
+                    return Ok(addr);
+                }
+                "Address has invalid hrp".to_string()
+            },
+            Err(e) => e,
+        };
         let contract_err = match contract_addr_from_str(from) {
             Ok(contract_addr) => return Ok(self.utxo_addr_from_contract_addr(contract_addr)),
             Err(e) => e,
         };
         ERR!(
-            "error on parse wallet address: {:?}, error on parse contract address: {:?}",
+            "error on parse wallet address: {:?}, {:?}, error on parse contract address: {:?}",
             utxo_err,
+            utxo_segwit_err,
             contract_err,
         )
     }
@@ -81,6 +94,8 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             t_addr_prefix: utxo.conf.pub_t_addr_prefix,
             hash: address.0.into(),
             checksum_type: utxo.conf.checksum_type,
+            hrp: utxo.conf.bech32_hrp.clone(),
+            addr_format: utxo.my_address.addr_format.clone(),
         }
     }
 
@@ -93,6 +108,8 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             t_addr_prefix: utxo.conf.pub_t_addr_prefix,
             hash: address.0.into(),
             checksum_type: utxo.conf.checksum_type,
+            hrp: utxo.conf.bech32_hrp.clone(),
+            addr_format: utxo.my_address.addr_format.clone(),
         }
     }
 
@@ -102,7 +119,9 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             pubkey,
             utxo.conf.pub_addr_prefix,
             utxo.conf.pub_t_addr_prefix,
-            utxo.conf.checksum_type
+            utxo.conf.checksum_type,
+            utxo.conf.bech32_hrp.clone(),
+            utxo.my_address.addr_format.clone()
         ));
         Ok(qtum::contract_addr_from_utxo_addr(qtum_address))
     }
@@ -152,19 +171,15 @@ impl UtxoCommonOps for QtumCoin {
     async fn get_htlc_spend_fee(&self) -> UtxoRpcResult<u64> { utxo_common::get_htlc_spend_fee(self).await }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        utxo_common::addresses_from_script(&self.utxo_arc.conf, script)
+        utxo_common::addresses_from_script(&self.utxo_arc, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
-    fn display_address(&self, address: &Address) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo_arc.conf, address)
-    }
-
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::address_from_str(&self.utxo_arc.conf, address)
+        utxo_common::checked_address_from_str(&self.utxo_arc, address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -550,10 +565,6 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        utxo_common::address_from_pubkey_str(self, pubkey)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
@@ -623,6 +634,12 @@ impl MmCoin for QtumCoin {
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+    }
 }
 
 /// Parse contract address (H160) from string.

@@ -66,7 +66,7 @@ pub struct SegwitAddress {
     /// The witness program version
     version: bech32::u5,
     /// The witness program
-    program: Vec<u8>,
+    pub program: Vec<u8>,
 }
 
 impl SegwitAddress {
@@ -91,6 +91,13 @@ impl SegwitAddress {
             _ => None,
         }
     }
+
+    /// Check whether or not the address is following Bitcoin
+    /// standardness rules.
+    ///
+    /// Segwit addresses with unassigned witness versions or non-standard
+    /// program sizes are considered non-standard.
+    pub fn is_standard(&self) -> bool { self.address_type().is_some() }
 }
 
 struct UpperWriter<W: fmt::Write>(W);

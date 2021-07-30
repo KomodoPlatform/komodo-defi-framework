@@ -1,7 +1,7 @@
 use common::safe_slurp;
 use futures::lock::Mutex as AsyncMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 lazy_static! {
     static ref TX_CACHE_LOCK: AsyncMutex<()> = AsyncMutex::new(());
@@ -10,7 +10,7 @@ lazy_static! {
 /// Try load transaction from cache.
 /// Note: tx.confirmations can be out-of-date.
 pub async fn load_transaction_from_cache(
-    tx_cache_path: &PathBuf,
+    tx_cache_path: &Path,
     txid: &H256Json,
 ) -> Result<Option<RpcTransaction>, String> {
     let _lock = TX_CACHE_LOCK.lock().await;
@@ -27,7 +27,7 @@ pub async fn load_transaction_from_cache(
 }
 
 /// Upload transaction to cache.
-pub async fn cache_transaction(tx_cache_path: &PathBuf, tx: &RpcTransaction) -> Result<(), String> {
+pub async fn cache_transaction(tx_cache_path: &Path, tx: &RpcTransaction) -> Result<(), String> {
     let _lock = TX_CACHE_LOCK.lock().await;
     let path = cached_transaction_path(tx_cache_path, &tx.txid);
     let tmp_path = format!("{}.tmp", path.display());
@@ -39,6 +39,6 @@ pub async fn cache_transaction(tx_cache_path: &PathBuf, tx: &RpcTransaction) -> 
     Ok(())
 }
 
-fn cached_transaction_path(tx_cache_path: &PathBuf, txid: &H256Json) -> PathBuf {
+fn cached_transaction_path(tx_cache_path: &Path, txid: &H256Json) -> PathBuf {
     tx_cache_path.join(format!("{:?}", txid))
 }

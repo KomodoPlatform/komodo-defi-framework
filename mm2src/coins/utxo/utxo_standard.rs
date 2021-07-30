@@ -44,19 +44,15 @@ impl UtxoCommonOps for UtxoStandardCoin {
     async fn get_htlc_spend_fee(&self) -> UtxoRpcResult<u64> { utxo_common::get_htlc_spend_fee(self).await }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        utxo_common::addresses_from_script(&self.utxo_arc.conf, script)
+        utxo_common::addresses_from_script(&self.utxo_arc, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
     fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
-    fn display_address(&self, address: &Address) -> Result<String, String> {
-        utxo_common::display_address(&self.utxo_arc.conf, address)
-    }
-
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::address_from_str(&self.utxo_arc.conf, address)
+        utxo_common::checked_address_from_str(&self.utxo_arc, address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -434,10 +430,6 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        utxo_common::address_from_pubkey_str(self, pubkey)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
@@ -506,4 +498,10 @@ impl MmCoin for UtxoStandardCoin {
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+    }
 }

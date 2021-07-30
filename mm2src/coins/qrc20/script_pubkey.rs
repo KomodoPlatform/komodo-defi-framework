@@ -7,17 +7,17 @@ pub fn generate_contract_call_script_pubkey(
     gas_limit: u64,
     gas_price: u64,
     contract_address: &[u8],
-) -> Qrc20ABIResult<Script> {
+) -> Qrc20AbiResult<Script> {
     if gas_limit == 0 || gas_price == 0 {
         // this is because the `encode_contract_number` will return an empty bytes
-        return MmError::err(Qrc20ABIError::InvalidParams(
+        return MmError::err(Qrc20AbiError::InvalidParams(
             "gas_limit and gas_price cannot be zero".to_owned(),
         ));
     }
 
     if contract_address.is_empty() {
         // this is because the `push_bytes` will panic
-        return MmError::err(Qrc20ABIError::InvalidParams("token_addr cannot be empty".to_owned()));
+        return MmError::err(Qrc20AbiError::InvalidParams("token_addr cannot be empty".to_owned()));
     }
 
     let gas_limit = encode_contract_number(gas_limit as i64);

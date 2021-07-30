@@ -88,7 +88,7 @@ pub struct RequestResponseBehaviour {
 impl RequestResponseBehaviour {
     pub fn sender(&self) -> RequestResponseSender { self.tx.clone() }
 
-    pub fn send_response(&mut self, ch: ResponseChannel<PeerResponse>, rs: PeerResponse) {
+    pub fn send_response(&mut self, ch: ResponseChannel<PeerResponse>, rs: PeerResponse) -> Result<(), PeerResponse> {
         self.inner.send_response(ch, rs)
     }
 
@@ -188,6 +188,7 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeerRequest, PeerResponse
                 self.process_response(request_id, err_response);
                 return;
             },
+            RequestResponseEvent::ResponseSent { .. } => return,
         };
 
         match message {

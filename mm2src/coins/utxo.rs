@@ -47,7 +47,7 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
-pub use keys::{Address, KeyPair, Private, Public, Secret};
+pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
@@ -55,7 +55,7 @@ use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
-use serialization::serialize;
+use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::num::NonZeroU64;
@@ -65,7 +65,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
-use utxo_common::{big_decimal_from_sat, display_address};
+use utxo_common::big_decimal_from_sat;
 
 pub use chain::Transaction as UtxoTx;
 
@@ -125,7 +125,13 @@ fn get_special_folder_path() -> PathBuf {
 fn get_special_folder_path() -> PathBuf { panic!("!windows") }
 
 impl Transaction for UtxoTx {
-    fn tx_hex(&self) -> Vec<u8> { serialize(self).into() }
+    fn tx_hex(&self) -> Vec<u8> {
+        if self.has_witness() {
+            serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS).into()
+        } else {
+            serialize(self).into()
+        }
+    }
 
     fn tx_hash(&self) -> BytesJson { self.hash().reversed().to_vec().into() }
 }
@@ -217,31 +223,6 @@ pub enum FeePolicy {
     SendExact,
     /// Contains the index of output from which fee should be deducted
     DeductFromOutput(usize),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "format")]
-pub enum UtxoAddressFormat {
-    /// Standard UTXO address format.
-    /// In Bitcoin Cash context the standard format also known as 'legacy'.
-    #[serde(rename = "standard")]
-    Standard,
-    /// Segwit Address
-    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
-    #[serde(rename = "segwit")]
-    Segwit,
-    /// Bitcoin Cash specific address format.
-    /// https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/cashaddr.md
-    #[serde(rename = "cashaddress")]
-    CashAddress { network: String },
-}
-
-impl Default for UtxoAddressFormat {
-    fn default() -> Self { UtxoAddressFormat::Standard }
-}
-
-impl UtxoAddressFormat {
-    fn is_segwit(&self) -> bool { matches!(*self, UtxoAddressFormat::Segwit) }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -410,8 +391,8 @@ pub struct UtxoCoinConf {
     /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
     pub requires_notarization: AtomicBool,
-    /// The address format indicates how to parse and display UTXO addresses over RPC calls
-    pub address_format: UtxoAddressFormat,
+    /// The address format indicates the default address format from coin config file
+    pub default_address_format: UtxoAddressFormat,
     /// Is current coin KMD asset chain?
     /// https://komodoplatform.atlassian.net/wiki/spaces/KPSD/pages/71729160/What+is+a+Parallel+Chain+Asset+Chain
     pub asset_chain: bool,
@@ -473,6 +454,27 @@ pub struct UtxoCoinFields {
     pub tx_hash_algo: TxHashAlgo,
 }
 
+#[derive(Debug, Display)]
+pub enum UnsupportedAddr {
+    #[display(
+        fmt = "{} address format activated for {}, but {} format used instead",
+        activated_format,
+        ticker,
+        used_format
+    )]
+    FormatMismatch {
+        ticker: String,
+        activated_format: String,
+        used_format: String,
+    },
+    #[display(fmt = "Expected a valid P2PKH or P2SH prefix for {}", _0)]
+    PrefixError(String),
+    #[display(fmt = "Address hrp {} is not a valid hrp for {}", hrp, ticker)]
+    HrpError { ticker: String, hrp: String },
+    #[display(fmt = "Segwit not activated in the config for {}", _0)]
+    SegwitNotActivated(String),
+}
+
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {
@@ -500,6 +502,51 @@ impl UtxoCoinFields {
             hash_algo: self.tx_hash_algo.into(),
         }
     }
+
+    pub fn check_withdraw_address_supported(&self, addr: &Address) -> Result<(), MmError<UnsupportedAddr>> {
+        let conf = &self.conf;
+
+        match addr.addr_format {
+            // Considering that legacy is supported with any configured formats
+            // This can be changed depending on the coins implementation
+            UtxoAddressFormat::Standard => {
+                let is_p2pkh = addr.prefix == conf.pub_addr_prefix && addr.t_addr_prefix == conf.pub_t_addr_prefix;
+                let is_p2sh = addr.prefix == conf.p2sh_addr_prefix
+                    && addr.t_addr_prefix == conf.p2sh_t_addr_prefix
+                    && conf.segwit;
+                if !is_p2pkh && !is_p2sh {
+                    MmError::err(UnsupportedAddr::PrefixError(conf.ticker.clone()))
+                } else {
+                    Ok(())
+                }
+            },
+            UtxoAddressFormat::Segwit => {
+                if !conf.segwit {
+                    return MmError::err(UnsupportedAddr::SegwitNotActivated(conf.ticker.clone()));
+                }
+
+                if addr.hrp != conf.bech32_hrp {
+                    MmError::err(UnsupportedAddr::HrpError {
+                        ticker: conf.ticker.clone(),
+                        hrp: addr.hrp.clone().unwrap_or_default(),
+                    })
+                } else {
+                    Ok(())
+                }
+            },
+            UtxoAddressFormat::CashAddress { .. } => {
+                if addr.addr_format == conf.default_address_format || addr.addr_format == self.my_address.addr_format {
+                    Ok(())
+                } else {
+                    MmError::err(UnsupportedAddr::FormatMismatch {
+                        ticker: conf.ticker.clone(),
+                        activated_format: self.my_address.addr_format.to_string(),
+                        used_format: addr.addr_format.to_string(),
+                    })
+                }
+            },
+        }
+    }
 }
 
 #[async_trait]
@@ -514,8 +561,6 @@ pub trait UtxoCommonOps {
     fn denominate_satoshis(&self, satoshi: i64) -> f64;
 
     fn my_public_key(&self) -> &Public;
-
-    fn display_address(&self, address: &Address) -> Result<String, String>;
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
@@ -901,7 +946,7 @@ impl<'a> UtxoConfBuilder<'a> {
 
         let bech32_hrp = self.bech32_hrp();
 
-        let address_format = try_s!(self.address_format());
+        let default_address_format = self.default_address_format();
 
         let asset_chain = self.asset_chain();
         let tx_version = self.tx_version();
@@ -941,7 +986,7 @@ impl<'a> UtxoConfBuilder<'a> {
             segwit,
             wif_prefix,
             tx_version,
-            address_format,
+            default_address_format,
             asset_chain,
             tx_fee_volatility_percent,
             version_group_id,
@@ -993,19 +1038,21 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn bech32_hrp(&self) -> Option<String> { json::from_value(self.conf["bech32_hrp"].clone()).unwrap_or(None) }
 
-    fn address_format(&self) -> Result<UtxoAddressFormat, String> {
-        let mut format: Option<UtxoAddressFormat> = try_s!(json::from_value(self.req["address_format"].clone()));
-        if format.is_none() {
-            format = try_s!(json::from_value(self.conf["address_format"].clone()))
+    fn default_address_format(&self) -> UtxoAddressFormat {
+        let mut address_format: UtxoAddressFormat =
+            json::from_value(self.conf["address_format"].clone()).unwrap_or(UtxoAddressFormat::Standard);
+
+        if let UtxoAddressFormat::CashAddress {
+            network: _,
+            ref mut pub_addr_prefix,
+            ref mut p2sh_addr_prefix,
+        } = address_format
+        {
+            *pub_addr_prefix = self.pub_addr_prefix();
+            *p2sh_addr_prefix = self.p2sh_address_prefix();
         }
 
-        let address_format = format.unwrap_or(UtxoAddressFormat::Standard);
-
-        if address_format.is_segwit() && !self.segwit() {
-            ERR!("Cannot use Segwit address format for coin without segwit support")
-        } else {
-            Ok(address_format)
-        }
+        address_format
     }
 
     fn asset_chain(&self) -> bool { self.conf["asset"].as_str().is_some() }
@@ -1141,13 +1188,16 @@ pub trait UtxoCoinBuilder {
             checksum_type: conf.checksum_type,
         };
         let key_pair = try_s!(KeyPair::from_private(private));
+        let addr_format = try_s!(self.address_format());
         let my_address = Address {
             prefix: conf.pub_addr_prefix,
             t_addr_prefix: conf.pub_t_addr_prefix,
             hash: key_pair.public().address_hash(),
             checksum_type: conf.checksum_type,
+            hrp: conf.bech32_hrp.clone(),
+            addr_format,
         };
-        let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+        let my_script_pubkey = output_script(&my_address).to_bytes();
         let rpc_client = try_s!(self.rpc_client().await);
         let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
         let decimals = try_s!(self.decimals(&rpc_client).await);
@@ -1157,7 +1207,6 @@ pub trait UtxoCoinBuilder {
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
 
-        let _my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
         let coin = UtxoCoinFields {
             conf,
             decimals,
@@ -1172,6 +1221,46 @@ pub trait UtxoCoinBuilder {
             tx_hash_algo,
         };
         Ok(coin)
+    }
+
+    fn address_format(&self) -> Result<UtxoAddressFormat, String> {
+        let mut format: Option<UtxoAddressFormat> = try_s!(json::from_value(self.req()["address_format"].clone()));
+        if format.is_none() {
+            format = try_s!(json::from_value(self.conf()["address_format"].clone()))
+        }
+
+        let mut address_format = format.unwrap_or(UtxoAddressFormat::Standard);
+
+        if let UtxoAddressFormat::CashAddress {
+            network: _,
+            ref mut pub_addr_prefix,
+            ref mut p2sh_addr_prefix,
+        } = address_format
+        {
+            *pub_addr_prefix = self.pub_addr_prefix();
+            *p2sh_addr_prefix = self.p2sh_address_prefix();
+        }
+
+        if address_format.is_segwit()
+            && (!self.conf()["segwit"].as_bool().unwrap_or(false) || self.conf()["bech32_hrp"].is_null())
+        {
+            ERR!("Cannot use Segwit address format for coin without segwit support or bech32_hrp in config")
+        } else {
+            Ok(address_format)
+        }
+    }
+
+    fn pub_addr_prefix(&self) -> u8 {
+        let pubtype = self.conf()["pubtype"]
+            .as_u64()
+            .unwrap_or(if self.ticker() == "BTC" { 0 } else { 60 });
+        pubtype as u8
+    }
+
+    fn p2sh_address_prefix(&self) -> u8 {
+        self.conf()["p2shtype"]
+            .as_u64()
+            .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
     }
 
     fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
@@ -1667,16 +1756,33 @@ pub(crate) fn sign_tx(
     fork_id: u32,
 ) -> Result<UtxoTx, String> {
     let mut signed_inputs = vec![];
-    for (i, _) in unsigned.inputs.iter().enumerate() {
-        signed_inputs.push(try_s!(p2pkh_spend(
-            &unsigned,
-            i,
-            key_pair,
-            &prev_script,
-            signature_version,
-            fork_id
-        )));
+    match signature_version {
+        SignatureVersion::WitnessV0 => {
+            for (i, _) in unsigned.inputs.iter().enumerate() {
+                signed_inputs.push(try_s!(p2wpkh_spend(
+                    &unsigned,
+                    i,
+                    key_pair,
+                    &prev_script,
+                    signature_version,
+                    fork_id
+                )));
+            }
+        },
+        _ => {
+            for (i, _) in unsigned.inputs.iter().enumerate() {
+                signed_inputs.push(try_s!(p2pkh_spend(
+                    &unsigned,
+                    i,
+                    key_pair,
+                    &prev_script,
+                    signature_version,
+                    fork_id
+                )));
+            }
+        },
     }
+
     Ok(UtxoTx {
         inputs: signed_inputs,
         n_time: unsigned.n_time,
@@ -1733,12 +1839,17 @@ where
         })
         .collect();
 
+    let signature_version = match &coin.as_ref().my_address.addr_format {
+        UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
+        _ => coin.as_ref().conf.signature_version,
+    };
+
     let prev_script = Builder::build_p2pkh(&coin.as_ref().my_address.hash);
     let signed = try_s!(sign_tx(
         unsigned,
         &coin.as_ref().key_pair,
         prev_script,
-        coin.as_ref().conf.signature_version,
+        signature_version,
         coin.as_ref().conf.fork_id
     ));
 
@@ -1820,6 +1931,43 @@ pub fn p2pk_spend(
     })
 }
 
+/// Creates signed input spending p2wpkh output
+fn p2wpkh_spend(
+    signer: &TransactionInputSigner,
+    input_index: usize,
+    key_pair: &KeyPair,
+    prev_script: &Script,
+    signature_version: SignatureVersion,
+    fork_id: u32,
+) -> Result<TransactionInput, String> {
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+
+    if script != *prev_script {
+        return ERR!(
+            "p2pkh script {} built from input key pair doesn't match expected prev script {}",
+            script,
+            prev_script
+        );
+    }
+    let sighash_type = 1 | fork_id;
+    let sighash = signer.signature_hash(
+        input_index,
+        signer.inputs[input_index].amount,
+        &script,
+        signature_version,
+        sighash_type,
+    );
+
+    let sig_script = try_s!(script_sig(&sighash, key_pair, fork_id));
+
+    Ok(TransactionInput {
+        previous_output: signer.inputs[input_index].previous_output.clone(),
+        script_sig: Bytes::from(Vec::new()),
+        sequence: signer.inputs[input_index].sequence,
+        script_witness: vec![sig_script, Bytes::from(key_pair.public().deref())],
+    })
+}
+
 fn script_sig_with_pub(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes, String> {
     let sig_script = try_s!(script_sig(message, key_pair, fork_id));
 
@@ -1842,7 +1990,19 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
     Ok(sig_script)
 }
 
-pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+pub fn output_script(address: &Address) -> Script {
+    match address.addr_format {
+        UtxoAddressFormat::Segwit => Builder::build_p2wpkh(&address.hash),
+        _ => Builder::build_p2pkh(&address.hash),
+    }
+}
+
+pub fn address_by_conf_and_pubkey_str(
+    coin: &str,
+    conf: &Json,
+    pubkey: &str,
+    addr_format: UtxoAddressFormat,
+) -> Result<String, String> {
     let null = Json::Null;
     let conf_builder = UtxoConfBuilder::new(&conf, &null, coin);
     let utxo_conf = try_s!(conf_builder.build());
@@ -1854,6 +2014,8 @@ pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> 
         t_addr_prefix: utxo_conf.pub_t_addr_prefix,
         hash,
         checksum_type: utxo_conf.checksum_type,
+        hrp: utxo_conf.bech32_hrp,
+        addr_format,
     };
-    display_address(&utxo_conf, &address)
+    address.display_address()
 }

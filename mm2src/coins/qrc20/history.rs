@@ -314,13 +314,13 @@ impl Qrc20Coin {
             let from = if is_transferred_from_contract(&script_pubkey) {
                 qtum::display_as_contract_address(from)
             } else {
-                try_s!(self.display_address(&from))
+                try_s!(from.display_address())
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
                 qtum::display_as_contract_address(to)
             } else {
-                try_s!(self.display_address(&to))
+                try_s!(to.display_address())
             };
 
             let tx_details = TransactionDetails {

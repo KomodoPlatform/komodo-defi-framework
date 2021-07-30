@@ -19,6 +19,7 @@ use std::hash::Hasher;
 /// Most coins use double sha256
 /// GRS uses double groestl512
 /// SMART uses keccak
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ChecksumType {
     DSHA256,

@@ -19,7 +19,7 @@ secp256k1 = { git = "https://github.com/artemii235/rust-secp256k1.git", features
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
-rand = { version = "0.6", features = ["std"] }
+rand = { package = "rand", version = "0.7", features = ["std", "wasm-bindgen"] }
 rmp-serde = "0.14.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11.5"
@@ -28,8 +28,10 @@ void = "1.0"
 wasm-timer = "0.2.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "0.2.22", features = ["rt-threaded"] }
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
+tokio = { version = "1.7", features = ["rt-multi-thread", "macros"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns-tokio", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["dns", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
+getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", default-features = false, features = ["floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
+wasm-bindgen-futures = "0.4.21"

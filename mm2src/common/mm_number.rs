@@ -88,8 +88,8 @@ impl From<BigRational> for Fraction {
     }
 }
 
-impl Into<BigRational> for Fraction {
-    fn into(self) -> BigRational { BigRational::new(self.numer.into(), self.denom.into()) }
+impl From<Fraction> for BigRational {
+    fn from(fraction: Fraction) -> Self { BigRational::new(fraction.numer.into(), fraction.denom.into()) }
 }
 
 impl From<BigDecimal> for Fraction {
