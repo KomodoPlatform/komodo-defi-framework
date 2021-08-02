@@ -2948,6 +2948,6 @@ fn test_withdraw_to_p2sh() {
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
-    
+
     assert!(output_script.is_pay_to_script_hash());
 }
