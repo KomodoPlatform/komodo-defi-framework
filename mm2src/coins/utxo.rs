@@ -1197,7 +1197,7 @@ pub trait UtxoCoinBuilder {
             hrp: conf.bech32_hrp.clone(),
             addr_format,
         };
-        let my_script_pubkey = output_script(&my_address).to_bytes();
+        let my_script_pubkey = output_script(&my_address, true).to_bytes();
         let rpc_client = try_s!(self.rpc_client().await);
         let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
         let decimals = try_s!(self.decimals(&rpc_client).await);
@@ -1990,10 +1990,16 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
     Ok(sig_script)
 }
 
-pub fn output_script(address: &Address) -> Script {
+pub fn output_script(address: &Address, is_p2pkh: bool) -> Script {
     match address.addr_format {
         UtxoAddressFormat::Segwit => Builder::build_p2wpkh(&address.hash),
-        _ => Builder::build_p2pkh(&address.hash),
+        _ => {
+            if is_p2pkh {
+                Builder::build_p2pkh(&address.hash)
+            } else {
+                Builder::build_p2sh(&address.hash)
+            }
+        },
     }
 }
 

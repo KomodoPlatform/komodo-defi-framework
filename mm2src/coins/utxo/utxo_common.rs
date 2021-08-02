@@ -290,7 +290,7 @@ where
     let dust: u64 = coin.as_ref().dust_amount;
     let lock_time = (now_ms() / 1000) as u32;
 
-    let change_script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+    let change_script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
     let coin_tx_fee = match fee {
         Some(f) => f,
         None => coin.get_tx_fee().await?,
@@ -738,7 +738,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -785,7 +785,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -829,7 +829,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -873,7 +873,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -1378,7 +1378,14 @@ where
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
 
-    let script_pubkey = output_script(&to).to_bytes();
+    let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
+    let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
+
+    if !is_p2pkh && !is_p2sh {
+        return MmError::err(WithdrawError::InvalidAddress("Expected either P2PKH or P2SH".into()));
+    }
+
+    let script_pubkey = output_script(&to, is_p2pkh).to_bytes();
 
     let signature_version = match coin.as_ref().my_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,

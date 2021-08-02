@@ -80,7 +80,7 @@ fn utxo_coin_fields_for_test(rpc_client: UtxoRpcClientEnum, force_seed: Option<&
             is_pos: false,
             requires_notarization: false.into(),
             overwintered: true,
-            segwit: false,
+            segwit: true,
             tx_version: 4,
             default_address_format: UtxoAddressFormat::Standard,
             asset_chain: true,
@@ -2903,4 +2903,51 @@ fn test_parse_tx_with_huge_locktime() {
     let verbose = r#"{"hex":"0400008085202f89010c03a2b3d8f97139a623f0759224c657513752b705b5c689a256d52b8f8279f200000000d8483045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d2660120bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b004c6b63046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68ffffffff014ddbf305000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88acf5b98899000000000000000000000000000000","txid":"3b666753b77e28da8a4d858339825315f32516cc147fa743329c7248bd0c6902","overwintered":true,"version":4,"versiongroupid":"892f2085","locktime":2575874549,"expiryheight":0,"vin":[{"txid":"f279828f2bd556a289c6b505b752375157c6249275f023a63971f9d8b3a2030c","vout":0,"scriptSig":{"asm":"3045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d266[ALL]bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b063046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68","hex":"483045022100fa07821f4739890fa3518c73ecb4917f4a8e7a1c7a803a0d0aea28f991f14f84022041ac557507d6c9786128828c7b2fca7d5c345ba57c8050e3edb29be0c1e5d2660120bdb3d550a68dfaeebe4c416e5750d20d27617bbfb29756843d605a0570ae787b004c6b63046576ba60b17521039ef1b42c635c32440099910bbe1c5e8b0c9373274c3f21cf1003750fc88d3499ac6782012088a914a4f9f1009dcb778bf1c26052258284b32c9075098821031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ac68"},"sequence":4294967295}],"vout":[{"value":0.99867469,"valueZat":99867469,"valueSat":99867469,"n":0,"scriptPubKey":{"asm":"OP_DUPOP_HASH160c3f710deb7320b0efa6edb14e3ebeeb9155fa90dOP_EQUALVERIFYOP_CHECKSIG","hex":"76a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac","reqSigs":1,"type":"pubkeyhash","addresses":["t1bjmkBWkzLWk3mHFoybXE5daGRY9pk1fxF"]}}],"vjoinsplit":[],"valueBalance":0.0,"valueBalanceZat":0,"vShieldedSpend":[],"vShieldedOutput":[],"blockhash":"0000077e33e838d9967427018a6e7049d8619ae556acb3e80c070990e90b67fc","height":1127478,"confirmations":2197,"time":1622825622,"blocktime":1622825622}"#;
     let verbose_tx: RpcTransaction = json::from_str(verbose).expect("!json::from_str");
     let _: UtxoTx = deserialize(verbose_tx.hex.as_slice()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_withdraw_to_p2sh() {
+    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        let unspents = vec![UnspentInfo {
+            outpoint: OutPoint {
+                hash: 1.into(),
+                index: 0,
+            },
+            value: 1000000000,
+            height: Default::default(),
+        }];
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
+
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client.clone()), None);
+
+    // Create a p2sh address for the test coin
+    let checksum_type = ChecksumType::DSHA256;
+    let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+    let key_pair = key_pair_from_seed(seed).unwrap();
+    let p2sh_address = Address {
+        prefix: 85,
+        hash: key_pair.public().address_hash(),
+        t_addr_prefix: 0,
+        checksum_type,
+        hrp: None,
+        addr_format: UtxoAddressFormat::Standard,
+    };
+
+    let withdraw_req = WithdrawRequest {
+        amount: 1.into(),
+        to: p2sh_address.to_string(),
+        coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+    };
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
+    let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
+    let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
+    
+    assert!(output_script.is_pay_to_script_hash());
 }
