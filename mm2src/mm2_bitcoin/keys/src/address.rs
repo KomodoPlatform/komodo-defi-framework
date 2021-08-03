@@ -66,6 +66,7 @@ impl AddressFormat {
     pub fn is_legacy(&self) -> bool { matches!(*self, AddressFormat::Standard) }
 }
 
+// TODO add ScriptType field to this struct for easier use of output_script function
 /// `AddressHash` with prefix and t addr zcash prefix
 #[derive(Debug, PartialEq, Clone)]
 pub struct Address {

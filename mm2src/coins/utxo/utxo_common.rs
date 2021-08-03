@@ -15,7 +15,8 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use keys::bytes::Bytes;
-use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHash, KeyPair, Public, SegwitAddress, Type};
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHash, KeyPair, Public, SegwitAddress,
+           Type as ScriptType};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, SignatureVersion, TransactionInputSigner,
@@ -189,8 +190,8 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
         .into_iter()
         .map(|dst| {
             let (prefix, t_addr_prefix) = match dst.kind {
-                Type::P2PKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix),
-                Type::P2SH => (conf.p2sh_addr_prefix, conf.p2sh_t_addr_prefix),
+                ScriptType::P2PKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix),
+                ScriptType::P2SH => (conf.p2sh_addr_prefix, conf.p2sh_t_addr_prefix),
             };
 
             Address {
@@ -290,7 +291,7 @@ where
     let dust: u64 = coin.as_ref().dust_amount;
     let lock_time = (now_ms() / 1000) as u32;
 
-    let change_script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
+    let change_script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
     let coin_tx_fee = match fee {
         Some(f) => f,
         None => coin.get_tx_fee().await?,
@@ -738,7 +739,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -785,7 +786,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -829,7 +830,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -873,7 +874,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee().await);
-        let script_pubkey = output_script(&coin.as_ref().my_address, true).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -1381,11 +1382,15 @@ where
     let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
     let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
 
-    if !is_p2pkh && !is_p2sh {
+    let script_type = if is_p2pkh {
+        ScriptType::P2PKH
+    } else if is_p2sh {
+        ScriptType::P2SH
+    } else {
         return MmError::err(WithdrawError::InvalidAddress("Expected either P2PKH or P2SH".into()));
-    }
+    };
 
-    let script_pubkey = output_script(&to, is_p2pkh).to_bytes();
+    let script_pubkey = output_script(&to, script_type).to_bytes();
 
     let signature_version = match coin.as_ref().my_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,

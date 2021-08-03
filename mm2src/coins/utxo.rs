@@ -47,7 +47,7 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
-pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type};
+pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type as ScriptType};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
@@ -1197,7 +1197,7 @@ pub trait UtxoCoinBuilder {
             hrp: conf.bech32_hrp.clone(),
             addr_format,
         };
-        let my_script_pubkey = output_script(&my_address, true).to_bytes();
+        let my_script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let rpc_client = try_s!(self.rpc_client().await);
         let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
         let decimals = try_s!(self.decimals(&rpc_client).await);
@@ -1990,15 +1990,12 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
     Ok(sig_script)
 }
 
-pub fn output_script(address: &Address, is_p2pkh: bool) -> Script {
+pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     match address.addr_format {
         UtxoAddressFormat::Segwit => Builder::build_p2wpkh(&address.hash),
-        _ => {
-            if is_p2pkh {
-                Builder::build_p2pkh(&address.hash)
-            } else {
-                Builder::build_p2sh(&address.hash)
-            }
+        _ => match script_type {
+            ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
+            ScriptType::P2SH => Builder::build_p2sh(&address.hash),
         },
     }
 }
