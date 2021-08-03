@@ -1,5 +1,6 @@
 use super::lp_protocol::{MmRpcBuilder, MmRpcRequest};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
+use crate::mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection};
 use crate::mm2::lp_swap::trade_preimage_rpc;
 use coins::withdraw;
 use common::log::{error, warn};
@@ -83,8 +84,11 @@ fn auth(request: &MmRpcRequest, ctx: &MmArc) -> DispatcherResult<()> {
 
 async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     match request.method.as_str() {
-        "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
+        "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
+        "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
+        "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
+        "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         _ => MmError::err(DispatcherError::NoSuchMethod { method: request.method }),
     }
 }

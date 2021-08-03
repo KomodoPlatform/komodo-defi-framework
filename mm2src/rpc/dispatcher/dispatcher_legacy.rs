@@ -12,7 +12,6 @@ use super::lp_commands::*;
 use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
                                 orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
                                 update_maker_order};
-use crate::mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection};
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
                           import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
                           recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
@@ -61,7 +60,6 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         // Sorted alphanumerically (on the first latter) for readability.
         // "autoprice" => lp_autoprice (ctx, req),
         "active_swaps" => hyres(active_swaps_rpc(ctx, req)),
-        "add_node_to_version_stat" => hyres(add_node_to_version_stat(ctx, req)),
         "all_swaps_uuids_by_filter" => all_swaps_uuids_by_filter(ctx, req),
         "ban_pubkey" => hyres(ban_pubkey_rpc(ctx, req)),
         "best_orders" => hyres(best_orders_rpc(ctx, req)),
@@ -120,14 +118,12 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
                 return DispatcherRes::NoMatch(req);
             }
         },
-        "remove_node_from_version_stat" => hyres(remove_node_from_version_stat(ctx, req)),
         "sell" => hyres(sell(ctx, req)),
         "show_priv_key" => hyres(show_priv_key(ctx, req)),
         "send_raw_transaction" => hyres(send_raw_transaction(ctx, req)),
         "set_required_confirmations" => hyres(set_required_confirmations(ctx, req)),
         "set_requires_notarization" => hyres(set_requires_notarization(ctx, req)),
         "setprice" => hyres(set_price(ctx, req)),
-        "start_version_stat_collection" => hyres(start_version_stat_collection(ctx, req)),
         "stats_swap_status" => stats_swap_status(ctx, req),
         "stop" => stop(ctx),
         "trade_preimage" => hyres(into_legacy::trade_preimage(ctx, req)),

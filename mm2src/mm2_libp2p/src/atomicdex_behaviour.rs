@@ -21,8 +21,7 @@ use libp2p_floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
 use log::{debug, error, info};
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::{collections::{hash_map::{DefaultHasher, HashMap},
-                        HashSet},
+use std::{collections::hash_map::{DefaultHasher, HashMap},
           hash::{Hash, Hasher},
           iter,
           net::IpAddr,
@@ -118,12 +117,6 @@ pub enum AdexBehaviourCmd {
         req: Vec<u8>,
         response_tx: oneshot::Sender<Vec<(PeerId, AdexResponse)>>,
     },
-    /// Add addresses to peer exchange then request peers and collect all their responses.
-    RequestAddresses {
-        req: Vec<u8>,
-        peers_addresses: Vec<(String, String)>,
-        response_tx: oneshot::Sender<Vec<(PeerId, AdexResponse)>>,
-    },
     /// Send a response using a `response_channel`.
     SendResponse {
         /// Response to a request.
@@ -145,6 +138,11 @@ pub enum AdexBehaviourCmd {
     },
     GetRelayMesh {
         result_tx: oneshot::Sender<Vec<String>>,
+    },
+    /// Add addresses for a peer to peer exchange.
+    AddPeerAddresses {
+        peer: PeerId,
+        addresses: PeerAddresses,
     },
     PropagateMessage {
         message_id: MessageId,
@@ -293,36 +291,6 @@ impl AtomicDexBehaviour {
                 let future = request_peers(relays, req, self.request_response.sender(), response_tx);
                 self.spawn(future);
             },
-            AdexBehaviourCmd::RequestAddresses {
-                req,
-                peers_addresses,
-                response_tx,
-            } => {
-                let peers = peers_addresses
-                    .into_iter()
-                    .filter_map(|(peer, address)| match peer.parse() {
-                        Ok(p) => {
-                            let multi_address = match Multiaddr::from_str(&address) {
-                                Ok(addr) => addr,
-                                Err(e) => {
-                                    error!("Error on parse address {}: {:?}", address, e);
-                                    return None;
-                                },
-                            };
-                            let mut addresses = HashSet::new();
-                            addresses.insert(multi_address);
-                            self.peers_exchange.add_peer_addresses(&p, addresses);
-                            Some(p)
-                        },
-                        Err(e) => {
-                            error!("Error on parse peer id {:?}: {:?}", peer, e);
-                            None
-                        },
-                    })
-                    .collect();
-                let future = request_peers(peers, req, self.request_response.sender(), response_tx);
-                self.spawn(future);
-            },
             AdexBehaviourCmd::SendResponse { res, response_channel } => {
                 if let Err(response) = self.request_response.send_response(response_channel.into(), res.into()) {
                     error!("Error sending response: {:?}", response);
@@ -404,6 +372,9 @@ impl AtomicDexBehaviour {
                 if result_tx.send(result).is_err() {
                     error!("Result rx is dropped");
                 }
+            },
+            AdexBehaviourCmd::AddPeerAddresses { peer, addresses } => {
+                self.peers_exchange.add_peer_addresses(&peer, addresses);
             },
             AdexBehaviourCmd::PropagateMessage {
                 message_id,

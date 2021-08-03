@@ -19,16 +19,39 @@
 use common::executor::spawn;
 use common::log;
 use common::mm_ctx::MmArc;
+use common::mm_error::prelude::*;
 use common::mm_metrics::{ClockOps, MetricsOps};
+use derive_more::Display;
 use futures::{channel::oneshot, lock::Mutex as AsyncMutex, StreamExt};
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
+use mm2_libp2p::peers_exchange::PeerAddresses;
 use mm2_libp2p::{decode_message, encode_message, GossipsubMessage, MessageId, PeerId, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use serde::de;
 use std::sync::Arc;
 
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
+
+pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
+
+#[derive(Debug, Display)]
+pub enum P2PRequestError {
+    EncodeError(String),
+    DecodeError(String),
+    SendError(String),
+    ResponseError(String),
+    #[display(fmt = "Expected 1 response, found {}", _0)]
+    ExpectedSingleResponseError(usize),
+}
+
+impl From<rmp_serde::encode::Error> for P2PRequestError {
+    fn from(e: rmp_serde::encode::Error) -> Self { P2PRequestError::EncodeError(e.to_string()) }
+}
+
+impl From<rmp_serde::decode::Error> for P2PRequestError {
+    fn from(e: rmp_serde::decode::Error) -> Self { P2PRequestError::DecodeError(e.to_string()) }
+}
 
 #[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
 pub enum P2PRequest {
@@ -139,8 +162,8 @@ async fn process_p2p_request(
     _peer_id: PeerId,
     request: Vec<u8>,
     response_channel: AdexResponseChannel,
-) -> Result<(), String> {
-    let request = try_s!(decode_message::<P2PRequest>(&request));
+) -> P2PRequestResult<()> {
+    let request = decode_message::<P2PRequest>(&request).map_to_mm(P2PRequestError::from)?;
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req).await,
         P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).await,
@@ -154,7 +177,12 @@ async fn process_p2p_request(
 
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd = AdexBehaviourCmd::SendResponse { res, response_channel };
-    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
+    p2p_ctx
+        .cmd_tx
+        .lock()
+        .await
+        .try_send(cmd)
+        .map_to_mm(|e| P2PRequestError::SendError(e.to_string()))?;
     Ok(())
 }
 
@@ -185,8 +213,8 @@ pub async fn subscribe_to_topic(ctx: &MmArc, topic: String) {
 pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
-) -> Result<Option<(T, PeerId)>, String> {
-    let encoded = try_s!(encode_message(&req));
+) -> P2PRequestResult<Option<(T, PeerId)>> {
+    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -194,10 +222,18 @@ pub async fn request_any_relay<T: de::DeserializeOwned>(
         req: encoded,
         response_tx,
     };
-    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
-    match try_s!(response_rx.await) {
+    p2p_ctx
+        .cmd_tx
+        .lock()
+        .await
+        .try_send(cmd)
+        .map_to_mm(|e| P2PRequestError::SendError(e.to_string()))?;
+    match response_rx
+        .await
+        .map_to_mm(|e| P2PRequestError::ResponseError(e.to_string()))?
+    {
         Some((from_peer, response)) => {
-            let response = try_s!(decode_message::<T>(&response));
+            let response = decode_message::<T>(&response).map_to_mm(P2PRequestError::from)?;
             Ok(Some((response, from_peer)))
         },
         None => Ok(None),
@@ -214,8 +250,8 @@ pub enum PeerDecodedResponse<T> {
 pub async fn request_relays<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
-) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
-    let encoded = try_s!(encode_message(&req));
+) -> P2PRequestResult<Vec<(PeerId, PeerDecodedResponse<T>)>> {
+    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -223,27 +259,15 @@ pub async fn request_relays<T: de::DeserializeOwned>(
         req: encoded,
         response_tx,
     };
-    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
-    let responses = try_s!(response_rx.await);
-    Ok(parse_peers_responses(responses))
-}
-
-pub async fn request_addresses<T: de::DeserializeOwned>(
-    ctx: MmArc,
-    req: P2PRequest,
-    peers_addresses: Vec<(String, String)>,
-) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
-    let encoded = try_s!(encode_message(&req));
-
-    let (response_tx, response_rx) = oneshot::channel();
-    let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
-    let cmd = AdexBehaviourCmd::RequestAddresses {
-        req: encoded,
-        peers_addresses,
-        response_tx,
-    };
-    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
-    let responses = try_s!(response_rx.await);
+    p2p_ctx
+        .cmd_tx
+        .lock()
+        .await
+        .try_send(cmd)
+        .map_to_mm(|e| P2PRequestError::SendError(e.to_string()))?;
+    let responses = response_rx
+        .await
+        .map_to_mm(|e| P2PRequestError::ResponseError(e.to_string()))?;
     Ok(parse_peers_responses(responses))
 }
 
@@ -251,8 +275,8 @@ pub async fn request_peers<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
     peers: Vec<String>,
-) -> Result<Vec<(PeerId, PeerDecodedResponse<T>)>, String> {
-    let encoded = try_s!(encode_message(&req));
+) -> P2PRequestResult<Vec<(PeerId, PeerDecodedResponse<T>)>> {
+    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -261,8 +285,15 @@ pub async fn request_peers<T: de::DeserializeOwned>(
         peers,
         response_tx,
     };
-    try_s!(p2p_ctx.cmd_tx.lock().await.try_send(cmd));
-    let responses = try_s!(response_rx.await);
+    p2p_ctx
+        .cmd_tx
+        .lock()
+        .await
+        .try_send(cmd)
+        .map_to_mm(|e| P2PRequestError::SendError(e.to_string()))?;
+    let responses = response_rx
+        .await
+        .map_to_mm(|e| P2PRequestError::ResponseError(e.to_string()))?;
     Ok(parse_peers_responses(responses))
 }
 
@@ -270,20 +301,20 @@ pub async fn request_one_peer<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
     peer: String,
-) -> Result<Option<T>, String> {
+) -> P2PRequestResult<Option<T>> {
     let clock = ctx.metrics.clock().expect("Metrics clock is not available");
     let start = clock.now();
-    let mut responses = try_s!(request_peers::<T>(ctx.clone(), req, vec![peer.clone()]).await);
+    let mut responses = request_peers::<T>(ctx.clone(), req, vec![peer.clone()]).await?;
     let end = clock.now();
     mm_timing!(ctx.metrics, "peer.outgoing_request.timing", start, end, "peer" => peer);
     if responses.len() != 1 {
-        return ERR!("Expected 1 response, found {}", responses.len());
+        return MmError::err(P2PRequestError::ExpectedSingleResponseError(responses.len()));
     }
     let (_, response) = responses.remove(0);
     match response {
         PeerDecodedResponse::Ok(response) => Ok(Some(response)),
         PeerDecodedResponse::None => Ok(None),
-        PeerDecodedResponse::Err(e) => ERR!("{}", e),
+        PeerDecodedResponse::Err(e) => MmError::err(P2PRequestError::ResponseError(e)),
     }
 }
 
@@ -316,6 +347,17 @@ pub fn propagate_message(ctx: &MmArc, message_id: MessageId, propagation_source:
         };
         if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
             log::error!("propagate_message cmd_tx.send error {:?}", e);
+        };
+    });
+}
+
+pub fn add_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAddresses) {
+    let ctx = ctx.clone();
+    spawn(async move {
+        let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
+        let cmd = AdexBehaviourCmd::AddPeerAddresses { peer, addresses };
+        if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
+            log::error!("add_peer_addresses cmd_tx.send error {:?}", e);
         };
     });
 }

@@ -2,15 +2,58 @@
 ///
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
-use common::{log, now_ms};
-use http::Response;
+use common::mm_error::prelude::*;
+use common::{log, now_ms, HttpStatusCode};
+use derive_more::Display;
+use http::StatusCode;
 use mm2_libp2p::atomicdex_behaviour::parse_relay_address;
-use mm2_libp2p::encode_message;
+use mm2_libp2p::{encode_message, PeerId};
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::ToSocketAddrs;
 
-use crate::mm2::lp_network::{request_addresses, P2PRequest, PeerDecodedResponse};
+use crate::mm2::lp_network::{add_peer_addresses, request_peers, P2PRequest, PeerDecodedResponse};
+
+pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum NodeVersionError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Database error: {}", _0)]
+    DatabaseError(String),
+    #[display(fmt = "Invalid address: {}", _0)]
+    InvalidAddress(String),
+    #[display(fmt = "Error on parse peer id {}", _0)]
+    PeerIdParseError(String),
+    #[display(fmt = "{} is only supported in native mode", _0)]
+    UnsupportedMode(String),
+}
+
+impl HttpStatusCode for NodeVersionError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            NodeVersionError::InvalidRequest(_)
+            | NodeVersionError::InvalidAddress(_)
+            | NodeVersionError::PeerIdParseError(_) => StatusCode::BAD_REQUEST,
+            NodeVersionError::UnsupportedMode(_) => StatusCode::METHOD_NOT_ALLOWED,
+            NodeVersionError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<serde_json::Error> for NodeVersionError {
+    fn from(e: serde_json::Error) -> Self { NodeVersionError::InvalidRequest(e.to_string()) }
+}
+
+impl From<NetIdError> for NodeVersionError {
+    fn from(e: NetIdError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+}
+
+impl From<ParseAddressError> for NodeVersionError {
+    fn from(e: ParseAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -22,8 +65,9 @@ pub struct NodeInfo {
 #[derive(Serialize, Deserialize)]
 pub struct NodeVersionStat {
     pub name: String,
-    pub version: String,
+    pub version: Option<String>,
     pub timestamp: u64,
+    pub error: Option<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -35,10 +79,10 @@ fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), Strin
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: &NodeVersionStat) -> Result<(), String> { Ok(()) }
+fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> { Ok(()) }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: &NodeVersionStat) -> Result<(), String> {
+fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
     crate::mm2::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| ERRL!("{}", e))
 }
 
@@ -51,24 +95,28 @@ fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
-    let res = json!({
-        "error": format!("'add_node_to_version_stat' is only supported in native mode"),
-    });
-    Response::builder()
-        .status(404)
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    MmError::err(NodeVersionError::UnsupportedMode("'add_node_to_version_stat'".into()))
 }
 
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let node_info: NodeInfo = try_s!(json::from_value(req));
+pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    let node_info: NodeInfo = json::from_value(req).map_to_mm(NodeVersionError::from)?;
     let netid = ctx.conf["netid"].as_u64().unwrap_or(0) as u16;
-    let (_, pubport, _) = try_s!(lp_ports(netid));
-    let addr = try_s!(addr_to_ipv4_string(&node_info.address));
+    let (_, pubport, _) = lp_ports(netid)?;
+    let addr = addr_to_ipv4_string(&node_info.address)?;
     let relay_address = parse_relay_address(addr, pubport);
+
+    let mut addresses = HashSet::new();
+    addresses.insert(relay_address.clone());
+
+    let peer_id: PeerId = match node_info.peer_id.parse() {
+        Ok(p) => p,
+        Err(e) => return MmError::err(NodeVersionError::PeerIdParseError(e.to_string())),
+    };
+
+    add_peer_addresses(&ctx, peer_id, addresses);
 
     let node_info_with_formated_addr = NodeInfo {
         name: node_info.name,
@@ -77,42 +125,28 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> Result<Response<
     };
 
     if let Err(e) = insert_node_info_to_db(&ctx, &node_info_with_formated_addr) {
-        return ERR!("Error {} on node insertion", e);
+        return MmError::err(NodeVersionError::DatabaseError(e));
     }
-    let res = json!({
-        "result": "success"
-    });
 
-    return Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e));
+    Ok("success".into())
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn remove_node_from_version_stat(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
-    let res = json!({
-        "error": format!("'remove_node_from_version_stat' is only supported in native mode"),
-    });
-    Response::builder()
-        .status(404)
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+pub async fn remove_node_from_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    MmError::err(NodeVersionError::UnsupportedMode(
+        "'remove_node_from_version_stat'".into(),
+    ))
 }
 
 /// Removes node info. from db to skip collecting stats for this node
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let node_name: String = try_s!(json::from_value(req["name"].clone()));
+pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    let node_name: String = json::from_value(req["name"].clone()).map_to_mm(NodeVersionError::from)?;
     if let Err(e) = delete_node_info_from_db(&ctx, node_name) {
-        return ERR!("Error {} on node deletion", e);
+        return MmError::err(NodeVersionError::DatabaseError(e));
     }
-    let res = json!({
-        "result": "success"
-    });
 
-    return Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e));
+    Ok("success".into())
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -140,48 +174,30 @@ pub async fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Re
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
-    let res = json!({
-        "error": format!("'start_version_stat_collection' is only supported in native mode"),
-    });
-    Response::builder()
-        .status(404)
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    MmError::err(NodeVersionError::UnsupportedMode(
+        "'start_version_stat_collection'".into(),
+    ))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let interval: f64 = try_s!(json::from_value(req["interval"].clone()));
+pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    let interval: f64 = json::from_value(req["interval"].clone()).map_to_mm(NodeVersionError::from)?;
 
     spawn(stat_collection_loop(ctx, interval));
 
-    let res = json!({
-        "result": "success"
-    });
-    Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+    Ok("success".into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
-    use crate::mm2::database::stats_nodes::{select_peers_addresses, select_peers_names};
+    use crate::mm2::database::stats_nodes::select_peers_names;
 
     loop {
         if ctx.is_stopping() {
             break;
         };
         {
-            let peers_addresses = match select_peers_addresses(&ctx) {
-                Ok(p) => p,
-                Err(e) => {
-                    log::error!("Error selecting peers addresses from db: {}", e);
-                    Timer::sleep(10.).await;
-                    continue;
-                },
-            };
-
             let peers_names = match select_peers_names(&ctx) {
                 Ok(n) => n,
                 Err(e) => {
@@ -191,11 +207,13 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                 },
             };
 
+            let peers: Vec<String> = peers_names.keys().cloned().collect();
+
             let timestamp = now_ms() / 1000;
-            let get_versions_res = match request_addresses::<String>(
+            let get_versions_res = match request_peers::<String>(
                 ctx.clone(),
                 P2PRequest::NetworkInfo(NetworkInfoRequest::GetMm2Version),
-                peers_addresses,
+                peers,
             )
             .await
             {
@@ -214,26 +232,44 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                 };
 
                 match response {
-                    PeerDecodedResponse::Ok(version) => {
+                    PeerDecodedResponse::Ok(v) => {
                         let node_version_stat = NodeVersionStat {
-                            name,
-                            version,
+                            name: name.clone(),
+                            version: Some(v.clone()),
                             timestamp,
+                            error: None,
                         };
-                        if let Err(e) = insert_node_version_stat_to_db(&ctx, &node_version_stat) {
-                            log::error!("Error inserting nodes versions into db: {}", e);
-                            continue;
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                            log::error!("Error inserting node {} version {} into db: {}", name, v, e);
                         };
                     },
-                    // If a node returns an error or no response it will not be added to the stats table
-                    // A simple count for every node in db will return a count for the number of responses recieved
                     PeerDecodedResponse::Err(e) => {
-                        log::error!("Node {} responded to version request with error: {}", name, e);
-                        continue;
+                        log::error!(
+                            "Node {} responded to version request with error: {}",
+                            name.clone(),
+                            e.clone()
+                        );
+                        let node_version_stat = NodeVersionStat {
+                            name: name.clone(),
+                            version: None,
+                            timestamp,
+                            error: Some(e.clone()),
+                        };
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                            log::error!("Error inserting node {} error into db: {}", name, e);
+                        };
                     },
                     PeerDecodedResponse::None => {
-                        log::debug!("Node {} did not respond to version request", name);
-                        continue;
+                        log::debug!("Node {} did not respond to version request", name.clone());
+                        let node_version_stat = NodeVersionStat {
+                            name: name.clone(),
+                            version: None,
+                            timestamp,
+                            error: None,
+                        };
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                            log::error!("Error inserting no response for node {} into db: {}", name, e);
+                        };
                     },
                 }
             }
@@ -242,7 +278,18 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
     }
 }
 
-fn addr_to_ipv4_string(address: &str) -> Result<String, String> {
+#[derive(Debug, Display)]
+pub enum ParseAddressError {
+    #[display(fmt = "Address {} resolved to IPv6 which is not supported", _0)]
+    UnsupportedIPv6Address(String),
+    #[display(fmt = "Address {} to_socket_addrs empty iter", _0)]
+    EmptyIterator(String),
+    // error return for second string
+    #[display(fmt = "Couldn't resolve '{}' Address: {}", _0, _1)]
+    UnresolvedAddress(String, String),
+}
+
+fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
     let address_with_port = if address.contains(':') {
         address.to_string()
     } else {
@@ -254,24 +301,26 @@ fn addr_to_ipv4_string(address: &str) -> Result<String, String> {
                 if addr.is_ipv4() {
                     Ok(addr.ip().to_string())
                 } else {
-                    ERR!("Address {} resolved to IPv6 {} which is not supported", address, addr)
+                    MmError::err(ParseAddressError::UnsupportedIPv6Address(address.into()))
                 }
             },
-            None => {
-                ERR!("Address {} to_socket_addrs empty iter", address)
-            },
+            None => MmError::err(ParseAddressError::EmptyIterator(address.into())),
         },
-        Err(e) => {
-            ERR!("Couldn't resolve '{}' Address: {}", address, e)
-        },
+        Err(e) => MmError::err(ParseAddressError::UnresolvedAddress(address.into(), e.to_string())),
     }
 }
 
-pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
+#[derive(Debug, Display)]
+pub enum NetIdError {
+    #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
+    LargerThanMax { netid: u16, max_netid: u16 },
+}
+
+pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {
     const LP_RPCPORT: u16 = 7783;
     let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
     if netid > max_netid {
-        return ERR!("Netid {} is larger than max {}", netid, max_netid);
+        return MmError::err(NetIdError::LargerThanMax { netid, max_netid });
     }
 
     let other_ports = if netid != 0 {
