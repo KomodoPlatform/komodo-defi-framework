@@ -18,7 +18,7 @@
 //
 use common::executor::spawn;
 use common::log;
-use common::mm_ctx::MmArc;
+use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::mm_metrics::{ClockOps, MetricsOps};
 use derive_more::Display;
@@ -86,24 +86,23 @@ impl P2PContext {
     }
 }
 
-pub async fn p2p_event_process_loop(ctx: MmArc, mut rx: AdexEventRx, i_am_relay: bool) {
-    while !ctx.is_stopping() {
-        match rx.next().await {
+pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay: bool) {
+    loop {
+        let adex_event = rx.next().await;
+        let ctx = match MmArc::from_weak(&ctx) {
+            Some(ctx) => ctx,
+            None => return,
+        };
+        match adex_event {
             Some(AdexBehaviourEvent::Message(peer_id, message_id, message)) => {
-                spawn(process_p2p_message(
-                    ctx.clone(),
-                    peer_id,
-                    message_id,
-                    message,
-                    i_am_relay,
-                ));
+                spawn(process_p2p_message(ctx, peer_id, message_id, message, i_am_relay));
             },
             Some(AdexBehaviourEvent::PeerRequest {
                 peer_id,
                 request,
                 response_channel,
             }) => {
-                if let Err(e) = process_p2p_request(ctx.clone(), peer_id, request, response_channel).await {
+                if let Err(e) = process_p2p_request(ctx, peer_id, request, response_channel).await {
                     log::error!("Error on process P2P request: {:?}", e);
                 }
             },

@@ -841,19 +841,23 @@ async fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
-    ctx: MmArc,
+    ctx: MmWeak,
 }
 
 impl BalanceUpdateOrdermatchHandler {
-    pub fn new(ctx: MmArc) -> Self { BalanceUpdateOrdermatchHandler { ctx } }
+    pub fn new(ctx: MmArc) -> Self { BalanceUpdateOrdermatchHandler { ctx: ctx.weak() } }
 }
 
 #[async_trait]
 impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
     async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal) {
+        let ctx = match MmArc::from_weak(&self.ctx) {
+            Some(ctx) => ctx,
+            None => return,
+        };
         // Get the max maker available volume to check if the wallet balances are sufficient for the issued maker orders.
         // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
-        let new_volume = match calc_max_maker_vol(&self.ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
+        let new_volume = match calc_max_maker_vol(&ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
             Ok(v) => v,
             Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
@@ -861,14 +865,14 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                 return;
             },
         };
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&self.ctx).unwrap();
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
         let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
         *maker_orders = maker_orders
             .drain()
             .filter_map(|(uuid, order)| {
                 if order.base == coin.ticker() {
                     if new_volume < order.min_base_vol {
-                        let ctx = self.ctx.clone();
+                        let ctx = ctx.clone();
                         delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::InsufficientBalance);
                         spawn(async move { maker_order_cancelled_p2p_notify(ctx, &order).await });
                         None
@@ -877,7 +881,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                         update_msg.with_new_max_volume(new_volume.to_ratio());
                         let base = order.base.to_owned();
                         let rel = order.rel.to_owned();
-                        let ctx = self.ctx.clone();
+                        let ctx = ctx.clone();
                         spawn(async move { maker_order_updated_p2p_notify(ctx, &base, &rel, update_msg).await });
                         Some((uuid, order))
                     } else {

@@ -580,14 +580,14 @@ async fn init_p2p(ctx: MmArc) -> Result<(), String> {
     let mut p2p_abort = Some(p2p_abort);
     ctx.on_stop(Box::new(move || {
         if let Some(handle) = p2p_abort.take() {
-            drop(handle);
+            handle.abort();
         }
         Ok(())
     }));
     try_s!(ctx.peer_id.pin(peer_id.to_string()));
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
-    spawn(p2p_event_process_loop(ctx.clone(), event_rx, i_am_seed));
+    spawn(p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed));
 
     Ok(())
 }
