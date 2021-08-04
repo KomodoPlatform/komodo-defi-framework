@@ -24,6 +24,8 @@ const INSERT_NODE: &str = "INSERT INTO nodes (name, address, peer_id) VALUES (?1
 
 const DELETE_NODE: &str = "DELETE FROM nodes WHERE name = ?1";
 
+const SELECT_PEERS_ADDRESSES: &str = "SELECT peer_id, address FROM nodes";
+
 const SELECT_PEERS_NAMES: &str = "SELECT peer_id, name FROM nodes";
 
 const INSERT_STAT: &str = "INSERT INTO stats_nodes (name, version, timestamp, error) VALUES (?1, ?2, ?3, ?4)";
@@ -44,6 +46,16 @@ pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     let params = vec![name];
     let conn = ctx.sqlite_connection();
     conn.execute(DELETE_NODE, &params).map(|_| ())
+}
+
+pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, SqlError> {
+    let conn = ctx.sqlite_connection();
+    let mut stmt = conn.prepare(SELECT_PEERS_ADDRESSES)?;
+    let peers_addresses = stmt
+        .query_map(NO_PARAMS, |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<SqlResult<Vec<(String, String)>>>()?;
+
+    Ok(peers_addresses)
 }
 
 pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, SqlError> {

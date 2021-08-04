@@ -139,8 +139,8 @@ pub enum AdexBehaviourCmd {
     GetRelayMesh {
         result_tx: oneshot::Sender<Vec<String>>,
     },
-    /// Add addresses for a peer to peer exchange.
-    AddPeerAddresses {
+    /// Add a reserved peer to the peer exchange.
+    AddReservedPeer {
         peer: PeerId,
         addresses: PeerAddresses,
     },
@@ -373,8 +373,9 @@ impl AtomicDexBehaviour {
                     error!("Result rx is dropped");
                 }
             },
-            AdexBehaviourCmd::AddPeerAddresses { peer, addresses } => {
-                self.peers_exchange.add_peer_addresses(&peer, addresses);
+            AdexBehaviourCmd::AddReservedPeer { peer, addresses } => {
+                self.peers_exchange
+                    .add_peer_addresses_to_reserved_peers(&peer, addresses);
             },
             AdexBehaviourCmd::PropagateMessage {
                 message_id,
@@ -414,7 +415,8 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for AtomicDexBehaviour {
                             Ok(a) => a,
                             Err(_) => return,
                         };
-                        self.peers_exchange.add_peer_addresses(&message.source, addresses);
+                        self.peers_exchange
+                            .add_peer_addresses_to_known_peers(&message.source, addresses);
                     }
                 }
             }
@@ -729,7 +731,7 @@ fn start_gossipsub(
             for (peer_id, address) in ALL_NETID_7777_SEEDNODES {
                 let peer_id = PeerId::from_str(peer_id).expect("valid peer id");
                 let multiaddr = parse_relay_address((*address).to_owned(), network_port);
-                peers_exchange.add_peer_addresses(&peer_id, iter::once(multiaddr).collect());
+                peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
                 gossipsub.add_explicit_relay(peer_id);
             }
         }

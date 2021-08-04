@@ -29,6 +29,7 @@ use mm2_libp2p::peers_exchange::PeerAddresses;
 use mm2_libp2p::{decode_message, encode_message, GossipsubMessage, MessageId, PeerId, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use serde::de;
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
@@ -162,7 +163,7 @@ async fn process_p2p_request(
     request: Vec<u8>,
     response_channel: AdexResponseChannel,
 ) -> P2PRequestResult<()> {
-    let request = decode_message::<P2PRequest>(&request).map_to_mm(P2PRequestError::from)?;
+    let request = decode_message::<P2PRequest>(&request)?;
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req).await,
         P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).await,
@@ -213,7 +214,7 @@ pub async fn request_any_relay<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
 ) -> P2PRequestResult<Option<(T, PeerId)>> {
-    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
+    let encoded = encode_message(&req)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -232,7 +233,7 @@ pub async fn request_any_relay<T: de::DeserializeOwned>(
         .map_to_mm(|e| P2PRequestError::ResponseError(e.to_string()))?
     {
         Some((from_peer, response)) => {
-            let response = decode_message::<T>(&response).map_to_mm(P2PRequestError::from)?;
+            let response = decode_message::<T>(&response)?;
             Ok(Some((response, from_peer)))
         },
         None => Ok(None),
@@ -250,7 +251,7 @@ pub async fn request_relays<T: de::DeserializeOwned>(
     ctx: MmArc,
     req: P2PRequest,
 ) -> P2PRequestResult<Vec<(PeerId, PeerDecodedResponse<T>)>> {
-    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
+    let encoded = encode_message(&req)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -275,7 +276,7 @@ pub async fn request_peers<T: de::DeserializeOwned>(
     req: P2PRequest,
     peers: Vec<String>,
 ) -> P2PRequestResult<Vec<(PeerId, PeerDecodedResponse<T>)>> {
-    let encoded = encode_message(&req).map_to_mm(P2PRequestError::from)?;
+    let encoded = encode_message(&req)?;
 
     let (response_tx, response_rx) = oneshot::channel();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -350,13 +351,81 @@ pub fn propagate_message(ctx: &MmArc, message_id: MessageId, propagation_source:
     });
 }
 
-pub fn add_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAddresses) {
+pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAddresses) {
     let ctx = ctx.clone();
     spawn(async move {
         let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
-        let cmd = AdexBehaviourCmd::AddPeerAddresses { peer, addresses };
+        let cmd = AdexBehaviourCmd::AddReservedPeer { peer, addresses };
         if let Err(e) = p2p_ctx.cmd_tx.lock().await.try_send(cmd) {
-            log::error!("add_peer_addresses cmd_tx.send error {:?}", e);
+            log::error!("add_reserved_peer_addresses cmd_tx.send error {:?}", e);
         };
     });
+}
+
+#[derive(Debug, Display)]
+pub enum ParseAddressError {
+    #[display(fmt = "Address/Seed {} resolved to IPv6 which is not supported", _0)]
+    UnsupportedIPv6Address(String),
+    #[display(fmt = "Address/Seed {} to_socket_addrs empty iter", _0)]
+    EmptyIterator(String),
+    #[display(fmt = "Couldn't resolve '{}' Address/Seed: {}", _0, _1)]
+    UnresolvedAddress(String, String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
+    // Remove "https:// or http://" etc.. from address str
+    let formated_address = address.split("://").last().unwrap_or(address);
+    let address_with_port = if formated_address.contains(':') {
+        formated_address.to_string()
+    } else {
+        format!("{}:0", formated_address)
+    };
+    match address_with_port.as_str().to_socket_addrs() {
+        Ok(mut iter) => match iter.next() {
+            Some(addr) => {
+                if addr.is_ipv4() {
+                    Ok(addr.ip().to_string())
+                } else {
+                    log::warn!(
+                        "Address/Seed {} resolved to IPv6 {} which is not supported",
+                        address,
+                        addr
+                    );
+                    MmError::err(ParseAddressError::UnsupportedIPv6Address(address.into()))
+                }
+            },
+            None => {
+                log::warn!("Address/Seed {} to_socket_addrs empty iter", address);
+                MmError::err(ParseAddressError::EmptyIterator(address.into()))
+            },
+        },
+        Err(e) => {
+            log::error!("Couldn't resolve '{}' seed: {}", address, e);
+            MmError::err(ParseAddressError::UnresolvedAddress(address.into(), e.to_string()))
+        },
+    }
+}
+
+#[derive(Debug, Display)]
+pub enum NetIdError {
+    #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
+    LargerThanMax { netid: u16, max_netid: u16 },
+}
+
+pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {
+    const LP_RPCPORT: u16 = 7783;
+    let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
+    if netid > max_netid {
+        return MmError::err(NetIdError::LargerThanMax { netid, max_netid });
+    }
+
+    let other_ports = if netid != 0 {
+        let net_mod = netid % 10;
+        let net_div = netid / 10;
+        (net_div * 40) + LP_RPCPORT + net_mod
+    } else {
+        LP_RPCPORT
+    };
+    Ok((other_ports + 10, other_ports + 20, other_ports + 30))
 }

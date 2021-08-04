@@ -77,6 +77,8 @@ pub struct PeersExchange {
     #[behaviour(ignore)]
     known_peers: Vec<PeerId>,
     #[behaviour(ignore)]
+    reserved_peers: Vec<PeerId>,
+    #[behaviour(ignore)]
     events: VecDeque<NetworkBehaviourAction<RequestProtocol<PeersExchangeCodec>, ()>>,
     #[behaviour(ignore)]
     maintain_peers_interval: Interval,
@@ -94,6 +96,7 @@ impl PeersExchange {
         PeersExchange {
             request_response,
             known_peers: Vec::new(),
+            reserved_peers: Vec::new(),
             events: VecDeque::new(),
             maintain_peers_interval: Interval::new_at(
                 Instant::now() + Duration::from_secs(REQUEST_PEERS_INITIAL_DELAY),
@@ -125,7 +128,7 @@ impl PeersExchange {
         }
     }
 
-    pub fn add_peer_addresses(&mut self, peer: &PeerId, addresses: PeerAddresses) {
+    pub fn add_peer_addresses_to_known_peers(&mut self, peer: &PeerId, addresses: PeerAddresses) {
         if addresses.len() > 1 {
             return;
         }
@@ -141,6 +144,29 @@ impl PeersExchange {
         let already_known = self.request_response.addresses_of_peer(peer);
         for address in addresses {
             if !already_known.contains(&address) {
+                self.request_response.add_address(&peer, address);
+            }
+        }
+    }
+
+    pub fn add_peer_addresses_to_reserved_peers(&mut self, peer: &PeerId, addresses: PeerAddresses) {
+        if addresses.len() > 1 {
+            return;
+        }
+
+        for address in addresses.iter() {
+            if !self.validate_global_multiaddr(address) {
+                return;
+            }
+        }
+
+        if !self.reserved_peers.contains(&peer) && !addresses.is_empty() {
+            self.reserved_peers.push(*peer);
+        }
+
+        let already_reserved = self.request_response.addresses_of_peer(peer);
+        for address in addresses {
+            if !already_reserved.contains(&address) {
                 self.request_response.add_address(&peer, address);
             }
         }
@@ -184,6 +210,8 @@ impl PeersExchange {
     }
 
     pub fn is_known_peer(&self, peer: &PeerId) -> bool { self.known_peers.contains(peer) }
+
+    pub fn is_reserved_peer(&self, peer: &PeerId) -> bool { self.reserved_peers.contains(peer) }
 
     pub fn add_known_peer(&mut self, peer: PeerId) {
         if !self.is_known_peer(&peer) {
@@ -282,7 +310,10 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
 
                         info!("Got peers {:?}", peers);
                         peers.into_iter().for_each(|(peer, addresses)| {
-                            self.add_peer_addresses(&peer.0, addresses);
+                            // reserved peers and known peers should not intersect leading to unintentional removal of reserved peers addresses
+                            if !self.is_reserved_peer(&peer.0) {
+                                self.add_peer_addresses_to_known_peers(&peer.0, addresses);
+                            }
                         });
                     },
                 },

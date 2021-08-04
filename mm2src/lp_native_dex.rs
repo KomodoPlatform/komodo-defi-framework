@@ -30,10 +30,9 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
-use crate::mm2::lp_network::{p2p_event_process_loop, P2PContext};
+use crate::mm2::lp_network::{addr_to_ipv4_string, lp_ports, p2p_event_process_loop, P2PContext};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_ordermatch_loop, orders_kick_start,
                                 BalanceUpdateOrdermatchHandler};
-use crate::mm2::lp_stats::lp_ports;
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -64,10 +63,7 @@ fn default_seednodes(netid: u16) -> Vec<String> {
     if netid == 7777 {
         NETID_7777_SEEDNODES
             .iter()
-            .filter_map(|seed| {
-                let seed_url = format!("{}:0", *seed);
-                seed_to_ipv4_string(&seed_url)
-            })
+            .filter_map(|seed| addr_to_ipv4_string(*seed).ok())
             .collect()
     } else {
         Vec::new()
@@ -310,31 +306,6 @@ fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
                 continue;
             },
         }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn seed_to_ipv4_string(seed: &str) -> Option<String> {
-    use std::net::ToSocketAddrs;
-    match seed.to_socket_addrs() {
-        Ok(mut iter) => match iter.next() {
-            Some(addr) => {
-                if addr.is_ipv4() {
-                    Some(addr.ip().to_string())
-                } else {
-                    warn!("Seed {} resolved to IPv6 {} which is not supported", seed, addr);
-                    None
-                }
-            },
-            None => {
-                warn!("Seed {} to_socket_addrs empty iter", seed);
-                None
-            },
-        },
-        Err(e) => {
-            error!("Couldn't resolve '{}' seed: {}", seed, e);
-            None
-        },
     }
 }
 

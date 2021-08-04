@@ -10,9 +10,9 @@ use mm2_libp2p::atomicdex_behaviour::parse_relay_address;
 use mm2_libp2p::{encode_message, PeerId};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
-use std::net::ToSocketAddrs;
 
-use crate::mm2::lp_network::{add_peer_addresses, request_peers, P2PRequest, PeerDecodedResponse};
+use crate::mm2::lp_network::{add_reserved_peer_addresses, addr_to_ipv4_string, lp_ports, request_peers, NetIdError,
+                             P2PRequest, ParseAddressError, PeerDecodedResponse};
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 
@@ -75,7 +75,7 @@ fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), Str
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::insert_node_info(ctx, node_info).map_err(|e| ERRL!("{}", e))
+    crate::mm2::database::stats_nodes::insert_node_info(ctx, node_info).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -83,7 +83,7 @@ fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionS
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| ERRL!("{}", e))
+    crate::mm2::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -91,7 +91,15 @@ fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| ERRL!("{}", e))
+    crate::mm2::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| e.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(()) }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
+    crate::mm2::database::stats_nodes::select_peers_addresses(ctx).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -102,31 +110,16 @@ pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionRes
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    let node_info: NodeInfo = json::from_value(req).map_to_mm(NodeVersionError::from)?;
-    let netid = ctx.conf["netid"].as_u64().unwrap_or(0) as u16;
-    let (_, pubport, _) = lp_ports(netid)?;
-    let addr = addr_to_ipv4_string(&node_info.address)?;
-    let relay_address = parse_relay_address(addr, pubport);
+    let node_info: NodeInfo = json::from_value(req)?;
 
-    let mut addresses = HashSet::new();
-    addresses.insert(relay_address.clone());
-
-    let peer_id: PeerId = match node_info.peer_id.parse() {
-        Ok(p) => p,
-        Err(e) => return MmError::err(NodeVersionError::PeerIdParseError(e.to_string())),
-    };
-
-    add_peer_addresses(&ctx, peer_id, addresses);
-
-    let node_info_with_formated_addr = NodeInfo {
+    let ipv4_addr = addr_to_ipv4_string(&node_info.address)?;
+    let node_info_with_ipv4_addr = NodeInfo {
         name: node_info.name,
-        address: relay_address.to_string(),
+        address: ipv4_addr,
         peer_id: node_info.peer_id,
     };
 
-    if let Err(e) = insert_node_info_to_db(&ctx, &node_info_with_formated_addr) {
-        return MmError::err(NodeVersionError::DatabaseError(e));
-    }
+    insert_node_info_to_db(&ctx, &node_info_with_ipv4_addr).map_to_mm(NodeVersionError::DatabaseError)?;
 
     Ok("success".into())
 }
@@ -141,10 +134,9 @@ pub async fn remove_node_from_version_stat(_ctx: MmArc, _req: Json) -> NodeVersi
 /// Removes node info. from db to skip collecting stats for this node
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    let node_name: String = json::from_value(req["name"].clone()).map_to_mm(NodeVersionError::from)?;
-    if let Err(e) = delete_node_info_from_db(&ctx, node_name) {
-        return MmError::err(NodeVersionError::DatabaseError(e));
-    }
+    let node_name: String = json::from_value(req["name"].clone())?;
+
+    delete_node_info_from_db(&ctx, node_name).map_to_mm(NodeVersionError::DatabaseError)?;
 
     Ok("success".into())
 }
@@ -182,7 +174,22 @@ pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersi
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    let interval: f64 = json::from_value(req["interval"].clone()).map_to_mm(NodeVersionError::from)?;
+    let interval: f64 = json::from_value(req["interval"].clone())?;
+
+    let peers_addresses = select_peers_addresses_from_db(&ctx).map_to_mm(NodeVersionError::DatabaseError)?;
+
+    let netid = ctx.conf["netid"].as_u64().unwrap_or(0) as u16;
+    let (_, pubport, _) = lp_ports(netid)?;
+
+    for (peer_id, address) in peers_addresses {
+        let peer_id = peer_id
+            .parse::<PeerId>()
+            .map_to_mm(|e| NodeVersionError::PeerIdParseError(e.to_string()))?;
+        let mut addresses = HashSet::new();
+        let multi_address = parse_relay_address(address, pubport);
+        addresses.insert(multi_address);
+        add_reserved_peer_addresses(&ctx, peer_id, addresses);
+    }
 
     spawn(stat_collection_loop(ctx, interval));
 
@@ -276,59 +283,4 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
         }
         Timer::sleep(interval).await;
     }
-}
-
-#[derive(Debug, Display)]
-pub enum ParseAddressError {
-    #[display(fmt = "Address {} resolved to IPv6 which is not supported", _0)]
-    UnsupportedIPv6Address(String),
-    #[display(fmt = "Address {} to_socket_addrs empty iter", _0)]
-    EmptyIterator(String),
-    // error return for second string
-    #[display(fmt = "Couldn't resolve '{}' Address: {}", _0, _1)]
-    UnresolvedAddress(String, String),
-}
-
-fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
-    let address_with_port = if address.contains(':') {
-        address.to_string()
-    } else {
-        format!("{}{}", address, ":0")
-    };
-    match address_with_port.as_str().to_socket_addrs() {
-        Ok(mut iter) => match iter.next() {
-            Some(addr) => {
-                if addr.is_ipv4() {
-                    Ok(addr.ip().to_string())
-                } else {
-                    MmError::err(ParseAddressError::UnsupportedIPv6Address(address.into()))
-                }
-            },
-            None => MmError::err(ParseAddressError::EmptyIterator(address.into())),
-        },
-        Err(e) => MmError::err(ParseAddressError::UnresolvedAddress(address.into(), e.to_string())),
-    }
-}
-
-#[derive(Debug, Display)]
-pub enum NetIdError {
-    #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
-    LargerThanMax { netid: u16, max_netid: u16 },
-}
-
-pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {
-    const LP_RPCPORT: u16 = 7783;
-    let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
-    if netid > max_netid {
-        return MmError::err(NetIdError::LargerThanMax { netid, max_netid });
-    }
-
-    let other_ports = if netid != 0 {
-        let net_mod = netid % 10;
-        let net_div = netid / 10;
-        (net_div * 40) + LP_RPCPORT + net_mod
-    } else {
-        LP_RPCPORT
-    };
-    Ok((other_ports + 10, other_ports + 20, other_ports + 30))
 }
