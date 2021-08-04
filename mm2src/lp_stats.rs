@@ -11,8 +11,8 @@ use mm2_libp2p::{encode_message, PeerId};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 
-use crate::mm2::lp_network::{add_reserved_peer_addresses, addr_to_ipv4_string, lp_ports, request_peers, NetIdError,
-                             P2PRequest, ParseAddressError, PeerDecodedResponse};
+use crate::mm2::lp_network::{add_reserved_peer_addresses, lp_ports, request_peers, NetIdError, P2PRequest,
+                             ParseAddressError, PeerDecodedResponse};
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 
@@ -95,7 +95,7 @@ fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(()) }
+fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(Vec::new()) }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
@@ -110,6 +110,8 @@ pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionRes
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    use crate::mm2::lp_network::addr_to_ipv4_string;
+
     let node_info: NodeInfo = json::from_value(req)?;
 
     let ipv4_addr = addr_to_ipv4_string(&node_info.address)?;

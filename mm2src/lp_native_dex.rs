@@ -30,7 +30,7 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
-use crate::mm2::lp_network::{addr_to_ipv4_string, lp_ports, p2p_event_process_loop, P2PContext};
+use crate::mm2::lp_network::{lp_ports, p2p_event_process_loop, P2PContext};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_ordermatch_loop, orders_kick_start,
                                 BalanceUpdateOrdermatchHandler};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
@@ -60,6 +60,7 @@ fn default_seednodes(netid: u16) -> Vec<String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<String> {
+    use crate::mm2::lp_network::addr_to_ipv4_string;
     if netid == 7777 {
         NETID_7777_SEEDNODES
             .iter()
