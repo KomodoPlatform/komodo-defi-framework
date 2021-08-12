@@ -426,10 +426,10 @@ where
                         if let ActualTxFee::Dynamic(ref f) = coin_tx_fee {
                             tx_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
                         }
-                        if let Some(min_relay) = min_relay_fee {
-                            if tx_fee < min_relay {
-                                tx_fee = min_relay;
-                            }
+                    }
+                    if let Some(min_relay) = min_relay_fee {
+                        if tx_fee < min_relay {
+                            tx_fee = min_relay;
                         }
                     }
                     break;
