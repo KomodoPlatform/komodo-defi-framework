@@ -1117,7 +1117,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
         MockResult::Return(Box::new(futures01::future::ok("1.0".parse().unwrap())))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
-    let mut coin = utxo_coin_fields_for_test(client, None);
+    let mut coin = utxo_coin_fields_for_test(client, None, false);
     coin.conf.force_min_relay_fee = true;
     let coin = utxo_coin_from_fields(coin);
     let unspents = vec![UnspentInfo {
