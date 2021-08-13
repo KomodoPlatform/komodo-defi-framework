@@ -56,7 +56,7 @@ pub async fn process_best_orders_p2p_request(
         let orders = match orderbook.ordered.get(&pair) {
             Some(orders) => orders,
             None => {
-                log::warn!("No orders for pair {:?}", pair);
+                log::debug!("No orders for pair {:?}", pair);
                 continue;
             },
         };
@@ -94,7 +94,7 @@ pub async fn process_best_orders_p2p_request(
                     }
                 },
                 None => {
-                    log::warn!("No order with uuid {:?}", ordered.uuid);
+                    log::debug!("No order with uuid {:?}", ordered.uuid);
                     continue;
                 },
             };
