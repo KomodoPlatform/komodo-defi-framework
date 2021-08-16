@@ -909,6 +909,7 @@ dependencies = [
  "futures 0.1.29",
  "futures 0.3.15",
  "futures-cpupool",
+ "getrandom 0.2.2",
  "gstuff",
  "hdrhistogram 7.1.0",
  "hex 0.3.2",
@@ -916,6 +917,7 @@ dependencies = [
  "http-body 0.1.0",
  "hyper",
  "hyper-rustls",
+ "indexmap",
  "itertools 0.8.2",
  "js-sys",
  "keys",
@@ -1843,8 +1845,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9495705279e7140bf035dde1f6e750c162df8b625267cd52cc44e0b156732c8"
 dependencies = [
  "cfg-if 1.0.0",
+ "js-sys",
  "libc",
  "wasi 0.10.2+wasi-snapshot-preview1",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2300,12 +2304,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "1.7.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc633605454125dec4b66843673f01c7df2b89479b32e0ed634e43a91cff62a5"
+checksum = "55e2e4c765aa53a0424761bf9f41aa7a6ac1efa87238f59560640e27fca028f2"
 dependencies = [
  "autocfg 1.0.0",
- "hashbrown 0.11.2",
+ "hashbrown 0.9.1",
 ]
 
 [[package]]
@@ -3182,6 +3186,7 @@ dependencies = [
  "atomicdex-gossipsub",
  "env_logger",
  "futures 0.3.15",
+ "getrandom 0.2.2",
  "hex 0.4.2",
  "lazy_static",
  "libp2p",
