@@ -2126,7 +2126,7 @@ impl Orderbook {
                 return;
             },
         };
-        let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
+        let order_bytes = rmp_serde::to_vec(&order.remove_protocol_info()).expect("Serialization should never fail");
         if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
             log::error!(
                 "Error {:?} on insertion to trie. Key {}, value {:?}",
@@ -3294,6 +3294,21 @@ impl OrderbookItem {
             base_min_volume,
             rel_max_volume,
             rel_min_volume,
+        }
+    }
+
+    fn remove_protocol_info(&self) -> Self {
+        OrderbookItem {
+            pubkey: self.pubkey.clone(),
+            base: self.base.clone(),
+            rel: self.rel.clone(),
+            price: self.price.clone(),
+            max_volume: self.max_volume.clone(),
+            min_volume: self.min_volume.clone(),
+            uuid: self.uuid,
+            created_at: self.created_at,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         }
     }
 }
