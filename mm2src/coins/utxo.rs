@@ -1109,7 +1109,7 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn signature_version(&self) -> SignatureVersion {
-        if self.ticker == "BCH" {
+        if self.ticker == "BCH" || self.fork_id() != 0 {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
