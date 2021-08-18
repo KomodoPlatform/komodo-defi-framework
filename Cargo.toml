@@ -164,3 +164,4 @@ resolver = "2"
 backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
 backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }
 num-rational = { git = "https://github.com/artemii235/num-rational.git" }
+parity-util-mem = { git = "https://github.com/KomodoPlatform/parity-common.git" }

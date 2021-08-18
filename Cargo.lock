@@ -1455,11 +1455,10 @@ dependencies = [
 [[package]]
 name = "ethbloom"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "779864b9c7f7ead1f092972c3257496c6a84b46dba2ce131dd8a282cb2cc5972"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "crunchy 0.2.2",
- "fixed-hash 0.7.0",
+ "fixed-hash 0.7.0 (git+https://github.com/KomodoPlatform/parity-common.git)",
  "impl-rlp",
  "impl-serde",
  "tiny-keccak 2.0.2",
@@ -1495,15 +1494,14 @@ dependencies = [
 [[package]]
 name = "ethereum-types"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f64b5df66a228d85e4b17e5d6c6aa43b0310898ffe8a85988c4c032357aaabfd"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "ethbloom 0.11.0",
- "fixed-hash 0.7.0",
+ "fixed-hash 0.7.0 (git+https://github.com/KomodoPlatform/parity-common.git)",
  "impl-rlp",
  "impl-serde",
- "primitive-types",
- "uint 0.9.1",
+ "primitive-types 0.9.0",
+ "uint 0.9.0",
 ]
 
 [[package]]
@@ -1593,6 +1591,14 @@ name = "fixed-hash"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcf0ed7fe52a17a03854ec54a9f76d6d84508d1c0e66bc1793301c73fc8493c"
+dependencies = [
+ "static_assertions",
+]
+
+[[package]]
+name = "fixed-hash"
+version = "0.7.0"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "byteorder 1.4.3",
  "rand 0.8.4",
@@ -2266,6 +2272,14 @@ dependencies = [
 
 [[package]]
 name = "impl-codec"
+version = "0.5.0"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
+dependencies = [
+ "parity-scale-codec",
+]
+
+[[package]]
+name = "impl-codec"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "161ebdfec3c8e3b52bf61c4f3550a1eea4f9579d10dc1b936f3171ebdcd6c443"
@@ -2276,8 +2290,7 @@ dependencies = [
 [[package]]
 name = "impl-rlp"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28220f89297a075ddc7245cd538076ee98b01f2a9c23a53a4f1105d5a322808"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "rlp 0.5.0",
 ]
@@ -2285,8 +2298,7 @@ dependencies = [
 [[package]]
 name = "impl-serde"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b47ca4d2b6931707a55fce5cf66aff80e2178c8b63bbb4ecb5695cbc870ddf6f"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "serde",
 ]
@@ -3542,8 +3554,7 @@ checksum = "aa9777aa91b8ad9dd5aaa04a9b6bcb02c7f1deb952fca5a66034d5e63afc5c6f"
 [[package]]
 name = "parity-util-mem"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "664a8c6b8e62d8f9f2f937e391982eb433ab285b4cd9545b342441e04a906e42"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "cfg-if 1.0.0",
  "ethereum-types 0.11.0",
@@ -3552,7 +3563,7 @@ dependencies = [
  "lru 0.6.0",
  "parity-util-mem-derive",
  "parking_lot 0.11.1",
- "primitive-types",
+ "primitive-types 0.9.0",
  "smallvec 1.6.1",
  "winapi",
 ]
@@ -3560,8 +3571,7 @@ dependencies = [
 [[package]]
 name = "parity-util-mem-derive"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f557c32c6d268a07c921471619c0295f5efad3a0e76d4f97a05c091a51d110b2"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "proc-macro2",
  "syn 1.0.72",
@@ -3805,14 +3815,24 @@ checksum = "237a5ed80e274dbc66f86bd59c1e25edc039660be53194b5fe0a482e0f2612ea"
 
 [[package]]
 name = "primitive-types"
+version = "0.9.0"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
+dependencies = [
+ "fixed-hash 0.7.0 (git+https://github.com/KomodoPlatform/parity-common.git)",
+ "impl-codec 0.5.0",
+ "impl-rlp",
+ "impl-serde",
+ "uint 0.9.0",
+]
+
+[[package]]
+name = "primitive-types"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06345ee39fbccfb06ab45f3a1a5798d9dafa04cb8921a76d227040003a234b0e"
 dependencies = [
- "fixed-hash 0.7.0",
- "impl-codec",
- "impl-rlp",
- "impl-serde",
+ "fixed-hash 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "impl-codec 0.5.1",
  "uint 0.9.1",
 ]
 
@@ -4417,8 +4437,7 @@ dependencies = [
 [[package]]
 name = "rlp"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e54369147e3e7796c9b885c7304db87ca3d09a0a98f72843d532868675bbfba8"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
 dependencies = [
  "bytes 1.0.1",
  "rustc-hex 2.1.0",
@@ -5048,7 +5067,7 @@ dependencies = [
  "num-traits 0.2.12",
  "parity-scale-codec",
  "parity-util-mem",
- "primitive-types",
+ "primitive-types 0.9.1",
  "secrecy",
  "sp-debug-derive",
  "sp-runtime-interface",
@@ -5076,7 +5095,7 @@ checksum = "b2e5c88b4bc8d607e4e2ff767a85db58cf7101f3dd6064f06929342ea67fe8fb"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
- "primitive-types",
+ "primitive-types 0.9.1",
  "sp-runtime-interface-proc-macro",
  "sp-std",
  "sp-storage",
@@ -5781,6 +5800,17 @@ dependencies = [
  "byteorder 1.4.3",
  "crunchy 0.1.6",
  "rustc-hex 2.1.0",
+]
+
+[[package]]
+name = "uint"
+version = "0.9.0"
+source = "git+https://github.com/KomodoPlatform/parity-common.git#d08731730e3b18b0164f7b74a89ea37f09b62d83"
+dependencies = [
+ "byteorder 1.4.3",
+ "crunchy 0.2.2",
+ "hex 0.4.2",
+ "static_assertions",
 ]
 
 [[package]]
