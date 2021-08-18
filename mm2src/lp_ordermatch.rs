@@ -569,23 +569,17 @@ async fn process_get_orderbook_request(
                 pubkey
             ))?;
 
-            let filtered_orders: Vec<(Uuid, OrderbookItem)> = orders
-                .into_iter()
-                .filter_map(|(uuid, order)| {
-                    if version == OrdermatchRequestVersion::V1
-                        && (order.base_protocol_info.is_some() || order.rel_protocol_info.is_some())
-                    {
-                        log::debug!("Order {} address format is not supported by receiver", order.uuid);
-                        None
-                    } else {
-                        Some((uuid, order))
-                    }
-                })
-                .collect::<Vec<_>>();
+            let backward_compatible_orders = match version {
+                OrdermatchRequestVersion::V1 => orders
+                    .into_iter()
+                    .map(|(uuid, order)| (uuid, order.clone_without_protocol_info()))
+                    .collect::<Vec<_>>(),
+                OrdermatchRequestVersion::V2 => orders,
+            };
 
             let item = GetOrderbookPubkeyItem {
                 last_keep_alive: pubkey_state.last_keep_alive,
-                orders: filtered_orders,
+                orders: backward_compatible_orders,
                 // TODO save last signed payload to pubkey state
                 last_signed_pubkey_payload: vec![],
             };

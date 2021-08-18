@@ -65,13 +65,6 @@ pub async fn process_best_orders_p2p_request(
         for ordered in orders {
             match orderbook.order_set.get(&ordered.uuid) {
                 Some(o) => {
-                    if version == OrdermatchRequestVersion::V1
-                        && (o.base_protocol_info.is_some() || o.rel_protocol_info.is_some())
-                    {
-                        log::debug!("Order {} address format is not supported by receiver", o.uuid);
-                        continue;
-                    }
-
                     let min_volume = match action {
                         BestOrdersAction::Buy => o.min_volume.clone(),
                         BestOrdersAction::Sell => &o.min_volume * &o.price,
@@ -85,7 +78,12 @@ pub async fn process_best_orders_p2p_request(
                         BestOrdersAction::Buy => o.max_volume.clone(),
                         BestOrdersAction::Sell => &o.max_volume * &o.price,
                     };
-                    let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());
+                    let order_w_proof = match version {
+                        OrdermatchRequestVersion::V1 => {
+                            orderbook.orderbook_item_with_proof(o.clone_without_protocol_info())
+                        },
+                        OrdermatchRequestVersion::V2 => orderbook.orderbook_item_with_proof(o.clone()),
+                    };
                     best_orders.push(order_w_proof);
 
                     collected_volume += max_volume;
