@@ -573,7 +573,7 @@ async fn process_get_orderbook_request(
                 .into_iter()
                 .filter_map(|(uuid, order)| {
                     if version == OrdermatchRequestVersion::V1
-                        && (order.base_protocol_info.is_some() || order.base_protocol_info.is_some())
+                        && (order.base_protocol_info.is_some() || order.rel_protocol_info.is_some())
                     {
                         log::debug!("Order {} address format is not supported by receiver", order.uuid);
                         None
@@ -2126,7 +2126,8 @@ impl Orderbook {
                 return;
             },
         };
-        let order_bytes = rmp_serde::to_vec(&order.remove_protocol_info()).expect("Serialization should never fail");
+        let order_bytes =
+            rmp_serde::to_vec(&order.clone_without_protocol_info()).expect("Serialization should never fail");
         if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
             log::error!(
                 "Error {:?} on insertion to trie. Key {}, value {:?}",
@@ -3297,7 +3298,7 @@ impl OrderbookItem {
         }
     }
 
-    fn remove_protocol_info(&self) -> Self {
+    fn clone_without_protocol_info(&self) -> Self {
         OrderbookItem {
             pubkey: self.pubkey.clone(),
             base: self.base.clone(),

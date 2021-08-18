@@ -66,7 +66,7 @@ pub async fn process_best_orders_p2p_request(
             match orderbook.order_set.get(&ordered.uuid) {
                 Some(o) => {
                     if version == OrdermatchRequestVersion::V1
-                        && (o.base_protocol_info.is_some() || o.base_protocol_info.is_some())
+                        && (o.base_protocol_info.is_some() || o.rel_protocol_info.is_some())
                     {
                         log::debug!("Order {} address format is not supported by receiver", o.uuid);
                         continue;
