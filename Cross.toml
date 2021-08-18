@@ -1,6 +1,25 @@
+[build.env]
+passthrough = [
+  "NDK_HOME",
+  "RUST_BACKTRACE"
+]
+
+[target.armv7-linux-androideabi]
+image = "armv7-linux-androideabi-aga"
+
+[target.aarch64-linux-android]
+image = "aarch64-linux-android-aga"
+
+[target.i686-linux-android]
+image = "i686-linux-android-aga"
+
+[target.x86_64-linux-android]
+image = "x86_64-linux-android-aga"
+
 [target.armv7-unknown-linux-gnueabihf]
 image = "mm2-armv7-unknown-linux-gnueabihf"
 
 rustflags = [
     "-C", "link-arg=--dynamic-linker=/lib/ld-linux-armhf.so.3",
 ]
+

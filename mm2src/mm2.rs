@@ -46,11 +46,22 @@ use coins::update_coins_config;
 #[path = "database.rs"]
 pub mod database;
 
-#[path = "lp_network.rs"] pub mod lp_network;
+#[cfg(not(feature = "wallet-only"))]
+#[path = "lp_network.rs"]
+pub mod lp_network;
 
-#[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
-#[path = "lp_stats.rs"] pub mod lp_stats;
-#[path = "lp_swap.rs"] pub mod lp_swap;
+#[cfg(not(feature = "wallet-only"))]
+#[path = "lp_ordermatch.rs"]
+pub mod lp_ordermatch;
+
+#[cfg(not(feature = "wallet-only"))]
+#[path = "lp_stats.rs"]
+pub mod lp_stats;
+
+#[cfg(not(feature = "wallet-only"))]
+#[path = "lp_swap.rs"]
+pub mod lp_swap;
+
 #[path = "rpc.rs"] pub mod rpc;
 
 #[cfg(any(test, target_arch = "wasm32"))]

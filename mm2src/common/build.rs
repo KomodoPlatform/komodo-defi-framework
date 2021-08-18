@@ -3,7 +3,7 @@
 
 // The script is experimentally formatted with `rustfmt`. Probably not going to use `rustfmt` for the rest of the project though.
 
-// Bindgen requirements: https://rust-lang-nursery.github.io/rust-bindgen/requirements.html
+// Bindgen requirements: https://rust-lang.github.io/rust-bindgen/requirements.html
 //              Windows: https://github.com/rust-lang-nursery/rustup.rs/issues/1003#issuecomment-289825927
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
@@ -12,7 +12,7 @@
 #[macro_use] extern crate fomat_macros;
 
 use gstuff::{last_modified_sec, slurp};
-use std::env::{self};
+use std::env::var;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -55,7 +55,7 @@ enum TargetArch {
 
 impl TargetArch {
     fn detect() -> Option<TargetArch> {
-        match env::var("CARGO_CFG_TARGET_ARCH") {
+        match var("CARGO_CFG_TARGET_ARCH") {
             Ok(arch) => Some(TargetArch::from(arch)),
             Err(e) => {
                 eprintln!("Error on get CARGO_CFG_TARGET_ARCH env: {}", e);
@@ -88,7 +88,7 @@ fn build_c_code() {
     if cfg!(windows) {
         // Link in the Windows-specific crash handling code.
         let lm_seh = last_modified_sec(&"seh.c").expect("Can't stat seh.c");
-        let out_dir = env::var("OUT_DIR").expect("!OUT_DIR");
+        let out_dir = var("OUT_DIR").expect("!OUT_DIR");
         let lib_path = Path::new(&out_dir).join("libseh.a");
         let lm_lib = last_modified_sec(&lib_path).unwrap_or(0.);
         if lm_seh >= lm_lib - SLIDE {

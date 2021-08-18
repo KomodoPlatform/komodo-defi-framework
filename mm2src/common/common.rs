@@ -35,7 +35,7 @@ extern crate ser_error_derive;
 macro_rules! safecopy {
     ($to: expr, $format: expr, $($args: tt)+) => {{
         use ::std::io::Write;
-        let to: &mut [i8] = &mut $to[..];  // Check the type.
+        let to = &mut $to[..];
         let to: &mut [u8] = unsafe {::std::mem::transmute (to)};  // c_char to Rust.
         let mut wr = ::std::io::Cursor::new (to);
         write! (&mut wr, concat! ($format, "\0"), $($args)+)
@@ -1756,7 +1756,7 @@ pub fn writeln(line: &str) {
     append_log_tail(line);
 }
 
-/// Set up a panic hook that prints the panic location and the message.  
+/// Set up a panic hook that prints the panic location and the message.
 /// (The default Rust handler doesn't have the means to print the message.
 ///  Note that we're also getting the stack trace from Node.js and rustfilt).
 #[cfg(target_arch = "wasm32")]

@@ -21,6 +21,10 @@ The current state can be considered as very early alpha.
     ```
 1. Run `cargo build` (or `cargo build -vv` to get verbose build output).
 
+## Building for Android
+
+[ANDROID](docs/ANDROID.md)
+
 ## Help and troubleshooting
 
 If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/artemii235/SuperNET/issues/new) or reach the team at [Discord `dev-marketmaker` channel](https://discord.gg/PGxVm2y).  

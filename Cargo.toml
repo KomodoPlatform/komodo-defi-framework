@@ -12,6 +12,7 @@ default-run = "mm2"
 [features]
 # Deprecated
 native = []
+wallet-only = []
 zhtlc = ["coins/zhtlc"]
 
 [[bin]]
@@ -40,7 +41,7 @@ debug-assertions = false
 # For better or worse, might affect the stack traces in our portion of the code.
 #opt-level = 1
 
-[profile.release.overrides."*"]
+[profile.release.package."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false
 

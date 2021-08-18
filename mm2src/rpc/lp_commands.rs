@@ -29,7 +29,9 @@ use http::Response;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::active_swaps_using_coin;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
 

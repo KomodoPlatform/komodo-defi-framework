@@ -30,9 +30,12 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_network::{lp_ports, p2p_event_process_loop, P2PContext};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_ordermatch_loop, orders_kick_start,
                                 BalanceUpdateOrdermatchHandler};
+#[cfg(not(feature = "wallet-only"))]
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -215,7 +218,7 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
 fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     let migration_num_path = ctx.dbdir().join(".migration");
     let mut current_migration = match std::fs::read(&migration_num_path) {
@@ -239,7 +242,7 @@ fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
 fn migration_1(_ctx: &MmArc) {}
 
 /// Resets the context (most of which resides currently in `lp::G` but eventually would move into `MmCtx`).
@@ -317,7 +320,7 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
     try_s!(lp_passphrase_init(&ctx));
 
     try_s!(fix_directories(&ctx));
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(feature = "wallet-only")))]
     {
         try_s!(ctx.init_sqlite_connection());
         try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()));
