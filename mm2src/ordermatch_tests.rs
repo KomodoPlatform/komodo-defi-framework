@@ -1448,8 +1448,6 @@ fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: Str
             created_at: now_ms() / 1000,
             timestamp: now_ms() / 1000,
             pair_trie_root: H64::default(),
-            base_protocol_info: None,
-            rel_protocol_info: None,
         };
 
         orders.push((order, pubkey.clone()).into());
@@ -1525,7 +1523,6 @@ fn test_process_get_orderbook_request() {
         ctx.clone(),
         "RICK".into(),
         "MORTY".into(),
-        OrdermatchRequestVersion::V2,
     ))
     .unwrap()
     .unwrap();
@@ -1572,7 +1569,6 @@ fn test_process_get_orderbook_request_limit() {
         ctx.clone(),
         "RICK".into(),
         "MORTY".into(),
-        OrdermatchRequestVersion::V2,
     ))
     .err()
     .expect("Expected an error");
@@ -1618,7 +1614,6 @@ fn test_request_and_fill_orderbook() {
     let expected_request = P2PRequest::Ordermatch(OrdermatchRequest::GetOrderbook {
         base: "RICK".into(),
         rel: "MORTY".into(),
-        version: OrdermatchRequestVersion::V2,
     });
 
     let orders = expected_orders.clone();
