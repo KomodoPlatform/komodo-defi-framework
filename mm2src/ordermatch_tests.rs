@@ -261,19 +261,6 @@ fn test_match_maker_order_and_taker_request() {
     };
     let actual = maker.match_with_request(&request);
     assert_eq!(actual, OrderMatchResult::NotMatched);
-    // let base_amount = match actual {
-    //     OrderMatchResult::Matched((base_amount, _rel_amount)) => base_amount,
-    //     _ => panic!(),
-    // };
-    // assert!(base_amount > maker.max_base_vol);
-    // let expected_base_amount: MmNumber = json::from_value(json!(
-    //     //
-    //     [[1, [2620317293u32, 1840105937, 8393954]], [1, [
-    //         376438784, 1219355313, 28655673
-    //     ]]]
-    // ))
-    // .unwrap();
-    // assert_eq!(base_amount, expected_base_amount);
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
