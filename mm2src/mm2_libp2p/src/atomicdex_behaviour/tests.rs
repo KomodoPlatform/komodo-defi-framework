@@ -9,7 +9,7 @@ use std::time::Duration;
 
 static TEST_LISTEN_PORT: AtomicU16 = AtomicU16::new(57780);
 
-fn next_port() -> u16 { TEST_LISTEN_PORT.fetch_add(100, Ordering::Relaxed) }
+fn next_port() -> u16 { TEST_LISTEN_PORT.fetch_add(2, Ordering::Relaxed) }
 
 fn spawn_boxed(fut: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn(fut); }
 
@@ -28,7 +28,7 @@ impl Node {
         let node_type = NodeType::Relay {
             ip: my_address,
             network_port,
-            network_ws_port: network_port + 10,
+            network_ws_port: network_port + 1,
         };
         let (cmd_tx, mut event_rx, peer_id, _) =
             spawn_gossipsub(333, None, spawn_boxed, seednodes, node_type, |_| {}).await;
