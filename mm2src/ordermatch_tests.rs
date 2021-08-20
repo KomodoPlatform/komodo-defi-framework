@@ -227,6 +227,53 @@ fn test_match_maker_order_and_taker_request() {
     let actual = maker.match_with_request(&request);
     let expected = OrderMatchResult::Matched((1.into(), 1.into()));
     assert_eq!(expected, actual);
+
+    // The following Taker request has not to be matched since the resulted base amount it greater than `max_base_vol`.
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1041#issuecomment-901863864
+    let maker = MakerOrder {
+        max_base_vol: MmNumber::from("0.2928826881884105"),
+        min_base_vol: MmNumber::from(0),
+        price: MmNumber::from("2643.01935664"),
+        created_at: now_ms(),
+        updated_at: None,
+        base: "ETH-BEP20".to_owned(),
+        rel: "KMD".to_owned(),
+        matches: HashMap::new(),
+        started_swaps: vec![],
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let request = TakerRequest {
+        base: "KMD".to_owned(),
+        rel: "ETH-BEP20".to_owned(),
+        base_amount: MmNumber::from("774.205645538427044180416545"),
+        rel_amount: MmNumber::from("0.2928826881884105"),
+        action: TakerAction::Sell,
+        uuid: Uuid::new_v4(),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+    let actual = maker.match_with_request(&request);
+    assert_eq!(actual, OrderMatchResult::NotMatched);
+    // let base_amount = match actual {
+    //     OrderMatchResult::Matched((base_amount, _rel_amount)) => base_amount,
+    //     _ => panic!(),
+    // };
+    // assert!(base_amount > maker.max_base_vol);
+    // let expected_base_amount: MmNumber = json::from_value(json!(
+    //     //
+    //     [[1, [2620317293u32, 1840105937, 8393954]], [1, [
+    //         376438784, 1219355313, 28655673
+    //     ]]]
+    // ))
+    // .unwrap();
+    // assert_eq!(base_amount, expected_base_amount);
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
