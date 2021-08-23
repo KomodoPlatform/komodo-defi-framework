@@ -2820,6 +2820,7 @@ fn zer_mtp() {
 }
 
 #[test]
+#[ignore]
 fn test_tx_details_kmd_rewards() {
     let electrum = electrum_client_for_test(&[
         "electrum1.cipig.net:10001",
@@ -2851,6 +2852,7 @@ fn test_tx_details_kmd_rewards() {
 /// then `TransactionDetails::kmd_rewards` has to be `Some(0)`, not `None`.
 /// https://kmdexplorer.io/tx/f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_details_kmd_rewards_claimed_by_other() {
     let electrum = electrum_client_for_test(&[

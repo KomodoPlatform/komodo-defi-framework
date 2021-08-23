@@ -1688,21 +1688,22 @@ where
                             updated = true;
                         }
                     }
-                    if e.get().should_update_kmd_rewards() && e.get().block_height > 0 {
-                        mm_counter!(ctx.metrics, "tx.history.update.kmd_rewards", 1);
-                        match coin.update_kmd_rewards(e.get_mut(), &mut input_transactions).await {
-                            Ok(()) => updated = true,
-                            Err(e) => ctx.log.log(
-                                "😟",
-                                &[&"tx_history", &coin.as_ref().conf.ticker],
-                                &ERRL!(
-                                    "Error {:?} on updating the KMD rewards of {:?}, skipping the tx",
-                                    e,
-                                    txid
-                                ),
-                            ),
-                        }
-                    }
+                    // TODO uncomment this when `update_kmd_rewards` works correctly
+                    // if e.get().should_update_kmd_rewards() && e.get().block_height > 0 {
+                    //     mm_counter!(ctx.metrics, "tx.history.update.kmd_rewards", 1);
+                    //     match coin.update_kmd_rewards(e.get_mut(), &mut input_transactions).await {
+                    //         Ok(()) => updated = true,
+                    //         Err(e) => ctx.log.log(
+                    //             "😟",
+                    //             &[&"tx_history", &coin.as_ref().conf.ticker],
+                    //             &ERRL!(
+                    //                 "Error {:?} on updating the KMD rewards of {:?}, skipping the tx",
+                    //                 e,
+                    //                 txid
+                    //             ),
+                    //         ),
+                    //     }
+                    // }
                 },
             }
             if updated {
@@ -1912,24 +1913,39 @@ where
         to_addresses.extend(to.into_iter());
     }
 
-    let (fee, kmd_rewards) = if ticker == "KMD" {
-        let kmd_rewards = try_s!(coin.calc_interest_of_tx(&tx, input_transactions).await);
-        // `input_amount = output_amount + fee`, where `output_amount = actual_output_amount + kmd_rewards`,
-        // so to calculate an actual transaction fee, we have to subtract the `kmd_rewards` from the total `output_amount`:
-        // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
-        let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
+    // TODO uncomment this when `calc_interest_of_tx` works fine
+    // let (fee, kmd_rewards) = if ticker == "KMD" {
+    //     let kmd_rewards = try_s!(coin.calc_interest_of_tx(&tx, input_transactions).await);
+    //     // `input_amount = output_amount + fee`, where `output_amount = actual_output_amount + kmd_rewards`,
+    //     // so to calculate an actual transaction fee, we have to subtract the `kmd_rewards` from the total `output_amount`:
+    //     // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
+    //     let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
+    //
+    //     let my_address = &coin.as_ref().my_address;
+    //     let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
+    //     let kmd_rewards_details = KmdRewardsDetails {
+    //         amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
+    //         claimed_by_me,
+    //     };
+    //     (
+    //         big_decimal_from_sat(fee, coin.as_ref().decimals),
+    //         Some(kmd_rewards_details),
+    //     )
+    // } else if input_amount == 0 {
+    //     let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
+    //         let fee = match input {
+    //             TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+    //             _ => 0.,
+    //         };
+    //         cur + fee
+    //     });
+    //     (fee.into(), None)
+    // } else {
+    //     let fee = input_amount as i64 - output_amount as i64;
+    //     (big_decimal_from_sat(fee, coin.as_ref().decimals), None)
+    // };
 
-        let my_address = &coin.as_ref().my_address;
-        let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
-        let kmd_rewards_details = KmdRewardsDetails {
-            amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
-            claimed_by_me,
-        };
-        (
-            big_decimal_from_sat(fee, coin.as_ref().decimals),
-            Some(kmd_rewards_details),
-        )
-    } else if input_amount == 0 {
+    let (fee, kmd_rewards) = if input_amount == 0 {
         let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
             let fee = match input {
                 TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
