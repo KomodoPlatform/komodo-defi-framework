@@ -8,6 +8,7 @@ use crypto::{dhash256, sha256};
 use hash::{H256, H512};
 use keys::KeyPair;
 use ser::Stream;
+use serde::Deserialize;
 use {Builder, Script};
 
 const ZCASH_PREVOUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashPrevoutHash";
@@ -18,10 +19,13 @@ const ZCASH_SHIELDED_SPENDS_HASH_PERSONALIZATION: &[u8] = b"ZcashSSpendsHash";
 const ZCASH_SHIELDED_OUTPUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashSOutputHash";
 const ZCASH_SIG_HASH_PERSONALIZATION: &[u8] = b"ZcashSigHash";
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Deserialize)]
 pub enum SignatureVersion {
+    #[serde(rename = "base")]
     Base,
+    #[serde(rename = "witness_v0")]
     WitnessV0,
+    #[serde(rename = "fork_id")]
     ForkId,
 }
 
