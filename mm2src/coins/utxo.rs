@@ -1109,11 +1109,12 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn signature_version(&self) -> SignatureVersion {
-        if self.ticker == "BCH" {
+        let default_signature_version = if self.ticker == "BCH" || self.fork_id() != 0 {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
-        }
+        };
+        json::from_value(self.conf["signature_version"].clone()).unwrap_or(default_signature_version)
     }
 
     fn fork_id(&self) -> u32 {

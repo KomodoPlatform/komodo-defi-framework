@@ -8,6 +8,7 @@ bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
 keys = { path = "../keys" }
 primitives = { path = "../primitives" }
+serde = "1.0"
 serialization = { path = "../serialization" }
 log = "0.4"
 blake2b_simd = "0.5"

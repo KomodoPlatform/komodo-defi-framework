@@ -56,6 +56,7 @@ winapi = "0.3"
 chrono = { version = "0.4", features = ["wasmbind"] }
 getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 gstuff = { version = "0.7", features = ["nightly"] }
+indexmap = "=1.6.0" # see https://github.com/KomodoPlatform/atomicDEX-API/issues/1042
 js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
@@ -69,7 +70,7 @@ chrono = "0.4"
 crossterm = "0.20"
 gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
 hdrhistogram = { version = "7.0", default-features = false, features = ["sync"] }
-hyper = { version = "0.14", features = ["client", "http2", "server", "tcp"] }
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.22", default-features = false, features = ["webpki-tokio"] }

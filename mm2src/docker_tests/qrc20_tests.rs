@@ -1846,6 +1846,7 @@ pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
 }
 
 #[test]
+#[ignore]
 fn segwit_address_in_the_orderbook() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
