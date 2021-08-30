@@ -21,13 +21,13 @@ pub use native_impl::MyOrdersStorage;
 pub enum MyOrdersError {
     #[display(fmt = "Order with uuid {} is not found", uuid)]
     NoSuchOrder { uuid: Uuid },
-    #[display(fmt = "Error uploading the a swap: {}", _0)]
-    ErrorUploading(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error saving an order: {}", _0)]
+    ErrorSaving(String),
+    #[display(fmt = "Error loading an order: {}", _0)]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing an order: {}", _0)]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing an order: {}", _0)]
     ErrorSerializing(String),
     #[allow(dead_code)]
     #[display(fmt = "Internal error: {}", _0)]
@@ -188,7 +188,7 @@ mod native_impl {
         fn from(fs: FsJsonError) -> Self {
             match fs {
                 FsJsonError::IoReading(reading) => MyOrdersError::ErrorLoading(reading.to_string()),
-                FsJsonError::IoWriting(writing) => MyOrdersError::ErrorUploading(writing.to_string()),
+                FsJsonError::IoWriting(writing) => MyOrdersError::ErrorSaving(writing.to_string()),
                 FsJsonError::Serializing(serializing) => MyOrdersError::ErrorSerializing(serializing.to_string()),
                 FsJsonError::Deserializing(deserializing) => {
                     MyOrdersError::ErrorDeserializing(deserializing.to_string())
@@ -234,7 +234,7 @@ mod native_impl {
             let path = my_maker_order_file_path(&self.ctx, &uuid);
             remove_file_async(&path)
                 .await
-                .mm_err(|e| MyOrdersError::ErrorUploading(e.to_string()))?;
+                .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
             Ok(())
         }
 
@@ -242,7 +242,7 @@ mod native_impl {
             let path = my_taker_order_file_path(&self.ctx, &uuid);
             remove_file_async(&path)
                 .await
-                .mm_err(|e| MyOrdersError::ErrorUploading(e.to_string()))?;
+                .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
             Ok(())
         }
 
@@ -288,24 +288,24 @@ mod native_impl {
         }
 
         async fn save_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            insert_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorUploading(e.to_string()))
+            insert_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn save_taker_order_in_filtering_history(&self, order: &TakerOrder) -> MyOrdersResult<()> {
             insert_taker_order(&self.ctx, order.request.uuid, order)
-                .map_to_mm(|e| MyOrdersError::ErrorUploading(e.to_string()))
+                .map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            update_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorUploading(e.to_string()))
+            update_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()> {
-            update_order_status(&self.ctx, uuid, status).map_to_mm(|e| MyOrdersError::ErrorUploading(e.to_string()))
+            update_order_status(&self.ctx, uuid, status).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            update_was_taker(&self.ctx, uuid).map_to_mm(|e| MyOrdersError::ErrorUploading(e.to_string()))
+            update_was_taker(&self.ctx, uuid).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
     }
 }
@@ -342,7 +342,7 @@ mod wasm_impl {
                 DbTransactionError::ErrorSerializingItem(_) => MyOrdersError::ErrorSerializing(stringified_error),
                 DbTransactionError::ErrorDeserializingItem(_) => MyOrdersError::ErrorDeserializing(stringified_error),
                 DbTransactionError::ErrorUploadingItem(_)
-                | DbTransactionError::ErrorDeletingItems(_) => MyOrdersError::ErrorUploading(stringified_error),
+                | DbTransactionError::ErrorDeletingItems(_) => MyOrdersError::ErrorSaving(stringified_error),
                 DbTransactionError::ErrorGettingItems(_) => MyOrdersError::ErrorLoading(stringified_error),
             }
         }

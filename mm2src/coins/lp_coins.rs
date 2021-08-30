@@ -1684,7 +1684,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
 #[cfg(target_arch = "wasm32")]
 fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
 where
-    T: MmCoin + MarketCoinOps + ?Sized,
+    T: MmCoin + ?Sized,
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
@@ -1716,7 +1716,7 @@ where
 #[cfg(not(target_arch = "wasm32"))]
 fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
 where
-    T: MmCoin + MarketCoinOps + ?Sized,
+    T: MmCoin + ?Sized,
 {
     let ticker = coin.ticker().to_owned();
     let history_path = coin.tx_history_path(&ctx);

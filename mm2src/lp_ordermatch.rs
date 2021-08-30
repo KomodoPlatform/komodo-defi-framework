@@ -2644,9 +2644,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
         }
 
         // notify other peers
-        if let Ok(Some((base, rel))) = find_pair(&ctx, &maker_order.base, &maker_order.rel).await {
-            maker_order_created_p2p_notify(ctx.clone(), &maker_order).await;
-        }
+        maker_order_created_p2p_notify(ctx.clone(), &maker_order).await;
     }
 
     *my_taker_orders = my_actual_taker_orders;

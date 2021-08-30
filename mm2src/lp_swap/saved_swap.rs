@@ -12,8 +12,8 @@ pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
 #[derive(Debug, Display)]
 pub enum SavedSwapError {
-    #[display(fmt = "Error uploading the a swap: {}", _0)]
-    ErrorUploading(String),
+    #[display(fmt = "Error saving the a swap: {}", _0)]
+    ErrorSaving(String),
     #[display(fmt = "Error loading a swap: {}", _0)]
     ErrorLoading(String),
     #[display(fmt = "Error deserializing a swap: {}", _0)]
@@ -140,7 +140,7 @@ mod native_impl {
         fn from(fs: FsJsonError) -> Self {
             match fs {
                 FsJsonError::IoReading(reading) => SavedSwapError::ErrorLoading(reading.to_string()),
-                FsJsonError::IoWriting(writing) => SavedSwapError::ErrorUploading(writing.to_string()),
+                FsJsonError::IoWriting(writing) => SavedSwapError::ErrorSaving(writing.to_string()),
                 FsJsonError::Serializing(serializing) => SavedSwapError::ErrorSerializing(serializing.to_string()),
                 FsJsonError::Deserializing(deserializing) => {
                     SavedSwapError::ErrorDeserializing(deserializing.to_string())
@@ -228,7 +228,7 @@ mod wasm_impl {
                 DbTransactionError::ErrorSerializingItem(_) => SavedSwapError::ErrorSerializing(desc),
                 DbTransactionError::ErrorGettingItems(_) => SavedSwapError::ErrorLoading(desc),
                 DbTransactionError::ErrorUploadingItem(_) | DbTransactionError::ErrorDeletingItems(_) => {
-                    SavedSwapError::ErrorUploading(desc)
+                    SavedSwapError::ErrorSaving(desc)
                 },
             }
         }
