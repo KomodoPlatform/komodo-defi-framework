@@ -26,7 +26,7 @@ use blake2::VarBlake2b;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType};
 use coins::{find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
-use common::log::error;
+use common::log::{error, LogOnError};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
 use common::{bits256, log, new_uuid, now_ms};
@@ -2638,9 +2638,15 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
         let maker_order: MakerOrder = order.into();
         my_maker_orders.insert(uuid, maker_order.clone());
 
-        error_if!(storage.save_new_active_maker_order(&maker_order).await);
+        storage
+            .save_new_active_maker_order(&maker_order)
+            .await
+            .error_log_with_msg("!save_new_active_maker_order");
         if maker_order.save_in_history {
-            error_if!(storage.update_was_taker_in_filtering_history(uuid).await);
+            storage
+                .update_was_taker_in_filtering_history(uuid)
+                .await
+                .error_log_with_msg("!update_was_taker_in_filtering_history");
         }
 
         // notify other peers
@@ -2691,7 +2697,10 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             order_match.last_updated + ORDER_MATCH_TIMEOUT * 1000 > now || order_match.connected.is_some()
         });
         if old_len != order.matches.len() {
-            error_if!(storage.update_active_maker_order(order).await);
+            storage
+                .update_active_maker_order(order)
+                .await
+                .error_log_with_msg("!update_active_maker_order");
         }
     }
 }
@@ -2737,7 +2746,10 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         my_order
             .matches
             .insert(taker_match.reserved.maker_order_uuid, taker_match);
-        error_if!(MyOrdersStorage::new(ctx).update_active_taker_order(my_order).await);
+        MyOrdersStorage::new(ctx)
+            .update_active_taker_order(my_order)
+            .await
+            .error_log_with_msg("!update_active_taker_order");
     }
 }
 
@@ -2840,7 +2852,10 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     last_updated: now_ms(),
                 };
                 order.matches.insert(maker_match.request.uuid, maker_match);
-                error_if!(storage.update_active_maker_order(order).await);
+                storage
+                    .update_active_maker_order(order)
+                    .await
+                    .error_log_with_msg("!update_active_maker_order");
             }
             return;
         }
@@ -2896,7 +2911,10 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
             updated_msg.with_new_max_volume(my_order.available_amount().into());
             maker_order_updated_p2p_notify(ctx.clone(), &my_order.base, &my_order.rel, updated_msg).await;
         }
-        error_if!(MyOrdersStorage::new(ctx).update_active_maker_order(my_order).await);
+        MyOrdersStorage::new(ctx)
+            .update_active_maker_order(my_order)
+            .await
+            .error_log_with_msg("!update_active_maker_order");
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::mm2::lp_ordermatch::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order,
                                 RecentOrdersSelectResult, TakerOrder, TakerOrderCancellationReason};
 use async_trait::async_trait;
+use common::log::LogOnError;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{BoxFut, PagingOptions};
@@ -36,28 +37,46 @@ pub enum MyOrdersError {
 
 pub async fn save_my_new_maker_order(ctx: MmArc, order: &MakerOrder) {
     let storage = MyOrdersStorage::new(ctx);
-    error_if!(storage.save_new_active_maker_order(order).await);
+    storage
+        .save_new_active_maker_order(order)
+        .await
+        .error_log_with_msg("!save_new_active_maker_order");
 
     if order.save_in_history {
-        error_if!(storage.save_maker_order_in_filtering_history(order).await);
+        storage
+            .save_maker_order_in_filtering_history(order)
+            .await
+            .error_log_with_msg("!save_maker_order_in_filtering_history");
     }
 }
 
 pub async fn save_my_new_taker_order(ctx: MmArc, order: &TakerOrder) {
     let storage = MyOrdersStorage::new(ctx);
-    error_if!(storage.save_new_active_taker_order(order).await);
+    storage
+        .save_new_active_taker_order(order)
+        .await
+        .error_log_with_msg("!save_new_active_taker_order");
 
     if order.save_in_history {
-        error_if!(storage.save_taker_order_in_filtering_history(order).await);
+        storage
+            .save_taker_order_in_filtering_history(order)
+            .await
+            .error_log_with_msg("!save_taker_order_in_filtering_history");
     }
 }
 
 pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) {
     let storage = MyOrdersStorage::new(ctx);
-    error_if!(storage.update_active_maker_order(order).await);
+    storage
+        .update_active_maker_order(order)
+        .await
+        .error_log_with_msg("!update_active_maker_order");
 
     if order.save_in_history {
-        error_if!(storage.update_maker_order_in_filtering_history(order).await);
+        storage
+            .update_maker_order_in_filtering_history(order)
+            .await
+            .error_log_with_msg("!update_maker_order_in_filtering_history");
     }
 }
 
@@ -68,23 +87,28 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
         let save_in_history = order.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
-        error_if!(storage.delete_active_taker_order(uuid).await);
+        storage
+            .delete_active_taker_order(uuid)
+            .await
+            .error_log_with_msg("!delete_active_taker_order");
 
         match reason {
             TakerOrderCancellationReason::ToMaker => (),
             _ => {
                 if save_in_history {
-                    error_if!(storage.save_order_in_history(&Order::Taker(order)).await);
+                    storage
+                        .save_order_in_history(&Order::Taker(order))
+                        .await
+                        .error_log_with_msg("!save_order_in_history");
                 }
             },
         }
 
         if save_in_history {
-            error_if!(
-                storage
-                    .update_order_status_in_filtering_history(uuid, reason.to_string())
-                    .await
-            );
+            storage
+                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .await
+                .error_log_with_msg("!update_order_status_in_filtering_history");
         }
         Ok(())
     };
@@ -98,15 +122,20 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
         let save_in_history = order.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
-        error_if!(storage.delete_active_maker_order(uuid).await);
+        storage
+            .delete_active_maker_order(uuid)
+            .await
+            .error_log_with_msg("!delete_active_maker_order");
 
         if save_in_history {
-            error_if!(storage.save_order_in_history(&Order::Maker(order.clone())).await);
-            error_if!(
-                storage
-                    .update_order_status_in_filtering_history(uuid, reason.to_string())
-                    .await
-            );
+            storage
+                .save_order_in_history(&Order::Maker(order.clone()))
+                .await
+                .error_log_with_msg("!save_order_in_history");
+            storage
+                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .await
+                .error_log_with_msg("!update_order_status_in_filtering_history");
         }
         Ok(())
     };

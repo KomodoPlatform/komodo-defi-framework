@@ -226,34 +226,60 @@ macro_rules! log_tag {
     }};
 }
 
-#[macro_export]
-macro_rules! error_if {
-    ($expression:expr) => {{
-        if let Err(e) = $expression {
-            $crate::log::error!("'{}' resulted in an error: {}", stringify!($expression), e);
-        }
-    }};
+pub trait LogOnError {
+    // Log the error and caller location to WARN level here.
+    fn warn_log(self);
 
-    ($res:expr, $msg:literal) => {{
-        if let Err(e) = $res {
-            $crate::log::error!("{}: {}", $msg, e);
-        }
-    }};
+    // Log the error, caller location and the given message to WARN level here.
+    fn warn_log_with_msg(self, msg: &str);
+
+    // Log the error and caller location to ERROR level here.
+    fn error_log(self);
+
+    // Log the error, caller location and the given message to ERROR level here.
+    fn error_log_with_msg(self, msg: &str);
 }
 
-#[macro_export]
-macro_rules! warn_if {
-    ($res:expr) => {{
-        if let Err(e) = $res {
-            $crate::log::warn!("{}", e);
+impl<T, E: fmt::Display> LogOnError for Result<T, E> {
+    #[track_caller]
+    fn warn_log(self) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            warn!("{}:{}] {}", file, line, e);
         }
-    }};
+    }
 
-    ($res:expr, $msg:literal) => {{
-        if let Err(e) = $res {
-            $crate::log::warn!("{}: {}", $msg, e);
+    #[track_caller]
+    fn warn_log_with_msg(self, msg: &str) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            warn!("{}:{}] {}: {}", file, line, msg, e);
         }
-    }};
+    }
+
+    #[track_caller]
+    fn error_log(self) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            error!("{}:{}] {}", file, line, e);
+        }
+    }
+
+    #[track_caller]
+    fn error_log_with_msg(self, msg: &str) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            error!("{}:{}] {}: {}", file, line, msg, e);
+        }
+    }
 }
 
 pub trait TagParam<'a> {
