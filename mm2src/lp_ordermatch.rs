@@ -319,6 +319,12 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         None => return,
     };
 
+    if pubkey_state.trie_roots.get(alb_pair).is_none() {
+        return;
+    }
+
+    pubkey_state.order_pairs_trie_state_history.remove(alb_pair.into());
+
     let mut orders_to_remove = Vec::with_capacity(pubkey_state.orders_uuids.len());
     pubkey_state.orders_uuids.retain(|(uuid, alb)| {
         if alb == alb_pair {
@@ -2180,11 +2186,13 @@ impl Orderbook {
             },
         };
 
-        let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
-        history.insert_new_diff(old_state, TrieDiff {
-            delta: vec![(uuid, None)],
-            next_root: *pair_state,
-        });
+        if pubkey_state.order_pairs_trie_state_history.get(&alb_ordered).is_some() {
+            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+            history.insert_new_diff(old_state, TrieDiff {
+                delta: vec![(uuid, None)],
+                next_root: *pair_state,
+            });
+        }
         Some(order)
     }
 
@@ -2516,21 +2524,22 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             // remove "timed out" pubkeys states with their orders from orderbook
             let mut orderbook = ordermatch_ctx.orderbook.lock().await;
             let mut uuids_to_remove = vec![];
-            let mut keys_to_remove = vec![];
-            orderbook.pubkeys_state.retain(|pubkey, state| {
-                let to_retain = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_ms() / 1000;
-                if !to_retain {
+            let mut pubkeys_to_remove = vec![];
+            for (pubkey, state) in orderbook.pubkeys_state.iter() {
+                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_ms() / 1000;
+                if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
                     }
-                    for root in state.trie_roots.values() {
-                        keys_to_remove.push(*root);
-                    }
+                    pubkeys_to_remove.push(pubkey.clone());
                 }
-                to_retain
-            });
+            }
+
             for uuid in uuids_to_remove {
                 orderbook.remove_order_trie_update(uuid);
+            }
+            for pubkey in pubkeys_to_remove {
+                orderbook.pubkeys_state.remove(&pubkey);
             }
 
             collect_orderbook_metrics(&ctx, &orderbook);

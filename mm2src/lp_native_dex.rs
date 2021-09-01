@@ -344,10 +344,7 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
 
     spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
-    if i_am_seed {
-        spawn(clean_memory_loop(ctx.clone()));
-    }
+    spawn(clean_memory_loop(ctx.clone()));
 
     let ctx_id = try_s!(ctx.ffi_handle());
 
