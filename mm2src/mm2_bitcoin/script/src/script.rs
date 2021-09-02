@@ -51,6 +51,14 @@ impl ScriptAddress {
             hash,
         }
     }
+
+    /// Creates P2SH-type ScriptAddress
+    pub fn new_p2wpkh(hash: AddressHash) -> Self {
+        ScriptAddress {
+            kind: keys::Type::P2WPKH,
+            hash,
+        }
+    }
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
@@ -422,9 +430,7 @@ impl Script {
             ScriptType::WitnessScript => {
                 Ok(vec![]) // TODO
             },
-            ScriptType::WitnessKey => {
-                Ok(vec![]) // TODO
-            },
+            ScriptType::WitnessKey => Ok(vec![ScriptAddress::new_p2wpkh(self.data[2..22].into())]),
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO
             },
