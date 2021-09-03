@@ -1604,13 +1604,17 @@ impl MakerOrder {
             TakerAction::Sell => {
                 let taker_price = taker_base_amount / taker_rel_amount;
 
+                // Calculate the resulting base amount using the Maker's price instead of the Taker's.
+                let matched_base_amount = taker_base_amount / &self.price;
+                let matched_rel_amount = taker_base_amount.clone();
+
                 if self.base == taker.rel
                     && self.rel == taker.base
-                    && taker_rel_amount <= &self.available_amount()
-                    && taker_rel_amount >= &self.min_base_vol
+                    && matched_base_amount <= self.available_amount()
+                    && matched_base_amount >= self.min_base_vol
                     && taker_price >= self.price
                 {
-                    OrderMatchResult::Matched((taker_base_amount / &self.price, taker_base_amount.clone()))
+                    OrderMatchResult::Matched((matched_base_amount, matched_rel_amount))
                 } else {
                     OrderMatchResult::NotMatched
                 }

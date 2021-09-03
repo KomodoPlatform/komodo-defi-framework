@@ -227,6 +227,80 @@ fn test_match_maker_order_and_taker_request() {
     let actual = maker.match_with_request(&request);
     let expected = OrderMatchResult::Matched((1.into(), 1.into()));
     assert_eq!(expected, actual);
+
+    // The following Taker request has not to be matched since the resulted base amount it greater than `max_base_vol`.
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1041#issuecomment-901863864
+    let maker = MakerOrder {
+        max_base_vol: "0.2928826881884105".into(),
+        min_base_vol: 0.into(),
+        price: "2643.01935664".into(),
+        created_at: now_ms(),
+        updated_at: None,
+        base: "ETH-BEP20".to_owned(),
+        rel: "KMD".to_owned(),
+        matches: HashMap::new(),
+        started_swaps: vec![],
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let request = TakerRequest {
+        base: "KMD".to_owned(),
+        rel: "ETH-BEP20".to_owned(),
+        base_amount: "774.205645538427044180416545".into(),
+        rel_amount: "0.2928826881884105".into(),
+        action: TakerAction::Sell,
+        uuid: Uuid::new_v4(),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+    let actual = maker.match_with_request(&request);
+    assert_eq!(actual, OrderMatchResult::NotMatched);
+
+    // Though the Taker's rel amount is less than the Makers' min base volume '2',
+    // the Maker's price is chosen to calculate the result amounts, so we have:
+    // `base_amount = taker_base_amount/maker_price = 30/10 = 3`
+    // `rel_amount = taker_base_amount = 30`.
+    // The order should be matched.
+    let maker = MakerOrder {
+        max_base_vol: "3".into(),
+        min_base_vol: "2".into(),
+        price: 10.into(),
+        created_at: now_ms(),
+        updated_at: None,
+        base: "BASE".to_owned(),
+        rel: "REL".to_owned(),
+        matches: HashMap::new(),
+        started_swaps: vec![],
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let request = TakerRequest {
+        base: "REL".to_owned(),
+        rel: "BASE".to_owned(),
+        base_amount: "30".into(),
+        rel_amount: "1.5".into(),
+        action: TakerAction::Sell,
+        uuid: Uuid::new_v4(),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+    let actual = maker.match_with_request(&request);
+    let expected_base_amount = MmNumber::from(3);
+    let expected_rel_amount = MmNumber::from(30);
+    let expected = OrderMatchResult::Matched((expected_base_amount, expected_rel_amount));
+    assert_eq!(actual, expected);
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495

@@ -4600,6 +4600,7 @@ dependencies = [
  "keys",
  "log 0.4.11",
  "primitives",
+ "serde",
  "serialization",
 ]
 

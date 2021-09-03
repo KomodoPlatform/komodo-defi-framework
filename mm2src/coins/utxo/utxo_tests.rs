@@ -1,4 +1,4 @@
-use super::rpc_clients::{ElectrumProtocol, ListSinceBlockRes, NetworkInfo};
+use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
 use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
@@ -15,35 +15,26 @@ use futures::future::join_all;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
-use std::thread;
-use std::time::Duration;
 
 const TEST_COIN_NAME: &'static str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
 const TEST_COIN_HRP: &'static str = "rck";
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
-    for server in servers {
-        block_on(client.add_server(&ElectrumRpcRequest {
-            url: server.to_string(),
-            protocol: ElectrumProtocol::TCP,
-            disable_cert_verification: false,
-        }))
-        .unwrap();
-    }
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let servers: Vec<_> = servers.iter().map(|server| json!({ "url": server })).collect();
+    let req = json!({
+        "method": "electrum",
+        "servers": servers,
+    });
+    let builder = UtxoArcBuilder::new(&ctx, TEST_COIN_NAME, &Json::Null, &req, &[]);
+    let args = ElectrumBuilderArgs {
+        spawn_ping: false,
+        negotiate_version: true,
+        collect_metrics: false,
+    };
 
-    let mut attempts = 0;
-    while !block_on(client.is_connected()) {
-        if attempts >= 10 {
-            panic!("Failed to connect to at least 1 of {:?} in 5 seconds.", servers);
-        }
-
-        thread::sleep(Duration::from_millis(500));
-        attempts += 1;
-    }
-
-    ElectrumClient(Arc::new(client))
+    block_on(builder.electrum_client(args)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -971,7 +962,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"JsonRpcError { client_info: "coin: RICK", request: JsonRpcRequest { jsonrpc: "2.0", id: "0", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
+    let expected = r#"JsonRpcError { client_info: "coin: RICK", request: JsonRpcRequest { jsonrpc: "2.0", id: "1", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
     let actual = format!("{}", err);
 
     assert_eq!(expected, actual);
@@ -1495,14 +1486,6 @@ fn test_spam_rick() {
 
 #[test]
 fn test_one_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers| {
-        MockResult::Return(ElectrumClientImpl::with_protocol_version(
-            coin_ticker,
-            event_handlers,
-            OrdRange::new(1.4, 1.4).unwrap(),
-        ))
-    });
-
     // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
     let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
     let result = client
@@ -2820,6 +2803,7 @@ fn zer_mtp() {
 }
 
 #[test]
+#[ignore]
 fn test_tx_details_kmd_rewards() {
     let electrum = electrum_client_for_test(&[
         "electrum1.cipig.net:10001",
@@ -2851,6 +2835,7 @@ fn test_tx_details_kmd_rewards() {
 /// then `TransactionDetails::kmd_rewards` has to be `Some(0)`, not `None`.
 /// https://kmdexplorer.io/tx/f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_details_kmd_rewards_claimed_by_other() {
     let electrum = electrum_client_for_test(&[

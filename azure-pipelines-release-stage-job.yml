@@ -128,12 +128,3 @@ jobs:
           7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\mm2.lib .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare release build upload Windows'
         condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['RELEASE_UPLOADED'], '' ) )
-      - task: GitHubRelease@0
-        inputs:
-          action: edit
-          gitHubConnection: artemii235
-          assets: 'upload/*'
-          assetUploadMode: replace
-          tagSource: manual
-          tag: $(RELEASE_TAG)
-        condition: or( eq( variables['RELEASE_UPLOADED'], '' ), eq( variables['DEBUG_UPLOADED'], '' ) )
