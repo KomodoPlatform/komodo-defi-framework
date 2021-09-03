@@ -86,6 +86,10 @@ const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
+#[cfg(not(test))]
+const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
+#[cfg(test)]
+const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 2;
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
@@ -1882,23 +1886,15 @@ enum OrderbookRequestingState {
 
 type H64 = [u8; 8];
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct TrieDiff<Key, Value> {
     delta: Vec<(Key, Option<Value>)>,
     next_root: H64,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 struct TrieDiffHistory<Key, Value> {
-    inner: HashMap<H64, TrieDiff<Key, Value>>,
-}
-
-impl<Key, Value> Default for TrieDiffHistory<Key, Value> {
-    fn default() -> Self {
-        TrieDiffHistory {
-            inner: Default::default(),
-        }
-    }
+    inner: TimeCache<H64, TrieDiff<Key, Value>>,
 }
 
 impl<Key, Value> TrieDiffHistory<Key, Value> {
@@ -1908,11 +1904,11 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
             return;
         }
 
-        match self.inner.remove(&diff.next_root) {
+        match self.inner.remove(diff.next_root) {
             Some(mut diff) => {
                 // we reached a state that was already reached previously
                 // history can be cleaned up to this state hash
-                while let Some(next_diff) = self.inner.remove(&diff.next_root) {
+                while let Some(next_diff) = self.inner.remove(diff.next_root) {
                     diff = next_diff;
                 }
             },
@@ -1923,12 +1919,15 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
     }
 
     #[allow(dead_code)]
-    fn remove_key(&mut self, key: &H64) { self.inner.remove(key); }
+    fn remove_key(&mut self, key: H64) { self.inner.remove(key); }
 
     #[allow(dead_code)]
     fn contains_key(&self, key: &H64) -> bool { self.inner.contains_key(key) }
 
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
+
+    #[allow(dead_code)]
+    fn len(&self) -> usize { self.inner.len() }
 }
 
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
@@ -1991,7 +1990,9 @@ fn pair_history_mut<'a>(
     state: &'a mut TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
     pair: &str,
 ) -> &'a mut TrieOrderHistory {
-    state.entry(pair.into()).or_insert_with(TrieOrderHistory::default)
+    state.entry(pair.into()).or_insert_with(|| TrieOrderHistory {
+        inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
+    })
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2003,8 +2004,8 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     use parity_util_mem::malloc_size;
 
     fn history_committed_changes(history: &TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
-        let total = history.map.iter().fold(0usize, |total, (_alb_pair, history)| {
-            total + history.element.inner.len()
+        let total = history.iter().fold(0usize, |total, (_alb_pair, history)| {
+            total + history.get_element().inner.len()
         });
         total as i64
     }

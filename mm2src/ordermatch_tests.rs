@@ -2349,40 +2349,36 @@ fn test_orderbook_pubkey_sync_request_relay() {
 
 #[test]
 fn test_trie_diff_avoid_cycle_on_insertion() {
-    let mut history = TrieDiffHistory::<String, String>::default();
+    let mut history = TrieDiffHistory::<String, String> {
+        inner: TimeCache::new(Duration::from_secs(3600)),
+    };
     history.insert_new_diff([1; 8], TrieDiff {
         delta: vec![],
         next_root: [2; 8],
     });
-
     history.insert_new_diff([2; 8], TrieDiff {
         delta: vec![],
         next_root: [3; 8],
     });
-
     history.insert_new_diff([3; 8], TrieDiff {
         delta: vec![],
         next_root: [4; 8],
     });
-
     history.insert_new_diff([4; 8], TrieDiff {
         delta: vec![],
         next_root: [5; 8],
     });
-
     history.insert_new_diff([5; 8], TrieDiff {
         delta: vec![],
         next_root: [2; 8],
     });
 
-    let expected = TrieDiffHistory {
-        inner: HashMap::from_iter(iter::once(([1; 8], TrieDiff {
-            delta: vec![],
-            next_root: [2; 8],
-        }))),
-    };
+    let expected = HashMap::from_iter(iter::once(([1u8; 8], TrieDiff {
+        delta: vec![],
+        next_root: [2; 8],
+    })));
 
-    assert_eq!(expected, history);
+    assert_eq!(expected, history.inner.as_hash_map());
 }
 
 #[test]
@@ -2485,12 +2481,7 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
     assert_eq!(orderbook.unordered, expected_unordered);
 
     // history
-    let actual_keys: HashSet<_> = pubkey_state
-        .order_pairs_trie_state_history
-        .map
-        .keys()
-        .cloned()
-        .collect();
+    let actual_keys: HashSet<_> = pubkey_state.order_pairs_trie_state_history.keys().cloned().collect();
     let expected_keys: HashSet<_> = orders
         .iter()
         .map(|order| alb_ordered_pair(&order.base, &order.rel))
@@ -2554,4 +2545,96 @@ fn test_remove_and_purge_pubkey_pair_orders() {
 
     remove_pubkey_pair_orders(&mut orderbook, &pubkey, &rick_morty_pair);
     check_if_orderbook_contains_only(&orderbook, &pubkey, &rick_kmd_orders);
+}
+
+#[test]
+fn test_orderbook_sync_trie_diff_time_cache() {
+    let (ctx_bob, pubkey_bob, secret_bob) = make_ctx_for_tests();
+    let rick_morty_orders = make_random_orders(pubkey_bob.clone(), &secret_bob, "RICK".into(), "MORTY".into(), 15);
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+
+    for order in &rick_morty_orders[..5] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    for order in &rick_morty_orders[5..10] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
+    assert_eq!(rick_morty_history_bob.len(), 5);
+
+    // alice has an outdated state, for which bob doesn't have history anymore as it's expired
+    let (ctx_alice, ..) = make_ctx_for_tests();
+
+    for order in &rick_morty_orders[..3] {
+        block_on(insert_or_update_order(&ctx_alice, order.clone()));
+    }
+
+    let ordermatch_ctx_alice = OrdermatchContext::from_ctx(&ctx_alice).unwrap();
+    let mut orderbook_alice = block_on(ordermatch_ctx_alice.orderbook.lock());
+    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
+    let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
+
+    let bob_history_on_sync = DeltaOrFullTrie::from_history(
+        &rick_morty_history_bob,
+        *alice_root,
+        *bob_root,
+        &orderbook_bob.memory_db,
+    )
+    .unwrap();
+
+    let full_trie = match bob_history_on_sync {
+        DeltaOrFullTrie::FullTrie(trie) => trie,
+        _ => panic!("Expected DeltaOrFullTrie::FullTrie"),
+    };
+
+    let new_alice_root = process_pubkey_full_trie(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, full_trie);
+
+    assert_eq!(new_alice_root, *bob_root);
+
+    drop(orderbook_bob);
+    drop(orderbook_alice);
+
+    for order in &rick_morty_orders[10..] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let mut orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+
+    orderbook_bob.remove_order_trie_update(rick_morty_orders[12].uuid);
+
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
+
+    let mut orderbook_alice = block_on(ordermatch_ctx_alice.orderbook.lock());
+    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
+    let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
+
+    let bob_history_on_sync = DeltaOrFullTrie::from_history(
+        &rick_morty_history_bob,
+        *alice_root,
+        *bob_root,
+        &orderbook_bob.memory_db,
+    )
+    .unwrap();
+
+    // Check that alice gets orders from history this time
+    let trie_delta = match bob_history_on_sync {
+        DeltaOrFullTrie::Delta(delta) => delta,
+        _ => panic!("Expected DeltaOrFullTrie::Delta"),
+    };
+
+    let new_alice_root = process_trie_delta(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, trie_delta);
+    assert_eq!(new_alice_root, *bob_root);
 }

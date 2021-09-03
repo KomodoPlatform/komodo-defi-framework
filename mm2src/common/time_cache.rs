@@ -22,22 +22,31 @@
 
 use fnv::FnvHashMap;
 use std::collections::hash_map::{self,
-                                 Entry::{Occupied, Vacant}};
+                                 Entry::{Occupied, Vacant},
+                                 Iter, Keys};
 use std::collections::VecDeque;
 use std::time::Duration;
 use wasm_timer::Instant;
 
+#[derive(Debug)]
 pub struct ExpiringElement<Element> {
     /// The element that expires
-    pub element: Element,
+    element: Element,
     /// The expire time.
     expires: Instant,
 }
 
+impl<Element> ExpiringElement<Element> {
+    pub fn get_element(&self) -> &Element { &self.element }
+
+    pub fn update_expiration(&mut self, expires: Instant) { self.expires = expires }
+}
+
+#[derive(Debug)]
 pub struct TimeCache<Key, Value> {
     /// Mapping a key to its value together with its latest expire time (can be updated through
     /// reinserts).
-    pub map: FnvHashMap<Key, ExpiringElement<Value>>,
+    map: FnvHashMap<Key, ExpiringElement<Value>>,
     /// An ordered list of keys by expires time.
     list: VecDeque<ExpiringElement<Key>>,
     /// The time elements remain in the cache.
@@ -76,6 +85,17 @@ where
                 expires: self.expiration,
             })
             .element
+    }
+
+    pub fn into_mut_with_update_expiration(mut self) -> &'a mut V {
+        //We push back an additional element, the first reference in the list will be ignored
+        // since we also updated the expires in the map, see below.
+        self.list.push_back(ExpiringElement {
+            element: self.entry.key().clone(),
+            expires: self.expiration,
+        });
+        self.entry.get_mut().update_expiration(self.expiration);
+        &mut self.entry.into_mut().element
     }
 }
 
@@ -117,6 +137,13 @@ where
     pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
         match self {
             Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(default()),
+        }
+    }
+
+    pub fn or_insert_with_update_expiration<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut_with_update_expiration(),
             Entry::Vacant(entry) => entry.insert(default()),
         }
     }
@@ -180,24 +207,9 @@ where
 
     // Removes a certain key even if it didn't expire plus removing other expired keys
     pub fn remove(&mut self, key: Key) -> Option<Value> {
-        let now = Instant::now();
-        let mut value = None;
-        while let Some(element) = self.list.pop_front() {
-            if element.expires > now && element.element != key {
-                self.list.push_front(element);
-                break;
-            }
-            if let Occupied(entry) = self.map.entry(element.element.clone()) {
-                if element.element == key {
-                    value = Some(entry.remove().element);
-                    break;
-                }
-                if entry.get().expires <= now {
-                    entry.remove();
-                }
-            }
-        }
-        value
+        let result = self.map.remove(&key).map(|el| el.element);
+        self.remove_expired_keys(Instant::now());
+        result
     }
 
     /// Empties the entire cache.
@@ -207,7 +219,7 @@ where
         self.list.clear();
     }
 
-    pub fn contains_key(&mut self, key: &Key) -> bool { self.map.contains_key(key) }
+    pub fn contains_key(&self, key: &Key) -> bool { self.map.contains_key(key) }
 
     pub fn get(&self, key: &Key) -> Option<&Value> { self.map.get(key).map(|e| &e.element) }
 
@@ -216,10 +228,27 @@ where
     pub fn is_empty(&self) -> bool { self.map.is_empty() }
 
     pub fn ttl(&self) -> Duration { self.ttl }
+
+    pub fn iter(&self) -> Iter<Key, ExpiringElement<Value>> { self.map.iter() }
+
+    pub fn keys(&self) -> Keys<Key, ExpiringElement<Value>> { self.map.keys() }
+}
+
+impl<Key, Value> TimeCache<Key, Value>
+where
+    Key: Eq + std::hash::Hash + Clone,
+    Value: Clone,
+{
+    pub fn as_hash_map(&self) -> std::collections::HashMap<Key, Value> {
+        self.map
+            .iter()
+            .map(|(key, expiring_el)| (key.clone(), expiring_el.element.clone()))
+            .collect()
+    }
 }
 
 #[allow(dead_code)]
-pub struct DuplicateCache<Key>(TimeCache<Key, ()>);
+pub struct DuplicateCache<Key: std::hash::Hash>(TimeCache<Key, ()>);
 
 #[allow(dead_code)]
 impl<Key> DuplicateCache<Key>
@@ -319,5 +348,15 @@ mod test {
 
         // should be removed from the cache
         assert!(cache.insert("t"));
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut cache = TimeCache::new(Duration::from_secs(10));
+
+        cache.insert("t", "");
+        cache.insert("e", "");
+        cache.remove("e");
+        assert!(!cache.contains_key(&"e"));
     }
 }
