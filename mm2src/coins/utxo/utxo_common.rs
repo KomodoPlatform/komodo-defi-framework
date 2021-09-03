@@ -193,12 +193,12 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
                 ScriptType::P2PKH => (
                     conf.pub_addr_prefix,
                     conf.pub_t_addr_prefix,
-                    UtxoAddressFormat::Standard,
+                    conf.default_address_format.clone(),
                 ),
                 ScriptType::P2SH => (
                     conf.p2sh_addr_prefix,
                     conf.p2sh_t_addr_prefix,
-                    UtxoAddressFormat::Standard,
+                    conf.default_address_format.clone(),
                 ),
                 ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };

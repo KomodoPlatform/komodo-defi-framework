@@ -5507,7 +5507,7 @@ fn test_qrc20_tx_history() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_history_segwit() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
     let coins = json!([
         {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
     ]);
@@ -5518,7 +5518,7 @@ fn test_tx_history_segwit() {
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "passphrase": bob_passphrase,
+            "passphrase": passphrase,
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
