@@ -51,6 +51,14 @@ impl ScriptAddress {
             hash,
         }
     }
+
+    /// Creates P2SH-type ScriptAddress
+    pub fn new_p2wpkh(hash: AddressHash) -> Self {
+        ScriptAddress {
+            kind: keys::Type::P2WPKH,
+            hash,
+        }
+    }
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
@@ -422,9 +430,7 @@ impl Script {
             ScriptType::WitnessScript => {
                 Ok(vec![]) // TODO
             },
-            ScriptType::WitnessKey => {
-                Ok(vec![]) // TODO
-            },
+            ScriptType::WitnessKey => Ok(vec![ScriptAddress::new_p2wpkh(self.data[2..22].into())]),
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO
             },
@@ -578,6 +584,7 @@ pub fn is_witness_commitment_script(script: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{Script, ScriptAddress, ScriptType};
+    use crypto::ChecksumType;
     use keys::{Address, Public};
     use {Builder, Error, Opcode};
 
@@ -771,6 +778,24 @@ OP_ADD
         assert_eq!(
             script.extract_destinations(),
             Ok(vec![ScriptAddress::new_p2sh(address),])
+        );
+    }
+
+    #[test]
+    fn test_extract_destinations_witness_pub_key_hash() {
+        let address = Address::from_segwitaddress(
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            ChecksumType::DSHA256,
+            0,
+            0,
+        )
+        .unwrap()
+        .hash;
+        let script = Builder::build_p2wpkh(&address);
+        assert_eq!(script.script_type(), ScriptType::WitnessKey);
+        assert_eq!(
+            script.extract_destinations(),
+            Ok(vec![ScriptAddress::new_p2wpkh(address),])
         );
     }
 

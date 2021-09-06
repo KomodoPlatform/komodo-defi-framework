@@ -5506,6 +5506,258 @@ fn test_qrc20_tx_history() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_tx_history_segwit() {
+    let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
+    let coins = json!([
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": passphrase,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+            "metrics_interval": 30.,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    // enable tBTC in legacy first to see that to/from segwit addresses are displayed correctly in tx_history
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "tx_history": true,
+    })))
+    .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb")
+    );
+
+    // Wait till tx_history will not be loaded
+    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
+
+    // let the MarketMaker save the history to the file
+    block_on(Timer::sleep(1.));
+
+    let tx_history = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "coin": "tBTC",
+        "limit": 100,
+    })))
+    .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    log!([tx_history.1]);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b/
+        "9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b",
+        // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
+        "ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7",
+        // https://live.blockcypher.com/btc-testnet/tx/7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44/
+        "7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44",
+        // https://live.blockcypher.com/btc-testnet/tx/17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953/
+        "17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953",
+        // https://live.blockcypher.com/btc-testnet/tx/45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba/
+        "45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba",
+        // https://live.blockcypher.com/btc-testnet/tx/2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298/
+        "2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298",
+        // https://live.blockcypher.com/btc-testnet/tx/4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857/
+        "4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857",
+        // https://live.blockcypher.com/btc-testnet/tx/0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb/
+        "0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb",
+        // https://live.blockcypher.com/btc-testnet/tx/1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265/
+        "1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265",
+        // https://live.blockcypher.com/btc-testnet/tx/245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e/
+        "245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e",
+        // https://live.blockcypher.com/btc-testnet/tx/8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c/
+        "8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c",
+        // https://live.blockcypher.com/btc-testnet/tx/15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96/
+        "15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96",
+        // https://live.blockcypher.com/btc-testnet/tx/ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9/
+        "ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9",
+        // https://live.blockcypher.com/btc-testnet/tx/322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37/
+        "322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37",
+        // https://live.blockcypher.com/btc-testnet/tx/db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69/
+        "db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69",
+        // https://live.blockcypher.com/btc-testnet/tx/4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a/
+        "4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a",
+        // https://live.blockcypher.com/btc-testnet/tx/a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1/
+        "a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1",
+        // https://live.blockcypher.com/btc-testnet/tx/2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35/
+        "2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35",
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60",
+        // https://live.blockcypher.com/btc-testnet/tx/303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f/
+        "303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f",
+        // https://live.blockcypher.com/btc-testnet/tx/adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0/
+        "adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0",
+        // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
+        "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
+    ];
+
+    assert_eq!(tx_history_result["total"].as_u64().unwrap(), expected.len() as u64);
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        if tx["tx_hash"].as_str().unwrap() == "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60" {
+            // assert that segwit from address displays correctly
+            assert_eq!(
+                tx["from"][0].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
+            );
+            // assert that legacy to address displays correctly
+            assert_eq!(tx["to"][0].as_str().unwrap(), "mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb");
+            // assert that segwit to address displays correctly
+            assert_eq!(
+                tx["to"][1].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
+            );
+        }
+    }
+
+    //Disable tBTC to enable it in Segwit Mode
+    let rc = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC",
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
+
+    // enable tBTC in Segwit to see that to/from segwit addresses are displayed correctly in tx_history
+    // and that tx_history is retrieved for the segwit address instead of legacy
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "tx_history": true,
+        "address_format": {
+            "format": "segwit",
+        },
+    })))
+    .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5")
+    );
+
+    // Wait till tx_history will not be loaded
+    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
+
+    // let the MarketMaker save the history to the file
+    block_on(Timer::sleep(10.));
+
+    let tx_history = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "coin": "tBTC",
+        "limit": 13,
+    })))
+    .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    log!([tx_history.1]);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e/
+        "17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e",
+        // https://live.blockcypher.com/btc-testnet/tx/f410e82e8c736b92ea6ec59a148533c8a2c4ad50e871a4e85a77e4546f9b2788/
+        "f410e82e8c736b92ea6ec59a148533c8a2c4ad50e871a4e85a77e4546f9b2788",
+        // https://live.blockcypher.com/btc-testnet/tx/54a288d017fd24a5eb30dee3e70b77119ac450b90e7316d9a2a4fa01642ff880/
+        "54a288d017fd24a5eb30dee3e70b77119ac450b90e7316d9a2a4fa01642ff880",
+        // https://live.blockcypher.com/btc-testnet/tx/0ff4d93f358185fbc928be4ddec38cd01241224dc7c09ef297518732e40807d3/
+        "0ff4d93f358185fbc928be4ddec38cd01241224dc7c09ef297518732e40807d3",
+        // https://live.blockcypher.com/btc-testnet/tx/e7a493f0370a36efbd5d8306de32dd6c354412c5ce4c81832648e7f9b91c1d27/
+        "e7a493f0370a36efbd5d8306de32dd6c354412c5ce4c81832648e7f9b91c1d27",
+        // https://live.blockcypher.com/btc-testnet/tx/ba9188ba9cd1ff8abb5af7bc6247b88c6f4cd065f93b8fb196de6a39b6ef178c/
+        "ba9188ba9cd1ff8abb5af7bc6247b88c6f4cd065f93b8fb196de6a39b6ef178c",
+        // https://live.blockcypher.com/btc-testnet/tx/0089a6efa24ace36f0b21956e7a63d8d3185c3cf1b248564b3c6fe0b81e40878/
+        "0089a6efa24ace36f0b21956e7a63d8d3185c3cf1b248564b3c6fe0b81e40878",
+        // https://live.blockcypher.com/btc-testnet/tx/7f888369d0dedd07ea780bb4bc4795554dd80c62de613381630ae7f49370100f/
+        "7f888369d0dedd07ea780bb4bc4795554dd80c62de613381630ae7f49370100f",
+        // https://live.blockcypher.com/btc-testnet/tx/369e59d3036abf1b5b519181d762e7776bcecd96a2f0ba3615edde20c928f8e4/
+        "369e59d3036abf1b5b519181d762e7776bcecd96a2f0ba3615edde20c928f8e4",
+        // https://live.blockcypher.com/btc-testnet/tx/ac4eeb9bc9b776e287b0e15314595d33df8528924b60fb9d4ab57159d5911b9e/
+        "ac4eeb9bc9b776e287b0e15314595d33df8528924b60fb9d4ab57159d5911b9e",
+        // https://live.blockcypher.com/btc-testnet/tx/16bb7653c5bdb359dbe207aad5fd784e8871e777257b2bbd9349c68f10819e6c/
+        "16bb7653c5bdb359dbe207aad5fd784e8871e777257b2bbd9349c68f10819e6c",
+        // https://live.blockcypher.com/btc-testnet/tx/8fe0b51bf5c26ebe45fda29bcf24982423445807097df6ee53726551596dfed4/
+        "8fe0b51bf5c26ebe45fda29bcf24982423445807097df6ee53726551596dfed4",
+        // https://live.blockcypher.com/btc-testnet/tx/3f7421fe2249870083fcc8b1730393542dcb591f36e2a6c9fd3a79388d53264f/
+        "3f7421fe2249870083fcc8b1730393542dcb591f36e2a6c9fd3a79388d53264f",
+    ];
+
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        assert!(
+            expected.contains(&tx["tx_hash"].as_str().unwrap()),
+            "Transaction history must contain expected transactions"
+        );
+        // https://live.blockcypher.com/btc-testnet/tx/17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e/
+        if tx["tx_hash"].as_str().unwrap() == "17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e" {
+            // assert that segwit from address displays correctly
+            assert_eq!(
+                tx["from"][0].as_str().unwrap(),
+                "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"
+            );
+            // assert that legacy P2SH to address displays correctly
+            assert_eq!(tx["to"][0].as_str().unwrap(), "2Mw6MLbfd5xrk1Wq785XuGWrpNvEGhHiNU1");
+            // assert that segwit to address displays correctly
+            assert_eq!(
+                tx["to"][1].as_str().unwrap(),
+                "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_buy_conf_settings() {
     let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
 

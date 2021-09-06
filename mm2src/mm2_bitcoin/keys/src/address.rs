@@ -27,6 +27,10 @@ pub enum Type {
     /// Newer P2SH type starting with the number 3, eg: 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy.
     /// https://bitcoin.org/en/glossary/p2sh-address
     P2SH,
+    /// Pay to Witness PubKey Hash
+    /// Common P2WPKH which begins with the human readable part followed by 1, eg: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+    P2WPKH,
 }
 
 #[derive(Clone, Debug, Display, Deserialize, PartialEq, Serialize)]
