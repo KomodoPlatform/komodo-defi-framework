@@ -1990,9 +1990,11 @@ fn pair_history_mut<'a>(
     state: &'a mut TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
     pair: &str,
 ) -> &'a mut TrieOrderHistory {
-    state.entry(pair.into()).or_insert_with(|| TrieOrderHistory {
-        inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
-    })
+    state
+        .entry(pair.into())
+        .or_insert_with_update_expiration(|| TrieOrderHistory {
+            inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
+        })
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
