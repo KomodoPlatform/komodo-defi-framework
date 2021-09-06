@@ -85,11 +85,14 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
+#[cfg(not(test))]
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
+#[cfg(test)]
+const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 #[cfg(not(test))]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
-const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 2;
+const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
@@ -2484,7 +2487,10 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             spawn({
                                 let ctx = ctx.clone();
                                 async move {
-                                    maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                    if let Ok(Some((_, _))) = find_pair(&ctx, &maker_order.base, &maker_order.rel).await
+                                    {
+                                        maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                    }
                                 }
                             });
                         } else {

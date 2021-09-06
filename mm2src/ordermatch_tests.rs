@@ -2558,7 +2558,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         block_on(insert_or_update_order(&ctx_bob, order.clone()));
     }
 
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_secs(3));
 
     for order in &rick_morty_orders[5..10] {
         block_on(insert_or_update_order(&ctx_bob, order.clone()));
@@ -2637,4 +2637,78 @@ fn test_orderbook_sync_trie_diff_time_cache() {
 
     let new_alice_root = process_trie_delta(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, trie_delta);
     assert_eq!(new_alice_root, *bob_root);
+}
+
+#[test]
+fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() {
+    let (ctx_bob, pubkey_bob, secret_bob) = make_ctx_for_tests();
+    let rick_morty_orders = make_random_orders(pubkey_bob.clone(), &secret_bob, "RICK".into(), "MORTY".into(), 15);
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+
+    for order in &rick_morty_orders[..5] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    // After 3 seconds RICK:MORTY pair trie state history will time out and will be empty
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Insert some more orders to remove expired timecache RICK:MORTY key
+    for order in &rick_morty_orders[5..10] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    // Only the last inserted 5 orders are found
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        5
+    );
+
+    drop(orderbook_bob);
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    // On inserting 5 more orders expiration for RICK:MORTY pair trie state history will be reset
+    for order in &rick_morty_orders[10..] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        10
+    );
+
+    drop(orderbook_bob);
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    // After 3 seconds from inserting orders number 6-10 these orders have not expired due to updated expiration on inserting orders 11-15
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        10
+    );
 }
