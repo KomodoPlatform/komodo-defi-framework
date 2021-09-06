@@ -1388,17 +1388,17 @@ impl EthCoin {
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
                     if allowed < value {
-                        let balance_f = arc.my_balance();
-                        Box::new(balance_f.map_err(|e| ERRL!("{}", e)).and_then(move |balance| {
-                            arc.approve(swap_contract_address, balance).and_then(move |_approved| {
-                                arc.sign_and_send_transaction(
-                                    0.into(),
-                                    Action::Call(swap_contract_address),
-                                    data,
-                                    U256::from(150_000),
-                                )
-                            })
-                        }))
+                        Box::new(
+                            arc.approve(swap_contract_address, U256::max_value())
+                                .and_then(move |_approved| {
+                                    arc.sign_and_send_transaction(
+                                        0.into(),
+                                        Action::Call(swap_contract_address),
+                                        data,
+                                        U256::from(150_000),
+                                    )
+                                }),
+                        )
                     } else {
                         Box::new(arc.sign_and_send_transaction(
                             0.into(),
