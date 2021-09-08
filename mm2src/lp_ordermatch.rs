@@ -76,7 +76,7 @@ mod order_requests_tracker;
 #[path = "lp_ordermatch/orderbook_rpc.rs"] mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
-mod ordermatch_tests;
+pub mod ordermatch_tests;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
 const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 30;
@@ -111,6 +111,8 @@ impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
             min_volume: order.min_volume,
             uuid: order.uuid.into(),
             created_at: order.created_at,
+            base_protocol_info: order.base_protocol_info,
+            rel_protocol_info: order.rel_protocol_info,
         }
     }
 }
@@ -731,7 +733,12 @@ fn test_parse_orderbook_pair_from_topic() {
     assert_eq!(None, parse_orderbook_pair_from_topic("orbk/BTC:"));
 }
 
-async fn maker_order_created_p2p_notify(ctx: MmArc, order: &MakerOrder) {
+async fn maker_order_created_p2p_notify(
+    ctx: MmArc,
+    order: &MakerOrder,
+    base_protocol_info: Vec<u8>,
+    rel_protocol_info: Vec<u8>,
+) {
     let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
     let message = new_protocol::MakerOrderCreated {
         uuid: order.uuid.into(),
@@ -744,6 +751,8 @@ async fn maker_order_created_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         created_at: now_ms() / 1000,
         timestamp: now_ms() / 1000,
         pair_trie_root: H64::default(),
+        base_protocol_info,
+        rel_protocol_info,
     };
 
     let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
@@ -1157,8 +1166,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: self.base_coin.coin_protocol_info(),
-                rel_protocol_info: self.rel_coin.coin_protocol_info(),
+                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
+                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
             },
             matches: Default::default(),
             min_volume,
@@ -1184,8 +1193,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 dest_pub_key: Default::default(),
                 match_by: self.match_by,
                 conf_settings: self.conf_settings,
-                base_protocol_info: self.base_coin.coin_protocol_info(),
-                rel_protocol_info: self.rel_coin.coin_protocol_info(),
+                base_protocol_info: Some(self.base_coin.coin_protocol_info()),
+                rel_protocol_info: Some(self.rel_coin.coin_protocol_info()),
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -2487,9 +2496,16 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             spawn({
                                 let ctx = ctx.clone();
                                 async move {
-                                    if let Ok(Some((_, _))) = find_pair(&ctx, &maker_order.base, &maker_order.rel).await
+                                    if let Ok(Some((base_coin, rel_coin))) =
+                                        find_pair(&ctx, &maker_order.base, &maker_order.rel).await
                                     {
-                                        maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                        maker_order_created_p2p_notify(
+                                            ctx,
+                                            &maker_order,
+                                            base_coin.coin_protocol_info(),
+                                            rel_coin.coin_protocol_info(),
+                                        )
+                                        .await;
                                     }
                                 }
                             });
@@ -2580,7 +2596,13 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                                 log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
                             }
                         }
-                        maker_order_created_p2p_notify(ctx.clone(), order).await;
+                        maker_order_created_p2p_notify(
+                            ctx.clone(),
+                            order,
+                            base.coin_protocol_info(),
+                            rel.coin_protocol_info(),
+                        )
+                        .await;
                     }
                 }
             }
@@ -2736,8 +2758,8 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    base_protocol_info: base_coin.coin_protocol_info(),
-                    rel_protocol_info: rel_coin.coin_protocol_info(),
+                    base_protocol_info: Some(base_coin.coin_protocol_info()),
+                    rel_protocol_info: Some(rel_coin.coin_protocol_info()),
                 };
                 let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -3035,6 +3057,8 @@ struct OrderbookItem {
     min_volume: BigRational,
     uuid: Uuid,
     created_at: u64,
+    base_protocol_info: Vec<u8>,
+    rel_protocol_info: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -3079,74 +3103,6 @@ impl OrderbookItem {
 
         if let Some(new_min_volume) = msg.new_min_volume() {
             self.min_volume = new_min_volume.into();
-        }
-    }
-
-    fn as_rpc_best_orders_buy(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
-        let price_mm = MmNumber::from(self.price.clone());
-        let max_vol_mm = MmNumber::from(self.max_volume.clone());
-        let min_vol_mm = MmNumber::from(self.min_volume.clone());
-
-        let base_max_volume = max_vol_mm.clone().into();
-        let base_min_volume = min_vol_mm.clone().into();
-        let rel_max_volume = (&max_vol_mm * &price_mm).into();
-        let rel_min_volume = (&min_vol_mm * &price_mm).into();
-
-        RpcOrderbookEntry {
-            coin: self.rel.clone(),
-            address,
-            price: price_mm.to_decimal(),
-            price_rat: price_mm.to_ratio(),
-            price_fraction: price_mm.to_fraction(),
-            max_volume: max_vol_mm.to_decimal(),
-            max_volume_rat: max_vol_mm.to_ratio(),
-            max_volume_fraction: max_vol_mm.to_fraction(),
-            min_volume: min_vol_mm.to_decimal(),
-            min_volume_rat: min_vol_mm.to_ratio(),
-            min_volume_fraction: min_vol_mm.to_fraction(),
-            pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
-            zcredits: 0,
-            uuid: self.uuid,
-            is_mine,
-            base_max_volume,
-            base_min_volume,
-            rel_max_volume,
-            rel_min_volume,
-        }
-    }
-
-    fn as_rpc_best_orders_sell(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
-        let price_mm = MmNumber::from(1i32) / self.price.clone().into();
-        let max_vol_mm = MmNumber::from(self.max_volume.clone());
-        let min_vol_mm = MmNumber::from(self.min_volume.clone());
-
-        let base_max_volume = (&max_vol_mm / &price_mm).into();
-        let base_min_volume = (&min_vol_mm / &price_mm).into();
-        let rel_max_volume = max_vol_mm.clone().into();
-        let rel_min_volume = min_vol_mm.clone().into();
-
-        RpcOrderbookEntry {
-            coin: self.base.clone(),
-            address,
-            price: price_mm.to_decimal(),
-            price_rat: price_mm.to_ratio(),
-            price_fraction: price_mm.to_fraction(),
-            max_volume: max_vol_mm.to_decimal(),
-            max_volume_rat: max_vol_mm.to_ratio(),
-            max_volume_fraction: max_vol_mm.to_fraction(),
-            min_volume: min_vol_mm.to_decimal(),
-            min_volume_rat: min_vol_mm.to_ratio(),
-            min_volume_fraction: min_vol_mm.to_fraction(),
-            pubkey: self.pubkey.clone(),
-            age: (now_ms() as i64 / 1000),
-            zcredits: 0,
-            uuid: self.uuid,
-            is_mine,
-            base_max_volume,
-            base_min_volume,
-            rel_max_volume,
-            rel_min_volume,
         }
     }
 
@@ -3535,7 +3491,13 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let request_orderbook = false;
     try_s!(subscribe_to_orderbook_topic(&ctx, &new_order.base, &new_order.rel, request_orderbook).await);
     save_my_new_maker_order(&ctx, &new_order);
-    maker_order_created_p2p_notify(ctx.clone(), &new_order).await;
+    maker_order_created_p2p_notify(
+        ctx.clone(),
+        &new_order,
+        base_coin.coin_protocol_info(),
+        rel_coin.coin_protocol_info(),
+    )
+    .await;
     let rpc_result = MakerOrderForRpc::from(&new_order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     my_orders.insert(new_order.uuid, new_order);

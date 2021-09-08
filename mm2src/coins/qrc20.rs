@@ -1163,7 +1163,7 @@ impl MmCoin for Qrc20Coin {
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo.conf.mature_confirmations) }
 
-    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo) }
+    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(&self.utxo) }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(&self.utxo, info)

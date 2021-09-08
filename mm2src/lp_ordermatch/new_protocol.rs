@@ -122,6 +122,10 @@ pub struct MakerOrderCreated {
     /// This is timestamp of message
     pub timestamp: u64,
     pub pair_trie_root: H64,
+    #[serde(default)]
+    pub base_protocol_info: Vec<u8>,
+    #[serde(default)]
+    pub rel_protocol_info: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

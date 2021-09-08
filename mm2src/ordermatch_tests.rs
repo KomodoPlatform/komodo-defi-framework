@@ -1506,7 +1506,13 @@ fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     (ctx, pubkey, secret)
 }
 
-fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: String, n: usize) -> Vec<OrderbookItem> {
+pub(super) fn make_random_orders(
+    pubkey: String,
+    _secret: &[u8; 32],
+    base: String,
+    rel: String,
+    n: usize,
+) -> Vec<OrderbookItem> {
     let mut rng = rand::thread_rng();
     let mut orders = Vec::with_capacity(n);
     for _i in 0..n {
@@ -1522,6 +1528,8 @@ fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: Str
             created_at: now_ms() / 1000,
             timestamp: now_ms() / 1000,
             pair_trie_root: H64::default(),
+            base_protocol_info: vec![],
+            rel_protocol_info: vec![],
         };
 
         orders.push((order, pubkey.clone()).into());
