@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::from_utf8;
 
+/// Absolute path taken from Atomicdex-api's root + `path`.
+fn rabs(rrel: &str) -> PathBuf { root().join(rrel) }
+
 fn path2s(path: PathBuf) -> String {
     path.to_str()
         .unwrap_or_else(|| panic!("Non-stringy path {:?}", path))
@@ -66,10 +69,14 @@ fn mm_version() -> String {
     let mm_version_p = root().join("MM_VERSION");
     let v_file = String::from_utf8(slurp(&mm_version_p)).unwrap();
     let v_file = v_file.trim().to_string();
-    if version[..] != v_file[..] {
-        // Create or update the MM_VERSION file in order to appease the Cargo dependency management.
-        let mut mm_version_f = fs::File::create(&mm_version_p).unwrap();
-        mm_version_f.write_all(version.as_bytes()).unwrap();
+    if !v_file.is_empty() {
+        if !v_file.contains(&version) {
+            // Create or update the MM_VERSION file in order to appease the Cargo dependency management.
+            let mut mm_version_f = fs::File::create(&mm_version_p).unwrap();
+            mm_version_f.write_all(version.as_bytes()).unwrap();
+        } else {
+            version = v_file;
+        }
     }
 
     println!("cargo:rustc-env=MM_VERSION={}", version);
@@ -87,12 +94,13 @@ fn mm_version() -> String {
 
     let mm_datetime_p = root().join("MM_DATETIME");
     let dt_file = String::from_utf8(slurp(&mm_datetime_p)).unwrap();
-    let dt_file = dt_file.trim().to_string();
+    let mut dt_file = dt_file.trim().to_string();
     if let Some(ref dt_git) = dt_git {
         if dt_git[..] != dt_file[..] {
             // Create or update the “MM_DATETIME” file in order to appease the Cargo dependency management.
             let mut mm_datetime_f = fs::File::create(&mm_datetime_p).unwrap();
             mm_datetime_f.write_all(dt_git.as_bytes()).unwrap();
+            dt_file = dt_git.to_string();
         }
     }
 
@@ -101,4 +109,8 @@ fn mm_version() -> String {
     version
 }
 
-fn main() { mm_version(); }
+fn main() {
+    // This allows build script to run even if no source code files change as rerun-if-changed checks for a file that doesn't exist
+    println!("cargo:rerun-if-changed={}", path2s(rabs("NON_EXISTING_FILE")));
+    mm_version();
+}
