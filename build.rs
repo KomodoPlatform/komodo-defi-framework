@@ -7,9 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::from_utf8;
 
-/// Absolute path taken from Atomicdex-api's root + `path`.
-fn rabs(rrel: &str) -> PathBuf { root().join(rrel) }
-
 fn path2s(path: PathBuf) -> String {
     path.to_str()
         .unwrap_or_else(|| panic!("Non-stringy path {:?}", path))
@@ -73,6 +70,13 @@ fn mm_version() -> String {
     if !v_file.is_empty() {
         if !v_file.contains(&version) {
             // If the file doesn't contain the latest commit hash then this is a local build and the file should be updated
+            let re = Regex::new(r"[0-9a-f]{9}$").unwrap();
+            let v: Vec<&str> = v_file.split('_').collect();
+            if re.is_match(v.last().unwrap()) {
+                version = re.replace(&v_file, version).to_string();
+            } else {
+                version = format!("{}_{}", v_file, version);
+            }
             let mut mm_version_f = fs::File::create(&mm_version_p).unwrap();
             mm_version_f.write_all(version.as_bytes()).unwrap();
         } else {
@@ -114,6 +118,6 @@ fn mm_version() -> String {
 
 fn main() {
     // This allows build script to run even if no source code files change as rerun-if-changed checks for a file that doesn't exist
-    println!("cargo:rerun-if-changed={}", path2s(rabs("NON_EXISTING_FILE")));
+    println!("cargo:rerun-if-changed=NON_EXISTING_FILE");
     mm_version();
 }
