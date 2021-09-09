@@ -1722,7 +1722,10 @@ fn test_request_and_fill_orderbook() {
                 (pubkey, item)
             })
             .collect();
-        let orderbook = GetOrderbookRes { pubkey_orders: result };
+        let orderbook = GetOrderbookRes {
+            pubkey_orders: result,
+            protocol_infos: HashMap::new(),
+        };
         let encoded = encode_message(&orderbook).unwrap();
 
         // send the response through the response channel

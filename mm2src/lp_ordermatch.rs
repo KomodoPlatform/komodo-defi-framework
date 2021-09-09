@@ -96,7 +96,7 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
-type PubkeyOrders = Vec<(Uuid, OrderbookItem)>;
+type PubkeyOrders = Vec<(Uuid, GetOrderbookItem)>;
 
 impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
     fn from(tuple: (new_protocol::MakerOrderCreated, String)) -> OrderbookItem {
@@ -133,6 +133,7 @@ fn process_pubkey_full_trie(
     pubkey: &str,
     alb_pair: &str,
     new_trie_orders: PubkeyOrders,
+    protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
 ) -> H64 {
     remove_pubkey_pair_orders(orderbook, pubkey, alb_pair);
 
@@ -152,7 +153,7 @@ fn process_trie_delta(
     orderbook: &mut Orderbook,
     pubkey: &str,
     alb_pair: &str,
-    delta_orders: HashMap<Uuid, Option<OrderbookItem>>,
+    delta_orders: HashMap<Uuid, Option<GetOrderbookItem>>,
 ) -> H64 {
     for (uuid, order) in delta_orders {
         match order {
@@ -207,7 +208,9 @@ async fn process_orders_keep_alive(
     for (pair, diff) in response.pair_orders_diff {
         let _new_root = match diff {
             DeltaOrFullTrie::Delta(delta) => process_trie_delta(&mut orderbook, &from_pubkey, &pair, delta),
-            DeltaOrFullTrie::FullTrie(values) => process_pubkey_full_trie(&mut orderbook, &from_pubkey, &pair, values),
+            DeltaOrFullTrie::FullTrie(values) => {
+                process_pubkey_full_trie(&mut orderbook, &from_pubkey, &pair, values, &response.protocol_infos)
+            },
         };
     }
     true
@@ -265,8 +268,14 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     };
 
     let response = try_s!(request_any_relay::<GetOrderbookRes>(ctx.clone(), P2PRequest::Ordermatch(request)).await);
-    let pubkey_orders = match response {
-        Some((GetOrderbookRes { pubkey_orders }, _peer_id)) => pubkey_orders,
+    let (pubkey_orders, protocol_infos) = match response {
+        Some((
+            GetOrderbookRes {
+                pubkey_orders,
+                protocol_infos,
+            },
+            _peer_id,
+        )) => (pubkey_orders, protocol_infos),
         None => return Ok(()),
     };
 
@@ -286,7 +295,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             log::warn!("Pubkey {} is banned", pubkey);
             continue;
         }
-        let _new_root = process_pubkey_full_trie(&mut orderbook, &pubkey, &alb_pair, orders);
+        let _new_root = process_pubkey_full_trie(&mut orderbook, &pubkey, &alb_pair, orders, &protocol_infos);
     }
 
     let topic = orderbook_topic_from_base_rel(base, rel);
@@ -496,10 +505,19 @@ struct GetOrderbookPubkeyItem {
     orders: PubkeyOrders,
 }
 
+/// Do not change this struct as it will break backward compatibility
+#[derive(Debug, Deserialize, Serialize)]
+struct BaseRelProtocolInfo {
+    base: Vec<u8>,
+    rel: Vec<u8>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct GetOrderbookRes {
     /// Asks and bids grouped by pubkey.
     pubkey_orders: HashMap<String, GetOrderbookPubkeyItem>,
+    #[serde(default)]
+    protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
 async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Result<Option<Vec<u8>>, String> {
@@ -555,7 +573,10 @@ async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) ->
         .collect();
 
     let pubkey_orders = orders_to_send?;
-    let response = GetOrderbookRes { pubkey_orders };
+    let response = GetOrderbookRes {
+        pubkey_orders,
+        protocol_infos: HashMap::new(),
+    };
     let encoded = try_s!(encode_message(&response));
     Ok(Some(encoded))
 }
@@ -640,7 +661,9 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone + TryFromByt
 struct SyncPubkeyOrderbookStateRes {
     /// last signed OrdermatchMessage payload from pubkey
     last_signed_pubkey_payload: Vec<u8>,
-    pair_orders_diff: HashMap<AlbOrderedOrderbookPair, DeltaOrFullTrie<Uuid, OrderbookItem>>,
+    pair_orders_diff: HashMap<AlbOrderedOrderbookPair, DeltaOrFullTrie<Uuid, GetOrderbookItem>>,
+    #[serde(default)]
+    protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
 async fn process_sync_pubkey_orderbook_state(
@@ -678,6 +701,7 @@ async fn process_sync_pubkey_orderbook_state(
     let result = SyncPubkeyOrderbookStateRes {
         last_signed_pubkey_payload,
         pair_orders_diff,
+        protocol_infos: HashMap::new(),
     };
     Ok(Some(result))
 }
@@ -3045,6 +3069,19 @@ pub async fn lp_auto_buy(
     save_my_new_taker_order(ctx, &order);
     my_taker_orders.insert(order.request.uuid, order);
     Ok(result.to_string())
+}
+
+/// Orderbook item for GetOrderbook P2P response
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct GetOrderbookItem {
+    pubkey: String,
+    base: String,
+    rel: String,
+    price: BigRational,
+    max_volume: BigRational,
+    min_volume: BigRational,
+    uuid: Uuid,
+    created_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

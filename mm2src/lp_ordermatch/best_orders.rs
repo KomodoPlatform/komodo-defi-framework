@@ -1,6 +1,6 @@
 use super::{AddressFormat, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-use crate::mm2::lp_ordermatch::{OrderbookItem, RpcOrderbookEntry, TrieProof};
+use crate::mm2::lp_ordermatch::{BaseRelProtocolInfo, OrderbookItem, RpcOrderbookEntry, TrieProof};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
@@ -151,17 +151,11 @@ impl From<OrderbookItemWithProof> for BestOrderWithProof {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-struct BestOrderProtocolInfo {
-    base: Vec<u8>,
-    rel: Vec<u8>,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct BestOrdersRes {
     orders: HashMap<String, Vec<BestOrderWithProof>>,
     #[serde(default)]
-    protocol_infos: HashMap<Uuid, BestOrderProtocolInfo>,
+    protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
 pub async fn process_best_orders_p2p_request(
@@ -364,7 +358,7 @@ mod best_orders_test {
         let old_serialized = rmp_serde::to_vec(&old).unwrap();
 
         let mut new: BestOrdersRes = rmp_serde::from_read_ref(&old_serialized).unwrap();
-        new.protocol_infos.insert(Uuid::new_v4(), BestOrderProtocolInfo {
+        new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
             base: vec![1],
             rel: vec![2],
         });

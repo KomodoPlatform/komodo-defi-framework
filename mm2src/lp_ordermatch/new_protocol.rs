@@ -379,4 +379,46 @@ mod new_protocol_tests {
 
         assert_eq!(deserialized, v2);
     }
+
+    #[test]
+    fn test_maker_order_created_serde() {
+        #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+        struct MakerOrderCreatedV1 {
+            pub uuid: CompactUuid,
+            pub base: String,
+            pub rel: String,
+            pub price: BigRational,
+            pub max_volume: BigRational,
+            pub min_volume: BigRational,
+            /// This is timestamp of order creation
+            pub created_at: u64,
+            pub conf_settings: OrderConfirmationsSettings,
+            /// This is timestamp of message
+            pub timestamp: u64,
+            pub pair_trie_root: H64,
+        }
+
+        let old_msg = MakerOrderCreatedV1 {
+            uuid: Uuid::new_v4().into(),
+            base: "RICK".to_string(),
+            rel: "MORTY".to_string(),
+            price: BigRational::from_integer(1.into()),
+            max_volume: BigRational::from_integer(2.into()),
+            min_volume: BigRational::from_integer(1.into()),
+            created_at: 0,
+            conf_settings: Default::default(),
+            timestamp: 0,
+            pair_trie_root: H64::default(),
+        };
+
+        let old_serialized = rmp_serde::to_vec(&old_msg).unwrap();
+
+        let mut new: MakerOrderCreated = rmp_serde::from_read_ref(&old_serialized).unwrap();
+
+        new.base_protocol_info = vec![1, 2, 3];
+        new.rel_protocol_info = vec![1, 2, 3, 4];
+
+        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+        let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    }
 }
