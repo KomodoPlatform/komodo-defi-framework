@@ -137,8 +137,11 @@ fn process_pubkey_full_trie(
 ) -> H64 {
     remove_pubkey_pair_orders(orderbook, pubkey, alb_pair);
 
-    for (_uuid, order) in new_trie_orders {
-        orderbook.insert_or_update_order_update_trie(order);
+    for (uuid, order) in new_trie_orders {
+        orderbook.insert_or_update_order_update_trie(OrderbookItem::from_p2p_and_proto_info(
+            order,
+            protocol_infos.get(&uuid).cloned().unwrap_or_default(),
+        ));
     }
 
     let new_root = pubkey_state_mut(&mut orderbook.pubkeys_state, pubkey)
@@ -154,10 +157,14 @@ fn process_trie_delta(
     pubkey: &str,
     alb_pair: &str,
     delta_orders: HashMap<Uuid, Option<GetOrderbookItem>>,
+    protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
 ) -> H64 {
     for (uuid, order) in delta_orders {
         match order {
-            Some(order) => orderbook.insert_or_update_order_update_trie(order),
+            Some(order) => orderbook.insert_or_update_order_update_trie(OrderbookItem::from_p2p_and_proto_info(
+                order,
+                protocol_infos.get(&uuid).cloned().unwrap_or_default(),
+            )),
             None => {
                 orderbook.remove_order_trie_update(uuid);
             },
@@ -207,7 +214,9 @@ async fn process_orders_keep_alive(
     let mut orderbook = ordermatch_ctx.orderbook.lock().await;
     for (pair, diff) in response.pair_orders_diff {
         let _new_root = match diff {
-            DeltaOrFullTrie::Delta(delta) => process_trie_delta(&mut orderbook, &from_pubkey, &pair, delta),
+            DeltaOrFullTrie::Delta(delta) => {
+                process_trie_delta(&mut orderbook, &from_pubkey, &pair, delta, &response.protocol_infos)
+            },
             DeltaOrFullTrie::FullTrie(values) => {
                 process_pubkey_full_trie(&mut orderbook, &from_pubkey, &pair, values, &response.protocol_infos)
             },
@@ -506,7 +515,7 @@ struct GetOrderbookPubkeyItem {
 }
 
 /// Do not change this struct as it will break backward compatibility
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 struct BaseRelProtocolInfo {
     base: Vec<u8>,
     rel: Vec<u8>,
@@ -539,7 +548,7 @@ async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) ->
                 .get(uuid)
                 .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set");
             let uuids = uuids_by_pubkey.entry(order.pubkey.clone()).or_insert_with(Vec::new);
-            uuids.push((*uuid, order.clone()))
+            uuids.push((*uuid, order.clone().into()))
         }
 
         (total_orders_number, uuids_by_pubkey)
@@ -585,6 +594,26 @@ async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) ->
 enum DeltaOrFullTrie<Key: Eq + std::hash::Hash, Value> {
     Delta(HashMap<Key, Option<Value>>),
     FullTrie(Vec<(Key, Value)>),
+}
+
+impl<Key: Eq + std::hash::Hash, V1> DeltaOrFullTrie<Key, V1> {
+    pub fn map_to<V2: From<V1>>(self, mut on_each: impl FnMut(&Key, Option<&V1>)) -> DeltaOrFullTrie<Key, V2> {
+        match self {
+            DeltaOrFullTrie::Delta(delta) => {
+                delta.iter().for_each(|(key, val)| on_each(key, val.as_ref()));
+                let new_map = delta
+                    .into_iter()
+                    .map(|(key, value)| (key, value.map(From::from)))
+                    .collect();
+                DeltaOrFullTrie::Delta(new_map)
+            },
+            DeltaOrFullTrie::FullTrie(trie) => {
+                trie.iter().for_each(|(key, val)| on_each(key, Some(val)));
+                let new_trie = trie.into_iter().map(|(key, value)| (key, value.into())).collect();
+                DeltaOrFullTrie::FullTrie(new_trie)
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -678,7 +707,7 @@ async fn process_sync_pubkey_orderbook_state(
         None => return Ok(None),
     };
 
-    let pair_orders_diff: Result<_, _> = trie_roots
+    let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
         .into_iter()
         .map(|(pair, root)| {
             let actual_pair_root = pubkey_state
@@ -697,11 +726,29 @@ async fn process_sync_pubkey_orderbook_state(
         .collect();
 
     let pair_orders_diff = try_s!(pair_orders_diff);
+    let mut protocol_infos = HashMap::new();
+    let pair_orders_diff = pair_orders_diff
+        .into_iter()
+        .map(|(pair, trie)| {
+            let new_trie = trie.map_to(|uuid, order| match order {
+                Some(o) => {
+                    protocol_infos.insert(o.uuid, BaseRelProtocolInfo {
+                        base: o.base_protocol_info.clone(),
+                        rel: o.rel_protocol_info.clone(),
+                    });
+                },
+                None => {
+                    protocol_infos.remove(uuid);
+                },
+            });
+            (pair, new_trie)
+        })
+        .collect();
     let last_signed_pubkey_payload = vec![];
     let result = SyncPubkeyOrderbookStateRes {
         last_signed_pubkey_payload,
         pair_orders_diff,
-        protocol_infos: HashMap::new(),
+        protocol_infos,
     };
     Ok(Some(result))
 }
@@ -3072,7 +3119,7 @@ pub async fn lp_auto_buy(
 }
 
 /// Orderbook item for GetOrderbook P2P response
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct GetOrderbookItem {
     pubkey: String,
     base: String,
@@ -3082,6 +3129,21 @@ struct GetOrderbookItem {
     min_volume: BigRational,
     uuid: Uuid,
     created_at: u64,
+}
+
+impl From<OrderbookItem> for GetOrderbookItem {
+    fn from(o: OrderbookItem) -> GetOrderbookItem {
+        GetOrderbookItem {
+            pubkey: o.pubkey,
+            base: o.base,
+            rel: o.rel,
+            price: o.price,
+            max_volume: o.max_volume,
+            min_volume: o.min_volume,
+            uuid: o.uuid,
+            created_at: o.created_at,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -3208,6 +3270,21 @@ impl OrderbookItem {
             base_min_volume,
             rel_max_volume,
             rel_min_volume,
+        }
+    }
+
+    fn from_p2p_and_proto_info(o: GetOrderbookItem, info: BaseRelProtocolInfo) -> Self {
+        OrderbookItem {
+            pubkey: o.pubkey,
+            base: o.base,
+            rel: o.rel,
+            price: o.price,
+            max_volume: o.max_volume,
+            min_volume: o.min_volume,
+            uuid: o.uuid,
+            created_at: o.created_at,
+            base_protocol_info: info.base,
+            rel_protocol_info: info.rel,
         }
     }
 }

@@ -1615,7 +1615,11 @@ fn test_process_get_orderbook_request() {
             .get(&pubkey)
             .expect(&format!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
 
-        let mut actual: Vec<OrderbookItem> = item.orders.iter().map(|(_uuid, order)| order.clone()).collect();
+        let mut actual: Vec<OrderbookItem> = item
+            .orders
+            .iter()
+            .map(|(_uuid, order)| OrderbookItem::from_p2p_and_proto_info(order.clone(), BaseRelProtocolInfo::default()))
+            .collect();
         actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
         log!([pubkey]"-"[actual.len()]);
         assert_eq!(actual, *expected);
@@ -1715,7 +1719,7 @@ fn test_request_and_fill_orderbook() {
             .into_iter()
             .map(|(pubkey, orders)| {
                 let item = GetOrderbookPubkeyItem {
-                    orders,
+                    orders: orders.into_iter().map(|(uuid, order)| (uuid, order.into())).collect(),
                     last_keep_alive: now_ms() / 1000,
                     last_signed_pubkey_payload: vec![],
                 };
@@ -2453,8 +2457,9 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
         DeltaOrFullTrie::FullTrie(full_trie) => full_trie,
     };
 
-    let mut expected: Vec<_> = orders.into_iter().map(|order| (order.uuid, order)).collect();
-    expected.push((new_order.uuid, new_order));
+    let mut expected: Vec<(Uuid, GetOrderbookItem)> =
+        orders.into_iter().map(|order| (order.uuid, order.into())).collect();
+    expected.push((new_order.uuid, new_order.into()));
     full_trie.sort_by(|x, y| x.0.cmp(&y.0));
     expected.sort_by(|x, y| x.0.cmp(&y.0));
     assert_eq!(full_trie, expected);
@@ -2608,7 +2613,16 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         _ => panic!("Expected DeltaOrFullTrie::FullTrie"),
     };
 
-    let new_alice_root = process_pubkey_full_trie(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, full_trie);
+    let new_alice_root = process_pubkey_full_trie(
+        &mut orderbook_alice,
+        &pubkey_bob,
+        &rick_morty_pair,
+        full_trie
+            .into_iter()
+            .map(|(uuid, order)| (uuid, order.into()))
+            .collect(),
+        &HashMap::new(),
+    );
 
     assert_eq!(new_alice_root, *bob_root);
 
@@ -2646,7 +2660,16 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         _ => panic!("Expected DeltaOrFullTrie::Delta"),
     };
 
-    let new_alice_root = process_trie_delta(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, trie_delta);
+    let new_alice_root = process_trie_delta(
+        &mut orderbook_alice,
+        &pubkey_bob,
+        &rick_morty_pair,
+        trie_delta
+            .into_iter()
+            .map(|(uuid, order)| (uuid, order.map(From::from)))
+            .collect(),
+        &HashMap::new(),
+    );
     assert_eq!(new_alice_root, *bob_root);
 }
 
