@@ -1,6 +1,7 @@
-use super::{AddressFormat, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-use crate::mm2::lp_ordermatch::{BaseRelProtocolInfo, OrderbookItem, RpcOrderbookEntry, TrieProof};
+use crate::mm2::lp_ordermatch::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderbookItem, RpcOrderbookEntry,
+                                TrieProof};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
@@ -179,6 +180,9 @@ pub async fn process_best_orders_p2p_request(
         BestOrdersAction::Buy => (coin.clone(), ticker.clone()),
         BestOrdersAction::Sell => (ticker.clone(), coin.clone()),
     });
+
+    let mut protocol_infos = HashMap::new();
+
     for pair in pairs {
         let orders = match orderbook.ordered.get(&pair) {
             Some(orders) => orders,
@@ -206,6 +210,7 @@ pub async fn process_best_orders_p2p_request(
                         BestOrdersAction::Sell => &o.max_volume * &o.price,
                     };
                     let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());
+                    protocol_infos.insert(order_w_proof.order.uuid, order_w_proof.order.base_rel_proto_info());
                     best_orders.push(order_w_proof.into());
 
                     collected_volume += max_volume;
@@ -226,7 +231,7 @@ pub async fn process_best_orders_p2p_request(
     }
     let response = BestOrdersRes {
         orders: result,
-        protocol_infos: HashMap::new(),
+        protocol_infos,
     };
     let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
@@ -263,13 +268,16 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                // Todo: use the right address format when a solution is found for the problem of protocol_info
-                let address = match address_by_coin_conf_and_pubkey_str(
-                    &coin,
-                    &coin_conf,
-                    &order.pubkey,
-                    AddressFormat::Standard,
-                ) {
+                let empty_proto_info = BaseRelProtocolInfo::default();
+                let proto_infos = p2p_response
+                    .protocol_infos
+                    .get(&order.uuid)
+                    .unwrap_or(&empty_proto_info);
+                let addr_format = match req.action {
+                    BestOrdersAction::Buy => addr_format_from_protocol_info(&proto_infos.rel),
+                    BestOrdersAction::Sell => addr_format_from_protocol_info(&proto_infos.base),
+                };
+                let address = match address_by_coin_conf_and_pubkey_str(&coin, &coin_conf, &order.pubkey, addr_format) {
                     Ok(a) => a,
                     Err(e) => {
                         log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);

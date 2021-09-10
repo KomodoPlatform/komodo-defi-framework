@@ -117,14 +117,10 @@ impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
     }
 }
 
-#[allow(dead_code)]
-pub fn addr_format_from_protocol_info(protocol_info: &Option<Vec<u8>>) -> AddressFormat {
-    match protocol_info {
-        Some(info) => match rmp_serde::from_read_ref::<_, AddressFormat>(info) {
-            Ok(format) => format,
-            Err(_) => AddressFormat::Standard,
-        },
-        None => AddressFormat::Standard,
+pub fn addr_format_from_protocol_info(protocol_info: &[u8]) -> AddressFormat {
+    match rmp_serde::from_read_ref::<_, AddressFormat>(protocol_info) {
+        Ok(format) => format,
+        Err(_) => AddressFormat::Standard,
     }
 }
 
@@ -467,7 +463,7 @@ impl TryFromBytes for String {
     }
 }
 
-impl TryFromBytes for OrderbookItem {
+impl TryFromBytes for GetOrderbookItem {
     fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, TryFromBytesError> {
         rmp_serde::from_read(bytes.as_slice()).map_err(|e| ERRL!("{}", e).into())
     }
@@ -529,35 +525,42 @@ struct GetOrderbookRes {
     protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
-async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Result<Option<Vec<u8>>, String> {
-    fn get_pubkeys_orders(orderbook: &Orderbook, base: String, rel: String) -> (usize, HashMap<String, PubkeyOrders>) {
-        let asks = orderbook.unordered.get(&(base.clone(), rel.clone()));
-        let bids = orderbook.unordered.get(&(rel, base));
+fn get_pubkeys_orders(
+    orderbook: &Orderbook,
+    base: String,
+    rel: String,
+) -> (usize, HashMap<String, PubkeyOrders>, HashMap<Uuid, BaseRelProtocolInfo>) {
+    let mut protocol_infos = HashMap::new();
 
-        let asks_num = asks.map(|x| x.len()).unwrap_or(0);
-        let bids_num = bids.map(|x| x.len()).unwrap_or(0);
-        let total_orders_number = asks_num + bids_num;
+    let asks = orderbook.unordered.get(&(base.clone(), rel.clone()));
+    let bids = orderbook.unordered.get(&(rel, base));
 
-        // flatten Option(asks) and Option(bids) to avoid cloning
-        let orders = asks.iter().chain(bids.iter()).copied().flatten();
+    let asks_num = asks.map(|x| x.len()).unwrap_or(0);
+    let bids_num = bids.map(|x| x.len()).unwrap_or(0);
+    let total_orders_number = asks_num + bids_num;
 
-        let mut uuids_by_pubkey = HashMap::new();
-        for uuid in orders {
-            let order = orderbook
-                .order_set
-                .get(uuid)
-                .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set");
-            let uuids = uuids_by_pubkey.entry(order.pubkey.clone()).or_insert_with(Vec::new);
-            uuids.push((*uuid, order.clone().into()))
-        }
+    // flatten Option(asks) and Option(bids) to avoid cloning
+    let orders = asks.iter().chain(bids.iter()).copied().flatten();
 
-        (total_orders_number, uuids_by_pubkey)
+    let mut uuids_by_pubkey = HashMap::new();
+    for uuid in orders {
+        let order = orderbook
+            .order_set
+            .get(uuid)
+            .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set");
+        let uuids = uuids_by_pubkey.entry(order.pubkey.clone()).or_insert_with(Vec::new);
+        protocol_infos.insert(order.uuid, order.base_rel_proto_info());
+        uuids.push((*uuid, order.clone().into()))
     }
 
+    (total_orders_number, uuids_by_pubkey, protocol_infos)
+}
+
+async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock().await;
 
-    let (total_orders_number, orders) = get_pubkeys_orders(&orderbook, base, rel);
+    let (total_orders_number, orders, protocol_infos) = get_pubkeys_orders(&orderbook, base, rel);
     if total_orders_number > MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE {
         return ERR!("Orderbook too large");
     }
@@ -584,7 +587,7 @@ async fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) ->
     let pubkey_orders = orders_to_send?;
     let response = GetOrderbookRes {
         pubkey_orders,
-        protocol_infos: HashMap::new(),
+        protocol_infos,
     };
     let encoded = try_s!(encode_message(&response));
     Ok(Some(encoded))
@@ -639,28 +642,31 @@ impl From<Box<trie_db::TrieError<H64, sp_trie::Error>>> for TrieDiffHistoryError
 fn get_full_trie<Key, Value>(
     trie_root: &H64,
     db: &MemoryDB<Blake2Hasher64>,
+    getter: impl Fn(&Key) -> Value,
 ) -> Result<Vec<(Key, Value)>, TrieDiffHistoryError>
 where
     Key: Clone + Eq + std::hash::Hash + TryFromBytes,
-    Value: Clone + TryFromBytes,
 {
     let trie = TrieDB::<Layout>::new(db, trie_root)?;
     let trie: Result<Vec<_>, TrieDiffHistoryError> = trie
         .iter()?
         .map(|key_value| {
-            let (key, value) = key_value?;
-            Ok((TryFromBytes::try_from_bytes(key)?, TryFromBytes::try_from_bytes(value)?))
+            let (key, _) = key_value?;
+            let key = TryFromBytes::try_from_bytes(key)?;
+            let val = getter(&key);
+            Ok((key, val))
         })
         .collect();
     trie
 }
 
-impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone + TryFromBytes> DeltaOrFullTrie<Key, Value> {
+impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone> DeltaOrFullTrie<Key, Value> {
     fn from_history(
         history: &TrieDiffHistory<Key, Value>,
         from_hash: H64,
         actual_trie_root: H64,
         db: &MemoryDB<Blake2Hasher64>,
+        getter: impl Fn(&Key) -> Value,
     ) -> Result<DeltaOrFullTrie<Key, Value>, TrieDiffHistoryError> {
         if let Some(delta) = history.get(&from_hash) {
             let mut current_delta = delta;
@@ -681,7 +687,7 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone + TryFromByt
             );
         }
 
-        let trie = get_full_trie(&actual_trie_root, db)?;
+        let trie = get_full_trie(&actual_trie_root, db, getter)?;
         Ok(DeltaOrFullTrie::FullTrie(trie))
     }
 }
@@ -707,6 +713,7 @@ async fn process_sync_pubkey_orderbook_state(
         None => return Ok(None),
     };
 
+    let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned().unwrap();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
         .into_iter()
         .map(|(pair, root)| {
@@ -716,8 +723,12 @@ async fn process_sync_pubkey_orderbook_state(
                 .ok_or(ERRL!("No pair trie root for {}", pair))?;
 
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
-                Some(history) => DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db),
-                None => get_full_trie(actual_pair_root, &orderbook.memory_db).map(DeltaOrFullTrie::FullTrie),
+                Some(history) => {
+                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, &order_getter)
+                },
+                None => {
+                    get_full_trie(actual_pair_root, &orderbook.memory_db, &order_getter).map(DeltaOrFullTrie::FullTrie)
+                },
             };
 
             let delta = try_s!(delta_result);
@@ -2164,7 +2175,7 @@ impl Orderbook {
                     return;
                 },
             };
-            let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
+            let order_bytes = order.trie_state_bytes();
             if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
                 log::error!(
                     "Error {:?} on insertion to trie. Key {}, value {:?}",
@@ -3146,7 +3157,7 @@ impl From<OrderbookItem> for GetOrderbookItem {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 struct OrderbookItem {
     pubkey: String,
     base: String,
@@ -3160,7 +3171,7 @@ struct OrderbookItem {
     rel_protocol_info: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 struct OrderbookItemWithProof {
     /// Orderbook item
     order: OrderbookItem,
@@ -3286,6 +3297,40 @@ impl OrderbookItem {
             base_protocol_info: info.base,
             rel_protocol_info: info.rel,
         }
+    }
+
+    fn base_rel_proto_info(&self) -> BaseRelProtocolInfo {
+        BaseRelProtocolInfo {
+            base: self.base_protocol_info.clone(),
+            rel: self.rel_protocol_info.clone(),
+        }
+    }
+
+    fn trie_state_bytes(&self) -> Vec<u8> {
+        #[derive(Serialize)]
+        struct OrderbookItemHelper<'a> {
+            pubkey: &'a str,
+            base: &'a str,
+            rel: &'a str,
+            price: &'a BigRational,
+            max_volume: &'a BigRational,
+            min_volume: &'a BigRational,
+            uuid: &'a Uuid,
+            created_at: &'a u64,
+        }
+
+        let helper = OrderbookItemHelper {
+            pubkey: &self.pubkey,
+            base: &self.base,
+            rel: &self.rel,
+            price: &self.price,
+            max_volume: &self.max_volume,
+            min_volume: &self.min_volume,
+            uuid: &self.uuid,
+            created_at: &self.created_at,
+        };
+
+        rmp_serde::to_vec(&helper).expect("Serialization should never fail")
     }
 }
 

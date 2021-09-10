@@ -1802,7 +1802,7 @@ fn test_request_and_fill_orderbook() {
             .map(|key_value| {
                 let (key, value) = key_value.expect("Iterator returned an error");
                 let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
-                let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                let value = orderbook.order_set.get(&key).cloned().unwrap();
                 (key, value)
             })
             .collect();
@@ -2184,9 +2184,15 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
     let actual_root_hash = delta_trie_root::<Layout, _, _, _, _, _>(
         &mut old_mem_db,
         pair_trie_root,
-        delta
-            .into_iter()
-            .map(|(uuid, order)| (*uuid.as_bytes(), order.map(|o| encode_message(&o).unwrap()))),
+        delta.into_iter().map(|(uuid, order)| {
+            (
+                *uuid.as_bytes(),
+                order.map(|o| {
+                    let o = OrderbookItem::from_p2p_and_proto_info(o, BaseRelProtocolInfo::default());
+                    o.trie_state_bytes()
+                }),
+            )
+        }),
     )
     .unwrap();
     assert_eq!(expected_root_hash, actual_root_hash);
@@ -2424,7 +2430,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
             .get(&alb_pair)
             .expect("MORTY:RICK must be in trie_roots");
 
-        let order_bytes = rmp_serde::to_vec(&new_order).expect("Serialization should never fail");
+        let order_bytes = new_order.trie_state_bytes();
         let mut new_root = old_root;
         let mut trie = get_trie_mut(&mut orderbook.memory_db, &mut new_root).expect("!get_trie_mut");
         trie.insert(new_order.uuid.as_bytes(), &order_bytes)
@@ -2523,7 +2529,7 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
                 .map(|key_value| {
                     let (key, value) = key_value.expect("Iterator returned an error");
                     let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
-                    let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                    let value = orderbook.order_set.get(&key).cloned().unwrap();
                     (key, value)
                 })
                 .collect();
@@ -2605,6 +2611,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned().unwrap(),
     )
     .unwrap();
 
@@ -2651,6 +2658,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned().unwrap(),
     )
     .unwrap();
 
