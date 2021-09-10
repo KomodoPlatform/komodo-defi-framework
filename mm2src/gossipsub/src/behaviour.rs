@@ -23,8 +23,8 @@ use crate::handler::GossipsubHandler;
 use crate::mcache::MessageCache;
 use crate::protocol::{GossipsubControlAction, GossipsubMessage, GossipsubSubscription, GossipsubSubscriptionAction,
                       MessageId};
-use crate::time_cache::{Entry as TimeCacheEntry, TimeCache};
 use crate::topic::{Topic, TopicHash};
+use common::time_cache::{Entry as TimeCacheEntry, TimeCache};
 use futures::prelude::*;
 use libp2p_core::{connection::ConnectionId, ConnectedPoint, Multiaddr, PeerId};
 use libp2p_swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters, ProtocolsHandler};

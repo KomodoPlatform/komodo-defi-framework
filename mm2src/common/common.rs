@@ -100,6 +100,7 @@ pub mod mm_number;
 pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
+pub mod time_cache;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm_indexed_db;
 #[cfg(target_arch = "wasm32")] pub mod wasm_rpc;

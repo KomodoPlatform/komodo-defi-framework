@@ -29,12 +29,13 @@ use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_number::{Fraction, MmNumber};
+use common::time_cache::TimeCache;
 use common::{bits256, json_dir_entries, log, new_uuid, now_ms, remove_file, write};
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use gstuff::slurp;
 use hash256_std_hasher::Hash256StdHasher;
-use hash_db::{Hasher, EMPTY_PREFIX};
+use hash_db::Hasher;
 use http::Response;
 use keys::AddressFormat;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
@@ -51,6 +52,7 @@ use std::fmt;
 use std::fs::DirEntry;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
@@ -83,6 +85,14 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
+#[cfg(not(test))]
+const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
+#[cfg(test)]
+const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
+#[cfg(not(test))]
+const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
+#[cfg(test)]
+const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
@@ -122,7 +132,7 @@ fn process_pubkey_full_trie(
     alb_pair: &str,
     new_trie_orders: PubkeyOrders,
 ) -> H64 {
-    remove_and_purge_pubkey_pair_orders(orderbook, pubkey, alb_pair);
+    remove_pubkey_pair_orders(orderbook, pubkey, alb_pair);
 
     for (_uuid, order) in new_trie_orders {
         orderbook.insert_or_update_order_update_trie(order);
@@ -296,24 +306,11 @@ async fn insert_or_update_order(ctx: &MmArc, item: OrderbookItem) {
 async fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
 
-    let mut inactive = ordermatch_ctx.inactive_orders.lock().await;
-    match inactive.get(&uuid) {
-        // don't remove the order if the pubkey is not equal
-        Some(order) if order.pubkey != pubkey => (),
-        Some(_) => {
-            inactive.remove(&uuid);
-        },
-        None => (),
-    }
-
     let mut orderbook = ordermatch_ctx.orderbook.lock().await;
-    match orderbook.order_set.get(&uuid) {
-        // don't remove the order if the pubkey is not equal
-        Some(order) if order.pubkey != pubkey => (),
-        Some(_) => {
+    if let Some(order) = orderbook.order_set.get(&uuid) {
+        if order.pubkey == pubkey {
             orderbook.remove_order_trie_update(uuid);
-        },
-        None => (),
+        }
     }
 }
 
@@ -323,16 +320,17 @@ async fn delete_my_order(ctx: &MmArc, uuid: Uuid) {
     orderbook.remove_order_trie_update(uuid);
 }
 
-fn remove_and_purge_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: &str) {
+fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: &str) {
     let pubkey_state = match orderbook.pubkeys_state.get_mut(pubkey) {
         Some(state) => state,
         None => return,
     };
-    let pair_root = match pubkey_state.trie_roots.remove(alb_pair) {
-        Some(root) => root,
-        None => return,
-    };
-    pubkey_state.order_pairs_trie_state_history.remove(alb_pair);
+
+    if pubkey_state.trie_roots.get(alb_pair).is_none() {
+        return;
+    }
+
+    pubkey_state.order_pairs_trie_state_history.remove(alb_pair.into());
 
     let mut orders_to_remove = Vec::with_capacity(pubkey_state.orders_uuids.len());
     pubkey_state.orders_uuids.retain(|(uuid, alb)| {
@@ -345,15 +343,15 @@ fn remove_and_purge_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, 
     });
 
     for order in orders_to_remove {
-        orderbook.remove_order(order);
+        orderbook.remove_order_trie_update(order);
     }
 
-    if orderbook.memory_db.remove_and_purge(&pair_root, EMPTY_PREFIX).is_none()
-        && pair_root != H64::default()
-        && pair_root != hashed_null_node::<Layout>()
-    {
-        log::warn!("Warning: couldn't find {:?} hash root in memory_db", pair_root);
-    }
+    let pubkey_state = match orderbook.pubkeys_state.get_mut(pubkey) {
+        Some(state) => state,
+        None => return,
+    };
+
+    pubkey_state.trie_roots.remove(alb_pair);
 }
 
 /// Attempts to decode a message and process it returning whether the message is valid and worth rebroadcasting
@@ -1891,23 +1889,15 @@ enum OrderbookRequestingState {
 
 type H64 = [u8; 8];
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct TrieDiff<Key, Value> {
     delta: Vec<(Key, Option<Value>)>,
     next_root: H64,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 struct TrieDiffHistory<Key, Value> {
-    inner: HashMap<H64, TrieDiff<Key, Value>>,
-}
-
-impl<Key, Value> Default for TrieDiffHistory<Key, Value> {
-    fn default() -> Self {
-        TrieDiffHistory {
-            inner: Default::default(),
-        }
-    }
+    inner: TimeCache<H64, TrieDiff<Key, Value>>,
 }
 
 impl<Key, Value> TrieDiffHistory<Key, Value> {
@@ -1917,11 +1907,11 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
             return;
         }
 
-        match self.inner.remove(&diff.next_root) {
+        match self.inner.remove(diff.next_root) {
             Some(mut diff) => {
                 // we reached a state that was already reached previously
                 // history can be cleaned up to this state hash
-                while let Some(next_diff) = self.inner.remove(&diff.next_root) {
+                while let Some(next_diff) = self.inner.remove(diff.next_root) {
                     diff = next_diff;
                 }
             },
@@ -1932,27 +1922,40 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
     }
 
     #[allow(dead_code)]
-    fn remove_key(&mut self, key: &H64) { self.inner.remove(key); }
+    fn remove_key(&mut self, key: H64) { self.inner.remove(key); }
 
     #[allow(dead_code)]
     fn contains_key(&self, key: &H64) -> bool { self.inner.contains_key(key) }
 
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
+
+    #[allow(dead_code)]
+    fn len(&self) -> usize { self.inner.len() }
 }
 
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
 
-#[derive(Default)]
 struct OrderbookPubkeyState {
     /// Timestamp of the latest keep alive message received
     last_keep_alive: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
-    order_pairs_trie_state_history: HashMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
+    order_pairs_trie_state_history: TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
     /// The known UUIDs owned by pubkey with alphabetically ordered pair to ease the lookup during pubkey orderbook requests
     orders_uuids: HashSet<(Uuid, AlbOrderedOrderbookPair)>,
     /// The map storing alphabetically ordered pair with trie root hash of orders owned by pubkey.
     trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
+}
+
+impl OrderbookPubkeyState {
+    pub fn with_history_timeout(ttl: Duration) -> OrderbookPubkeyState {
+        OrderbookPubkeyState {
+            last_keep_alive: now_ms() / 1000,
+            order_pairs_trie_state_history: TimeCache::new(ttl),
+            orders_uuids: HashSet::default(),
+            trie_roots: HashMap::default(),
+        }
+    }
 }
 
 fn get_trie_mut<'a>(
@@ -1973,10 +1976,7 @@ fn pubkey_state_mut<'a>(
     match state.raw_entry_mut().from_key(from_pubkey) {
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState {
-                last_keep_alive: now_ms() / 1000,
-                ..OrderbookPubkeyState::default()
-            };
+            let state = OrderbookPubkeyState::with_history_timeout(Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0));
             e.insert(from_pubkey.to_string(), state).1
         },
     }
@@ -1990,13 +1990,14 @@ fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>,
 }
 
 fn pair_history_mut<'a>(
-    state: &'a mut HashMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
+    state: &'a mut TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
     pair: &str,
 ) -> &'a mut TrieOrderHistory {
-    match state.raw_entry_mut().from_key(pair) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => e.insert(pair.to_owned(), Default::default()).1,
-    }
+    state
+        .entry(pair.into())
+        .or_insert_with_update_expiration(|| TrieOrderHistory {
+            inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
+        })
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2007,17 +2008,16 @@ fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     use parity_util_mem::malloc_size;
 
-    fn history_committed_changes(history: &HashMap<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
-        let total = history
-            .iter()
-            .fold(0usize, |total, (_alb_pair, history)| total + history.inner.len());
+    fn history_committed_changes(history: &TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>) -> i64 {
+        let total = history.iter().fold(0usize, |total, (_alb_pair, history)| {
+            total + history.get_element().inner.len()
+        });
         total as i64
     }
 
     let memory_db_size = malloc_size(&orderbook.memory_db);
     mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as i64);
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as i64);
-    // mm_gauge!(ctx.metrics, "inactive_orders.len", inactive.len() as i64);
 
     // TODO remove metrics below after testing
     for (pubkey, pubkey_state) in orderbook.pubkeys_state.iter() {
@@ -2076,24 +2076,25 @@ impl Orderbook {
 
         pubkey_state.orders_uuids.insert((order.uuid, alb_ordered.clone()));
 
-        let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
-            Ok(trie) => trie,
-            Err(e) => {
-                log::error!("Error getting {} trie with root {:?}", e, prev_root);
+        {
+            let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
+                Ok(trie) => trie,
+                Err(e) => {
+                    log::error!("Error getting {} trie with root {:?}", e, prev_root);
+                    return;
+                },
+            };
+            let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
+            if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
+                log::error!(
+                    "Error {:?} on insertion to trie. Key {}, value {:?}",
+                    e,
+                    order.uuid,
+                    order_bytes
+                );
                 return;
-            },
-        };
-        let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
-        if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
-            log::error!(
-                "Error {:?} on insertion to trie. Key {}, value {:?}",
-                e,
-                order.uuid,
-                order_bytes
-            );
-            return;
-        };
-        drop(pair_trie);
+            };
+        }
 
         if prev_root != H64::default() {
             let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
@@ -2148,36 +2149,6 @@ impl Orderbook {
         self.order_set.insert(order.uuid, order);
     }
 
-    fn remove_order(&mut self, uuid: Uuid) -> Option<OrderbookItem> {
-        let order = match self.order_set.remove(&uuid) {
-            Some(order) => order,
-            None => return None,
-        };
-        let base_rel = (order.base.clone(), order.rel.clone());
-
-        // create an `order_to_delete` that allows to find and remove an element from `self.ordered` by hash
-        let order_to_delete = OrderedByPriceOrder {
-            price: order.price.clone().into(),
-            uuid,
-        };
-
-        if let Some(orders) = self.ordered.get_mut(&base_rel) {
-            orders.remove(&order_to_delete);
-            if orders.is_empty() {
-                self.ordered.remove(&base_rel);
-            }
-        }
-
-        if let Some(orders) = self.unordered.get_mut(&base_rel) {
-            // use the same uuid to remove an order
-            orders.remove(&order_to_delete.uuid);
-            if orders.is_empty() {
-                self.unordered.remove(&base_rel);
-            }
-        };
-        Some(order)
-    }
-
     fn remove_order_trie_update(&mut self, uuid: Uuid) -> Option<OrderbookItem> {
         let order = match self.order_set.remove(&uuid) {
             Some(order) => order,
@@ -2225,11 +2196,13 @@ impl Orderbook {
             },
         };
 
-        let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
-        history.insert_new_diff(old_state, TrieDiff {
-            delta: vec![(uuid, None)],
-            next_root: *pair_state,
-        });
+        if pubkey_state.order_pairs_trie_state_history.get(&alb_ordered).is_some() {
+            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+            history.insert_new_diff(old_state, TrieDiff {
+                delta: vec![(uuid, None)],
+                next_root: *pair_state,
+            });
+        }
         Some(order)
     }
 
@@ -2293,7 +2266,6 @@ struct OrdermatchContext {
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub my_cancelled_orders: AsyncMutex<HashMap<Uuid, MakerOrder>>,
     pub orderbook: AsyncMutex<Orderbook>,
-    pub inactive_orders: AsyncMutex<HashMap<Uuid, OrderbookItem>>,
 }
 
 #[cfg_attr(test, mockable)]
@@ -2515,7 +2487,10 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             spawn({
                                 let ctx = ctx.clone();
                                 async move {
-                                    maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                    if let Ok(Some((_, _))) = find_pair(&ctx, &maker_order.base, &maker_order.rel).await
+                                    {
+                                        maker_order_created_p2p_notify(ctx, &maker_order).await;
+                                    }
                                 }
                             });
                         } else {
@@ -2562,25 +2537,22 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             // remove "timed out" pubkeys states with their orders from orderbook
             let mut orderbook = ordermatch_ctx.orderbook.lock().await;
             let mut uuids_to_remove = vec![];
-            let mut keys_to_remove = vec![];
-            orderbook.pubkeys_state.retain(|pubkey, state| {
-                let to_retain = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_ms() / 1000;
-                if !to_retain {
+            let mut pubkeys_to_remove = vec![];
+            for (pubkey, state) in orderbook.pubkeys_state.iter() {
+                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_ms() / 1000;
+                if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
                     }
-                    for root in state.trie_roots.values() {
-                        keys_to_remove.push(*root);
-                    }
+                    pubkeys_to_remove.push(pubkey.clone());
                 }
-                to_retain
-            });
-            for uuid in uuids_to_remove {
-                orderbook.remove_order(uuid);
             }
 
-            for key in keys_to_remove {
-                orderbook.memory_db.remove_and_purge(&key, EMPTY_PREFIX);
+            for uuid in uuids_to_remove {
+                orderbook.remove_order_trie_update(uuid);
+            }
+            for pubkey in pubkeys_to_remove {
+                orderbook.pubkeys_state.remove(&pubkey);
             }
 
             collect_orderbook_metrics(&ctx, &orderbook);
@@ -2621,6 +2593,20 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         }
 
         Timer::sleep(0.777).await;
+    }
+}
+
+pub async fn clean_memory_loop(ctx: MmArc) {
+    loop {
+        if ctx.is_stopping() {
+            break;
+        }
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        {
+            let mut orderbook = ordermatch_ctx.orderbook.lock().await;
+            orderbook.memory_db.purge();
+        }
+        Timer::sleep(600.).await;
     }
 }
 

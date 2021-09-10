@@ -22,6 +22,7 @@ cfg-if = "1.0"
 crossbeam = "0.7"
 derive_more = "0.99"
 findshlibs = "0.5"
+fnv = "1.0.6"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
@@ -50,6 +51,7 @@ serde_repr = "0.1.6"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 uuid = { version = "0.7", features = ["serde", "v4"] }
+wasm-timer = "0.2.4"
 winapi = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

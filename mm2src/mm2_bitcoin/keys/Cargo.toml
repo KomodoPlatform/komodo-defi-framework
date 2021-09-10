@@ -12,5 +12,4 @@ derive_more = "0.99"
 lazy_static = "1.4"
 primitives = { path = "../primitives" }
 secp256k1 = { version = "0.20", features = ["rand"] }
-serde = "1.0"
-serde_derive = "1.0"
+serde = { version = "1.0", features = ["derive"] }

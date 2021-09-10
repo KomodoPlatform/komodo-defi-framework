@@ -109,10 +109,17 @@ impl PeersExchange {
     fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = rand::thread_rng();
-        let peer_ids = self.known_peers.choose_multiple(&mut rng, num).cloned();
+        let peer_ids = self
+            .known_peers
+            .clone()
+            .into_iter()
+            .filter(|peer| !self.request_response.addresses_of_peer(peer).is_empty())
+            .collect::<Vec<_>>();
+
+        let peer_ids = peer_ids.choose_multiple(&mut rng, num);
         for peer_id in peer_ids {
-            let addresses = self.request_response.addresses_of_peer(&peer_id).into_iter().collect();
-            result.insert(peer_id.into(), addresses);
+            let addresses = self.request_response.addresses_of_peer(peer_id).into_iter().collect();
+            result.insert((*peer_id).into(), addresses);
         }
         result
     }
@@ -129,10 +136,6 @@ impl PeersExchange {
     }
 
     pub fn add_peer_addresses_to_known_peers(&mut self, peer: &PeerId, addresses: PeerAddresses) {
-        if addresses.len() > 1 {
-            return;
-        }
-
         for address in addresses.iter() {
             if !self.validate_global_multiaddr(address) {
                 return;
@@ -150,10 +153,6 @@ impl PeersExchange {
     }
 
     pub fn add_peer_addresses_to_reserved_peers(&mut self, peer: &PeerId, addresses: PeerAddresses) {
-        if addresses.len() > 1 {
-            return;
-        }
-
         for address in addresses.iter() {
             if !self.validate_global_multiaddr(address) {
                 return;
@@ -239,9 +238,6 @@ impl PeersExchange {
             _ => return false,
         }
 
-        if components.next().is_some() {
-            return false;
-        }
         true
     }
 
@@ -301,6 +297,8 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
                 },
                 RequestResponseMessage::Response { response, .. } => match response {
                     PeersExchangeResponse::KnownPeers { peers } => {
+                        info!("Got peers {:?}", peers);
+
                         if !self.validate_get_known_peers_response(&peers) {
                             // if peer provides invalid response forget it and try to request from other peer
                             self.forget_peer(&peer);
@@ -308,7 +306,6 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
                             return;
                         }
 
-                        info!("Got peers {:?}", peers);
                         peers.into_iter().for_each(|(peer, addresses)| {
                             // reserved peers and known peers should not intersect leading to unintentional removal of reserved peers addresses
                             if !self.is_reserved_peer(&peer.0) {
@@ -374,10 +371,6 @@ mod tests {
         let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
         assert!(behaviour.validate_get_known_peers_response(&response));
 
-        let address: Multiaddr = "/ip4/216.58.210.142/tcp/3000/tcp/2000".parse().unwrap();
-        let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
-        assert!(!behaviour.validate_get_known_peers_response(&response));
-
         let address: Multiaddr = "/ip4/216.58.210.142/tcp/3001".parse().unwrap();
         let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
         assert!(!behaviour.validate_get_known_peers_response(&response));
@@ -385,5 +378,44 @@ mod tests {
         let address: Multiaddr = "/ip4/216.58.210.142".parse().unwrap();
         let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
         assert!(!behaviour.validate_get_known_peers_response(&response));
+
+        let address: Multiaddr =
+            "/ip4/168.119.236.241/tcp/3000/p2p/12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P"
+                .parse()
+                .unwrap();
+        let response = HashMap::from_iter(vec![(PeerIdSerde(PeerId::random()), HashSet::from_iter(vec![address]))]);
+        assert!(behaviour.validate_get_known_peers_response(&response));
+
+        let address1: Multiaddr =
+            "/ip4/168.119.236.241/tcp/3000/p2p/12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P"
+                .parse()
+                .unwrap();
+
+        let address2: Multiaddr = "/ip4/168.119.236.241/tcp/3000".parse().unwrap();
+        let response = HashMap::from_iter(vec![(
+            PeerIdSerde(PeerId::random()),
+            HashSet::from_iter(vec![address1, address2]),
+        )]);
+        assert!(behaviour.validate_get_known_peers_response(&response));
+    }
+
+    #[test]
+    fn test_get_random_known_peers() {
+        let mut behaviour = PeersExchange::new(3000);
+        let peer_id = PeerId::random();
+        behaviour.add_known_peer(peer_id);
+
+        let result = behaviour.get_random_known_peers(1);
+        assert!(result.is_empty());
+
+        let address: Multiaddr = "/ip4/168.119.236.241/tcp/3000".parse().unwrap();
+        behaviour.request_response.add_address(&peer_id, address.clone());
+
+        let result = behaviour.get_random_known_peers(1);
+        assert_eq!(result.len(), 1);
+
+        let addresses = result.get(&peer_id.into()).unwrap();
+        assert_eq!(addresses.len(), 1);
+        assert!(addresses.contains(&address));
     }
 }

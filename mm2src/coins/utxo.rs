@@ -1163,6 +1163,23 @@ impl<'a> UtxoConfBuilder<'a> {
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
 }
 
+#[derive(Debug)]
+pub struct ElectrumBuilderArgs {
+    pub spawn_ping: bool,
+    pub negotiate_version: bool,
+    pub collect_metrics: bool,
+}
+
+impl Default for ElectrumBuilderArgs {
+    fn default() -> Self {
+        ElectrumBuilderArgs {
+            spawn_ping: true,
+            negotiate_version: true,
+            collect_metrics: true,
+        }
+    }
+}
+
 #[async_trait]
 pub trait UtxoCoinBuilder {
     type ResultCoin;
@@ -1321,21 +1338,27 @@ pub trait UtxoCoinBuilder {
                 }
             },
             Some("electrum") => {
-                let electrum = try_s!(self.electrum_client().await);
+                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default()).await);
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
             _ => ERR!("Expected enable or electrum request"),
         }
     }
 
-    async fn electrum_client(&self) -> Result<ElectrumClient, String> {
+    async fn electrum_client(&self, args: ElectrumBuilderArgs) -> Result<ElectrumClient, String> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
-        let event_handlers = vec![
-            CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
-            ElectrumProtoVerifier { on_connect_tx }.into_shared(),
-        ];
+        let mut event_handlers = vec![];
+        if args.collect_metrics {
+            event_handlers.push(
+                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
+            );
+        }
+
+        if args.negotiate_version {
+            event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
+        }
 
         let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(self.req()["servers"].clone()));
         let mut rng = small_rng();
@@ -1360,14 +1383,18 @@ pub trait UtxoCoinBuilder {
 
         let client = Arc::new(client);
 
-        let weak_client = Arc::downgrade(&client);
-        let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-        spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+        if args.negotiate_version {
+            let weak_client = Arc::downgrade(&client);
+            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
+            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
 
-        try_s!(wait_for_protocol_version_checked(&client).await);
+            try_s!(wait_for_protocol_version_checked(&client).await);
+        }
 
-        let weak_client = Arc::downgrade(&client);
-        spawn_electrum_ping_loop(weak_client, servers);
+        if args.spawn_ping {
+            let weak_client = Arc::downgrade(&client);
+            spawn_electrum_ping_loop(weak_client, servers);
+        }
 
         Ok(ElectrumClient(client))
     }
@@ -1996,6 +2023,7 @@ pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
         _ => match script_type {
             ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
             ScriptType::P2SH => Builder::build_p2sh(&address.hash),
+            ScriptType::P2WPKH => Builder::build_p2wpkh(&address.hash),
         },
     }
 }

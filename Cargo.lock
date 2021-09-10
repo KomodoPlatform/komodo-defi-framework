@@ -265,6 +265,7 @@ dependencies = [
  "base64 0.11.0",
  "byteorder 1.4.3",
  "bytes 0.5.6",
+ "common",
  "env_logger",
  "fnv",
  "futures 0.3.15",
@@ -904,6 +905,7 @@ dependencies = [
  "crossterm",
  "derive_more",
  "findshlibs",
+ "fnv",
  "fomat-macros 0.2.1",
  "fomat-macros 0.3.1",
  "futures 0.1.29",
@@ -952,6 +954,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+ "wasm-timer",
  "web-sys",
  "winapi",
 ]
@@ -2454,7 +2457,6 @@ dependencies = [
  "rustc-hex 2.1.0",
  "secp256k1",
  "serde",
- "serde_derive",
 ]
 
 [[package]]
