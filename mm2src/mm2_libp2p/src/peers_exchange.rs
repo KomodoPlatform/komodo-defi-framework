@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_get_random_known_peers() {
-        let mut behaviour = PeersExchange::new(3000);
+        let mut behaviour = PeersExchange::new(NetworkInfo::InMemory);
         let peer_id = PeerId::random();
         behaviour.add_known_peer(peer_id);
 

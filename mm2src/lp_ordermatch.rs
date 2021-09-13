@@ -2310,7 +2310,6 @@ impl OrdermatchContext {
                 my_maker_orders: Default::default(),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
-                inactive_orders: Default::default(),
                 ordermatch_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
