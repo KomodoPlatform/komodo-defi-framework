@@ -96,7 +96,7 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
-type PubkeyOrders = Vec<(Uuid, GetOrderbookItem)>;
+type PubkeyOrders = Vec<(Uuid, OrderbookP2PItem)>;
 
 impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
     fn from(tuple: (new_protocol::MakerOrderCreated, String)) -> OrderbookItem {
@@ -152,7 +152,7 @@ fn process_trie_delta(
     orderbook: &mut Orderbook,
     pubkey: &str,
     alb_pair: &str,
-    delta_orders: HashMap<Uuid, Option<GetOrderbookItem>>,
+    delta_orders: HashMap<Uuid, Option<OrderbookP2PItem>>,
     protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
 ) -> H64 {
     for (uuid, order) in delta_orders {
@@ -463,7 +463,7 @@ impl TryFromBytes for String {
     }
 }
 
-impl TryFromBytes for GetOrderbookItem {
+impl TryFromBytes for OrderbookP2PItem {
     fn try_from_bytes(bytes: Vec<u8>) -> Result<Self, TryFromBytesError> {
         rmp_serde::from_read(bytes.as_slice()).map_err(|e| ERRL!("{}", e).into())
     }
@@ -696,7 +696,7 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone> DeltaOrFull
 struct SyncPubkeyOrderbookStateRes {
     /// last signed OrdermatchMessage payload from pubkey
     last_signed_pubkey_payload: Vec<u8>,
-    pair_orders_diff: HashMap<AlbOrderedOrderbookPair, DeltaOrFullTrie<Uuid, GetOrderbookItem>>,
+    pair_orders_diff: HashMap<AlbOrderedOrderbookPair, DeltaOrFullTrie<Uuid, OrderbookP2PItem>>,
     #[serde(default)]
     protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
@@ -3129,9 +3129,10 @@ pub async fn lp_auto_buy(
     Ok(result.to_string())
 }
 
-/// Orderbook item for GetOrderbook P2P response
+/// Orderbook Item P2P message
+/// DO NOT CHANGE - it will break backwards compatibility
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct GetOrderbookItem {
+struct OrderbookP2PItem {
     pubkey: String,
     base: String,
     rel: String,
@@ -3142,9 +3143,103 @@ struct GetOrderbookItem {
     created_at: u64,
 }
 
-impl From<OrderbookItem> for GetOrderbookItem {
-    fn from(o: OrderbookItem) -> GetOrderbookItem {
-        GetOrderbookItem {
+impl OrderbookP2PItem {
+    fn as_rpc_best_orders_buy(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+        let price_mm = MmNumber::from(self.price.clone());
+        let max_vol_mm = MmNumber::from(self.max_volume.clone());
+        let min_vol_mm = MmNumber::from(self.min_volume.clone());
+
+        let base_max_volume = max_vol_mm.clone().into();
+        let base_min_volume = min_vol_mm.clone().into();
+        let rel_max_volume = (&max_vol_mm * &price_mm).into();
+        let rel_min_volume = (&min_vol_mm * &price_mm).into();
+
+        RpcOrderbookEntry {
+            coin: self.rel.clone(),
+            address,
+            price: price_mm.to_decimal(),
+            price_rat: price_mm.to_ratio(),
+            price_fraction: price_mm.to_fraction(),
+            max_volume: max_vol_mm.to_decimal(),
+            max_volume_rat: max_vol_mm.to_ratio(),
+            max_volume_fraction: max_vol_mm.to_fraction(),
+            min_volume: min_vol_mm.to_decimal(),
+            min_volume_rat: min_vol_mm.to_ratio(),
+            min_volume_fraction: min_vol_mm.to_fraction(),
+            pubkey: self.pubkey.clone(),
+            age: (now_ms() as i64 / 1000),
+            zcredits: 0,
+            uuid: self.uuid,
+            is_mine,
+            base_max_volume,
+            base_min_volume,
+            rel_max_volume,
+            rel_min_volume,
+        }
+    }
+
+    fn as_rpc_best_orders_sell(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+        let price_mm = MmNumber::from(1i32) / self.price.clone().into();
+        let max_vol_mm = MmNumber::from(self.max_volume.clone());
+        let min_vol_mm = MmNumber::from(self.min_volume.clone());
+
+        let base_max_volume = (&max_vol_mm / &price_mm).into();
+        let base_min_volume = (&min_vol_mm / &price_mm).into();
+        let rel_max_volume = max_vol_mm.clone().into();
+        let rel_min_volume = min_vol_mm.clone().into();
+
+        RpcOrderbookEntry {
+            coin: self.base.clone(),
+            address,
+            price: price_mm.to_decimal(),
+            price_rat: price_mm.to_ratio(),
+            price_fraction: price_mm.to_fraction(),
+            max_volume: max_vol_mm.to_decimal(),
+            max_volume_rat: max_vol_mm.to_ratio(),
+            max_volume_fraction: max_vol_mm.to_fraction(),
+            min_volume: min_vol_mm.to_decimal(),
+            min_volume_rat: min_vol_mm.to_ratio(),
+            min_volume_fraction: min_vol_mm.to_fraction(),
+            pubkey: self.pubkey.clone(),
+            age: (now_ms() as i64 / 1000),
+            zcredits: 0,
+            uuid: self.uuid,
+            is_mine,
+            base_max_volume,
+            base_min_volume,
+            rel_max_volume,
+            rel_min_volume,
+        }
+    }
+}
+
+/// Despite it looks the same as OrderbookItemWithProof it's better to have a separate struct to avoid compatibility
+/// breakage if we need to add more fields to the OrderbookItemWithProof
+/// DO NOT ADD more fields in this struct as it will break backward compatibility.
+/// Add them to the BestOrdersRes instead
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+struct OrderbookP2PItemWithProof {
+    /// Orderbook item
+    order: OrderbookP2PItem,
+    /// Last pubkey message payload that contains most recent pair trie root
+    last_message_payload: Vec<u8>,
+    /// Proof confirming that orderbook item is in the pair trie
+    proof: TrieProof,
+}
+
+impl From<OrderbookItemWithProof> for OrderbookP2PItemWithProof {
+    fn from(o: OrderbookItemWithProof) -> Self {
+        OrderbookP2PItemWithProof {
+            order: o.order.into(),
+            last_message_payload: o.last_message_payload,
+            proof: o.proof,
+        }
+    }
+}
+
+impl From<OrderbookItem> for OrderbookP2PItem {
+    fn from(o: OrderbookItem) -> OrderbookP2PItem {
+        OrderbookP2PItem {
             pubkey: o.pubkey,
             base: o.base,
             rel: o.rel,
@@ -3284,7 +3379,7 @@ impl OrderbookItem {
         }
     }
 
-    fn from_p2p_and_proto_info(o: GetOrderbookItem, info: BaseRelProtocolInfo) -> Self {
+    fn from_p2p_and_proto_info(o: OrderbookP2PItem, info: BaseRelProtocolInfo) -> Self {
         OrderbookItem {
             pubkey: o.pubkey,
             base: o.base,
@@ -3306,6 +3401,8 @@ impl OrderbookItem {
         }
     }
 
+    /// Serialize order partially to store in the trie
+    /// AVOID CHANGING THIS as much as possible because it will cause a kind of "hard fork"
     fn trie_state_bytes(&self) -> Vec<u8> {
         #[derive(Serialize)]
         struct OrderbookItemHelper<'a> {
