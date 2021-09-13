@@ -189,9 +189,18 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
     let addresses = destinations
         .into_iter()
         .map(|dst| {
-            let (prefix, t_addr_prefix) = match dst.kind {
-                ScriptType::P2PKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix),
-                ScriptType::P2SH => (conf.p2sh_addr_prefix, conf.p2sh_t_addr_prefix),
+            let (prefix, t_addr_prefix, addr_format) = match dst.kind {
+                ScriptType::P2PKH => (
+                    conf.pub_addr_prefix,
+                    conf.pub_t_addr_prefix,
+                    conf.default_address_format.clone(),
+                ),
+                ScriptType::P2SH => (
+                    conf.p2sh_addr_prefix,
+                    conf.p2sh_t_addr_prefix,
+                    conf.default_address_format.clone(),
+                ),
+                ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };
 
             Address {
@@ -200,7 +209,7 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
                 prefix,
                 t_addr_prefix,
                 hrp: conf.bech32_hrp.clone(),
-                addr_format: coin.my_address.addr_format.clone(),
+                addr_format,
             }
         })
         .collect();
@@ -1811,7 +1820,7 @@ where
                 .collect()
         },
         UtxoRpcClientEnum::Electrum(client) => {
-            let script = Builder::build_p2pkh(&coin.as_ref().my_address.hash);
+            let script = output_script(&coin.as_ref().my_address, ScriptType::P2PKH);
             let script_hash = electrum_script_hash(&script);
 
             mm_counter!(metrics, "tx.history.request.count", 1,
