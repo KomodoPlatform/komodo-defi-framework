@@ -39,6 +39,7 @@ jobs:
         displayName: 'Build MM2 Release'
       # Build WASM with the debug symbols.
       - bash: |
+          cargo clean -p mm2-libp2p -p mm2 --target=wasm32-unknown-unknown
           wasm-pack build --dev --target web --out-dir target/target-wasm-debug
         displayName: 'Build MM2 WASM Debug'
         condition: eq( variables['Agent.OS'], 'Linux' )
