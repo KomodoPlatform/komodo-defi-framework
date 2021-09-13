@@ -1,5 +1,5 @@
-use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderbookItem, OrderbookP2PItemWithProof,
-            OrdermatchContext, OrdermatchRequest};
+use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext,
+            OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
@@ -173,11 +173,11 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
         .map_err(|e| ERRL!("{}", e))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod best_orders_test {
     use super::*;
     use crate::mm2::lp_ordermatch::ordermatch_tests::make_random_orders;
-    use crate::mm2::lp_ordermatch::TrieProof;
+    use crate::mm2::lp_ordermatch::{OrderbookItem, TrieProof};
     use std::iter::FromIterator;
 
     #[test]

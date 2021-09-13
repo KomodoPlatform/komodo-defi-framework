@@ -295,7 +295,7 @@ pub struct MakerConnected {
     pub maker_order_uuid: CompactUuid,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod new_protocol_tests {
     use common::new_uuid;
 
