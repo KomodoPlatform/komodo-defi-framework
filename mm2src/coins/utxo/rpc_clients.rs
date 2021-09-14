@@ -12,7 +12,6 @@ use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, Json
 use common::log::{error, info, warn};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
-use common::wio::slurp_req;
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
 use futures::channel::oneshot as async_oneshot;
@@ -23,10 +22,8 @@ use futures::{select, StreamExt};
 use futures01::future::select_ok;
 use futures01::sync::{mpsc, oneshot};
 use futures01::{Future, Sink, Stream};
-use http::header::AUTHORIZATION;
 use http::Uri;
-use http::{Request, StatusCode};
-use keys::Address;
+use keys::{Address, Type as ScriptType};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -46,6 +43,8 @@ use std::time::Duration;
 cfg_native! {
     use futures::future::Either;
     use futures::io::Error;
+    use http::header::AUTHORIZATION;
+    use http::{Request, StatusCode};
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
@@ -528,7 +527,17 @@ impl JsonRpcClient for NativeClientImpl {
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
+    #[cfg(target_arch = "wasm32")]
+    fn transport(&self, _request: JsonRpcRequest) -> JsonRpcResponseFut {
+        Box::new(futures01::future::err(ERRL!(
+            "'NativeClientImpl' must be used in native mode only"
+        )))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
+        use common::wio::slurp_req;
+
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
         self.event_handlers.on_outgoing_request(request_body.as_bytes());
@@ -1497,7 +1506,7 @@ impl ElectrumClient {
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for ElectrumClient {
     fn list_unspent(&self, address: &Address, _decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
-        let script = output_script(address);
+        let script = output_script(address, ScriptType::P2PKH);
         let script_hash = electrum_script_hash(&script);
         Box::new(
             self.scripthash_list_unspent(&hex::encode(script_hash))
@@ -1557,7 +1566,7 @@ impl UtxoRpcClientOps for ElectrumClient {
     }
 
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
-        let hash = electrum_script_hash(&output_script(&address));
+        let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
         let hash_str = hex::encode(hash);
         Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
             BigDecimal::from(result.confirmed + result.unconfirmed) / BigDecimal::from(10u64.pow(decimals as u32))
@@ -1889,7 +1898,7 @@ async fn connect_loop(
         *connection_tx.lock().await = Some(tx);
         let rx = rx_to_stream(rx).inspect(|data| {
             // measure the length of each sent packet
-            event_handlers.on_outgoing_request(&data);
+            event_handlers.on_outgoing_request(data);
         });
 
         let (read, mut write) = tokio::io::split(stream);

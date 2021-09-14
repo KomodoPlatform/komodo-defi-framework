@@ -167,7 +167,7 @@ async fn send_request(
 
     let mut transport_errors = Vec::new();
     for uri in uris {
-        match send_request_once(&request_payload, &uri, &event_handlers).await {
+        match send_request_once(request_payload.clone(), &uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
                 transport_errors.push(e.to_string());
@@ -185,14 +185,11 @@ async fn send_request(
 
 #[cfg(target_arch = "wasm32")]
 async fn send_request_once(
-    request_payload: &String,
+    request_payload: String,
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
-    use wasm_bindgen::prelude::*;
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen_futures::JsFuture;
-    use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
+    use common::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errkind:ident) => {
@@ -203,39 +200,29 @@ async fn send_request_once(
         };
     }
 
-    let window = web_sys::window().expect("!window");
-
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());
 
-    let mut opts = RequestInit::new();
-    opts.method("POST");
-    opts.mode(RequestMode::Cors);
-    opts.body(Some(&JsValue::from_str(&request_payload)));
+    let result = FetchRequest::post(&uri.to_string())
+        .cors()
+        .body_utf8(request_payload)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .request_str()
+        .await;
+    let (status_code, response_str) = try_or!(result, Transport);
+    if !status_code.is_success() {
+        return Err(Error::from(ErrorKind::Transport(ERRL!(
+            "!200: {}, {}",
+            status_code,
+            response_str
+        ))));
+    }
 
-    let request = try_or!(Request::new_with_str_and_init(&uri.to_string(), &opts), Transport);
+    // account for incoming traffic
+    event_handlers.on_incoming_response(response_str.as_bytes());
 
-    request.headers().set("Accept", "application/json").unwrap();
-    request.headers().set("Content-Type", "application/json").unwrap();
-
-    let request_promise = window.fetch_with_request(&request);
-
-    let future = JsFuture::from(request_promise);
-    let resp_value = try_or!(future.await, Transport);
-    let js_response: JsResponse = try_or!(resp_value.dyn_into(), Transport);
-
-    let resp_txt_fut = try_or!(js_response.text(), Transport);
-    let resp_txt = try_or!(JsFuture::from(resp_txt_fut).await, Transport);
-
-    let resp_str = resp_txt.as_string().ok_or_else(|| {
-        Error::from(ErrorKind::Transport(ERRL!(
-            "Expected a UTF-8 string JSON, found {:?}",
-            resp_txt
-        )))
-    })?;
-    event_handlers.on_incoming_response(resp_str.as_bytes());
-
-    let response: Response = try_or!(serde_json::from_str(&resp_str), InvalidResponse);
+    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
     match response {
         Response::Single(output) => to_result_from_output(output),
         Response::Batch(_) => Err(Error::from(ErrorKind::InvalidResponse(

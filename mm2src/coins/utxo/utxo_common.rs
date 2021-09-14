@@ -15,7 +15,8 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use keys::bytes::Bytes;
-use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHash, KeyPair, Public, SegwitAddress, Type};
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHash, KeyPair, Public, SegwitAddress,
+           Type as ScriptType};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, SignatureVersion, TransactionInputSigner,
@@ -199,9 +200,18 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
     let addresses = destinations
         .into_iter()
         .map(|dst| {
-            let (prefix, t_addr_prefix) = match dst.kind {
-                Type::P2PKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix),
-                Type::P2SH => (conf.p2sh_addr_prefix, conf.p2sh_t_addr_prefix),
+            let (prefix, t_addr_prefix, addr_format) = match dst.kind {
+                ScriptType::P2PKH => (
+                    conf.pub_addr_prefix,
+                    conf.pub_t_addr_prefix,
+                    conf.default_address_format.clone(),
+                ),
+                ScriptType::P2SH => (
+                    conf.p2sh_addr_prefix,
+                    conf.p2sh_t_addr_prefix,
+                    conf.default_address_format.clone(),
+                ),
+                ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };
 
             Address {
@@ -210,7 +220,7 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
                 prefix,
                 t_addr_prefix,
                 hrp: conf.bech32_hrp.clone(),
-                addr_format: coin.my_address.addr_format.clone(),
+                addr_format,
             }
         })
         .collect();
@@ -412,10 +422,10 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> UtxoTxBuilder<'a, T> {
                         if let ActualTxFee::Dynamic(ref f) = actual_tx_fee {
                             self.tx_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
                         }
-                        if let Some(min_relay) = self.min_relay_fee {
-                            if self.tx_fee < min_relay {
-                                self.tx_fee = min_relay;
-                            }
+                    }
+                    if let Some(min_relay) = min_relay_fee {
+                        if tx_fee < min_relay {
+                            tx_fee = min_relay;
                         }
                     }
                     true
@@ -799,7 +809,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -846,7 +856,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -890,7 +900,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -934,7 +944,7 @@ where
     );
     let fut = async move {
         let fee = try_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
-        let script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_tx.outputs[0].value - fee,
             script_pubkey,
@@ -962,7 +972,7 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => try_s!(Signature::parse_der(&bytes[..bytes.len() - 1])),
+                Some(bytes) => try_s!(Signature::from_der(&bytes[..bytes.len() - 1])),
                 None => return ERR!("No data at instruction 0 of script {:?}", script),
             },
             _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
@@ -974,7 +984,7 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     let pubkey = match script.get_instruction(1) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::parse_slice(bytes, None)),
+                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
                 None => return ERR!("No data at instruction 1 of script {:?}", script),
             },
             _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
@@ -986,7 +996,7 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     if script.get_instruction(2).is_some() {
         return ERR!("Unexpected instruction at position 2 of script {:?}", script);
     }
-    Ok(pubkey.serialize_compressed().into())
+    Ok(pubkey.serialize().into())
 }
 
 /// Extracts pubkey from witness script
@@ -999,11 +1009,11 @@ fn pubkey_from_witness_script(witness_script: &[Bytes]) -> Result<H264, String> 
     if signature.is_empty() {
         return ERR!("Empty signature data in witness script");
     }
-    try_s!(Signature::parse_der(&signature[..signature.len() - 1]));
+    try_s!(Signature::from_der(&signature[..signature.len() - 1]));
 
-    let pubkey = try_s!(PublicKey::parse_slice(&witness_script[1], None));
+    let pubkey = try_s!(PublicKey::from_slice(&witness_script[1]));
 
-    Ok(pubkey.serialize_compressed().into())
+    Ok(pubkey.serialize().into())
 }
 
 pub async fn is_tx_confirmed_before_block<T>(coin: &T, tx: &RpcTransaction, block_number: u64) -> Result<bool, String>
@@ -1417,30 +1427,6 @@ pub fn current_block(coin: &UtxoCoinFields) -> Box<dyn Future<Item = u64, Error 
     Box::new(coin.rpc_client.get_block_count().map_err(|e| ERRL!("{}", e)))
 }
 
-pub fn display_address_from_pubkey_str<T>(coin: &T, pubkey: &str) -> Result<String, String>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
-{
-    let addr = try_s!(address_from_pubkey_str(coin, pubkey));
-    addr.display_address()
-}
-
-pub fn address_from_pubkey_str<T>(coin: &T, pubkey: &str) -> Result<Address, String>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
-{
-    let pubkey_bytes = try_s!(hex::decode(pubkey));
-    let addr = try_s!(address_from_raw_pubkey(
-        &pubkey_bytes,
-        coin.as_ref().conf.pub_addr_prefix,
-        coin.as_ref().conf.pub_t_addr_prefix,
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        coin.as_ref().my_address.addr_format.clone()
-    ));
-    Ok(addr)
-}
-
 pub fn display_priv_key(coin: &UtxoCoinFields) -> String { format!("{}", coin.key_pair.private()) }
 
 pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
@@ -1469,7 +1455,18 @@ where
         .address_from_str(&req.to)
         .map_to_mm(WithdrawError::InvalidAddress)?;
 
-    let script_pubkey = output_script(&to).to_bytes();
+    let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
+    let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
+
+    let script_type = if is_p2pkh {
+        ScriptType::P2PKH
+    } else if is_p2sh {
+        ScriptType::P2SH
+    } else {
+        return MmError::err(WithdrawError::InvalidAddress("Expected either P2PKH or P2SH".into()));
+    };
+
+    let script_pubkey = output_script(&to, script_type).to_bytes();
 
     let signature_version = match coin.as_ref().my_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
@@ -1627,10 +1624,12 @@ where
     let history = match coin.load_history_from_file(&ctx).compat().await {
         Ok(history) => history,
         Err(e) => {
-            ctx.log.log(
+            log_tag!(
+                ctx,
                 "",
-                &[&"tx_history", &coin.as_ref().conf.ticker],
-                &ERRL!("Error {} on 'load_history_from_file', stop the history loop", e),
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'load_history_from_file', stop the history loop", e
             );
             return;
         },
@@ -1649,8 +1648,7 @@ where
             let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
             let coins = coins_ctx.coins.lock().await;
             if !coins.contains_key(&coin.as_ref().conf.ticker) {
-                ctx.log
-                    .log("", &[&"tx_history", &coin.as_ref().conf.ticker], "Loop stopped");
+                log_tag!(ctx, "", "tx_history", "coin" => coin.as_ref().conf.ticker; fmt = "Loop stopped");
                 break;
             };
         }
@@ -1658,10 +1656,12 @@ where
         let actual_balance = match coin.my_balance().compat().await {
             Ok(actual_balance) => Some(actual_balance),
             Err(err) => {
-                ctx.log.log(
+                log_tag!(
+                    ctx,
                     "",
-                    &[&"tx_history", &coin.as_ref().conf.ticker],
-                    &ERRL!("Error {:?} on getting balance", err),
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "Error {:?} on getting balance", err
                 );
                 None
             },
@@ -1681,19 +1681,23 @@ where
         let tx_ids = match coin.request_tx_history(metrics).await {
             RequestTxHistoryResult::Ok(tx_ids) => tx_ids,
             RequestTxHistoryResult::Retry { error } => {
-                ctx.log.log(
+                log_tag!(
+                    ctx,
                     "",
-                    &[&"tx_history", &coin.as_ref().conf.ticker],
-                    &ERRL!("{}, retrying", error),
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "{}, retrying", error
                 );
                 Timer::sleep(10.).await;
                 continue;
             },
             RequestTxHistoryResult::HistoryTooLarge => {
-                ctx.log.log(
+                log_tag!(
+                    ctx,
                     "",
-                    &[&"tx_history", &coin.as_ref().conf.ticker],
-                    &ERRL!("Got `history too large`, stopping further attempts to retrieve it"),
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "Got `history too large`, stopping further attempts to retrieve it"
                 );
                 *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Error(json!({
                     "code": HISTORY_TOO_LARGE_ERR_CODE,
@@ -1702,10 +1706,12 @@ where
                 break;
             },
             RequestTxHistoryResult::UnknownError(e) => {
-                ctx.log.log(
+                log_tag!(
+                    ctx,
                     "",
-                    &[&"tx_history", &coin.as_ref().conf.ticker],
-                    &ERRL!("{}, stopping futher attempts to retreive it", e),
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "{}, stopping futher attempts to retreive it", e
                 );
                 break;
             },
@@ -1746,10 +1752,12 @@ where
                             }
                             updated = true;
                         },
-                        Err(e) => ctx.log.log(
+                        Err(e) => log_tag!(
+                            ctx,
                             "",
-                            &[&"tx_history", &coin.as_ref().conf.ticker],
-                            &ERRL!("Error {:?} on getting the details of {:?}, skipping the tx", e, txid),
+                            "tx_history",
+                            "coin" => coin.as_ref().conf.ticker;
+                            fmt = "Error {:?} on getting the details of {:?}, skipping the tx", e, txid
                         ),
                     }
                 },
@@ -1769,21 +1777,20 @@ where
                             updated = true;
                         }
                     }
-                    if e.get().should_update_kmd_rewards() && e.get().block_height > 0 {
-                        mm_counter!(ctx.metrics, "tx.history.update.kmd_rewards", 1);
-                        match coin.update_kmd_rewards(e.get_mut(), &mut input_transactions).await {
-                            Ok(()) => updated = true,
-                            Err(e) => ctx.log.log(
-                                "😟",
-                                &[&"tx_history", &coin.as_ref().conf.ticker],
-                                &ERRL!(
-                                    "Error {:?} on updating the KMD rewards of {:?}, skipping the tx",
-                                    e,
-                                    txid
-                                ),
-                            ),
-                        }
-                    }
+                    // TODO uncomment this when `update_kmd_rewards` works correctly
+                    // if e.get().should_update_kmd_rewards() && e.get().block_height > 0 {
+                    //     mm_counter!(ctx.metrics, "tx.history.update.kmd_rewards", 1);
+                    //     match coin.update_kmd_rewards(e.get_mut(), &mut input_transactions).await {
+                    //         Ok(()) => updated = true,
+                    //         Err(e) => log_tag!(
+                    //             ctx,
+                    //             "😟",
+                    //             "tx_history",
+                    //             "coin" => coin.as_ref().conf.ticker;
+                    //             fmt = "Error {:?} on updating the KMD rewards of {:?}, skipping the tx", e, txid
+                    //         ),
+                    //     }
+                    // }
                 },
             }
             if updated {
@@ -1800,10 +1807,12 @@ where
                     }
                 });
                 if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
-                    ctx.log.log(
+                    log_tag!(
+                        ctx,
                         "",
-                        &[&"tx_history", &coin.as_ref().conf.ticker],
-                        &ERRL!("Error {} on 'save_history_to_file', stop the history loop", e),
+                        "tx_history",
+                        "coin" => coin.as_ref().conf.ticker;
+                        fmt = "Error {} on 'save_history_to_file', stop the history loop", e
                     );
                     return;
                 };
@@ -1812,10 +1821,12 @@ where
         *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Finished;
 
         if success_iteration == 0 {
-            ctx.log.log(
+            log_tag!(
+                ctx,
                 "😅",
-                &[&"tx_history", &("coin", coin.as_ref().conf.ticker.clone().as_str())],
-                "history has been loaded successfully",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "history has been loaded successfully"
             );
         }
 
@@ -1878,7 +1889,7 @@ where
                 .collect()
         },
         UtxoRpcClientEnum::Electrum(client) => {
-            let script = Builder::build_p2pkh(&coin.as_ref().my_address.hash);
+            let script = output_script(&coin.as_ref().my_address, ScriptType::P2PKH);
             let script_hash = electrum_script_hash(&script);
 
             mm_counter!(metrics, "tx.history.request.count", 1,
@@ -1987,24 +1998,39 @@ where
         to_addresses.extend(to.into_iter());
     }
 
-    let (fee, kmd_rewards) = if ticker == "KMD" {
-        let kmd_rewards = try_s!(coin.calc_interest_of_tx(&tx, input_transactions).await);
-        // `input_amount = output_amount + fee`, where `output_amount = actual_output_amount + kmd_rewards`,
-        // so to calculate an actual transaction fee, we have to subtract the `kmd_rewards` from the total `output_amount`:
-        // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
-        let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
+    // TODO uncomment this when `calc_interest_of_tx` works fine
+    // let (fee, kmd_rewards) = if ticker == "KMD" {
+    //     let kmd_rewards = try_s!(coin.calc_interest_of_tx(&tx, input_transactions).await);
+    //     // `input_amount = output_amount + fee`, where `output_amount = actual_output_amount + kmd_rewards`,
+    //     // so to calculate an actual transaction fee, we have to subtract the `kmd_rewards` from the total `output_amount`:
+    //     // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
+    //     let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
+    //
+    //     let my_address = &coin.as_ref().my_address;
+    //     let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
+    //     let kmd_rewards_details = KmdRewardsDetails {
+    //         amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
+    //         claimed_by_me,
+    //     };
+    //     (
+    //         big_decimal_from_sat(fee, coin.as_ref().decimals),
+    //         Some(kmd_rewards_details),
+    //     )
+    // } else if input_amount == 0 {
+    //     let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
+    //         let fee = match input {
+    //             TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+    //             _ => 0.,
+    //         };
+    //         cur + fee
+    //     });
+    //     (fee.into(), None)
+    // } else {
+    //     let fee = input_amount as i64 - output_amount as i64;
+    //     (big_decimal_from_sat(fee, coin.as_ref().decimals), None)
+    // };
 
-        let my_address = &coin.as_ref().my_address;
-        let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
-        let kmd_rewards_details = KmdRewardsDetails {
-            amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
-            claimed_by_me,
-        };
-        (
-            big_decimal_from_sat(fee, coin.as_ref().decimals),
-            Some(kmd_rewards_details),
-        )
-    } else if input_amount == 0 {
+    let (fee, kmd_rewards) = if input_amount == 0 {
         let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
             let fee = match input {
                 TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
@@ -2211,7 +2237,7 @@ where
     match tx_fee {
         ActualTxFee::Fixed(fee_amount) => {
             let amount = big_decimal_from_sat(fee_amount as i64, decimals);
-            return Ok(amount);
+            Ok(amount)
         },
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
         ActualTxFee::Dynamic(fee) => {
@@ -2383,6 +2409,17 @@ pub fn set_requires_notarization(coin: &UtxoCoinFields, requires_nota: bool) {
         .store(requires_nota, AtomicOrdering::Relaxed);
 }
 
+pub fn coin_protocol_info(coin: &UtxoCoinFields) -> Option<Vec<u8>> {
+    Some(rmp_serde::to_vec(&coin.my_address.addr_format).unwrap())
+}
+
+pub fn is_coin_protocol_supported(coin: &UtxoCoinFields, info: &Option<Vec<u8>>) -> bool {
+    match info {
+        Some(format) => rmp_serde::from_read_ref::<_, UtxoAddressFormat>(format).is_ok(),
+        None => !coin.my_address.addr_format.is_segwit(),
+    }
+}
+
 #[allow(clippy::needless_lifetimes)]
 pub async fn ordered_mature_unspents<'a, T>(
     coin: &'a T,
@@ -2519,7 +2556,7 @@ pub async fn cache_transaction_if_possible(coin: &UtxoCoinFields, tx: &RpcTransa
         None => return Ok(()),
     }
 
-    tx_cache::cache_transaction(&tx_cache_path, &tx)
+    tx_cache::cache_transaction(&tx_cache_path, tx)
         .await
         .map_err(|e| ERRL!("Error {:?} on caching transaction {:?}", e, tx.txid))
 }
@@ -2836,7 +2873,7 @@ pub fn p2sh_spend(
         1 | fork_id,
     );
 
-    let sig = try_s!(script_sig(&sighash, &key_pair, fork_id));
+    let sig = try_s!(script_sig(&sighash, key_pair, fork_id));
 
     let mut resulting_script = Builder::default().push_data(&sig).into_bytes();
     if !script_data.is_empty() {

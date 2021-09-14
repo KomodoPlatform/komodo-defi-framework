@@ -137,6 +137,7 @@ impl Num {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Bytes {
         if self.value == 0 {
             return Bytes::default();

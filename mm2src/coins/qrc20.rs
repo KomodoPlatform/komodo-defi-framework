@@ -733,7 +733,7 @@ impl SwapOps for Qrc20Coin {
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_fus!(check_all_inputs_signed_by_pub(&fee_tx, expected_sender)) {
+        if !try_fus!(check_all_inputs_signed_by_pub(fee_tx, expected_sender)) {
             return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
         }
         let fee_addr = try_fus!(self.contract_address_from_raw_pubkey(fee_addr));
@@ -978,10 +978,6 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::current_block(&self.utxo)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        utxo_common::display_address_from_pubkey_str(self, pubkey)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
@@ -1156,6 +1152,12 @@ impl MmCoin for Qrc20Coin {
     }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo.conf.mature_confirmations) }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo) }
+
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        utxo_common::is_coin_protocol_supported(&self.utxo, info)
+    }
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {

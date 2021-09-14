@@ -35,6 +35,17 @@ macro_rules! console_info {
     }};
 }
 
+#[macro_export]
+macro_rules! console_log {
+    ($($args: tt)+) => {{
+        let here = format!("{}:{}]", ::gstuff::filename(file!()), line!());
+        let msg = format!($($args)+);
+        let msg_formatted = format!("{} {}", here, msg);
+        let msg_js = $crate::log::wasm_log::JsValue::from(msg_formatted);
+        $crate::log::wasm_log::console::log_1(&msg_js);
+    }};
+}
+
 const CHANNEL_BUF_SIZE: usize = 1024;
 
 #[wasm_bindgen]

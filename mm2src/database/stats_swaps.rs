@@ -1,12 +1,8 @@
-use crate::mm2::lp_swap::{stats_maker_swap_dir, stats_taker_swap_dir, MakerSavedSwap, SavedSwap, TakerSavedSwap};
-use common::{log::{debug, error, warn},
+use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
+use common::{log::{debug, error},
              mm_ctx::MmArc,
-             read_dir,
-             rusqlite::{Connection, OptionalExtension},
-             slurp};
-use serde_json::{self as json};
+             rusqlite::{Connection, OptionalExtension}};
 use std::collections::HashSet;
-use uuid::Uuid;
 
 const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -74,71 +70,25 @@ pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_sw
 const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
-pub fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let maker_swap_files =
-        read_dir(&stats_maker_swap_dir(&ctx)).expect("Reading swaps dir should not fail at this point");
+pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
+    let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
+
     let mut result = vec![(CREATE_STATS_SWAPS_TABLE, vec![])];
-    let mut inserted_maker_uuids = HashSet::with_capacity(maker_swap_files.len());
-    for (_, file) in maker_swap_files {
-        let content = slurp(&file).expect("slurp should not fail at this point");
-        match json::from_slice(&content) {
-            Ok(swap) => {
-                if let Some(sql_with_params) = insert_stats_maker_swap_sql_init(&swap) {
-                    inserted_maker_uuids.insert(swap.uuid);
-                    result.push(sql_with_params);
-                }
-            },
-            Err(e) => error!(
-                "Error {} on file {} content {:?} deserialization to MakerSavedSwap",
-                e,
-                file.display(),
-                content
-            ),
+    let mut inserted_maker_uuids = HashSet::with_capacity(maker_swaps.len());
+
+    for maker_swap in maker_swaps {
+        if let Some(sql_with_params) = insert_stats_maker_swap_sql_init(&maker_swap) {
+            inserted_maker_uuids.insert(maker_swap.uuid);
+            result.push(sql_with_params);
         }
     }
-
-    let taker_swap_files =
-        read_dir(&stats_taker_swap_dir(&ctx)).expect("Reading swaps dir should not fail at this point");
-    for (_, file) in taker_swap_files {
-        let os_file_name = match file.file_stem() {
-            Some(name) => name,
-            None => {
-                warn!("File {} does not have file_stem", file.display());
-                continue;
-            },
-        };
-        let file_name = match os_file_name.to_str() {
-            Some(name) => name,
-            None => {
-                warn!("{:?} is not a valid unicode", os_file_name);
-                continue;
-            },
-        };
-        let uuid: Uuid = match file_name.parse() {
-            Ok(u) => u,
-            Err(e) => {
-                warn!("Error {} while parsing uuid from {}", e, file_name);
-                continue;
-            },
-        };
-
-        if inserted_maker_uuids.contains(&uuid) {
+    for taker_swap in taker_swaps {
+        if inserted_maker_uuids.contains(&taker_swap.uuid) {
             continue;
         }
-
-        let content = slurp(&file).expect("slurp should not fail at this point");
-        match json::from_slice(&content) {
-            Ok(swap) => {
-                if let Some(sql_with_params) = insert_stats_taker_swap_sql_init(&swap) {
-                    result.push(sql_with_params);
-                }
-            },
-            Err(e) => error!(
-                "Error {} on file {} content {:?} deserialization to TakerSavedSwap",
-                e,
-                file.display(),
-                content
-            ),
+        if let Some(sql_with_params) = insert_stats_taker_swap_sql_init(&taker_swap) {
+            result.push(sql_with_params);
         }
     }
     result

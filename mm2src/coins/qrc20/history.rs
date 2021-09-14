@@ -1,8 +1,6 @@
 use super::*;
-use crate::tx_history_db::TxHistoryResult;
 use crate::utxo::{RequestTxHistoryResult, UtxoFeeDetails};
-use crate::CoinsContext;
-use crate::TxFeeDetails;
+use crate::{CoinsContext, TxFeeDetails, TxHistoryResult};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::mm_metrics::MetricsArc;
@@ -486,7 +484,7 @@ impl Qrc20Coin {
             if let Some(tx_hash_history) = history_map.get_mut(&tx_hash) {
                 // we should check if the cached `transfer` details are up-to-date (timestamp and blockheight are not zeros)
                 match self
-                    .process_cached_tx_transfer_map(&ctx, &tx_hash, height, tx_hash_history)
+                    .process_cached_tx_transfer_map(ctx, &tx_hash, height, tx_hash_history)
                     .await
                 {
                     ProcessCachedTransferMapResult::Updated => {
@@ -536,7 +534,7 @@ impl Qrc20Coin {
     }
 
     async fn try_load_history_from_file(&self, ctx: &MmArc) -> TxHistoryResult<HistoryMapByHash> {
-        let history = self.load_history_from_file(&ctx).compat().await?;
+        let history = self.load_history_from_file(ctx).compat().await?;
         let mut history_map: HistoryMapByHash = HashMap::default();
 
         for tx in history {
@@ -735,7 +733,7 @@ impl BuildTransferHistory for NativeClient {
 }
 
 fn is_transferred_from_contract(script_pubkey: &Script) -> bool {
-    let contract_call_bytes = match extract_contract_call_from_script(&script_pubkey) {
+    let contract_call_bytes = match extract_contract_call_from_script(script_pubkey) {
         Ok(bytes) => bytes,
         Err(e) => {
             error!("{}", e);
@@ -759,7 +757,7 @@ fn is_transferred_from_contract(script_pubkey: &Script) -> bool {
 }
 
 fn is_transferred_to_contract(script_pubkey: &Script) -> bool {
-    let contract_call_bytes = match extract_contract_call_from_script(&script_pubkey) {
+    let contract_call_bytes = match extract_contract_call_from_script(script_pubkey) {
         Ok(bytes) => bytes,
         Err(e) => {
             error!("{}", e);

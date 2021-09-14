@@ -1,4 +1,4 @@
-use common::safe_slurp;
+use common::fs::safe_slurp;
 use futures::lock::Mutex as AsyncMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ pub async fn load_transaction_from_cache(
 ) -> Result<Option<RpcTransaction>, String> {
     let _lock = TX_CACHE_LOCK.lock().await;
 
-    let path = cached_transaction_path(tx_cache_path, &txid);
+    let path = cached_transaction_path(tx_cache_path, txid);
     let data = try_s!(safe_slurp(&path));
     if data.is_empty() {
         // couldn't find corresponding file

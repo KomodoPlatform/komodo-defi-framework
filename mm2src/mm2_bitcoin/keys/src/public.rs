@@ -1,7 +1,8 @@
+use crate::SECP_VERIFY;
 use crypto::dhash160;
 use hash::{H264, H520};
 use hex::ToHex;
-use secp256k1::{verify, Message as SecpMessage, PublicKey, PublicKeyFormat, Signature as SecpSignature};
+use secp256k1::{Message as SecpMessage, PublicKey, Signature as SecpSignature};
 use std::{fmt, ops};
 use {AddressHash, Error, Message, Signature};
 
@@ -38,13 +39,13 @@ impl Public {
 
     pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
         let public = match self {
-            Public::Compressed(public) => PublicKey::parse_slice(&**public, Some(PublicKeyFormat::Compressed))?,
-            Public::Normal(public) => PublicKey::parse_slice(&**public, Some(PublicKeyFormat::Full))?,
+            Public::Compressed(public) => PublicKey::from_slice(&**public)?,
+            Public::Normal(public) => PublicKey::from_slice(&**public)?,
         };
-        let mut signature = SecpSignature::parse_der_lax(signature)?;
+        let mut signature = SecpSignature::from_der_lax(signature)?;
         signature.normalize_s();
-        let message = SecpMessage::parse_slice(&**message)?;
-        Ok(verify(&message, &signature, &public))
+        let message = SecpMessage::from_slice(&**message)?;
+        Ok(SECP_VERIFY.verify(&message, &signature, &public).is_ok())
     }
 }
 

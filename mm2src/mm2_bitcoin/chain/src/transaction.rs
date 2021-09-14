@@ -93,9 +93,9 @@ pub struct ShieldedOutput {
     pub zkproof: ZkProofSapling,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum JoinSplitProof {
-    #[allow(clippy::upper_case_acronyms)]
     PHGR(ZkProof),
     Groth(ZkProofSapling),
 }
@@ -210,8 +210,8 @@ impl Transaction {
     pub fn hash(&self) -> H256 {
         let serialized = &serialize(self);
         match self.tx_hash_algo {
-            TxHashAlgo::DSHA256 => dhash256(&serialized),
-            TxHashAlgo::SHA256 => sha256(&serialized),
+            TxHashAlgo::DSHA256 => dhash256(serialized),
+            TxHashAlgo::SHA256 => sha256(serialized),
         }
     }
 

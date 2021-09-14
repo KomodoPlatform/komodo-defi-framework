@@ -19,7 +19,6 @@
 
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
-#![feature(non_ascii_idents)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
@@ -34,18 +33,18 @@
 use async_trait::async_trait;
 use bigdecimal::{BigDecimal, ParseBigDecimalError};
 use common::executor::{spawn, Timer};
-use common::mm_ctx::{from_ctx, MmArc};
+use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
 use common::{calc_total_pages, now_ms, HttpStatusCode};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
+use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
-use keys::NetworkPrefix as CashAddrPrefix;
+use keys::{AddressFormat as UtxoAddressFormat, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer};
 use serde_json::{self as json, Value as Json};
@@ -100,8 +99,7 @@ use qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
 pub mod test_coin;
 pub use test_coin::TestCoin;
 
-pub mod tx_history_db;
-use tx_history_db::{TxHistoryDb, TxHistoryError, TxHistoryOps, TxHistoryResult};
+#[cfg(target_arch = "wasm32")] pub mod tx_history_db;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
@@ -110,6 +108,19 @@ use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::UnsupportedAddr;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 use z_coin::{z_coin_from_conf_and_request, ZCoin};
+
+cfg_native! {
+    use async_std::fs;
+    use futures::AsyncWriteExt;
+    use std::io;
+}
+
+cfg_wasm32! {
+    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use tx_history_db::TxHistoryDb;
+
+    pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
+}
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
@@ -120,7 +131,18 @@ pub type TradePreimageResult<T> = Result<T, MmError<TradePreimageError>>;
 pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePreimageError>> + Send>;
 pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
-pub type TxHistoryDbLocked<'a> = AsyncMappedMutexGuard<'a, Option<TxHistoryDb>, TxHistoryDb>;
+pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
+
+#[derive(Debug, Display)]
+pub enum TxHistoryError {
+    ErrorSerializing(String),
+    ErrorDeserializing(String),
+    ErrorSaving(String),
+    ErrorLoading(String),
+    ErrorClearing(String),
+    NotSupported(String),
+    InternalError(String),
+}
 
 pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
@@ -354,8 +376,6 @@ pub trait MarketCoinOps {
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
-
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String>;
 
     fn display_priv_key(&self) -> String;
 
@@ -807,7 +827,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
-        let coin_conf = coin_conf(&ctx, &self.ticker());
+        let coin_conf = coin_conf(ctx, self.ticker());
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
@@ -824,46 +844,25 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     /// Loop collecting coin transaction history and saving it to local DB
     fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
+    /// Path to tx history file
+    fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
+        let my_address = self.my_address().unwrap_or_default();
+        // BCH cash address format has colon after prefix, e.g. bitcoincash:
+        // Colon can't be used in file names on Windows so it should be escaped
+        let my_address = my_address.replace(":", "_");
+        ctx.dbdir()
+            .join("TRANSACTIONS")
+            .join(format!("{}_{}.json", self.ticker(), my_address))
+    }
+
     /// Loads existing tx history from file, returns empty vector if file is not found
     /// Cleans the existing file if deserialization fails
     fn load_history_from_file(&self, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>> {
-        let ctx = ctx.clone();
-        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let ticker = self.ticker().to_owned();
-        let my_address = self.my_address().unwrap_or_default();
-
-        let fut = async move {
-            let mut db = coins_ctx.tx_history_db().await?;
-            let err = match db.load_history(&ticker, &my_address).await {
-                Ok(history) => return Ok(history),
-                Err(e) => e,
-            };
-
-            if let TxHistoryError::ErrorDeserializing(e) = err.get_inner() {
-                ctx.log.log(
-                    "🌋",
-                    &[&"tx_history", &ticker.to_owned()],
-                    &ERRL!("Error {} on history deserialization, resetting the cache.", e),
-                );
-                db.clear(&ticker, &my_address).await?;
-                return Ok(Vec::new());
-            }
-
-            Err(err)
-        };
-        Box::new(fut.boxed().compat())
+        load_history_from_file_impl(self, ctx)
     }
 
     fn save_history_to_file(&self, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()> {
-        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let ticker = self.ticker().to_owned();
-        let my_address = self.my_address().unwrap_or_default();
-
-        let fut = async move {
-            let mut db = coins_ctx.tx_history_db().await?;
-            db.save_history(&ticker, &my_address, history).await
-        };
-        Box::new(fut.boxed().compat())
+        save_history_to_file_impl(self, ctx, history)
     }
 
     /// Transaction history background sync status
@@ -902,6 +901,12 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
+
+    /// Get some of the coin config info in serialized format for p2p messaging.
+    fn coin_protocol_info(&self) -> Option<Vec<u8>>;
+
+    /// Check if serialized coin protocol info is supported by current version.
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
 #[derive(Clone, Debug)]
@@ -978,45 +983,26 @@ struct CoinsContext {
     /// Similar to `LP_coins`.
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
-    tx_history_path: PathBuf,
+    #[cfg(target_arch = "wasm32")]
     /// The database has to be initialized only once!
-    /// It's better to use something like [`Constructible`], but it doesn't provide a method to get the inner value by the mutable reference.
-    tx_history_db: AsyncMutex<Option<TxHistoryDb>>,
+    tx_history_db: ConstructibleDb<TxHistoryDb>,
 }
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
-        let tx_history_path = ctx.dbdir().join("TRANSACTIONS");
         Ok(try_s!(from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
-                tx_history_path,
-                tx_history_db: AsyncMutex::new(None),
+                #[cfg(target_arch = "wasm32")]
+                tx_history_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
     }
 
+    #[cfg(target_arch = "wasm32")]
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        /// # Panics
-        ///
-        /// This function will `panic!()` if the inner value of the `guard` is `None`.
-        fn unwrap_tx_history_db(guard: AsyncMutexGuard<'_, Option<TxHistoryDb>>) -> TxHistoryDbLocked<'_> {
-            AsyncMutexGuard::map(guard, |wrapped_db| {
-                wrapped_db
-                    .as_mut()
-                    .expect("'CoinsContext::tx_history_db' must contain a value")
-            })
-        }
-
-        let mut tx_history_db = self.tx_history_db.lock().await;
-        if tx_history_db.is_some() {
-            return Ok(unwrap_tx_history_db(tx_history_db));
-        }
-
-        let db = TxHistoryDb::init_with_fs_path(self.tx_history_path.clone()).await?;
-        *tx_history_db = Some(db);
-        Ok(unwrap_tx_history_db(tx_history_db))
+        Ok(self.tx_history_db.get_or_initialize().await?)
     }
 }
 
@@ -1244,10 +1230,9 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             platform,
             contract_address,
         } => {
-            let contract_address = try_s!(qtum::contract_addr_from_str(&contract_address));
+            let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
             try_s!(
-                qrc20_coin_from_conf_and_request(ctx, ticker, &platform, &coins_en, req, secret, contract_address)
-                    .await
+                qrc20_coin_from_conf_and_request(ctx, ticker, platform, &coins_en, req, secret, contract_address).await
             )
             .into()
         },
@@ -1296,9 +1281,9 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     if history {
         try_s!(lp_spawn_tx_history(ctx.clone(), coin.clone()));
     }
-    let ctxʹ = ctx.clone();
     let ticker = ticker.to_owned();
-    spawn(async move { check_balance_update_loop(ctxʹ, ticker).await });
+    let ctx_weak = ctx.weak();
+    spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
     Ok(coin)
 }
 
@@ -1430,7 +1415,7 @@ pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
     let bytes_string = try_s!(req["tx_hex"].as_str().ok_or("No 'tx_hex' field"));
-    let res = try_s!(coin.send_raw_tx(&bytes_string).compat().await);
+    let res = try_s!(coin.send_raw_tx(bytes_string).compat().await);
     let body = try_s!(json::to_vec(&json!({ "tx_hash": res })));
     Ok(try_s!(Response::builder().body(body)))
 }
@@ -1565,7 +1550,7 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
 }
 
 pub async fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
-    let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
+    let coins_ctx = try_s!(CoinsContext::from_ctx(ctx));
     let mut coins = coins_ctx.coins.lock().await;
     match coins.remove(ticker) {
         Some(_) => Ok(()),
@@ -1636,10 +1621,15 @@ pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 }
 
 // TODO: Refactor this, it's actually not required to check balance and trade fee when there no orders using the coin
-pub async fn check_balance_update_loop(ctx: MmArc, ticker: String) {
+pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
     let mut current_balance = None;
     loop {
         Timer::sleep(10.).await;
+        let ctx = match MmArc::from_weak(&ctx) {
+            Some(ctx) => ctx,
+            None => return,
+        };
+
         match lp_coinfind(&ctx, &ticker).await {
             Ok(Some(coin)) => {
                 let balance = match coin.my_spendable_balance().compat().await {
@@ -1739,12 +1729,13 @@ pub fn address_by_coin_conf_and_pubkey_str(
     coin: &str,
     conf: &Json,
     pubkey: &str,
+    addr_format: UtxoAddressFormat,
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
-            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey)
+        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } => {
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {
             let platform_conf = coin_conf(&ctx, &platform);
@@ -1761,6 +1752,127 @@ pub fn address_by_coin_conf_and_pubkey_str(
             }
         },
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey),
+        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
+where
+    T: MmCoin + ?Sized,
+{
+    let ctx = ctx.clone();
+    let ticker = coin.ticker().to_owned();
+    let my_address = coin.my_address().unwrap_or_default();
+
+    let fut = async move {
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let db = coins_ctx.tx_history_db().await?;
+        let err = match db.load_history(&ticker, &my_address).await {
+            Ok(history) => return Ok(history),
+            Err(e) => e,
+        };
+
+        if let TxHistoryError::ErrorDeserializing(e) = err.get_inner() {
+            ctx.log.log(
+                "🌋",
+                &[&"tx_history", &ticker.to_owned()],
+                &ERRL!("Error {} on history deserialization, resetting the cache.", e),
+            );
+            db.clear(&ticker, &my_address).await?;
+            return Ok(Vec::new());
+        }
+
+        Err(err)
+    };
+    Box::new(fut.boxed().compat())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
+where
+    T: MmCoin + ?Sized,
+{
+    let ticker = coin.ticker().to_owned();
+    let history_path = coin.tx_history_path(&ctx);
+    let ctx = ctx.clone();
+
+    let fut = async move {
+        let content = match fs::read(&history_path).await {
+            Ok(content) => content,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                return Ok(Vec::new());
+            },
+            Err(err) => {
+                let error = format!(
+                    "Error '{}' reading from the history file {}",
+                    err,
+                    history_path.display()
+                );
+                return MmError::err(TxHistoryError::ErrorLoading(error));
+            },
+        };
+        let serde_err = match json::from_slice(&content) {
+            Ok(txs) => return Ok(txs),
+            Err(e) => e,
+        };
+
+        ctx.log.log(
+            "🌋",
+            &[&"tx_history", &ticker],
+            &ERRL!("Error {} on history deserialization, resetting the cache.", serde_err),
+        );
+        fs::remove_file(&history_path)
+            .await
+            .map_to_mm(|e| TxHistoryError::ErrorClearing(e.to_string()))?;
+        Ok(Vec::new())
+    };
+    Box::new(fut.boxed().compat())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+where
+    T: MmCoin + MarketCoinOps + ?Sized,
+{
+    let ctx = ctx.clone();
+    let ticker = coin.ticker().to_owned();
+    let my_address = coin.my_address().unwrap_or_default();
+
+    let fut = async move {
+        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let db = coins_ctx.tx_history_db().await?;
+        db.save_history(&ticker, &my_address, history).await?;
+        Ok(())
+    };
+    Box::new(fut.boxed().compat())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+where
+    T: MmCoin + MarketCoinOps + ?Sized,
+{
+    let history_path = coin.tx_history_path(ctx);
+    let tmp_file = format!("{}.tmp", history_path.display());
+
+    let fut = async move {
+        let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
+
+        let fs_fut = async {
+            let mut file = fs::File::create(&tmp_file).await?;
+            file.write_all(&content).await?;
+            file.flush().await?;
+            fs::rename(&tmp_file, &history_path).await?;
+            Ok(())
+        };
+
+        let res: io::Result<_> = fs_fut.await;
+        if let Err(e) = res {
+            let error = format!("Error '{}' creating/writing/renaming the tmp file {}", e, tmp_file);
+            return MmError::err(TxHistoryError::ErrorSaving(error));
+        }
+        Ok(())
+    };
+    Box::new(fut.boxed().compat())
 }

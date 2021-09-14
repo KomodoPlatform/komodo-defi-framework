@@ -1,19 +1,15 @@
 use super::{lp_main, LpMainParams};
 use bigdecimal::BigDecimal;
-#[cfg(target_arch = "wasm32")] use common::call_back;
+use common::block_on;
 use common::executor::Timer;
 use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                        enable_electrum as enable_electrum_impl, enable_native as enable_native_impl, enable_qrc20,
-                        find_metrics_in_json, from_env_file, get_passphrase, mm_spat, new_mm2_temp_folder_path,
-                        LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                        enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
+                        mm_spat, LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
                         TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
-use common::{block_on, slurp};
 use http::StatusCode;
-#[cfg(not(target_arch = "wasm32"))]
-use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use num_rational::BigRational;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -25,6 +21,21 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+cfg_native! {
+    use common::for_tests::{get_passphrase, new_mm2_temp_folder_path};
+    use common::fs::slurp;
+    use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
+}
+
+cfg_wasm32! {
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+}
+
+#[path = "mm2_tests/electrums.rs"] pub mod electrums;
+use electrums::*;
+
 #[path = "mm2_tests/structs.rs"] pub mod structs;
 use structs::*;
 
@@ -32,8 +43,23 @@ use structs::*;
 // "Tests in your src files should be unit tests, and tests in tests/ should be integration-style tests."
 // - https://doc.rust-lang.org/cargo/guide/tests.html
 
+/// Ideally, this function should be replaced everywhere with `enable_electrum_json`.
 async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> EnableElectrumResponse {
+    use common::for_tests::enable_electrum as enable_electrum_impl;
+
     let value = enable_electrum_impl(mm, coin, tx_history, urls).await;
+    json::from_value(value).unwrap()
+}
+
+async fn enable_electrum_json(
+    mm: &MarketMakerIt,
+    coin: &str,
+    tx_history: bool,
+    servers: Vec<Json>,
+) -> EnableElectrumResponse {
+    use common::for_tests::enable_electrum_json as enable_electrum_impl;
+
+    let value = enable_electrum_impl(mm, coin, tx_history, servers).await;
     json::from_value(value).unwrap()
 }
 
@@ -47,23 +73,10 @@ async fn enable_coins_eth_electrum(
     eth_urls: &[&str],
 ) -> HashMap<&'static str, EnableElectrumResponse> {
     let mut replies = HashMap::new();
-    replies.insert(
-        "RICK",
-        enable_electrum(mm, "RICK", false, &[
-            "electrum1.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum3.cipig.net:10017",
-        ])
-        .await,
-    );
+    replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
     replies.insert(
         "MORTY",
-        enable_electrum(mm, "MORTY", false, &[
-            "electrum1.cipig.net:10018",
-            "electrum2.cipig.net:10018",
-            "electrum3.cipig.net:10018",
-        ])
-        .await,
+        enable_electrum_json(mm, "MORTY", false, morty_electrums()).await,
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls).await);
     replies.insert("JST", enable_native(mm, "JST", eth_urls).await);
@@ -219,16 +232,20 @@ fn local_start() -> LocalStart { local_start_impl }
 #[cfg(target_arch = "wasm32")]
 fn local_start() -> LocalStart { wasm_start_impl }
 
+#[cfg(not(target_arch = "wasm32"))]
 macro_rules! local_start {
     ($who: expr) => {
-        if cfg!(not(target_acrh = "wasm32")) {
-            match var("LOCAL_THREAD_MM") {
-                Ok(ref e) if e == $who => Some(local_start()),
-                _ => None,
-            }
-        } else {
-            Some(local_start())
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == $who => Some(local_start()),
+            _ => None,
         }
+    };
+}
+
+#[cfg(target_arch = "wasm32")]
+macro_rules! local_start {
+    ($who: expr) => {
+        Some(local_start())
     };
 }
 
@@ -289,7 +306,7 @@ fn alice_can_see_the_active_order_after_connection() {
 
     let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
     log!("Bob orderbook "[bob_orderbook]);
-    assert!(bob_orderbook.asks.len() > 0, "Bob RICK/MORTY asks are empty");
+    assert!(!bob_orderbook.asks.is_empty(), "Bob RICK/MORTY asks are empty");
     assert_eq!(BigDecimal::from_str("0.9").unwrap(), bob_orderbook.asks[0].max_volume);
 
     // start eve and immediately place the order
@@ -1056,8 +1073,8 @@ async fn trade_base_rel_electrum(
     taker_price: i32,
     volume: f64,
 ) {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
@@ -1067,7 +1084,7 @@ async fn trade_base_rel_electrum(
         {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
     ]);
 
-    let mut mm_bob = MarketMakerIt::start(
+    let mut mm_bob = MarketMakerIt::start_async(
         json! ({
             "gui": "nogui",
             "netid": 8999,
@@ -1079,11 +1096,11 @@ async fn trade_base_rel_electrum(
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
-            "skip_startup_checks": true,
         }),
         "password".into(),
         local_start!("bob"),
     )
+    .await
     .unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -1092,8 +1109,6 @@ async fn trade_base_rel_electrum(
         log! ({"Bob log path: {}", mm_bob.log_path.display()})
     }
 
-    // wait until bob starts listening on the p2p port and sleep for 1 second
-    wait_log_re!(mm_bob, 22., "INFO Listening on");
     Timer::sleep(1.).await;
 
     // Both Alice and Bob might try to bind on the "0.0.0.0:47773" DHT port in this test
@@ -1103,7 +1118,7 @@ async fn trade_base_rel_electrum(
     // Direct communication is not required in this test, but it's nice to have.
     // wait_log_re! (mm_bob, 9., "preferred port");
 
-    let mut mm_alice = MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start_async(
         json! ({
             "gui": "nogui",
             "netid": 8999,
@@ -1112,13 +1127,14 @@ async fn trade_base_rel_electrum(
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": alice_passphrase,
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.my_seed_addr()],
             "rpc_password": "password",
             "skip_startup_checks": true,
         }),
         "password".into(),
         local_start!("alice"),
     )
+    .await
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -1127,11 +1143,7 @@ async fn trade_base_rel_electrum(
         log! ({"Alice log path: {}", mm_alice.log_path.display()})
     }
 
-    // wait until both nodes RPC API is active
-    wait_log_re!(mm_bob, 22., ">>>>>>>>> DEX stats ");
-    wait_log_re!(mm_alice, 22., ">>>>>>>>> DEX stats ");
-
-    #[cfg(feature = "zhtlc")]
+    #[cfg(all(feature = "zhtlc", not(target_arch = "wasm32"))]
     {
         let rmd = rmd160_from_passphrase(&bob_passphrase);
         let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
@@ -1148,6 +1160,7 @@ async fn trade_base_rel_electrum(
     // Enable coins on Bob side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]).await;
     log! ({"enable_coins (bob): {:?}", rc});
+
     // Enable coins on Alice side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]).await;
     log! ({"enable_coins (alice): {:?}", rc});
@@ -1221,6 +1234,7 @@ async fn trade_base_rel_electrum(
             .unwrap()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {
         // ensure the swaps are indexed to the SQLite database
         let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
@@ -1245,16 +1259,13 @@ async fn trade_base_rel_electrum(
             .await
             .unwrap();
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            log!("Waiting a few second for the fresh swap status to be saved..");
-            Timer::sleep(7.77).await;
-        }
+        log!("Waiting a few second for the fresh swap status to be saved..");
+        Timer::sleep(7.77).await;
 
         log!("Checking alice/taker status..");
         check_my_swap_status(
             &mm_alice,
-            &uuid,
+            uuid,
             &TAKER_SUCCESS_EVENTS,
             &TAKER_ERROR_EVENTS,
             volume.into(),
@@ -1265,7 +1276,7 @@ async fn trade_base_rel_electrum(
         log!("Checking bob/maker status..");
         check_my_swap_status(
             &mm_bob,
-            &uuid,
+            uuid,
             &MAKER_SUCCESS_EVENTS,
             &MAKER_ERROR_EVENTS,
             volume.into(),
@@ -1277,12 +1288,13 @@ async fn trade_base_rel_electrum(
     log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
     Timer::sleep(3.).await;
 
+    #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {
         log!("Checking alice status..");
-        check_stats_swap_status(&mm_alice, &uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+        check_stats_swap_status(&mm_alice, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
 
         log!("Checking bob status..");
-        check_stats_swap_status(&mm_bob, &uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+        check_stats_swap_status(&mm_bob, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
     }
 
     log!("Checking alice recent swaps..");
@@ -1323,16 +1335,11 @@ fn trade_test_electrum_and_eth_coins() {
     block_on(trade_base_rel_electrum(pairs, 1, 2, 0.1));
 }
 
+#[wasm_bindgen_test]
 #[cfg(target_arch = "wasm32")]
-#[no_mangle]
-pub extern "C" fn trade_test_electrum_and_eth_coins(cb_id: i32) {
-    use std::ptr::null;
-
-    common::executor::spawn(async move {
-        let pairs = [("ETH", "JST")];
-        trade_base_rel_electrum(&pairs, 1, 2, 0.1).await;
-        call_back(cb_id, null(), 0)
-    })
+async fn trade_test_rick_and_morty() {
+    let pairs: &[_] = &[("RICK", "MORTY")];
+    trade_base_rel_electrum(pairs, 1, 1, 0.0001).await;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1864,12 +1871,7 @@ fn test_swap_status() {
     })))
     .unwrap();
 
-    assert_eq!(
-        my_swap.0,
-        StatusCode::NOT_FOUND,
-        "!not found status code: {}",
-        my_swap.1
-    );
+    assert!(my_swap.0.is_server_error(), "!not found status code: {}", my_swap.1);
 
     let stats_swap = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,
@@ -1880,9 +1882,8 @@ fn test_swap_status() {
     })))
     .unwrap();
 
-    assert_eq!(
-        stats_swap.0,
-        StatusCode::NOT_FOUND,
+    assert!(
+        stats_swap.0.is_server_error(),
         "!not found status code: {}",
         stats_swap.1
     );
@@ -1957,6 +1958,7 @@ fn test_order_errors_when_base_equal_rel() {
     assert!(rc.0.is_server_error(), "sell should have failed, but got {:?}", rc);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn startup_passphrase(passphrase: &str, expected_address: &str) {
     let coins = json!([
         {"coin":"KMD","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
@@ -3691,7 +3693,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
 
     log!("Issue sell request again on Bob side by setting base/rel price…");
-    let rc = block_on(mm_bob.rpc(set_price_json.clone())).unwrap();
+    let rc = block_on(mm_bob.rpc(set_price_json)).unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     let pause = 2;
@@ -3860,7 +3862,7 @@ fn test_metrics_method() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
-        let metrics = request_metrics(&mm);
+        let metrics = request_metrics(mm);
         match find_metrics_in_json(metrics, "tx.history.request.count", &[
             ("coin", "RICK"),
             ("method", "blockchain.scripthash.get_history"),
@@ -3993,7 +3995,13 @@ fn test_withdraw_cashaddresses() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"}],
+        "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
     })))
     .unwrap();
@@ -4113,7 +4121,13 @@ fn test_withdraw_cashaddresses() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+        "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "address_format":{"format":"standard"},
         "mm2": 1,
     })))
@@ -4203,7 +4217,13 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+        "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
     })))
     .unwrap();
@@ -4262,13 +4282,20 @@ fn test_common_cashaddresses() {
 
     // Enable BCH electrum client with tx_history loop.
     // Enable RICK electrum client with tx_history loop.
-    let electrum = block_on(mm.rpc (json! ({
+    let electrum = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
-        "servers": [{"url":"blackie.c3-soft.com:60001"}, {"url":"bch0.kister.net:51001"}, {"url":"testnet.imaginary.cash:50001"}],
+        "servers": [
+            {"url":"electroncash.de:50003"},
+            {"url":"tbch.loping.net:60001"},
+            {"url":"blackie.c3-soft.com:60001"},
+            {"url":"bch0.kister.net:51001"},
+            {"url":"testnet.imaginary.cash:50001"}
+        ],
         "mm2": 1,
-    }))).unwrap();
+    })))
+    .unwrap();
 
     assert_eq!(
         electrum.0,
@@ -4346,6 +4373,8 @@ fn test_convert_utxo_address() {
     log!({ "log path: {}", mm.log_path.display() });
 
     let _electrum = block_on(enable_electrum(&mm, "BCH", false, &[
+        "electroncash.de:50003",
+        "tbch.loping.net:60001",
         "blackie.c3-soft.com:60001",
         "bch0.kister.net:51001",
         "testnet.imaginary.cash:50001",
@@ -5387,16 +5416,14 @@ fn test_qrc20_withdraw_error() {
         .contains("Not enough QTUM to withdraw: available 0, required at least 0.04"));
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_qrc20_tx_history() {
+async fn test_qrc20_history_impl() {
     let passphrase = "daring blind measure rebuild grab boost fix favorite nurse stereo april rookie";
     let coins = json!([
         {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
-    let mut mm = MarketMakerIt::start(
+    let mut mm = MarketMakerIt::start_async(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -5404,27 +5431,35 @@ fn test_qrc20_tx_history() {
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "passphrase": passphrase,
             "coins": coins,
-            "i_am_seed": true,
             "rpc_password": "pass",
             "metrics_interval": 30.,
         }),
         "pass".into(),
         local_start!("bob"),
     )
+    .await
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
 
-    let electrum = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "electrum",
-        "coin": "QRC20",
-        "servers": [{"url":"95.217.83.126:10001"}],
-        "mm2": 1,
-        "tx_history": true,
-        "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
-    })))
-    .unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    common::log::info!("log path: {}", mm.log_path.display());
+
+    mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))
+        .await
+        .unwrap();
+
+    let electrum = mm
+        .rpc(json!({
+            "userpass": mm.userpass,
+            "method": "electrum",
+            "coin": "QRC20",
+            "servers": qtum_electrums(),
+            "mm2": 1,
+            "tx_history": true,
+            "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+        }))
+        .await
+        .unwrap();
     assert_eq!(
         electrum.0,
         StatusCode::OK,
@@ -5439,18 +5474,22 @@ fn test_qrc20_tx_history() {
     );
 
     // Wait till tx_history will not be loaded
-    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
+    mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))
+        .await
+        .unwrap();
 
     // let the MarketMaker save the history to the file
-    block_on(Timer::sleep(1.));
+    Timer::sleep(1.).await;
 
-    let tx_history = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "my_tx_history",
-        "coin": "QRC20",
-        "limit": 100,
-    })))
-    .unwrap();
+    let tx_history = mm
+        .rpc(json!({
+            "userpass": mm.userpass,
+            "method": "my_tx_history",
+            "coin": "QRC20",
+            "limit": 100,
+        }))
+        .await
+        .unwrap();
     assert_eq!(
         tx_history.0,
         StatusCode::OK,
@@ -5458,7 +5497,7 @@ fn test_qrc20_tx_history() {
         tx_history.0,
         tx_history.1
     );
-    log!([tx_history.1]);
+    common::log::debug!("{:?}", tx_history.1);
     let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
     let tx_history_result = &tx_history_json["result"];
 
@@ -5488,6 +5527,266 @@ fn test_qrc20_tx_history() {
         // pop front item
         let expected_tx = expected.remove(0);
         assert_eq!(tx["internal_id"].as_str().unwrap(), expected_tx);
+    }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl()); }
+
+#[wasm_bindgen_test]
+#[cfg(target_arch = "wasm32")]
+async fn test_qrc20_tx_history() { test_qrc20_history_impl().await }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_tx_history_segwit() {
+    let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
+    let coins = json!([
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": passphrase,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+            "metrics_interval": 30.,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    // enable tBTC in legacy first to see that to/from segwit addresses are displayed correctly in tx_history
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "tx_history": true,
+    })))
+    .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb")
+    );
+
+    // Wait till tx_history will not be loaded
+    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
+
+    // let the MarketMaker save the history to the file
+    block_on(Timer::sleep(1.));
+
+    let tx_history = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "coin": "tBTC",
+        "limit": 100,
+    })))
+    .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    log!([tx_history.1]);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b/
+        "9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b",
+        // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
+        "ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7",
+        // https://live.blockcypher.com/btc-testnet/tx/7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44/
+        "7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44",
+        // https://live.blockcypher.com/btc-testnet/tx/17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953/
+        "17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953",
+        // https://live.blockcypher.com/btc-testnet/tx/45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba/
+        "45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba",
+        // https://live.blockcypher.com/btc-testnet/tx/2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298/
+        "2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298",
+        // https://live.blockcypher.com/btc-testnet/tx/4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857/
+        "4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857",
+        // https://live.blockcypher.com/btc-testnet/tx/0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb/
+        "0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb",
+        // https://live.blockcypher.com/btc-testnet/tx/1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265/
+        "1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265",
+        // https://live.blockcypher.com/btc-testnet/tx/245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e/
+        "245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e",
+        // https://live.blockcypher.com/btc-testnet/tx/8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c/
+        "8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c",
+        // https://live.blockcypher.com/btc-testnet/tx/15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96/
+        "15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96",
+        // https://live.blockcypher.com/btc-testnet/tx/ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9/
+        "ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9",
+        // https://live.blockcypher.com/btc-testnet/tx/322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37/
+        "322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37",
+        // https://live.blockcypher.com/btc-testnet/tx/db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69/
+        "db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69",
+        // https://live.blockcypher.com/btc-testnet/tx/4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a/
+        "4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a",
+        // https://live.blockcypher.com/btc-testnet/tx/a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1/
+        "a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1",
+        // https://live.blockcypher.com/btc-testnet/tx/2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35/
+        "2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35",
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60",
+        // https://live.blockcypher.com/btc-testnet/tx/303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f/
+        "303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f",
+        // https://live.blockcypher.com/btc-testnet/tx/adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0/
+        "adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0",
+        // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
+        "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
+    ];
+
+    assert_eq!(tx_history_result["total"].as_u64().unwrap(), expected.len() as u64);
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        if tx["tx_hash"].as_str().unwrap() == "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60" {
+            // assert that segwit from address displays correctly
+            assert_eq!(
+                tx["from"][0].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
+            );
+            // assert that legacy to address displays correctly
+            assert_eq!(tx["to"][0].as_str().unwrap(), "mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb");
+            // assert that segwit to address displays correctly
+            assert_eq!(
+                tx["to"][1].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
+            );
+        }
+    }
+
+    //Disable tBTC to enable it in Segwit Mode
+    let rc = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC",
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
+
+    // enable tBTC in Segwit to see that to/from segwit addresses are displayed correctly in tx_history
+    // and that tx_history is retrieved for the segwit address instead of legacy
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "tx_history": true,
+        "address_format": {
+            "format": "segwit",
+        },
+    })))
+    .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5")
+    );
+
+    // Wait till tx_history will not be loaded
+    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
+
+    // let the MarketMaker save the history to the file
+    block_on(Timer::sleep(10.));
+
+    let tx_history = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "coin": "tBTC",
+        "limit": 13,
+    })))
+    .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    log!([tx_history.1]);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e/
+        "17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e",
+        // https://live.blockcypher.com/btc-testnet/tx/f410e82e8c736b92ea6ec59a148533c8a2c4ad50e871a4e85a77e4546f9b2788/
+        "f410e82e8c736b92ea6ec59a148533c8a2c4ad50e871a4e85a77e4546f9b2788",
+        // https://live.blockcypher.com/btc-testnet/tx/54a288d017fd24a5eb30dee3e70b77119ac450b90e7316d9a2a4fa01642ff880/
+        "54a288d017fd24a5eb30dee3e70b77119ac450b90e7316d9a2a4fa01642ff880",
+        // https://live.blockcypher.com/btc-testnet/tx/0ff4d93f358185fbc928be4ddec38cd01241224dc7c09ef297518732e40807d3/
+        "0ff4d93f358185fbc928be4ddec38cd01241224dc7c09ef297518732e40807d3",
+        // https://live.blockcypher.com/btc-testnet/tx/e7a493f0370a36efbd5d8306de32dd6c354412c5ce4c81832648e7f9b91c1d27/
+        "e7a493f0370a36efbd5d8306de32dd6c354412c5ce4c81832648e7f9b91c1d27",
+        // https://live.blockcypher.com/btc-testnet/tx/ba9188ba9cd1ff8abb5af7bc6247b88c6f4cd065f93b8fb196de6a39b6ef178c/
+        "ba9188ba9cd1ff8abb5af7bc6247b88c6f4cd065f93b8fb196de6a39b6ef178c",
+        // https://live.blockcypher.com/btc-testnet/tx/0089a6efa24ace36f0b21956e7a63d8d3185c3cf1b248564b3c6fe0b81e40878/
+        "0089a6efa24ace36f0b21956e7a63d8d3185c3cf1b248564b3c6fe0b81e40878",
+        // https://live.blockcypher.com/btc-testnet/tx/7f888369d0dedd07ea780bb4bc4795554dd80c62de613381630ae7f49370100f/
+        "7f888369d0dedd07ea780bb4bc4795554dd80c62de613381630ae7f49370100f",
+        // https://live.blockcypher.com/btc-testnet/tx/369e59d3036abf1b5b519181d762e7776bcecd96a2f0ba3615edde20c928f8e4/
+        "369e59d3036abf1b5b519181d762e7776bcecd96a2f0ba3615edde20c928f8e4",
+        // https://live.blockcypher.com/btc-testnet/tx/ac4eeb9bc9b776e287b0e15314595d33df8528924b60fb9d4ab57159d5911b9e/
+        "ac4eeb9bc9b776e287b0e15314595d33df8528924b60fb9d4ab57159d5911b9e",
+        // https://live.blockcypher.com/btc-testnet/tx/16bb7653c5bdb359dbe207aad5fd784e8871e777257b2bbd9349c68f10819e6c/
+        "16bb7653c5bdb359dbe207aad5fd784e8871e777257b2bbd9349c68f10819e6c",
+        // https://live.blockcypher.com/btc-testnet/tx/8fe0b51bf5c26ebe45fda29bcf24982423445807097df6ee53726551596dfed4/
+        "8fe0b51bf5c26ebe45fda29bcf24982423445807097df6ee53726551596dfed4",
+        // https://live.blockcypher.com/btc-testnet/tx/3f7421fe2249870083fcc8b1730393542dcb591f36e2a6c9fd3a79388d53264f/
+        "3f7421fe2249870083fcc8b1730393542dcb591f36e2a6c9fd3a79388d53264f",
+    ];
+
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        assert!(
+            expected.contains(&tx["tx_hash"].as_str().unwrap()),
+            "Transaction history must contain expected transactions"
+        );
+        // https://live.blockcypher.com/btc-testnet/tx/17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e/
+        if tx["tx_hash"].as_str().unwrap() == "17505e47435d1522ebf34b48cf60eda5537539c7a13551f4c091c0bc3fd3181e" {
+            // assert that segwit from address displays correctly
+            assert_eq!(
+                tx["from"][0].as_str().unwrap(),
+                "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"
+            );
+            // assert that legacy P2SH to address displays correctly
+            assert_eq!(tx["to"][0].as_str().unwrap(), "2Mw6MLbfd5xrk1Wq785XuGWrpNvEGhHiNU1");
+            // assert that segwit to address displays correctly
+            assert_eq!(
+                tx["to"][1].as_str().unwrap(),
+                "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"
+            );
+        }
     }
 }
 
@@ -6292,7 +6591,7 @@ fn test_update_maker_order_fail() {
     assert!(rc.0.is_success(), "!batch: {}", rc.1);
     log!((rc.1));
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
-    if responses[1]["result"] == Json::from("success") {
+    if responses[1]["result"] == *"success" {
         assert_eq!(responses[0].get("result"), None);
     }
 }
@@ -7343,6 +7642,192 @@ fn test_best_orders_filter_response() {
     block_on(mm_alice.stop()).unwrap();
 }
 
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_best_orders_segwit() {
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+
+    let bob_coins_config = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+    ]);
+
+    let alice_coins_config = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+    ]);
+
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": bob_coins_config,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let electrum = block_on(mm_bob.rpc(json!({
+        "userpass": "pass",
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "address_format":{"format":"segwit"},
+        "mm2": 1,
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    log!({ "enable tBTC: {:?}", electrum });
+    let enable_tbtc_res: Json = json::from_str(&electrum.1).unwrap();
+    let tbtc_segwit_address = enable_tbtc_res["address"].as_str().unwrap();
+
+    let electrum = block_on(mm_bob.rpc(json!({
+        "userpass": "pass",
+        "method": "electrum",
+        "coin": "RICK",
+        "servers": [{"url":"electrum1.cipig.net:10017"},{"url":"electrum2.cipig.net:10017"},{"url":"electrum3.cipig.net:10017"}],
+        "mm2": 1,
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    log!({ "enable RICK: {:?}", electrum });
+    let enable_rick_res: Json = json::from_str(&electrum.1).unwrap();
+    let rick_address = enable_rick_res["address"].as_str().unwrap();
+
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell requests");
+
+    let bob_orders = [
+        // (base, rel, price, volume, min_volume)
+        ("tBTC", "RICK", "0.7", "0.0002", Some("0.00015")),
+        ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015")),
+    ];
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    let mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": alice_coins_config,
+            "seednodes": [fomat!((mm_bob.ip))],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("alice"),
+    )
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
+    }))
+    .unwrap();
+
+    // checking buy and sell best_orders against ("tBTC", "RICK", "0.7", "0.0002", Some("0.00015"))
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "coin": "tBTC",
+        "action": "buy",
+        "volume": "0.0002",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let response: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let best_orders = response.result.get("RICK").unwrap();
+    assert_eq!(1, best_orders.len());
+    assert_eq!(best_orders[0].coin, "RICK");
+    assert_eq!(best_orders[0].address, rick_address);
+
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "coin": "RICK",
+        "action": "sell",
+        "volume": "0.0002",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let response: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let best_orders = response.result.get("tBTC").unwrap();
+    assert_eq!(1, best_orders.len());
+    assert_eq!(best_orders[0].coin, "tBTC");
+    assert_eq!(best_orders[0].address, tbtc_segwit_address);
+
+    // checking buy and sell best_orders against ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015"))
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "coin": "RICK",
+        "action": "buy",
+        "volume": "0.0002",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let response: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let best_orders = response.result.get("tBTC").unwrap();
+    assert_eq!(1, best_orders.len());
+    assert_eq!(best_orders[0].coin, "tBTC");
+    assert_eq!(best_orders[0].address, tbtc_segwit_address);
+
+    let rc = block_on(mm_alice.rpc(json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "coin": "tBTC",
+        "action": "sell",
+        "volume": "0.0002",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let response: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let best_orders = response.result.get("RICK").unwrap();
+    assert_eq!(1, best_orders.len());
+    assert_eq!(best_orders[0].coin, "RICK");
+    assert_eq!(best_orders[0].address, rick_address);
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+}
+
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
     let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
@@ -7483,6 +7968,7 @@ fn test_orderbook_depth() {
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/932
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_mm2_db_migration() {
     let bob_passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
 
@@ -7522,104 +8008,4 @@ fn test_mm2_db_migration() {
         None,
     )
     .unwrap();
-}
-
-// HOWTO
-// 1. Install Firefox.
-// 2. Install wasm-bindgen-cli: cargo install wasm-bindgen-cli
-// 3. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
-// 4. Run WASM_BINDGEN_TEST_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN cargo test --target wasm32-unknown-unknown
-#[cfg(target_arch = "wasm32")]
-mod wasm_bindgen_tests {
-    use super::*;
-    use futures01::Future;
-    use js_sys::Promise;
-    use lazy_static::lazy_static;
-    use wasm_bindgen::prelude::*;
-    use wasm_bindgen_futures::JsFuture;
-    use wasm_bindgen_test::*;
-    use web_sys::console;
-
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    async fn test_swap() {
-        use crate::mm2::lp_swap::{run_maker_swap, run_taker_swap, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
-                                  SwapConfirmationsSettings, TakerSwap, PAYMENT_LOCKTIME};
-        use coins::lp_coininit;
-        use common::mm_ctx::MmCtxBuilder;
-        use common::new_uuid;
-        use common::now_ms;
-        use futures::future::join;
-        use futures::{Future, TryFutureExt};
-
-        let conf_settings = SwapConfirmationsSettings {
-            maker_coin_confs: 0,
-            maker_coin_nota: false,
-            taker_coin_confs: 0,
-            taker_coin_nota: false,
-        };
-        let uuid = new_uuid();
-        let key_pair_taker =
-            key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid")
-                .unwrap();
-        let key_pair_maker =
-            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
-        let conf = json!({
-            "coins":[
-               {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80,"mm2":1},
-               {"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
-            ]
-        });
-        let ctx_taker = MmCtxBuilder::new()
-            .with_conf(conf.clone())
-            .with_secp256k1_key_pair(key_pair_taker)
-            .into_mm_arc();
-        let ctx_maker = MmCtxBuilder::new()
-            .with_conf(conf)
-            .with_secp256k1_key_pair(key_pair_maker)
-            .into_mm_arc();
-        let taker_persistent_pub = (**ctx_taker.secp256k1_key_pair().public()).into();
-        let maker_persistent_pub = (**ctx_maker.secp256k1_key_pair().public()).into();
-
-        let req = json!({
-            "urls":["http://195.201.0.6:8565"],
-            "swap_contract_address":"0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd"
-        });
-        let eth_taker = lp_coininit(&ctx_taker, "ETH", &req).await.unwrap();
-        let jst_taker = lp_coininit(&ctx_taker, "JST", &req).await.unwrap();
-        let eth_maker = lp_coininit(&ctx_maker, "ETH", &req).await.unwrap();
-        let jst_maker = lp_coininit(&ctx_maker, "JST", &req).await.unwrap();
-        let taker_swap = TakerSwap::new(
-            ctx_taker.clone(),
-            [0; 32].into(),
-            1.into(),
-            1.into(),
-            taker_persistent_pub,
-            uuid,
-            None,
-            conf_settings.clone(),
-            eth_taker,
-            jst_taker,
-            PAYMENT_LOCKTIME,
-        );
-
-        let maker_swap = MakerSwap::new(
-            ctx_maker.clone(),
-            [0; 32].into(),
-            1.into(),
-            1.into(),
-            maker_persistent_pub,
-            uuid,
-            None,
-            conf_settings,
-            eth_maker,
-            jst_maker,
-            PAYMENT_LOCKTIME,
-        );
-
-        let taker_swap_fut = run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx_taker);
-        let maker_swap_fut = run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx_maker);
-        join(taker_swap_fut, maker_swap_fut).await;
-    }
 }

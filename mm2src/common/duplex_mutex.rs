@@ -1,11 +1,10 @@
 use super::executor::Timer;
 use super::now_ms;
-use atomic::Atomic;
 use parking_lot_core::SpinWait;
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[must_use = "if unused the DuplexMutexGuard will immediately unlock"]
@@ -38,7 +37,7 @@ impl<T: fmt::Display> fmt::Display for DuplexMutexGuard<'_, T> {
 }
 
 struct Impl<T> {
-    locked: Atomic<usize>,
+    locked: AtomicUsize,
     data: UnsafeCell<T>,
 }
 
@@ -145,7 +144,7 @@ impl<T> DuplexMutex<T> {
     pub fn new(v: T) -> DuplexMutex<T> {
         DuplexMutex {
             pimpl: Arc::new(Impl {
-                locked: Atomic::new(0),
+                locked: AtomicUsize::new(0),
                 data: UnsafeCell::new(v),
             }),
         }

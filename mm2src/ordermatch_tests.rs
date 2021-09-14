@@ -45,6 +45,8 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
@@ -78,6 +80,8 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
@@ -111,6 +115,8 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
@@ -144,6 +150,8 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
@@ -177,6 +185,8 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
@@ -210,11 +220,87 @@ fn test_match_maker_order_and_taker_request() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let actual = maker.match_with_request(&request);
     let expected = OrderMatchResult::Matched((1.into(), 1.into()));
     assert_eq!(expected, actual);
+
+    // The following Taker request has not to be matched since the resulted base amount it greater than `max_base_vol`.
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1041#issuecomment-901863864
+    let maker = MakerOrder {
+        max_base_vol: "0.2928826881884105".into(),
+        min_base_vol: 0.into(),
+        price: "2643.01935664".into(),
+        created_at: now_ms(),
+        updated_at: None,
+        base: "ETH-BEP20".to_owned(),
+        rel: "KMD".to_owned(),
+        matches: HashMap::new(),
+        started_swaps: vec![],
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let request = TakerRequest {
+        base: "KMD".to_owned(),
+        rel: "ETH-BEP20".to_owned(),
+        base_amount: "774.205645538427044180416545".into(),
+        rel_amount: "0.2928826881884105".into(),
+        action: TakerAction::Sell,
+        uuid: Uuid::new_v4(),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+    let actual = maker.match_with_request(&request);
+    assert_eq!(actual, OrderMatchResult::NotMatched);
+
+    // Though the Taker's rel amount is less than the Makers' min base volume '2',
+    // the Maker's price is chosen to calculate the result amounts, so we have:
+    // `base_amount = taker_base_amount/maker_price = 30/10 = 3`
+    // `rel_amount = taker_base_amount = 30`.
+    // The order should be matched.
+    let maker = MakerOrder {
+        max_base_vol: "3".into(),
+        min_base_vol: "2".into(),
+        price: 10.into(),
+        created_at: now_ms(),
+        updated_at: None,
+        base: "BASE".to_owned(),
+        rel: "REL".to_owned(),
+        matches: HashMap::new(),
+        started_swaps: vec![],
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let request = TakerRequest {
+        base: "REL".to_owned(),
+        rel: "BASE".to_owned(),
+        base_amount: "30".into(),
+        rel_amount: "1.5".into(),
+        action: TakerAction::Sell,
+        uuid: Uuid::new_v4(),
+        sender_pubkey: H256Json::default(),
+        dest_pub_key: H256Json::default(),
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+    let actual = maker.match_with_request(&request);
+    let expected_base_amount = MmNumber::from(3);
+    let expected_rel_amount = MmNumber::from(30);
+    let expected = OrderMatchResult::Matched((expected_base_amount, expected_rel_amount));
+    assert_eq!(actual, expected);
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
@@ -276,6 +362,8 @@ fn test_maker_order_available_amount() {
             action: TakerAction::Buy,
             match_by: MatchBy::Any,
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -287,6 +375,8 @@ fn test_maker_order_available_amount() {
             maker_order_uuid: Uuid::new_v4(),
             taker_order_uuid: Uuid::new_v4(),
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         connect: None,
         connected: None,
@@ -304,6 +394,8 @@ fn test_maker_order_available_amount() {
             action: TakerAction::Buy,
             match_by: MatchBy::Any,
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -315,6 +407,8 @@ fn test_maker_order_available_amount() {
             maker_order_uuid: Uuid::new_v4(),
             taker_order_uuid: Uuid::new_v4(),
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         connect: None,
         connected: None,
@@ -341,6 +435,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -363,6 +459,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -378,6 +476,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -400,6 +500,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -415,6 +517,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -437,6 +541,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -452,6 +558,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Sell,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -474,6 +582,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -489,6 +599,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -511,6 +623,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -526,6 +640,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -548,6 +664,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -563,6 +681,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -585,6 +705,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -600,6 +722,8 @@ fn test_taker_match_reserved() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -622,6 +746,8 @@ fn test_taker_match_reserved() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -641,6 +767,8 @@ fn test_taker_match_reserved() {
             dest_pub_key: H256Json::default(),
             match_by: MatchBy::Any,
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         matches: HashMap::new(),
         order_type: OrderType::GoodTillCancelled,
@@ -659,6 +787,8 @@ fn test_taker_match_reserved() {
         sender_pubkey: H256Json::default(),
         dest_pub_key: H256Json::default(),
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -677,6 +807,8 @@ fn test_taker_order_cancellable() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let order = TakerOrder {
@@ -702,6 +834,8 @@ fn test_taker_order_cancellable() {
         action: TakerAction::Buy,
         match_by: MatchBy::Any,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let mut order = TakerOrder {
@@ -726,6 +860,8 @@ fn test_taker_order_cancellable() {
             maker_order_uuid: Uuid::new_v4(),
             taker_order_uuid: Uuid::new_v4(),
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         connect: TakerConnect {
             sender_pubkey: H256Json::default(),
@@ -807,6 +943,8 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             sender_pubkey: H256Json::default(),
             match_by: MatchBy::Any,
             conf_settings: None,
+            base_protocol_info: None,
+            rel_protocol_info: None,
         },
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
@@ -826,8 +964,8 @@ fn test_cancel_by_single_coin() {
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "RICK".into() })).unwrap();
     block_on(rx.take(2).collect::<Vec<_>>());
@@ -847,8 +985,8 @@ fn test_cancel_by_pair() {
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Pair {
         base: "RICK".into(),
@@ -872,8 +1010,8 @@ fn test_cancel_by_all() {
     let connection = Connection::open_in_memory().unwrap();
     let _ = ctx.sqlite_connection.pin(Mutex::new(connection));
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(()));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(()));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::All)).unwrap();
     block_on(rx.take(3).collect::<Vec<_>>());
@@ -901,6 +1039,8 @@ fn test_taker_order_match_by() {
         action: TakerAction::Buy,
         match_by: MatchBy::Orders(not_matching_uuids),
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     let mut order = TakerOrder {
@@ -923,6 +1063,8 @@ fn test_taker_order_match_by() {
         maker_order_uuid: Uuid::new_v4(),
         taker_order_uuid: uuid,
         conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -1359,7 +1501,7 @@ fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     ctx.secp256k1_key_pair
         .pin(key_pair_from_seed("passphrase").unwrap())
         .unwrap();
-    let secret = (&*ctx.secp256k1_key_pair().private().secret).clone();
+    let secret = *(&*ctx.secp256k1_key_pair().private().secret);
     let pubkey = hex::encode(&**ctx.secp256k1_key_pair().public());
     (ctx, pubkey, secret)
 }
@@ -1391,7 +1533,7 @@ fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: Str
 fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
     let key_pair = key_pair_from_seed(passphrase).unwrap();
     let pubkey = hex::encode(&**key_pair.public());
-    let secret = (&*key_pair.private().secret).clone();
+    let secret = *(&*key_pair.private().secret);
     (pubkey, secret)
 }
 
@@ -1483,7 +1625,7 @@ fn test_process_get_orderbook_request_limit() {
     let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
 
     let orders = make_random_orders(
-        pubkey.clone(),
+        pubkey,
         &secret,
         "RICK".into(),
         "MORTY".into(),
@@ -1527,7 +1669,7 @@ fn test_request_and_fill_orderbook() {
         .iter()
         .map(|(pubkey, secret)| {
             let orders: Vec<_> =
-                make_random_orders(pubkey.clone(), &secret, "RICK".into(), "MORTY".into(), ORDERS_NUMBER)
+                make_random_orders(pubkey.clone(), secret, "RICK".into(), "MORTY".into(), ORDERS_NUMBER)
                     .into_iter()
                     .map(|order| (order.uuid, order))
                     .collect();
@@ -1624,7 +1766,7 @@ fn test_request_and_fill_orderbook() {
         let pubkey_state = orderbook
             .pubkeys_state
             .get(&pubkey)
-            .expect(&format!("!pubkey_state.get() {} pubkey", pubkey));
+            .unwrap_or_else(|| panic!("!pubkey_state.get() {} pubkey", pubkey));
 
         let expected = orders
             .iter()
@@ -1635,7 +1777,7 @@ fn test_request_and_fill_orderbook() {
         let root = pubkey_state
             .trie_roots
             .get(&rick_morty_pair)
-            .expect(&format!("!pubkey_state.trie_roots.get() {}", rick_morty_pair));
+            .unwrap_or_else(|| panic!("!pubkey_state.trie_roots.get() {}", rick_morty_pair));
 
         // check if the root contains only expected orders
         let trie = TrieDB::<Layout>::new(&orderbook.memory_db, root).expect("!TrieDB::new()");
@@ -1959,8 +2101,8 @@ fn test_taker_request_can_match_with_uuid() {
 fn test_orderbook_insert_or_update_order() {
     let (_, pubkey, secret) = make_ctx_for_tests();
     let mut orderbook = Orderbook::default();
-    let order = make_random_orders(pubkey.clone(), &secret, "C1".into(), "C2".into(), 1).remove(0);
-    orderbook.insert_or_update_order_update_trie(order.clone());
+    let order = make_random_orders(pubkey, &secret, "C1".into(), "C2".into(), 1).remove(0);
+    orderbook.insert_or_update_order_update_trie(order);
 }
 
 fn pair_trie_root_by_pub(ctx: &MmArc, pubkey: &str, pair: &str) -> H64 {
@@ -2207,40 +2349,36 @@ fn test_orderbook_pubkey_sync_request_relay() {
 
 #[test]
 fn test_trie_diff_avoid_cycle_on_insertion() {
-    let mut history = TrieDiffHistory::<String, String>::default();
+    let mut history = TrieDiffHistory::<String, String> {
+        inner: TimeCache::new(Duration::from_secs(3600)),
+    };
     history.insert_new_diff([1; 8], TrieDiff {
         delta: vec![],
         next_root: [2; 8],
     });
-
     history.insert_new_diff([2; 8], TrieDiff {
         delta: vec![],
         next_root: [3; 8],
     });
-
     history.insert_new_diff([3; 8], TrieDiff {
         delta: vec![],
         next_root: [4; 8],
     });
-
     history.insert_new_diff([4; 8], TrieDiff {
         delta: vec![],
         next_root: [5; 8],
     });
-
     history.insert_new_diff([5; 8], TrieDiff {
         delta: vec![],
         next_root: [2; 8],
     });
 
-    let expected = TrieDiffHistory {
-        inner: HashMap::from_iter(iter::once(([1; 8], TrieDiff {
-            delta: vec![],
-            next_root: [2; 8],
-        }))),
-    };
+    let expected = HashMap::from_iter(iter::once(([1u8; 8], TrieDiff {
+        delta: vec![],
+        next_root: [2; 8],
+    })));
 
-    assert_eq!(expected, history);
+    assert_eq!(expected, history.inner.as_hash_map());
 }
 
 #[test]
@@ -2294,7 +2432,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
 
     let SyncPubkeyOrderbookStateRes {
         mut pair_orders_diff, ..
-    } = block_on(process_sync_pubkey_orderbook_state(ctx.clone(), pubkey, roots))
+    } = block_on(process_sync_pubkey_orderbook_state(ctx, pubkey, roots))
         .expect("!process_sync_pubkey_orderbook_state")
         .expect("Expected MORTY:RICK delta, returned None");
 
@@ -2405,6 +2543,172 @@ fn test_remove_and_purge_pubkey_pair_orders() {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut orderbook = block_on(ordermatch_ctx.orderbook.lock());
 
-    remove_and_purge_pubkey_pair_orders(&mut orderbook, &pubkey, &rick_morty_pair);
+    remove_pubkey_pair_orders(&mut orderbook, &pubkey, &rick_morty_pair);
     check_if_orderbook_contains_only(&orderbook, &pubkey, &rick_kmd_orders);
+}
+
+#[test]
+fn test_orderbook_sync_trie_diff_time_cache() {
+    let (ctx_bob, pubkey_bob, secret_bob) = make_ctx_for_tests();
+    let rick_morty_orders = make_random_orders(pubkey_bob.clone(), &secret_bob, "RICK".into(), "MORTY".into(), 15);
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+
+    for order in &rick_morty_orders[..5] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    std::thread::sleep(Duration::from_secs(3));
+
+    for order in &rick_morty_orders[5..10] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
+    assert_eq!(rick_morty_history_bob.len(), 5);
+
+    // alice has an outdated state, for which bob doesn't have history anymore as it's expired
+    let (ctx_alice, ..) = make_ctx_for_tests();
+
+    for order in &rick_morty_orders[..3] {
+        block_on(insert_or_update_order(&ctx_alice, order.clone()));
+    }
+
+    let ordermatch_ctx_alice = OrdermatchContext::from_ctx(&ctx_alice).unwrap();
+    let mut orderbook_alice = block_on(ordermatch_ctx_alice.orderbook.lock());
+    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
+    let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
+
+    let bob_history_on_sync = DeltaOrFullTrie::from_history(
+        &rick_morty_history_bob,
+        *alice_root,
+        *bob_root,
+        &orderbook_bob.memory_db,
+    )
+    .unwrap();
+
+    let full_trie = match bob_history_on_sync {
+        DeltaOrFullTrie::FullTrie(trie) => trie,
+        _ => panic!("Expected DeltaOrFullTrie::FullTrie"),
+    };
+
+    let new_alice_root = process_pubkey_full_trie(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, full_trie);
+
+    assert_eq!(new_alice_root, *bob_root);
+
+    drop(orderbook_bob);
+    drop(orderbook_alice);
+
+    for order in &rick_morty_orders[10..] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let mut orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+
+    orderbook_bob.remove_order_trie_update(rick_morty_orders[12].uuid);
+
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
+
+    let mut orderbook_alice = block_on(ordermatch_ctx_alice.orderbook.lock());
+    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
+    let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
+
+    let bob_history_on_sync = DeltaOrFullTrie::from_history(
+        &rick_morty_history_bob,
+        *alice_root,
+        *bob_root,
+        &orderbook_bob.memory_db,
+    )
+    .unwrap();
+
+    // Check that alice gets orders from history this time
+    let trie_delta = match bob_history_on_sync {
+        DeltaOrFullTrie::Delta(delta) => delta,
+        _ => panic!("Expected DeltaOrFullTrie::Delta"),
+    };
+
+    let new_alice_root = process_trie_delta(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, trie_delta);
+    assert_eq!(new_alice_root, *bob_root);
+}
+
+#[test]
+fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() {
+    let (ctx_bob, pubkey_bob, secret_bob) = make_ctx_for_tests();
+    let rick_morty_orders = make_random_orders(pubkey_bob.clone(), &secret_bob, "RICK".into(), "MORTY".into(), 15);
+
+    let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
+
+    for order in &rick_morty_orders[..5] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    // After 3 seconds RICK:MORTY pair trie state history will time out and will be empty
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Insert some more orders to remove expired timecache RICK:MORTY key
+    for order in &rick_morty_orders[5..10] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    // Only the last inserted 5 orders are found
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        5
+    );
+
+    drop(orderbook_bob);
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    // On inserting 5 more orders expiration for RICK:MORTY pair trie state history will be reset
+    for order in &rick_morty_orders[10..] {
+        block_on(insert_or_update_order(&ctx_bob, order.clone()));
+    }
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        10
+    );
+
+    drop(orderbook_bob);
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
+    let orderbook_bob = block_on(ordermatch_ctx_bob.orderbook.lock());
+    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+
+    // After 3 seconds from inserting orders number 6-10 these orders have not expired due to updated expiration on inserting orders 11-15
+    assert_eq!(
+        bob_state
+            .order_pairs_trie_state_history
+            .get(&rick_morty_pair)
+            .unwrap()
+            .len(),
+        10
+    );
 }

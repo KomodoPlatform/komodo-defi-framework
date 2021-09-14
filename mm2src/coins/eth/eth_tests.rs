@@ -682,7 +682,7 @@ fn test_nonce_lock() {
     // Waiting for NONCE_LOCK… might not appear at all if waiting takes less than 0.5 seconds
     // but all transactions are sent successfully still
     // wait_for_log(&ctx.log, 1.1, &|line| line.contains("Waiting for NONCE_LOCK…")));
-    wait_for_log(&ctx.log, 1.1, &|line| line.contains("get_addr_nonce…")).unwrap();
+    block_on(wait_for_log(&ctx, 1.1, |line| line.contains("get_addr_nonce…"))).unwrap();
 }
 
 #[test]
@@ -756,11 +756,18 @@ fn get_sender_trade_preimage() {
 
 #[test]
 fn get_erc20_sender_trade_preimage() {
+    const APPROVE_GAS_LIMIT: u64 = 60_000;
     static mut ALLOWANCE: u64 = 0;
+    static mut ESTIMATE_GAS_CALLED: bool = false;
+
     EthCoin::allowance
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(unsafe { ALLOWANCE.into() }))));
 
     EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
+    EthCoinImpl::estimate_gas.mock_safe(|_, _| {
+        unsafe { ESTIMATE_GAS_CALLED = true };
+        MockResult::Return(Box::new(futures01::future::ok(APPROVE_GAS_LIMIT.into())))
+    });
 
     fn expected_trade_fee(gas_limit: u64, gas_price: u64) -> TradeFee {
         let amount = u256_to_big_decimal((gas_limit * gas_price).into(), 18).expect("!u256_to_big_decimal");
@@ -788,6 +795,7 @@ fn get_erc20_sender_trade_preimage() {
         .wait()
         .expect("!get_sender_trade_fee");
     log!([actual.amount.to_decimal()]);
+    unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(actual, expected_trade_fee(300_000, GAS_PRICE));
 
     // value is greater than allowance
@@ -797,9 +805,13 @@ fn get_erc20_sender_trade_preimage() {
         .get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap)
         .wait()
         .expect("!get_sender_trade_fee");
+    unsafe {
+        assert!(ESTIMATE_GAS_CALLED);
+        ESTIMATE_GAS_CALLED = false;
+    }
     assert_eq!(
         actual,
-        expected_trade_fee(350_000, GAS_PRICE_APPROXIMATION_ON_START_SWAP)
+        expected_trade_fee(360_000, GAS_PRICE_APPROXIMATION_ON_START_SWAP)
     );
 
     // value is allowed
@@ -809,6 +821,7 @@ fn get_erc20_sender_trade_preimage() {
         .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue)
         .wait()
         .expect("!get_sender_trade_fee");
+    unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(
         actual,
         expected_trade_fee(300_000, GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE)
@@ -821,9 +834,13 @@ fn get_erc20_sender_trade_preimage() {
         .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage)
         .wait()
         .expect("!get_sender_trade_fee");
+    unsafe {
+        assert!(ESTIMATE_GAS_CALLED);
+        ESTIMATE_GAS_CALLED = false;
+    }
     assert_eq!(
         actual,
-        expected_trade_fee(350_000, GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE)
+        expected_trade_fee(360_000, GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE)
     );
 }
 
@@ -988,9 +1005,12 @@ fn validate_dex_fee_invalid_sender_erc() {
 }
 
 fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
-    let raw_pubkey = tx.public.unwrap();
-    let secp_public = PublicKey::parse_slice(&raw_pubkey, None).unwrap();
-    secp_public.serialize_compressed()
+    let tx_pubkey = tx.public.unwrap();
+    let mut raw_pubkey = [0; 65];
+    raw_pubkey[0] = 0x04;
+    raw_pubkey[1..].copy_from_slice(&tx_pubkey);
+    let secp_public = PublicKey::from_slice(&raw_pubkey).unwrap();
+    secp_public.serialize()
 }
 
 #[test]

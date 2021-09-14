@@ -82,6 +82,7 @@ pub const PAYMENT_STATE_SENT: u8 = 1;
 const _PAYMENT_STATE_SPENT: u8 = 2;
 const _PAYMENT_STATE_REFUNDED: u8 = 3;
 const GAS_PRICE_PERCENT: u64 = 10;
+const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
 /// Take into account that the dynamic fee may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
@@ -94,9 +95,6 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE: u64 = 5;
 /// - it may increase by 2% until a swap is started;
 /// - it may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
-
-const APPROVE_GAS_LIMIT: u64 = 50_000;
-const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -350,9 +348,9 @@ impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
     fn store_eth_traces(&self, ctx: &MmArc, traces: &SavedTraces) {
         let content = json::to_vec(traces).unwrap();
-        let tmp_file = format!("{}.tmp", self.eth_traces_path(&ctx).display());
+        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.eth_traces_path(&ctx)).unwrap();
+        std::fs::rename(tmp_file, self.eth_traces_path(ctx)).unwrap();
     }
 
     /// Store ETH traces to local DB
@@ -373,9 +371,9 @@ impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
     fn store_erc20_events(&self, ctx: &MmArc, events: &SavedErc20Events) {
         let content = json::to_vec(events).unwrap();
-        let tmp_file = format!("{}.tmp", self.erc20_events_path(&ctx).display());
+        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.erc20_events_path(&ctx)).unwrap();
+        std::fs::rename(tmp_file, self.erc20_events_path(ctx)).unwrap();
     }
 
     /// Store ERC20 events to local DB
@@ -418,7 +416,7 @@ impl EthCoinImpl {
     fn get_gas_price(&self) -> Web3RpcFut<U256> {
         let fut = if let Some(url) = &self.gas_station_url {
             Either01::A(
-                GasStationData::get_gas_price(&url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
+                GasStationData::get_gas_price(url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
             )
         } else {
             Either01::B(self.web3.eth().gas_price().map_to_mm_fut(Web3RpcError::from))
@@ -1219,8 +1217,6 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> { addr_from_pubkey_str(pubkey) }
-
     fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
@@ -1282,11 +1278,11 @@ async fn sign_and_send_transaction_impl(
     let gas_price = try_s!(coin.get_gas_price().compat().await);
     let tx = UnSignedEthTx {
         nonce,
-        value,
-        action,
-        data,
-        gas,
         gas_price,
+        gas,
+        action,
+        value,
+        data,
     };
     let signed = tx.sign(coin.key_pair.secret(), coin.chain_id);
     let bytes = web3::types::Bytes(rlp::encode(&signed).to_vec());
@@ -1393,17 +1389,17 @@ impl EthCoin {
                 let arc = self.clone();
                 Box::new(allowance_fut.and_then(move |allowed| -> EthTxFut {
                     if allowed < value {
-                        let balance_f = arc.my_balance();
-                        Box::new(balance_f.map_err(|e| ERRL!("{}", e)).and_then(move |balance| {
-                            arc.approve(swap_contract_address, balance).and_then(move |_approved| {
-                                arc.sign_and_send_transaction(
-                                    0.into(),
-                                    Action::Call(swap_contract_address),
-                                    data,
-                                    U256::from(150_000),
-                                )
-                            })
-                        }))
+                        Box::new(
+                            arc.approve(swap_contract_address, U256::max_value())
+                                .and_then(move |_approved| {
+                                    arc.sign_and_send_transaction(
+                                        0.into(),
+                                        Action::Call(swap_contract_address),
+                                        data,
+                                        U256::from(150_000),
+                                    )
+                                }),
+                        )
                     } else {
                         Box::new(arc.sign_and_send_transaction(
                             0.into(),
@@ -1594,6 +1590,34 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    /// Estimates how much gas is necessary to allow the contract call to complete.
+    /// `contract_addr` can be a ERC20 token address or any other contract address.
+    ///
+    /// # Important
+    ///
+    /// Don't use this method to estimate gas for a withdrawal of `ETH` coin.
+    /// For more details, see `withdraw_impl`.
+    ///
+    /// Also, note that the contract call has to be initiated by my wallet address,
+    /// because [`CallRequest::from`] is set to [`EthCoinImpl::my_address`].
+    fn estimate_gas_for_contract_call(&self, contract_addr: Address, call_data: Bytes) -> Web3RpcFut<U256> {
+        let coin = self.clone();
+        Box::new(coin.get_gas_price().and_then(move |gas_price| {
+            let eth_value = U256::zero();
+            let estimate_gas_req = CallRequest {
+                value: Some(eth_value),
+                data: Some(call_data),
+                from: Some(coin.my_address),
+                to: contract_addr,
+                gas: None,
+                // gas price must be supplied because some smart contracts base their
+                // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
+                gas_price: Some(gas_price),
+            };
+            coin.estimate_gas(estimate_gas_req).map_to_mm_fut(Web3RpcError::from)
+        }))
+    }
+
     fn eth_balance(&self) -> BalanceFut<U256> {
         Box::new(
             self.web3
@@ -1649,18 +1673,27 @@ impl EthCoin {
     }
 
     fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
-        match &self.coin_type {
-            EthCoinType::Eth => panic!(),
-            EthCoinType::Erc20 {
-                platform: _,
-                token_addr,
-            } => {
-                let function = try_fus!(ERC20_CONTRACT.function("approve"));
-                let data = try_fus!(function.encode_input(&[Token::Address(spender), Token::Uint(amount),]));
+        let coin = self.clone();
+        let fut = async move {
+            let token_addr = match coin.coin_type {
+                EthCoinType::Eth => return ERR!("'approve' is expected to be call for ERC20 coins only"),
+                EthCoinType::Erc20 { token_addr, .. } => token_addr,
+            };
+            let function = try_s!(ERC20_CONTRACT.function("approve"));
+            let data = try_s!(function.encode_input(&[Token::Address(spender), Token::Uint(amount)]));
 
-                self.sign_and_send_transaction(0.into(), Action::Call(*token_addr), data, U256::from(APPROVE_GAS_LIMIT))
-            },
-        }
+            let gas_limit = try_s!(
+                coin.estimate_gas_for_contract_call(token_addr, Bytes::from(data.clone()))
+                    .compat()
+                    .await
+            );
+
+            coin.sign_and_send_transaction(0.into(), Action::Call(token_addr), data, gas_limit)
+                .compat()
+                .await
+                .map_err(|e| ERRL!("{}", e))
+        };
+        Box::new(fut.boxed().compat())
     }
 
     /// Gets `PaymentSent` events from etomic swap smart contract since `from_block`
@@ -1875,7 +1908,7 @@ impl EthCoin {
                 break;
             };
             {
-                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+                let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
                 let coins = coins_ctx.coins.lock().await;
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
@@ -1896,7 +1929,7 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_events = match self.load_saved_erc20_events(&ctx) {
+            let mut saved_events = match self.load_saved_erc20_events(ctx) {
                 Some(events) => events,
                 None => SavedErc20Events {
                     events: vec![],
@@ -1977,7 +2010,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_erc20_events(&ctx, &saved_events);
+                self.store_erc20_events(ctx, &saved_events);
             }
 
             if current_block > saved_events.latest_block {
@@ -2036,14 +2069,14 @@ impl EthCoin {
                 saved_events.events.extend(from_events_after_latest);
                 saved_events.events.extend(to_events_after_latest);
                 saved_events.latest_block = current_block;
-                self.store_erc20_events(&ctx, &saved_events);
+                self.store_erc20_events(ctx, &saved_events);
             }
 
             let all_events: HashMap<_, _> = saved_events
                 .events
                 .iter()
                 .filter(|e| e.block_number.is_some() && e.transaction_hash.is_some() && !e.is_removed())
-                .map(|e| (e.transaction_hash.clone().unwrap(), e))
+                .map(|e| (e.transaction_hash.unwrap(), e))
                 .collect();
             let mut all_events: Vec<_> = all_events.into_iter().map(|(_, log)| log).collect();
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
@@ -2144,7 +2177,7 @@ impl EthCoin {
                     },
                 };
                 let fee_coin = match &self.coin_type {
-                    EthCoinType::Eth => &self.ticker(),
+                    EthCoinType::Eth => self.ticker(),
                     EthCoinType::Erc20 { platform, .. } => platform.as_str(),
                 };
                 let fee_details = match receipt {
@@ -2209,7 +2242,7 @@ impl EthCoin {
                         b.block_height.cmp(&a.block_height)
                     }
                 });
-                if let Err(e) = self.save_history_to_file(&ctx, existing_history).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history).compat().await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -2253,7 +2286,7 @@ impl EthCoin {
                 break;
             };
             {
-                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+                let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
                 let coins = coins_ctx.coins.lock().await;
                 if !coins.contains_key(&self.ticker) {
                     ctx.log.log("", &[&"tx_history", &self.ticker], "Loop stopped");
@@ -2274,7 +2307,7 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_traces = match self.load_saved_traces(&ctx) {
+            let mut saved_traces = match self.load_saved_traces(ctx) {
                 Some(traces) => traces,
                 None => SavedTraces {
                     traces: vec![],
@@ -2366,7 +2399,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_eth_traces(&ctx, &saved_traces);
+                self.store_eth_traces(ctx, &saved_traces);
             }
 
             if current_block > saved_traces.latest_block {
@@ -2424,7 +2457,7 @@ impl EthCoin {
                 saved_traces.traces.extend(to_traces_after_latest);
                 saved_traces.latest_block = current_block;
 
-                self.store_eth_traces(&ctx, &saved_traces);
+                self.store_eth_traces(ctx, &saved_traces);
             }
             saved_traces.traces.sort_by(|a, b| b.block_number.cmp(&a.block_number));
             for trace in saved_traces.traces {
@@ -2500,7 +2533,7 @@ impl EthCoin {
                     },
                 };
                 let fee_coin = match &self.coin_type {
-                    EthCoinType::Eth => &self.ticker(),
+                    EthCoinType::Eth => self.ticker(),
                     EthCoinType::Erc20 { platform, .. } => platform.as_str(),
                 };
                 let fee_details: Option<EthTxFeeDetails> = match receipt {
@@ -2579,7 +2612,7 @@ impl EthCoin {
                     }
                 });
 
-                if let Err(e) = self.save_history_to_file(&ctx, existing_history.clone()).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).compat().await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -2800,7 +2833,7 @@ impl MmCoin for EthCoin {
                     // this gas_limit includes gas for `ethPayment` and `senderRefund` contract calls
                     U256::from(300_000)
                 },
-                EthCoinType::Erc20 { .. } => {
+                EthCoinType::Erc20 { token_addr, .. } => {
                     let value = match value {
                         TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
                             wei_from_big_decimal(&value, coin.decimals)?
@@ -2808,8 +2841,20 @@ impl MmCoin for EthCoin {
                     };
                     let allowed = coin.allowance(coin.swap_contract_address).compat().await?;
                     if allowed < value {
+                        // estimate gas for the `approve` contract call
+
+                        // Pass a dummy spender. Let's use `my_address`.
+                        let spender = coin.my_address;
+                        let approve_function = ERC20_CONTRACT.function("approve")?;
+                        let approve_data =
+                            approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
+                        let approve_gas_limit = coin
+                            .estimate_gas_for_contract_call(token_addr, Bytes::from(approve_data))
+                            .compat()
+                            .await?;
+
                         // this gas_limit includes gas for `approve`, `erc20Payment` and `senderRefund` contract calls
-                        U256::from(300_000 + APPROVE_GAS_LIMIT)
+                        U256::from(300_000) + approve_gas_limit
                     } else {
                         // this gas_limit includes gas for `erc20Payment` and `senderRefund` contract calls
                         U256::from(300_000)
@@ -2918,6 +2963,10 @@ impl MmCoin for EthCoin {
     }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { None }
+
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
 
 pub trait TryToAddress {
@@ -2938,8 +2987,8 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
 }
 
 pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
-    let pubkey = try_s!(PublicKey::parse_slice(pubkey, None).map_err(|e| ERRL!("{:?}", e)));
-    let eth_public = Public::from(&pubkey.serialize()[1..65]);
+    let pubkey = try_s!(PublicKey::from_slice(pubkey).map_err(|e| ERRL!("{:?}", e)));
+    let eth_public = Public::from(&pubkey.serialize_uncompressed()[1..65]);
     Ok(public_to_address(&eth_public))
 }
 

@@ -1,15 +1,15 @@
+use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerAction,
+                                TakerOrder};
 /// This module contains code to work with my_orders table in MM2 SQLite DB
-use crate::mm2::lp_ordermatch::MyOrdersFilter;
-use crate::mm2::lp_ordermatch::{MakerOrder, TakerAction, TakerOrder};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use common::now_ms;
 use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use common::{now_ms, PagingOptions};
 use sql_builder::SqlBuilder;
 use std::convert::TryInto;
 use uuid::Uuid;
 
-use super::database_common::{offset_by_uuid, PagingOptions};
+use super::database_common::offset_by_uuid;
 
 const MY_ORDERS_TABLE: &str = "my_orders";
 
@@ -176,29 +176,6 @@ fn apply_my_orders_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, Stri
         params.push((":status", status.clone()));
     }
 }
-#[derive(Debug, Default)]
-pub struct RecentOrdersSelectSqlResult {
-    /// Orders matching the query
-    pub result: Vec<OrderSqlRow>,
-    /// Total count of orders matching the query
-    pub total_count: usize,
-    /// The number of skipped orders
-    pub skipped: usize,
-}
-#[derive(Debug, Serialize)]
-pub struct OrderSqlRow {
-    pub uuid: String,
-    pub order_type: String,
-    initial_action: String,
-    base: String,
-    rel: String,
-    price: f64,
-    volume: f64,
-    created_at: i64,
-    last_updated: i64,
-    was_taker: i8,
-    status: String,
-}
 
 #[derive(Debug)]
 pub enum SelectRecentOrdersUuidsErr {
@@ -222,7 +199,7 @@ pub fn select_orders_by_filter(
     conn: &Connection,
     filter: &MyOrdersFilter,
     paging_options: Option<&PagingOptions>,
-) -> SqlResult<RecentOrdersSelectSqlResult, SelectRecentOrdersUuidsErr> {
+) -> SqlResult<RecentOrdersSelectResult, SelectRecentOrdersUuidsErr> {
     let mut query_builder = SqlBuilder::select_from(MY_ORDERS_TABLE);
     let mut params = vec![];
     apply_my_orders_filter(&mut query_builder, &mut params, filter);
@@ -238,7 +215,7 @@ pub fn select_orders_by_filter(
     let total_count: isize = conn.query_row_named(&count_query, params_as_trait.as_slice(), |row| row.get(0))?;
     let total_count = total_count.try_into().expect("COUNT should always be >= 0");
     if total_count == 0 {
-        return Ok(RecentOrdersSelectSqlResult::default());
+        return Ok(RecentOrdersSelectResult::default());
     }
 
     // query the orders finally
@@ -273,9 +250,9 @@ pub fn select_orders_by_filter(
     let uuids_query = query_builder.sql().expect("SQL query builder should never fail here");
     debug!("Trying to execute SQL query {} with params {:?}", uuids_query, params);
     let mut stmt = conn.prepare(&uuids_query)?;
-    let result = stmt
+    let orders = stmt
         .query_map_named(params_as_trait.as_slice(), |row| {
-            Ok(OrderSqlRow {
+            Ok(FilteringOrder {
                 uuid: row.get(0)?,
                 order_type: row.get(1)?,
                 initial_action: row.get(2)?,
@@ -289,10 +266,10 @@ pub fn select_orders_by_filter(
                 status: row.get(10)?,
             })
         })?
-        .collect::<SqlResult<Vec<OrderSqlRow>>>()?;
+        .collect::<SqlResult<Vec<FilteringOrder>>>()?;
 
-    Ok(RecentOrdersSelectSqlResult {
-        result,
+    Ok(RecentOrdersSelectResult {
+        orders,
         total_count,
         skipped,
     })

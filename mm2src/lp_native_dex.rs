@@ -18,7 +18,7 @@
 //
 
 use coins::register_balance_update_handler;
-use mm2_libp2p::{spawn_gossipsub, NodeType};
+use mm2_libp2p::{spawn_gossipsub, NodeType, RelayAddress};
 use rand::rngs::SmallRng;
 use rand::{random, Rng, SeedableRng};
 use serde_json::{self as json};
@@ -30,9 +30,9 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
-use crate::mm2::lp_network::{p2p_event_process_loop, P2PContext};
-use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, lp_ordermatch_loop, orders_kick_start,
-                                BalanceUpdateOrdermatchHandler};
+use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, P2PContext};
+use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, lp_ordermatch_loop,
+                                orders_kick_start, BalanceUpdateOrdermatchHandler};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -47,11 +47,11 @@ const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ip
 const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
 
 #[cfg(target_arch = "wasm32")]
-fn default_seednodes(netid: u16) -> Vec<String> {
+fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     if netid == 7777 {
         NETID_7777_SEEDNODES
             .iter()
-            .map(|dns| format!("/dns/{}/tcp/{}/ws", dns, netid))
+            .map(|seed| RelayAddress::Dns(seed.to_string()))
             .collect()
     } else {
         Vec::new()
@@ -59,35 +59,17 @@ fn default_seednodes(netid: u16) -> Vec<String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn default_seednodes(netid: u16) -> Vec<String> {
+fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
+    use crate::mm2::lp_network::addr_to_ipv4_string;
     if netid == 7777 {
         NETID_7777_SEEDNODES
             .iter()
-            .filter_map(|seed| {
-                let seed_url = format!("{}:0", *seed);
-                seed_to_ipv4_string(&seed_url)
-            })
+            .filter_map(|seed| addr_to_ipv4_string(*seed).ok())
+            .map(RelayAddress::IPv4)
             .collect()
     } else {
         Vec::new()
     }
-}
-
-pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), String> {
-    const LP_RPCPORT: u16 = 7783;
-    let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
-    if netid > max_netid {
-        return ERR!("Netid {} is larger than max {}", netid, max_netid);
-    }
-
-    let other_ports = if netid != 0 {
-        let net_mod = netid % 10;
-        let net_div = netid / 10;
-        (net_div * 40) + LP_RPCPORT + net_mod
-    } else {
-        LP_RPCPORT
-    };
-    Ok((other_ports + 10, other_ports + 20, other_ports + 30))
 }
 
 /// Invokes `OS_ensure_directory`,
@@ -206,34 +188,6 @@ fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
-fn fix_directories(ctx: &MmCtx) -> Result<(), String> {
-    use std::os::raw::c_char;
-
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_ensure_dir_is_writable(ptr: *const c_char, len: i32) -> i32;
-    }
-    macro_rules! writeable_dir {
-        ($path: expr) => {
-            let path = $path;
-            let path = try_s!(path.to_str().ok_or("Non-unicode path"));
-            let rc = host_ensure_dir_is_writable(path.as_ptr() as *const c_char, path.len() as i32);
-            if rc != 0 {
-                return ERR!("Dir '{}' not writeable: {}", path, rc);
-            }
-        };
-    }
-
-    let dbdir = ctx.dbdir();
-    writeable_dir!(dbdir.join("SWAPS").join("MY"));
-    writeable_dir!(dbdir.join("SWAPS").join("STATS").join("MAKER"));
-    writeable_dir!(dbdir.join("SWAPS").join("STATS").join("TAKER"));
-    writeable_dir!(dbdir.join("ORDERS").join("MY").join("MAKER"));
-    writeable_dir!(dbdir.join("ORDERS").join("MY").join("TAKER"));
-    Ok(())
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 fn migrate_db(ctx: &MmArc) -> Result<(), String> {
     let migration_num_path = ctx.dbdir().join(".migration");
@@ -329,42 +283,17 @@ fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn seed_to_ipv4_string(seed: &str) -> Option<String> {
-    use std::net::ToSocketAddrs;
-    match seed.to_socket_addrs() {
-        Ok(mut iter) => match iter.next() {
-            Some(addr) => {
-                if addr.is_ipv4() {
-                    Some(addr.ip().to_string())
-                } else {
-                    warn!("Seed {} resolved to IPv6 {} which is not supported", seed, addr);
-                    None
-                }
-            },
-            None => {
-                warn!("Seed {} to_socket_addrs empty iter", seed);
-                None
-            },
-        },
-        Err(e) => {
-            error!("Couldn't resolve '{}' seed: {}", seed, e);
-            None
-        },
-    }
-}
-
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
     info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
     try_s!(lp_passphrase_init(&ctx));
 
-    try_s!(fix_directories(&ctx));
     #[cfg(not(target_arch = "wasm32"))]
     {
+        try_s!(fix_directories(&ctx));
         try_s!(ctx.init_sqlite_connection());
-        try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()));
+        try_s!(init_and_migrate_db(&ctx, &ctx.sqlite_connection()).await);
         try_s!(migrate_db(&ctx));
     }
 
@@ -375,18 +304,15 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
 
     try_s!(ctx.initialized.pin(true));
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        // launch kickstart threads before RPC is available, this will prevent the API user to place
-        // an order and start new swap that might get started 2 times because of kick-start
-        let mut coins_needed_for_kick_start = swap_kick_starts(ctx.clone());
-        coins_needed_for_kick_start.extend(try_s!(orders_kick_start(&ctx).await));
-        *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
-    }
+    // launch kickstart threads before RPC is available, this will prevent the API user to place
+    // an order and start new swap that might get started 2 times because of kick-start
+    try_s!(kick_start(ctx.clone()).await);
 
     spawn(lp_ordermatch_loop(ctx.clone()));
 
     spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
+
+    spawn(clean_memory_loop(ctx.clone()));
 
     let ctx_id = try_s!(ctx.ffi_handle());
 
@@ -412,6 +338,13 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
         };
         Timer::sleep(0.2).await
     }
+    Ok(())
+}
+
+async fn kick_start(ctx: MmArc) -> Result<(), String> {
+    let mut coins_needed_for_kick_start = try_s!(swap_kick_starts(ctx.clone()).await);
+    coins_needed_for_kick_start.extend(try_s!(orders_kick_start(&ctx).await));
+    *(try_s!(ctx.coins_needed_for_kick_start.lock())) = coins_needed_for_kick_start;
     Ok(())
 }
 
@@ -529,11 +462,7 @@ async fn init_p2p(ctx: MmArc) -> Result<(), String> {
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
 
-    let seednodes: Vec<String> = if ctx.conf["seednodes"].is_null() {
-        default_seednodes(netid)
-    } else {
-        try_s!(json::from_value(ctx.conf["seednodes"].clone()))
-    };
+    let seednodes = try_s!(seednodes(&ctx));
 
     let ctx_on_poll = ctx.clone();
     let force_p2p_key = if i_am_seed {
@@ -544,66 +473,103 @@ async fn init_p2p(ctx: MmArc) -> Result<(), String> {
     };
 
     let node_type = if i_am_seed {
-        #[cfg(target_arch = "wasm32")]
-        return ERR!("'i_am_seed' is only supported in native mode");
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let ip = try_s!(myipaddr(ctx.clone()).await);
-            let (_, network_port, network_ws_port) = try_s!(lp_ports(netid));
-            NodeType::Relay {
-                ip,
-                network_port,
-                network_ws_port,
-            }
-        }
+        try_s!(relay_node_type(&ctx).await)
     } else {
-        let (_, network_port, _network_ws_port) = try_s!(lp_ports(netid));
-        NodeType::Light { network_port }
+        try_s!(light_node_type(&ctx))
     };
 
-    let (cmd_tx, event_rx, peer_id, p2p_abort) =
-        spawn_gossipsub(netid, force_p2p_key, spawn_boxed, seednodes, node_type, move |swarm| {
-            let behaviour = swarm.behaviour();
-            mm_gauge!(
-                ctx_on_poll.metrics,
-                "p2p.connected_relays.len",
-                behaviour.connected_relays_len() as i64
-            );
-            mm_gauge!(
-                ctx_on_poll.metrics,
-                "p2p.relay_mesh.len",
-                behaviour.relay_mesh_len() as i64
-            );
-            let (period, received_msgs) = behaviour.received_messages_in_period();
-            mm_gauge!(
-                ctx_on_poll.metrics,
-                "p2p.received_messages.period_in_secs",
-                period.as_secs() as i64
-            );
+    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawn_boxed, seednodes, node_type, move |swarm| {
+        let behaviour = swarm.behaviour();
+        mm_gauge!(
+            ctx_on_poll.metrics,
+            "p2p.connected_relays.len",
+            behaviour.connected_relays_len() as i64
+        );
+        mm_gauge!(
+            ctx_on_poll.metrics,
+            "p2p.relay_mesh.len",
+            behaviour.relay_mesh_len() as i64
+        );
+        let (period, received_msgs) = behaviour.received_messages_in_period();
+        mm_gauge!(
+            ctx_on_poll.metrics,
+            "p2p.received_messages.period_in_secs",
+            period.as_secs() as i64
+        );
 
-            mm_gauge!(ctx_on_poll.metrics, "p2p.received_messages.count", received_msgs as i64);
+        mm_gauge!(ctx_on_poll.metrics, "p2p.received_messages.count", received_msgs as i64);
 
-            let connected_peers_count = behaviour.connected_peers_len();
+        let connected_peers_count = behaviour.connected_peers_len();
 
-            mm_gauge!(
-                ctx_on_poll.metrics,
-                "p2p.connected_peers.count",
-                connected_peers_count as i64
-            );
-        })
-        .await;
+        mm_gauge!(
+            ctx_on_poll.metrics,
+            "p2p.connected_peers.count",
+            connected_peers_count as i64
+        );
+    })
+    .await;
+    let (cmd_tx, event_rx, peer_id, p2p_abort) = try_s!(spawn_result);
     let mut p2p_abort = Some(p2p_abort);
     ctx.on_stop(Box::new(move || {
         if let Some(handle) = p2p_abort.take() {
-            drop(handle);
+            handle.abort();
         }
         Ok(())
     }));
     try_s!(ctx.peer_id.pin(peer_id.to_string()));
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
-    spawn(p2p_event_process_loop(ctx.clone(), event_rx, i_am_seed));
+    spawn(p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed));
 
     Ok(())
+}
+
+fn seednodes(ctx: &MmArc) -> Result<Vec<RelayAddress>, String> {
+    if ctx.conf["seednodes"].is_null() {
+        if ctx.p2p_in_memory() {
+            // If the network is in memory, there is no need to use default seednodes.
+            return Ok(Vec::new());
+        }
+        return Ok(default_seednodes(ctx.netid()));
+    }
+
+    json::from_value(ctx.conf["seednodes"].clone()).map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn relay_node_type(ctx: &MmArc) -> Result<NodeType, String> {
+    if ctx.p2p_in_memory() {
+        return relay_in_memory_node_type(ctx);
+    }
+    ERR!("WASM node can be a seed if only 'p2p_in_memory' is true")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn relay_node_type(ctx: &MmArc) -> Result<NodeType, String> {
+    if ctx.p2p_in_memory() {
+        return relay_in_memory_node_type(ctx);
+    }
+
+    let netid = ctx.netid();
+    let ip = try_s!(myipaddr(ctx.clone()).await);
+    let network_ports = try_s!(lp_network_ports(netid));
+    Ok(NodeType::Relay { ip, network_ports })
+}
+
+fn relay_in_memory_node_type(ctx: &MmArc) -> Result<NodeType, String> {
+    Ok(NodeType::RelayInMemory {
+        port: ctx
+            .p2p_in_memory_port()
+            .ok_or_else(|| ERRL!("'p2p_in_memory_port' not found in the config"))?,
+    })
+}
+
+fn light_node_type(ctx: &MmArc) -> Result<NodeType, String> {
+    if ctx.p2p_in_memory() {
+        return Ok(NodeType::LightInMemory);
+    }
+
+    let netid = ctx.netid();
+    let network_ports = try_s!(lp_network_ports(netid));
+    Ok(NodeType::Light { network_ports })
 }

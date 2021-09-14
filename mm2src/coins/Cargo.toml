@@ -33,24 +33,24 @@ fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
-gstuff = { version = "0.6", features = ["nightly"] }
+gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.3.2"
 http = "0.2"
 itertools = "0.9"
 jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
-lazy_static = "1.3"
+lazy_static = "1.4"
 libc = "0.2"
-libsecp256k1 = "0.3.5"
 metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { git = "https://github.com/artemii235/parity-common" }
+rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 script = { path = "../mm2_bitcoin/script" }
-secp256k1_bindings = { version = "0.20", package = "secp256k1" }
+secp256k1 = { version = "0.20" }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"

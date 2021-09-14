@@ -555,10 +555,6 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        utxo_common::display_address_from_pubkey_str(self, pubkey)
-    }
-
     fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
@@ -628,6 +624,12 @@ impl MmCoin for QtumCoin {
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+    }
 }
 
 /// Parse contract address (H160) from string.

@@ -8,7 +8,6 @@
 // On build.rs: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
 #![allow(uncommon_codepoints)]
-#![feature(non_ascii_idents)]
 
 #[macro_use] extern crate fomat_macros;
 

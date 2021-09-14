@@ -108,7 +108,7 @@ mod compact_uuid {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub struct MakerOrderCreated {
     pub uuid: CompactUuid,
     pub base: String,
@@ -254,6 +254,12 @@ pub struct TakerRequest {
     pub uuid: CompactUuid,
     pub match_by: MatchBy,
     pub conf_settings: OrderConfirmationsSettings,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -265,6 +271,12 @@ pub struct MakerReserved {
     pub taker_order_uuid: CompactUuid,
     pub maker_order_uuid: CompactUuid,
     pub conf_settings: OrderConfirmationsSettings,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_protocol_info: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

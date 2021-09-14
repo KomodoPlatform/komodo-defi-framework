@@ -4,6 +4,7 @@
 pub mod database_common;
 #[path = "database/my_orders.rs"] pub mod my_orders;
 #[path = "database/my_swaps.rs"] pub mod my_swaps;
+#[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
 use crate::CREATE_MY_SWAPS_TABLE;
@@ -20,7 +21,7 @@ fn get_current_migration(conn: &Connection) -> SqlResult<i64> {
     conn.query_row(SELECT_MIGRATION, NO_PARAMS, |row| row.get(0))
 }
 
-pub fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()> {
+pub async fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()> {
     info!("Checking the current SQLite migration");
     match get_current_migration(conn) {
         Ok(current_migration) => {
@@ -29,7 +30,7 @@ pub fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()> {
                     "Current migration is {}, skipping the init, trying to migrate",
                     current_migration
                 );
-                migrate_sqlite_database(ctx, conn, current_migration)?;
+                migrate_sqlite_database(ctx, conn, current_migration).await?;
                 return Ok(());
             }
         },
@@ -54,15 +55,15 @@ pub fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()> {
         "COMMIT;"
     );
     conn.execute_batch(init_batch)?;
-    migrate_sqlite_database(ctx, conn, 1)?;
+    migrate_sqlite_database(ctx, conn, 1).await?;
     info!("SQLite database initialization is successful");
     Ok(())
 }
 
-fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx) }
+async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx).await }
 
-fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    create_and_fill_stats_swaps_from_json_statements(ctx)
+async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    create_and_fill_stats_swaps_from_json_statements(ctx).await
 }
 
 fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
@@ -71,24 +72,32 @@ fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_spli
 
 fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
 
-fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
+fn migration_6() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        (stats_nodes::CREATE_NODES_TABLE, vec![]),
+        (stats_nodes::CREATE_STATS_NODES_TABLE, vec![]),
+    ]
+}
+
+async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
-        1 => Some(migration_1(ctx)),
-        2 => Some(migration_2(ctx)),
+        1 => Some(migration_1(ctx).await),
+        2 => Some(migration_2(ctx).await),
         3 => Some(migration_3()),
         4 => Some(migration_4()),
         5 => Some(migration_5()),
+        6 => Some(migration_6()),
         _ => None,
     }
 }
 
-pub fn migrate_sqlite_database(ctx: &MmArc, conn: &Connection, mut current_migration: i64) -> SqlResult<()> {
+pub async fn migrate_sqlite_database(ctx: &MmArc, conn: &Connection, mut current_migration: i64) -> SqlResult<()> {
     info!("migrate_sqlite_database, current migration {}", current_migration);
     let transaction = conn.unchecked_transaction()?;
-    while let Some(statements_with_params) = statements_for_migration(ctx, current_migration) {
+    while let Some(statements_with_params) = statements_for_migration(ctx, current_migration).await {
         for (statement, params) in statements_with_params {
             debug!("Executing SQL statement {:?} with params {:?}", statement, params);
-            transaction.execute(&statement, params)?;
+            transaction.execute(statement, params)?;
         }
         current_migration += 1;
         transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", &[

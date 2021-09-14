@@ -12,6 +12,9 @@ use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
+use http::StatusCode;
+use rand6::Rng;
+use std::path::PathBuf;
 use futures01::Future;
 use rand4::Rng;
 use serde_json::{self as json, Value as Json};
@@ -78,7 +81,7 @@ impl QtumDockerOps {
 }
 
 pub fn qtum_docker_node(docker: &Cli, port: u16) -> UtxoDockerNode {
-    let args = vec!["-p".into(), format!("127.0.0.1:{}:{}", port, port).into()];
+    let args = vec!["-p".into(), format!("127.0.0.1:{}:{}", port, port)];
     let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE)
         .with_args(args)
         .with_env_var("CLIENTS", "2")
@@ -455,13 +458,7 @@ fn test_check_if_my_payment_sent() {
     let amount = BigDecimal::from_str("0.2").unwrap();
 
     let payment = coin
-        .send_maker_payment(
-            timelock,
-            &taker_pub,
-            secret_hash,
-            amount.clone(),
-            &coin.swap_contract_address(),
-        )
+        .send_maker_payment(timelock, &taker_pub, secret_hash, amount, &coin.swap_contract_address())
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
@@ -508,7 +505,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
             timelock,
             taker_pub,
             secret_hash,
-            amount.clone(),
+            amount,
             &maker_coin.swap_contract_address(),
         )
         .wait()
@@ -574,7 +571,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
             timelock,
             &taker_pub,
             secret_hash,
-            amount.clone(),
+            amount,
             &maker_coin.swap_contract_address(),
         )
         .wait()
@@ -640,7 +637,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
             timelock,
             &taker_pub,
             secret_hash,
-            amount.clone(),
+            amount,
             &maker_coin.swap_contract_address(),
         )
         .wait()
@@ -688,7 +685,7 @@ fn test_wait_for_tx_spend() {
             timelock,
             taker_pub,
             secret_hash,
-            amount.clone(),
+            amount,
             &maker_coin.swap_contract_address(),
         )
         .wait()
@@ -757,26 +754,26 @@ fn test_wait_for_tx_spend() {
 
 #[test]
 fn test_check_balance_on_order_post_base_coin_locked() {
-    let bob_priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let alice_priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let bob_priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let alice_priv_key = SecretKey::new(&mut rand6::thread_rng());
     let timeout = 30; // timeout if test takes more than 80 seconds to run
 
     // fill the Bob address by 0.05 Qtum
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &bob_priv_key);
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 0.05.into(), timeout);
     // fill the Bob address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", &bob_priv_key);
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
     // fill the Alice address by 10 Qtum and 10 QICK
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &alice_priv_key);
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", alice_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
     fill_qrc20_address(&coin, 10.into(), timeout);
     // fill the Alice address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", &alice_priv_key);
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", alice_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
@@ -795,7 +792,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+            "passphrase": format!("0x{}", hex::encode(bob_priv_key.as_ref())),
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
@@ -818,7 +815,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+            "passphrase": format!("0x{}", hex::encode(alice_priv_key.as_ref())),
             "coins": coins,
             "seednodes": [fomat!((mm_bob.ip))],
             "rpc_password": "pass",
@@ -1019,7 +1016,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
     let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 2.into(), Some(0));
     let my_address = coin.my_address().expect("!my_address");
-    let mut rng = rand4::thread_rng();
+    let mut rng = rand6::thread_rng();
     let mut qtum_balance = BigDecimal::from(2);
     let mut qtum_balance_steps = "2".to_owned();
     for _ in 0..4 {
@@ -1360,6 +1357,87 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         .unwrap()
         .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
+}
+
+pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
+    let native = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "address_format": {
+                "format": "segwit",
+            },
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
+    json::from_str(&native.1).unwrap()
+}
+
+#[test]
+#[ignore]
+fn segwit_address_in_the_orderbook() {
+    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
+    let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+
+    let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
+    let coins = json! ([
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt"},
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+    ]);
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
+    block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+    let enable_qtum_res = block_on(enable_native_segwit(&mm, "QTUM"));
+    let enable_qtum_res: EnableElectrumResponse = json::from_value(enable_qtum_res).unwrap();
+    let segwit_addr = enable_qtum_res.address;
+
+    fill_address(&coin, &segwit_addr, 1000.into(), 30);
+
+    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "QTUM",
+        "rel": "MYCOIN",
+        "price": 1,
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let orderbook = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "QTUM",
+        "rel": "MYCOIN",
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", rc.1);
+
+    let orderbook: OrderbookResponse = json::from_str(&orderbook.1).unwrap();
+    assert_eq!(orderbook.asks[0].coin, "QTUM");
+    assert_eq!(orderbook.asks[0].address, segwit_addr);
+    block_on(mm.stop()).unwrap();
 }
 
 #[test]

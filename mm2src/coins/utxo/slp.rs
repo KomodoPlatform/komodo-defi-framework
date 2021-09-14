@@ -477,7 +477,7 @@ impl SlpToken {
         let other_pub = Public::from_slice(other_pub)?;
         let redeem_script = payment_script(
             time_lock,
-            &*dhash160(&secret),
+            &*dhash160(secret),
             &other_pub,
             self.platform_coin.my_public_key(),
         );
@@ -967,13 +967,7 @@ impl MarketCoinOps for SlpToken {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 
-    fn address_from_pubkey_str(&self, pubkey: &str) -> Result<String, String> {
-        let addr = try_s!(utxo_common::address_from_pubkey_str(&self.platform_coin, pubkey));
-        let slp_address = try_s!(self.slp_address(&addr));
-        slp_address.encode()
-    }
-
-    fn display_priv_key(&self) -> String { self.platform_coin.display_priv_key() }
+    fn display_priv_key(&self) -> String { self.platform_utxo.display_priv_key() }
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }
 
@@ -1547,7 +1541,11 @@ impl MmCoin for SlpToken {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
-    fn mature_confirmations(&self) -> Option<u32> { self.platform_coin.mature_confirmations() }
+    fn mature_confirmations(&self) -> Option<u32> { self.platform_utxo.mature_confirmations() }
+
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { unimplemented!() }
+
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
 }
 
 #[derive(Debug, Display)]

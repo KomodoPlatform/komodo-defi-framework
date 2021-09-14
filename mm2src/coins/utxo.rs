@@ -48,7 +48,7 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
-pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type};
+pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type as ScriptType};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
@@ -1114,11 +1114,12 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn signature_version(&self) -> SignatureVersion {
-        if self.ticker == "BCH" || self.fork_id() != 0 {
+        let default_signature_version = if self.ticker == "BCH" || self.fork_id() != 0 {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
-        }
+        };
+        json::from_value(self.conf["signature_version"].clone()).unwrap_or(default_signature_version)
     }
 
     fn fork_id(&self) -> u32 {
@@ -1167,6 +1168,23 @@ impl<'a> UtxoConfBuilder<'a> {
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
 }
 
+#[derive(Debug)]
+pub struct ElectrumBuilderArgs {
+    pub spawn_ping: bool,
+    pub negotiate_version: bool,
+    pub collect_metrics: bool,
+}
+
+impl Default for ElectrumBuilderArgs {
+    fn default() -> Self {
+        ElectrumBuilderArgs {
+            spawn_ping: true,
+            negotiate_version: true,
+            collect_metrics: true,
+        }
+    }
+}
+
 #[async_trait]
 pub trait UtxoCoinBuilder {
     type ResultCoin;
@@ -1202,7 +1220,7 @@ pub trait UtxoCoinBuilder {
             hrp: conf.bech32_hrp.clone(),
             addr_format,
         };
-        let my_script_pubkey = output_script(&my_address).to_bytes();
+        let my_script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let rpc_client = try_s!(self.rpc_client().await);
         let tx_fee = try_s!(self.tx_fee(&rpc_client).await);
         let decimals = try_s!(self.decimals(&rpc_client).await);
@@ -1325,21 +1343,27 @@ pub trait UtxoCoinBuilder {
                 }
             },
             Some("electrum") => {
-                let electrum = try_s!(self.electrum_client().await);
+                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default()).await);
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
             _ => ERR!("Expected enable or electrum request"),
         }
     }
 
-    async fn electrum_client(&self) -> Result<ElectrumClient, String> {
+    async fn electrum_client(&self, args: ElectrumBuilderArgs) -> Result<ElectrumClient, String> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
-        let event_handlers = vec![
-            CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
-            ElectrumProtoVerifier { on_connect_tx }.into_shared(),
-        ];
+        let mut event_handlers = vec![];
+        if args.collect_metrics {
+            event_handlers.push(
+                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
+            );
+        }
+
+        if args.negotiate_version {
+            event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
+        }
 
         let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(self.req()["servers"].clone()));
         let mut rng = small_rng();
@@ -1364,14 +1388,18 @@ pub trait UtxoCoinBuilder {
 
         let client = Arc::new(client);
 
-        let weak_client = Arc::downgrade(&client);
-        let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-        spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+        if args.negotiate_version {
+            let weak_client = Arc::downgrade(&client);
+            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
+            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
 
-        try_s!(wait_for_protocol_version_checked(&client).await);
+            try_s!(wait_for_protocol_version_checked(&client).await);
+        }
 
-        let weak_client = Arc::downgrade(&client);
-        spawn_electrum_ping_loop(weak_client, servers);
+        if args.spawn_ping {
+            let weak_client = Arc::downgrade(&client);
+            spawn_electrum_ping_loop(weak_client, servers);
+        }
 
         Ok(ElectrumClient(client))
     }
@@ -1719,10 +1747,9 @@ where
             | KmdRewardsAccrueInfo::NotAccruedReason(KmdRewardsNotAccruedReason::TransactionInMempool)
             | KmdRewardsAccrueInfo::NotAccruedReason(KmdRewardsNotAccruedReason::OneHourNotPassedYet) => {
                 let start_at = Some(kmd_interest_accrue_start_at(locktime));
-                let stop_at = match tx_info.height {
-                    Some(height) => Some(kmd_interest_accrue_stop_at(height, locktime)),
-                    _ => None,
-                };
+                let stop_at = tx_info
+                    .height
+                    .map(|height| kmd_interest_accrue_stop_at(height, locktime));
                 (start_at, stop_at)
             },
             _ => (None, None),
@@ -2000,16 +2027,25 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
     Ok(sig_script)
 }
 
-pub fn output_script(address: &Address) -> Script {
+pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     match address.addr_format {
         UtxoAddressFormat::Segwit => Builder::build_p2wpkh(&address.hash),
-        _ => Builder::build_p2pkh(&address.hash),
+        _ => match script_type {
+            ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
+            ScriptType::P2SH => Builder::build_p2sh(&address.hash),
+            ScriptType::P2WPKH => Builder::build_p2wpkh(&address.hash),
+        },
     }
 }
 
-pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> Result<String, String> {
+pub fn address_by_conf_and_pubkey_str(
+    coin: &str,
+    conf: &Json,
+    pubkey: &str,
+    addr_format: UtxoAddressFormat,
+) -> Result<String, String> {
     let null = Json::Null;
-    let conf_builder = UtxoConfBuilder::new(&conf, &null, coin);
+    let conf_builder = UtxoConfBuilder::new(conf, &null, coin);
     let utxo_conf = try_s!(conf_builder.build());
     let pubkey_bytes = try_s!(hex::decode(pubkey));
     let hash = dhash160(&pubkey_bytes);
@@ -2019,8 +2055,8 @@ pub fn address_by_conf_and_pubkey_str(coin: &str, conf: &Json, pubkey: &str) -> 
         t_addr_prefix: utxo_conf.pub_t_addr_prefix,
         hash,
         checksum_type: utxo_conf.checksum_type,
-        hrp: utxo_conf.bech32_hrp.clone(),
-        addr_format: utxo_conf.default_address_format,
+        hrp: utxo_conf.bech32_hrp,
+        addr_format,
     };
     address.display_address()
 }

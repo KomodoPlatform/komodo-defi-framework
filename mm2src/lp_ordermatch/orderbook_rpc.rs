@@ -1,4 +1,4 @@
-use super::{subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
+use super::{subscribe_to_orderbook_topic, AddressFormat, OrdermatchContext, RpcOrderbookEntry};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
 use http::Response;
@@ -106,12 +106,13 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",
                     uuid
                 ))?;
-
+                // Todo: use the right address format when a solution is found for the problem of protocol_info
                 let address = try_s!(address_by_coin_conf_and_pubkey_str(
                     &ctx,
                     &req.base,
                     &base_coin_conf,
-                    &ask.pubkey
+                    &ask.pubkey,
+                    AddressFormat::Standard,
                 ));
                 let is_mine = my_pubsecp == ask.pubkey;
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
@@ -132,11 +133,13 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",
                     uuid
                 ))?;
+                // Todo: use the right address format when a solution is found for the problem of protocol_info
                 let address = try_s!(address_by_coin_conf_and_pubkey_str(
                     &ctx,
                     &req.rel,
                     &rel_coin_conf,
-                    &bid.pubkey
+                    &bid.pubkey,
+                    AddressFormat::Standard,
                 ));
                 let is_mine = my_pubsecp == bid.pubkey;
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));

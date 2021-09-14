@@ -676,7 +676,6 @@ mod tests {
     use super::*;
     use crate::custom_futures::FutureTimerExt;
     use crate::for_tests::register_wasm_log;
-    use crate::log::LogLevel;
     use crate::{WasmUnwrapErrExt, WasmUnwrapExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use wasm_bindgen_test::*;
@@ -689,7 +688,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_websocket() {
-        register_wasm_log(LogLevel::Debug);
+        register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
         let (mut outgoing_tx, mut incoming_rx) =
@@ -747,7 +746,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_websocket_unreachable_url() {
-        register_wasm_log(LogLevel::Debug);
+        register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
         // TODO check if outgoing messages are ignored non-open states
@@ -782,7 +781,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_websocket_invalid_url() {
-        register_wasm_log(LogLevel::Debug);
+        register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
         let error =

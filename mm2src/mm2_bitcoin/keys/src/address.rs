@@ -27,6 +27,10 @@ pub enum Type {
     /// Newer P2SH type starting with the number 3, eg: 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy.
     /// https://bitcoin.org/en/glossary/p2sh-address
     P2SH,
+    /// Pay to Witness PubKey Hash
+    /// Common P2WPKH which begins with the human readable part followed by 1, eg: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+    P2WPKH,
 }
 
 #[derive(Clone, Debug, Display, Deserialize, PartialEq, Serialize)]
@@ -66,6 +70,7 @@ impl AddressFormat {
     pub fn is_legacy(&self) -> bool { matches!(*self, AddressFormat::Standard) }
 }
 
+// TODO add ScriptType field to this struct for easier use of output_script function
 /// `AddressHash` with prefix and t addr zcash prefix
 #[derive(Debug, PartialEq, Clone)]
 pub struct Address {
@@ -212,7 +217,7 @@ impl Address {
                 pub_addr_prefix,
                 p2sh_addr_prefix,
             } => self
-                .to_cashaddress(&network, *pub_addr_prefix, *p2sh_addr_prefix)
+                .to_cashaddress(network, *pub_addr_prefix, *p2sh_addr_prefix)
                 .and_then(|cashaddress| cashaddress.encode()),
         }
     }

@@ -2,21 +2,7 @@ use common::log::debug;
 use common::rusqlite::{Connection, Result as SqlResult, ToSql};
 use sql_builder::SqlBuilder;
 use std::convert::TryInto;
-use std::num::NonZeroUsize;
 use uuid::Uuid;
-
-const fn ten() -> usize { 10 }
-
-fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
-
-#[derive(Debug, Deserialize)]
-pub struct PagingOptions {
-    #[serde(default = "ten")]
-    pub limit: usize,
-    #[serde(default = "one")]
-    pub page_number: NonZeroUsize,
-    pub from_uuid: Option<Uuid>,
-}
 
 /// Calculates the offset to skip records by uuid.
 /// Expects `query_builder` to have where clauses applied *before* calling this fn.

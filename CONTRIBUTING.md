@@ -16,14 +16,23 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
 
 1. Install these tools (only once):
     ```
-    rustup component add rustfmt --toolchain nightly-2020-02-01
+    rustup component add rustfmt
     rustup component add clippy
     ```
 1. Format the code using rustfmt:
     ```
-    cargo +nightly fmt
+    cargo fmt
     ```
 1. Make sure there are no warnings and errors. Run the Clippy:
     ```
     cargo clippy -- -D warnings
+    ```
+
+### Run WASM tests
+
+1. Install Firefox.
+1. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
+1. Run the tests
+    ```
+    WASM_BINDGEN_TEST_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN wasm-pack test --firefox --headless
     ```

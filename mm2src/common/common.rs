@@ -11,13 +11,12 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(non_ascii_idents, integer_atomics, panic_info_message)]
+#![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(negative_impls)]
 #![feature(auto_traits)]
 #![feature(drain_filter)]
-#![feature(const_fn)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate fomat_macros;
@@ -92,8 +91,7 @@ pub mod big_int_str;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod duplex_mutex;
-pub mod file_lock;
-#[cfg(not(target_arch = "wasm32"))] pub mod for_c;
+pub mod for_tests;
 pub mod iguana_utils;
 pub mod mm_ctx;
 #[path = "mm_error/mm_error.rs"] pub mod mm_error;
@@ -101,14 +99,23 @@ pub mod mm_number;
 pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
+pub mod time_cache;
 
-#[cfg(target_arch = "wasm32")] pub mod wasm_indexed_db;
+#[cfg(target_arch = "wasm32")] pub mod executor;
+#[cfg(target_arch = "wasm32")]
+#[path = "indexed_db/indexed_db.rs"]
+pub mod indexed_db;
+
+#[cfg(target_arch = "wasm32")]
+#[path = "transport/wasm_http.rs"]
+pub mod wasm_http;
+
 #[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
 #[cfg(target_arch = "wasm32")]
 #[path = "transport/wasm_ws.rs"]
 pub mod wasm_ws;
 
-use atomic::Atomic;
+use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
 use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
@@ -117,24 +124,24 @@ use futures01::{future, task::Task, Future};
 use gstuff::binprint;
 use hex::FromHex;
 use http::header::{HeaderValue, CONTENT_TYPE};
-use http::{HeaderMap, Request, Response, StatusCode};
+use http::{HeaderMap, Response, StatusCode};
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::ffi::{CStr, OsStr};
+use std::ffi::CStr;
 use std::fmt::{self, Write as FmtWrite};
-use std::fs;
-use std::fs::DirEntry;
 use std::future::Future as Future03;
 use std::io::Write;
 use std::mem::{forget, size_of, zeroed};
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::{c_char, c_void};
-use std::path::{Path, PathBuf};
+use std::panic::{set_hook, PanicInfo};
+use std::path::Path;
 use std::ptr::read_volatile;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -142,20 +149,25 @@ use uuid::Uuid;
 
 pub use serde;
 
+#[cfg(not(target_arch = "wasm32"))] pub mod for_c;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "fs/fs.rs"]
+pub mod fs;
+
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
     pub use rusqlite;
 
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
+    use http::Request;
     use libc::{free, malloc};
     use std::env;
-    use std::io::Read;
+    use std::path::PathBuf;
 }
 
 cfg_wasm32! {
-    use futures::task::{Context, Poll as Poll03};
-    use std::pin::Pin;
     use wasm_bindgen::prelude::*;
 }
 
@@ -358,7 +370,7 @@ impl<'a> AsRef<Path> for RaiiRm<'a> {
     fn as_ref(&self) -> &Path { self.0 }
 }
 impl<'a> Drop for RaiiRm<'a> {
-    fn drop(&mut self) { let _ = fs::remove_file(self); }
+    fn drop(&mut self) { let _ = std::fs::remove_file(self); }
 }
 
 /// Using a static buffer in order to minimize the chance of heap and stack allocations in the signal handler.
@@ -495,15 +507,27 @@ fn output_pc_mem_addr(output: &mut dyn FnMut(&str)) {
     });
 }
 
+/// Set up a panic hook that prints the panic location, the message and the backtrace.
+/// (The default Rust handler doesn't have the means to print the message).
+#[cfg(target_arch = "wasm32")]
+pub fn set_panic_hook() {
+    set_hook(Box::new(|info: &PanicInfo| {
+        let mut trace = String::new();
+        stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
+        console_err!("{}", info);
+        console_err!("backtrace\n{}", trace);
+    }))
+}
+
 /// Sets our own panic handler using patched backtrace crate. It was discovered that standard Rust panic
 /// handlers print only "unknown" in Android backtraces which is not helpful.
 /// Using custom hook with patched backtrace version solves this issue.
 /// NB: https://github.com/rust-lang/backtrace-rs/issues/227
 #[cfg(not(target_arch = "wasm32"))]
 pub fn set_panic_hook() {
-    use std::panic::{set_hook, PanicInfo};
+    use std::sync::atomic::AtomicBool;
 
-    thread_local! {static ENTERED: Atomic<bool> = Atomic::new (false);}
+    thread_local! {static ENTERED: AtomicBool = AtomicBool::new(false);}
 
     set_hook(Box::new(|info: &PanicInfo| {
         // Stack tracing and logging might panic (in `println!` for example).
@@ -585,6 +609,8 @@ pub type SlurpRes = Result<(StatusCode, HeaderMap, Vec<u8>), String>;
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
 pub type HyRes = Box<dyn Future<Item = Response<Vec<u8>>, Error = String> + Send>;
 
+pub type BoxFut<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
+
 pub trait HttpStatusCode {
     fn status_code(&self) -> StatusCode;
 }
@@ -608,58 +634,6 @@ struct HostedHttpResponse {
 // we're splitting the code in place with conditional compilation.
 // wio stands for "web I/O" or "wasm I/O",
 // it contains the parts which aren't directly available with WASM.
-
-#[cfg(target_arch = "wasm32")]
-pub mod wio {
-    use super::SlurpRes;
-    use http::header::{HeaderName, HeaderValue};
-    use http::{HeaderMap, Request, StatusCode};
-    use serde_bencode::de::from_bytes as bdecode;
-    use serde_bencode::ser::to_bytes as bencode;
-    use std::str::FromStr;
-
-    pub async fn slurp_reqʹ(request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
-        let (parts, body) = request.into_parts();
-
-        let hhreq = super::HostedHttpRequest {
-            method: parts.method.as_str().to_owned(),
-            uri: fomat!((parts.uri)),
-            headers: parts
-                .headers
-                .iter()
-                .filter_map(|(name, value)| {
-                    let name = name.as_str().to_owned();
-                    let v = match value.to_str() {
-                        Ok(ascii) => ascii,
-                        Err(err) => {
-                            log! ("!ascii '" (name) "': " (err));
-                            return None;
-                        },
-                    };
-                    Some((name, v.to_owned()))
-                })
-                .collect(),
-            body,
-        };
-
-        let hhreq = try_s!(bencode(&hhreq));
-        let hhres = try_s!(super::helperᶜ("slurp_req", hhreq).await);
-        let hhres: super::HostedHttpResponse = try_s!(bdecode(&hhres));
-        let status = try_s!(StatusCode::from_u16(hhres.status));
-
-        let mut headers = HeaderMap::<HeaderValue>::with_capacity(hhres.headers.len());
-        for (n, v) in hhres.headers {
-            headers.insert(
-                try_s!(HeaderName::from_str(&n[..])),
-                try_s!(HeaderValue::from_str(&v[..])),
-            );
-        }
-
-        Ok((status, headers, hhres.body))
-    }
-
-    pub async fn slurp_req(request: Request<Vec<u8>>) -> SlurpRes { slurp_reqʹ(request).await }
-}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod wio {
@@ -1132,6 +1106,12 @@ pub mod executor {
                 till_utc: now_float() + seconds,
             }
         }
+        pub fn sleep_ms(ms: u32) -> Timer {
+            let seconds = gstuff::duration_to_float(Duration::from_millis(ms as u64));
+            Timer {
+                till_utc: now_float() + seconds,
+            }
+        }
         pub fn till_utc(&self) -> f64 { self.till_utc }
     }
 
@@ -1164,8 +1144,6 @@ pub mod executor {
     }
 }
 
-#[cfg(target_arch = "wasm32")] pub mod executor;
-
 /// Returns a JSON error HyRes on a failure.
 #[macro_export]
 macro_rules! try_h {
@@ -1178,8 +1156,19 @@ macro_rules! try_h {
 }
 
 /// Executes a GET request, returning the response status, headers and body.
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn slurp_url(url: &str) -> SlurpRes {
     wio::slurp_req(try_s!(Request::builder().uri(url).body(Vec::new()))).await
+}
+
+/// Executes a GET request, returning the response status, headers and body.
+/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
+#[cfg(target_arch = "wasm32")]
+pub async fn slurp_url(url: &str) -> SlurpRes {
+    wasm_http::FetchRequest::get(url)
+        .request_str()
+        .await
+        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
 }
 
 #[test]
@@ -1199,6 +1188,7 @@ where
 }
 
 /// Send POST JSON HTTPS request and parse response
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn post_json<T>(url: &str, json: String) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + Send + 'static,
@@ -1428,42 +1418,17 @@ pub struct QueuedCommand {
     // retstrp: *mut *mut c_char,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn var(name: &str) -> Result<String, String> {
-    /// Obtains the environment variable `name` from the host, copying it into `rbuf`.
-    /// Returns the length of the value copied to `rbuf` or -1 if there was an error.
-    #[cfg(target_arch = "wasm32")]
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_env(name: *const c_char, nameˡ: i32, rbuf: *mut c_char, rcap: i32) -> i32;
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        match std::env::var(name) {
-            Ok(v) => Ok(v),
-            Err(_err) => ERR!("No {}", name),
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Get the environment variable from the host.
-        use std::str::from_utf8;
-
-        let mut buf: [u8; 4096] = unsafe { zeroed() };
-        let rc = host_env(
-            name.as_ptr() as *const c_char,
-            name.len() as i32,
-            buf.as_mut_ptr() as *mut c_char,
-            buf.len() as i32,
-        );
-        if rc <= 0 {
-            return ERR!("No {}", name);
-        }
-        let s = try_s!(from_utf8(&buf[0..rc as usize]));
-        Ok(String::from(s))
+    match std::env::var(name) {
+        Ok(v) => Ok(v),
+        Err(_err) => ERR!("No {}", name),
     }
 }
+
+/// TODO make it wasm32 only
+#[cfg(target_arch = "wasm32")]
+pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable not supported in WASM") }
 
 /// TODO make it wasm32 only
 /// #[cfg(not(target_arch = "wasm32"))]
@@ -1480,8 +1445,6 @@ where
     futures::executor::block_on(f)
 }
 
-use backtrace::SymbolName;
-
 #[cfg(target_arch = "wasm32")]
 pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
 
@@ -1493,192 +1456,13 @@ pub fn now_float() -> f64 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> { Ok(gstuff::slurp(path)) }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn safe_slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {
-    let mut file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(ref err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return ERR!("Can't open {:?}: {}", path.as_ref(), err),
-    };
-    let mut buf = Vec::new();
-    try_s!(file.read_to_end(&mut buf));
-    Ok(buf)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {
-    use std::mem::MaybeUninit;
-
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_slurp(path_p: *const c_char, path_l: i32, rbuf: *mut c_char, rcap: i32) -> i32;
-    }
-
-    let path = try_s!(path.as_ref().to_str().ok_or("slurp: path not unicode"));
-    let mut rbuf: [u8; 262144] = unsafe { MaybeUninit::uninit().assume_init() };
-    let rc = host_slurp(
-        path.as_ptr() as *const c_char,
-        path.len() as i32,
-        rbuf.as_mut_ptr() as *mut c_char,
-        rbuf.len() as i32,
-    );
-    if rc < 0 {
-        return ERR!("!host_slurp: {}", rc);
-    }
-    Ok(Vec::from(&rbuf[..rc as usize]))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn temp_dir() -> PathBuf { env::temp_dir() }
-
-#[cfg(target_arch = "wasm32")]
-pub fn temp_dir() -> PathBuf {
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn temp_dir(rbuf: *mut c_char, rcap: i32) -> i32;
-    }
-    let mut buf: [u8; 4096] = unsafe { zeroed() };
-    let rc = temp_dir(buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
-    if rc <= 0 {
-        panic!("!temp_dir")
-    }
-    let path = std::str::from_utf8(&buf[0..rc as usize]).unwrap();
-    Path::new(path).into()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn remove_file(path: &dyn AsRef<Path>) -> Result<(), String> {
-    try_s!(fs::remove_file(path));
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn remove_file(path: &dyn AsRef<Path>) -> Result<(), String> {
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_rm(ptr: *const c_char, len: i32) -> i32;
-    }
-
-    let path = try_s!(path.as_ref().to_str().ok_or("Non-unicode path"));
-    let rc = host_rm(path.as_ptr() as *const c_char, path.len() as i32);
-    if rc != 0 {
-        return ERR!("!host_rm: {}", rc);
-    }
-    Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
-    try_s!(fs::write(path, contents));
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_write(path_p: *const c_char, path_l: i32, ptr: *const c_char, len: i32) -> i32;
-    }
-
-    let path = try_s!(path.as_ref().to_str().ok_or("Non-unicode path"));
-    let content = contents.as_ref();
-    let rc = host_write(
-        path.as_ptr() as *const c_char,
-        path.len() as i32,
-        content.as_ptr() as *const c_char,
-        content.len() as i32,
-    );
-    if rc != 0 {
-        return ERR!("!host_write: {}", rc);
-    }
-    Ok(())
-}
-
-/// Read a folder and return a list of files with their last-modified ms timestamps.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
-    use std::time::UNIX_EPOCH;
-
-    let entries = try_s!(dir.as_ref().read_dir())
-        .filter_map(|dir_entry| {
-            let entry = match dir_entry {
-                Ok(ent) => ent,
-                Err(e) => {
-                    log!("Error " (e) " reading from dir " (dir.as_ref().display()));
-                    return None;
-                },
-            };
-
-            let metadata = match entry.metadata() {
-                Ok(m) => m,
-                Err(e) => {
-                    log!("Error " (e) " getting file " (entry.path().display()) " meta");
-                    return None;
-                },
-            };
-
-            let m_time = match metadata.modified() {
-                Ok(time) => time,
-                Err(e) => {
-                    log!("Error " (e) " getting file " (entry.path().display()) " m_time");
-                    return None;
-                },
-            };
-
-            let lm = m_time.duration_since(UNIX_EPOCH).expect("!duration_since").as_millis();
-            assert!(lm < u64::max_value() as u128);
-            let lm = lm as u64;
-
-            let path = entry.path();
-            if path.extension() == Some(OsStr::new("json")) {
-                Some((lm, path))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    Ok(entries)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn read_dir(dir: &dyn AsRef<Path>) -> Result<Vec<(u64, PathBuf)>, String> {
-    use std::mem::MaybeUninit;
-
-    #[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-    extern "C" {
-        pub fn host_read_dir(path_p: *const c_char, path_l: i32, rbuf: *mut c_char, rcap: i32) -> i32;
-    }
-
-    let path = try_s!(dir.as_ref().to_str().ok_or("read_dir: dir path not unicode"));
-    let mut rbuf: [u8; 262144] = unsafe { MaybeUninit::uninit().assume_init() };
-    let rc = host_read_dir(
-        path.as_ptr() as *const c_char,
-        path.len() as i32,
-        rbuf.as_mut_ptr() as *mut c_char,
-        rbuf.len() as i32,
-    );
-    if rc <= 0 {
-        return ERR!("!host_read_dir: {}", rc);
-    }
-    let jens: Vec<(u64, String)> = try_s!(json::from_slice(&rbuf[..rc as usize]));
-
-    let mut entries: Vec<(u64, PathBuf)> = Vec::with_capacity(jens.len());
-    for (lm, name) in jens {
-        let path = dir.as_ref().join(name);
-        entries.push((lm, path))
-    }
-
-    Ok(entries)
-}
 
 /// If the `MM_LOG` variable is present then tries to open that file.  
 /// Prints a warning to `stdout` if there's a problem opening the file.  
 /// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
 #[cfg(not(target_arch = "wasm32"))]
-fn open_log_file() -> Option<fs::File> {
+fn open_log_file() -> Option<std::fs::File> {
     let mm_log = match var("MM_LOG") {
         Ok(v) => v,
         Err(_) => return None,
@@ -1690,7 +1474,7 @@ fn open_log_file() -> Option<fs::File> {
         return None;
     }
 
-    match fs::OpenOptions::new().append(true).create(true).open(&mm_log) {
+    match std::fs::OpenOptions::new().append(true).create(true).open(&mm_log) {
         Ok(f) => Some(f),
         Err(err) => {
             println!("open_log_file] Can't open {}: {}", mm_log, err);
@@ -1704,7 +1488,7 @@ pub fn writeln(line: &str) {
     use std::panic::catch_unwind;
 
     lazy_static! {
-        static ref LOG_FILE: Mutex<Option<fs::File>> = Mutex::new(open_log_file());
+        static ref LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(open_log_file());
     }
 
     // `catch_unwind` protects the tests from error
@@ -1727,7 +1511,7 @@ pub fn writeln(line: &str) {
 static mut PROCESS_LOG_TAIL: [u8; 0x10000] = [0; 0x10000];
 
 #[cfg(target_arch = "wasm32")]
-static TAIL_CUR: Atomic<usize> = Atomic::new(0);
+static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
 
 /// Keep a tail of the log in RAM for the integration tests.
 #[cfg(target_arch = "wasm32")]
@@ -1760,50 +1544,7 @@ pub fn writeln(line: &str) {
     append_log_tail(line);
 }
 
-/// Set up a panic hook that prints the panic location and the message.  
-/// (The default Rust handler doesn't have the means to print the message.
-///  Note that we're also getting the stack trace from Node.js and rustfilt).
-#[cfg(target_arch = "wasm32")]
-#[no_mangle]
-pub extern "C" fn set_panic_hook() {
-    use std::panic::{set_hook, PanicInfo};
-
-    set_hook(Box::new(|info: &PanicInfo| {
-        let mut msg = String::with_capacity(256);
-        let _ = wite!(&mut msg, (info));
-        writeln(&msg)
-    }))
-}
-
 pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }
-
-/// Ask the WASM host to send HTTP request to the native helpers.
-/// Returns request ID used to wait for the reply.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-extern "C" {
-    fn http_helper_if(helper: *const u8, helper_len: i32, payload: *const u8, payload_len: i32, timeout_ms: i32)
-        -> i32;
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-extern "C" {
-    /// Check with the WASM host to see if the given HTTP request is ready.
-    ///
-    /// Returns the amount of bytes copied to rbuf,  
-    /// or `-1` if the request is not yet finished,  
-    /// or `0 - amount of bytes` in case the intended size was larger than the `rcap`.
-    ///
-    /// The bytes copied to rbuf are in the bencode format,
-    /// `{status: $number, ct: $bytes, cs: $bytes, body: $bytes}`
-    /// (the `HelperResponse`).
-    ///
-    /// * `helper_request_id` - Request ID previously returned by `http_helper_if`.
-    /// * `rbuf` - The buffer to copy the response payload into if the request is finished.
-    /// * `rcap` - The size of the `rbuf` buffer.
-    pub fn http_helper_check(helper_request_id: i32, rbuf: *mut u8, rcap: i32) -> i32;
-}
 
 lazy_static! {
     /// Maps helper request ID to the corresponding Waker,
@@ -1837,54 +1578,6 @@ impl fmt::Display for HelperResponse {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-pub async fn helperᶜ(helper: &'static str, args: Vec<u8>) -> Result<Vec<u8>, String> {
-    use serde_bencode::de::from_bytes as bdecode;
-
-    let helper_request_id = http_helper_if(
-        helper.as_ptr(),
-        helper.len() as i32,
-        args.as_ptr(),
-        args.len() as i32,
-        9999,
-    );
-
-    struct HelperReply {
-        helper_request_id: i32,
-    }
-    impl std::future::Future for HelperReply {
-        type Output = Result<Vec<u8>, String>;
-        fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
-            let mut buf: [u8; 65535] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-            let rlen = http_helper_check(self.helper_request_id, buf.as_mut_ptr(), buf.len() as i32);
-            if rlen < -1 {
-                // Response is larger than capacity.
-                return Poll03::Ready(ERR!("Helper result is too large ({})", rlen));
-            }
-            if rlen >= 0 {
-                return Poll03::Ready(Ok(Vec::from(&buf[0..rlen as usize])));
-            }
-
-            // NB: Need a fresh waker each time `Pending` is returned, to support switching tasks.
-            // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
-            let waker = cx.waker().clone();
-            HELPER_REQUESTS.lock().unwrap().insert(self.helper_request_id, waker);
-
-            Poll03::Pending
-        }
-    }
-    impl Drop for HelperReply {
-        fn drop(&mut self) { HELPER_REQUESTS.lock().unwrap().remove(&self.helper_request_id); }
-    }
-    let rv: Vec<u8> = try_s!(HelperReply { helper_request_id }.await);
-    let rv: HelperResponse = try_s!(bdecode(&rv));
-    if rv.status != 200 {
-        return ERR!("!{}: {}", helper, rv);
-    }
-    // TODO: Check `rv.checksum` if present.
-    Ok(rv.body.into_vec())
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct BroadcastP2pMessageArgs {
     pub ctx: u32,
@@ -1916,14 +1609,6 @@ impl<T: Copy> OrdRange<T> {
     /// Flatten a start-end pair into the vector.
     pub fn flatten(&self) -> Vec<T> { vec![*self.start(), *self.end()] }
 }
-
-/// Invokes callback `cb_id` in the WASM host, passing a `(ptr,len)` string to it.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(raw_module = "../../../js/defined-in-js.js")]
-extern "C" {
-    pub fn call_back(cb_id: i32, ptr: *const c_char, len: i32);
-}
-pub mod for_tests;
 
 fn without_trailing_zeroes(decimal: &str, dot: usize) -> &str {
     let mut pos = decimal.len() - 1;
@@ -2031,6 +1716,19 @@ fn test_round_to() {
     assert_eq!(round_to(&BigDecimal::from(-0), 0), "0");
 }
 
+const fn ten() -> usize { 10 }
+
+fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
+
+#[derive(Debug, Deserialize)]
+pub struct PagingOptions {
+    #[serde(default = "ten")]
+    pub limit: usize,
+    #[serde(default = "one")]
+    pub page_number: NonZeroUsize,
+    pub from_uuid: Option<Uuid>,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn new_uuid() -> Uuid { Uuid::new_v4() }
 
@@ -2039,7 +1737,7 @@ pub fn new_uuid() -> Uuid {
     use rand::RngCore;
     use uuid::{Builder, Variant, Version};
 
-    let mut rng = small_rng();
+    let mut rng = rand::thread_rng();
     let mut bytes = [0; 16];
 
     rng.fill_bytes(&mut bytes);
@@ -2193,26 +1891,6 @@ fn test_first_char_to_upper() {
     assert_eq!("K", first_char_to_upper("k"));
     assert_eq!("Komodo", first_char_to_upper("komodo"));
     assert_eq!(".komodo", first_char_to_upper(".komodo"));
-}
-
-pub fn json_dir_entries(path: &dyn AsRef<Path>) -> Result<Vec<DirEntry>, String> {
-    Ok(try_s!(path.as_ref().read_dir())
-        .filter_map(|dir_entry| {
-            let entry = match dir_entry {
-                Ok(ent) => ent,
-                Err(e) => {
-                    log!("Error " (e) " reading from dir " (path.as_ref().display()));
-                    return None;
-                },
-            };
-
-            if entry.path().extension() == Some(OsStr::new("json")) {
-                Some(entry)
-            } else {
-                None
-            }
-        })
-        .collect())
 }
 
 /// Calculates the median of the set represented as slice

@@ -80,7 +80,7 @@ impl TrySink for MetricsArc {
 
 impl TrySink for MetricsWeak {
     fn try_sink(&self) -> Option<Sink> {
-        let metrics = MetricsArc::from_weak(&self)?;
+        let metrics = MetricsArc::from_weak(self)?;
         metrics.0.sink().ok()
     }
 }

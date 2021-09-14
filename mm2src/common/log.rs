@@ -3,7 +3,6 @@
 use super::duplex_mutex::DuplexMutex;
 use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
-use atomic::Atomic;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
@@ -21,7 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::mem::swap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
@@ -38,6 +37,7 @@ pub use wasm_log::{LogLevel, WasmCallback, WasmLoggerBuilder};
 mod native_log;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_log::{FfiCallback, LogLevel, UnifiedLoggerBuilder};
+use std::str::FromStr;
 
 lazy_static! {
     /// If this C callback is present then all the logging output should happen through it
@@ -184,6 +184,104 @@ macro_rules! log {
     }}
 }
 
+/// Log to the `ctx` dashboard with single tags, or key-value tags, or without any tags.
+///
+/// # Examples
+///
+/// ## With single and key-value tags
+///
+/// ```rust
+/// log_tag!(
+///   ctx,
+///   "😅",
+///   "tx_history",
+///   "coin" => coin.as_ref().conf.ticker;
+///   fmt = "Some message: {}",
+///   any_message
+/// );
+/// ```
+///
+/// ## Without any tags
+///
+/// ```rust
+/// log_tag!(ctx, "😅"; fmt = "Some message: {}", any_message);
+/// ```
+///
+/// # Important
+///
+/// Don't forget to separate tags and message formatting using `;` symbol.
+#[macro_export]
+macro_rules! log_tag {
+    ($ctx:expr, $emotion:literal $(, $tag_key:expr $(=> $tag_val:expr)? )* ; fmt = $($arg:tt)*) => {{
+        let tags: &[&dyn $crate::log::TagParam] = &[
+            $(
+                &(
+                    $tag_key.to_string()
+                    $(, $tag_val.to_string())?
+                )
+            ),*
+        ];
+        let line = ERRL!($($arg)*);
+        $ctx.log.log($emotion, tags, &line);
+    }};
+}
+
+pub trait LogOnError {
+    // Log the error and caller location to WARN level here.
+    fn warn_log(self);
+
+    // Log the error, caller location and the given message to WARN level here.
+    fn warn_log_with_msg(self, msg: &str);
+
+    // Log the error and caller location to ERROR level here.
+    fn error_log(self);
+
+    // Log the error, caller location and the given message to ERROR level here.
+    fn error_log_with_msg(self, msg: &str);
+}
+
+impl<T, E: fmt::Display> LogOnError for Result<T, E> {
+    #[track_caller]
+    fn warn_log(self) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            warn!("{}:{}] {}", file, line, e);
+        }
+    }
+
+    #[track_caller]
+    fn warn_log_with_msg(self, msg: &str) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            warn!("{}:{}] {}: {}", file, line, msg, e);
+        }
+    }
+
+    #[track_caller]
+    fn error_log(self) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            error!("{}:{}] {}", file, line, e);
+        }
+    }
+
+    #[track_caller]
+    fn error_log_with_msg(self, msg: &str) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = gstuff::filename(location.file());
+            let line = location.line();
+            error!("{}:{}] {}: {}", file, line, msg, e);
+        }
+    }
+}
+
 pub trait TagParam<'a> {
     fn key(&self) -> String;
     fn val(&self) -> Option<String>;
@@ -212,6 +310,11 @@ impl<'a> TagParam<'a> for (String, &'a str) {
 impl<'a> TagParam<'a> for (&'a str, i32) {
     fn key(&self) -> String { String::from(self.0) }
     fn val(&self) -> Option<String> { Some(fomat!((self.1))) }
+}
+
+impl<'a> TagParam<'a> for (String, String) {
+    fn key(&self) -> String { self.0.clone() }
+    fn val(&self) -> Option<String> { Some(self.1.clone()) }
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -246,10 +349,10 @@ pub struct Status {
     pub tags: DuplexMutex<Vec<Tag>>,
     pub line: DuplexMutex<String>,
     /// The time, in milliseconds since UNIX epoch, when the tracked operation started.
-    pub start: Atomic<u64>,
+    pub start: AtomicU64,
     /// Expected time limit of the tracked operation, in milliseconds since UNIX epoch.  
     /// 0 if no deadline is set.
-    pub deadline: Atomic<u64>,
+    pub deadline: AtomicU64,
 }
 
 impl Clone for Status {
@@ -259,8 +362,8 @@ impl Clone for Status {
         Status {
             tags: DuplexMutex::new(tags),
             line: DuplexMutex::new(line),
-            start: Atomic::new(self.start.load(Ordering::Relaxed)),
-            deadline: Atomic::new(self.deadline.load(Ordering::Relaxed)),
+            start: AtomicU64::new(self.start.load(Ordering::Relaxed)),
+            deadline: AtomicU64::new(self.deadline.load(Ordering::Relaxed)),
         }
     }
 }
@@ -382,8 +485,8 @@ impl StatusHandle {
             let status = Arc::new(Status {
                 tags: DuplexMutex::new(tagsʹ),
                 line: DuplexMutex::new(line.into()),
-                start: Atomic::new(now_ms()),
-                deadline: Atomic::new(0),
+                start: AtomicU64::new(now_ms()),
+                deadline: AtomicU64::new(0),
             });
             self.status = Some(status.clone());
             self.dashboard.spinlock(77).unwrap().push(status);
@@ -509,17 +612,17 @@ impl LogWeak {
 /// The state used to periodically log the dashboard.
 struct DashboardLogging {
     /// The time when the dashboard was last printed into the log.
-    last_log_ms: Atomic<u64>,
+    last_log_ms: AtomicU64,
     /// Checksum of the dashboard that was last printed into the log.  
     /// Allows us to detect whether the dashboard has changed since then.
-    last_hash: Atomic<u64>,
+    last_hash: AtomicU64,
 }
 
 impl Default for DashboardLogging {
     fn default() -> DashboardLogging {
         DashboardLogging {
-            last_log_ms: Atomic::new(0),
-            last_hash: Atomic::new(0),
+            last_log_ms: AtomicU64::new(0),
+            last_hash: AtomicU64::new(0),
         }
     }
 }
@@ -871,6 +974,25 @@ impl Drop for LogState {
             }
         } else {
             log!("LogState] Bye!");
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct UnknownLogLevel(String);
+
+impl FromStr for LogLevel {
+    type Err = UnknownLogLevel;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "off" => Ok(LogLevel::Off),
+            "error" => Ok(LogLevel::Error),
+            "warn" => Ok(LogLevel::Warn),
+            "info" => Ok(LogLevel::Info),
+            "debug" => Ok(LogLevel::Debug),
+            "trace" => Ok(LogLevel::Trace),
+            _ => Err(UnknownLogLevel(s.to_owned())),
         }
     }
 }

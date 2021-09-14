@@ -1,4 +1,4 @@
-use super::{OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{AddressFormat, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
@@ -24,7 +24,7 @@ struct BestOrdersRequest {
     volume: MmNumber,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct BestOrdersRes {
     orders: HashMap<String, Vec<OrderbookItemWithProof>>,
 }
@@ -54,7 +54,7 @@ pub async fn process_best_orders_p2p_request(
         let orders = match orderbook.ordered.get(&pair) {
             Some(orders) => orders,
             None => {
-                log::warn!("No orders for pair {:?}", pair);
+                log::debug!("No orders for pair {:?}", pair);
                 continue;
             },
         };
@@ -85,7 +85,7 @@ pub async fn process_best_orders_p2p_request(
                     }
                 },
                 None => {
-                    log::warn!("No order with uuid {:?}", ordered.uuid);
+                    log::debug!("No order with uuid {:?}", ordered.uuid);
                     continue;
                 },
             };
@@ -131,7 +131,13 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                let address = match address_by_coin_conf_and_pubkey_str(&ctx, &coin, &coin_conf, &order.pubkey) {
+                // Todo: use the right address format when a solution is found for the problem of protocol_info
+                let address = match address_by_coin_conf_and_pubkey_str(
+                    &coin,
+                    &coin_conf,
+                    &order.pubkey,
+                    AddressFormat::Standard,
+                ) {
                     Ok(a) => a,
                     Err(e) => {
                         log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);
@@ -139,8 +145,8 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                     },
                 };
                 let entry = match req.action {
-                    BestOrdersAction::Buy => order.as_rpc_entry_ask(address, false),
-                    BestOrdersAction::Sell => order.as_rpc_entry_bid(address, false),
+                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, false),
+                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, false),
                 };
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
