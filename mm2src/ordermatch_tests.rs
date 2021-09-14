@@ -2612,7 +2612,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
-        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned().unwrap(),
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
     )
     .unwrap();
 
@@ -2659,7 +2659,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
-        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned().unwrap(),
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
     )
     .unwrap();
 

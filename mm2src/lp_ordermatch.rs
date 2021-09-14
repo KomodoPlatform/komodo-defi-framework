@@ -530,8 +530,6 @@ fn get_pubkeys_orders(
     base: String,
     rel: String,
 ) -> (usize, HashMap<String, PubkeyOrders>, HashMap<Uuid, BaseRelProtocolInfo>) {
-    let mut protocol_infos = HashMap::new();
-
     let asks = orderbook.unordered.get(&(base.clone(), rel.clone()));
     let bids = orderbook.unordered.get(&(rel, base));
 
@@ -543,6 +541,7 @@ fn get_pubkeys_orders(
     let orders = asks.iter().chain(bids.iter()).copied().flatten();
 
     let mut uuids_by_pubkey = HashMap::new();
+    let mut protocol_infos = HashMap::new();
     for uuid in orders {
         let order = orderbook
             .order_set
@@ -623,6 +622,7 @@ impl<Key: Eq + std::hash::Hash, V1> DeltaOrFullTrie<Key, V1> {
 enum TrieDiffHistoryError {
     TrieDbError(Box<trie_db::TrieError<H64, sp_trie::Error>>),
     TryFromBytesError(TryFromBytesError),
+    GetterNoneForKeyFromTrie,
 }
 
 impl std::fmt::Display for TrieDiffHistoryError {
@@ -642,7 +642,7 @@ impl From<Box<trie_db::TrieError<H64, sp_trie::Error>>> for TrieDiffHistoryError
 fn get_full_trie<Key, Value>(
     trie_root: &H64,
     db: &MemoryDB<Blake2Hasher64>,
-    getter: impl Fn(&Key) -> Value,
+    getter: impl Fn(&Key) -> Option<Value>,
 ) -> Result<Vec<(Key, Value)>, TrieDiffHistoryError>
 where
     Key: Clone + Eq + std::hash::Hash + TryFromBytes,
@@ -653,7 +653,7 @@ where
         .map(|key_value| {
             let (key, _) = key_value?;
             let key = TryFromBytes::try_from_bytes(key)?;
-            let val = getter(&key);
+            let val = getter(&key).ok_or(TrieDiffHistoryError::GetterNoneForKeyFromTrie)?;
             Ok((key, val))
         })
         .collect();
@@ -666,7 +666,7 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone> DeltaOrFull
         from_hash: H64,
         actual_trie_root: H64,
         db: &MemoryDB<Blake2Hasher64>,
-        getter: impl Fn(&Key) -> Value,
+        getter: impl Fn(&Key) -> Option<Value>,
     ) -> Result<DeltaOrFullTrie<Key, Value>, TrieDiffHistoryError> {
         if let Some(delta) = history.get(&from_hash) {
             let mut current_delta = delta;
@@ -713,7 +713,7 @@ async fn process_sync_pubkey_orderbook_state(
         None => return Ok(None),
     };
 
-    let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned().unwrap();
+    let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
         .into_iter()
         .map(|(pair, root)| {
