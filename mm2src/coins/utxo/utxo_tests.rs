@@ -19,6 +19,11 @@ use serialization::{deserialize, CoinVariant};
 const TEST_COIN_NAME: &'static str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
 const TEST_COIN_HRP: &'static str = "rck";
+const RICK_ELECTRUM_ADDRS: &[&'static str] = &[
+    "electrum1.cipig.net:10017",
+    "electrum2.cipig.net:10017",
+    "electrum3.cipig.net:10017",
+];
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();
@@ -135,11 +140,7 @@ fn utxo_coin_for_test(
 
 #[test]
 fn test_extract_secret() {
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10017",
-        "electrum2.cipig.net:10017",
-        "electrum3.cipig.net:10017",
-    ]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
 
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
@@ -151,11 +152,7 @@ fn test_extract_secret() {
 
 #[test]
 fn test_generate_transaction() {
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10017",
-        "electrum2.cipig.net:10017",
-        "electrum3.cipig.net:10017",
-    ]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let unspents = vec![UnspentInfo {
         value: 10000000000,
@@ -246,7 +243,7 @@ fn test_generate_transaction() {
 
 #[test]
 fn test_addresses_from_script() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
@@ -415,7 +412,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
 #[test]
 fn test_search_for_swap_tx_spend_electrum_was_spent() {
     let secret = [0; 32];
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -448,7 +445,7 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
 #[test]
 fn test_search_for_swap_tx_spend_electrum_was_refunded() {
     let secret = [0; 20];
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -847,7 +844,7 @@ fn test_withdraw_rick_rewards_none() {
 
 #[test]
 fn test_ordered_mature_unspents_without_tx_cache() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -867,7 +864,7 @@ fn test_ordered_mature_unspents_without_tx_cache() {
 #[test]
 fn test_utxo_lock() {
     // send several transactions concurrently to check that they are not using same inputs
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10017", "electrum2.cipig.net:10017"]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let output = TransactionOutput {
         value: 1000000,
@@ -1710,11 +1707,7 @@ fn test_ordered_mature_unspents_from_cache_impl(
 ) {
     const TX_HASH: &str = "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f";
     let tx_hash: H256Json = hex::decode(TX_HASH).unwrap().as_slice().into();
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10017",
-        "electrum2.cipig.net:10017",
-        "electrum3.cipig.net:10017",
-    ]);
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let mut verbose = client.get_verbose_transaction(&tx_hash).wait().unwrap();
     verbose.confirmations = cached_confs;
     verbose.height = cached_height;

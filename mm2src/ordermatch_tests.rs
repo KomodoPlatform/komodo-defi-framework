@@ -1506,7 +1506,13 @@ fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     (ctx, pubkey, secret)
 }
 
-fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: String, n: usize) -> Vec<OrderbookItem> {
+pub(super) fn make_random_orders(
+    pubkey: String,
+    _secret: &[u8; 32],
+    base: String,
+    rel: String,
+    n: usize,
+) -> Vec<OrderbookItem> {
     let mut rng = rand::thread_rng();
     let mut orders = Vec::with_capacity(n);
     for _i in 0..n {
@@ -1522,6 +1528,8 @@ fn make_random_orders(pubkey: String, _secret: &[u8; 32], base: String, rel: Str
             created_at: now_ms() / 1000,
             timestamp: now_ms() / 1000,
             pair_trie_root: H64::default(),
+            base_protocol_info: vec![],
+            rel_protocol_info: vec![],
         };
 
         orders.push((order, pubkey.clone()).into());
@@ -1607,7 +1615,11 @@ fn test_process_get_orderbook_request() {
             .get(&pubkey)
             .expect(&format!("!best_orders_by_pubkeys is expected to contain {:?}", pubkey));
 
-        let mut actual: Vec<OrderbookItem> = item.orders.iter().map(|(_uuid, order)| order.clone()).collect();
+        let mut actual: Vec<OrderbookItem> = item
+            .orders
+            .iter()
+            .map(|(_uuid, order)| OrderbookItem::from_p2p_and_proto_info(order.clone(), BaseRelProtocolInfo::default()))
+            .collect();
         actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
         log!([pubkey]"-"[actual.len()]);
         assert_eq!(actual, *expected);
@@ -1707,14 +1719,17 @@ fn test_request_and_fill_orderbook() {
             .into_iter()
             .map(|(pubkey, orders)| {
                 let item = GetOrderbookPubkeyItem {
-                    orders,
+                    orders: orders.into_iter().map(|(uuid, order)| (uuid, order.into())).collect(),
                     last_keep_alive: now_ms() / 1000,
                     last_signed_pubkey_payload: vec![],
                 };
                 (pubkey, item)
             })
             .collect();
-        let orderbook = GetOrderbookRes { pubkey_orders: result };
+        let orderbook = GetOrderbookRes {
+            pubkey_orders: result,
+            protocol_infos: HashMap::new(),
+        };
         let encoded = encode_message(&orderbook).unwrap();
 
         // send the response through the response channel
@@ -1785,9 +1800,9 @@ fn test_request_and_fill_orderbook() {
             .iter()
             .expect("!TrieDB::iter()")
             .map(|key_value| {
-                let (key, value) = key_value.expect("Iterator returned an error");
+                let (key, _) = key_value.expect("Iterator returned an error");
                 let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
-                let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                let value = orderbook.order_set.get(&key).cloned().unwrap();
                 (key, value)
             })
             .collect();
@@ -2169,9 +2184,15 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
     let actual_root_hash = delta_trie_root::<Layout, _, _, _, _, _>(
         &mut old_mem_db,
         pair_trie_root,
-        delta
-            .into_iter()
-            .map(|(uuid, order)| (*uuid.as_bytes(), order.map(|o| encode_message(&o).unwrap()))),
+        delta.into_iter().map(|(uuid, order)| {
+            (
+                *uuid.as_bytes(),
+                order.map(|o| {
+                    let o = OrderbookItem::from_p2p_and_proto_info(o, BaseRelProtocolInfo::default());
+                    o.trie_state_bytes()
+                }),
+            )
+        }),
     )
     .unwrap();
     assert_eq!(expected_root_hash, actual_root_hash);
@@ -2409,7 +2430,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
             .get(&alb_pair)
             .expect("MORTY:RICK must be in trie_roots");
 
-        let order_bytes = rmp_serde::to_vec(&new_order).expect("Serialization should never fail");
+        let order_bytes = new_order.trie_state_bytes();
         let mut new_root = old_root;
         let mut trie = get_trie_mut(&mut orderbook.memory_db, &mut new_root).expect("!get_trie_mut");
         trie.insert(new_order.uuid.as_bytes(), &order_bytes)
@@ -2424,6 +2445,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
             .trie_roots
             .insert(alb_pair.clone(), new_root);
 
+        orderbook.order_set.insert(new_order.uuid, new_order.clone());
         (old_root, new_root)
     };
 
@@ -2442,8 +2464,9 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
         DeltaOrFullTrie::FullTrie(full_trie) => full_trie,
     };
 
-    let mut expected: Vec<_> = orders.into_iter().map(|order| (order.uuid, order)).collect();
-    expected.push((new_order.uuid, new_order));
+    let mut expected: Vec<(Uuid, OrderbookP2PItem)> =
+        orders.into_iter().map(|order| (order.uuid, order.into())).collect();
+    expected.push((new_order.uuid, new_order.into()));
     full_trie.sort_by(|x, y| x.0.cmp(&y.0));
     expected.sort_by(|x, y| x.0.cmp(&y.0));
     assert_eq!(full_trie, expected);
@@ -2505,9 +2528,9 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
                 .iter()
                 .expect("!TrieDB::iter")
                 .map(|key_value| {
-                    let (key, value) = key_value.expect("Iterator returned an error");
+                    let (key, _) = key_value.expect("Iterator returned an error");
                     let key = TryFromBytes::try_from_bytes(key).expect("!try_from_bytes() key");
-                    let value = TryFromBytes::try_from_bytes(value).expect("!try_from_bytes() val");
+                    let value = orderbook.order_set.get(&key).cloned().unwrap();
                     (key, value)
                 })
                 .collect();
@@ -2589,6 +2612,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
     )
     .unwrap();
 
@@ -2597,7 +2621,16 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         _ => panic!("Expected DeltaOrFullTrie::FullTrie"),
     };
 
-    let new_alice_root = process_pubkey_full_trie(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, full_trie);
+    let new_alice_root = process_pubkey_full_trie(
+        &mut orderbook_alice,
+        &pubkey_bob,
+        &rick_morty_pair,
+        full_trie
+            .into_iter()
+            .map(|(uuid, order)| (uuid, order.into()))
+            .collect(),
+        &HashMap::new(),
+    );
 
     assert_eq!(new_alice_root, *bob_root);
 
@@ -2626,6 +2659,7 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         *alice_root,
         *bob_root,
         &orderbook_bob.memory_db,
+        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
     )
     .unwrap();
 
@@ -2635,7 +2669,16 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         _ => panic!("Expected DeltaOrFullTrie::Delta"),
     };
 
-    let new_alice_root = process_trie_delta(&mut orderbook_alice, &pubkey_bob, &rick_morty_pair, trie_delta);
+    let new_alice_root = process_trie_delta(
+        &mut orderbook_alice,
+        &pubkey_bob,
+        &rick_morty_pair,
+        trie_delta
+            .into_iter()
+            .map(|(uuid, order)| (uuid, order.map(From::from)))
+            .collect(),
+        &HashMap::new(),
+    );
     assert_eq!(new_alice_root, *bob_root);
 }
 
@@ -2711,4 +2754,189 @@ fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() 
             .len(),
         10
     );
+}
+
+#[test]
+fn test_trie_state_bytes() {
+    let pubkey = "037310a8fb9fd8f198a1a21db830252ad681fccda580ed4101f3f6bfb98b34fab5";
+    let base = "RICK";
+    let rel = "MORTY";
+    let price = BigRational::from_integer(1.into());
+    let max_volume = BigRational::from_integer(u64::MAX.into());
+    let min_volume = BigRational::from_integer(1.into());
+    let uuid = Uuid::new_v4();
+    let created_at = now_ms() / 1000;
+
+    #[derive(Serialize)]
+    struct OrderbookItemV1 {
+        pubkey: String,
+        base: String,
+        rel: String,
+        price: BigRational,
+        max_volume: BigRational,
+        min_volume: BigRational,
+        uuid: Uuid,
+        created_at: u64,
+    }
+
+    let old = OrderbookItemV1 {
+        pubkey: pubkey.to_owned(),
+        base: base.to_owned(),
+        rel: rel.to_owned(),
+        price: price.clone(),
+        max_volume: max_volume.clone(),
+        min_volume: min_volume.clone(),
+        uuid,
+        created_at,
+    };
+
+    let old_bytes = rmp_serde::to_vec(&old).unwrap();
+
+    let new = OrderbookItem {
+        pubkey: pubkey.to_owned(),
+        base: base.to_owned(),
+        rel: rel.to_owned(),
+        price,
+        max_volume,
+        min_volume,
+        uuid,
+        created_at,
+        base_protocol_info: vec![1, 2, 3],
+        rel_protocol_info: vec![4, 5, 6],
+    };
+
+    let new_bytes = new.trie_state_bytes();
+
+    assert_eq!(old_bytes, new_bytes);
+}
+
+#[test]
+fn check_get_orderbook_p2p_res_serde() {
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    struct OrderbookItemV1 {
+        pubkey: String,
+        base: String,
+        rel: String,
+        price: BigRational,
+        max_volume: BigRational,
+        min_volume: BigRational,
+        uuid: Uuid,
+        created_at: u64,
+    }
+
+    type PubkeyOrdersV1 = Vec<(Uuid, OrderbookItemV1)>;
+
+    impl From<OrderbookItem> for OrderbookItemV1 {
+        fn from(o: OrderbookItem) -> Self {
+            OrderbookItemV1 {
+                pubkey: o.pubkey,
+                base: o.base,
+                rel: o.rel,
+                price: o.price,
+                max_volume: o.max_volume,
+                min_volume: o.min_volume,
+                uuid: o.uuid,
+                created_at: o.created_at,
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct GetOrderbookPubkeyItemV1 {
+        /// Timestamp of the latest keep alive message received.
+        last_keep_alive: u64,
+        /// last signed OrdermatchMessage payload
+        last_signed_pubkey_payload: Vec<u8>,
+        /// Requested orders.
+        orders: PubkeyOrdersV1,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct GetOrderbookResV1 {
+        /// Asks and bids grouped by pubkey.
+        pubkey_orders: HashMap<String, GetOrderbookPubkeyItemV1>,
+    }
+
+    let orders = make_random_orders("".into(), &[1; 32], "RICK".into(), "MORTY".into(), 10);
+    let item = GetOrderbookPubkeyItemV1 {
+        last_keep_alive: 100,
+        last_signed_pubkey_payload: vec![1, 2, 3],
+        orders: orders.into_iter().map(|order| (order.uuid, order.into())).collect(),
+    };
+
+    let old = GetOrderbookResV1 {
+        pubkey_orders: HashMap::from_iter(std::iter::once(("pubkey".into(), item))),
+    };
+
+    let old_serialized = rmp_serde::to_vec(&old).unwrap();
+
+    let mut new: GetOrderbookRes = rmp_serde::from_read_ref(&old_serialized).unwrap();
+    new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
+        base: vec![1],
+        rel: vec![2],
+    });
+
+    let new_serialized = rmp_serde::to_vec(&new).unwrap();
+
+    let old_from_new: GetOrderbookResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+    assert_eq!(old, old_from_new);
+}
+
+#[test]
+fn check_sync_pubkey_state_p2p_res_serde() {
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    struct OrderbookItemV1 {
+        pubkey: String,
+        base: String,
+        rel: String,
+        price: BigRational,
+        max_volume: BigRational,
+        min_volume: BigRational,
+        uuid: Uuid,
+        created_at: u64,
+    }
+
+    impl From<OrderbookItem> for OrderbookItemV1 {
+        fn from(o: OrderbookItem) -> Self {
+            OrderbookItemV1 {
+                pubkey: o.pubkey,
+                base: o.base,
+                rel: o.rel,
+                price: o.price,
+                max_volume: o.max_volume,
+                min_volume: o.min_volume,
+                uuid: o.uuid,
+                created_at: o.created_at,
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct SyncPubkeyOrderbookStateResV1 {
+        /// last signed OrdermatchMessage payload from pubkey
+        last_signed_pubkey_payload: Vec<u8>,
+        pair_orders_diff: HashMap<AlbOrderedOrderbookPair, DeltaOrFullTrie<Uuid, OrderbookItemV1>>,
+    }
+
+    let orders = make_random_orders("".into(), &[1; 32], "RICK".into(), "MORTY".into(), 10);
+
+    let old = SyncPubkeyOrderbookStateResV1 {
+        last_signed_pubkey_payload: vec![1, 2, 3, 4],
+        pair_orders_diff: HashMap::from_iter(iter::once((
+            alb_ordered_pair("RICK", "MORTY"),
+            DeltaOrFullTrie::FullTrie(orders.into_iter().map(|order| (order.uuid, order.into())).collect()),
+        ))),
+    };
+
+    let old_serialized = rmp_serde::to_vec(&old).unwrap();
+
+    let mut new: SyncPubkeyOrderbookStateRes = rmp_serde::from_read_ref(&old_serialized).unwrap();
+    new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
+        base: vec![1],
+        rel: vec![2],
+    });
+
+    let new_serialized = rmp_serde::to_vec(&new).unwrap();
+
+    let _old_from_new: SyncPubkeyOrderbookStateResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
 }

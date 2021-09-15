@@ -1,4 +1,5 @@
-use super::{AddressFormat, OrderbookItemWithProof, OrdermatchContext, OrdermatchRequest};
+use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext,
+            OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
@@ -9,6 +10,7 @@ use num_rational::BigRational;
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -24,9 +26,11 @@ struct BestOrdersRequest {
     volume: MmNumber,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct BestOrdersRes {
-    orders: HashMap<String, Vec<OrderbookItemWithProof>>,
+    orders: HashMap<String, Vec<OrderbookP2PItemWithProof>>,
+    #[serde(default)]
+    protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
 pub async fn process_best_orders_p2p_request(
@@ -50,6 +54,9 @@ pub async fn process_best_orders_p2p_request(
         BestOrdersAction::Buy => (coin.clone(), ticker.clone()),
         BestOrdersAction::Sell => (ticker.clone(), coin.clone()),
     });
+
+    let mut protocol_infos = HashMap::new();
+
     for pair in pairs {
         let orders = match orderbook.ordered.get(&pair) {
             Some(orders) => orders,
@@ -77,7 +84,8 @@ pub async fn process_best_orders_p2p_request(
                         BestOrdersAction::Sell => &o.max_volume * &o.price,
                     };
                     let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());
-                    best_orders.push(order_w_proof);
+                    protocol_infos.insert(order_w_proof.order.uuid, order_w_proof.order.base_rel_proto_info());
+                    best_orders.push(order_w_proof.into());
 
                     collected_volume += max_volume;
                     if collected_volume >= required_volume {
@@ -95,7 +103,10 @@ pub async fn process_best_orders_p2p_request(
             BestOrdersAction::Sell => result.insert(pair.0, best_orders),
         };
     }
-    let response = BestOrdersRes { orders: result };
+    let response = BestOrdersRes {
+        orders: result,
+        protocol_infos,
+    };
     let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
 }
@@ -131,14 +142,16 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
             }
             for order_w_proof in orders_w_proofs {
                 let order = order_w_proof.order;
-                // Todo: use the right address format when a solution is found for the problem of protocol_info
-                let address = match address_by_coin_conf_and_pubkey_str(
-                    &ctx,
-                    &coin,
-                    &coin_conf,
-                    &order.pubkey,
-                    AddressFormat::Standard,
-                ) {
+                let empty_proto_info = BaseRelProtocolInfo::default();
+                let proto_infos = p2p_response
+                    .protocol_infos
+                    .get(&order.uuid)
+                    .unwrap_or(&empty_proto_info);
+                let addr_format = match req.action {
+                    BestOrdersAction::Buy => addr_format_from_protocol_info(&proto_infos.rel),
+                    BestOrdersAction::Sell => addr_format_from_protocol_info(&proto_infos.base),
+                };
+                let address = match address_by_coin_conf_and_pubkey_str(&coin, &coin_conf, &order.pubkey, addr_format) {
                     Ok(a) => a,
                     Err(e) => {
                         log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);
@@ -158,4 +171,84 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     Response::builder()
         .body(json::to_vec(&res).expect("Serialization failed"))
         .map_err(|e| ERRL!("{}", e))
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod best_orders_test {
+    use super::*;
+    use crate::mm2::lp_ordermatch::ordermatch_tests::make_random_orders;
+    use crate::mm2::lp_ordermatch::{OrderbookItem, TrieProof};
+    use std::iter::FromIterator;
+
+    #[test]
+    fn check_best_orders_p2p_res_serde() {
+        #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+        struct BestOrderV1 {
+            pubkey: String,
+            base: String,
+            rel: String,
+            price: BigRational,
+            max_volume: BigRational,
+            min_volume: BigRational,
+            uuid: Uuid,
+            created_at: u64,
+        }
+
+        impl From<OrderbookItem> for BestOrderV1 {
+            fn from(o: OrderbookItem) -> Self {
+                BestOrderV1 {
+                    pubkey: o.pubkey,
+                    base: o.base,
+                    rel: o.rel,
+                    price: o.price,
+                    max_volume: o.max_volume,
+                    min_volume: o.min_volume,
+                    uuid: o.uuid,
+                    created_at: o.created_at,
+                }
+            }
+        }
+
+        #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+        struct BestOrderWithProofV1 {
+            /// Orderbook item
+            order: BestOrderV1,
+            /// Last pubkey message payload that contains most recent pair trie root
+            last_message_payload: Vec<u8>,
+            /// Proof confirming that orderbook item is in the pair trie
+            proof: TrieProof,
+        }
+
+        #[derive(Debug, Deserialize, PartialEq, Serialize)]
+        struct BestOrdersResV1 {
+            orders: HashMap<String, Vec<BestOrderWithProofV1>>,
+        }
+
+        let orders = make_random_orders("".into(), &[1; 32], "RICK".into(), "MORTY".into(), 10);
+        let orders: Vec<_> = orders
+            .into_iter()
+            .map(|order| BestOrderWithProofV1 {
+                order: order.into(),
+                last_message_payload: vec![],
+                proof: vec![],
+            })
+            .collect();
+
+        let old = BestOrdersResV1 {
+            orders: HashMap::from_iter(std::iter::once(("RICK".into(), orders))),
+        };
+
+        let old_serialized = rmp_serde::to_vec(&old).unwrap();
+
+        let mut new: BestOrdersRes = rmp_serde::from_read_ref(&old_serialized).unwrap();
+        new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
+            base: vec![1],
+            rel: vec![2],
+        });
+
+        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+
+        let old_from_new: BestOrdersResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+        assert_eq!(old, old_from_new);
+    }
 }
