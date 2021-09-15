@@ -1,5 +1,5 @@
-use crate::mm2::lp_ordermatch::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order,
-                                RecentOrdersSelectResult, TakerOrder, TakerOrderCancellationReason};
+use super::{HistoricalOrder, MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order,
+            RecentOrdersSelectResult, TakerOrder, TakerOrderCancellationReason};
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::mm_ctx::MmArc;
@@ -65,12 +65,17 @@ pub async fn save_my_new_taker_order(ctx: MmArc, order: &TakerOrder) {
     }
 }
 
-pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) {
+pub async fn save_maker_order_on_update(ctx: MmArc, order: &mut MakerOrder, new_change: HistoricalOrder) {
     let storage = MyOrdersStorage::new(ctx);
+    if let Ok(old_order) = storage.load_active_maker_order(order.uuid).await {
+        order.changes_history = old_order.changes_history;
+        order.changes_history.get_or_insert(Vec::new()).push(new_change);
+    }
     storage
         .update_active_maker_order(order)
         .await
         .error_log_with_msg("!update_active_maker_order");
+    order.changes_history = None;
 
     if order.save_in_history {
         storage
@@ -118,10 +123,16 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
 #[cfg_attr(test, mockable)]
 pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCancellationReason) -> BoxFut<(), ()> {
     let fut = async move {
-        let uuid = order.uuid;
-        let save_in_history = order.save_in_history;
+        let mut order_to_save = order;
+        let uuid = order_to_save.uuid;
+        let save_in_history = order_to_save.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
+        if order_to_save.created_at != order_to_save.updated_at.unwrap_or(order_to_save.created_at) {
+            if let Ok(order_from_file) = storage.load_active_maker_order(order_to_save.uuid).await {
+                order_to_save = order_from_file;
+            }
+        }
         storage
             .delete_active_maker_order(uuid)
             .await
@@ -129,7 +140,7 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
 
         if save_in_history {
             storage
-                .save_order_in_history(&Order::Maker(order.clone()))
+                .save_order_in_history(&Order::Maker(order_to_save.clone()))
                 .await
                 .error_log_with_msg("!save_order_in_history");
             storage
@@ -145,6 +156,8 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
 #[async_trait]
 pub trait MyActiveOrders {
     async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>>;
+
+    async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder>;
 
     async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>>;
 
@@ -240,6 +253,13 @@ mod native_impl {
         async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
             let dir_path = my_maker_orders_dir(&self.ctx);
             Ok(read_dir_json(&dir_path).await?)
+        }
+
+        async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
+            let path = my_maker_order_file_path(&self.ctx, &uuid);
+            read_json(&path)
+                .await?
+                .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
         async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {
@@ -401,6 +421,18 @@ mod wasm_impl {
                 .into_iter()
                 .map(|(_item_id, MyActiveMakerOrdersTable { order_payload, .. })| order_payload)
                 .collect())
+        }
+
+        async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
+            let db = self.ctx.ordermatch_db().await?;
+            let transaction = db.transaction().await?;
+            let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
+
+            table
+                .get_item_by_unique_index("uuid", uuid)
+                .await?
+                .map(|(_item_id, MyActiveMakerOrdersTable { order_payload, .. })| order_payload)
+                .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
         async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {

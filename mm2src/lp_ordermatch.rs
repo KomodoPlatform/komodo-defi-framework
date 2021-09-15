@@ -1637,11 +1637,12 @@ impl<'a> MakerOrderBuilder<'a> {
             self.price.clone(),
         )?;
 
+        let created_at = now_ms();
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            created_at: now_ms(),
-            updated_at: Some(now_ms()),
+            created_at,
+            updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
             min_base_vol: actual_min_base_vol,
             price: self.price,
@@ -1656,11 +1657,12 @@ impl<'a> MakerOrderBuilder<'a> {
 
     #[cfg(test)]
     fn build_unchecked(self) -> MakerOrder {
+        let created_at = now_ms();
         MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            created_at: now_ms(),
-            updated_at: Some(now_ms()),
+            created_at,
+            updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
             min_base_vol: self.min_base_vol.unwrap_or(self.base_coin.min_trading_vol()),
             price: self.price,
@@ -1784,13 +1786,14 @@ impl MakerOrder {
 
 impl From<TakerOrder> for MakerOrder {
     fn from(taker_order: TakerOrder) -> Self {
+        let created_at = now_ms();
         match taker_order.request.action {
             TakerAction::Sell => MakerOrder {
                 price: (taker_order.request.get_rel_amount() / taker_order.request.get_base_amount()),
                 max_base_vol: taker_order.request.get_base_amount().clone(),
                 min_base_vol: taker_order.min_volume,
-                created_at: now_ms(),
-                updated_at: Some(now_ms()),
+                created_at,
+                updated_at: Some(created_at),
                 base: taker_order.request.base,
                 rel: taker_order.request.rel,
                 matches: HashMap::new(),
@@ -1808,8 +1811,8 @@ impl From<TakerOrder> for MakerOrder {
                     price,
                     max_base_vol: taker_order.request.get_rel_amount().clone(),
                     min_base_vol,
-                    created_at: now_ms(),
-                    updated_at: Some(now_ms()),
+                    created_at,
+                    updated_at: Some(created_at),
                     base: taker_order.request.rel,
                     rel: taker_order.request.base,
                     matches: HashMap::new(),
@@ -2211,7 +2214,6 @@ impl Orderbook {
         }
 
         if prev_root != H64::default() {
-            // log::info!("UUID: {}, prev_root {:?} new_root {:?}.",order.uuid, prev_root, *pair_root);
             let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
             history.insert_new_diff(prev_root, TrieDiff {
                 delta: vec![(order.uuid, Some(order.clone()))],
@@ -3977,10 +3979,9 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
                 return ERR!("Order {} is being matched now, can't update", req.uuid);
             }
 
-            // let new_change = HistoricalOrder::build(&update_msg, order);
+            let new_change = HistoricalOrder::build(&update_msg, order);
             order.apply_updated(&update_msg);
-            // order.changes_history.get_or_insert(Vec::new()).push(new_change);
-            save_maker_order_on_update(ctx.clone(), order).await;
+            save_maker_order_on_update(ctx.clone(), order, new_change).await;
             update_msg.with_new_max_volume((new_volume - reserved_amount).into());
             (MakerOrderForRpc::from(&*order), order.base.as_str(), order.rel.as_str())
         },
@@ -4381,7 +4382,7 @@ fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct HistoricalOrder {
+pub struct HistoricalOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_base_vol: Option<MmNumber>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4394,37 +4395,37 @@ struct HistoricalOrder {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-// impl HistoricalOrder {
-//     fn build(new_order: &new_protocol::MakerOrderUpdated, old_order: &MakerOrder) -> HistoricalOrder {
-//         HistoricalOrder {
-//             max_base_vol: if new_order.new_max_volume().is_some() {
-//                 Some(old_order.max_base_vol.clone())
-//             } else {
-//                 None
-//             },
-//             min_base_vol: if new_order.new_min_volume().is_some() {
-//                 Some(old_order.min_base_vol.clone())
-//             } else {
-//                 None
-//             },
-//             price: if new_order.new_price().is_some() {
-//                 Some(old_order.price.clone())
-//             } else {
-//                 None
-//             },
-//             updated_at: old_order.updated_at,
-//             conf_settings: if let Some(settings) = new_order.new_conf_settings() {
-//                 if Some(settings) == old_order.conf_settings {
-//                     None
-//                 } else {
-//                     old_order.conf_settings
-//                 }
-//             } else {
-//                 None
-//             },
-//         }
-//     }
-// }
+impl HistoricalOrder {
+    fn build(new_order: &new_protocol::MakerOrderUpdated, old_order: &MakerOrder) -> HistoricalOrder {
+        HistoricalOrder {
+            max_base_vol: if new_order.new_max_volume().is_some() {
+                Some(old_order.max_base_vol.clone())
+            } else {
+                None
+            },
+            min_base_vol: if new_order.new_min_volume().is_some() {
+                Some(old_order.min_base_vol.clone())
+            } else {
+                None
+            },
+            price: if new_order.new_price().is_some() {
+                Some(old_order.price.clone())
+            } else {
+                None
+            },
+            updated_at: old_order.updated_at,
+            conf_settings: if let Some(settings) = new_order.new_conf_settings() {
+                if Some(settings) == old_order.conf_settings {
+                    None
+                } else {
+                    old_order.conf_settings
+                }
+            } else {
+                None
+            },
+        }
+    }
+}
 
 pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
