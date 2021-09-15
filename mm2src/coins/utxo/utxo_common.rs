@@ -423,9 +423,9 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> UtxoTxBuilder<'a, T> {
                             self.tx_fee += (f * P2PKH_OUTPUT_LEN) / KILO_BYTE;
                         }
                     }
-                    if let Some(min_relay) = min_relay_fee {
-                        if tx_fee < min_relay {
-                            tx_fee = min_relay;
+                    if let Some(min_relay) = self.min_relay_fee {
+                        if self.tx_fee < min_relay {
+                            self.tx_fee = min_relay;
                         }
                     }
                     true
@@ -444,7 +444,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> UtxoTxBuilder<'a, T> {
     pub async fn build(mut self) -> GenerateTxResult {
         let coin = self.coin;
         let dust: u64 = coin.as_ref().dust_amount;
-        let change_script_pubkey = output_script(&coin.as_ref().my_address).to_bytes();
+        let change_script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
 
         let actual_tx_fee = match self.fee {
             Some(fee) => fee,

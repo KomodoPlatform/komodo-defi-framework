@@ -967,7 +967,7 @@ impl MarketCoinOps for SlpToken {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 
-    fn display_priv_key(&self) -> String { self.platform_utxo.display_priv_key() }
+    fn display_priv_key(&self) -> String { self.platform_coin.display_priv_key() }
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }
 
@@ -1541,11 +1541,11 @@ impl MmCoin for SlpToken {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
-    fn mature_confirmations(&self) -> Option<u32> { self.platform_utxo.mature_confirmations() }
+    fn mature_confirmations(&self) -> Option<u32> { self.platform_coin.mature_confirmations() }
 
-    fn coin_protocol_info(&self) -> Option<Vec<u8>> { unimplemented!() }
+    fn coin_protocol_info(&self) -> Option<Vec<u8>> { None }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
 
 #[derive(Debug, Display)]

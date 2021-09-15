@@ -106,6 +106,7 @@ mod docker_tests {
     use coins::utxo::{dhash160, UtxoCommonOps};
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum, WithdrawRequest};
     use common::for_tests::enable_electrum;
+    use common::mm_ctx::{MmArc, MmCtxBuilder};
     use common::mm_number::MmNumber;
     use common::privkey::key_pair_from_secret;
     use common::{block_on, now_ms};
@@ -280,7 +281,7 @@ mod docker_tests {
             let mut slp_outputs = vec![];
 
             for _ in 0..18 {
-                let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+                let priv_key = *(SecretKey::new(&mut rand6::thread_rng()).as_ref());
                 let key_pair = key_pair_from_secret(priv_key).unwrap();
                 let address_hash = key_pair.public().address_hash();
                 let address = Address {
@@ -342,8 +343,8 @@ mod docker_tests {
         ticker: &str,
         balance: BigDecimal,
     ) -> (MmArc, UtxoStandardCoin, [u8; 32]) {
-        let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-        let (ctx, coin) = utxo_coin_from_privkey(ticker, &priv_key);
+        let priv_key = SecretKey::new(&mut rand6::thread_rng());
+        let (ctx, coin) = utxo_coin_from_privkey(ticker, priv_key.as_ref());
         let timeout = 30; // timeout if test takes more than 30 seconds to run
         let my_address = coin.my_address().expect("!my_address");
         fill_address(&coin, &my_address, balance, timeout);

@@ -1140,14 +1140,13 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
         value: 1000000000,
     }];
 
-    let fut = coin.generate_transaction(
-        unspents,
-        outputs,
-        FeePolicy::DeductFromOutput(0),
-        Some(ActualTxFee::Dynamic(100)),
-        None,
-    );
-    let generated = block_on(fut).unwrap();
+    let tx_builder = UtxoTxBuilder::new(&coin)
+        .add_available_inputs(unspents)
+        .add_outputs(outputs)
+        .with_fee_policy(FeePolicy::DeductFromOutput(0))
+        .with_fee(ActualTxFee::Dynamic(100));
+
+    let generated = block_on(tx_builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
     // `output (= 10.0) - fee_amount (= 1.0)`
     assert_eq!(generated.0.outputs[0].value, 900000000);

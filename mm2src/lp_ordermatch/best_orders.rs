@@ -133,6 +133,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                 let order = order_w_proof.order;
                 // Todo: use the right address format when a solution is found for the problem of protocol_info
                 let address = match address_by_coin_conf_and_pubkey_str(
+                    &ctx,
                     &coin,
                     &coin_conf,
                     &order.pubkey,

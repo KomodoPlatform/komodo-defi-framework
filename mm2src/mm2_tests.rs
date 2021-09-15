@@ -1143,7 +1143,7 @@ async fn trade_base_rel_electrum(
         log! ({"Alice log path: {}", mm_alice.log_path.display()})
     }
 
-    #[cfg(all(feature = "zhtlc", not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "zhtlc", not(target_arch = "wasm32")))]
     {
         let rmd = rmd160_from_passphrase(&bob_passphrase);
         let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");

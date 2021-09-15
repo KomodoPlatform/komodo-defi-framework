@@ -24,6 +24,7 @@ use futures01::Future;
 use http::StatusCode;
 use keys::Address;
 use primitives::hash::{H160, H256};
+use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
 use std::path::PathBuf;
 use std::process::Command;
@@ -133,9 +134,9 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
 }
 
 pub fn rmd160_from_priv(privkey: [u8; 32]) -> H160 {
-    let secret = SecretKey::parse(&privkey).unwrap();
-    let public = PublicKey::from_secret_key(&secret);
-    dhash160(&public.serialize_compressed())
+    let secret = SecretKey::from_slice(&privkey).unwrap();
+    let public = PublicKey::from_secret_key(&Secp256k1::new(), &secret);
+    dhash160(&public.serialize())
 }
 
 pub fn get_prefilled_slp_privkey() -> [u8; 32] { SLP_TOKEN_OWNERS.lock().unwrap().remove(0) }
@@ -312,14 +313,14 @@ pub fn generate_qrc20_coin_with_random_privkey(
     qtum_balance: BigDecimal,
     qrc20_balance: BigDecimal,
 ) -> (MmArc, Qrc20Coin, [u8; 32]) {
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let (ctx, coin) = qrc20_coin_from_privkey(ticker, &priv_key);
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let (ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key.as_ref());
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, qtum_balance, timeout);
     fill_qrc20_address(&coin, qrc20_balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 pub fn generate_qtum_coin_with_random_privkey(
@@ -345,14 +346,21 @@ pub fn generate_qtum_coin_with_random_privkey(
         "dust": 72800,
     });
     let req = json!({"method": "enable"});
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "QTUM", &conf, &req, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "QTUM",
+        &conf,
+        &req,
+        priv_key.as_ref(),
+    ))
+    .unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 pub fn generate_segwit_qtum_coin_with_random_privkey(
@@ -382,14 +390,21 @@ pub fn generate_segwit_qtum_coin_with_random_privkey(
         },
     });
     let req = json!({"method": "enable"});
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "QTUM", &conf, &req, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "QTUM",
+        &conf,
+        &req,
+        priv_key.as_ref(),
+    ))
+    .unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
-    (ctx, coin, priv_key)
+    (ctx, coin, *priv_key.as_ref())
 }
 
 pub fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)
@@ -442,8 +457,8 @@ pub fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
         EstimateSmartFeeState::Idle => log!("Start wait_for_estimate_smart_fee"),
     }
 
-    let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &priv_key);
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key.as_ref());
     let timeout = now_ms() / 1000 + timeout;
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
@@ -498,25 +513,25 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 priv_key
             },
             "QICK" | "QORTY" => {
-                let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-                let (_ctx, coin) = qrc20_coin_from_privkey(ticker, &priv_key);
+                let priv_key = SecretKey::new(&mut rand6::thread_rng());
+                let (_ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
                 fill_qrc20_address(&coin, 10.into(), timeout);
 
-                priv_key
+                *priv_key.as_ref()
             },
             "MYCOIN" | "MYCOIN1" => {
-                let priv_key = SecretKey::random(&mut rand4::thread_rng()).serialize();
-                let (_ctx, coin) = utxo_coin_from_privkey(ticker, &priv_key);
+                let priv_key = SecretKey::new(&mut rand6::thread_rng());
+                let (_ctx, coin) = utxo_coin_from_privkey(ticker, priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
                 // also fill the Qtum
-                let (_ctx, coin) = qrc20_coin_from_privkey("QICK", &priv_key);
+                let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key.as_ref());
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
 
-                priv_key
+                *priv_key.as_ref()
             },
             "ADEXSLP" => get_prefilled_slp_privkey(),
             "FORSLP" => get_prefilled_slp_privkey(),
