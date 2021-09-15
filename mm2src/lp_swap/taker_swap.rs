@@ -784,7 +784,7 @@ impl TakerSwap {
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
             taker_payment_lock: started_at + self.payment_locktime,
-            my_persistent_pub: self.my_persistent_pub.clone().into(),
+            my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_payment_wait: started_at + (self.payment_locktime * 2) / 5,
             maker_coin_start_block,

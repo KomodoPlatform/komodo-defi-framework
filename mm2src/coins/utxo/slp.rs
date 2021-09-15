@@ -110,7 +110,7 @@ impl From<NumConversError> for ValidateDexFeeError {
     fn from(err: NumConversError) -> ValidateDexFeeError { ValidateDexFeeError::NumConversionErr(err) }
 }
 
-#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::upper_case_acronyms, clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum SpendP2SHError {
     GenerateTxErr(GenerateTxError),

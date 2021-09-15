@@ -358,7 +358,7 @@ impl MakerSwap {
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
             maker_payment_lock: started_at + self.payment_locktime * 2,
-            my_persistent_pub: self.my_persistent_pub.clone().into(),
+            my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_coin_start_block,
             taker_coin_start_block,

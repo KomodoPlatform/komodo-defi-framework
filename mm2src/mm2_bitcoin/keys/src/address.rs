@@ -274,7 +274,7 @@ impl Address {
             ));
         };
 
-        CashAddress::new(network_prefix, self.hash.clone().take().to_vec(), address_type)
+        CashAddress::new(network_prefix, self.hash.take().to_vec(), address_type)
     }
 
     pub fn from_segwitaddress(

@@ -19,7 +19,7 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, Public};
 use script::{Builder as ScriptBuilder, Opcode, Script};
-use secp256k1_bindings::SecretKey;
+use secp256k1::SecretKey;
 use serialization::deserialize;
 use zcash_primitives::consensus;
 use zcash_primitives::legacy::Script as ZCashScript;

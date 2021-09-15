@@ -164,5 +164,5 @@ impl H256 {
     pub fn from_reversed_str(s: &'static str) -> Self { H256::from(s).reversed() }
 
     #[inline]
-    pub fn to_reversed_str(&self) -> String { self.reversed().to_string() }
+    pub fn to_reversed_str(self) -> String { self.reversed().to_string() }
 }
