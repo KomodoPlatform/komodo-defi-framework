@@ -2537,7 +2537,7 @@ pub async fn get_verbose_transaction_from_cache_or_rpc(
     coin: &UtxoCoinFields,
     txid: H256Json,
 ) -> UtxoRpcResult<VerboseTransactionFrom> {
-    let tx = coin.rpc_client.get_verbose_transaction(txid.clone()).compat().await?;
+    let tx = coin.rpc_client.get_verbose_transaction(&txid).compat().await?;
     Ok(VerboseTransactionFrom::Rpc(tx))
 }
 
