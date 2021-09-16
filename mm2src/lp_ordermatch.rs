@@ -394,7 +394,8 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
                 },
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
-                    process_maker_reserved(ctx, pubkey.unprefixed().into(), msg).await;
+                    // spawn because process_maker_reserved may take significant time to run
+                    spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
                     true
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -1853,6 +1854,8 @@ impl MakerReserved {
     fn get_base_amount(&self) -> &MmNumber { &self.base_amount }
 
     fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
+
+    fn price(&self) -> MmNumber { &self.rel_amount / &self.base_amount }
 }
 
 impl MakerReserved {
@@ -2357,6 +2360,9 @@ struct OrdermatchContext {
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub my_cancelled_orders: AsyncMutex<HashMap<Uuid, MakerOrder>>,
     pub orderbook: AsyncMutex<Orderbook>,
+    /// Pending MakerReserved messages for a specific TakerOrder UUID
+    /// Used to select a trade with the best price upon matching
+    pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
 }
 
 #[cfg_attr(test, mockable)]
@@ -2716,46 +2722,76 @@ pub async fn clean_memory_loop(ctx: MmArc) {
 
 async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    {
+        let my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+        if !my_taker_orders.contains_key(&reserved_msg.taker_order_uuid) {
+            return;
+        }
+    }
+
     let our_public_id = ctx.public_id().unwrap();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker reserved from our pubkey");
         return;
     }
 
+    let uuid = reserved_msg.taker_order_uuid;
+    {
+        let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
+        let pending_for_order = pending_map
+            .entry(reserved_msg.taker_order_uuid)
+            .or_insert_with(Vec::new);
+        pending_for_order.push(reserved_msg);
+        if pending_for_order.len() > 1 {
+            // messages will be sorted by price and processed in the first called handler
+            return;
+        }
+    }
+
+    Timer::sleep(3.).await;
+
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    let my_order = match my_taker_orders.entry(reserved_msg.taker_order_uuid) {
+    let my_order = match my_taker_orders.entry(uuid) {
         Entry::Vacant(_) => return,
         Entry::Occupied(entry) => entry.into_mut(),
     };
-    let (base_coin, rel_coin) = match find_pair(&ctx, &reserved_msg.base, &reserved_msg.rel).await {
+
+    let (base_coin, rel_coin) = match find_pair(&ctx, &my_order.request.base, &my_order.request.rel).await {
         Ok(Some(c)) => c,
         _ => return, // attempt to match with deactivated coin
     };
+    let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
+    if let Some(mut reserved_messages) = pending_map.remove(&uuid) {
+        reserved_messages.sort_unstable_by_key(|r| r.price());
 
-    // send "connect" message if reserved message targets our pubkey AND
-    // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
-    if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
-        && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info)
-        && rel_coin.is_coin_protocol_supported(&reserved_msg.rel_protocol_info)
-    {
-        let connect = TakerConnect {
-            sender_pubkey: H256Json::from(our_public_id.bytes),
-            dest_pub_key: reserved_msg.sender_pubkey.clone(),
-            taker_order_uuid: reserved_msg.taker_order_uuid,
-            maker_order_uuid: reserved_msg.maker_order_uuid,
-        };
-        let topic = orderbook_topic_from_base_rel(&my_order.request.base, &my_order.request.rel);
-        broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into());
-        let taker_match = TakerMatch {
-            reserved: reserved_msg,
-            connect,
-            connected: None,
-            last_updated: now_ms(),
-        };
-        my_order
-            .matches
-            .insert(taker_match.reserved.maker_order_uuid, taker_match);
-        save_my_taker_order(&ctx, my_order);
+        for reserved_msg in reserved_messages {
+            // send "connect" message if reserved message targets our pubkey AND
+            // reserved amounts match our order AND order is NOT reserved by someone else (empty matches)
+            if (my_order.match_reserved(&reserved_msg) == MatchReservedResult::Matched && my_order.matches.is_empty())
+                && base_coin.is_coin_protocol_supported(&reserved_msg.base_protocol_info)
+                && rel_coin.is_coin_protocol_supported(&reserved_msg.rel_protocol_info)
+            {
+                let connect = TakerConnect {
+                    sender_pubkey: H256Json::from(our_public_id.bytes),
+                    dest_pub_key: reserved_msg.sender_pubkey.clone(),
+                    taker_order_uuid: reserved_msg.taker_order_uuid,
+                    maker_order_uuid: reserved_msg.maker_order_uuid,
+                };
+                let topic = orderbook_topic_from_base_rel(&my_order.request.base, &my_order.request.rel);
+                broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into());
+                let taker_match = TakerMatch {
+                    reserved: reserved_msg,
+                    connect,
+                    connected: None,
+                    last_updated: now_ms(),
+                };
+                my_order
+                    .matches
+                    .insert(taker_match.reserved.maker_order_uuid, taker_match);
+                save_my_taker_order(&ctx, my_order);
+                return;
+            }
+        }
     }
 }
 
