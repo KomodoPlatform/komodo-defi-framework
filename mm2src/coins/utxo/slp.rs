@@ -1216,7 +1216,7 @@ impl MmCoin for SlpToken {
 
     fn mature_confirmations(&self) -> Option<u32> { self.platform_utxo.mature_confirmations() }
 
-    fn coin_protocol_info(&self) -> Option<Vec<u8>> { unimplemented!() }
+    fn coin_protocol_info(&self) -> Vec<u8> { unimplemented!() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
 }

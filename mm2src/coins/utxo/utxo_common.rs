@@ -2314,8 +2314,8 @@ pub fn set_requires_notarization(coin: &UtxoCoinFields, requires_nota: bool) {
         .store(requires_nota, AtomicOrderding::Relaxed);
 }
 
-pub fn coin_protocol_info(coin: &UtxoCoinFields) -> Option<Vec<u8>> {
-    Some(rmp_serde::to_vec(&coin.my_address.addr_format).unwrap())
+pub fn coin_protocol_info(coin: &UtxoCoinFields) -> Vec<u8> {
+    rmp_serde::to_vec(&coin.my_address.addr_format).expect("Serialization should not fail")
 }
 
 pub fn is_coin_protocol_supported(coin: &UtxoCoinFields, info: &Option<Vec<u8>>) -> bool {

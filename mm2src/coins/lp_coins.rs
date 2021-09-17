@@ -887,7 +887,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn mature_confirmations(&self) -> Option<u32>;
 
     /// Get some of the coin config info in serialized format for p2p messaging.
-    fn coin_protocol_info(&self) -> Option<Vec<u8>>;
+    fn coin_protocol_info(&self) -> Vec<u8>;
 
     /// Check if serialized coin protocol info is supported by current version.
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
