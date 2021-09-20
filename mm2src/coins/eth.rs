@@ -1334,7 +1334,7 @@ impl EthCoin {
         Box::new(fut.compat())
     }
 
-    fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
+    pub fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
         match &self.coin_type {
             EthCoinType::Eth => self.sign_and_send_transaction(value, Action::Call(address), vec![], U256::from(21000)),
             EthCoinType::Erc20 {
