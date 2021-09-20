@@ -1,4 +1,5 @@
 use crate::mm2::lp_ordermatch::lp_bot::{RateInfos, TickerInfosRegistry};
+use crate::mm2::lp_ordermatch::{update_maker_order, MakerOrderUpdateReq};
 use crate::{mm2::lp_ordermatch::lp_bot::TickerInfos,
             mm2::lp_ordermatch::lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
                                          TradingBotContext, TradingBotState},
@@ -298,6 +299,59 @@ async fn update_single_order(
             return Err(err);
         },
     };
+
+    let base_balance = coin_find_and_checks(cfg.base.clone(), key_trade_pair.clone(), true, ctx).await?;
+    coin_find_and_checks(cfg.rel.clone(), key_trade_pair.clone(), false, ctx).await?;
+
+    info!("balance for {} is {}", cfg.base, base_balance);
+
+    let mut calculated_price = rates.price * cfg.spread;
+    info!("calculated price is: {}", calculated_price);
+    if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
+        vwap_apply(&mut calculated_price).await;
+    }
+
+    // I sell 1 KMD because 50 % percent of the balance is 1 KMD -> order.max_base_vol -> 1
+    let volume = match cfg.balance_percent {
+        Some(balance_percent) => balance_percent * base_balance.clone(),
+        None => MmNumber::default(),
+    };
+
+    let min_vol: Option<MmNumber> = match cfg.min_volume {
+        Some(min_volume) => {
+            if cfg.max.unwrap_or(false) {
+                Some(min_volume * base_balance.clone())
+            } else {
+                Some(min_volume * volume.clone())
+            }
+        },
+        None => None,
+    };
+
+    let req = MakerOrderUpdateReq {
+        uuid,
+        new_price: Some(calculated_price),
+        max: cfg.max,
+        volume_delta: None,
+        min_volume: min_vol,
+        base_confs: cfg.base_confs,
+        base_nota: cfg.base_nota,
+        rel_confs: cfg.rel_confs,
+        rel_nota: cfg.rel_nota,
+    };
+
+    let resp = match update_maker_order(ctx, req).await {
+        Ok(x) => x,
+        Err(err) => {
+            warn!(
+                "Couldn't update the order {} - for {} - reason: {}",
+                uuid, key_trade_pair, err
+            );
+            cancel_single_order(ctx, uuid).await;
+            return MmError::err(OrderProcessingError::OrderCreationError);
+        },
+    };
+    info!("Successfully update order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
 }
 

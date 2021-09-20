@@ -3549,7 +3549,7 @@ pub struct SetPriceReq {
 }
 
 #[derive(Deserialize)]
-struct MakerOrderUpdateReq {
+pub struct MakerOrderUpdateReq {
     uuid: Uuid,
     new_price: Option<MmNumber>,
     max: Option<bool>,
@@ -3853,10 +3853,8 @@ async fn cancel_previous_maker_orders(
     *my_maker_orders = my_actual_maker_orders;
 }
 
-pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
-
-    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
 
     let (base_coin, rel_coin, original_price, original_volume, updated_conf_settings, matches, reserved_amount) =
@@ -3866,13 +3864,13 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
                     return ERR!("Can't update an order that has ongoing matches");
                 }
                 let base = order.base.as_str();
-                let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, base).await) {
+                let base_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, base).await) {
                     Some(coin) => coin,
                     None => return ERR!("Base coin {} has been removed from config", base),
                 };
 
                 let rel = order.rel.as_str();
-                let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, rel).await) {
+                let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, rel).await) {
                     Some(coin) => coin,
                     None => return ERR!("Rel coin {} has been removed from config", rel),
                 };
@@ -3931,7 +3929,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
 
     // Calculate order volume and add to update_msg if new_volume is found in the request
     let new_volume = if req.max.unwrap_or(false) {
-        let max_volume = try_s!(get_max_volume(&ctx, &base_coin, &rel_coin).await) + reserved_amount.clone();
+        let max_volume = try_s!(get_max_volume(ctx, &base_coin, &rel_coin).await) + reserved_amount.clone();
         update_msg.with_new_max_volume(max_volume.clone().into());
         max_volume
     } else if Option::is_some(&req.volume_delta) {
@@ -3941,7 +3939,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
         }
         try_s!(
             check_balance_for_maker_swap(
-                &ctx,
+                ctx,
                 &base_coin,
                 &rel_coin,
                 volume.clone(),
@@ -3975,7 +3973,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
     ));
 
     let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    let (rpc_result, base, rel) = match my_maker_orders.get_mut(&req.uuid) {
+    match my_maker_orders.get_mut(&req.uuid) {
         None => return ERR!("Order with UUID: {} has been deleted", req.uuid),
         Some(order) => {
             if order.matches.len() != matches.len() || !order.matches.keys().all(|k| matches.contains_key(k)) {
@@ -3987,11 +3985,17 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
             order.changes_history.get_or_insert(Vec::new()).push(new_change);
             save_maker_order_on_update(ctx.clone(), order).await;
             update_msg.with_new_max_volume((new_volume - reserved_amount).into());
-            (MakerOrderForRpc::from(&*order), order.base.as_str(), order.rel.as_str())
+            maker_order_updated_p2p_notify(ctx.clone(), order.base.as_str(), order.rel.as_str(), update_msg).await;
+            Ok(order.clone())
         },
-    };
+    }
+}
+
+pub async fn update_maker_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
+    let order = try_s!(update_maker_order(&ctx, req).await);
+    let rpc_result = MakerOrderForRpc::from(&order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
-    maker_order_updated_p2p_notify(ctx.clone(), base, rel, update_msg).await;
 
     Ok(try_s!(Response::builder().body(res)))
 }
