@@ -3,8 +3,8 @@ use crate::{mm2::lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
             mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap_intro, lp_ordermatch::lp_bot::Provider,
                   lp_ordermatch::lp_bot::TickerInfos, lp_ordermatch::lp_bot::TradingBotContext,
                   lp_swap::MyRecentSwapsAnswer}};
-use common::{block_on, log::UnifiedLoggerBuilder, mm_ctx::MmCtxBuilder, mm_number::BigInt, mm_number::BigRational,
-             mm_number::MmNumber, privkey::key_pair_from_seed};
+use common::{block_on, log::UnifiedLoggerBuilder, mm_ctx::MmCtxBuilder, mm_number::MmNumber,
+             privkey::key_pair_from_seed};
 
 use std::num::NonZeroUsize;
 
@@ -59,6 +59,22 @@ mod tests {
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_single_base_side() {
+        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        let base_swaps =
+            generate_swaps_from_values(vec![(MmNumber::from("29.99997438"), MmNumber::from("222.76277576"))]);
+        let rel_swaps = generate_swaps_from_values(vec![]);
+        let mut calculated_price = MmNumber::from("7.14455729");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        let expected_price = MmNumber::from(
+            "7.425432199985765454510364818518221681227982435363666467237829687773220024996568013735750396997505703",
+        );
+        assert_eq!(calculated_price.to_decimal(), expected_price.to_decimal());
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn test_vwap_single_reversed_side() {
         UnifiedLoggerBuilder::default().try_init().unwrap_or(());
         let base_swaps = generate_swaps_from_values(vec![]);
@@ -66,9 +82,10 @@ mod tests {
         let mut calculated_price = MmNumber::from("7.14455729");
         let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
         calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
-        let expected_price = MmNumber::from(BigRational::new_raw(BigInt::from(21947090), BigInt::from(2999999)));
-        assert_eq!(calculated_price, expected_price);
-        assert!(calculated_price.to_string().starts_with("7.31569910"));
+        let expected_price = MmNumber::from(
+            "7.3156991052330350776783592261197420399140133046711015570338523446174482058160686053562017854005951340",
+        );
+        assert_eq!(calculated_price.to_decimal(), expected_price.to_decimal());
     }
 
     #[test]
@@ -93,9 +110,10 @@ mod tests {
         let mut calculated_price = MmNumber::from("7.14455729");
         let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
         calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
-        let expected_price = MmNumber::from(BigRational::new_raw(BigInt::from(22111645), BigInt::from(2999999)));
-        assert!(calculated_price.to_string().starts_with("7.37055079"));
-        assert_eq!(calculated_price, expected_price);
+        let expected_price = MmNumber::from(
+            "7.370550790183596727865575955191985063995021331673777224592408197469399156466385488795162931720977240",
+        );
+        assert_eq!(calculated_price.to_decimal(), expected_price.to_decimal());
     }
 
     #[test]
