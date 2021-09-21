@@ -1257,6 +1257,57 @@ pub struct MakerSavedSwap {
     error_events: Vec<String>,
 }
 
+#[cfg(test)]
+impl MakerSavedSwap {
+    pub fn new(maker_amount: &MmNumber, taker_amount: &MmNumber) -> MakerSavedSwap {
+        let mut events: Vec<MakerSavedEvent> = Vec::new();
+        events.push(MakerSavedEvent {
+            timestamp: 0,
+            event: MakerSwapEvent::Started(MakerSwapData {
+                taker_coin: "".to_string(),
+                maker_coin: "".to_string(),
+                taker: Default::default(),
+                secret: Default::default(),
+                secret_hash: None,
+                my_persistent_pub: Default::default(),
+                lock_duration: 0,
+                maker_amount: maker_amount.to_decimal(),
+                taker_amount: taker_amount.to_decimal(),
+                maker_payment_confirmations: 0,
+                maker_payment_requires_nota: None,
+                taker_payment_confirmations: 0,
+                taker_payment_requires_nota: None,
+                maker_payment_lock: 0,
+                uuid: Default::default(),
+                started_at: 0,
+                maker_coin_start_block: 0,
+                taker_coin_start_block: 0,
+                maker_payment_trade_fee: None,
+                taker_payment_spend_trade_fee: None,
+                maker_coin_swap_contract_address: None,
+                taker_coin_swap_contract_address: None,
+            }),
+        });
+        events.push(MakerSavedEvent {
+            timestamp: 0,
+            event: MakerSwapEvent::Finished,
+        });
+        MakerSavedSwap {
+            uuid: Default::default(),
+            my_order_uuid: None,
+            events,
+            maker_amount: Some(maker_amount.to_decimal()),
+            maker_coin: None,
+            taker_amount: Some(taker_amount.to_decimal()),
+            taker_coin: None,
+            gui: None,
+            mm_version: None,
+            success_events: vec![],
+            error_events: vec![],
+        }
+    }
+}
+
 impl MakerSavedSwap {
     pub fn maker_coin(&self) -> Result<String, String> {
         match self.events.first() {

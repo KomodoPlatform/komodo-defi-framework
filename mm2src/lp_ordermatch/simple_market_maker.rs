@@ -30,6 +30,7 @@ const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v1/tickers
 pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<StartSimpleMakerBotError>>;
 pub type StopSimpleMakerBotResult = Result<StopSimpleMakerBotRes, MmError<StopSimpleMakerBotError>>;
 pub type OrderProcessingResult = Result<bool, MmError<OrderProcessingError>>;
+pub type VwapProcessingResult = Result<MmNumber, MmError<OrderProcessingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -240,7 +241,7 @@ async fn vwap_calculation(
     swaps_answer: MyRecentSwapsAnswer,
     nb_valid_trades: &mut usize,
     cfg: &SimpleCoinMarketMakerCfg,
-    calculated_price: &mut MmNumber,
+    calculated_price: MmNumber,
 ) -> MmNumber {
     let mut average_trading_price = calculated_price.clone();
     let mut total_sum_price_volume = MmNumber::default();
@@ -284,7 +285,7 @@ async fn vwap_calculation(
     }
     if total_sum_price_volume.is_zero() {
         warn!("Unable to get average price from last trades - stick with calculated price");
-        return calculated_price.clone();
+        return calculated_price;
     }
     average_trading_price = total_sum_price_volume / total_volume;
     average_trading_price
@@ -293,16 +294,18 @@ async fn vwap_calculation(
 async fn vwap_logic(
     base_swaps: MyRecentSwapsAnswer,
     rel_swaps: MyRecentSwapsAnswer,
-    calculated_price: &mut MmNumber,
+    calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
-) {
+) -> MmNumber {
     let mut nb_valid_trades = base_swaps.swaps.len() + rel_swaps.swaps.len();
+    let base_swaps_empty = base_swaps.swaps.is_empty();
+    let rel_swaps_empty = rel_swaps.swaps.is_empty();
     let base_vwap = vwap_calculation(
         VwapCalculationSide::Rel,
         base_swaps,
         &mut nb_valid_trades,
         cfg,
-        calculated_price,
+        calculated_price.clone(),
     )
     .await;
     let rel_vwap = vwap_calculation(
@@ -310,34 +313,42 @@ async fn vwap_logic(
         rel_swaps,
         &mut nb_valid_trades,
         cfg,
-        calculated_price,
+        calculated_price.clone(),
     )
     .await;
-    if base_vwap == *calculated_price && rel_vwap == *calculated_price {
-        //< this means error occured for both side
-        return;
+    if base_vwap == calculated_price && rel_vwap == calculated_price {
+        return calculated_price;
     }
-    let total_vwap = base_vwap + rel_vwap;
-    let vwap_price = total_vwap / MmNumber::from(2);
-    if vwap_price > *calculated_price {
-        let original_price = calculated_price.clone();
-        *calculated_price = vwap_price;
+    let mut to_divide = 0;
+    let mut total_vwap = MmNumber::default();
+    if !base_swaps_empty {
+        to_divide += 1;
+        total_vwap += base_vwap;
+    }
+    if !rel_swaps_empty {
+        to_divide += 1;
+        total_vwap += rel_vwap;
+    }
+    // here divide cannot be 0 anymore because if both swaps history are empty we do not pass through this function.
+    let vwap_price = total_vwap / MmNumber::from(to_divide);
+    if vwap_price > calculated_price {
         info!(
             "[{}/{}]: price: {} is less than average trading price ({} swaps): - using vwap price: {}",
-            cfg.base, cfg.rel, original_price, nb_valid_trades, calculated_price
+            cfg.base, cfg.rel, calculated_price, nb_valid_trades, vwap_price
         );
-    } else {
-        info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]", 
-            calculated_price, nb_valid_trades, vwap_price, cfg.base, cfg.rel);
+        return vwap_price;
     }
+    info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]", 
+            calculated_price, nb_valid_trades, vwap_price, cfg.base, cfg.rel);
+    calculated_price
 }
 
 pub async fn vwap_intro(
     base_swaps: MyRecentSwapsAnswer,
     rel_swaps: MyRecentSwapsAnswer,
-    calculated_price: &mut MmNumber,
+    calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
-) {
+) -> MmNumber {
     // since the limit is `1000` unwrap is fine here.
     let nb_diff_swaps = rel_swaps.swaps.len().to_isize().unwrap() - base_swaps.swaps.len().to_isize().unwrap();
     let have_precedent_swaps = !rel_swaps.swaps.is_empty() && !base_swaps.swaps.is_empty();
@@ -346,16 +357,12 @@ pub async fn vwap_intro(
             "No last trade for trading pair: [{}/{}] - keeping calculated price: {}",
             cfg.base, cfg.rel, calculated_price
         );
-    } else {
-        vwap_logic(base_swaps, rel_swaps, calculated_price, cfg).await;
+        return calculated_price;
     }
+    vwap_logic(base_swaps, rel_swaps, calculated_price, cfg).await
 }
 
-async fn vwap_apply(
-    calculated_price: &mut MmNumber,
-    ctx: &MmArc,
-    cfg: &SimpleCoinMarketMakerCfg,
-) -> OrderProcessingResult {
+async fn vwap_apply(calculated_price: MmNumber, ctx: &MmArc, cfg: &SimpleCoinMarketMakerCfg) -> VwapProcessingResult {
     let my_recent_swaps_req = async move |base: String, rel: String| MyRecentSwapsReq {
         paging_options: PagingOptions {
             limit: 1000,
@@ -379,8 +386,7 @@ async fn vwap_apply(
         my_recent_swaps_req(cfg.rel.clone(), cfg.base.clone()).await,
     )
     .await?;
-    vwap_intro(base_swaps, rel_swaps, calculated_price, cfg).await;
-    Ok(true)
+    Ok(vwap_intro(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
@@ -462,7 +468,7 @@ async fn update_single_order(
     let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        vwap_apply(&mut calculated_price, ctx, &cfg).await?;
+        calculated_price = vwap_apply(calculated_price.clone(), ctx, &cfg).await?;
     }
 
     // I sell 1 KMD because 50 % percent of the balance is 1 KMD -> order.max_base_vol -> 1
@@ -530,7 +536,7 @@ async fn create_single_order(
     let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        vwap_apply(&mut calculated_price, ctx, &cfg).await?;
+        calculated_price = vwap_apply(calculated_price.clone(), ctx, &cfg).await?;
     }
 
     let volume = match cfg.balance_percent {

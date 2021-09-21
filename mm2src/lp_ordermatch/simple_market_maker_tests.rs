@@ -1,13 +1,116 @@
-use crate::mm2::lp_ordermatch::lp_bot::Provider;
-use crate::mm2::lp_ordermatch::lp_bot::TradingBotContext;
-use common::block_on;
-use common::mm_ctx::MmCtxBuilder;
-use common::privkey::key_pair_from_seed;
+use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap};
+use crate::{mm2::lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
+            mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap_intro, lp_ordermatch::lp_bot::Provider,
+                  lp_ordermatch::lp_bot::TickerInfos, lp_ordermatch::lp_bot::TradingBotContext,
+                  lp_swap::MyRecentSwapsAnswer}};
+use common::{block_on, log::UnifiedLoggerBuilder, mm_ctx::MmCtxBuilder, mm_number::BigInt, mm_number::BigRational,
+             mm_number::MmNumber, privkey::key_pair_from_seed};
+
+use std::num::NonZeroUsize;
+
+fn generate_swaps_from_values(swaps_value: Vec<(MmNumber, MmNumber)>) -> MyRecentSwapsAnswer {
+    let mut swaps: Vec<SavedSwap> = Vec::with_capacity(swaps_value.len());
+    for (base_amount, other_amount) in swaps_value.iter() {
+        swaps.push(SavedSwap::Maker(MakerSavedSwap::new(base_amount, other_amount)));
+    }
+    MyRecentSwapsAnswer {
+        from_uuid: None,
+        limit: 0,
+        skipped: 0,
+        total: 0,
+        found_records: 0,
+        page_number: NonZeroUsize::new(1).unwrap(),
+        total_pages: 0,
+        swaps,
+    }
+}
+
+fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> SimpleCoinMarketMakerCfg {
+    SimpleCoinMarketMakerCfg {
+        base,
+        rel,
+        min_volume: None,
+        spread,
+        base_confs: None,
+        base_nota: None,
+        rel_confs: None,
+        rel_nota: None,
+        enable: true,
+        price_elapsed_validity: None,
+        check_last_bidirectional_trade_thresh_hold: Some(true),
+        max: Some(true),
+        balance_percent: None,
+    }
+}
 
 mod tests {
     use super::*;
-    use crate::mm2::lp_ordermatch::lp_bot::TickerInfos;
-    use common::mm_number::MmNumber;
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_empty_base_rel() {
+        let base_swaps = generate_swaps_from_values(vec![]);
+        let rel_swaps = generate_swaps_from_values(vec![]);
+        let mut calculated_price = MmNumber::from("7.14455729");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        assert_eq!(calculated_price, MmNumber::from("7.14455729"));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_single_reversed_side() {
+        UnifiedLoggerBuilder::default().try_init().unwrap_or(());
+        let base_swaps = generate_swaps_from_values(vec![]);
+        let rel_swaps = generate_swaps_from_values(vec![(MmNumber::from("219.4709"), MmNumber::from("29.99999"))]);
+        let mut calculated_price = MmNumber::from("7.14455729");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        let expected_price = MmNumber::from(BigRational::new_raw(BigInt::from(21947090), BigInt::from(2999999)));
+        assert_eq!(calculated_price, expected_price);
+        assert!(calculated_price.to_string().starts_with("7.31569910"));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_single_reversed_side_forced_price() {
+        let base_swaps = generate_swaps_from_values(vec![]);
+        let rel_swaps = generate_swaps_from_values(vec![(MmNumber::from("219.4709"), MmNumber::from("29.99999"))]);
+        let mut calculated_price = MmNumber::from("7.6");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        assert_eq!(calculated_price, MmNumber::from("7.6"));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_multiple_reversed_side() {
+        let base_swaps = generate_swaps_from_values(vec![]);
+        let rel_swaps = generate_swaps_from_values(vec![
+            (MmNumber::from("219.4709"), MmNumber::from("29.99999")),
+            (MmNumber::from("222.762"), MmNumber::from("29.99999")),
+        ]);
+        let mut calculated_price = MmNumber::from("7.14455729");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        let expected_price = MmNumber::from(BigRational::new_raw(BigInt::from(22111645), BigInt::from(2999999)));
+        assert!(calculated_price.to_string().starts_with("7.37055079"));
+        assert_eq!(calculated_price, expected_price);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vwap_multiple_reversed_side_forced_price() {
+        let base_swaps = generate_swaps_from_values(vec![]);
+        let rel_swaps = generate_swaps_from_values(vec![
+            (MmNumber::from("219.4709"), MmNumber::from("29.99999")),
+            (MmNumber::from("222.762"), MmNumber::from("29.99999")),
+        ]);
+        let mut calculated_price = MmNumber::from("7.54455729");
+        let cfg = generate_cfg_from_params("FIRO".to_string(), "KMD".to_string(), MmNumber::from("1.015"));
+        calculated_price = block_on(vwap_intro(base_swaps, rel_swaps, calculated_price.clone(), &cfg));
+        assert_eq!(calculated_price, MmNumber::from("7.54455729"));
+    }
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
