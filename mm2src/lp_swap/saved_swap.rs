@@ -33,6 +33,13 @@ pub enum SavedSwap {
 }
 
 impl SavedSwap {
+    pub fn is_finished_and_success(&self) -> bool {
+        match self {
+            SavedSwap::Maker(swap) => swap.is_success().unwrap_or(false),
+            SavedSwap::Taker(swap) => swap.is_success().unwrap_or(false),
+        }
+    }
+
     pub fn is_finished(&self) -> bool {
         match self {
             SavedSwap::Maker(swap) => swap.is_finished(),

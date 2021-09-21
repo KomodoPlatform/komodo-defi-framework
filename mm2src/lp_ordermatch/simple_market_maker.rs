@@ -1,5 +1,6 @@
 use crate::mm2::lp_ordermatch::lp_bot::{RateInfos, TickerInfosRegistry};
 use crate::mm2::lp_ordermatch::{update_maker_order, MakerOrderUpdateReq};
+use crate::mm2::lp_swap::{my_recent_swaps, MyRecentSwapsAnswer, MyRecentSwapsErr, MyRecentSwapsReq, MySwapsFilter};
 use crate::{mm2::lp_ordermatch::lp_bot::TickerInfos,
             mm2::lp_ordermatch::lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
                                          TradingBotContext, TradingBotState},
@@ -11,12 +12,14 @@ use common::{executor::{spawn, Timer},
              log::{error, info, warn},
              mm_ctx::MmArc,
              mm_error::MmError,
-             slurp_url, HttpStatusCode};
+             slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
+use num_traits::ToPrimitive;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::str::Utf8Error;
 use uuid::Uuid;
 
@@ -51,6 +54,12 @@ pub enum OrderProcessingError {
     BalanceIsZero,
     #[display(fmt = "Error when creating the order")]
     OrderCreationError,
+    #[display(fmt = "Error when querying swap history")]
+    MyRecentSwapsError,
+}
+
+impl From<MyRecentSwapsErr> for OrderProcessingError {
+    fn from(_: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError }
 }
 
 #[allow(dead_code)]
@@ -86,6 +95,11 @@ pub struct StartSimpleMakerBotRes {
 #[cfg(test)]
 impl StartSimpleMakerBotRes {
     pub fn get_result(&self) -> String { self.result.clone() }
+}
+
+enum VwapCalculationSide {
+    Base,
+    Rel,
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -221,7 +235,153 @@ async fn coin_find_and_checks(
     Ok(MmNumber::default())
 }
 
-async fn vwap_apply(_calculated_price: &mut MmNumber) {}
+async fn vwap_calculation(
+    kind: VwapCalculationSide,
+    swaps_answer: MyRecentSwapsAnswer,
+    nb_valid_trades: &mut usize,
+    cfg: &SimpleCoinMarketMakerCfg,
+    calculated_price: &mut MmNumber,
+) -> MmNumber {
+    let mut average_trading_price = calculated_price.clone();
+    let mut total_sum_price_volume = MmNumber::default();
+    let mut total_volume = MmNumber::default();
+    for swap in swaps_answer.swaps.iter() {
+        if !swap.is_finished_and_success() {
+            *nb_valid_trades -= 1;
+            continue;
+        }
+        let (my_amount, other_amount) = match swap.get_my_info() {
+            Some(x) => (MmNumber::from(x.my_amount), MmNumber::from(x.other_amount)),
+            None => {
+                *nb_valid_trades -= 1;
+                continue;
+            },
+        };
+        // todo: refactor to a function
+        let cur_sum_price_volume = match kind {
+            VwapCalculationSide::Base => {
+                let cur_price = my_amount / other_amount.clone();
+                let cur_sum_price_volume = cur_price.clone() * other_amount.clone();
+                total_volume += other_amount.clone();
+                info!(
+                    "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
+                    cfg.base, cfg.rel, cur_price, other_amount, average_trading_price, total_volume
+                );
+                cur_sum_price_volume
+            },
+            VwapCalculationSide::Rel => {
+                let cur_price = other_amount.clone() / my_amount.clone();
+                let cur_sum_price_volume = cur_price.clone() * my_amount.clone();
+                total_volume += my_amount.clone();
+                info!(
+                    "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
+                    cfg.base, cfg.rel, cur_price, my_amount, average_trading_price, total_volume
+                );
+                cur_sum_price_volume
+            },
+        };
+        total_sum_price_volume += cur_sum_price_volume;
+    }
+    if total_sum_price_volume.is_zero() {
+        warn!("Unable to get average price from last trades - stick with calculated price");
+        return calculated_price.clone();
+    }
+    average_trading_price = total_sum_price_volume / total_volume;
+    average_trading_price
+}
+
+async fn vwap_logic(
+    base_swaps: MyRecentSwapsAnswer,
+    rel_swaps: MyRecentSwapsAnswer,
+    calculated_price: &mut MmNumber,
+    cfg: &SimpleCoinMarketMakerCfg,
+) {
+    let mut nb_valid_trades = base_swaps.swaps.len() + rel_swaps.swaps.len();
+    let base_vwap = vwap_calculation(
+        VwapCalculationSide::Rel,
+        base_swaps,
+        &mut nb_valid_trades,
+        cfg,
+        calculated_price,
+    )
+    .await;
+    let rel_vwap = vwap_calculation(
+        VwapCalculationSide::Base,
+        rel_swaps,
+        &mut nb_valid_trades,
+        cfg,
+        calculated_price,
+    )
+    .await;
+    if base_vwap == *calculated_price && rel_vwap == *calculated_price {
+        //< this means error occured for both side
+        return;
+    }
+    let total_vwap = base_vwap + rel_vwap;
+    let vwap_price = total_vwap / MmNumber::from(2);
+    if vwap_price > *calculated_price {
+        let original_price = calculated_price.clone();
+        *calculated_price = vwap_price;
+        info!(
+            "[{}/{}]: price: {} is less than average trading price ({} swaps): - using vwap price: {}",
+            cfg.base, cfg.rel, original_price, nb_valid_trades, calculated_price
+        );
+    } else {
+        info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]", 
+            calculated_price, nb_valid_trades, vwap_price, cfg.base, cfg.rel);
+    }
+}
+
+pub async fn vwap_intro(
+    base_swaps: MyRecentSwapsAnswer,
+    rel_swaps: MyRecentSwapsAnswer,
+    calculated_price: &mut MmNumber,
+    cfg: &SimpleCoinMarketMakerCfg,
+) {
+    // since the limit is `1000` unwrap is fine here.
+    let nb_diff_swaps = rel_swaps.swaps.len().to_isize().unwrap() - base_swaps.swaps.len().to_isize().unwrap();
+    let have_precedent_swaps = !rel_swaps.swaps.is_empty() && !base_swaps.swaps.is_empty();
+    if nb_diff_swaps.is_zero() && !have_precedent_swaps {
+        info!(
+            "No last trade for trading pair: [{}/{}] - keeping calculated price: {}",
+            cfg.base, cfg.rel, calculated_price
+        );
+    } else {
+        vwap_logic(base_swaps, rel_swaps, calculated_price, cfg).await;
+    }
+}
+
+async fn vwap_apply(
+    calculated_price: &mut MmNumber,
+    ctx: &MmArc,
+    cfg: &SimpleCoinMarketMakerCfg,
+) -> OrderProcessingResult {
+    let my_recent_swaps_req = async move |base: String, rel: String| MyRecentSwapsReq {
+        paging_options: PagingOptions {
+            limit: 1000,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        },
+        filter: MySwapsFilter {
+            my_coin: Some(base),
+            other_coin: Some(rel),
+            from_timestamp: None,
+            to_timestamp: None,
+        },
+    };
+    let base_swaps = my_recent_swaps(
+        ctx.clone(),
+        my_recent_swaps_req(cfg.base.clone(), cfg.rel.clone()).await,
+    )
+    .await?;
+    let rel_swaps = my_recent_swaps(
+        ctx.clone(),
+        my_recent_swaps_req(cfg.rel.clone(), cfg.base.clone()).await,
+    )
+    .await?;
+    vwap_intro(base_swaps, rel_swaps, calculated_price, cfg).await;
+    Ok(true)
+}
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
     info!("cancelling single order with uuid: {}", uuid);
@@ -292,23 +452,17 @@ async fn update_single_order(
     let registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
     let rates = registry.get_cex_rates(cfg.base.clone(), cfg.rel.clone());
     drop(registry);
-    match checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await {
-        Ok(x) => x,
-        Err(err) => {
-            cancel_single_order(ctx, uuid).await;
-            return Err(err);
-        },
-    };
+    checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
 
     let base_balance = coin_find_and_checks(cfg.base.clone(), key_trade_pair.clone(), true, ctx).await?;
     coin_find_and_checks(cfg.rel.clone(), key_trade_pair.clone(), false, ctx).await?;
 
     info!("balance for {} is {}", cfg.base, base_balance);
 
-    let mut calculated_price = rates.price * cfg.spread;
+    let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        vwap_apply(&mut calculated_price).await;
+        vwap_apply(&mut calculated_price, ctx, &cfg).await?;
     }
 
     // I sell 1 KMD because 50 % percent of the balance is 1 KMD -> order.max_base_vol -> 1
@@ -373,10 +527,10 @@ async fn create_single_order(
 
     info!("balance for {} is {}", cfg.base, base_balance);
 
-    let mut calculated_price = rates.price * cfg.spread;
+    let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        vwap_apply(&mut calculated_price).await;
+        vwap_apply(&mut calculated_price, ctx, &cfg).await?;
     }
 
     let volume = match cfg.balance_percent {
@@ -435,24 +589,29 @@ async fn process_bot_logic(ctx: &MmArc) {
     info!("nb_orders: {}", maker_orders.len());
 
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
-    for (key, value) in maker_orders.iter() {
+    for (uuid, value) in maker_orders.iter() {
         let key_trade_pair = TradingPair::new(value.base.clone(), value.rel.clone());
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
-                // res will be used later for reporting error to the users, also usefullt o be coupled with a telegram service to send notification to the user
-                let _res = update_single_order(
+                match update_single_order(
                     coin_cfg.clone(),
-                    *key,
+                    *uuid,
                     value.clone(),
                     key_trade_pair.as_combination(),
                     ctx,
                 )
-                .await;
+                .await
+                {
+                    Ok(_) => info!("Order with uuid: {} successfully updated", uuid),
+                    Err(err) => {
+                        cancel_single_order(ctx, *uuid).await;
+                        error!("{}", err);
+                    },
+                };
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
             },
             _ => continue,
         }
-        println!("{}", key);
     }
 
     // Now iterate over the registry and for every pairs that are not hit let's create an order
