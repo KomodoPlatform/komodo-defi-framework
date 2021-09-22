@@ -1105,6 +1105,9 @@ fn test_maker_order_was_updated() {
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
     update_msg.with_new_price(BigRational::from_integer(2.into()));
+
+    std::thread::sleep(Duration::from_secs(1));
+
     maker_order.apply_updated(&update_msg);
     assert!(maker_order.was_updated());
 }
