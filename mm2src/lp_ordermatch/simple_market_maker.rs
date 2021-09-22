@@ -343,7 +343,7 @@ async fn vwap_logic(
     calculated_price
 }
 
-pub async fn vwap_intro(
+pub async fn vwap(
     base_swaps: MyRecentSwapsAnswer,
     rel_swaps: MyRecentSwapsAnswer,
     calculated_price: MmNumber,
@@ -362,7 +362,11 @@ pub async fn vwap_intro(
     vwap_logic(base_swaps, rel_swaps, calculated_price, cfg).await
 }
 
-async fn vwap_apply(calculated_price: MmNumber, ctx: &MmArc, cfg: &SimpleCoinMarketMakerCfg) -> VwapProcessingResult {
+async fn vwap_calculator(
+    calculated_price: MmNumber,
+    ctx: &MmArc,
+    cfg: &SimpleCoinMarketMakerCfg,
+) -> VwapProcessingResult {
     let my_recent_swaps_req = async move |base: String, rel: String| MyRecentSwapsReq {
         paging_options: PagingOptions {
             limit: 1000,
@@ -386,7 +390,7 @@ async fn vwap_apply(calculated_price: MmNumber, ctx: &MmArc, cfg: &SimpleCoinMar
         my_recent_swaps_req(cfg.rel.clone(), cfg.base.clone()).await,
     )
     .await?;
-    Ok(vwap_intro(base_swaps, rel_swaps, calculated_price, cfg).await)
+    Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
@@ -468,7 +472,7 @@ async fn update_single_order(
     let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        calculated_price = vwap_apply(calculated_price.clone(), ctx, &cfg).await?;
+        calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
     }
 
     // I sell 1 KMD because 50 % percent of the balance is 1 KMD -> order.max_base_vol -> 1
@@ -536,7 +540,7 @@ async fn create_single_order(
     let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        calculated_price = vwap_apply(calculated_price.clone(), ctx, &cfg).await?;
+        calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
     }
 
     let volume = match cfg.balance_percent {
