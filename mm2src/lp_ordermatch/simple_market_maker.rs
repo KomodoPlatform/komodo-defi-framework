@@ -6,7 +6,7 @@ use crate::{mm2::lp_ordermatch::lp_bot::TickerInfos,
                                          TradingBotContext, TradingBotState},
             mm2::lp_ordermatch::{cancel_order, create_maker_order, MakerOrder, OrdermatchContext, SetPriceReq}};
 use bigdecimal::Zero;
-use coins::lp_coinfind;
+use coins::{lp_coinfind, MmCoinEnum};
 use common::mm_number::MmNumber;
 use common::{executor::{spawn, Timer},
              log::{error, info, warn},
@@ -31,6 +31,7 @@ pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<Star
 pub type StopSimpleMakerBotResult = Result<StopSimpleMakerBotRes, MmError<StopSimpleMakerBotError>>;
 pub type OrderProcessingResult = Result<bool, MmError<OrderProcessingError>>;
 pub type VwapProcessingResult = Result<MmNumber, MmError<OrderProcessingError>>;
+pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber), MmError<OrderProcessingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -57,10 +58,16 @@ pub enum OrderProcessingError {
     OrderCreationError,
     #[display(fmt = "Error when querying swap history")]
     MyRecentSwapsError,
+    #[display(fmt = "Legacy error - skipping")]
+    LegacyError(String),
 }
 
 impl From<MyRecentSwapsErr> for OrderProcessingError {
     fn from(_: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError }
+}
+
+impl From<std::string::String> for OrderProcessingError {
+    fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
 }
 
 #[allow(dead_code)]
@@ -191,49 +198,19 @@ pub async fn tear_down_bot(ctx: MmArc) {
     // todo: cancel all pending orders
 }
 
-// This function check if coin is enabled and if check_balance is set to true and the balance is non-zero it's returned for later usage
-// e.g i want to use 50% of my KMD balance instead of max, will be used later.
-async fn coin_find_and_checks(
-    ticker: String,
-    key_trade_pair: String,
-    check_balance: bool,
-    ctx: &MmArc,
-) -> Result<MmNumber, MmError<OrderProcessingError>> {
-    let coin = match lp_coinfind(ctx, ticker.as_str()).await {
-        Ok(None) => {
-            warn!("{} not enabled - skipping for {}", ticker, key_trade_pair);
-            return MmError::err(OrderProcessingError::AssetNotEnabled);
-        },
+async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<OrderProcessingError>> {
+    let coin_balance = match coin.my_balance().compat().await {
+        Ok(coin_balance) => coin_balance,
         Err(err) => {
-            warn!(
-                "err with {} - reason: {} - skipping for {}",
-                ticker, err, key_trade_pair
-            );
-            return MmError::err(OrderProcessingError::InternalCoinFindError);
+            warn!("err with balance: {} - reason: {}", coin.ticker(), err.to_string());
+            return MmError::err(OrderProcessingError::BalanceInternalError);
         },
-        Ok(Some(t)) => t,
     };
-
-    if check_balance {
-        let coin_balance = match coin.my_balance().compat().await {
-            Ok(coin_balance) => coin_balance,
-            Err(err) => {
-                warn!(
-                    "err with balance: {} - reason: {} - skipping for {}",
-                    ticker,
-                    err.to_string(),
-                    key_trade_pair
-                );
-                return MmError::err(OrderProcessingError::BalanceInternalError);
-            },
-        };
-        if coin_balance.spendable.is_zero() {
-            warn!("balance for: {} is zero - skipping for {}", ticker, key_trade_pair);
-            return MmError::err(OrderProcessingError::BalanceIsZero);
-        }
-        return Ok(MmNumber::from(coin_balance.spendable));
+    if coin_balance.spendable.is_zero() {
+        warn!("balance for: {} is zero", coin.ticker());
+        return MmError::err(OrderProcessingError::BalanceIsZero);
     }
-    Ok(MmNumber::default())
+    Ok(MmNumber::from(coin_balance.spendable))
 }
 
 async fn vwap_calculation(
@@ -450,22 +427,20 @@ async fn checks_order_prerequisites(
     Ok(true)
 }
 
-async fn update_single_order(
-    cfg: SimpleCoinMarketMakerCfg,
-    uuid: Uuid,
-    _order: MakerOrder,
-    key_trade_pair: String,
-    ctx: &MmArc,
-) -> OrderProcessingResult {
-    info!("need to update order: {} of {} - cfg: {}", uuid, key_trade_pair, cfg);
+async fn prepare_order(cfg: SimpleCoinMarketMakerCfg, key_trade_pair: String, ctx: &MmArc) -> OrderPreparationResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
     let registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
     let rates = registry.get_cex_rates(cfg.base.clone(), cfg.rel.clone());
     drop(registry);
     checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
 
-    let base_balance = coin_find_and_checks(cfg.base.clone(), key_trade_pair.clone(), true, ctx).await?;
-    coin_find_and_checks(cfg.rel.clone(), key_trade_pair.clone(), false, ctx).await?;
+    let base_coin = lp_coinfind(ctx, cfg.rel.as_str())
+        .await?
+        .ok_or(MmError::new(OrderProcessingError::AssetNotEnabled))?;
+    let base_balance = get_non_zero_balance(base_coin).await?;
+    lp_coinfind(ctx, cfg.rel.as_str())
+        .await?
+        .ok_or(MmError::new(OrderProcessingError::AssetNotEnabled))?;
 
     info!("balance for {} is {}", cfg.base, base_balance);
 
@@ -491,6 +466,18 @@ async fn update_single_order(
         },
         None => None,
     };
+    Ok((min_vol, volume, calculated_price))
+}
+
+async fn update_single_order(
+    cfg: SimpleCoinMarketMakerCfg,
+    uuid: Uuid,
+    _order: MakerOrder,
+    key_trade_pair: String,
+    ctx: &MmArc,
+) -> OrderProcessingResult {
+    info!("need to update order: {} of {} - cfg: {}", uuid, key_trade_pair, cfg);
+    let (min_vol, _, calculated_price) = prepare_order(cfg.clone(), key_trade_pair.clone(), ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -511,7 +498,6 @@ async fn update_single_order(
                 "Couldn't update the order {} - for {} - reason: {}",
                 uuid, key_trade_pair, err
             );
-            cancel_single_order(ctx, uuid).await;
             return MmError::err(OrderProcessingError::OrderCreationError);
         },
     };
@@ -525,39 +511,7 @@ async fn create_single_order(
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     info!("need to create order for: {} - cfg: {}", key_trade_pair, cfg);
-    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    let registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
-    let rates = registry.get_cex_rates(cfg.base.clone(), cfg.rel.clone());
-    drop(registry);
-
-    checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
-
-    let base_balance = coin_find_and_checks(cfg.base.clone(), key_trade_pair.clone(), true, ctx).await?;
-    coin_find_and_checks(cfg.rel.clone(), key_trade_pair.clone(), false, ctx).await?;
-
-    info!("balance for {} is {}", cfg.base, base_balance);
-
-    let mut calculated_price = rates.price * cfg.spread.clone();
-    info!("calculated price is: {}", calculated_price);
-    if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
-    }
-
-    let volume = match cfg.balance_percent {
-        Some(balance_percent) => balance_percent * base_balance.clone(),
-        None => MmNumber::default(),
-    };
-
-    let min_vol: Option<MmNumber> = match cfg.min_volume {
-        Some(min_volume) => {
-            if cfg.max.unwrap_or(false) {
-                Some(min_volume * base_balance.clone())
-            } else {
-                Some(min_volume * volume.clone())
-            }
-        },
-        None => None,
-    };
+    let (min_vol, volume, calculated_price) = prepare_order(cfg.clone(), key_trade_pair.clone(), ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -630,7 +584,10 @@ async fn process_bot_logic(ctx: &MmArc) {
             Some(_) => continue,
             None => {
                 // res will be used later for reporting error to the users, also usefullt o be coupled with a telegram service to send notification to the user
-                let _res = create_single_order(cur_cfg.clone(), trading_pair.clone(), ctx).await;
+                match create_single_order(cur_cfg.clone(), trading_pair.clone(), ctx).await {
+                    Ok(_) => {},
+                    Err(err) => error!("{}", err),
+                };
             },
         };
     }
