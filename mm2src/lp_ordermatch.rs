@@ -2840,8 +2840,15 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    base_protocol_info: Some(base_coin.coin_protocol_info()),
-                    rel_protocol_info: Some(rel_coin.coin_protocol_info()),
+                    // In Sell case the pair is reversed so protocols should be reversed too
+                    base_protocol_info: match taker_request.action {
+                        TakerAction::Buy => Some(base_coin.coin_protocol_info()),
+                        TakerAction::Sell => Some(rel_coin.coin_protocol_info()),
+                    },
+                    rel_protocol_info: match taker_request.action {
+                        TakerAction::Buy => Some(rel_coin.coin_protocol_info()),
+                        TakerAction::Sell => Some(base_coin.coin_protocol_info()),
+                    },
                 };
                 let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
                 log::debug!("Request matched sending reserved {:?}", reserved);
