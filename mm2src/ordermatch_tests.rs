@@ -1,6 +1,6 @@
 use super::*;
 use crate::mm2::lp_network::P2PContext;
-use crate::mm2::lp_ordermatch::new_protocol::PubkeyKeepAlive;
+use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 use coins::{MmCoin, TestCoin};
 use common::rusqlite::Connection;
 use common::{block_on,
@@ -1083,6 +1083,30 @@ fn test_taker_order_match_by() {
     matching_pubkeys.insert(H256Json::default());
     order.request.match_by = MatchBy::Pubkeys(matching_pubkeys);
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
+}
+
+#[test]
+fn test_maker_order_was_updated() {
+    let created_at = now_ms();
+    let mut maker_order = MakerOrder {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        created_at,
+        updated_at: Some(created_at),
+        max_base_vol: 10.into(),
+        min_base_vol: 0.into(),
+        price: 1.into(),
+        matches: HashMap::new(),
+        started_swaps: Vec::new(),
+        uuid: Uuid::new_v4(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+    };
+    let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
+    update_msg.with_new_price(BigRational::from_integer(2.into()));
+    maker_order.apply_updated(&update_msg);
+    assert!(maker_order.was_updated());
 }
 
 #[test]

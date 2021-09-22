@@ -1782,6 +1782,8 @@ impl MakerOrder {
         )
         .await
     }
+
+    fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -4020,15 +4022,16 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let storage = MyOrdersStorage::new(ctx.clone());
 
     let maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    if let Some(order) = maker_orders.get(&req.uuid) {
+    if let Ok(order) = storage.load_active_maker_order(req.uuid).await {
         let res = json!({
             "type": "Maker",
-            "order": MakerOrderForMyOrdersRpc::from(order),
+            "order": MakerOrderForMyOrdersRpc::from(&order),
         });
         return Response::builder()
             .body(json::to_vec(&res).expect("Serialization failed"))
             .map_err(|e| ERRL!("{}", e));
     }
+    drop(maker_orders);
 
     let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     if let Some(order) = taker_orders.get(&req.uuid) {

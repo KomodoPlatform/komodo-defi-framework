@@ -128,7 +128,7 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
         let save_in_history = order_to_save.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
-        if order_to_save.created_at != order_to_save.updated_at.unwrap_or(order_to_save.created_at) {
+        if order_to_save.was_updated() {
             if let Ok(order_from_file) = storage.load_active_maker_order(order_to_save.uuid).await {
                 order_to_save = order_from_file;
             }
