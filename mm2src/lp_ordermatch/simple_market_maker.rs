@@ -1,26 +1,27 @@
-use crate::mm2::lp_ordermatch::lp_bot::{RateInfos, TickerInfosRegistry};
-use crate::mm2::lp_ordermatch::{update_maker_order, MakerOrderUpdateReq};
-use crate::mm2::lp_swap::{my_recent_swaps, MyRecentSwapsAnswer, MyRecentSwapsErr, MyRecentSwapsReq, MySwapsFilter};
-use crate::{mm2::lp_ordermatch::lp_bot::TickerInfos,
-            mm2::lp_ordermatch::lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
-                                         TradingBotContext, TradingBotState},
-            mm2::lp_ordermatch::{cancel_order, create_maker_order, MakerOrder, OrdermatchContext, SetPriceReq}};
+use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
+                                 lp_bot::TickerInfos,
+                                 lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
+                                          TradingBotContext, TradingBotState},
+                                 lp_bot::{RateInfos, TickerInfosRegistry},
+                                 update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
+                                 OrdermatchContext, SetPriceReq},
+                 lp_swap::{my_recent_swaps, MyRecentSwapsAnswer, MyRecentSwapsErr, MyRecentSwapsReq, MySwapsFilter}};
 use bigdecimal::Zero;
 use coins::{lp_coinfind, MmCoinEnum};
-use common::mm_number::MmNumber;
 use common::{executor::{spawn, Timer},
              log::{error, info, warn},
              mm_ctx::MmArc,
              mm_error::MmError,
+             mm_number::MmNumber,
              slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
 use serde_json::Value as Json;
-use std::collections::{HashMap, HashSet};
-use std::num::NonZeroUsize;
-use std::str::Utf8Error;
+use std::{collections::{HashMap, HashSet},
+          num::NonZeroUsize,
+          str::Utf8Error};
 use uuid::Uuid;
 
 // !< constants
@@ -371,18 +372,10 @@ async fn vwap_calculator(
 }
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
-    info!("cancelling single order with uuid: {}", uuid);
-    let resp = match cancel_order(ctx.clone(), json!({"uuid": uuid.to_string()})).await {
-        Ok(resp) => resp,
-        Err(_) => {
-            warn!("Couldn't cancel the order with uuid: {}", uuid);
-            return;
-        },
+    match cancel_order(ctx.clone(), CancelOrderReq { uuid }).await {
+        Ok(_) => info!("Order with uuid: {} successfully cancelled", uuid),
+        Err(_) => warn!("Couldn't cancel the order with uuid: {}", uuid),
     };
-
-    if resp.status() == StatusCode::OK {
-        info!("Order with uuid: {} successfully cancelled", uuid);
-    }
 }
 
 async fn checks_order_prerequisites(

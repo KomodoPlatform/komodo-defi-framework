@@ -4222,11 +4222,79 @@ pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<
 }
 
 #[derive(Deserialize)]
-struct CancelOrderReq {
+pub struct CancelOrderReq {
     uuid: Uuid,
 }
 
-pub async fn cancel_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+#[derive(Debug, Deserialize, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CancelOrderError {
+    CannotRetrieveOrderMatchContext,
+    OrderBeingMatched(String),
+    UUIDNotFound(String),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CancelOrderResponse {
+    result: String,
+}
+
+pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
+    let ordermatch_ctx = match OrdermatchContext::from_ctx(&ctx) {
+        Ok(x) => x,
+        Err(_) => return Err(MmError::new(CancelOrderError::CannotRetrieveOrderMatchContext)),
+    };
+    let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
+    match maker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return Err(MmError::new(CancelOrderError::OrderBeingMatched(format!(
+                    "Order {} is being matched now, can't cancel",
+                    req.uuid
+                ))));
+            }
+            let order = order.remove();
+            maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
+            delete_my_maker_order(ctx, order, MakerOrderCancellationReason::Cancelled)
+                .compat()
+                .await
+                .ok();
+            return Ok(CancelOrderResponse {
+                result: "success".to_string(),
+            });
+        },
+        // look for taker order with provided uuid
+        Entry::Vacant(_) => (),
+    }
+
+    let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+    match taker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return Err(MmError::new(CancelOrderError::OrderBeingMatched(format!(
+                    "Order {} is being matched now, can't cancel",
+                    req.uuid
+                ))));
+            }
+            let order = order.remove();
+            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled)
+                .compat()
+                .await
+                .ok();
+            return Ok(CancelOrderResponse {
+                result: "success".to_string(),
+            });
+        },
+        // error is returned
+        Entry::Vacant(_) => (),
+    }
+    Err(MmError::new(CancelOrderError::UUIDNotFound(format!(
+        "Order with uuid {} is not found",
+        req.uuid
+    ))))
+}
+
+pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: CancelOrderReq = try_s!(json::from_value(req));
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
