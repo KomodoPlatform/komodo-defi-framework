@@ -364,9 +364,9 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
 name = "bech32"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c7f7096bc256f5e5cb960f60dfc4f4ef979ca65abe7fb9d5a4f77150d3783d4"
+checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 
 [[package]]
 name = "bellman"
@@ -405,6 +405,17 @@ name = "bimap"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3528c4b6f81eb2aadd3504da4ddc5bf5caec1b4aaf0d9dccfb8aaf2850f5b39c"
+
+[[package]]
+name = "bitcoin"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes",
+ "secp256k1",
+]
 
 [[package]]
 name = "bitcoin-cash"
@@ -471,6 +482,12 @@ checksum = "744837d4735aab854e4722a3a2ee942aaa96c6c02de7e06594e6511ef9fba309"
 dependencies = [
  "bitcoin-cash",
 ]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
 
 [[package]]
 name = "bitcrypto"
@@ -825,6 +842,7 @@ dependencies = [
  "async-trait",
  "base64 0.10.1",
  "bigdecimal",
+ "bitcoin",
  "bitcoin-cash-slp",
  "bitcrypto",
  "byteorder 1.4.3",
@@ -850,6 +868,7 @@ dependencies = [
  "keys",
  "lazy_static",
  "libc",
+ "lightning",
  "metrics",
  "mocktopus",
  "num-traits 0.2.12",
@@ -925,6 +944,7 @@ dependencies = [
  "keys",
  "lazy_static",
  "libc",
+ "lightning",
  "log 0.4.11",
  "log4rs",
  "metrics",
@@ -2826,6 +2846,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightning"
+version = "0.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c5f600361d3415d6bd863c6437f16700a752f3a384508bd8679d39676b3fd99"
+dependencies = [
+ "bitcoin",
+ "secp256k1",
+]
+
+[[package]]
 name = "linked-hash-map"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4619,9 +4649,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.20.2"
+version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee5070fdc6f26ca5be6dcfc3d07c76fdb974a63a8b246b459854274145f5a258"
+checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
 dependencies = [
  "rand 0.6.5",
  "secp256k1-sys",

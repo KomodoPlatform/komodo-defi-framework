@@ -4,6 +4,8 @@
 use crate::utxo::{output_script, sat_from_big_decimal};
 use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use bigdecimal::BigDecimal;
+use bitcoin::blockdata::transaction::Transaction as BitcoinTransaction;
+use bitcoin::consensus::encode;
 use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::executor::{spawn, Timer};
@@ -24,6 +26,7 @@ use futures01::sync::{mpsc, oneshot};
 use futures01::{Future, Sink, Stream};
 use http::Uri;
 use keys::{Address, Type as ScriptType};
+use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -1632,6 +1635,33 @@ impl UtxoRpcClientOps for ElectrumClient {
                     Ok(median(timestamps.as_mut_slice()).unwrap())
                 }),
         )
+    }
+}
+
+#[cfg_attr(test, mockable)]
+impl FeeEstimator for ElectrumClient {
+    // TODO: use fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) instead of fixed number
+    // Gets estimated satoshis of fee required per 1000 Weight-Units.
+    fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
+        match confirmation_target {
+            // fetch background feerate
+            ConfirmationTarget::Background => 253,
+            // fetch normal feerate (~6 blocks)
+            ConfirmationTarget::Normal => 2000,
+            // fetch high priority feerate
+            ConfirmationTarget::HighPriority => 5000,
+        }
+    }
+}
+
+#[cfg_attr(test, mockable)]
+impl BroadcasterInterface for ElectrumClient {
+    fn broadcast_transaction(&self, tx: &BitcoinTransaction) {
+        let tx_bytes = BytesJson::from(encode::serialize_hex(tx).as_bytes());
+        let _ = Box::new(
+            self.blockchain_transaction_broadcast(tx_bytes)
+                .map_to_mm_fut(UtxoRpcError::from),
+        );
     }
 }
 

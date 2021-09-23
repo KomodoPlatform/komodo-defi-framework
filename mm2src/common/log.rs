@@ -7,7 +7,8 @@ use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
 use crossbeam::queue::SegQueue;
-use log::Record;
+use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
+use log::{Level, Record};
 use parking_lot::Mutex;
 use serde_json::Value as Json;
 use std::cell::RefCell;
@@ -949,6 +950,30 @@ impl LogState {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+impl LightningLogger for LogState {
+    fn log(&self, record: &LightningRecord) {
+        let level = match record.level {
+            LightningLevel::Trace => Level::Trace,
+            LightningLevel::Debug => Level::Debug,
+            LightningLevel::Info => Level::Info,
+            LightningLevel::Warn => Level::Warn,
+            LightningLevel::Error => Level::Error,
+        };
+        let record = Record::builder()
+            .args(record.args)
+            .level(level)
+            .target("mm_log")
+            .module_path(Some(record.module_path))
+            .file(Some(record.file))
+            .line(Some(record.line))
+            .build();
+        let as_string = format_record(&record);
+        let level = LogLevel::from(record.metadata().level());
+        chunk2log(as_string, level);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for LogState {
     fn drop(&mut self) {
         // Make sure to log the chunks received from the satellite threads.
@@ -997,9 +1022,8 @@ impl FromStr for LogLevel {
     }
 }
 
-impl From<log::Level> for LogLevel {
-    fn from(orig: log::Level) -> Self {
-        use log::Level;
+impl From<Level> for LogLevel {
+    fn from(orig: Level) -> Self {
         match orig {
             Level::Error => LogLevel::Error,
             Level::Warn => LogLevel::Warn,
