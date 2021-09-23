@@ -428,19 +428,20 @@ async fn checks_order_prerequisites(
 }
 
 async fn prepare_order(cfg: SimpleCoinMarketMakerCfg, key_trade_pair: String, ctx: &MmArc) -> OrderPreparationResult {
+    info!("preparing order: {}", key_trade_pair);
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
     let registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
     let rates = registry.get_cex_rates(cfg.base.clone(), cfg.rel.clone());
     drop(registry);
     checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
 
-    let base_coin = lp_coinfind(ctx, cfg.rel.as_str())
+    let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
-        .ok_or(MmError::new(OrderProcessingError::AssetNotEnabled))?;
+        .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
     let base_balance = get_non_zero_balance(base_coin).await?;
     lp_coinfind(ctx, cfg.rel.as_str())
         .await?
-        .ok_or(MmError::new(OrderProcessingError::AssetNotEnabled))?;
+        .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
 
     info!("balance for {} is {}", cfg.base, base_balance);
 
@@ -450,7 +451,6 @@ async fn prepare_order(cfg: SimpleCoinMarketMakerCfg, key_trade_pair: String, ct
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
     }
 
-    // I sell 1 KMD because 50 % percent of the balance is 1 KMD -> order.max_base_vol -> 1
     let volume = match cfg.balance_percent {
         Some(balance_percent) => balance_percent * base_balance.clone(),
         None => MmNumber::default(),
@@ -568,8 +568,13 @@ async fn process_bot_logic(ctx: &MmArc) {
                 {
                     Ok(_) => info!("Order with uuid: {} successfully updated", uuid),
                     Err(err) => {
+                        error!(
+                            "Order with uuid: {} for {} cannot be updated - {}",
+                            uuid,
+                            key_trade_pair.as_combination(),
+                            err
+                        );
                         cancel_single_order(ctx, *uuid).await;
-                        error!("{}", err);
                     },
                 };
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
@@ -586,7 +591,7 @@ async fn process_bot_logic(ctx: &MmArc) {
                 // res will be used later for reporting error to the users, also usefullt o be coupled with a telegram service to send notification to the user
                 match create_single_order(cur_cfg.clone(), trading_pair.clone(), ctx).await {
                     Ok(_) => {},
-                    Err(err) => error!("{}", err),
+                    Err(err) => error!("{} order cannot be created - {}", trading_pair, err),
                 };
             },
         };
