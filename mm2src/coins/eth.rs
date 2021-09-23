@@ -1100,7 +1100,8 @@ impl MarketCoinOps for EthCoin {
                                 continue;
                             },
                         };
-                        if current_block - confirmed_at + 1 >= required_confirms {
+                        // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
+                        if current_block > confirmed_at && (current_block - confirmed_at + 1 >= required_confirms) {
                             status.append(" Confirmed.");
                             return Ok(());
                         }
