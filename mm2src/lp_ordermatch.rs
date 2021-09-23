@@ -1640,11 +1640,12 @@ impl<'a> MakerOrderBuilder<'a> {
             self.price.clone(),
         )?;
 
+        let created_at = now_ms();
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            created_at: now_ms(),
-            updated_at: Some(now_ms()),
+            created_at,
+            updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
             min_base_vol: actual_min_base_vol,
             price: self.price,
@@ -1659,11 +1660,12 @@ impl<'a> MakerOrderBuilder<'a> {
 
     #[cfg(test)]
     fn build_unchecked(self) -> MakerOrder {
+        let created_at = now_ms();
         MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            created_at: now_ms(),
-            updated_at: Some(now_ms()),
+            created_at,
+            updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
             min_base_vol: self.min_base_vol.unwrap_or(self.base_coin.min_trading_vol()),
             price: self.price,
@@ -1783,17 +1785,20 @@ impl MakerOrder {
         )
         .await
     }
+
+    fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 }
 
 impl From<TakerOrder> for MakerOrder {
     fn from(taker_order: TakerOrder) -> Self {
+        let created_at = now_ms();
         match taker_order.request.action {
             TakerAction::Sell => MakerOrder {
                 price: (taker_order.request.get_rel_amount() / taker_order.request.get_base_amount()),
                 max_base_vol: taker_order.request.get_base_amount().clone(),
                 min_base_vol: taker_order.min_volume,
-                created_at: now_ms(),
-                updated_at: Some(now_ms()),
+                created_at,
+                updated_at: Some(created_at),
                 base: taker_order.request.base,
                 rel: taker_order.request.rel,
                 matches: HashMap::new(),
@@ -1811,8 +1816,8 @@ impl From<TakerOrder> for MakerOrder {
                     price,
                     max_base_vol: taker_order.request.get_rel_amount().clone(),
                     min_base_vol,
-                    created_at: now_ms(),
-                    updated_at: Some(now_ms()),
+                    created_at,
+                    updated_at: Some(created_at),
                     base: taker_order.request.rel,
                     rel: taker_order.request.base,
                     matches: HashMap::new(),
@@ -3982,8 +3987,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
 
             let new_change = HistoricalOrder::build(&update_msg, order);
             order.apply_updated(&update_msg);
-            order.changes_history.get_or_insert(Vec::new()).push(new_change);
-            save_maker_order_on_update(ctx.clone(), order).await;
+            save_maker_order_on_update(ctx.clone(), order, new_change).await;
             update_msg.with_new_max_volume((new_volume - reserved_amount).into());
             maker_order_updated_p2p_notify(ctx.clone(), order.base.as_str(), order.rel.as_str(), update_msg).await;
             Ok(order.clone())
@@ -4028,15 +4032,16 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let storage = MyOrdersStorage::new(ctx.clone());
 
     let maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    if let Some(order) = maker_orders.get(&req.uuid) {
+    if let Ok(order) = storage.load_active_maker_order(req.uuid).await {
         let res = json!({
             "type": "Maker",
-            "order": MakerOrderForMyOrdersRpc::from(order),
+            "order": MakerOrderForMyOrdersRpc::from(&order),
         });
         return Response::builder()
             .body(json::to_vec(&res).expect("Serialization failed"))
             .map_err(|e| ERRL!("{}", e));
     }
+    drop(maker_orders);
 
     let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     if let Some(order) = taker_orders.get(&req.uuid) {
@@ -4390,7 +4395,7 @@ fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct HistoricalOrder {
+pub struct HistoricalOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_base_vol: Option<MmNumber>,
     #[serde(skip_serializing_if = "Option::is_none")]
