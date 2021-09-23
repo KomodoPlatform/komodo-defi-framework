@@ -9,9 +9,9 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 use super::lp_commands::*;
-use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order_rpc, my_orders, order_status,
-                                orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
-                                update_maker_order_rpc};
+use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders,
+                                order_status, orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell,
+                                set_price, update_maker_order_rpc};
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
                           import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status,
                           recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
@@ -64,7 +64,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "ban_pubkey" => hyres(ban_pubkey_rpc(ctx, req)),
         "best_orders" => hyres(best_orders_rpc(ctx, req)),
         "buy" => hyres(buy(ctx, req)),
-        "cancel_all_orders" => hyres(cancel_all_orders(ctx, req)),
+        "cancel_all_orders" => hyres(cancel_all_orders_rpc(ctx, req)),
         "cancel_order" => hyres(cancel_order_rpc(ctx, req)),
         "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         "convertaddress" => hyres(convert_address(ctx, req)),

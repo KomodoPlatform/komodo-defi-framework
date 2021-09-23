@@ -115,6 +115,18 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 type AlbOrderedOrderbookPair = String;
 type PubkeyOrders = Vec<(Uuid, OrderbookP2PItem)>;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CancelAllOrdersResponse {
+    cancelled: Vec<Uuid>,
+    currently_matching: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CancelAllOrdersError {
+    LegacyError(String),
+}
+
 impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
     fn from(tuple: (new_protocol::MakerOrderCreated, String)) -> OrderbookItem {
         let (order, pubkey) = tuple;
@@ -4641,7 +4653,21 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
     Ok((cancelled, currently_matching))
 }
 
-pub async fn cancel_all_orders(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+pub async fn cancel_all_orders(
+    ctx: MmArc,
+    cancel_by: CancelBy,
+) -> Result<CancelAllOrdersResponse, MmError<CancelAllOrdersError>> {
+    let (cancelled, currently_matching) = match cancel_orders_by(&ctx, cancel_by).await {
+        Ok(x) => x,
+        Err(err) => return Err(MmError::new(CancelAllOrdersError::LegacyError(err))),
+    };
+    Ok(CancelAllOrdersResponse {
+        cancelled,
+        currently_matching,
+    })
+}
+
+pub async fn cancel_all_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let cancel_by: CancelBy = try_s!(json::from_value(req["cancel_by"].clone()));
 
     let (cancelled, currently_matching) = try_s!(cancel_orders_by(&ctx, cancel_by).await);

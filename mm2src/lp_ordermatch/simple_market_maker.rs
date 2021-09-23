@@ -1,3 +1,4 @@
+use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy};
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::TickerInfos,
                                  lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
@@ -193,10 +194,9 @@ pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     {
         let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-        // todo: check if clear is adapted, if i understand its keep the memory allocated for later usage.
         trading_bot_cfg.clear();
     }
-    // todo: cancel all pending orders
+    cancel_pending_orders(&ctx).await;
 }
 
 async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<OrderProcessingError>> {
@@ -371,6 +371,13 @@ async fn vwap_calculator(
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
+async fn cancel_pending_orders(ctx: &MmArc) {
+    match cancel_all_orders(ctx.clone(), CancelBy::All).await {
+        Ok(resp) => info!("Successfully deleted orders: {:?}", resp.cancelled),
+        Err(err) => error!("Couldn't cancel pending orders: {}", err),
+    }
+}
+
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
     match cancel_order(ctx.clone(), CancelOrderReq { uuid }).await {
         Ok(_) => info!("Order with uuid: {} successfully cancelled", uuid),
@@ -539,8 +546,8 @@ async fn process_bot_logic(ctx: &MmArc) {
             model
         },
         Err(err) => {
-            error!("error during fetching price - skipping to next iteration: {:?}", err);
-            // todo cancel all pending orders
+            error!("error during fetching price: {:?}", err);
+            cancel_pending_orders(ctx).await;
             return;
         },
     };
