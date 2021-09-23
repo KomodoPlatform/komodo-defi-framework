@@ -93,7 +93,6 @@ impl Default for Provider {
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
     trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
-    price_tickers_registry: AsyncMutex<TickerInfosRegistry>,
 }
 
 #[derive(Default, Clone, Display)]

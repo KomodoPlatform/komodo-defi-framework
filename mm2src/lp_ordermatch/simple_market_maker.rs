@@ -427,14 +427,13 @@ async fn checks_order_prerequisites(
     Ok(true)
 }
 
-async fn prepare_order(cfg: SimpleCoinMarketMakerCfg, key_trade_pair: String, ctx: &MmArc) -> OrderPreparationResult {
-    info!("preparing order: {}", key_trade_pair);
-    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    let registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
-    let rates = registry.get_cex_rates(cfg.base.clone(), cfg.rel.clone());
-    drop(registry);
+async fn prepare_order(
+    rates: RateInfos,
+    cfg: SimpleCoinMarketMakerCfg,
+    key_trade_pair: String,
+    ctx: &MmArc,
+) -> OrderPreparationResult {
     checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
-
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -470,6 +469,7 @@ async fn prepare_order(cfg: SimpleCoinMarketMakerCfg, key_trade_pair: String, ct
 }
 
 async fn update_single_order(
+    rates: RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     uuid: Uuid,
     _order: MakerOrder,
@@ -477,7 +477,7 @@ async fn update_single_order(
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     info!("need to update order: {} of {} - cfg: {}", uuid, key_trade_pair, cfg);
-    let (min_vol, _, calculated_price) = prepare_order(cfg.clone(), key_trade_pair.clone(), ctx).await?;
+    let (min_vol, _, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -506,12 +506,13 @@ async fn update_single_order(
 }
 
 async fn create_single_order(
+    rates: RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     info!("need to create order for: {} - cfg: {}", key_trade_pair, cfg);
-    let (min_vol, volume, calculated_price) = prepare_order(cfg.clone(), key_trade_pair.clone(), ctx).await?;
+    let (min_vol, volume, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -539,6 +540,17 @@ async fn create_single_order(
 }
 
 async fn process_bot_logic(ctx: &MmArc) {
+    let rates_registry = match fetch_price_tickers().await {
+        Ok(model) => {
+            info!("price successfully fetched");
+            model
+        },
+        Err(err) => {
+            error!("error during fetching price - skipping to next iteration: {:?}", err);
+            // todo cancel all pending orders
+            return;
+        },
+    };
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
     // note: Copy the cfg here will not be expensive, and this will be thread safe.
     let cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await.clone();
@@ -558,6 +570,7 @@ async fn process_bot_logic(ctx: &MmArc) {
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
                 match update_single_order(
+                    rates_registry.get_cex_rates(coin_cfg.base.clone(), coin_cfg.rel.clone()),
                     coin_cfg.clone(),
                     *uuid,
                     value.clone(),
@@ -589,7 +602,14 @@ async fn process_bot_logic(ctx: &MmArc) {
             Some(_) => continue,
             None => {
                 // res will be used later for reporting error to the users, also usefullt o be coupled with a telegram service to send notification to the user
-                match create_single_order(cur_cfg.clone(), trading_pair.clone(), ctx).await {
+                match create_single_order(
+                    rates_registry.get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone()),
+                    cur_cfg.clone(),
+                    trading_pair.clone(),
+                    ctx,
+                )
+                .await
+                {
                     Ok(_) => {},
                     Err(err) => error!("{} order cannot be created - {}", trading_pair, err),
                 };
@@ -639,38 +659,10 @@ pub async fn process_price_request() -> Result<TickerInfosRegistry, MmError<Pric
     Ok(TickerInfosRegistry(model))
 }
 
-async fn fetch_price_tickers(ctx: &MmArc) -> Result<bool, MmError<PriceServiceRequestError>> {
+async fn fetch_price_tickers() -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     let model = process_price_request().await?;
-    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    let mut price_registry = simple_market_maker_bot_ctx.price_tickers_registry.lock().await;
-    *price_registry = model;
-    info!("registry size: {}", price_registry.0.len());
-    Ok(true)
-}
-
-pub async fn lp_price_service_loop(ctx: MmArc) {
-    info!("lp_price_service successfully started");
-    loop {
-        // todo: this log should probably in debug
-        info!("tick lp_price_service_loop");
-        if ctx.is_stopping() {
-            break;
-        }
-
-        let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-        let states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-        if *states == TradingBotState::Stopping {
-            info!("stop price service loop");
-            break;
-        }
-        drop(states);
-        match fetch_price_tickers(&ctx).await {
-            Ok(_) => info!("price successfully fetched"),
-            Err(err) => error!("error during fetching price: {:?}", err),
-        };
-        Timer::sleep(20.0).await;
-    }
-    info!("lp_price_service successfully stopped");
+    info!("price registry size: {}", model.0.len());
+    Ok(model)
 }
 
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {
@@ -686,7 +678,6 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
     }
 
     info!("simple_market_maker_bot successfully started");
-    spawn(lp_price_service_loop(ctx.clone()));
     spawn(lp_bot_loop(ctx.clone()));
     Ok(StartSimpleMakerBotRes {
         result: "Success".to_string(),
