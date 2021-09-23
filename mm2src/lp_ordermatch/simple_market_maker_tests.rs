@@ -1,10 +1,10 @@
-use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap};
-use crate::{mm2::lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
-            mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap, lp_ordermatch::lp_bot::Provider,
-                  lp_ordermatch::lp_bot::TickerInfos, lp_ordermatch::lp_bot::TradingBotContext,
-                  lp_swap::MyRecentSwapsAnswer}};
-use common::{block_on, log::UnifiedLoggerBuilder, mm_ctx::MmCtxBuilder, mm_number::MmNumber,
-             privkey::key_pair_from_seed};
+use crate::mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
+                 lp_ordermatch::lp_bot::Provider,
+                 lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
+                 lp_ordermatch::lp_bot::TickerInfos,
+                 lp_ordermatch::lp_bot::TickerInfosRegistry,
+                 lp_swap::{MakerSavedSwap, MyRecentSwapsAnswer, SavedSwap}};
+use common::{block_on, log::UnifiedLoggerBuilder, mm_number::MmNumber};
 
 use std::num::NonZeroUsize;
 
@@ -207,14 +207,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_get_cex_rates() {
-        let ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(
-                key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
-                    .unwrap(),
-            )
-            .into_mm_arc();
-        let trading_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-        let mut registry = block_on(trading_bot_ctx.price_tickers_registry.lock());
+        let mut registry = TickerInfosRegistry::default();
         let rates = registry.get_cex_rates("KMD".to_string(), "LTC".to_string());
         assert_eq!(rates.base_provider, Provider::Unknown);
         assert_eq!(rates.rel_provider, Provider::Unknown);
