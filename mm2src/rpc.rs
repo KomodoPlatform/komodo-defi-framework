@@ -17,22 +17,6 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 
-#[cfg(not(target_arch = "wasm32"))] use common::log::warn;
-use common::log::{error, info};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
-use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode};
-use derive_more::Display;
-use futures::future::{join_all, FutureExt};
-use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
-use http::request::Parts;
-use http::{Method, Request, Response, StatusCode};
-#[cfg(not(target_arch = "wasm32"))]
-use hyper::{self, Body, Server};
-use serde::Serialize;
-use serde_json::{self as json, Value as Json};
-use std::net::SocketAddr;
-
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
 mod dispatcher_legacy;
 

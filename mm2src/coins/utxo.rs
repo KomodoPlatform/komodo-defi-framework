@@ -20,6 +20,7 @@
 //
 
 pub mod bch;
+pub mod bchd_grpc;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;

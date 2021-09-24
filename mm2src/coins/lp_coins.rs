@@ -122,6 +122,10 @@ cfg_wasm32! {
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
 
+mod bchrpc {
+    include!(concat!(env!("OUT_DIR"), "/pb.rs"));
+}
+
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
