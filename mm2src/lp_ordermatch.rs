@@ -2736,6 +2736,8 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     }
 
     let uuid = reserved_msg.taker_order_uuid;
+    let base = reserved_msg.base.clone();
+    let rel = reserved_msg.rel.clone();
     {
         let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
         let pending_for_order = pending_map
@@ -2756,7 +2758,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         Entry::Occupied(entry) => entry.into_mut(),
     };
 
-    let (base_coin, rel_coin) = match find_pair(&ctx, &my_order.request.base, &my_order.request.rel).await {
+    let (base_coin, rel_coin) = match find_pair(&ctx, &base, &rel).await {
         Ok(Some(c)) => c,
         _ => return, // attempt to match with deactivated coin
     };

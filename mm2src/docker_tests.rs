@@ -3713,7 +3713,6 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-
         let rc = block_on(mm_alice.rpc(json! ({
             "userpass": mm_alice.userpass,
             "method": "sell",
@@ -3723,7 +3722,7 @@ mod docker_tests {
             "volume": "0.1",
         })))
         .unwrap();
-        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        assert!(rc.0.is_success(), "!sell: {}", rc.1);
 
         block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/ETH"))).unwrap();
         block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/ETH"))).unwrap();
