@@ -22,7 +22,6 @@ use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
-use common::log::info;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::{now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1101,10 +1100,6 @@ impl MarketCoinOps for EthCoin {
                                 continue;
                             },
                         };
-                        info!(
-                            "current_block: {} - confirmed_at: {}, required_confirms: {}",
-                            current_block, confirmed_at, required_confirms
-                        );
                         // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
                         if current_block >= confirmed_at && (current_block - confirmed_at) + 1 >= required_confirms {
                             status.append(" Confirmed.");
