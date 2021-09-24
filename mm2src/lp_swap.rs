@@ -853,7 +853,7 @@ pub struct MyRecentSwapsUuids {
 }
 
 #[derive(Debug)]
-pub struct MyRecentSwapsAnswer {
+pub struct MyRecentSwapsResponse {
     pub from_uuid: Option<Uuid>,
     pub limit: usize,
     pub skipped: usize,
@@ -872,7 +872,7 @@ pub enum MyRecentSwapsErr {
     UnableToQuerySwapStorage(String),
 }
 
-pub type MyRecentSwapsResult = Result<MyRecentSwapsAnswer, MmError<MyRecentSwapsErr>>;
+pub type MyRecentSwapsResult = Result<MyRecentSwapsResponse, MmError<MyRecentSwapsErr>>;
 
 pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwapsResult {
     let db_result = match MySwapsStorage::new(ctx.clone())
@@ -902,7 +902,7 @@ pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwaps
         swaps.push(swap);
     }
 
-    Ok(MyRecentSwapsAnswer {
+    Ok(MyRecentSwapsResponse {
         from_uuid: req.paging_options.from_uuid,
         limit: req.paging_options.limit,
         skipped: db_result.skipped,

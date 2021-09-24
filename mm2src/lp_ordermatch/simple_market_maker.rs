@@ -6,7 +6,7 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::{RateInfos, TickerInfosRegistry},
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
-                 lp_swap::{my_recent_swaps, MyRecentSwapsAnswer, MyRecentSwapsErr, MyRecentSwapsReq, MySwapsFilter}};
+                 lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
 use bigdecimal::Zero;
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{executor::{spawn, Timer},
@@ -144,6 +144,10 @@ pub enum PriceServiceRequestError {
     ParsingAnswerError(String),
 }
 
+impl From<serde_json::Error> for PriceServiceRequestError {
+    fn from(error: serde_json::Error) -> Self { PriceServiceRequestError::ParsingAnswerError(error.to_string()) }
+}
+
 impl From<std::string::String> for PriceServiceRequestError {
     fn from(error: String) -> Self { PriceServiceRequestError::HttpProcessError(error) }
 }
@@ -216,7 +220,7 @@ async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<Orde
 
 async fn vwap_calculation(
     kind: VwapCalculationSide,
-    swaps_answer: MyRecentSwapsAnswer,
+    swaps_answer: MyRecentSwapsResponse,
     nb_valid_trades: &mut usize,
     cfg: &SimpleCoinMarketMakerCfg,
     calculated_price: MmNumber,
@@ -270,8 +274,8 @@ async fn vwap_calculation(
 }
 
 async fn vwap_logic(
-    base_swaps: MyRecentSwapsAnswer,
-    rel_swaps: MyRecentSwapsAnswer,
+    base_swaps: MyRecentSwapsResponse,
+    rel_swaps: MyRecentSwapsResponse,
     calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
@@ -322,8 +326,8 @@ async fn vwap_logic(
 }
 
 pub async fn vwap(
-    base_swaps: MyRecentSwapsAnswer,
-    rel_swaps: MyRecentSwapsAnswer,
+    base_swaps: MyRecentSwapsResponse,
+    rel_swaps: MyRecentSwapsResponse,
     calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
@@ -649,13 +653,7 @@ pub async fn process_price_request() -> Result<TickerInfosRegistry, MmError<Pric
     if status_code != StatusCode::OK {
         return MmError::err(PriceServiceRequestError::HttpProcessError(body));
     }
-    let model: HashMap<String, TickerInfos> = match serde_json::from_str(&body) {
-        Ok(model) => model,
-        Err(err) => {
-            return MmError::err(PriceServiceRequestError::ParsingAnswerError(err.to_string()));
-        },
-    };
-
+    let model: HashMap<String, TickerInfos> = serde_json::from_str(&body)?;
     Ok(TickerInfosRegistry(model))
 }
 

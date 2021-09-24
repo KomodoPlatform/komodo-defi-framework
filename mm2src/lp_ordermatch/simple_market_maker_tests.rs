@@ -3,17 +3,17 @@ use crate::mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
                  lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
                  lp_ordermatch::lp_bot::TickerInfos,
                  lp_ordermatch::lp_bot::TickerInfosRegistry,
-                 lp_swap::{MakerSavedSwap, MyRecentSwapsAnswer, SavedSwap}};
+                 lp_swap::{MakerSavedSwap, MyRecentSwapsResponse, SavedSwap}};
 use common::{block_on, log::UnifiedLoggerBuilder, mm_number::MmNumber};
 
 use std::num::NonZeroUsize;
 
-fn generate_swaps_from_values(swaps_value: Vec<(MmNumber, MmNumber)>) -> MyRecentSwapsAnswer {
+fn generate_swaps_from_values(swaps_value: Vec<(MmNumber, MmNumber)>) -> MyRecentSwapsResponse {
     let mut swaps: Vec<SavedSwap> = Vec::with_capacity(swaps_value.len());
     for (base_amount, other_amount) in swaps_value.iter() {
         swaps.push(SavedSwap::Maker(MakerSavedSwap::new(base_amount, other_amount)));
     }
-    MyRecentSwapsAnswer {
+    MyRecentSwapsResponse {
         from_uuid: None,
         limit: 0,
         skipped: 0,
