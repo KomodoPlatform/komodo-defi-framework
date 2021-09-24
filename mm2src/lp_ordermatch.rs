@@ -4238,12 +4238,15 @@ pub struct CancelOrderReq {
     uuid: Uuid,
 }
 
-#[derive(Debug, Deserialize, Serialize, SerializeErrorType)]
+#[derive(Debug, Deserialize, Serialize, SerializeErrorType, Display)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum CancelOrderError {
+    #[display(fmt = "Cannot retrieve order match context.")]
     CannotRetrieveOrderMatchContext,
-    OrderBeingMatched(String),
-    UUIDNotFound(String),
+    #[display(fmt = "Order {} is being matched now, can't cancel", uuid)]
+    OrderBeingMatched { uuid: Uuid },
+    #[display(fmt = "Order {} not found", uuid)]
+    UUIDNotFound { uuid: Uuid },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -4260,10 +4263,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
     match maker_orders.entry(req.uuid) {
         Entry::Occupied(order) => {
             if !order.get().is_cancellable() {
-                return Err(MmError::new(CancelOrderError::OrderBeingMatched(format!(
-                    "Order {} is being matched now, can't cancel",
-                    req.uuid
-                ))));
+                return MmError::err(CancelOrderError::OrderBeingMatched { uuid: req.uuid });
             }
             let order = order.remove();
             maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
@@ -4283,10 +4283,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
     match taker_orders.entry(req.uuid) {
         Entry::Occupied(order) => {
             if !order.get().is_cancellable() {
-                return Err(MmError::new(CancelOrderError::OrderBeingMatched(format!(
-                    "Order {} is being matched now, can't cancel",
-                    req.uuid
-                ))));
+                return MmError::err(CancelOrderError::UUIDNotFound { uuid: req.uuid });
             }
             let order = order.remove();
             delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled)
@@ -4300,10 +4297,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
         // error is returned
         Entry::Vacant(_) => (),
     }
-    Err(MmError::new(CancelOrderError::UUIDNotFound(format!(
-        "Order with uuid {} is not found",
-        req.uuid
-    ))))
+    MmError::err(CancelOrderError::UUIDNotFound { uuid: req.uuid })
 }
 
 pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {

@@ -95,16 +95,7 @@ pub struct TradingBotContext {
     trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
 }
 
-#[derive(Default, Clone, Display)]
-#[display(
-    fmt = "{} {} {} {} {:?} {:?}",
-    base,
-    rel,
-    price,
-    last_updated_timestamp,
-    base_provider,
-    rel_provider
-)]
+#[derive(Default, Clone, Debug)]
 pub struct RateInfos {
     base: String,
     rel: String,

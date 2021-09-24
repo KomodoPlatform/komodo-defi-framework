@@ -243,9 +243,9 @@ async fn vwap_calculation(
         // todo: refactor to a function
         let cur_sum_price_volume = match kind {
             VwapCalculationSide::Base => {
-                let cur_price = my_amount / other_amount.clone();
-                let cur_sum_price_volume = cur_price.clone() * other_amount.clone();
-                total_volume += other_amount.clone();
+                let cur_price = &my_amount / &other_amount;
+                let cur_sum_price_volume = &cur_price * &other_amount;
+                total_volume += &other_amount;
                 info!(
                     "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
                     cfg.base, cfg.rel, cur_price, other_amount, average_trading_price, total_volume
@@ -253,9 +253,9 @@ async fn vwap_calculation(
                 cur_sum_price_volume
             },
             VwapCalculationSide::Rel => {
-                let cur_price = other_amount.clone() / my_amount.clone();
-                let cur_sum_price_volume = cur_price.clone() * my_amount.clone();
-                total_volume += my_amount.clone();
+                let cur_price = &other_amount / &my_amount;
+                let cur_sum_price_volume = &cur_price * &my_amount;
+                total_volume += &my_amount;
                 info!(
                     "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
                     cfg.base, cfg.rel, cur_price, my_amount, average_trading_price, total_volume
@@ -532,6 +532,7 @@ async fn create_single_order(
         rel_nota: cfg.rel_nota,
         save_in_history: true,
     };
+
     let resp = match create_maker_order(ctx, req).await {
         Ok(x) => x,
         Err(err) => {
