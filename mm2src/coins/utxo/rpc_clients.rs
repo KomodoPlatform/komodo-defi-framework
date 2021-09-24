@@ -4,8 +4,9 @@
 use crate::utxo::{output_script, sat_from_big_decimal};
 use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use bigdecimal::BigDecimal;
-use bitcoin::blockdata::transaction::Transaction as BitcoinTransaction;
+use bitcoin::blockdata::{script::Script as BitcoinScript, transaction::Transaction as BitcoinTransaction};
 use bitcoin::consensus::encode;
+use bitcoin::hash_types::Txid;
 use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::executor::{spawn, Timer};
@@ -26,7 +27,8 @@ use futures01::sync::{mpsc, oneshot};
 use futures01::{Future, Sink, Stream};
 use http::Uri;
 use keys::{Address, Type as ScriptType};
-use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
+use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
+                       Filter, WatchedOutput};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -1662,6 +1664,46 @@ impl BroadcasterInterface for ElectrumClient {
             self.blockchain_transaction_broadcast(tx_bytes)
                 .map_to_mm_fut(UtxoRpcError::from),
         );
+    }
+}
+
+#[cfg_attr(test, mockable)]
+impl Filter for ElectrumClient {
+    // Watches for this transaction on-chain
+    fn register_tx(&self, _txid: &Txid, _script_pubkey: &BitcoinScript) { unimplemented!() }
+
+    // Watches for any transactions that spend this output on-chain
+    // Todo: find a way to remove block_on
+    fn register_output(&self, output: WatchedOutput) -> Option<(usize, BitcoinTransaction)> {
+        use common::block_on;
+        let selfi = self.clone();
+        let script_hash = hex::encode(electrum_script_hash(output.script_pubkey.as_ref()));
+        let history = block_on(selfi.scripthash_get_history(&script_hash).compat()).unwrap_or_default();
+
+        if history.len() < 2 {
+            return None;
+        }
+
+        for item in history.iter() {
+            let transaction = match block_on(selfi.get_transaction_bytes(item.tx_hash.clone()).compat()) {
+                Ok(tx) => tx,
+                Err(_) => continue,
+            };
+
+            let maybe_spend_tx: BitcoinTransaction = match encode::deserialize(transaction.as_slice()) {
+                Ok(tx) => tx,
+                Err(_) => continue,
+            };
+
+            for (index, input) in maybe_spend_tx.input.iter().enumerate() {
+                if input.previous_output.txid == output.outpoint.txid
+                    && input.previous_output.vout == output.outpoint.index as u32
+                {
+                    return Some((index, maybe_spend_tx));
+                }
+            }
+        }
+        None
     }
 }
 
