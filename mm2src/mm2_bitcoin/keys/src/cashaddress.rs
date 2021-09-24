@@ -19,6 +19,7 @@ pub enum NetworkPrefix {
     BitcoinCash,
     BchTest,
     BchReg,
+    Other(String),
 }
 
 impl fmt::Display for NetworkPrefix {
@@ -27,6 +28,7 @@ impl fmt::Display for NetworkPrefix {
             NetworkPrefix::BitcoinCash => "bitcoincash",
             NetworkPrefix::BchTest => "bchtest",
             NetworkPrefix::BchReg => "bchreg",
+            NetworkPrefix::Other(network) => network,
         };
         write!(f, "{}", as_str)
     }
@@ -41,7 +43,7 @@ impl FromStr for NetworkPrefix {
             "bitcoincash" => NetworkPrefix::BitcoinCash,
             "bchtest" => NetworkPrefix::BchTest,
             "bchreg" => NetworkPrefix::BchReg,
-            _ => return Err("Unexpected network prefix".into()),
+            _ => NetworkPrefix::Other(s),
         };
         Ok(prefix)
     }
@@ -503,6 +505,7 @@ mod tests {
             "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn",
             "bchtest:testnetaddress4d6njnut",
             "bchreg:555555555555555555555555555555555555555555555udxmlmrz",
+            "ergon:qq0fj6kgmpxet2za56lxv4zlkjhu6a6psq0jqd4tvs",
         ];
 
         for addr in addresses {
@@ -515,6 +518,7 @@ mod tests {
             "bchtest:9adhakpwzztepkpwp5z0dq62m6u5v5xtyj7j3h2u94tsynr",
             "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyc",
             "bchtest:testnetaddress4d6njnu",
+            "ergon:p9adhakpwzztepkpwp5z0dq62m6u5v5xtyj7j3h2u94tsynr",
         ];
 
         for addr in incorrect_addresses {
