@@ -64,8 +64,26 @@ pub enum OrderProcessingError {
     LegacyError(String),
 }
 
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum BalanceProcessingError {
+    #[display(fmt = "Internal error when retrieving balance - skipping")]
+    BalanceInternalError,
+    #[display(fmt = "Balance is zero - skipping")]
+    BalanceIsZero,
+}
+
 impl From<MyRecentSwapsErr> for OrderProcessingError {
     fn from(_: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError }
+}
+
+impl From<BalanceProcessingError> for OrderProcessingError {
+    fn from(err: BalanceProcessingError) -> Self {
+        match err {
+            BalanceProcessingError::BalanceInternalError => OrderProcessingError::BalanceInternalError,
+            BalanceProcessingError::BalanceIsZero => OrderProcessingError::BalanceIsZero,
+        }
+    }
 }
 
 impl From<std::string::String> for OrderProcessingError {
@@ -203,17 +221,17 @@ pub async fn tear_down_bot(ctx: MmArc) {
     cancel_pending_orders(&ctx).await;
 }
 
-async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<OrderProcessingError>> {
+async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<BalanceProcessingError>> {
     let coin_balance = match coin.my_balance().compat().await {
         Ok(coin_balance) => coin_balance,
         Err(err) => {
             warn!("err with balance: {} - reason: {}", coin.ticker(), err.to_string());
-            return MmError::err(OrderProcessingError::BalanceInternalError);
+            return MmError::err(BalanceProcessingError::BalanceInternalError);
         },
     };
     if coin_balance.spendable.is_zero() {
         warn!("balance for: {} is zero", coin.ticker());
-        return MmError::err(OrderProcessingError::BalanceIsZero);
+        return MmError::err(BalanceProcessingError::BalanceIsZero);
     }
     Ok(MmNumber::from(coin_balance.spendable))
 }
