@@ -122,30 +122,40 @@ impl RateInfos {
 }
 
 impl TickerInfosRegistry {
+    fn get_infos(&self, ticker: String) -> Option<&TickerInfos> { self.0.get(ticker.as_str()) }
+
+    fn get_infos_pair(&self, base: String, rel: String) -> Result<Option<(&TickerInfos, &TickerInfos)>, bool> {
+        let (base_infos, rel_infos) = (self.get_infos(base), self.get_infos(rel));
+        if base_infos.is_none() || rel_infos.is_none() {
+            return Err(false);
+        }
+        Ok(Some((base_infos.unwrap(), rel_infos.unwrap())))
+    }
+
     pub fn get_cex_rates(&self, base: String, rel: String) -> RateInfos {
         let mut rate_infos = RateInfos::new(base, rel);
+        match self.get_infos_pair(rate_infos.base.clone(), rate_infos.rel.clone()) {
+            Ok(Some((base_price_infos, rel_price_infos))) => {
+                if base_price_infos.price_provider == Provider::Unknown
+                    || rel_price_infos.price_provider == Provider::Unknown
+                {
+                    return rate_infos;
+                }
 
-        // todo: check if it's possible here to use a `get` on multiple key and match on them instead of using contains + get / unwrap
-        if self.0.contains_key(&*rate_infos.base) && self.0.contains_key(&*rate_infos.rel) {
-            let base_price_infos = self.0.get(&*rate_infos.base).unwrap();
-            let rel_price_infos = self.0.get(&*rate_infos.rel).unwrap();
-            if base_price_infos.price_provider == Provider::Unknown
-                || rel_price_infos.price_provider == Provider::Unknown
-            {
-                return rate_infos;
-            }
-
-            rate_infos.base_provider = base_price_infos.price_provider.clone();
-            rate_infos.rel_provider = rel_price_infos.price_provider.clone();
-            rate_infos.last_updated_timestamp =
-                if base_price_infos.last_updated_timestamp <= rel_price_infos.last_updated_timestamp {
-                    base_price_infos.last_updated_timestamp
-                } else {
-                    rel_price_infos.last_updated_timestamp
-                };
-            rate_infos.price = base_price_infos.last_price.clone() / rel_price_infos.last_price.clone();
+                rate_infos.base_provider = base_price_infos.price_provider.clone();
+                rate_infos.rel_provider = rel_price_infos.price_provider.clone();
+                rate_infos.last_updated_timestamp =
+                    if base_price_infos.last_updated_timestamp <= rel_price_infos.last_updated_timestamp {
+                        base_price_infos.last_updated_timestamp
+                    } else {
+                        rel_price_infos.last_updated_timestamp
+                    };
+                rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
+                rate_infos
+            },
+            Err(_) => rate_infos,
+            _ => rate_infos,
         }
-        rate_infos
     }
 }
 
