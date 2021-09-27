@@ -8,7 +8,7 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
 use bigdecimal::Zero;
-use coins::{lp_coinfind, MmCoinEnum};
+use coins::{lp_coinfind, GetNonZeroBalance};
 use common::{executor::{spawn, Timer},
              log::{error, info, warn},
              mm_ctx::MmArc,
@@ -16,7 +16,6 @@ use common::{executor::{spawn, Timer},
              mm_number::MmNumber,
              slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
-use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
 use serde_json::Value as Json;
@@ -64,24 +63,15 @@ pub enum OrderProcessingError {
     LegacyError(String),
 }
 
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum BalanceProcessingError {
-    #[display(fmt = "Internal error when retrieving balance - skipping")]
-    BalanceInternalError,
-    #[display(fmt = "Balance is zero - skipping")]
-    BalanceIsZero,
-}
-
 impl From<MyRecentSwapsErr> for OrderProcessingError {
     fn from(_: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError }
 }
 
-impl From<BalanceProcessingError> for OrderProcessingError {
-    fn from(err: BalanceProcessingError) -> Self {
+impl From<GetNonZeroBalance> for OrderProcessingError {
+    fn from(err: GetNonZeroBalance) -> Self {
         match err {
-            BalanceProcessingError::BalanceInternalError => OrderProcessingError::BalanceInternalError,
-            BalanceProcessingError::BalanceIsZero => OrderProcessingError::BalanceIsZero,
+            GetNonZeroBalance::MyBalanceError(_) => OrderProcessingError::BalanceInternalError,
+            GetNonZeroBalance::BalanceIsZero => OrderProcessingError::BalanceIsZero,
         }
     }
 }
@@ -219,21 +209,6 @@ pub async fn tear_down_bot(ctx: MmArc) {
         trading_bot_cfg.clear();
     }
     cancel_pending_orders(&ctx).await;
-}
-
-async fn get_non_zero_balance(coin: MmCoinEnum) -> Result<MmNumber, MmError<BalanceProcessingError>> {
-    let coin_balance = match coin.my_balance().compat().await {
-        Ok(coin_balance) => coin_balance,
-        Err(err) => {
-            warn!("err with balance: {} - reason: {}", coin.ticker(), err.to_string());
-            return MmError::err(BalanceProcessingError::BalanceInternalError);
-        },
-    };
-    if coin_balance.spendable.is_zero() {
-        warn!("balance for: {} is zero", coin.ticker());
-        return MmError::err(BalanceProcessingError::BalanceIsZero);
-    }
-    Ok(MmNumber::from(coin_balance.spendable))
 }
 
 async fn vwap_calculation(
@@ -459,7 +434,7 @@ async fn prepare_order(
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
-    let base_balance = get_non_zero_balance(base_coin).await?;
+    let base_balance = base_coin.get_non_zero_balance()?;
     lp_coinfind(ctx, cfg.rel.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;

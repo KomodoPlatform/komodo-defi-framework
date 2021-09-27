@@ -31,7 +31,7 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use bigdecimal::{BigDecimal, ParseBigDecimalError};
+use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_error::prelude::*;
@@ -330,6 +330,14 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> Result<String, String>;
+
+    fn get_non_zero_balance(&self) -> Result<MmNumber, MmError<GetNonZeroBalance>> {
+        let res = self.my_balance().wait()?;
+        if res.spendable.is_zero() {
+            return MmError::err(GetNonZeroBalance::BalanceIsZero);
+        }
+        Ok(MmNumber::from(res.spendable))
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
 
@@ -682,6 +690,18 @@ pub enum BalanceError {
     InvalidResponse(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+}
+
+#[derive(Debug, PartialEq, Display)]
+pub enum GetNonZeroBalance {
+    #[display(fmt = "Internal error when retrieving balance - skipping")]
+    MyBalanceError(BalanceError),
+    #[display(fmt = "Balance is zero - skipping")]
+    BalanceIsZero,
+}
+
+impl From<BalanceError> for GetNonZeroBalance {
+    fn from(e: BalanceError) -> Self { GetNonZeroBalance::MyBalanceError(e) }
 }
 
 impl From<NumConversError> for BalanceError {
