@@ -139,6 +139,7 @@ pub struct MakerSwapMut {
     maker_payment: Option<TransactionIdentifier>,
     taker_payment: Option<TransactionIdentifier>,
     taker_payment_spend: Option<TransactionIdentifier>,
+    taker_payment_spend_confirmed: bool,
     maker_payment_refund: Option<TransactionIdentifier>,
 }
 
@@ -205,7 +206,7 @@ impl MakerSwap {
             MakerSwapEvent::TakerPaymentSpent(tx) => self.w().taker_payment_spend = Some(tx),
             MakerSwapEvent::TakerPaymentSpendFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::TakerPaymentSpendConfirmStarted => (),
-            MakerSwapEvent::TakerPaymentSpendConfirmed => (),
+            MakerSwapEvent::TakerPaymentSpendConfirmed => self.w().taker_payment_spend_confirmed = true,
             MakerSwapEvent::TakerPaymentSpendConfirmFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentWaitRefundStarted { .. } => (),
             MakerSwapEvent::MakerPaymentRefunded(tx) => self.w().maker_payment_refund = Some(tx),
@@ -270,6 +271,7 @@ impl MakerSwap {
                 taker_payment: None,
                 taker_payment_spend: None,
                 maker_payment_refund: None,
+                taker_payment_spend_confirmed: false,
             }),
         }
     }
@@ -981,6 +983,10 @@ impl MakerSwap {
 
         if self.r().maker_payment_refund.is_some() {
             return ERR!("Maker payment is refunded, swap is not recoverable");
+        }
+
+        if self.r().taker_payment_spend.is_some() && self.r().taker_payment_spend_confirmed {
+            return ERR!("Taker payment spend transaction has been sent and confirmed");
         }
 
         let secret_hash = self
@@ -2061,6 +2067,46 @@ mod maker_swap_tests {
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED });
         assert!(unsafe { SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED });
+    }
+
+    #[test]
+    fn test_recover_funds_should_not_refund_on_the_successful_swap() {
+        let maker_saved_json = r#"{"type":"Maker","uuid":"12456076-58dd-4772-9d88-167d5fa103d2","my_order_uuid":"5ae22bf5-09cf-4828-87a7-c3aa7339ba10","events":[{"timestamp":1631695364907,"event":{"type":"Started","data":{"taker_coin":"KMD","maker_coin":"TKL","taker":"2b20b92e19e9e11b07f8309cebb1fcd1cce1606be8ab0de2c1b91f979c937996","secret":"0000000000000000000000000000000000000000000000000000000000000000","secret_hash":"65a10bd6dbdf6ebf7ec1f3bfb7451cde0582f9cb","my_persistent_pub":"03789c206e830f9e0083571f79e80eb58601d37bde8abb0c380d81127613060b74","lock_duration":31200,"maker_amount":"500","taker_amount":"140.7","maker_payment_confirmations":1,"maker_payment_requires_nota":false,"taker_payment_confirmations":2,"taker_payment_requires_nota":true,"maker_payment_lock":1631757764,"uuid":"12456076-58dd-4772-9d88-167d5fa103d2","started_at":1631695364,"maker_coin_start_block":61066,"taker_coin_start_block":2569118,"maker_payment_trade_fee":{"coin":"TKL","amount":"0.00001","paid_from_trading_vol":false},"taker_payment_spend_trade_fee":{"coin":"KMD","amount":"0.00001","paid_from_trading_vol":true}}}},{"timestamp":1631695366908,"event":{"type":"Negotiated","data":{"taker_payment_locktime":1631726564,"taker_pubkey":"032b20b92e19e9e11b07f8309cebb1fcd1cce1606be8ab0de2c1b91f979c937996","maker_coin_swap_contract_addr":null,"taker_coin_swap_contract_addr":null}}},{"timestamp":1631695367917,"event":{"type":"TakerFeeValidated","data":{"tx_hex":"0400008085202f8901562fdec6bbdac4c5c3212394e1fd439d3647ff04bdd79d51b9bbf697c9a925e7000000006a473044022074c71fcdc12654e3aa01c780b10d6c84b1d6ba28f0db476010002a1ed00e75cf022018e115923b1c1b5e872893fd6a1f270c0e8e3e84a869181c349aa78553e1423b0121032b20b92e19e9e11b07f8309cebb1fcd1cce1606be8ab0de2c1b91f979c937996ffffffff0251adf800000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac72731e4c080000001976a914dc1bea5367613f189da622e9bc5bdb2d61667e5b88ac08aa4161000000000000000000000000000000","tx_hash":"f315170aba20ff4d432b8a2d0a8fa0211444c8d27b56fc0d4fc2058e9f3c6e08"}}},{"timestamp":1631695368024,"event":{"type":"MakerPaymentSent","data":{"tx_hex":"0400008085202f8901bc488c4e0f9a3fe9d7f5dbcc17f61e7711a75c7ed277843988f3be4d236b9a02020000006a473044022027ac57a4a34b0d8561afc1ad63f9e1fb271d58577a80f26ba519017d65d882f802200b5617f32427b86b423de6740cd134fdb8b86c511943e778c65781573224cf4a012103789c206e830f9e0083571f79e80eb58601d37bde8abb0c380d81127613060b74ffffffff0300743ba40b00000017a914022be92579878d04c80d128cdfdcba4ed29a9f9a870000000000000000166a1465a10bd6dbdf6ebf7ec1f3bfb7451cde0582f9cb6494f93503c801001976a914bde146a76acf122caf5e460d01ddaf3be714247e88ac07b24161000000000000000000000000000000","tx_hash":"8693723462ef5ee6c3014230fd4a4aefe6bcd0eaeb727e1e5b33fe1105e9f8ad"}}},{"timestamp":1631696319310,"event":{"type":"TakerPaymentReceived","data":{"tx_hex":"0400008085202f8901086e3c9f8e05c24f0dfc567bd2c8441421a08f0a2d8a2b434dff20ba0a1715f3010000006a47304402207190691940b4834394c2a9e08a32b775f1c62a47ab76737c96c08e2937173988022040229094d51acb3d948413c349e36795b888a9b425b29ed7a96ed8eb97407d050121032b20b92e19e9e11b07f8309cebb1fcd1cce1606be8ab0de2c1b91f979c937996ffffffff038029a3460300000017a9146d0db00d111fcd0b83505cb805a3255cbaa8c747870000000000000000166a1465a10bd6dbdf6ebf7ec1f3bfb7451cde0582f9cb0a467b05050000001976a914dc1bea5367613f189da622e9bc5bdb2d61667e5b88acbfad4161000000000000000000000000000000","tx_hash":"a9b97c4c12c8eb637a7016459de644eae9e307efd2d051601d7d9f615fd62461"}}},{"timestamp":1631696319310,"event":{"type":"TakerPaymentWaitConfirmStarted"}},{"timestamp":1631697459816,"event":{"type":"TakerPaymentValidatedAndConfirmed"}},{"timestamp":1631697459821,"event":{"type":"TakerPaymentSpent","data":{"tx_hex":"0400008085202f89016124d65f619f7d1d6051d0d2ef07e3e9ea44e69d4516707a63ebc8124c7cb9a900000000d84830450221008c50c144382346247d7052a32e12f4d839fa22c12064b199d589cc62ead00c99022017e88f543e181fd92ebf32e1313ca6fb12f93226fd294c808b0904601102424f012068e659c506d57d94369ca520158d641ea997b0db39fdafb1e59b07867ad4be9d004c6b6304e42b4261b17521032b20b92e19e9e11b07f8309cebb1fcd1cce1606be8ab0de2c1b91f979c937996ac6782012088a91465a10bd6dbdf6ebf7ec1f3bfb7451cde0582f9cb882103789c206e830f9e0083571f79e80eb58601d37bde8abb0c380d81127613060b74ac68ffffffff019825a346030000001976a914bde146a76acf122caf5e460d01ddaf3be714247e88ace42b4261000000000000000000000000000000","tx_hash":"8a6d65518d3a01f6f659f11e0667373052ebfc2e600f80c6592dec556bee4a39"}}},{"timestamp":1631697459822,"event":{"type":"TakerPaymentSpendConfirmStarted"}},{"timestamp":1631697489840,"event":{"type":"TakerPaymentSpendConfirmed"}},{"timestamp":1631697489841,"event":{"type":"Finished"}}],"maker_amount":"500","maker_coin":"TKL","taker_amount":"140.7","taker_coin":"KMD","gui":"TOKEL-IDO","mm_version":"41170748d","success_events":["Started","Negotiated","TakerFeeValidated","MakerPaymentSent","TakerPaymentReceived","TakerPaymentWaitConfirmStarted","TakerPaymentValidatedAndConfirmed","TakerPaymentSpent","TakerPaymentSpendConfirmStarted","TakerPaymentSpendConfirmed","Finished"],"error_events":["StartFailed","NegotiateFailed","TakerFeeValidateFailed","MakerPaymentTransactionFailed","MakerPaymentDataSendFailed","MakerPaymentWaitConfirmFailed","TakerPaymentValidateFailed","TakerPaymentWaitConfirmFailed","TakerPaymentSpendFailed","TakerPaymentSpendConfirmFailed","MakerPaymentWaitRefundStarted","MakerPaymentRefunded","MakerPaymentRefundFailed"]}"#;
+        let maker_saved_swap: MakerSavedSwap = json::from_str(maker_saved_json).unwrap();
+        let key_pair =
+            key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid")
+                .unwrap();
+        let ctx = MmCtxBuilder::default().with_secp256k1_key_pair(key_pair).into_mm_arc();
+
+        TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
+        TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+
+        static mut SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED: bool = false;
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _| {
+            unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED = true }
+            MockResult::Return(Ok(Some(FoundSwapTxSpend::Spent(eth_tx_for_test().into()))))
+        });
+
+        static mut SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED: bool = false;
+        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _| {
+            unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED = true }
+            MockResult::Return(Ok(None))
+        });
+
+        static mut SEND_MAKER_REFUNDS_PAYMENT_CALLED: bool = false;
+        TestCoin::send_maker_refunds_payment.mock_safe(|_, _, _, _, _, _| {
+            unsafe { SEND_MAKER_REFUNDS_PAYMENT_CALLED = true }
+            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+        });
+
+        let maker_coin = MmCoinEnum::Test(TestCoin::default());
+        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let err = maker_swap.recover_funds().unwrap_err();
+        assert!(err.contains("Taker payment spend transaction has been sent and confirmed"));
+        assert!(unsafe { !SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
+        assert!(unsafe { !SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED });
+        assert!(unsafe { !SEND_MAKER_REFUNDS_PAYMENT_CALLED });
     }
 
     #[test]
