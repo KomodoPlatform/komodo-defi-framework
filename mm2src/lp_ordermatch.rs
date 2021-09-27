@@ -2412,6 +2412,7 @@ impl OrdermatchContext {
                 my_maker_orders: Default::default(),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
+                pending_maker_reserved: Default::default(),
                 ordermatch_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
