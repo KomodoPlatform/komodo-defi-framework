@@ -16,6 +16,7 @@ use common::{executor::{spawn, Timer},
              mm_number::MmNumber,
              slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
+use futures::channel::oneshot::Sender;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
@@ -143,6 +144,8 @@ pub enum StartSimpleMakerBotError {
     InvalidBotConfiguration,
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Cannot start the bot if it's currently stopping")]
+    CannotStartFromStopping,
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -168,9 +171,9 @@ impl From<std::str::Utf8Error> for PriceServiceRequestError {
 impl HttpStatusCode for StartSimpleMakerBotError {
     fn status_code(&self) -> StatusCode {
         match self {
-            StartSimpleMakerBotError::AlreadyStarted | StartSimpleMakerBotError::InvalidBotConfiguration => {
-                StatusCode::BAD_REQUEST
-            },
+            StartSimpleMakerBotError::AlreadyStarted
+            | StartSimpleMakerBotError::InvalidBotConfiguration
+            | StartSimpleMakerBotError::CannotStartFromStopping => StatusCode::BAD_REQUEST,
             StartSimpleMakerBotError::Transport(_) | StartSimpleMakerBotError::InternalError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
@@ -192,6 +195,7 @@ impl HttpStatusCode for StopSimpleMakerBotError {
     }
 }
 
+#[derive(Clone)]
 struct TradingPair {
     base: String,
     rel: String,
@@ -552,50 +556,43 @@ async fn process_bot_logic(ctx: &MmArc) {
     };
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
     // note: Copy the cfg here will not be expensive, and this will be thread safe.
-    let cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await.clone();
+    let cfg_guard = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
+    let cfg = cfg_guard.clone();
+    drop(cfg_guard);
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let maker_orders_guard = ordermatch_ctx.my_maker_orders.lock().await;
-    // I'm forced to iterate cloned orders here, otherwise i will deadlock if i need to cancel one.
     let maker_orders = maker_orders_guard.clone();
     drop(maker_orders_guard);
 
     info!("nb_orders: {}", maker_orders.len());
 
+    let mut futures_order_update = Vec::with_capacity(0);
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
-    for (uuid, value) in maker_orders.iter() {
+    for (uuid, value) in maker_orders.into_iter() {
         let key_trade_pair = TradingPair::new(value.base.clone(), value.rel.clone());
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
-                match update_single_order(
+                let (result_sender, result_receiver) = futures::channel::oneshot::channel();
+                let cloned_infos = (
+                    ctx.clone(),
                     rates_registry.get_cex_rates(coin_cfg.base.clone(), coin_cfg.rel.clone()),
+                    key_trade_pair.clone(),
                     coin_cfg.clone(),
-                    *uuid,
-                    value.clone(),
-                    key_trade_pair.as_combination(),
-                    ctx,
-                )
-                .await
-                {
-                    Ok(_) => info!("Order with uuid: {} successfully updated", uuid),
-                    Err(err) => {
-                        error!(
-                            "Order with uuid: {} for {} cannot be updated - {}",
-                            uuid,
-                            key_trade_pair.as_combination(),
-                            err
-                        );
-                        cancel_single_order(ctx, *uuid).await;
-                    },
-                };
+                );
+                spawn(execute_update_order(uuid, value, result_sender, cloned_infos));
+                futures_order_update.push(result_receiver);
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
             },
             _ => continue,
         }
     }
 
-    let mut futures = Vec::with_capacity(0);
+    let all_updated_orders_tasks = futures::future::join_all(futures_order_update.into_iter());
+    let _results_order_updates = all_updated_orders_tasks.await;
+
+    let mut futures_order_creation = Vec::with_capacity(0);
     // Now iterate over the registry and for every pairs that are not hit let's create an order
     for (trading_pair, cur_cfg) in cfg.into_iter() {
         match memoization_pair_registry.get(&trading_pair) {
@@ -617,13 +614,45 @@ async fn process_bot_logic(ctx: &MmArc) {
                         Err(_) => error!("{} order cannot be created", trading_pair),
                     };
                 });
-                futures.push(result_receiver);
+                futures_order_creation.push(result_receiver);
             },
         };
     }
-    let all_tasks = futures::future::join_all(futures.into_iter());
-    // later the result will not be bool, but the uuid of the order created so we can add a telegram bot for example and notify
-    let _results_order_creations = all_tasks.await;
+    let all_created_orders_tasks = futures::future::join_all(futures_order_creation.into_iter());
+    let _results_order_creations = all_created_orders_tasks.await;
+}
+
+async fn execute_update_order(
+    uuid: Uuid,
+    value: MakerOrder,
+    result_sender: Sender<bool>,
+    cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
+) {
+    let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
+    let resp = match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
+        Ok(resp) => {
+            info!("Order with uuid: {} successfully updated", uuid);
+            resp
+        },
+        Err(err) => {
+            error!(
+                "Order with uuid: {} for {} cannot be updated - {}",
+                uuid,
+                key_trade_pair.as_combination(),
+                err
+            );
+            cancel_single_order(&ctx, uuid).await;
+            false
+        },
+    };
+    match result_sender.send(resp) {
+        Ok(_) => {},
+        Err(_) => error!(
+            "Order with uuid: {} for {} cannot be updated",
+            uuid,
+            key_trade_pair.as_combination()
+        ),
+    };
 }
 
 pub async fn lp_bot_loop(ctx: MmArc) {
@@ -670,13 +699,14 @@ async fn fetch_price_tickers() -> Result<TickerInfosRegistry, MmError<PriceServi
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     {
-        let mut states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-        if *states == TradingBotState::Running {
-            return MmError::err(StartSimpleMakerBotError::AlreadyStarted);
+        let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+        match *state {
+            TradingBotState::Running => return MmError::err(StartSimpleMakerBotError::AlreadyStarted),
+            TradingBotState::Stopping => return MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
+            TradingBotState::Stopped => *state = TradingBotState::Running,
         }
         let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
         *trading_bot_cfg = req.cfg;
-        *states = TradingBotState::Running;
     }
 
     info!("simple_market_maker_bot successfully started");
