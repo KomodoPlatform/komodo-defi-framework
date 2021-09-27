@@ -118,6 +118,7 @@ cfg_wasm32! {
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
+pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
 pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
 pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
@@ -331,12 +332,14 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> Result<String, String>;
 
-    fn get_non_zero_balance(&self) -> Result<MmNumber, MmError<GetNonZeroBalance>> {
-        let res = self.my_balance().wait()?;
-        if res.spendable.is_zero() {
-            return MmError::err(GetNonZeroBalance::BalanceIsZero);
-        }
-        Ok(MmNumber::from(res.spendable))
+    fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
+        let closure = |spendable: BigDecimal| {
+            if spendable.is_zero() {
+                return MmError::err(GetNonZeroBalance::BalanceIsZero);
+            }
+            Ok(MmNumber::from(spendable))
+        };
+        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;

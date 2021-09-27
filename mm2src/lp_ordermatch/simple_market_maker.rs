@@ -16,6 +16,7 @@ use common::{executor::{spawn, Timer},
              mm_number::MmNumber,
              slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
+use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
 use serde_json::Value as Json;
@@ -434,7 +435,7 @@ async fn prepare_order(
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
-    let base_balance = base_coin.get_non_zero_balance()?;
+    let base_balance = base_coin.get_non_zero_balance().compat().await?;
     lp_coinfind(ctx, cfg.rel.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -506,10 +507,10 @@ async fn create_single_order(
     rates: RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     key_trade_pair: String,
-    ctx: &MmArc,
+    ctx: MmArc,
 ) -> OrderProcessingResult {
     info!("need to create order for: {} - cfg: {}", key_trade_pair, cfg);
-    let (min_vol, volume, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), ctx).await?;
+    let (min_vol, volume, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), &ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -526,7 +527,7 @@ async fn create_single_order(
         save_in_history: true,
     };
 
-    let resp = match create_maker_order(ctx, req).await {
+    let resp = match create_maker_order(&ctx, req).await {
         Ok(x) => x,
         Err(err) => {
             warn!("Couldn't place the order for {} - reason: {}", key_trade_pair, err);
@@ -594,26 +595,35 @@ async fn process_bot_logic(ctx: &MmArc) {
         }
     }
 
+    let mut futures = Vec::with_capacity(0);
     // Now iterate over the registry and for every pairs that are not hit let's create an order
-    for (trading_pair, cur_cfg) in cfg.iter() {
-        match memoization_pair_registry.get(trading_pair) {
+    for (trading_pair, cur_cfg) in cfg.into_iter() {
+        match memoization_pair_registry.get(&trading_pair) {
             Some(_) => continue,
             None => {
-                // res will be used later for reporting error to the users, also usefullt o be coupled with a telegram service to send notification to the user
-                match create_single_order(
-                    rates_registry.get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone()),
-                    cur_cfg.clone(),
-                    trading_pair.clone(),
-                    ctx,
-                )
-                .await
-                {
-                    Ok(_) => {},
-                    Err(err) => error!("{} order cannot be created - {}", trading_pair, err),
-                };
+                let (result_sender, result_receiver) = futures::channel::oneshot::channel();
+                let ctx_cloned = ctx.clone();
+                let rates_infos = rates_registry.get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone());
+                spawn(async move {
+                    let res = match create_single_order(rates_infos, cur_cfg, trading_pair.clone(), ctx_cloned).await {
+                        Ok(resp) => resp,
+                        Err(err) => {
+                            error!("{} order cannot be created - {}", trading_pair, err);
+                            false
+                        },
+                    };
+                    match result_sender.send(res) {
+                        Ok(_) => {},
+                        Err(_) => error!("{} order cannot be created", trading_pair),
+                    };
+                });
+                futures.push(result_receiver);
             },
         };
     }
+    let all_tasks = futures::future::join_all(futures.into_iter());
+    // later the result will not be bool, but the uuid of the order created so we can add a telegram bot for example and notify
+    let _results_order_creations = all_tasks.await;
 }
 
 pub async fn lp_bot_loop(ctx: MmArc) {
