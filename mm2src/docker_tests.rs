@@ -247,6 +247,43 @@ mod docker_tests {
 
     impl CoinDockerOps for BchDockerOps {
         fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    // builds the EthCoin using the external dev Parity/OpenEthereum node
+    // the address belonging to the default passphrase has million of ETH that it can distribute to
+    // random privkeys generated in tests
+    fn eth_distributor() -> EthCoin {
+        let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
+        let req = json!({
+            "method": "enable",
+            "coin": "ETH",
+            "urls": ["http://195.201.0.6:8565"],
+            "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        });
+        let keypair =
+            key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid")
+                .unwrap();
+        block_on(eth_coin_from_conf_and_request(
+            &MM_CTX,
+            "ETH",
+            &conf,
+            &req,
+            &*keypair.private().secret,
+            CoinProtocol::ETH,
+        ))
+        .unwrap()
+    }
+
+    // pass address without 0x prefix to this fn
+    fn fill_eth(to_addr: &str) {
+        ETH_DISTRIBUTOR
+            .send_to_address(to_addr.parse().unwrap(), 1_000_000_000_000_000_000u64.into())
+            .wait()
+            .unwrap();
+    }
+
+    lazy_static! {
+        static ref COINS_LOCK: Mutex<()> = Mutex::new(());
+        static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
+        static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
     }
 
     impl BchDockerOps {
@@ -3304,5 +3341,442 @@ mod docker_tests {
         };
         assert_eq!(error.error_type, "NotSufficientBalance");
         assert_eq!(error.error_data, Some(expected_error));
+    }
+
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1053
+    #[test]
+    fn test_taker_should_match_with_best_price_buy() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 4000.into());
+        let (_ctx, _, eve_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mm_bob = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+        let mut mm_alice = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        let mut mm_eve = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(eve_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!([block_on(enable_native(&mm_eve, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_eve, "MYCOIN1", &[]))]);
+
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 2,
+            "max": true,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        let rc = block_on(mm_eve.rpc(json! ({
+            "userpass": mm_eve.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "max": true,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        // subscribe alice to the orderbook topic to not miss eve's message
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "orderbook",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!alice orderbook: {}", rc.1);
+        log!("alice orderbook "(rc.1));
+
+        thread::sleep(Duration::from_secs(1));
+
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "buy",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 3,
+            "volume": "1000",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let alice_buy: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+
+        block_on(mm_eve.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
+        block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")))
+            .unwrap();
+
+        thread::sleep(Duration::from_secs(2));
+
+        block_on(check_my_swap_status_amounts(
+            &mm_alice,
+            alice_buy.result.uuid,
+            1000.into(),
+            1000.into(),
+        ));
+        block_on(check_my_swap_status_amounts(
+            &mm_eve,
+            alice_buy.result.uuid,
+            1000.into(),
+            1000.into(),
+        ));
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+        block_on(mm_eve.stop()).unwrap();
+    }
+
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1053
+    #[test]
+    fn test_taker_should_match_with_best_price_sell() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 4000.into());
+        let (_ctx, _, eve_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mm_bob = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+        let mut mm_alice = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        let mut mm_eve = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(eve_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!([block_on(enable_native(&mm_eve, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_eve, "MYCOIN1", &[]))]);
+
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 2,
+            "max": true,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        let rc = block_on(mm_eve.rpc(json! ({
+            "userpass": mm_eve.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "max": true,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        // subscribe alice to the orderbook topic to not miss eve's message
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "orderbook",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!alice orderbook: {}", rc.1);
+        log!("alice orderbook "(rc.1));
+
+        thread::sleep(Duration::from_secs(1));
+
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "sell",
+            "base": "MYCOIN1",
+            "rel": "MYCOIN",
+            "price": "0.1",
+            "volume": "1000",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let alice_buy: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+
+        block_on(mm_eve.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
+        block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")))
+            .unwrap();
+
+        thread::sleep(Duration::from_secs(2));
+
+        block_on(check_my_swap_status_amounts(
+            &mm_alice,
+            alice_buy.result.uuid,
+            1000.into(),
+            1000.into(),
+        ));
+        block_on(check_my_swap_status_amounts(
+            &mm_eve,
+            alice_buy.result.uuid,
+            1000.into(),
+            1000.into(),
+        ));
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+        block_on(mm_eve.stop()).unwrap();
+    }
+
+    #[test]
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
+    fn test_match_utxo_with_eth_taker_sell() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        ]);
+        let mut mm_bob = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+        let mut mm_alice = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
+        let eth_bob: EnableElectrumResponse = json::from_value(eth_bob).unwrap();
+        // pass without 0x
+        fill_eth(&eth_bob.address[2..]);
+
+        let eth_alice = block_on(enable_native(&mm_alice, "ETH", &["http://195.201.0.6:8565"]));
+        let eth_alice: EnableElectrumResponse = json::from_value(eth_alice).unwrap();
+        // pass without 0x
+        fill_eth(&eth_alice.address[2..]);
+
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "ETH",
+            "price": 1,
+            "volume": "0.1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "sell",
+            "base": "ETH",
+            "rel": "MYCOIN",
+            "price": 1,
+            "volume": "0.1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!sell: {}", rc.1);
+
+        block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/ETH"))).unwrap();
+        block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/ETH"))).unwrap();
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+    }
+
+    #[test]
+    // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
+    fn test_match_utxo_with_eth_taker_buy() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let coins = json! ([
+            {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        ]);
+        let mut mm_bob = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+        let mut mm_alice = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
+        let eth_bob: EnableElectrumResponse = json::from_value(eth_bob).unwrap();
+        // pass without 0x
+        fill_eth(&eth_bob.address[2..]);
+
+        let eth_alice = block_on(enable_native(&mm_alice, "ETH", &["http://195.201.0.6:8565"]));
+        let eth_alice: EnableElectrumResponse = json::from_value(eth_alice).unwrap();
+        // pass without 0x
+        fill_eth(&eth_alice.address[2..]);
+
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN",
+            "rel": "ETH",
+            "price": 1,
+            "volume": "0.1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "buy",
+            "base": "MYCOIN",
+            "rel": "ETH",
+            "price": 1,
+            "volume": "0.1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+        block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/ETH"))).unwrap();
+        block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/ETH"))).unwrap();
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
     }
 }
