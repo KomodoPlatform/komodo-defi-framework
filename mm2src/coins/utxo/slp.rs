@@ -688,7 +688,7 @@ impl SlpToken {
         Ok(satoshi)
     }
 
-    fn slp_prefix(&self) -> CashAddrPrefix { self.platform_coin.slp_prefix() }
+    fn slp_prefix(&self) -> &CashAddrPrefix { self.platform_coin.slp_prefix() }
 }
 
 /// https://slp.dev/specs/slp-token-type-1/#transaction-detail
@@ -1289,7 +1289,7 @@ impl MmCoin for SlpToken {
         let coin = self.clone();
         let fut = async move {
             let address = CashAddress::decode(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
-            if address.prefix != coin.slp_prefix() {
+            if address.prefix != *coin.slp_prefix() {
                 return MmError::err(WithdrawError::InvalidAddress(format!(
                     "Expected {} address prefix, not {}",
                     coin.slp_prefix(),
@@ -1412,7 +1412,7 @@ impl MmCoin for SlpToken {
             },
         };
 
-        if cash_address.prefix == self.slp_prefix() {
+        if cash_address.prefix == *self.slp_prefix() {
             ValidateAddressResult {
                 is_valid: true,
                 reason: None,

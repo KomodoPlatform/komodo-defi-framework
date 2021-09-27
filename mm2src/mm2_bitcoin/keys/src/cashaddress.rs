@@ -14,7 +14,7 @@ pub enum AddressType {
     P2SH,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NetworkPrefix {
     BitcoinCash,
     BchTest,

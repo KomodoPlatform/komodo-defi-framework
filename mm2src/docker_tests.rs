@@ -97,6 +97,7 @@ mod docker_tests {
     use bigdecimal::BigDecimal;
     use bitcrypto::ChecksumType;
     use chain::{OutPoint, TransactionOutput};
+    use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
     use coins::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
     use coins::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum};
     use coins::utxo::slp::SlpToken;
@@ -104,11 +105,12 @@ mod docker_tests {
     use coins::utxo::utxo_common::send_outputs_from_my_address;
     use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
     use coins::utxo::{dhash160, UtxoCommonOps};
-    use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum, WithdrawRequest};
-    use common::for_tests::enable_electrum;
+    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum,
+                WithdrawRequest};
+    use common::for_tests::{check_my_swap_status_amounts, enable_electrum};
     use common::mm_ctx::{MmArc, MmCtxBuilder};
     use common::mm_number::MmNumber;
-    use common::privkey::key_pair_from_secret;
+    use common::privkey::{key_pair_from_secret, key_pair_from_seed};
     use common::{block_on, now_ms};
     use futures01::Future;
     use keys::{Address, KeyPair, NetworkPrefix as CashAddrPrefix, Private};
@@ -120,6 +122,7 @@ mod docker_tests {
     use std::env;
     use std::io::{BufRead, BufReader};
     use std::process::Command;
+    use std::sync::Mutex;
     use std::thread;
     use std::time::Duration;
     use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
@@ -245,8 +248,6 @@ mod docker_tests {
         coin: BchCoin,
     }
 
-    impl CoinDockerOps for BchDockerOps {
-        fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
     // builds the EthCoin using the external dev Parity/OpenEthereum node
     // the address belonging to the default passphrase has million of ETH that it can distribute to
     // random privkeys generated in tests
@@ -373,6 +374,10 @@ mod docker_tests {
             *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
             *SLP_TOKEN_ID.lock().unwrap() = slp_genesis_tx.tx_hash().as_slice().into();
         }
+    }
+
+    impl CoinDockerOps for BchDockerOps {
+        fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
     }
 
     /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
@@ -3346,9 +3351,9 @@ mod docker_tests {
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/1053
     #[test]
     fn test_taker_should_match_with_best_price_buy() {
-        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
-        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 4000.into());
-        let (_ctx, _, eve_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 4000.into());
+        let (_ctx, _, eve_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
 
         let coins = json! ([
             {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -3483,9 +3488,9 @@ mod docker_tests {
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/1053
     #[test]
     fn test_taker_should_match_with_best_price_sell() {
-        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
-        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 4000.into());
-        let (_ctx, _, eve_priv_key) = generate_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 4000.into());
+        let (_ctx, _, eve_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
 
         let coins = json! ([
             {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -3620,8 +3625,8 @@ mod docker_tests {
     #[test]
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
     fn test_match_utxo_with_eth_taker_sell() {
-        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
-        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
         let coins = json! ([
             {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
             {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
@@ -3701,8 +3706,8 @@ mod docker_tests {
     #[test]
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/1074
     fn test_match_utxo_with_eth_taker_buy() {
-        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
-        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
         let coins = json! ([
             {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
             {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},

@@ -60,7 +60,7 @@ impl From<serialization::Error> for IsSlpUtxoError {
 }
 
 impl BchCoin {
-    pub fn slp_prefix(&self) -> CashAddrPrefix { self.slp_addr_prefix }
+    pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
         let mut result = BchUnspents::default();
@@ -223,9 +223,12 @@ pub async fn bch_coin_from_conf_and_request(
     slp_addr_prefix: CashAddrPrefix,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
-    let constructor = move |utxo_arc| BchCoin {
-        utxo_arc,
-        slp_addr_prefix,
+    let constructor = {
+        let prefix = slp_addr_prefix.clone();
+        move |utxo_arc| BchCoin {
+            utxo_arc,
+            slp_addr_prefix: prefix.clone(),
+        }
     };
     let coin: BchCoin =
         try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, constructor).await);
