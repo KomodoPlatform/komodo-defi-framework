@@ -21,6 +21,7 @@
 
 pub mod bch;
 pub mod bchd_grpc;
+#[path = "utxo/pb.rs"] pub mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;

@@ -61,7 +61,6 @@ serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 sha2 = "0.8"
 sha3 = "0.8"
-tonic = { version = "0.5.2", features = ["tls", "compression"] }
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
@@ -87,4 +86,4 @@ zcash_primitives = { features = ["transparent-inputs"], git = "https://github.co
 zcash_proofs = { features = ["bundled-prover"], git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
 
 [build-dependencies]
-tonic-build = { version = "0.5.2", features = ["prost", "compression"] }
+prost-build = "0.8"

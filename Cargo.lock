@@ -803,6 +803,7 @@ dependencies = [
  "num-traits 0.2.12",
  "primitives",
  "prost",
+ "prost-build",
  "rand 0.7.3",
  "rlp 0.3.0",
  "rmp-serde",
@@ -823,8 +824,6 @@ dependencies = [
  "sha3",
  "tokio",
  "tokio-rustls",
- "tonic",
- "tonic-build",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -5552,7 +5551,6 @@ dependencies = [
  "async-trait",
  "base64 0.13.0",
  "bytes 1.1.0",
- "flate2",
  "futures-core",
  "futures-util",
  "h2",
@@ -5565,7 +5563,6 @@ dependencies = [
  "prost",
  "prost-derive",
  "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tokio-util",
  "tower",
@@ -5573,18 +5570,6 @@ dependencies = [
  "tower-service",
  "tracing",
  "tracing-futures",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12b52d07035516c2b74337d2ac7746075e7dcae7643816c1b12c5ff8a7484c08"
-dependencies = [
- "proc-macro2",
- "prost-build",
- "quote 1.0.7",
- "syn 1.0.72",
 ]
 
 [[package]]

@@ -92,6 +92,7 @@ pub mod crash_reports;
 pub mod custom_futures;
 pub mod duplex_mutex;
 pub mod for_tests;
+pub mod grpc_web;
 pub mod iguana_utils;
 pub mod mm_ctx;
 #[path = "mm_error/mm_error.rs"] pub mod mm_error;
@@ -147,6 +148,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+use crate::wio::slurp_req;
 pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;
