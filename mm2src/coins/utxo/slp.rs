@@ -61,7 +61,7 @@ pub struct SlpToken {
     platform_coin: BchCoin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SlpUnspent {
     pub bch_unspent: UnspentInfo,
     pub slp_amount: u64,

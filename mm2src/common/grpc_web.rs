@@ -19,7 +19,7 @@ impl From<prost::EncodeError> for EncodeBodyError {
     fn from(err: prost::EncodeError) -> Self { EncodeBodyError::Encode(err) }
 }
 
-fn encode_body<T>(msg: T) -> Result<Vec<u8>, MmError<EncodeBodyError>>
+fn encode_body<T>(msg: &T) -> Result<Vec<u8>, MmError<EncodeBodyError>>
 where
     T: prost::Message,
 {
@@ -100,7 +100,7 @@ impl From<http::Error> for PostGrpcWebErr {
 
 /// Send POST gRPC WEB HTTPS request and parse response
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn post_grpc_web<Req, Res>(url: &str, req: Req) -> Result<Res, MmError<PostGrpcWebErr>>
+pub async fn post_grpc_web<Req, Res>(url: &str, req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
 where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,

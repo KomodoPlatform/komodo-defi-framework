@@ -21,7 +21,9 @@
 
 pub mod bch;
 pub mod bchd_grpc;
-#[path = "utxo/pb.rs"] pub mod bchd_pb;
+#[allow(clippy::large_enum_variant)]
+#[path = "utxo/pb.rs"]
+pub mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
