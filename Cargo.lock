@@ -869,6 +869,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "lightning",
+ "lightning-persister",
  "metrics",
  "mocktopus",
  "num-traits 0.2.12",
@@ -2847,12 +2848,24 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.100"
+version = "0.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c5f600361d3415d6bd863c6437f16700a752f3a384508bd8679d39676b3fd99"
+checksum = "7b0bcd8d72c1177579fe7cfe42309967e11e432688b2e87c86d0d8b707d60530"
 dependencies = [
  "bitcoin",
  "secp256k1",
+]
+
+[[package]]
+name = "lightning-persister"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1888e0a7bc69df004b49b087648e95a3ee5540eb762768d9b4f35148234cd599"
+dependencies = [
+ "bitcoin",
+ "libc",
+ "lightning",
+ "winapi",
 ]
 
 [[package]]

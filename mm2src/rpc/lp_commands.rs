@@ -130,6 +130,10 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     Ok(try_s!(Response::builder().body(res)))
 }
 
+#[allow(dead_code)]
+/// Enable BTC (LTC should be added later) in lightning mode and spawn a lightning node.
+pub async fn enable_lightning(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> { unimplemented!() }
+
 #[cfg(target_arch = "wasm32")]
 pub fn help() -> HyRes {
     rpc_response(

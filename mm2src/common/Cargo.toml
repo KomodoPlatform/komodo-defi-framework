@@ -33,7 +33,7 @@ http-body = "0.1"
 itertools = "0.8"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
-lightning = "0.0.100"
+lightning = "0.0.101"
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
