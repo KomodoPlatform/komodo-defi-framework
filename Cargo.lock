@@ -844,6 +844,7 @@ dependencies = [
  "bigdecimal",
  "bitcoin",
  "bitcoin-cash-slp",
+ "bitcoin_hashes",
  "bitcrypto",
  "byteorder 1.4.3",
  "bytes 0.4.12",

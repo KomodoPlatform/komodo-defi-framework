@@ -7,7 +7,7 @@ use bigdecimal::BigDecimal;
 use bitcoin::blockdata::{script::Script as BitcoinScript, transaction::Transaction as BitcoinTransaction};
 use bitcoin::consensus::encode;
 use bitcoin::hash_types::Txid;
-use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
+use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient, JsonRpcRemoteAddr,
@@ -239,6 +239,8 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     fn get_verbose_transaction(&self, txid: H256Json) -> RpcRes<RpcTransaction>;
 
     fn get_block_count(&self) -> UtxoRpcFut<u64>;
+
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock>;
 
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
@@ -621,6 +623,8 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(self.0.get_block_count().map_to_mm_fut(UtxoRpcError::from))
     }
 
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> { unimplemented!() }
+
     fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(
             self.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
@@ -922,11 +926,21 @@ pub struct ElectrumUnspent {
     pub value: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ElectrumNonce {
     Number(u64),
     Hash(H256Json),
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<BlockHeaderNonce> for ElectrumNonce {
+    fn into(self) -> BlockHeaderNonce {
+        match self {
+            ElectrumNonce::Number(n) => BlockHeaderNonce::U32(n as u32),
+            ElectrumNonce::Hash(h) => BlockHeaderNonce::H256(h.into()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -948,6 +962,29 @@ pub struct ElectrumBlockHeaderV12 {
     version: u64,
 }
 
+impl ElectrumBlockHeaderV12 {
+    pub fn hash(&self) -> H256Json {
+        let block_header = BlockHeader {
+            version: self.version as u32,
+            previous_header_hash: self.prev_block_hash.clone().into(),
+            merkle_root_hash: self.merkle_root.clone().into(),
+            hash_final_sapling_root: None,
+            time: self.timestamp as u32,
+            bits: BlockHeaderBits::U32(self.bits as u32),
+            nonce: self.nonce.clone().into(),
+            solution: None,
+            aux_pow: None,
+            mtp_pow: None,
+            is_verus: false,
+            hash_state_root: None,
+            hash_utxo_root: None,
+            prevout_stake: None,
+            vch_block_sig_dlgt: None,
+        };
+        BlockHeader::hash(&block_header).into()
+    }
+}
+
 /// The block header compatible with Electrum 1.4
 #[derive(Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV14 {
@@ -955,11 +992,29 @@ pub struct ElectrumBlockHeaderV14 {
     hex: BytesJson,
 }
 
+impl ElectrumBlockHeaderV14 {
+    pub fn hash(&self) -> H256Json { self.hex.clone().into_vec()[..].into() }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ElectrumBlockHeader {
     V12(ElectrumBlockHeaderV12),
     V14(ElectrumBlockHeaderV14),
+}
+
+pub struct BestBlock {
+    pub height: u64,
+    pub hash: H256Json,
+}
+
+impl From<ElectrumBlockHeader> for BestBlock {
+    fn from(block_header: ElectrumBlockHeader) -> Self {
+        BestBlock {
+            height: block_header.block_height(),
+            hash: block_header.block_hash(),
+        }
+    }
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -975,6 +1030,13 @@ impl ElectrumBlockHeader {
         match self {
             ElectrumBlockHeader::V12(h) => h.block_height,
             ElectrumBlockHeader::V14(h) => h.height,
+        }
+    }
+
+    fn block_hash(&self) -> H256Json {
+        match self {
+            ElectrumBlockHeader::V12(h) => h.hash(),
+            ElectrumBlockHeader::V14(h) => h.hash(),
         }
     }
 }
@@ -1547,6 +1609,14 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(
             self.blockchain_headers_subscribe()
                 .map(|r| r.block_height())
+                .map_to_mm_fut(UtxoRpcError::from),
+        )
+    }
+
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> {
+        Box::new(
+            self.blockchain_headers_subscribe()
+                .map(BestBlock::from)
                 .map_to_mm_fut(UtxoRpcError::from),
         )
     }
