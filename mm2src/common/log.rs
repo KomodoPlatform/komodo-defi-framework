@@ -7,6 +7,7 @@ use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
 use crossbeam::queue::SegQueue;
+#[cfg(not(target_arch = "wasm32"))]
 use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
 use log::{Level, Record};
 use parking_lot::Mutex;
