@@ -148,7 +148,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use crate::wio::slurp_req;
 pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;

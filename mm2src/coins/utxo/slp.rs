@@ -277,7 +277,6 @@ impl SlpToken {
         if slp_outputs.len() > 18 {
             return MmError::err(GenSlpSpendErr::TooManyOutputs);
         }
-
         let (slp_unspents, bch_unspents, recently_spent) = self.slp_unspents_for_spend().await?;
         let total_slp_output = slp_outputs.iter().fold(0, |cur, slp_out| cur + slp_out.amount);
         let mut total_slp_input = 0;

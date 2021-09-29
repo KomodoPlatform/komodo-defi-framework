@@ -22,6 +22,7 @@
 pub mod bch;
 pub mod bchd_grpc;
 #[allow(clippy::large_enum_variant)]
+#[rustfmt::skip]
 #[path = "utxo/pb.rs"]
 pub mod bchd_pb;
 pub mod qtum;

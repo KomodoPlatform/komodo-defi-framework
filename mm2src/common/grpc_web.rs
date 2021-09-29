@@ -1,6 +1,7 @@
 /// The small module implementing gRPC-WEB support
 /// Implementation was taken from https://github.com/hyperium/tonic/blob/ddab65ede90f503360b7adb0d7afe6d5b7bb8b02/examples/src/grpc-web/client.rs
 /// with minor refactoring
+#[cfg(not(target_arch = "wasm32"))]
 use super::slurp_req;
 use crate::mm_error::prelude::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
