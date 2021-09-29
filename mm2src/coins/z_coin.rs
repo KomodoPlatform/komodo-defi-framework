@@ -58,8 +58,7 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use crate::z_coin::z_rpc::ZUnspent;
-use z_rpc::ZRpcOps;
+use z_rpc::{ZRpcOps, ZUnspent};
 
 mod z_coin_errors;
 use z_coin_errors::*;
@@ -151,11 +150,15 @@ impl ZCoin {
 
     pub fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
 
-    #[allow(dead_code)]
+    /// Returns all unspents included currently unspendable (not confirmed)
     async fn my_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
+        let min_conf = 0;
+        let max_conf = i32::MAX as u32;
+        let watch_only = true;
+
         let mut unspents = self
             .z_rpc()
-            .z_list_unspent(0, i32::MAX as u32, true, &[&self.z_fields.my_z_addr_encoded])
+            .z_list_unspent(min_conf, max_conf, watch_only, &[&self.z_fields.my_z_addr_encoded])
             .compat()
             .await?;
 
@@ -163,10 +166,15 @@ impl ZCoin {
         Ok(unspents)
     }
 
+    /// shielded outputs are not spendable until confirmed
     async fn my_spendable_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
+        let min_conf = 1;
+        let max_conf = i32::MAX as u32;
+        let watch_only = true;
+
         let mut unspents = self
             .z_rpc()
-            .z_list_unspent(1, i32::MAX as u32, true, &[&self.z_fields.my_z_addr_encoded])
+            .z_list_unspent(min_conf, max_conf, watch_only, &[&self.z_fields.my_z_addr_encoded])
             .compat()
             .await?;
 

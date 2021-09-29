@@ -18,7 +18,6 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
-use common::serde::export::Option::None;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::lock::MutexGuard as AsyncMutexGuard;
@@ -244,7 +243,9 @@ impl SlpToken {
     }
 
     /// Returns the OP_RETURN output for SLP Send transaction
-    fn send_op_ret_out(&self, amounts: &[u64]) -> TransactionOutput { slp_send_output(&self.conf.token_id, amounts) }
+    fn send_op_return_output(&self, amounts: &[u64]) -> TransactionOutput {
+        slp_send_output(&self.conf.token_id, amounts)
+    }
 
     fn rpc(&self) -> &UtxoRpcClientEnum { &self.platform_coin.as_ref().rpc_client }
 
@@ -303,7 +304,7 @@ impl SlpToken {
             amounts_for_op_return.push(change);
         }
 
-        let op_return_out_mm = self.send_op_ret_out(&amounts_for_op_return);
+        let op_return_out_mm = self.send_op_return_output(&amounts_for_op_return);
         let mut outputs = vec![op_return_out_mm];
 
         outputs.extend(slp_outputs.into_iter().map(|spend_to| TransactionOutput {
@@ -522,7 +523,7 @@ impl SlpToken {
         script_data: Script,
         redeem_script: Script,
     ) -> Result<UtxoTx, MmError<SpendP2SHError>> {
-        let op_return_out_mm = self.send_op_ret_out(&[p2sh_utxo.slp_amount]);
+        let op_return_out_mm = self.send_op_return_output(&[p2sh_utxo.slp_amount]);
         let mut outputs = Vec::with_capacity(3);
         outputs.push(op_return_out_mm);
 
