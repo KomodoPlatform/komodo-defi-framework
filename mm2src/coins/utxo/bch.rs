@@ -15,6 +15,7 @@ use serialization::{deserialize, CoinVariant};
 pub struct BchCoin {
     utxo_arc: UtxoArc,
     slp_addr_prefix: CashAddrPrefix,
+    bchd_urls: Vec<String>,
 }
 
 pub enum IsSlpUtxoError {
@@ -61,6 +62,8 @@ impl From<serialization::Error> for IsSlpUtxoError {
 
 impl BchCoin {
     pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
+
+    pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
         let mut result = BchUnspents::default();
@@ -221,13 +224,14 @@ pub async fn bch_coin_from_conf_and_request(
     conf: &Json,
     req: &Json,
     slp_addr_prefix: CashAddrPrefix,
+    bchd_urls: Vec<String>,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
     let constructor = {
-        let prefix = slp_addr_prefix.clone();
         move |utxo_arc| BchCoin {
             utxo_arc,
-            slp_addr_prefix: prefix.clone(),
+            slp_addr_prefix: slp_addr_prefix.clone(),
+            bchd_urls: bchd_urls.clone(),
         }
     };
     let coin: BchCoin =
@@ -744,6 +748,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
         &conf,
         &req,
         CashAddrPrefix::SlpTest,
+        Vec::new(),
         &*keypair.private().secret,
     ))
     .unwrap()
@@ -772,6 +777,7 @@ pub fn bch_coin_for_test() -> BchCoin {
         &conf,
         &req,
         CashAddrPrefix::SimpleLedger,
+        Vec::new(),
         &*keypair.private().secret,
     ))
     .unwrap()

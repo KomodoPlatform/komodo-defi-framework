@@ -299,6 +299,7 @@ mod docker_tests {
                 &conf,
                 &req,
                 CashAddrPrefix::SlpTest,
+                Vec::new(),
                 &priv_key,
             ))
             .unwrap();

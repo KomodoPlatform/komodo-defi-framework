@@ -5,32 +5,33 @@ use crate::utxo::slp::SlpUnspent;
 use chain::OutPoint;
 use common::grpc_web::{post_grpc_web, PostGrpcWebErr};
 use common::mm_error::prelude::*;
+use derive_more::Display;
 use futures::future::join_all;
 use get_slp_trusted_validation_response::validity_result::ValidityResultType;
 use keys::hash::H256;
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum ValidateSlpUtxosErr {
-    PostGrpcError {
-        to_url: String,
-        err: PostGrpcWebErr,
-    },
-    UnexpectedTokenId {
-        expected: H256,
-        actual: H256,
-    },
+    #[display(fmt = "Error {:?} on request to the url {}", err, to_url)]
+    PostGrpcError { to_url: String, err: PostGrpcWebErr },
+    #[display(fmt = "Expected {} token id, but got {}", expected, actual)]
+    UnexpectedTokenId { expected: H256, actual: H256 },
+    #[display(
+        fmt = "Unexpected validity_result {:?} for unspent {:?}",
+        validity_result,
+        for_unspent
+    )]
     UnexpectedValidityResultType {
         for_unspent: SlpUnspent,
         validity_result: Option<ValidityResultType>,
     },
-    UnexpectedUtxoInResponse {
-        outpoint: OutPoint,
-    },
+    #[display(fmt = "Unexpected utxo {:?} in response", outpoint)]
+    UnexpectedUtxoInResponse { outpoint: OutPoint },
 }
 
 pub async fn validate_slp_utxos(
-    bchd_urls: &[&str],
-    utxos: Vec<SlpUnspent>,
+    bchd_urls: &[impl AsRef<str>],
+    utxos: &[SlpUnspent],
     token_id: &H256,
 ) -> Result<(), MmError<ValidateSlpUtxosErr>> {
     let queries = utxos
@@ -48,11 +49,11 @@ pub async fn validate_slp_utxos(
 
     let futures = bchd_urls
         .iter()
-        .map(|url| post_grpc_web::<_, GetSlpTrustedValidationResponse>(url, &request));
+        .map(|url| post_grpc_web::<_, GetSlpTrustedValidationResponse>(url.as_ref(), &request));
     let results = join_all(futures).await;
     for (i, result) in results.into_iter().enumerate() {
         let response = result.mm_err(|e| ValidateSlpUtxosErr::PostGrpcError {
-            to_url: bchd_urls.get(i).map(|url| url.to_string()).unwrap_or_default(),
+            to_url: bchd_urls.get(i).map(|url| url.as_ref().to_string()).unwrap_or_default(),
             err: e,
         })?;
 
@@ -106,7 +107,7 @@ mod bchd_grpc_tests {
     fn test_validate_slp_utxos_valid() {
         let tx_hash = H256::from_reversed_str("0ba1b91abbfceaa0777424165edb2928dace87d59669c913989950da31968032");
 
-        let slp_utxos = vec![
+        let slp_utxos = [
             SlpUnspent {
                 bch_unspent: UnspentInfo {
                     outpoint: OutPoint {
@@ -133,14 +134,14 @@ mod bchd_grpc_tests {
 
         let url = "https://bchd-testnet.greyh.at:18335/pb.bchrpc/GetSlpTrustedValidation";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        block_on(validate_slp_utxos(&[url], slp_utxos, &token_id)).unwrap();
+        block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap();
     }
 
     #[test]
     fn test_validate_slp_utxos_non_slp_input() {
         let tx_hash = H256::from_reversed_str("0ba1b91abbfceaa0777424165edb2928dace87d59669c913989950da31968032");
 
-        let slp_utxos = vec![
+        let slp_utxos = [
             SlpUnspent {
                 bch_unspent: UnspentInfo {
                     outpoint: OutPoint {
@@ -178,7 +179,7 @@ mod bchd_grpc_tests {
 
         let url = "https://bchd-testnet.greyh.at:18335/pb.bchrpc/GetSlpTrustedValidation";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        let err = block_on(validate_slp_utxos(&[url], slp_utxos, &token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner() {
             ValidateSlpUtxosErr::PostGrpcError { .. } => (),
             err @ _ => panic!("Unexpected error {:?}", err),
@@ -200,7 +201,7 @@ mod bchd_grpc_tests {
             slp_amount: 999,
         };
 
-        let slp_utxos = vec![invalid_utxo.clone(), SlpUnspent {
+        let slp_utxos = [invalid_utxo.clone(), SlpUnspent {
             bch_unspent: UnspentInfo {
                 outpoint: OutPoint {
                     hash: tx_hash,
@@ -214,7 +215,7 @@ mod bchd_grpc_tests {
 
         let url = "https://bchd-testnet.greyh.at:18335/pb.bchrpc/GetSlpTrustedValidation";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        let err = block_on(validate_slp_utxos(&[url], slp_utxos, &token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner() {
             ValidateSlpUtxosErr::UnexpectedValidityResultType {
                 for_unspent,
@@ -232,7 +233,7 @@ mod bchd_grpc_tests {
     fn test_validate_slp_utxos_unexpected_token_id() {
         let tx_hash = H256::from_reversed_str("0ba1b91abbfceaa0777424165edb2928dace87d59669c913989950da31968032");
 
-        let slp_utxos = vec![
+        let slp_utxos = [
             SlpUnspent {
                 bch_unspent: UnspentInfo {
                     outpoint: OutPoint {
@@ -260,7 +261,7 @@ mod bchd_grpc_tests {
         let url = "https://bchd-testnet.greyh.at:18335/pb.bchrpc/GetSlpTrustedValidation";
         let valid_token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let invalid_token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb8");
-        let err = block_on(validate_slp_utxos(&[url], slp_utxos, &invalid_token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &invalid_token_id)).unwrap_err();
         match err.into_inner() {
             ValidateSlpUtxosErr::UnexpectedTokenId { expected, actual } => {
                 assert_eq!(invalid_token_id, expected);

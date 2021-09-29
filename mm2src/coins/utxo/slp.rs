@@ -2,6 +2,7 @@
 use super::p2pkh_spend;
 
 use crate::utxo::bch::BchCoin;
+use crate::utxo::bchd_grpc::{validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, p2sh_spend, payment_script, UtxoTxBuilder};
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, sign_tx, ActualTxFee, FeePolicy, GenerateTxError,
@@ -75,7 +76,7 @@ pub struct SlpOutput {
 
 /// The SLP transaction preimage
 struct SlpTxPreimage {
-    slp_inputs: Vec<UnspentInfo>,
+    slp_inputs: Vec<SlpUnspent>,
     available_bch_inputs: Vec<UnspentInfo>,
     outputs: Vec<TransactionOutput>,
 }
@@ -288,7 +289,7 @@ impl SlpToken {
             }
 
             total_slp_input += slp_utxo.slp_amount;
-            inputs.push(slp_utxo.bch_unspent);
+            inputs.push(slp_utxo);
         }
 
         if total_slp_input < total_slp_output {
@@ -322,6 +323,7 @@ impl SlpToken {
             outputs.push(slp_change_out);
         }
 
+        validate_slp_utxos(self.platform_coin.bchd_urls(), &inputs, self.token_id()).await?;
         let preimage = SlpTxPreimage {
             slp_inputs: inputs,
             available_bch_inputs: bch_unspents,
@@ -335,7 +337,7 @@ impl SlpToken {
         generate_and_send_tx(
             &self.platform_coin,
             preimage.available_bch_inputs,
-            Some(preimage.slp_inputs),
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
             FeePolicy::SendExact,
             recently_spent,
             preimage.outputs,
@@ -357,7 +359,7 @@ impl SlpToken {
         generate_and_send_tx(
             &self.platform_coin,
             preimage.available_bch_inputs,
-            Some(preimage.slp_inputs),
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
             FeePolicy::SendExact,
             recently_spent,
             preimage.outputs,
@@ -881,17 +883,24 @@ enum GenSlpSpendErr {
         available: BigDecimal,
         required: BigDecimal,
     },
+    InvalidSlpUtxos(ValidateSlpUtxosErr),
 }
 
 impl From<UtxoRpcError> for GenSlpSpendErr {
     fn from(err: UtxoRpcError) -> GenSlpSpendErr { GenSlpSpendErr::RpcError(err) }
 }
 
+impl From<ValidateSlpUtxosErr> for GenSlpSpendErr {
+    fn from(err: ValidateSlpUtxosErr) -> GenSlpSpendErr { GenSlpSpendErr::InvalidSlpUtxos(err) }
+}
+
 impl From<GenSlpSpendErr> for WithdrawError {
     fn from(err: GenSlpSpendErr) -> WithdrawError {
         match err {
             GenSlpSpendErr::RpcError(e) => e.into(),
-            GenSlpSpendErr::TooManyOutputs => WithdrawError::InternalError(err.to_string()),
+            GenSlpSpendErr::TooManyOutputs | GenSlpSpendErr::InvalidSlpUtxos(_) => {
+                WithdrawError::InternalError(err.to_string())
+            },
             GenSlpSpendErr::InsufficientSlpBalance {
                 coin,
                 available,
@@ -989,7 +998,7 @@ impl SwapOps for SlpToken {
             generate_and_send_tx(
                 &coin.platform_coin,
                 preimage.available_bch_inputs,
-                Some(preimage.slp_inputs),
+                Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
                 FeePolicy::SendExact,
                 recently_spent,
                 preimage.outputs,
@@ -1269,7 +1278,9 @@ impl From<GenSlpSpendErr> for TradePreimageError {
                 required,
             },
             GenSlpSpendErr::RpcError(e) => e.into(),
-            GenSlpSpendErr::TooManyOutputs => TradePreimageError::InternalError(slp.to_string()),
+            GenSlpSpendErr::TooManyOutputs | GenSlpSpendErr::InvalidSlpUtxos(_) => {
+                TradePreimageError::InternalError(slp.to_string())
+            },
         }
     }
 }
@@ -1323,7 +1334,7 @@ impl MmCoin for SlpToken {
             let slp_output = SlpOutput { amount, script_pubkey };
             let (slp_preimage, _) = coin.generate_slp_tx_preimage(vec![slp_output]).await?;
             let mut tx_builder = UtxoTxBuilder::new(&coin.platform_coin)
-                .add_required_inputs(slp_preimage.slp_inputs)
+                .add_required_inputs(slp_preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent))
                 .add_available_inputs(slp_preimage.available_bch_inputs)
                 .add_outputs(slp_preimage.outputs);
 
