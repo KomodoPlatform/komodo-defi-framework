@@ -8317,9 +8317,9 @@ fn test_get_public_key() {
 
     // Must be 200
     assert_eq!(resp.0, 200);
-    let v: Json = serde_json::from_str(&*resp.1).unwrap();
+    let v: GetPublicKeyResponse = serde_json::from_str(&*resp.1).unwrap();
     assert_eq!(
-        v["result"]["public_key"].as_str().unwrap(),
+        v.result.public_key,
         "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"
     )
 }
