@@ -496,7 +496,7 @@ async fn update_single_order(
 
     let resp = update_maker_order(ctx, req)
         .await
-        .map_to_mm(|e| OrderProcessingError::OrderUpdateError(e))?;
+        .map_to_mm(OrderProcessingError::OrderUpdateError)?;
     info!("Successfully update order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
 }
@@ -527,7 +527,7 @@ async fn create_single_order(
 
     let resp = create_maker_order(&ctx, req)
         .await
-        .map_to_mm(|e| OrderProcessingError::OrderCreationError(e))?;
+        .map_to_mm(OrderProcessingError::OrderUpdateError)?;
     info!("Successfully placed order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
 }
