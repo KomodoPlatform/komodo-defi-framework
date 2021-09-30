@@ -9,8 +9,9 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                  lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
 use bigdecimal::Zero;
 use coins::{lp_coinfind, GetNonZeroBalance};
+use common::mm_error::prelude::MapToMmResult;
 use common::{executor::{spawn, Timer},
-             log::{error, info, warn},
+             log::{debug, error, info, warn},
              mm_ctx::MmArc,
              mm_error::MmError,
              mm_number::MmNumber,
@@ -57,8 +58,10 @@ pub enum OrderProcessingError {
     BalanceInternalError,
     #[display(fmt = "Balance is zero - skipping")]
     BalanceIsZero,
-    #[display(fmt = "Error when creating the order")]
-    OrderCreationError,
+    #[display(fmt = "{}", _0)]
+    OrderCreationError(String),
+    #[display(fmt = "{}", _0)]
+    OrderUpdateError(String),
     #[display(fmt = "Error when querying swap history")]
     MyRecentSwapsError,
     #[display(fmt = "Legacy error - skipping")]
@@ -244,7 +247,7 @@ async fn vwap_calculation(
                 let cur_price = &my_amount / &other_amount;
                 let cur_sum_price_volume = &cur_price * &other_amount;
                 total_volume += &other_amount;
-                info!(
+                debug!(
                     "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
                     cfg.base, cfg.rel, cur_price, other_amount, average_trading_price, total_volume
                 );
@@ -254,7 +257,7 @@ async fn vwap_calculation(
                 let cur_price = &other_amount / &my_amount;
                 let cur_sum_price_volume = &cur_price * &my_amount;
                 total_volume += &my_amount;
-                info!(
+                debug!(
                     "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
                     cfg.base, cfg.rel, cur_price, my_amount, average_trading_price, total_volume
                 );
@@ -493,16 +496,9 @@ async fn update_single_order(
         rel_nota: cfg.rel_nota,
     };
 
-    let resp = match update_maker_order(ctx, req).await {
-        Ok(x) => x,
-        Err(err) => {
-            warn!(
-                "Couldn't update the order {} - for {} - reason: {}",
-                uuid, key_trade_pair, err
-            );
-            return MmError::err(OrderProcessingError::OrderCreationError);
-        },
-    };
+    let resp = update_maker_order(ctx, req)
+        .await
+        .map_to_mm(|e| OrderProcessingError::OrderUpdateError(e))?;
     info!("Successfully update order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
 }
@@ -531,13 +527,9 @@ async fn create_single_order(
         save_in_history: true,
     };
 
-    let resp = match create_maker_order(&ctx, req).await {
-        Ok(x) => x,
-        Err(err) => {
-            warn!("Couldn't place the order for {} - reason: {}", key_trade_pair, err);
-            return MmError::err(OrderProcessingError::OrderCreationError);
-        },
-    };
+    let resp = create_maker_order(&ctx, req)
+        .await
+        .map_to_mm(|e| OrderProcessingError::OrderCreationError(e))?;
     info!("Successfully placed order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
 }
