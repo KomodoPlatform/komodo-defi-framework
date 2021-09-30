@@ -2,10 +2,17 @@
 /// Implementation was taken from https://github.com/hyperium/tonic/blob/ddab65ede90f503360b7adb0d7afe6d5b7bb8b02/examples/src/grpc-web/client.rs
 /// with minor refactoring
 use crate::mm_error::prelude::*;
-#[cfg(not(target_arch = "wasm32"))] use crate::wio::slurp_req;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use http::header::{ACCEPT, CONTENT_TYPE};
 use prost::DecodeError;
+
+cfg_native! {
+    use crate::wio::slurp_req;
+    use http::header::{ACCEPT, CONTENT_TYPE};
+}
+
+cfg_wasm32! {
+    use crate::wasm_http::FetchRequest;
+}
 
 // one byte for the compression flag plus four bytes for the length
 const GRPC_HEADER_SIZE: usize = 5;
@@ -118,4 +125,14 @@ where
     let reply = decode_body(response.2.into())?;
 
     Ok(reply)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn post_grpc_web<Req, Res>(url: &str, req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
+where
+    Req: prost::Message + Send + 'static,
+    Res: prost::Message + Default + Send + 'static,
+{
+    let mut request = FetchRequest::post(url);
+    unimplemented!()
 }
