@@ -1,17 +1,22 @@
 use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
+use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hash_types::BlockHash;
 use bitcoin::network::constants::Network;
 use bitcoin_hashes::{sha256d, Hash};
-use common::log::LogArc;
+use common::log::{LogArc, LogState};
 use common::mm_ctx::MmArc;
 use futures::compat::Future01CompatExt;
-use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
-use lightning::chain::{chainmonitor, BestBlock};
+use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, KeysManager};
+use lightning::chain::{chainmonitor, Access, BestBlock};
 use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::ChainParameters;
 use lightning::ln::msgs::NetAddress;
+use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
+use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning::util::config::UserConfig;
+use lightning_net_tokio::SocketDescriptor;
 use lightning_persister::FilesystemPersister;
+use rand::RngCore;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -23,6 +28,15 @@ type ChainMonitor = chainmonitor::ChainMonitor<
     Arc<ElectrumClient>,
     LogArc,
     Arc<FilesystemPersister>,
+>;
+
+type PeerManager = SimpleArcPeerManager<
+    SocketDescriptor,
+    ChainMonitor,
+    ElectrumClient,
+    ElectrumClient,
+    dyn Access + Send + Sync,
+    LogState,
 >;
 
 #[derive(Debug)]
@@ -107,13 +121,54 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
             best_block.height as u32,
         ),
     };
-    let _new_channel_manager = channelmanager::ChannelManager::new(
+    let new_channel_manager = Arc::new(channelmanager::ChannelManager::new(
         fee_estimator,
         chain_monitor,
         broadcaster,
-        logger,
-        keys_manager,
+        logger.0.clone(),
+        keys_manager.clone(),
         user_config,
         chain_params,
-    );
+    ));
+
+    // Initialize the NetGraphMsgHandler. This is used for providing routes to send payments over
+    let genesis = genesis_block(conf.network).header.block_hash();
+    let router = Arc::new(NetGraphMsgHandler::new(
+        NetworkGraph::new(genesis),
+        None::<Arc<dyn Access + Send + Sync>>,
+        logger.0.clone(),
+    ));
+
+    // Initialize the PeerManager
+    // ephemeral_random_data is used to derive per-connection ephemeral keys
+    let mut ephemeral_bytes = [0; 32];
+    rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
+    let lightning_msg_handler = MessageHandler {
+        chan_handler: new_channel_manager,
+        route_handler: router,
+    };
+    // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
+    let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
+        lightning_msg_handler,
+        keys_manager.get_node_secret(),
+        &ephemeral_bytes,
+        logger.0,
+        Arc::new(IgnoringMessageHandler {}),
+    ));
+
+    // Initialize networking
+    let listening_port = conf.ln_peer_listening_port;
+    tokio::spawn(async move {
+        // TODO: Error handling
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", listening_port))
+            .await
+            .unwrap();
+        loop {
+            let peer_mgr = peer_manager.clone();
+            let tcp_stream = listener.accept().await.unwrap().0;
+            tokio::spawn(async move {
+                lightning_net_tokio::setup_inbound(peer_mgr.clone(), tcp_stream.into_std().unwrap()).await;
+            });
+        }
+    });
 }

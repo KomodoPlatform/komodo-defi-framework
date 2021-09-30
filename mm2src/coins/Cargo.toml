@@ -79,6 +79,7 @@ web-sys = { version = "0.3.4", features = ["console", "Headers", "Request", "Req
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 lightning-persister = "0.0.101"
+lightning-net-tokio = "0.0.101"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.19", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
