@@ -569,7 +569,9 @@ async fn process_bot_logic(ctx: &MmArc) {
                 let (result_sender, result_receiver) = futures::channel::oneshot::channel();
                 let cloned_infos = (
                     ctx.clone(),
-                    rates_registry.get_cex_rates(coin_cfg.base.clone(), coin_cfg.rel.clone()),
+                    rates_registry
+                        .get_cex_rates(coin_cfg.base.clone(), coin_cfg.rel.clone())
+                        .unwrap_or_default(),
                     key_trade_pair.clone(),
                     coin_cfg.clone(),
                 );
@@ -592,7 +594,9 @@ async fn process_bot_logic(ctx: &MmArc) {
             None => {
                 let (result_sender, result_receiver) = futures::channel::oneshot::channel();
                 let ctx_cloned = ctx.clone();
-                let rates_infos = rates_registry.get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone());
+                let rates_infos = rates_registry
+                    .get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone())
+                    .unwrap_or_default();
                 spawn(async move {
                     let res = match create_single_order(rates_infos, cur_cfg, trading_pair.clone(), ctx_cloned).await {
                         Ok(resp) => resp,

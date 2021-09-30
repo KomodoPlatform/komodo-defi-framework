@@ -208,7 +208,9 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     fn test_get_cex_rates() {
         let mut registry = TickerInfosRegistry::default();
-        let rates = registry.get_cex_rates("KMD".to_string(), "LTC".to_string());
+        let rates = registry
+            .get_cex_rates("KMD".to_string(), "LTC".to_string())
+            .unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Unknown);
         assert_eq!(rates.rel_provider, Provider::Unknown);
 
@@ -240,7 +242,9 @@ mod tests {
             change_24_h_provider: Default::default(),
         });
 
-        let rates = registry.get_cex_rates("KMD".to_string(), "LTC".to_string());
+        let rates = registry
+            .get_cex_rates("KMD".to_string(), "LTC".to_string())
+            .unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Binance);
         assert_eq!(rates.rel_provider, Provider::Coingecko);
         assert_eq!(rates.price, MmNumber::from("0.02"));

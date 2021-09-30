@@ -116,30 +116,28 @@ impl RateInfos {
         RateInfos {
             base,
             rel,
+            base_provider: Provider::Unknown,
+            rel_provider: Provider::Unknown,
             ..Default::default()
         }
     }
 }
 
 impl TickerInfosRegistry {
-    fn get_infos(&self, ticker: String) -> Option<&TickerInfos> { self.0.get(ticker.as_str()) }
+    fn get_infos(&self, ticker: &str) -> Option<&TickerInfos> { self.0.get(ticker) }
 
-    fn get_infos_pair(&self, base: String, rel: String) -> Result<Option<(&TickerInfos, &TickerInfos)>, bool> {
-        let (base_infos, rel_infos) = (self.get_infos(base), self.get_infos(rel));
-        if base_infos.is_none() || rel_infos.is_none() {
-            return Err(false);
-        }
-        Ok(Some((base_infos.unwrap(), rel_infos.unwrap())))
+    fn get_infos_pair(&self, base: &str, rel: &str) -> Option<(&TickerInfos, &TickerInfos)> {
+        self.get_infos(base).zip(self.get_infos(rel))
     }
 
-    pub fn get_cex_rates(&self, base: String, rel: String) -> RateInfos {
-        let mut rate_infos = RateInfos::new(base, rel);
-        match self.get_infos_pair(rate_infos.base.clone(), rate_infos.rel.clone()) {
-            Ok(Some((base_price_infos, rel_price_infos))) => {
+    pub fn get_cex_rates(&self, base: String, rel: String) -> Option<RateInfos> {
+        match self.get_infos_pair(&base, &rel) {
+            Some((base_price_infos, rel_price_infos)) => {
+                let mut rate_infos = RateInfos::new(base, rel);
                 if base_price_infos.price_provider == Provider::Unknown
                     || rel_price_infos.price_provider == Provider::Unknown
                 {
-                    return rate_infos;
+                    return None;
                 }
 
                 rate_infos.base_provider = base_price_infos.price_provider.clone();
@@ -151,10 +149,9 @@ impl TickerInfosRegistry {
                         rel_price_infos.last_updated_timestamp
                     };
                 rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
-                rate_infos
+                Some(rate_infos)
             },
-            Err(_) => rate_infos,
-            _ => rate_infos,
+            None => None,
         }
     }
 }
