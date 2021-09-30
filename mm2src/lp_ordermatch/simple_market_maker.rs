@@ -460,12 +460,12 @@ async fn prepare_order(
         None => MmNumber::default(),
     };
 
-    let min_vol: Option<MmNumber> = match cfg.min_volume {
-        Some(min_volume) => {
+    let min_vol: Option<MmNumber> = match cfg.min_volume_percentage {
+        Some(min_volume_percentage) => {
             if cfg.max.unwrap_or(false) {
-                Some(min_volume * base_balance.clone())
+                Some(min_volume_percentage * base_balance.clone())
             } else {
-                Some(min_volume * volume.clone())
+                Some(min_volume_percentage * volume.clone())
             }
         },
         None => None,

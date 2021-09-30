@@ -38,7 +38,8 @@ pub type SimpleMakerBotRegistry = HashMap<String, SimpleCoinMarketMakerCfg>;
 pub struct SimpleCoinMarketMakerCfg {
     pub base: String,
     pub rel: String,
-    pub min_volume: Option<MmNumber>,
+    #[serde(rename = "min_volume")]
+    pub min_volume_percentage: Option<MmNumber>,
     pub spread: MmNumber,
     pub base_confs: Option<u64>,
     pub base_nota: Option<bool>,

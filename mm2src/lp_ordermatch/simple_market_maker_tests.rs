@@ -29,7 +29,7 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
     SimpleCoinMarketMakerCfg {
         base,
         rel,
-        min_volume: None,
+        min_volume_percentage: None,
         spread,
         base_confs: None,
         base_nota: None,
