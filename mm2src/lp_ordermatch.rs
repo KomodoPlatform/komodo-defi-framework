@@ -4303,7 +4303,7 @@ pub struct CancelOrderResponse {
 pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
     let ordermatch_ctx = match OrdermatchContext::from_ctx(&ctx) {
         Ok(x) => x,
-        Err(_) => return Err(MmError::new(CancelOrderError::CannotRetrieveOrderMatchContext)),
+        Err(_) => return MmError::err(CancelOrderError::CannotRetrieveOrderMatchContext),
     };
     let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
     match maker_orders.entry(req.uuid) {
