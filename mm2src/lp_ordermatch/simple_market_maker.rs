@@ -120,7 +120,7 @@ impl StartSimpleMakerBotRes {
     pub fn get_result(&self) -> String { self.result.clone() }
 }
 
-enum VwapCalculationSide {
+enum VwapSide {
     Base,
     Rel,
 }
@@ -219,16 +219,33 @@ pub async fn tear_down_bot(ctx: MmArc) {
     cancel_pending_orders(&ctx).await;
 }
 
+async fn sum_vwap(
+    base_amount: &MmNumber,
+    rel_amount: &MmNumber,
+    total_volume: &mut MmNumber,
+    cfg: &SimpleCoinMarketMakerCfg,
+    average_trading_price: &MmNumber,
+) -> MmNumber {
+    let cur_price = base_amount / rel_amount;
+    let cur_sum_price_volume = &cur_price * rel_amount;
+    *total_volume += rel_amount;
+    debug!(
+        "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
+        cfg.base, cfg.rel, cur_price, rel_amount, average_trading_price, total_volume
+    );
+    cur_sum_price_volume
+}
+
 async fn vwap_calculation(
-    kind: VwapCalculationSide,
+    kind: VwapSide,
     swaps_answer: MyRecentSwapsResponse,
     nb_valid_trades: &mut usize,
     cfg: &SimpleCoinMarketMakerCfg,
     calculated_price: MmNumber,
 ) -> MmNumber {
-    let mut average_trading_price = calculated_price.clone();
+    let mut avg_trade_price = calculated_price.clone();
     let mut total_sum_price_volume = MmNumber::default();
-    let mut total_volume = MmNumber::default();
+    let mut total_vol = MmNumber::default();
     for swap in swaps_answer.swaps.iter() {
         if !swap.is_finished_and_success() {
             *nb_valid_trades -= 1;
@@ -241,28 +258,9 @@ async fn vwap_calculation(
                 continue;
             },
         };
-        // todo: refactor to a function
         let cur_sum_price_volume = match kind {
-            VwapCalculationSide::Base => {
-                let cur_price = &my_amount / &other_amount;
-                let cur_sum_price_volume = &cur_price * &other_amount;
-                total_volume += &other_amount;
-                debug!(
-                    "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
-                    cfg.base, cfg.rel, cur_price, other_amount, average_trading_price, total_volume
-                );
-                cur_sum_price_volume
-            },
-            VwapCalculationSide::Rel => {
-                let cur_price = &other_amount / &my_amount;
-                let cur_sum_price_volume = &cur_price * &my_amount;
-                total_volume += &my_amount;
-                debug!(
-                    "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
-                    cfg.base, cfg.rel, cur_price, my_amount, average_trading_price, total_volume
-                );
-                cur_sum_price_volume
-            },
+            VwapSide::Base => sum_vwap(&my_amount, &other_amount, &mut total_vol, cfg, &avg_trade_price).await,
+            VwapSide::Rel => sum_vwap(&other_amount, &my_amount, &mut total_vol, cfg, &avg_trade_price).await,
         };
         total_sum_price_volume += cur_sum_price_volume;
     }
@@ -270,8 +268,8 @@ async fn vwap_calculation(
         warn!("Unable to get average price from last trades - stick with calculated price");
         return calculated_price;
     }
-    average_trading_price = total_sum_price_volume / total_volume;
-    average_trading_price
+    avg_trade_price = total_sum_price_volume / total_vol;
+    avg_trade_price
 }
 
 async fn vwap_logic(
@@ -284,7 +282,7 @@ async fn vwap_logic(
     let base_swaps_empty = base_swaps.swaps.is_empty();
     let rel_swaps_empty = rel_swaps.swaps.is_empty();
     let base_vwap = vwap_calculation(
-        VwapCalculationSide::Rel,
+        VwapSide::Rel,
         base_swaps,
         &mut nb_valid_trades,
         cfg,
@@ -292,7 +290,7 @@ async fn vwap_logic(
     )
     .await;
     let rel_vwap = vwap_calculation(
-        VwapCalculationSide::Base,
+        VwapSide::Base,
         rel_swaps,
         &mut nb_valid_trades,
         cfg,
