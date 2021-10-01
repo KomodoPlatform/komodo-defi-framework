@@ -951,15 +951,15 @@ pub struct ElectrumBlockHeadersRes {
 }
 
 /// The block header compatible with Electrum 1.2
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV12 {
-    bits: u64,
-    block_height: u64,
-    merkle_root: H256Json,
-    nonce: ElectrumNonce,
-    prev_block_hash: H256Json,
-    timestamp: u64,
-    version: u64,
+    pub bits: u64,
+    pub block_height: u64,
+    pub merkle_root: H256Json,
+    pub nonce: ElectrumNonce,
+    pub prev_block_hash: H256Json,
+    pub timestamp: u64,
+    pub version: u64,
 }
 
 impl ElectrumBlockHeaderV12 {
@@ -986,23 +986,24 @@ impl ElectrumBlockHeaderV12 {
 }
 
 /// The block header compatible with Electrum 1.4
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV14 {
-    height: u64,
-    hex: BytesJson,
+    pub height: u64,
+    pub hex: BytesJson,
 }
 
 impl ElectrumBlockHeaderV14 {
     pub fn hash(&self) -> H256Json { self.hex.clone().into_vec()[..].into() }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ElectrumBlockHeader {
     V12(ElectrumBlockHeaderV12),
     V14(ElectrumBlockHeaderV14),
 }
 
+#[derive(Debug, PartialEq)]
 pub struct BestBlock {
     pub height: u64,
     pub hash: H256Json,

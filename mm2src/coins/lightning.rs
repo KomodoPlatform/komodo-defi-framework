@@ -1,13 +1,15 @@
-use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
+use crate::utxo::rpc_clients::{ElectrumBlockHeader, ElectrumClient, ElectrumNonce, UtxoRpcClientOps};
+use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
-use bitcoin::hash_types::BlockHash;
+use bitcoin::consensus::encode::deserialize;
+use bitcoin::hash_types::{BlockHash, TxMerkleNode};
 use bitcoin::network::constants::Network;
 use bitcoin_hashes::{sha256d, Hash};
 use common::log::{LogArc, LogState};
 use common::mm_ctx::MmArc;
 use futures::compat::Future01CompatExt;
 use lightning::chain::keysinterface::{InMemorySigner, KeysInterface, KeysManager};
-use lightning::chain::{chainmonitor, Access, BestBlock};
+use lightning::chain::{chainmonitor, Access, BestBlock, Confirm};
 use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::ChainParameters;
 use lightning::ln::msgs::NetAddress;
@@ -19,7 +21,7 @@ use lightning_persister::FilesystemPersister;
 use rand::RngCore;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 type ChainMonitor = chainmonitor::ChainMonitor<
     InMemorySigner,
@@ -123,7 +125,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
     };
     let new_channel_manager = Arc::new(channelmanager::ChannelManager::new(
         fee_estimator,
-        chain_monitor,
+        chain_monitor.clone(),
         broadcaster,
         logger.0.clone(),
         keys_manager.clone(),
@@ -144,7 +146,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
     let mut ephemeral_bytes = [0; 32];
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
     let lightning_msg_handler = MessageHandler {
-        chan_handler: new_channel_manager,
+        chan_handler: new_channel_manager.clone(),
         route_handler: router,
     };
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
@@ -169,6 +171,49 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
             tokio::spawn(async move {
                 lightning_net_tokio::setup_inbound(peer_mgr.clone(), tcp_stream.into_std().unwrap()).await;
             });
+        }
+    });
+
+    // Update best block whenever there's a new chain tip or a block has been newly disconnected
+    // TODO: Error handling
+    tokio::spawn(async move {
+        loop {
+            let best_header = conf.rpc_client.blockchain_headers_subscribe().compat().await.unwrap();
+            if best_block != best_header.clone().into() {
+                let (new_best_header, new_best_height) = match best_header {
+                    ElectrumBlockHeader::V12(h) => {
+                        let nonce = match h.nonce {
+                            ElectrumNonce::Number(n) => n as u32,
+                            ElectrumNonce::Hash(_) => {
+                                tokio::time::sleep(Duration::from_secs(60)).await;
+                                continue;
+                            },
+                        };
+                        (
+                            BlockHeader {
+                                version: h.version as i32,
+                                prev_blockhash: BlockHash::from_hash(
+                                    sha256d::Hash::from_slice(&h.prev_block_hash.0).unwrap(),
+                                ),
+                                merkle_root: TxMerkleNode::from_hash(
+                                    sha256d::Hash::from_slice(&h.merkle_root.0).unwrap(),
+                                ),
+                                time: h.timestamp as u32,
+                                bits: h.bits as u32,
+                                nonce,
+                            },
+                            h.block_height as u32,
+                        )
+                    },
+                    ElectrumBlockHeader::V14(h) => (
+                        deserialize(&h.hex.into_vec()).expect("Can't deserialize block header"),
+                        h.height as u32,
+                    ),
+                };
+                new_channel_manager.best_block_updated(&new_best_header, new_best_height);
+                chain_monitor.best_block_updated(&new_best_header, new_best_height);
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }
