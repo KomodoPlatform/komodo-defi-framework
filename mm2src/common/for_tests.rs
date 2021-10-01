@@ -10,6 +10,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Mutex;
+use uuid::Uuid;
 
 use crate::executor::Timer;
 use crate::mm_ctx::MmArc;
@@ -866,6 +867,32 @@ pub async fn check_my_swap_status(
     let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
     let actual_events: Vec<&str> = actual_events.collect();
     assert_eq!(expected_success_events, actual_events.as_slice());
+}
+
+pub async fn check_my_swap_status_amounts(
+    mm: &MarketMakerIt,
+    uuid: Uuid,
+    maker_amount: BigDecimal,
+    taker_amount: BigDecimal,
+) {
+    let response = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "my_swap_status",
+            "params": {
+                "uuid": uuid,
+            }
+        }))
+        .await
+        .unwrap();
+    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+    let status_response: Json = json::from_str(&response.1).unwrap();
+
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_maker_amount = json::from_value(events_array[0]["event"]["data"]["maker_amount"].clone()).unwrap();
+    assert_eq!(maker_amount, actual_maker_amount);
+    let actual_taker_amount = json::from_value(events_array[0]["event"]["data"]["taker_amount"].clone()).unwrap();
+    assert_eq!(taker_amount, actual_taker_amount);
 }
 
 pub async fn check_stats_swap_status(

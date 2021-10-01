@@ -11,7 +11,7 @@ use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
 use common::{block_on, slurp};
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 #[cfg(not(target_arch = "wasm32"))]
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use num_rational::BigRational;
@@ -8279,6 +8279,48 @@ fn test_mm2_db_migration() {
         None,
     )
     .unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_public_key() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+    fn get_public_key_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
+        block_on(mm.rpc(json!({
+                 "userpass": "password",
+                 "mmrpc": "2.0",
+                 "method": "get_public_key",
+                 "params": {},
+                 "id": 0})))
+        .unwrap()
+    }
+    let resp = get_public_key_bot_rpc(&mm);
+
+    // Must be 200
+    assert_eq!(resp.0, 200);
+    let v: GetPublicKeyResponse = serde_json::from_str(&*resp.1).unwrap();
+    assert_eq!(
+        v.result.public_key,
+        "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"
+    )
 }
 
 // HOWTO
