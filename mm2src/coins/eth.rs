@@ -610,7 +610,7 @@ impl Deref for EthCoin {
 }
 
 impl SwapOps for EthCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let address = try_fus!(addr_from_raw_pubkey(fee_addr));
 
         Box::new(
@@ -745,6 +745,7 @@ impl SwapOps for EthCoin {
         fee_addr: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
+        _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
         let tx = match fee_tx {

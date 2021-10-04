@@ -84,8 +84,6 @@ async fn enable_coins_eth_electrum(
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls).await);
     replies.insert("JST", enable_native(mm, "JST", eth_urls).await);
-    #[cfg(feature = "zhtlc")]
-    replies.insert("ZOMBIE", enable_native(mm, "ZOMBIE", eth_urls).await);
     replies
 }
 
@@ -1070,7 +1068,7 @@ async fn trade_base_rel_electrum(
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"}},
+        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
         {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
     ]);
 
@@ -1133,6 +1131,29 @@ async fn trade_base_rel_electrum(
         log! ({"Alice log path: {}", mm_alice.log_path.display()})
     }
 
+    #[cfg(all(feature = "zhtlc", not(target_arch = "wasm32")))]
+    {
+        Timer::sleep(1.).await;
+        let rmd = rmd160_from_passphrase(&bob_passphrase);
+        let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
+        log!("bob_zombie_cache_path "(bob_zombie_cache_path.display()));
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
+
+        let rmd = rmd160_from_passphrase(&alice_passphrase);
+        let alice_zombie_cache_path = mm_alice
+            .folder
+            .join("DB")
+            .join(hex::encode(rmd))
+            .join("ZOMBIE_CACHE.db");
+        log!("alice_zombie_cache_path "(alice_zombie_cache_path.display()));
+
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", alice_zombie_cache_path).unwrap();
+
+        let zombie_bob = enable_native(&mm_bob, "ZOMBIE", &["http://195.201.0.6:8565"]).await;
+        log!("enable ZOMBIE bob "[zombie_bob]);
+        let zombie_alice = enable_native(&mm_alice, "ZOMBIE", &["http://195.201.0.6:8565"]).await;
+        log!("enable ZOMBIE alice "[zombie_alice]);
+    }
     // Enable coins on Bob side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]).await;
     log! ({"enable_coins (bob): {:?}", rc});
@@ -1226,12 +1247,12 @@ async fn trade_base_rel_electrum(
 
     for uuid in uuids.iter() {
         mm_bob
-            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
         mm_alice
-            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
@@ -1304,7 +1325,7 @@ async fn trade_base_rel_electrum(
 #[cfg(not(target_arch = "wasm32"))]
 fn trade_test_electrum_and_eth_coins() {
     let pairs: &[_] = if cfg!(feature = "zhtlc") {
-        &[("ETH", "JST"), ("RICK", "ZOMBIE")]
+        &[("RICK", "ZOMBIE")]
     } else {
         &[("ETH", "JST")]
     };

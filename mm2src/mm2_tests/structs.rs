@@ -521,6 +521,15 @@ pub struct TransactionDetails {
     pub internal_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MyBalanceResponse {
+    pub address: String,
+    pub balance: BigDecimal,
+    pub unspendable_balance: BigDecimal,
+    pub coin: String,
+}
+
 pub mod withdraw_error {
     use bigdecimal::BigDecimal;
 

@@ -3,11 +3,11 @@ use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc2
                                 ViewContractCallType};
 use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
-                               UtxoRpcError, UtxoRpcResult};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub};
-use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError, GenerateTxResult,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
+                               UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
+use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError, HistoryUtxoTx,
+                  HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
+                  VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -390,12 +390,14 @@ impl Qrc20Coin {
             gas_fee += output.gas_limit * output.gas_price;
             outputs.push(TransactionOutput::from(output));
         }
-        let fee_policy = FeePolicy::SendExact;
-        let tx_fee = None;
 
-        let (unsigned, data) = self
-            .generate_transaction(unspents, outputs, fee_policy, tx_fee, Some(gas_fee))
+        let (unsigned, data) = UtxoTxBuilder::new(self)
+            .add_available_inputs(unspents)
+            .add_outputs(outputs)
+            .with_gas_fee(gas_fee)
+            .build()
             .await?;
+
         let prev_script = ScriptBuilder::build_p2pkh(&self.utxo.my_address.hash);
         let signed = sign_tx(
             unsigned,
@@ -462,7 +464,9 @@ impl UtxoCommonOps for Qrc20Coin {
     /// Get only QTUM transaction fee.
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo).await }
 
-    async fn get_htlc_spend_fee(&self) -> UtxoRpcResult<u64> { utxo_common::get_htlc_spend_fee(self).await }
+    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
+        utxo_common::get_htlc_spend_fee(self, tx_size).await
+    }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, String> {
         utxo_common::addresses_from_script(&self.utxo, script)
@@ -481,18 +485,6 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
-
-    /// Generate UTXO transaction with specified unspent inputs and specified outputs.
-    async fn generate_transaction(
-        &self,
-        utxos: Vec<UnspentInfo>,
-        outputs: Vec<TransactionOutput>,
-        fee_policy: FeePolicy,
-        fee: Option<ActualTxFee>,
-        gas_fee: Option<u64>,
-    ) -> GenerateTxResult {
-        utxo_common::generate_transaction(self, utxos, outputs, fee_policy, fee, gas_fee).await
-    }
 
     async fn calc_interest_if_required(
         &self,
@@ -549,10 +541,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::ordered_mature_unspents(self, address).await
     }
 
-    fn get_verbose_transaction_from_cache_or_rpc(
-        &self,
-        txid: H256Json,
-    ) -> Box<dyn Future<Item = VerboseTransactionFrom, Error = String> + Send> {
+    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
         let selfi = self.clone();
         let fut = async move { utxo_common::get_verbose_transaction_from_cache_or_rpc(&selfi.utxo, txid).await };
         Box::new(fut.boxed().compat())
@@ -589,7 +578,7 @@ impl UtxoCommonOps for Qrc20Coin {
 }
 
 impl SwapOps for Qrc20Coin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let to_address = try_fus!(self.contract_address_from_raw_pubkey(fee_addr));
         let amount = try_fus!(wei_from_big_decimal(&amount, self.utxo.decimals));
         let transfer_output =
@@ -737,6 +726,7 @@ impl SwapOps for Qrc20Coin {
         fee_addr: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
+        _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let fee_tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,

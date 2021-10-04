@@ -151,13 +151,14 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                     BestOrdersAction::Buy => addr_format_from_protocol_info(&proto_infos.rel),
                     BestOrdersAction::Sell => addr_format_from_protocol_info(&proto_infos.base),
                 };
-                let address = match address_by_coin_conf_and_pubkey_str(&coin, &coin_conf, &order.pubkey, addr_format) {
-                    Ok(a) => a,
-                    Err(e) => {
-                        log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);
-                        continue;
-                    },
-                };
+                let address =
+                    match address_by_coin_conf_and_pubkey_str(&ctx, &coin, &coin_conf, &order.pubkey, addr_format) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            log::error!("Error {} getting coin {} address from pubkey {}", e, coin, order.pubkey);
+                            continue;
+                        },
+                    };
                 let entry = match req.action {
                     BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, false),
                     BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, false),

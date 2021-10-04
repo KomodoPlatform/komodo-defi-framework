@@ -35,7 +35,7 @@ jobs:
           mkdir upload
           echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
           cat MM_VERSION
-          cargo build --release --bin mm2
+          cargo build --release --bin mm2 --features zhtlc
         displayName: 'Build MM2 Release'
       # Build WASM with the debug symbols.
       - bash: |

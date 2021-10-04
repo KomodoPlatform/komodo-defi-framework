@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate derive_more;
 extern crate primitives;
 
 mod compact_integer;

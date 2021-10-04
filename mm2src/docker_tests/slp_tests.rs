@@ -1,49 +1,67 @@
-use super::*;
-use bitcoin_cash_slp::{slp_genesis_output, SlpTokenType};
-use chain::TransactionOutput;
-use coins::utxo::slp::SlpToken;
-use coins::utxo::utxo_common::send_outputs_from_my_address;
-use keys::{KeyPair, Private};
-use script::Builder;
+use crate::docker_tests::docker_tests_common::*;
+use bigdecimal::BigDecimal;
+use serde_json::{self as json};
+use std::time::Duration;
 
 #[test]
-fn mint_slp_token() {
-    let (_ctx, coin, privkey) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
-    let private = Private {
-        prefix: 0,
-        secret: privkey.into(),
-        compressed: true,
-        checksum_type: Default::default(),
-    };
-    let keypair = KeyPair::from_private(private).unwrap();
+fn trade_test_with_maker_slp() { trade_base_rel(("ADEXSLP", "FORSLP")); }
 
-    let output = slp_genesis_output(SlpTokenType::Fungible, "ADEX", "ADEX", "", "", 8, None, 1000_0000_0000);
-    let script_pubkey = output.script.serialize().unwrap().to_vec().into();
+#[test]
+fn trade_test_with_taker_slp() { trade_base_rel(("FORSLP", "ADEXSLP")); }
 
-    let op_return_output = TransactionOutput {
-        value: output.value,
-        script_pubkey,
-    };
-    let mint_output = TransactionOutput {
-        value: 1000,
-        script_pubkey: Builder::build_p2pkh(&keypair.public().address_hash()).to_bytes(),
-    };
-    let tx = send_outputs_from_my_address(coin.clone(), vec![op_return_output, mint_output])
-        .wait()
-        .unwrap();
+#[test]
+fn test_bch_and_slp_balance() {
+    // MM2 should mark the SLP-related and other UTXOs as unspendable BCH balance
+    let mm = slp_supplied_node();
 
-    let slp = SlpToken::new(8, "ADEX".into(), tx.tx_hash().as_slice().into(), coin, 0);
-    let balance = slp.my_balance().wait().unwrap();
-    let expected = BigDecimal::from(1000);
-    assert_eq!(expected, balance.spendable);
+    let enable_bch = block_on(enable_native(&mm, "FORSLP", &[]));
+    let enable_bch: EnableElectrumResponse = json::from_value(enable_bch).unwrap();
 
-    let secret = [0; 32];
-    let secret_hash = dhash160(&secret);
-    let time_lock = (now_ms() / 1000) as u32;
+    let expected_spendable = BigDecimal::from(1000);
+    assert_eq!(expected_spendable, enable_bch.balance);
 
-    let tx = slp
-        .send_maker_payment(time_lock, &*keypair.public(), &*secret_hash, 1.into(), &None)
-        .wait()
-        .unwrap();
-    println!("{}", hex::encode(tx.tx_hex()));
+    let expected_unspendable: BigDecimal = "0.00001".parse().unwrap();
+    assert_eq!(expected_unspendable, enable_bch.unspendable_balance);
+
+    let bch_balance = get_balance(&mm, "FORSLP");
+
+    assert_eq!(expected_spendable, bch_balance.balance);
+    assert_eq!(expected_unspendable, bch_balance.unspendable_balance);
+
+    let enable_slp = block_on(enable_native(&mm, "ADEXSLP", &[]));
+    let enable_slp: EnableElectrumResponse = json::from_value(enable_slp).unwrap();
+
+    let expected_spendable = BigDecimal::from(1000);
+    assert_eq!(expected_spendable, enable_slp.balance);
+
+    let expected_unspendable: BigDecimal = 0.into();
+    assert_eq!(expected_unspendable, enable_slp.unspendable_balance);
+
+    let slp_balance = get_balance(&mm, "ADEXSLP");
+
+    assert_eq!(expected_spendable, slp_balance.balance);
+    assert_eq!(expected_unspendable, slp_balance.unspendable_balance);
+}
+
+#[test]
+fn test_withdraw_bch_max_must_not_spend_slp() {
+    let mm = slp_supplied_node();
+
+    block_on(enable_native(&mm, "FORSLP", &[]));
+    block_on(enable_native(&mm, "ADEXSLP", &[]));
+
+    withdraw_max_and_send_v1(&mm, "FORSLP", &utxo_burn_address().to_string());
+    thread::sleep(Duration::from_secs(1));
+
+    let bch_balance = get_balance(&mm, "FORSLP");
+    let expected_spendable = BigDecimal::from(0);
+    let expected_unspendable: BigDecimal = "0.00001".parse().unwrap();
+
+    assert_eq!(expected_spendable, bch_balance.balance);
+    assert_eq!(expected_unspendable, bch_balance.unspendable_balance);
+
+    let slp_balance = get_balance(&mm, "ADEXSLP");
+    let expected_spendable = BigDecimal::from(1000);
+
+    assert_eq!(expected_spendable, slp_balance.balance);
 }

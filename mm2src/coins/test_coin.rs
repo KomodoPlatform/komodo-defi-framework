@@ -74,7 +74,7 @@ impl MarketCoinOps for TestCoin {
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl SwapOps for TestCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut { unimplemented!() }
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(
         &self,
@@ -149,6 +149,7 @@ impl SwapOps for TestCoin {
         fee_addr: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
+        _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }

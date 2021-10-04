@@ -69,12 +69,37 @@ pub struct ZSendManyHtlcParams {
     pub locktime: u32,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ZUnspent {
+    pub txid: H256Json,
+    #[serde(rename = "outindex")]
+    pub out_index: u32,
+    pub confirmations: u32,
+    #[serde(rename = "raw_confirmations")]
+    pub raw_confirmations: Option<u32>,
+    pub spendable: bool,
+    pub address: String,
+    pub amount: MmNumber,
+    pub memo: BytesJson,
+    pub change: bool,
+}
+
 pub trait ZRpcOps {
     fn z_get_balance(&self, address: &str, min_conf: u32) -> UtxoRpcFut<MmNumber>;
 
     fn z_get_send_many_status(&self, op_ids: &[&str]) -> UtxoRpcFut<Vec<ZOperationStatus<ZOperationTxid>>>;
 
+    fn z_list_unspent(
+        &self,
+        min_conf: u32,
+        max_conf: u32,
+        watch_only: bool,
+        addresses: &[&str],
+    ) -> UtxoRpcFut<Vec<ZUnspent>>;
+
     fn z_send_many(&self, from_address: &str, send_to: Vec<ZSendManyItem>) -> UtxoRpcFut<String>;
+
+    fn z_import_key(&self, key: &str) -> UtxoRpcFut<()>;
 }
 
 impl ZRpcOps for NativeClient {
@@ -88,8 +113,24 @@ impl ZRpcOps for NativeClient {
         Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
     }
 
+    fn z_list_unspent(
+        &self,
+        min_conf: u32,
+        max_conf: u32,
+        watch_only: bool,
+        addresses: &[&str],
+    ) -> UtxoRpcFut<Vec<ZUnspent>> {
+        let fut = rpc_func!(self, "z_listunspent", min_conf, max_conf, watch_only, addresses);
+        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
+    }
+
     fn z_send_many(&self, from_address: &str, send_to: Vec<ZSendManyItem>) -> UtxoRpcFut<String> {
         let fut = rpc_func!(self, "z_sendmany", from_address, send_to);
+        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
+    }
+
+    fn z_import_key(&self, key: &str) -> UtxoRpcFut<()> {
+        let fut = rpc_func!(self, "z_importkey", key, "no");
         Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
     }
 }

@@ -360,7 +360,7 @@ impl MakerSwap {
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
             maker_payment_lock: started_at + self.payment_locktime * 2,
-            my_persistent_pub: self.my_persistent_pub.clone().into(),
+            my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_coin_start_block,
             taker_coin_start_block,
@@ -459,7 +459,7 @@ impl MakerSwap {
     }
 
     async fn wait_taker_fee(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        const TAKER_FEE_RECV_TIMEOUT: u64 = 180;
+        const TAKER_FEE_RECV_TIMEOUT: u64 = 600;
         let negotiated = SwapMsg::Negotiated(true);
         let send_abort_handle = broadcast_swap_message_every(
             self.ctx.clone(),
@@ -497,7 +497,7 @@ impl MakerSwap {
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
         let fee_amount = dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &taker_amount);
-        let other_pub = self.r().other_persistent_pub.clone();
+        let other_pub = self.r().other_persistent_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
 
         let mut attempts = 0;
@@ -510,6 +510,7 @@ impl MakerSwap {
                     &DEX_FEE_ADDR_RAW_PUBKEY,
                     &fee_amount.clone().into(),
                     taker_coin_start_block,
+                    self.uuid.as_bytes(),
                 )
                 .compat()
                 .await

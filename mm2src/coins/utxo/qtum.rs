@@ -157,7 +157,8 @@ pub async fn qtum_coin_from_conf_and_request(
     req: &Json,
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
-    let coin: QtumCoin = try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key).await);
+    let coin: QtumCoin =
+        try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, QtumCoin::from).await);
     Ok(coin)
 }
 
@@ -168,7 +169,9 @@ impl QtumBasedCoin for QtumCoin {}
 impl UtxoCommonOps for QtumCoin {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
-    async fn get_htlc_spend_fee(&self) -> UtxoRpcResult<u64> { utxo_common::get_htlc_spend_fee(self).await }
+    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
+        utxo_common::get_htlc_spend_fee(self, tx_size).await
+    }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
         utxo_common::addresses_from_script(&self.utxo_arc, script)
@@ -187,17 +190,6 @@ impl UtxoCommonOps for QtumCoin {
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
-
-    async fn generate_transaction(
-        &self,
-        utxos: Vec<UnspentInfo>,
-        outputs: Vec<TransactionOutput>,
-        fee_policy: FeePolicy,
-        fee: Option<ActualTxFee>,
-        gas_fee: Option<u64>,
-    ) -> GenerateTxResult {
-        utxo_common::generate_transaction(self, utxos, outputs, fee_policy, fee, gas_fee).await
-    }
 
     async fn calc_interest_if_required(
         &self,
@@ -254,10 +246,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::ordered_mature_unspents(self, address).await
     }
 
-    fn get_verbose_transaction_from_cache_or_rpc(
-        &self,
-        txid: H256Json,
-    ) -> Box<dyn Future<Item = VerboseTransactionFrom, Error = String> + Send> {
+    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
         let selfi = self.clone();
         let fut = async move { utxo_common::get_verbose_transaction_from_cache_or_rpc(&selfi.utxo_arc, txid).await };
         Box::new(fut.boxed().compat())
@@ -317,7 +306,7 @@ impl UtxoStandardOps for QtumCoin {
 }
 
 impl SwapOps for QtumCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         utxo_common::send_taker_fee(self.clone(), fee_addr, amount)
     }
 
@@ -394,6 +383,7 @@ impl SwapOps for QtumCoin {
         fee_addr: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
+        _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
