@@ -870,6 +870,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "lightning",
+ "lightning-background-processor",
  "lightning-net-tokio",
  "lightning-persister",
  "metrics",
@@ -2856,6 +2857,17 @@ checksum = "7b0bcd8d72c1177579fe7cfe42309967e11e432688b2e87c86d0d8b707d60530"
 dependencies = [
  "bitcoin",
  "secp256k1",
+]
+
+[[package]]
+name = "lightning-background-processor"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0629a41f3450eac5a702562cbcc52a3375b97524990c12442bdcd72dceb30c5"
+dependencies = [
+ "bitcoin",
+ "lightning",
+ "lightning-persister",
 ]
 
 [[package]]
