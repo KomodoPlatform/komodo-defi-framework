@@ -1660,6 +1660,7 @@ mod slp_tests {
     use super::*;
     use crate::utxo::bch::tbch_coin_for_test;
     use common::block_on;
+    use mocktopus::mocking::{MockResult, Mockable};
 
     // https://slp.dev/specs/slp-token-type-1/#examples
     #[test]
@@ -1830,8 +1831,13 @@ mod slp_tests {
         // https://testnet.simpleledger.info/tx/e935160bfb5b45007a0fc6f8fbe8da618f28df6573731f1ffb54d9560abb49b2
         let tx = hex::decode("0100000002736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5020000006a47304402206be99fe56a98e7a8c2ffe6f2d05c5c1f46a6577064b84d27d45fe0e959f6e77402201c512629313b48cd4df873222aa49046ae9a3a6e34e359d10d4308cb40438fba4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5030000006a473044022020d774d045bbe3dce5b04af836f6a5629c6c4ce75b0b5ba8a1da0ae9a4ecc0530220522f86d20c9e4142e40f9a9c8d25db16fde91d4a0ad6f6ff2107e201386131b64121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8080000000000001f3ee80300000000000017a914b0ca1fea17cf522c7e858416093fc6d95e55824087e8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88accf614801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8c83d460").unwrap();
 
-        let other_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
+        let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
         let other_pub = Public::from_slice(&other_pub).unwrap();
+
+        let my_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
+        let my_pub = Public::from_slice(&my_pub).unwrap();
+        BchCoin::my_public_key.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(my_pub))));
+
         let lock_time = 1624547837;
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
         let amount = "0.1".parse().unwrap();

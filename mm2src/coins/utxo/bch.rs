@@ -278,7 +278,11 @@ impl UtxoCommonOps for BchCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
+    fn my_public_key(&self) -> &Public {
+        let public = self.utxo_arc.key_pair.public();
+        println!("{:?}", public);
+        public
+    }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
         utxo_common::checked_address_from_str(&self.utxo_arc, address)
@@ -762,7 +766,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
         &conf,
         &req,
         CashAddrPrefix::SlpTest,
-        Vec::new(),
+        vec!["https://bchd-testnet.greyh.at:18335".to_owned()],
         &*keypair.private().secret,
     ))
     .unwrap()
