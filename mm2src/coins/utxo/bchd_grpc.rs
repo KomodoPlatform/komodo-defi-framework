@@ -18,6 +18,8 @@ pub struct GrpcWebMultiUrlReqErr {
     err: PostGrpcWebErr,
 }
 
+/// This fn will simply return Ok() if urls are empty.
+/// It is intended behaviour to make "unsafe" mode possible for BCH.
 #[allow(clippy::needless_lifetimes)]
 async fn grpc_web_multi_url_request<'a, Req, Res, Url>(
     urls: &'a [Url],

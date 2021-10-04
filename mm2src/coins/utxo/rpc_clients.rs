@@ -233,7 +233,7 @@ impl From<NumConversError> for UtxoRpcError {
 pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>>;
 
-    fn send_transaction(&self, tx: &UtxoTx) -> Box<dyn Future<Item = H256Json, Error = String> + Send + 'static>;
+    fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json>;
 
     fn send_raw_transaction(&self, tx: BytesJson) -> UtxoRpcFut<H256Json>;
 
@@ -600,13 +600,13 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(fut)
     }
 
-    fn send_transaction(&self, tx: &UtxoTx) -> Box<dyn Future<Item = H256Json, Error = String> + Send + 'static> {
+    fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json> {
         let tx_bytes = if tx.has_witness() {
             BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
         } else {
             BytesJson::from(serialize(tx))
         };
-        Box::new(self.send_raw_transaction(tx_bytes).map_err(|e| ERRL!("{}", e)))
+        Box::new(self.send_raw_transaction(tx_bytes))
     }
 
     /// https://developer.bitcoin.org/reference/rpc/sendrawtransaction
@@ -1527,13 +1527,16 @@ impl UtxoRpcClientOps for ElectrumClient {
         )
     }
 
-    fn send_transaction(&self, tx: &UtxoTx) -> Box<dyn Future<Item = H256Json, Error = String> + Send + 'static> {
+    fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json> {
         let bytes = if tx.has_witness() {
             BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
         } else {
             BytesJson::from(serialize(tx))
         };
-        Box::new(self.blockchain_transaction_broadcast(bytes).map_err(|e| ERRL!("{}", e)))
+        Box::new(
+            self.blockchain_transaction_broadcast(bytes)
+                .map_to_mm_fut(UtxoRpcError::from),
+        )
     }
 
     fn send_raw_transaction(&self, tx: BytesJson) -> UtxoRpcFut<H256Json> {
