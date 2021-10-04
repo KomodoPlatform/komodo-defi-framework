@@ -212,11 +212,9 @@ impl TradingPair {
 
 pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-    {
-        let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-        trading_bot_cfg.clear();
-    }
-    cancel_pending_orders(&ctx).await;
+    let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
+    cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
+    trading_bot_cfg.clear()
 }
 
 async fn sum_vwap(
@@ -374,10 +372,20 @@ async fn vwap_calculator(
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
-async fn cancel_pending_orders(ctx: &MmArc) {
-    match cancel_all_orders(ctx.clone(), CancelBy::All).await {
-        Ok(resp) => info!("Successfully deleted orders: {:?}", resp.cancelled),
-        Err(err) => error!("Couldn't cancel pending orders: {}", err),
+async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, SimpleCoinMarketMakerCfg>) {
+    for (trading_pair, cfg) in cfg_registry.iter() {
+        match cancel_all_orders(ctx.clone(), CancelBy::Pair {
+            base: cfg.base.clone(),
+            rel: cfg.rel.clone(),
+        })
+        .await
+        {
+            Ok(resp) => info!(
+                "Successfully deleted orders: {:?} for pair: {}",
+                resp.cancelled, trading_pair
+            ),
+            Err(err) => error!("Couldn't cancel pending orders: {} for pair: {}", err, trading_pair),
+        }
     }
 }
 
@@ -533,6 +541,11 @@ async fn create_single_order(
 }
 
 async fn process_bot_logic(ctx: &MmArc) {
+    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
+    // note: Copy the cfg here will not be expensive, and this will be thread safe.
+    let cfg_guard = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
+    let cfg = cfg_guard.clone();
+    drop(cfg_guard);
     let rates_registry = match fetch_price_tickers().await {
         Ok(model) => {
             info!("price successfully fetched");
@@ -540,15 +553,10 @@ async fn process_bot_logic(ctx: &MmArc) {
         },
         Err(err) => {
             error!("error during fetching price: {:?}", err);
-            cancel_pending_orders(ctx).await;
+            cancel_pending_orders(ctx, &cfg).await;
             return;
         },
     };
-    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    // note: Copy the cfg here will not be expensive, and this will be thread safe.
-    let cfg_guard = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-    let cfg = cfg_guard.clone();
-    drop(cfg_guard);
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
