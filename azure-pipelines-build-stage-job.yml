@@ -37,11 +37,11 @@ jobs:
           cat MM_VERSION
           cargo build --release --features zhtlc
         displayName: 'Build MM2 Release'
-      # Build WASM with the debug symbols.
+      # Build WASM.
       - bash: |
           cargo clean -p mm2-libp2p -p mm2 --target=wasm32-unknown-unknown
-          wasm-pack build --target web --out-dir target/target-wasm-debug
-        displayName: 'Build MM2 WASM Debug'
+          wasm-pack build --release --target web --out-dir target/target-wasm-release
+        displayName: 'Build MM2 WASM Release'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
           cargo test --target wasm32-unknown-unknown --release --bin mm2
@@ -84,9 +84,9 @@ jobs:
         displayName: 'Prepare release build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
-          cd target/target-wasm-debug/
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Debug mm2_bg.wasm mm2.js snippets -r
-        displayName: 'Prepare debug WASM build upload Linux'
+          cd target/target-wasm-release/
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Release mm2_bg.wasm mm2.js snippets -r
+        displayName: 'Prepare release WASM build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
           cd target/release
