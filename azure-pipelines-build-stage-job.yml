@@ -35,12 +35,12 @@ jobs:
           mkdir upload
           echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
           cat MM_VERSION
-          cargo build --release --bin mm2 --features zhtlc
+          cargo build --release --features zhtlc
         displayName: 'Build MM2 Release'
       # Build WASM with the debug symbols.
       - bash: |
           cargo clean -p mm2-libp2p -p mm2 --target=wasm32-unknown-unknown
-          wasm-pack build --dev --target web --out-dir target/target-wasm-debug
+          wasm-pack build --target web --out-dir target/target-wasm-debug
         displayName: 'Build MM2 WASM Debug'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
@@ -80,7 +80,7 @@ jobs:
         displayName: 'Check rustfmt warnings'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 target/release/libmm2.a -j
         displayName: 'Prepare release build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
@@ -90,7 +90,7 @@ jobs:
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
           cd target/release
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 libmm2.a -r
         displayName: 'Prepare release build upload MacOS'
         condition: eq( variables['Agent.OS'], 'Darwin' )
       - powershell: |
