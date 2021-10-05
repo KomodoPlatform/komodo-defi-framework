@@ -78,8 +78,10 @@ cfg_wasm32! {
 
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
 #[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
+use common::mm_error::prelude::MapToMmResult;
 pub use lp_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                  StartSimpleMakerBotRequest};
+
 #[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;
 #[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
@@ -4697,14 +4699,13 @@ pub async fn cancel_all_orders(
     ctx: MmArc,
     cancel_by: CancelBy,
 ) -> Result<CancelAllOrdersResponse, MmError<CancelAllOrdersError>> {
-    let (cancelled, currently_matching) = match cancel_orders_by(&ctx, cancel_by).await {
-        Ok(x) => x,
-        Err(err) => return Err(MmError::new(CancelAllOrdersError::LegacyError(err))),
-    };
-    Ok(CancelAllOrdersResponse {
-        cancelled,
-        currently_matching,
-    })
+    cancel_orders_by(&ctx, cancel_by)
+        .await
+        .map(|(cancelled, currently_matching)| CancelAllOrdersResponse {
+            cancelled,
+            currently_matching,
+        })
+        .map_to_mm(CancelAllOrdersError::LegacyError)
 }
 
 pub async fn cancel_all_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
