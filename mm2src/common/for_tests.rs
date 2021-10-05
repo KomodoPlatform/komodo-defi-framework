@@ -896,6 +896,7 @@ pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str
             "method": "enable",
             "coin": coin,
             "bchd_urls": bchd_urls,
+            "allow_slp_unsafe_conf": true,
             "mm2": 1,
         }))
         .await

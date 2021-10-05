@@ -1238,8 +1238,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
-            let urls = try_s!(json::from_value(req["bchd_urls"].clone()));
-            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, req, prefix, urls, secret).await);
+
+            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, req, prefix, secret).await);
             bch.into()
         },
         CoinProtocol::SLPTOKEN {

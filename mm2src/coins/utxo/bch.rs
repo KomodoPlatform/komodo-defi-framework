@@ -218,15 +218,22 @@ impl AsRef<UtxoCoinFields> for BchCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn bch_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     req: &Json,
     slp_addr_prefix: CashAddrPrefix,
-    bchd_urls: Vec<String>,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
+    let bchd_urls: Vec<String> = try_s!(json::from_value(req["bchd_urls"].clone()));
+    let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or(false);
+
+    if bchd_urls.is_empty() && !allow_slp_unsafe_conf {
+        return Err("Using empty bchd_urls is unsafe for SLP users!".into());
+    }
+
     let constructor = {
         move |utxo_arc| BchCoin {
             utxo_arc,
@@ -759,6 +766,8 @@ pub fn tbch_coin_for_test() -> BchCoin {
         "method": "electrum",
         "coin": "BCH",
         "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"},{"url":"electroncash.de:50003"}],
+        "bchd_urls": ["https://bchd-testnet.greyh.at:18335"],
+        "allow_slp_unsafe_conf": false,
     });
     block_on(bch_coin_from_conf_and_request(
         &ctx,
@@ -766,7 +775,6 @@ pub fn tbch_coin_for_test() -> BchCoin {
         &conf,
         &req,
         CashAddrPrefix::SlpTest,
-        vec!["https://bchd-testnet.greyh.at:18335".to_owned()],
         &*keypair.private().secret,
     ))
     .unwrap()
@@ -788,6 +796,8 @@ pub fn bch_coin_for_test() -> BchCoin {
         "method": "electrum",
         "coin": "BCH",
         "servers": [{"url":"electrum1.cipig.net:10055"},{"url":"electrum2.cipig.net:10055"},{"url":"electrum3.cipig.net:10055"}],
+        "bchd_urls": [],
+        "allow_slp_unsafe_conf": true,
     });
     block_on(bch_coin_from_conf_and_request(
         &ctx,
@@ -795,7 +805,6 @@ pub fn bch_coin_for_test() -> BchCoin {
         &conf,
         &req,
         CashAddrPrefix::SimpleLedger,
-        Vec::new(),
         &*keypair.private().secret,
     ))
     .unwrap()
