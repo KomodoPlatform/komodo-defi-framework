@@ -461,8 +461,10 @@ fn test_add_delegation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
     let (_ctx, coin) = qrc20_coin_for_test(keypair.private().secret.as_slice(), None);
-    let address = Address::from_str("qV1mNZokPVcrQcH8RdnfzHsVVyVSGFnaue").unwrap();
-    let res = block_on(coin.add_delegation(100.0.into(), address, 5)).unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let fake_res = block_on(coin.add_delegation(10.0.into(), address.clone(), 10));
+    assert_eq!(fake_res.is_err(), true);
+    let res = block_on(coin.add_delegation(100.0.into(), address, 10)).unwrap();
     assert_ne!(res.gas_fee, 0);
     assert_ne!(res.miner_fee, 0);
     assert_eq!(res.signed.hash().is_empty(), false);

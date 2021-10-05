@@ -438,6 +438,11 @@ impl Qrc20Coin {
         to_addr: Address,
         fee: u64,
     ) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
+        if amount < 100.0.into() {
+            return MmError::err(GenerateTxError::Internal(
+                "Amount for delegation cannot be less than 100".to_string(),
+            ));
+        }
         let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
@@ -446,7 +451,6 @@ impl Qrc20Coin {
             QRC20_GAS_PRICE_DEFAULT,
         )?;
 
-        //  change_script = CScript([OP_DUP, OP_HASH160, bytes.fromhex(delegator_address_hex), OP_EQUALVERIFY, OP_CHECKSIG])
         let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
 
         let amount_sat = sat_from_big_decimal(&amount, self.decimals()).unwrap()
@@ -484,9 +488,6 @@ impl Qrc20Coin {
         let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
         let script_pubkey =
             generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
-
-        println!("res: {}", hex::encode(params));
-        println!("script_pubkey: {}", hex::encode(script_pubkey.clone()));
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
             script_pubkey,
