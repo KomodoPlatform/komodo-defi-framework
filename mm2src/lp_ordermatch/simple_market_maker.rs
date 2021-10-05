@@ -217,57 +217,43 @@ pub async fn tear_down_bot(ctx: MmArc) {
     trading_bot_cfg.clear()
 }
 
-async fn sum_vwap(
-    base_amount: &MmNumber,
-    rel_amount: &MmNumber,
-    total_volume: &mut MmNumber,
-    cfg: &SimpleCoinMarketMakerCfg,
-    average_trading_price: &MmNumber,
-) -> MmNumber {
+fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
     let cur_price = base_amount / rel_amount;
     let cur_sum_price_volume = &cur_price * rel_amount;
     *total_volume += rel_amount;
-    debug!(
-        "[{}/{}] - price: {} - amount: {} - avgprice: {} - total volume: {}",
-        cfg.base, cfg.rel, cur_price, rel_amount, average_trading_price, total_volume
-    );
     cur_sum_price_volume
 }
 
-async fn vwap_calculation(
+fn vwap_calculation(
     kind: VwapSide,
     swaps_answer: MyRecentSwapsResponse,
-    nb_valid_trades: &mut usize,
-    cfg: &SimpleCoinMarketMakerCfg,
     calculated_price: MmNumber,
-) -> MmNumber {
-    let mut avg_trade_price = calculated_price.clone();
+) -> (MmNumber, i32) {
+    let mut nb_trades_treated = 0;
     let mut total_sum_price_volume = MmNumber::default();
     let mut total_vol = MmNumber::default();
     for swap in swaps_answer.swaps.iter() {
         if !swap.is_finished_and_success() {
-            *nb_valid_trades -= 1;
             continue;
         }
         let (my_amount, other_amount) = match swap.get_my_info() {
-            Some(x) => (MmNumber::from(x.my_amount), MmNumber::from(x.other_amount)),
-            None => {
-                *nb_valid_trades -= 1;
-                continue;
+            Some(x) => {
+                nb_trades_treated += 1;
+                (MmNumber::from(x.my_amount), MmNumber::from(x.other_amount))
             },
+            None => continue,
         };
         let cur_sum_price_volume = match kind {
-            VwapSide::Base => sum_vwap(&my_amount, &other_amount, &mut total_vol, cfg, &avg_trade_price).await,
-            VwapSide::Rel => sum_vwap(&other_amount, &my_amount, &mut total_vol, cfg, &avg_trade_price).await,
+            VwapSide::Base => sum_vwap(&my_amount, &other_amount, &mut total_vol),
+            VwapSide::Rel => sum_vwap(&other_amount, &my_amount, &mut total_vol),
         };
         total_sum_price_volume += cur_sum_price_volume;
     }
     if total_sum_price_volume.is_zero() {
         warn!("Unable to get average price from last trades - stick with calculated price");
-        return calculated_price;
+        return (calculated_price, nb_trades_treated);
     }
-    avg_trade_price = total_sum_price_volume / total_vol;
-    avg_trade_price
+    (total_sum_price_volume / total_vol, nb_trades_treated)
 }
 
 async fn vwap_logic(
@@ -276,25 +262,11 @@ async fn vwap_logic(
     calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
-    let mut nb_valid_trades = base_swaps.swaps.len() + rel_swaps.swaps.len();
     let base_swaps_empty = base_swaps.swaps.is_empty();
     let rel_swaps_empty = rel_swaps.swaps.is_empty();
-    let base_vwap = vwap_calculation(
-        VwapSide::Rel,
-        base_swaps,
-        &mut nb_valid_trades,
-        cfg,
-        calculated_price.clone(),
-    )
-    .await;
-    let rel_vwap = vwap_calculation(
-        VwapSide::Base,
-        rel_swaps,
-        &mut nb_valid_trades,
-        cfg,
-        calculated_price.clone(),
-    )
-    .await;
+    let (base_vwap, nb_base_trades) = vwap_calculation(VwapSide::Rel, base_swaps, calculated_price.clone());
+    let (rel_vwap, nb_rel_trades) = vwap_calculation(VwapSide::Base, rel_swaps, calculated_price.clone());
+    let total_trades_treated = nb_base_trades + nb_rel_trades;
     if base_vwap == calculated_price && rel_vwap == calculated_price {
         return calculated_price;
     }
@@ -313,12 +285,12 @@ async fn vwap_logic(
     if vwap_price > calculated_price {
         info!(
             "[{}/{}]: price: {} is less than average trading price ({} swaps): - using vwap price: {}",
-            cfg.base, cfg.rel, calculated_price, nb_valid_trades, vwap_price
+            cfg.base, cfg.rel, calculated_price, total_trades_treated, vwap_price
         );
         return vwap_price;
     }
-    info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]", 
-            calculated_price, nb_valid_trades, vwap_price, cfg.base, cfg.rel);
+    info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]",
+    calculated_price, total_trades_treated, vwap_price, cfg.base, cfg.rel);
     calculated_price
 }
 
