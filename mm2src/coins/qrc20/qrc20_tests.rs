@@ -456,6 +456,21 @@ fn test_generate_token_transfer_script_pubkey() {
 }
 
 #[test]
+fn test_add_delegation() {
+    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let address = Address::from_str("qV1mNZokPVcrQcH8RdnfzHsVVyVSGFnaue").unwrap();
+    let staker_address_hex = format!("{:?}", qtum::contract_addr_from_utxo_addr(address.clone()))
+        .trim_start_matches("0x")
+        .to_string();
+    coin.add_delegation(staker_address_hex.parse().unwrap(), 99 as u64);
+}
+
+#[test]
 fn test_transfer_details_by_hash() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [

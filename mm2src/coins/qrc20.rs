@@ -14,7 +14,7 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use bitcrypto::{dhash160, sha256};
+use bitcrypto::{dhash160, dhash256, sha256};
 use chain::TransactionOutput;
 use common::block_on;
 use common::executor::Timer;
@@ -25,14 +25,14 @@ use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::now_ms;
 use derive_more::Display;
-use ethabi::{Function, Token};
+use ethabi::{Contract, Function, Token};
 use ethereum_types::{H160, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
-use keys::{Address as UtxoAddress, Address, Public};
+use keys::{Address as UtxoAddress, Address, Error, Public};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -62,8 +62,13 @@ const QRC20_TRANSFER_TOPIC: &str = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4
 const QRC20_PAYMENT_SENT_TOPIC: &str = "ccc9c05183599bd3135da606eaaf535daffe256e9de33c048014cffcccd4ad57";
 const QRC20_RECEIVER_SPENT_TOPIC: &str = "36c177bcb01c6d568244f05261e2946c8c977fa50822f3fa098c470770ee1f3e";
 const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f50ebc7dbda3c7c81778973f35ba";
+const QTUM_DELEGATE_CONTRACT_ABI: &str = r#"[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"_staker","type":"address"},{"indexed":true,"internalType":"address","name":"_delegate","type":"address"},{"indexed":false,"internalType":"uint8","name":"fee","type":"uint8"},{"indexed":false,"internalType":"uint256","name":"blockHeight","type":"uint256"},{"indexed":false,"internalType":"bytes","name":"PoD","type":"bytes"}],"name":"AddDelegation","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"_staker","type":"address"},{"indexed":true,"internalType":"address","name":"_delegate","type":"address"}],"name":"RemoveDelegation","type":"event"},{"constant":false,"inputs":[{"internalType":"address","name":"_staker","type":"address"},{"internalType":"uint8","name":"_fee","type":"uint8"},{"internalType":"bytes","name":"_PoD","type":"bytes"}],"name":"addDelegation","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"delegations","outputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint8","name":"fee","type":"uint8"},{"internalType":"uint256","name":"blockHeight","type":"uint256"},{"internalType":"bytes","name":"PoD","type":"bytes"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"removeDelegation","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]"#;
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
+
+lazy_static! {
+    pub static ref QTUM_DELEGATE_CONTRACT: Contract = Contract::load(QTUM_DELEGATE_CONTRACT_ABI.as_bytes()).unwrap();
+}
 
 struct Qrc20CoinBuilder<'a> {
     ctx: &'a MmArc,
@@ -320,10 +325,16 @@ pub enum Qrc20AbiError {
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
     AbiError(String),
+    #[display(fmt = "Qtum POD error: {}", _0)]
+    PodSigningError(String),
 }
 
 impl From<ethabi::Error> for Qrc20AbiError {
     fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
+}
+
+impl From<keys::Error> for Qrc20AbiError {
+    fn from(e: keys::Error) -> Self { Qrc20AbiError::PodSigningError(e.to_string()) }
 }
 
 impl From<Qrc20AbiError> for TradePreimageError {
@@ -413,6 +424,27 @@ impl Qrc20Coin {
             signed,
             miner_fee,
             gas_fee,
+        })
+    }
+
+    pub fn add_delegation(&self, to_addr: H160, fee: u64) -> Qrc20AbiResult<ContractCallOutput> {
+        let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
+        let msg = b"\x15Qtum signed message:\n\x28";
+        let buffer: Vec<u8> = [msg.to_vec(), to_addr.to_vec()].concat();
+        let hashed = dhash256(&buffer);
+        let signature = self.utxo.key_pair.private().sign(&hashed)?;
+        let params = function.encode_input(&vec![
+            Token::Address(to_addr),
+            Token::Uint(fee.into()),
+            Token::Bytes(signature.into()),
+        ])?;
+
+        println!("res: {}", hex::encode(params));
+        Ok(ContractCallOutput {
+            value: 0,
+            script_pubkey: Default::default(),
+            gas_limit: 0,
+            gas_price: 0,
         })
     }
 
