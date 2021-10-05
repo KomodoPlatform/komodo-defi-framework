@@ -392,7 +392,7 @@ async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, Simpl
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
     match cancel_order(ctx.clone(), CancelOrderReq { uuid }).await {
         Ok(_) => info!("Order with uuid: {} successfully cancelled", uuid),
-        Err(_) => warn!("Couldn't cancel the order with uuid: {}", uuid),
+        Err(err) => warn!("Couldn't cancel the order with uuid: {} - err: {}", uuid, err),
     };
 }
 
