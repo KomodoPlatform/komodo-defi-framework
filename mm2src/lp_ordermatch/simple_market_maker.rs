@@ -660,17 +660,14 @@ async fn execute_update_order(
 pub async fn lp_bot_loop(ctx: MmArc) {
     info!("lp_bot_loop successfully started");
     loop {
-        // todo: this log should probably in debug
-        info!("tick lp_bot_loop");
+        debug!("tick lp_bot_loop");
         if ctx.is_stopping() {
-            // todo: can we cancel all the pending orders when the ctx is stopping or call tear_down ?
             break;
         }
         let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
         let mut states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
         if *states == TradingBotState::Stopping {
             *states = TradingBotState::Stopped;
-            // todo: verify if there is a possible deadlock here if i use states inside tear_down_bot
             tear_down_bot(ctx).await;
             break;
         }
@@ -720,17 +717,16 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
 
 pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-    {
-        let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-
-        match *state {
-            TradingBotState::Stopped => return MmError::err(StopSimpleMakerBotError::AlreadyStopped),
-            TradingBotState::Stopping => return MmError::err(StopSimpleMakerBotError::AlreadyStopping),
-            _ => *state = TradingBotState::Stopping,
-        }
+    let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    match *state {
+        TradingBotState::Stopped => return MmError::err(StopSimpleMakerBotError::AlreadyStopped),
+        TradingBotState::Stopping => return MmError::err(StopSimpleMakerBotError::AlreadyStopping),
+        TradingBotState::Running => {
+            *state = TradingBotState::Stopping;
+            info!("simple_market_maker_bot will stop within 30 seconds");
+            Ok(StopSimpleMakerBotRes {
+                result: "Success".to_string(),
+            })
+        },
     }
-    info!("simple_market_maker_bot will stop within 30 seconds");
-    Ok(StopSimpleMakerBotRes {
-        result: "Success".to_string(),
-    })
 }
