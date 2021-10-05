@@ -22,6 +22,7 @@ use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
 use serde_json::Value as Json;
+use std::time::SystemTimeError;
 use std::{collections::{HashMap, HashSet},
           num::NonZeroUsize,
           str::Utf8Error};
@@ -48,8 +49,8 @@ pub enum OrderProcessingError {
     LastUpdatedTimestampInvalid,
     #[display(fmt = "The price elapsed validity is invalid - skipping")]
     PriceElapsedValidityExpired,
-    #[display(fmt = "Unable to parse/treat elapsed time - skipping")]
-    PriceElapsedValidityUntreatable,
+    #[display(fmt = "Unable to parse/treat elapsed time {} - skipping", _0)]
+    PriceElapsedValidityUntreatable(String),
     #[display(fmt = "Asset not enabled - skipping")]
     AssetNotEnabled,
     #[display(fmt = "Internal coin find error - skipping")]
@@ -79,6 +80,10 @@ impl From<GetNonZeroBalance> for OrderProcessingError {
             GetNonZeroBalance::BalanceIsZero => OrderProcessingError::BalanceIsZero,
         }
     }
+}
+
+impl From<SystemTimeError> for OrderProcessingError {
+    fn from(e: SystemTimeError) -> Self { OrderProcessingError::PriceElapsedValidityUntreatable(e.to_string()) }
 }
 
 impl From<std::string::String> for OrderProcessingError {
@@ -393,10 +398,7 @@ async fn checks_order_prerequisites(
 
     // Elapsed validity is the field defined in the cfg or 5 min by default (300 sec)
     let time_diff = rates.retrieve_elapsed_times();
-    let elapsed = match time_diff.elapsed() {
-        Ok(elapsed) => elapsed.as_secs_f64(),
-        Err(_) => return MmError::err(OrderProcessingError::PriceElapsedValidityUntreatable),
-    };
+    let elapsed = time_diff.elapsed()?.as_secs_f64();
     let elapsed_validity = cfg.price_elapsed_validity.unwrap_or(300.0);
 
     if elapsed > elapsed_validity {
