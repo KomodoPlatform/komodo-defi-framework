@@ -3,6 +3,7 @@ use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
+use common::privkey::key_pair_from_seed;
 use common::DEX_FEE_ADDR_RAW_PUBKEY;
 use itertools::Itertools;
 use mocktopus::mocking::{MockResult, Mockable};
@@ -457,17 +458,17 @@ fn test_generate_token_transfer_script_pubkey() {
 
 #[test]
 fn test_add_delegation() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
+    let (_ctx, coin) = qrc20_coin_for_test(keypair.private().secret.as_slice(), None);
     let address = Address::from_str("qV1mNZokPVcrQcH8RdnfzHsVVyVSGFnaue").unwrap();
-    let staker_address_hex = format!("{:?}", qtum::contract_addr_from_utxo_addr(address.clone()))
-        .trim_start_matches("0x")
-        .to_string();
-    coin.add_delegation(staker_address_hex.parse().unwrap(), 99 as u64);
+    let res = block_on(coin.add_delegation(100.0.into(), address, 5)).unwrap();
+    assert_ne!(res.gas_fee, 0);
+    assert_ne!(res.miner_fee, 0);
+    assert_eq!(res.signed.hash().is_empty(), false);
+    println!("{:?}", res.gas_fee);
+    println!("{:?}", res.miner_fee);
+    println!("{:?}", res.signed);
 }
 
 #[test]

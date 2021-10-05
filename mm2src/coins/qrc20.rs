@@ -5,9 +5,9 @@ use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
-use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError, HistoryUtxoTx,
-                  HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
-                  VerboseTransactionFrom, UTXO_LOCK};
+use crate::utxo::{qtum, sat_from_big_decimal, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError,
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
+                  UtxoCommonOps, UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -32,7 +32,7 @@ use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
-use keys::{Address as UtxoAddress, Address, Error, Public};
+use keys::{Address as UtxoAddress, Address, Public};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -55,6 +55,7 @@ mod swap;
 const OUTPUT_QTUM_AMOUNT: u64 = 0;
 const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
 const QRC20_PAYMENT_GAS_LIMIT: u64 = 200_000;
+const QRC20_GAS_LIMIT_DELEGATION: u64 = 2_250_000;
 const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
 const QRC20_DUST: u64 = 0;
 // Keccak-256 hash of `Transfer` event
@@ -337,6 +338,10 @@ impl From<keys::Error> for Qrc20AbiError {
     fn from(e: keys::Error) -> Self { Qrc20AbiError::PodSigningError(e.to_string()) }
 }
 
+impl From<Qrc20AbiError> for GenerateTxError {
+    fn from(e: Qrc20AbiError) -> Self { GenerateTxError::Internal(e.to_string()) }
+}
+
 impl From<Qrc20AbiError> for TradePreimageError {
     fn from(e: Qrc20AbiError) -> Self {
         // `Qrc20ABIError` is always an internal error
@@ -427,24 +432,66 @@ impl Qrc20Coin {
         })
     }
 
-    pub fn add_delegation(&self, to_addr: H160, fee: u64) -> Qrc20AbiResult<ContractCallOutput> {
+    async fn add_delegation(
+        &self,
+        amount: BigDecimal,
+        to_addr: Address,
+        fee: u64,
+    ) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
+        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
+        let delegation_output = self.add_delegation_output(
+            staker_address_hex,
+            fee,
+            QRC20_GAS_LIMIT_DELEGATION,
+            QRC20_GAS_PRICE_DEFAULT,
+        )?;
+
+        //  change_script = CScript([OP_DUP, OP_HASH160, bytes.fromhex(delegator_address_hex), OP_EQUALVERIFY, OP_CHECKSIG])
+        let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
+
+        let amount_sat = sat_from_big_decimal(&amount, self.decimals()).unwrap()
+            - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
+        let change_script_output = ContractCallOutput {
+            value: amount_sat,
+            script_pubkey: change_script.to_bytes(),
+            gas_limit: 0,
+            gas_price: 0,
+        };
+        let outputs = vec![delegation_output, change_script_output];
+        let _utxo_lock = UTXO_LOCK.lock().await;
+        let res = self.generate_qrc20_transaction(outputs).await?;
+        Ok(res)
+    }
+
+    pub fn add_delegation_output(
+        &self,
+        to_addr: H160,
+        fee: u64,
+        gas_limit: u64,
+        gas_price: u64,
+    ) -> Qrc20AbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
         let msg = b"\x15Qtum signed message:\n\x28";
         let buffer: Vec<u8> = [msg.to_vec(), to_addr.to_vec()].concat();
         let hashed = dhash256(&buffer);
         let signature = self.utxo.key_pair.private().sign(&hashed)?;
-        let params = function.encode_input(&vec![
+        let params = function.encode_input(&[
             Token::Address(to_addr),
             Token::Uint(fee.into()),
             Token::Bytes(signature.into()),
         ])?;
 
+        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
+        let script_pubkey =
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
+
         println!("res: {}", hex::encode(params));
+        println!("script_pubkey: {}", hex::encode(script_pubkey.clone()));
         Ok(ContractCallOutput {
-            value: 0,
-            script_pubkey: Default::default(),
-            gas_limit: 0,
-            gas_price: 0,
+            value: OUTPUT_QTUM_AMOUNT,
+            script_pubkey,
+            gas_limit,
+            gas_price,
         })
     }
 
