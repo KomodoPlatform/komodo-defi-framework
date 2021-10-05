@@ -21,6 +21,7 @@ use lightning_background_processor::BackgroundProcessor;
 use lightning_net_tokio::SocketDescriptor;
 use lightning_persister::FilesystemPersister;
 use rand::RngCore;
+use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -60,6 +61,19 @@ pub struct LightningConf {
     pub ln_announced_node_name: [u8; 32],
 }
 
+impl LightningConf {
+    // TODO: add network, listen address to fn params
+    pub fn new(rpc_client: ElectrumClient, port: u16, node_name: String) -> Self {
+        LightningConf {
+            rpc_client,
+            network: Network::Testnet,
+            ln_peer_listening_port: port,
+            ln_announced_listen_addr: Vec::new(),
+            ln_announced_node_name: node_name.as_bytes().try_into().expect("Node name has incorrect length"),
+        }
+    }
+}
+
 fn my_ln_data_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("LIGHTNING") }
 
 // TODO: Implement all the cases
@@ -76,7 +90,7 @@ async fn handle_ln_events(event: &Event) {
     }
 }
 
-pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
+pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
     // Initialize the FeeEstimator. rpc_client implements the FeeEstimator trait, so it'll act as our fee estimator.
     let fee_estimator = Arc::new(conf.rpc_client.clone());
 
@@ -89,7 +103,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) {
 
     // Initialize Persist
     // TODO: Error type for handling this unwarp and others
-    let ln_data_dir = my_ln_data_dir(ctx).as_path().to_str().unwrap().to_string();
+    let ln_data_dir = my_ln_data_dir(&ctx).as_path().to_str().unwrap().to_string();
     let persister = Arc::new(FilesystemPersister::new(ln_data_dir.clone()));
 
     // Initialize the Filter. rpc_client implements the Filter trait, so it'll act as our filter.

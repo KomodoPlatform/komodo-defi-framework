@@ -18,6 +18,9 @@
 //
 
 use bigdecimal::BigDecimal;
+#[cfg(not(target_arch = "wasm32"))]
+use coins::lightning::{start_lightning, LightningConf};
+use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
@@ -130,9 +133,46 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     Ok(try_s!(Response::builder().body(res)))
 }
 
-#[allow(dead_code)]
 /// Enable BTC (LTC should be added later) in lightning mode and spawn a lightning node.
-pub async fn enable_lightning(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> { unimplemented!() }
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn enable_lightning(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+
+    // TODO: Check that the coin it's enabled in Segwit
+    // coin has to be enabled in electrum to start a lightning node
+    let coin = match lp_coinfind(&ctx, &ticker).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): ", err),
+    };
+
+    let rpc_client = match coin {
+        MmCoinEnum::UtxoCoin(utxo) => utxo.as_ref().rpc_client.clone(),
+        _ => return ERR!("Only utxo coins are supported in lightning"),
+    };
+    let client = match rpc_client {
+        UtxoRpcClientEnum::Electrum(c) => c,
+        UtxoRpcClientEnum::Native(_) => return ERR!("Only electrum client is supported for now"),
+    };
+
+    let name = req["name"].as_str().unwrap_or_default();
+    let node_name = format!("{}{:width$}", name, " ", width = 32 - name.len());
+
+    // TODO: get port from req and see if it's used
+    let conf = LightningConf::new(client, 9735, node_name);
+    spawn(start_lightning(ctx.clone(), conf));
+
+    let json = json!({
+        "result": "success"
+    });
+    let res = try_s!(json::to_vec(&json));
+    Ok(try_s!(Response::builder().body(res)))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn enable_lightning(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
+    ERR!("'enable_lightning' is only supported in native mode")
+}
 
 #[cfg(target_arch = "wasm32")]
 pub fn help() -> HyRes {
