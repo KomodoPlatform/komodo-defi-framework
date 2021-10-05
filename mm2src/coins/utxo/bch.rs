@@ -218,7 +218,6 @@ impl AsRef<UtxoCoinFields> for BchCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn bch_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
