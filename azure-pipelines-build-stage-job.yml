@@ -94,7 +94,7 @@ jobs:
         displayName: 'Prepare release build upload MacOS'
         condition: eq( variables['Agent.OS'], 'Darwin' )
       - powershell: |
-          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\mm2.lib .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare release build upload Windows'
         condition: eq( variables['Agent.OS'], 'Windows_NT' )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
