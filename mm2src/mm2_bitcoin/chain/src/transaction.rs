@@ -493,6 +493,13 @@ impl Deserializable for Transaction {
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
+            if t.outputs.is_empty() {
+                if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
+                    if !t.outputs.is_empty() {
+                        return Ok(t);
+                    }
+                }
+            }
             return Ok(t);
         }
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
@@ -909,5 +916,64 @@ mod tests {
         let t: Transaction = transaction.into();
         println!("{:?}", t);
         assert_eq!(transaction, serialize(&t).to_hex::<String>());
+    }
+
+    #[test]
+    fn n_time_transaction() {
+        let actual: Transaction = "0100000003b353610304d549c67cb7ae66bd70e6e24e5346e3b904bc1928a0c8ebbcf07c4bceb1f6b9020000006a473044022013d6bb97af945c955e33d49517d75d681a308f5f6c1f48048984bd6673a2657a022050da86bd9f9bc68e4ccec184ad0c17f54387bbad04a1932a52c511c2c6715be30121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffffce1aa62b413dd2870bc9490193add689d7f6a452650b9dfc18d5ace1e1e1b573000000006b483045022100ebc72b69f44f4ea83318e64d379f8c678017bb6e1e9c31578588f7962ee310d8022001839c3c839f5d32c2c491ab9b67ed91cb4b0e94d967d66920bb4d6d8f082c200121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffffb358dde3245b17d219e9b2c40b3ce7ac9477e05719e96504706d39bc0fcd198b000000006a473044022059d50b7ba9a7db6c97e57c77e230a69dedd54f64c2c6f76c72696869968dfade022050eca1c2c5f4ca8db4b602496a9d350d747a3144cb9fb0e57968cedd9e478f310121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8ffffffff030d1d6a100000000017a91439352bc650acd5e1dfbf109841c1a97824e8b858870000000000000000166a14e1fdcb31df41211da0325bb6dce577b856588b787cd84e02000000001976a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac03b35361".into();
+        let expected = Transaction {
+			version: 1,
+			n_time: Some(1632875267),
+			overwintered: false,
+			expiry_height: 0,
+			binding_sig: H512::default(),
+			join_split_pubkey: H256::default(),
+			join_split_sig: H512::default(),
+			join_splits: vec![],
+			shielded_spends: vec![],
+			shielded_outputs: vec![],
+			value_balance: 0,
+			version_group_id: 0,
+			inputs: vec![TransactionInput {
+				previous_output: OutPoint {
+					hash: "04d549c67cb7ae66bd70e6e24e5346e3b904bc1928a0c8ebbcf07c4bceb1f6b9".into(),
+					index: 2,
+				},
+				script_sig: "473044022013d6bb97af945c955e33d49517d75d681a308f5f6c1f48048984bd6673a2657a022050da86bd9f9bc68e4ccec184ad0c17f54387bbad04a1932a52c511c2c6715be30121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8".into(),
+				sequence: 4294967295,
+				script_witness: vec![],
+			}, TransactionInput {
+				previous_output: OutPoint {
+					hash: "ce1aa62b413dd2870bc9490193add689d7f6a452650b9dfc18d5ace1e1e1b573".into(),
+					index: 0,
+				},
+				script_sig: "483045022100ebc72b69f44f4ea83318e64d379f8c678017bb6e1e9c31578588f7962ee310d8022001839c3c839f5d32c2c491ab9b67ed91cb4b0e94d967d66920bb4d6d8f082c200121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8".into(),
+				sequence: 4294967295,
+				script_witness: vec![],
+			}, TransactionInput {
+				previous_output: OutPoint {
+					hash: "b358dde3245b17d219e9b2c40b3ce7ac9477e05719e96504706d39bc0fcd198b".into(),
+					index: 0,
+				},
+				script_sig: "473044022059d50b7ba9a7db6c97e57c77e230a69dedd54f64c2c6f76c72696869968dfade022050eca1c2c5f4ca8db4b602496a9d350d747a3144cb9fb0e57968cedd9e478f310121031bb83b58ec130e28e0a6d5d2acf2eb01b0d3f1670e021d47d31db8a858219da8".into(),
+				sequence: 4294967295,
+				script_witness: vec![],
+			}],
+			outputs: vec![TransactionOutput {
+				value: 275389709,
+				script_pubkey: "a91439352bc650acd5e1dfbf109841c1a97824e8b85887".into(),
+			}, TransactionOutput {
+				value: 0,
+				script_pubkey: "6a14e1fdcb31df41211da0325bb6dce577b856588b78".into(),
+			}, TransactionOutput {
+				value: 38721660,
+				script_pubkey: "76a914c3f710deb7320b0efa6edb14e3ebeeb9155fa90d88ac".into(),
+			}],
+			lock_time: 1632875267,
+			zcash: false,
+            str_d_zeel: None,
+            tx_hash_algo: TxHashAlgo::DSHA256,
+		};
+        assert_eq!(actual, expected);
     }
 }
