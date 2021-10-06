@@ -363,6 +363,10 @@ impl From<Qrc20AbiError> for UtxoRpcError {
     }
 }
 
+impl From<BalanceError> for GenerateTxError {
+    fn from(e: BalanceError) -> Self { GenerateTxError::Internal(e.to_string()) }
+}
+
 impl Qrc20Coin {
     /// `gas_fee` should be calculated by: gas_limit * gas_price * (count of contract calls),
     /// or should be sum of gas fee of all contract calls.
@@ -434,11 +438,11 @@ impl Qrc20Coin {
 
     async fn add_delegation(
         &self,
-        amount: BigDecimal,
         to_addr: Address,
         fee: u64,
     ) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
-        if amount < 100.0.into() {
+        let balance = self.my_balance().compat().await?;
+        if balance.spendable < 100.0.into() {
             return MmError::err(GenerateTxError::Internal(
                 "Amount for delegation cannot be less than 100".to_string(),
             ));
@@ -453,7 +457,8 @@ impl Qrc20Coin {
 
         let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
 
-        let amount_sat = sat_from_big_decimal(&amount, self.decimals()).unwrap()
+        // Here amount should be `int(delegator_unspent['amount']*COIN) - 2250000*40`
+        let amount_sat = sat_from_big_decimal(&balance.spendable, self.decimals()).unwrap()
             - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
         let change_script_output = ContractCallOutput {
             value: amount_sat,
