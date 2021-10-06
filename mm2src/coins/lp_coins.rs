@@ -81,6 +81,8 @@ macro_rules! try_f {
 #[cfg(test)]
 pub mod coins_tests;
 
+pub mod enable_v2;
+
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 
@@ -103,6 +105,7 @@ pub use test_coin::TestCoin;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
+
 use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::UnsupportedAddr;
