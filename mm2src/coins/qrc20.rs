@@ -6,8 +6,9 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationMode, UtxoCoinBuilder,
+                  UtxoCoinFields, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps,
+                  VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -69,7 +70,7 @@ struct Qrc20CoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    req: &'a Json,
+    mode: UtxoActivationMode,
     priv_key: &'a [u8],
     platform: String,
     contract_address: H160,
@@ -80,7 +81,7 @@ impl<'a> Qrc20CoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        req: &'a Json,
+        mode: UtxoActivationMode,
         priv_key: &'a [u8],
         platform: String,
         contract_address: H160,
@@ -89,7 +90,7 @@ impl<'a> Qrc20CoinBuilder<'a> {
             ctx,
             ticker,
             conf,
-            req,
+            mode,
             priv_key,
             platform,
             contract_address,
@@ -136,8 +137,6 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
-
-    fn req(&self) -> &Json { self.req }
 
     fn ticker(&self) -> &str { self.ticker }
 
@@ -197,11 +196,11 @@ pub async fn qrc20_coin_from_conf_and_request(
     ticker: &str,
     platform: &str,
     conf: &Json,
-    req: &Json,
+    mode: UtxoActivationMode,
     priv_key: &[u8],
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
-    let builder = Qrc20CoinBuilder::new(ctx, ticker, conf, req, priv_key, platform.to_owned(), contract_address);
+    let builder = Qrc20CoinBuilder::new(ctx, ticker, conf, mode, priv_key, platform.to_owned(), contract_address);
     builder.build().await
 }
 

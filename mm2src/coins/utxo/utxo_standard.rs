@@ -1,4 +1,5 @@
 use super::*;
+use crate::utxo::utxo_common::UtxoMergeParams;
 use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
@@ -27,11 +28,21 @@ pub async fn utxo_standard_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    mode: UtxoActivationMode,
+    merge_params: Option<UtxoMergeParams>,
     priv_key: &[u8],
 ) -> Result<UtxoStandardCoin, String> {
     let coin: UtxoStandardCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, UtxoStandardCoin::from).await
+        utxo_common::utxo_arc_from_conf_and_request(
+            ctx,
+            ticker,
+            conf,
+            mode,
+            merge_params,
+            priv_key,
+            UtxoStandardCoin::from
+        )
+        .await
     );
     Ok(coin)
 }

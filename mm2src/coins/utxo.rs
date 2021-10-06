@@ -1195,6 +1195,12 @@ impl<'a> UtxoConfBuilder<'a> {
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum UtxoActivationMode {
+    Native,
+    Electrum { servers: Vec<ElectrumRpcRequest> },
+}
+
 #[derive(Debug)]
 pub struct ElectrumBuilderArgs {
     pub spawn_ping: bool,
@@ -1222,7 +1228,7 @@ pub trait UtxoCoinBuilder {
 
     fn conf(&self) -> &Json;
 
-    fn req(&self) -> &Json;
+    fn mode(&self) -> &UtxoActivationMode;
 
     fn ticker(&self) -> &str;
 

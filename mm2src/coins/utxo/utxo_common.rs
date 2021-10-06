@@ -60,7 +60,7 @@ pub struct UtxoArcBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    req: &'a Json,
+    mode: UtxoActivationMode,
     priv_key: &'a [u8],
 }
 
@@ -69,14 +69,14 @@ impl<'a> UtxoArcBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        req: &'a Json,
+        mode: UtxoActivationMode,
         priv_key: &'a [u8],
     ) -> UtxoArcBuilder<'a> {
         UtxoArcBuilder {
             ctx,
             ticker,
             conf,
-            req,
+            mode,
             priv_key,
         }
     }
@@ -95,8 +95,6 @@ impl UtxoCoinBuilder for UtxoArcBuilder<'_> {
 
     fn conf(&self) -> &Json { self.conf }
 
-    fn req(&self) -> &Json { self.req }
-
     fn ticker(&self) -> &str { self.ticker }
 
     fn priv_key(&self) -> &[u8] { self.priv_key }
@@ -106,18 +104,18 @@ pub async fn utxo_arc_from_conf_and_request<T>(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    mode: UtxoActivationMode,
+    merge_params: Option<UtxoMergeParams>,
     priv_key: &[u8],
     constructor: impl Fn(UtxoArc) -> T + Send + 'static,
 ) -> Result<T, String>
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, req, priv_key);
+    let builder = UtxoArcBuilder::new(ctx, ticker, conf, mode, priv_key);
     let utxo_arc = try_s!(builder.build().await);
     let coin = constructor(utxo_arc.clone());
 
-    let merge_params: Option<UtxoMergeParams> = try_s!(json::from_value(req["utxo_merge_params"].clone()));
     if let Some(merge_params) = merge_params {
         let weak = utxo_arc.downgrade();
         let merge_loop = merge_utxo_loop(
@@ -137,8 +135,8 @@ fn ten_f64() -> f64 { 10. }
 
 fn one_hundred() -> usize { 100 }
 
-#[derive(Debug, Deserialize)]
-struct UtxoMergeParams {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UtxoMergeParams {
     merge_at: usize,
     #[serde(default = "ten_f64")]
     check_every: f64,

@@ -108,7 +108,7 @@ pub mod z_coin;
 
 use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use crate::utxo::UnsupportedAddr;
+use crate::utxo::{UnsupportedAddr, UtxoActivationMode};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 use z_coin::{z_coin_from_conf_and_request, ZCoin};
 
@@ -1223,9 +1223,30 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
-            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into()
+            let mode = match req["method"].as_str() {
+                Some("enable") => UtxoActivationMode::Native,
+                Some("electrum") => {
+                    let servers = try_s!(json::from_value(req["servers"].clone()));
+                    UtxoActivationMode::Electrum { servers }
+                },
+                _ => return ERR!("Expected enable or electrum request"),
+            };
+            let merge_params = try_s!(json::from_value(req["utxo_merge_params"].clone()));
+            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, &coins_en, mode, merge_params, secret).await)
+                .into()
         },
-        CoinProtocol::QTUM => try_s!(qtum_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into(),
+        CoinProtocol::QTUM => {
+            let mode = match req["method"].as_str() {
+                Some("enable") => UtxoActivationMode::Native,
+                Some("electrum") => {
+                    let servers = try_s!(json::from_value(req["servers"].clone()));
+                    UtxoActivationMode::Electrum { servers }
+                },
+                _ => return ERR!("Expected enable or electrum request"),
+            };
+            let merge_params = try_s!(json::from_value(req["utxo_merge_params"].clone()));
+            try_s!(qtum_coin_from_conf_and_request(ctx, ticker, &coins_en, mode, merge_params, secret).await).into()
+        },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, protocol).await).into()
         },
@@ -1234,8 +1255,17 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             contract_address,
         } => {
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
+            let mode = match req["method"].as_str() {
+                Some("enable") => UtxoActivationMode::Native,
+                Some("electrum") => {
+                    let servers = try_s!(json::from_value(req["servers"].clone()));
+                    UtxoActivationMode::Electrum { servers }
+                },
+                _ => return ERR!("Expected enable or electrum request"),
+            };
             try_s!(
-                qrc20_coin_from_conf_and_request(ctx, ticker, platform, &coins_en, req, secret, contract_address).await
+                qrc20_coin_from_conf_and_request(ctx, ticker, platform, &coins_en, mode, secret, contract_address)
+                    .await
             )
             .into()
         },

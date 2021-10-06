@@ -1,16 +1,11 @@
 use super::{coin_conf, lp_coinfind, CoinProtocol};
-use crate::utxo::rpc_clients::ElectrumRpcRequest;
+use crate::utxo::utxo_common::UtxoMergeParams;
+use crate::utxo::UtxoActivationMode;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use derive_more::Display;
 use ethereum_types::Address;
 use serde_json::{self as json, Value as Json};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub enum UtxoActivationMode {
-    Native,
-    Electrum { servers: Vec<ElectrumRpcRequest> },
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ZcoinActivationMode {
@@ -27,6 +22,7 @@ pub enum EnableProtocolParams {
         bchd_urls: Vec<String>,
         mode: UtxoActivationMode,
         with_tokens: Vec<String>,
+        utxo_merge_params: Option<UtxoMergeParams>,
     },
     SlpToken,
     Eth {
@@ -38,8 +34,12 @@ pub enum EnableProtocolParams {
     Erc20,
     Utxo {
         mode: UtxoActivationMode,
+        utxo_merge_params: Option<UtxoMergeParams>,
     },
-    Qrc20,
+    Qrc20 {
+        swap_contract_address: Address,
+        fallback_swap_contract: Option<Address>,
+    },
     Zcoin {
         mode: ZcoinActivationMode,
     },
@@ -48,9 +48,10 @@ pub enum EnableProtocolParams {
 #[derive(Debug, Deserialize)]
 pub struct EnableRpcRequest {
     coin: String,
+    #[serde(default)]
     tx_history: bool,
-    required_confirmations: u64,
-    requires_notarization: bool,
+    required_confirmations: Option<u64>,
+    requires_notarization: Option<bool>,
     protocol_params: EnableProtocolParams,
 }
 
@@ -91,13 +92,14 @@ pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<En
     let protocol: CoinProtocol =
         json::from_value(conf["protocol"].clone()).map_to_mm(EnableError::InvalidCoinProtocolConf)?;
 
-    let coin = match (&req.protocol_params, &protocol) {
+    let coin = match (req.protocol_params, protocol) {
         (
             EnableProtocolParams::Bch {
                 allow_slp_unsafe_conf,
                 bchd_urls,
                 mode,
                 with_tokens,
+                utxo_merge_params,
             },
             CoinProtocol::BCH { slp_prefix },
         ) => {
@@ -134,11 +136,20 @@ pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<En
         ) => {
             // Erc20
         },
-        (EnableProtocolParams::Utxo { mode }, CoinProtocol::UTXO) => {
+        (
+            EnableProtocolParams::Utxo {
+                mode,
+                utxo_merge_params,
+            },
+            CoinProtocol::UTXO,
+        ) => {
             // UTXO
         },
         (
-            EnableProtocolParams::Qrc20,
+            EnableProtocolParams::Qrc20 {
+                swap_contract_address,
+                fallback_swap_contract,
+            },
             CoinProtocol::QRC20 {
                 platform,
                 contract_address,
@@ -150,10 +161,10 @@ pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<En
         (EnableProtocolParams::Zcoin { mode }, CoinProtocol::ZHTLC) => {
             // Qrc20
         },
-        _ => {
+        (request, protocol_from_conf) => {
             return MmError::err(EnableError::RequestNotCompatibleWithProtocol {
-                request: req.protocol_params,
-                protocol_from_conf: protocol,
+                request,
+                protocol_from_conf,
             })
         },
     };
