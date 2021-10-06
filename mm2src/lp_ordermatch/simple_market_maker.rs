@@ -482,6 +482,30 @@ async fn update_single_order(
     Ok(true)
 }
 
+async fn execute_update_order(
+    uuid: Uuid,
+    value: MakerOrder,
+    cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
+) -> bool {
+    let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
+    match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
+        Ok(resp) => {
+            info!("Order with uuid: {} successfully updated", uuid);
+            resp
+        },
+        Err(err) => {
+            error!(
+                "Order with uuid: {} for {} cannot be updated - {}",
+                uuid,
+                key_trade_pair.as_combination(),
+                err
+            );
+            cancel_single_order(&ctx, uuid).await;
+            false
+        },
+    }
+}
+
 async fn create_single_order(
     rates: RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
@@ -511,6 +535,21 @@ async fn create_single_order(
         .map_to_mm(OrderProcessingError::OrderUpdateError)?;
     info!("Successfully placed order for {} - uuid: {}", key_trade_pair, resp.uuid);
     Ok(true)
+}
+
+async fn execute_create_single_order(
+    rates: RateInfos,
+    cfg: SimpleCoinMarketMakerCfg,
+    key_trade_pair: String,
+    ctx: &MmArc,
+) -> bool {
+    match create_single_order(rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
+        Ok(resp) => resp,
+        Err(err) => {
+            error!("{} order cannot be created for: {}", err, key_trade_pair);
+            false
+        },
+    }
 }
 
 async fn process_bot_logic(ctx: &MmArc) {
@@ -552,8 +591,6 @@ async fn process_bot_logic(ctx: &MmArc) {
                     coin_cfg.clone(),
                 );
                 futures_order_update.push(execute_update_order(uuid, value, cloned_infos));
-                //spawn(execute_update_order(uuid, value, result_sender, cloned_infos));
-                //futures_order_update.push(result_receiver);
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
             },
             _ => continue,
@@ -569,54 +606,20 @@ async fn process_bot_logic(ctx: &MmArc) {
         match memoization_pair_registry.get(&trading_pair) {
             Some(_) => continue,
             None => {
-                let (result_sender, result_receiver) = futures::channel::oneshot::channel();
-                let ctx_cloned = ctx.clone();
                 let rates_infos = rates_registry
                     .get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone())
                     .unwrap_or_default();
-                spawn(async move {
-                    let res = match create_single_order(rates_infos, cur_cfg, trading_pair.clone(), ctx_cloned).await {
-                        Ok(resp) => resp,
-                        Err(err) => {
-                            error!("{} order cannot be created - {}", trading_pair, err);
-                            false
-                        },
-                    };
-                    match result_sender.send(res) {
-                        Ok(_) => {},
-                        Err(_) => error!("{} order cannot be created", trading_pair),
-                    };
-                });
-                futures_order_creation.push(result_receiver);
+                futures_order_creation.push(execute_create_single_order(
+                    rates_infos,
+                    cur_cfg,
+                    trading_pair.clone(),
+                    ctx,
+                ));
             },
         };
     }
-    let all_created_orders_tasks = futures::future::join_all(futures_order_creation.into_iter());
+    let all_created_orders_tasks = futures::future::join_all(futures_order_creation);
     let _results_order_creations = all_created_orders_tasks.await;
-}
-
-async fn execute_update_order(
-    uuid: Uuid,
-    value: MakerOrder,
-    cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
-) -> bool {
-    let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
-    match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
-        Ok(resp) => {
-            info!("Order with uuid: {} successfully updated", uuid);
-            resp
-        },
-        Err(err) => {
-            error!(
-                "Order with uuid: {} for {} cannot be updated - {}",
-                uuid,
-                key_trade_pair.as_combination(),
-                err
-            );
-            cancel_single_order(&ctx, uuid).await;
-            false
-        },
-    }
 }
 
 pub async fn lp_bot_loop(ctx: MmArc) {
