@@ -1,8 +1,9 @@
 use super::lp_protocol::{MmRpcBuilder, MmRpcRequest};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::mm2::lp_ordermatch::{start_simple_market_maker_bot, stop_simple_market_maker_bot};
-use crate::mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection};
-use crate::mm2::lp_swap::trade_preimage_rpc;
+use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection},
+            mm2::lp_swap::trade_preimage_rpc,
+            mm2::rpc::get_public_key::get_public_key};
 use coins::withdraw;
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
@@ -86,6 +87,7 @@ fn auth(request: &MmRpcRequest, ctx: &MmArc) -> DispatcherResult<()> {
 async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     match request.method.as_str() {
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
+        "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,

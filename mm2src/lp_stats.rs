@@ -25,8 +25,8 @@ pub enum NodeVersionError {
     DatabaseError(String),
     #[display(fmt = "Invalid address: {}", _0)]
     InvalidAddress(String),
-    #[display(fmt = "Error on parse peer id {}", _0)]
-    PeerIdParseError(String),
+    #[display(fmt = "Error on parse peer id {}: {}", _0, _1)]
+    PeerIdParseError(String, String),
     #[display(fmt = "{} is only supported in native mode", _0)]
     UnsupportedMode(String),
 }
@@ -36,7 +36,7 @@ impl HttpStatusCode for NodeVersionError {
         match self {
             NodeVersionError::InvalidRequest(_)
             | NodeVersionError::InvalidAddress(_)
-            | NodeVersionError::PeerIdParseError(_) => StatusCode::BAD_REQUEST,
+            | NodeVersionError::PeerIdParseError(_, _) => StatusCode::BAD_REQUEST,
             NodeVersionError::UnsupportedMode(_) => StatusCode::METHOD_NOT_ALLOWED,
             NodeVersionError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -118,6 +118,12 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResul
 
     let node_info: NodeInfo = json::from_value(req)?;
 
+    // Check that the entered peer_id is valid
+    let _peer_id = node_info
+        .peer_id
+        .parse::<PeerId>()
+        .map_to_mm(|e| NodeVersionError::PeerIdParseError(node_info.peer_id.clone(), e.to_string()))?;
+
     let ipv4_addr = addr_to_ipv4_string(&node_info.address)?;
     let node_info_with_ipv4_addr = NodeInfo {
         name: node_info.name,
@@ -195,7 +201,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
     for (peer_id, address) in peers_addresses {
         let peer_id = peer_id
             .parse::<PeerId>()
-            .map_to_mm(|e| NodeVersionError::PeerIdParseError(e.to_string()))?;
+            .map_to_mm(|e| NodeVersionError::PeerIdParseError(peer_id, e.to_string()))?;
 
         let relay_addr = RelayAddress::from_str(&address)?;
         let multi_address = relay_addr.try_to_multiaddr(network_info)?;
