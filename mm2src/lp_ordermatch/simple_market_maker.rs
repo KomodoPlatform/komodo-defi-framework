@@ -17,7 +17,6 @@ use common::{executor::{spawn, Timer},
              mm_number::MmNumber,
              slurp_url, HttpStatusCode, PagingOptions};
 use derive_more::Display;
-use futures::channel::oneshot::Sender;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use num_traits::ToPrimitive;
@@ -538,15 +537,12 @@ async fn process_bot_logic(ctx: &MmArc) {
     let maker_orders = maker_orders_guard.clone();
     drop(maker_orders_guard);
 
-    info!("nb_orders: {}", maker_orders.len());
-
     let mut futures_order_update = Vec::with_capacity(0);
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
     for (uuid, value) in maker_orders.into_iter() {
         let key_trade_pair = TradingPair::new(value.base.clone(), value.rel.clone());
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
-                let (result_sender, result_receiver) = futures::channel::oneshot::channel();
                 let cloned_infos = (
                     ctx.clone(),
                     rates_registry
@@ -555,15 +551,16 @@ async fn process_bot_logic(ctx: &MmArc) {
                     key_trade_pair.clone(),
                     coin_cfg.clone(),
                 );
-                spawn(execute_update_order(uuid, value, result_sender, cloned_infos));
-                futures_order_update.push(result_receiver);
+                futures_order_update.push(execute_update_order(uuid, value, cloned_infos));
+                //spawn(execute_update_order(uuid, value, result_sender, cloned_infos));
+                //futures_order_update.push(result_receiver);
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
             },
             _ => continue,
         }
     }
 
-    let all_updated_orders_tasks = futures::future::join_all(futures_order_update.into_iter());
+    let all_updated_orders_tasks = futures::future::join_all(futures_order_update);
     let _results_order_updates = all_updated_orders_tasks.await;
 
     let mut futures_order_creation = Vec::with_capacity(0);
@@ -601,11 +598,10 @@ async fn process_bot_logic(ctx: &MmArc) {
 async fn execute_update_order(
     uuid: Uuid,
     value: MakerOrder,
-    result_sender: Sender<bool>,
     cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
-) {
+) -> bool {
     let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
-    let resp = match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
+    match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
         Ok(resp) => {
             info!("Order with uuid: {} successfully updated", uuid);
             resp
@@ -620,15 +616,7 @@ async fn execute_update_order(
             cancel_single_order(&ctx, uuid).await;
             false
         },
-    };
-    match result_sender.send(resp) {
-        Ok(_) => {},
-        Err(_) => error!(
-            "Order with uuid: {} for {} cannot be updated",
-            uuid,
-            key_trade_pair.as_combination()
-        ),
-    };
+    }
 }
 
 pub async fn lp_bot_loop(ctx: MmArc) {
