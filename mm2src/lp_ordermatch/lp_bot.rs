@@ -101,14 +101,14 @@ pub struct RateInfos {
     base: String,
     rel: String,
     price: MmNumber,
-    last_updated_timestamp: u64,
+    last_updated_timestamp: Option<u64>,
     base_provider: Provider,
     rel_provider: Provider,
 }
 
 impl RateInfos {
     pub fn retrieve_elapsed_times(&self) -> SystemTime {
-        let last_updated_time = UNIX_EPOCH + Duration::from_secs(self.last_updated_timestamp);
+        let last_updated_time = UNIX_EPOCH + Duration::from_secs(self.last_updated_timestamp.unwrap_or_default());
         let time_diff: SystemTime = SystemTime::now() - last_updated_time.elapsed().unwrap();
         time_diff
     }
@@ -119,6 +119,7 @@ impl RateInfos {
             rel,
             base_provider: Provider::Unknown,
             rel_provider: Provider::Unknown,
+            last_updated_timestamp: None,
             ..Default::default()
         }
     }
@@ -137,6 +138,8 @@ impl TickerInfosRegistry {
                 let mut rate_infos = RateInfos::new(base, rel);
                 if base_price_infos.price_provider == Provider::Unknown
                     || rel_price_infos.price_provider == Provider::Unknown
+                    || base_price_infos.last_updated_timestamp == 0
+                    || rel_price_infos.last_updated_timestamp == 0
                 {
                     return None;
                 }
@@ -145,9 +148,9 @@ impl TickerInfosRegistry {
                 rate_infos.rel_provider = rel_price_infos.price_provider.clone();
                 rate_infos.last_updated_timestamp =
                     if base_price_infos.last_updated_timestamp <= rel_price_infos.last_updated_timestamp {
-                        base_price_infos.last_updated_timestamp
+                        Some(base_price_infos.last_updated_timestamp)
                     } else {
-                        rel_price_infos.last_updated_timestamp
+                        Some(rel_price_infos.last_updated_timestamp)
                     };
                 rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
                 Some(rate_infos)

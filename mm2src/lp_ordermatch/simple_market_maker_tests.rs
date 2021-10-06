@@ -45,6 +45,7 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
 
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
@@ -218,7 +219,10 @@ mod tests {
             ticker: "KMD".to_string(),
             last_price: MmNumber::from("10"),
             last_updated: "".to_string(),
-            last_updated_timestamp: 0,
+            last_updated_timestamp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             volume24_h: MmNumber::from("25000"),
             price_provider: Provider::Binance,
             volume_provider: Provider::Coinpaprika,
@@ -232,7 +236,10 @@ mod tests {
             ticker: "LTC".to_string(),
             last_price: MmNumber::from("500.0"),
             last_updated: "".to_string(),
-            last_updated_timestamp: 0,
+            last_updated_timestamp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             volume24_h: MmNumber::from("25000"),
             price_provider: Provider::Coingecko,
             volume_provider: Provider::Binance,

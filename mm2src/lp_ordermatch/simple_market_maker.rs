@@ -388,7 +388,7 @@ async fn checks_order_prerequisites(
         return MmError::err(OrderProcessingError::PriceIsZero);
     }
 
-    if rates.last_updated_timestamp == 0 {
+    if rates.last_updated_timestamp.is_none() {
         warn!(
             "last updated price timestamp is invalid - skipping for {}",
             key_trade_pair
