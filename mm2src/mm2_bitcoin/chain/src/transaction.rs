@@ -401,6 +401,9 @@ where
         false
     };
     let outputs = reader.read_list_max(MAX_LIST_SIZE)?;
+    if outputs.is_empty() && tx_type == TxType::StandardWithWitness {
+        return Err(Error::Custom("Transaction has no output".into()));
+    }
     if read_witness {
         for input in inputs.iter_mut() {
             input.script_witness = reader.read_list_max(MAX_LIST_SIZE)?;
@@ -493,13 +496,6 @@ impl Deserializable for Transaction {
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
-            if t.outputs.is_empty() {
-                if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
-                    if !t.outputs.is_empty() {
-                        return Ok(t);
-                    }
-                }
-            }
             return Ok(t);
         }
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
@@ -798,15 +794,17 @@ mod tests {
 
     #[test]
     fn test_serialization_with_flags() {
+        // tBTC txid: 245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e
         let transaction_without_witness: Transaction =
-            "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0100000001d834ce92ae8493013133a217d6a5f42e9ccc303c23a34bf49a9394381659bd4500000000d7473044022000f1f6f036d14e1f68ca250c0f99d89385bed112254832416d965d07f6ca4c930220256ea7a5a459f406434a4cd7b9cba747c623cbb06e315e944b13152a8085851701205132177f18e6234f24c7489e5db9bcb506d3fa066c554845c8de456a61ebbb4a004c6b6304cc38cb60b1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914c9db7afe749d2e94ee842ed2ec966e96e3508f6a882103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edac68ffffffff01df250000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88accc38cb60"
                 .into();
         assert_eq!(
             serialize_with_flags(&transaction_without_witness, 0),
             serialize_with_flags(&transaction_without_witness, SERIALIZE_TRANSACTION_WITNESS)
         );
 
-        let transaction_with_witness: Transaction = "0000000000010100000000000000000000000000000000000000000000000000000000000000000000000000000000000001010000000000".into();
+        // tBTC txid: 303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f
+        let transaction_with_witness: Transaction = "01000000000101b62722419e6529830e548eb7944b0bb8af2dfd102c30d9accc5be57da6276f320100000000ffffffff02e8030000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac3f7b00000000000016001405aab5342166f8594baf17a7d9bef5d567443327024730440220229efa569066639fd94d737d3981c7e1fe39e4605637b8c46c28413abb3e759b022034f2b1ea17481c6fb34c9074f8d1ab1c7cc1a2dcdfe7060c53a31fd5fc606504012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f33fcec160".into();
         assert!(
             serialize_with_flags(&transaction_with_witness, 0)
                 != serialize_with_flags(&transaction_with_witness, SERIALIZE_TRANSACTION_WITNESS)
@@ -815,15 +813,17 @@ mod tests {
 
     #[test]
     fn test_witness_hash_differs() {
+        // tBTC txid: 245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e
         let transaction_without_witness: Transaction =
-            "000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "0100000001d834ce92ae8493013133a217d6a5f42e9ccc303c23a34bf49a9394381659bd4500000000d7473044022000f1f6f036d14e1f68ca250c0f99d89385bed112254832416d965d07f6ca4c930220256ea7a5a459f406434a4cd7b9cba747c623cbb06e315e944b13152a8085851701205132177f18e6234f24c7489e5db9bcb506d3fa066c554845c8de456a61ebbb4a004c6b6304cc38cb60b1752102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ac6782012088a914c9db7afe749d2e94ee842ed2ec966e96e3508f6a882103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edac68ffffffff01df250000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88accc38cb60"
                 .into();
         assert_eq!(
             transaction_without_witness.hash(),
             transaction_without_witness.witness_hash()
         );
 
-        let transaction_with_witness: Transaction = "0000000000010100000000000000000000000000000000000000000000000000000000000000000000000000000000000001010000000000".into();
+        // tBTC txid: 303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f
+        let transaction_with_witness: Transaction = "01000000000101b62722419e6529830e548eb7944b0bb8af2dfd102c30d9accc5be57da6276f320100000000ffffffff02e8030000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac3f7b00000000000016001405aab5342166f8594baf17a7d9bef5d567443327024730440220229efa569066639fd94d737d3981c7e1fe39e4605637b8c46c28413abb3e759b022034f2b1ea17481c6fb34c9074f8d1ab1c7cc1a2dcdfe7060c53a31fd5fc606504012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f33fcec160".into();
         assert!(transaction_with_witness.hash() != transaction_with_witness.witness_hash());
     }
 
