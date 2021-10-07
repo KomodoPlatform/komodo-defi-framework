@@ -35,13 +35,13 @@ jobs:
           mkdir upload
           echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
           cat MM_VERSION
-          cargo build --release --bin mm2 --features zhtlc
+          cargo build --release --features zhtlc
         displayName: 'Build MM2 Release'
-      # Build WASM with the debug symbols.
+      # Build WASM.
       - bash: |
           cargo clean -p mm2-libp2p -p mm2 --target=wasm32-unknown-unknown
-          wasm-pack build --dev --target web --out-dir target/target-wasm-debug
-        displayName: 'Build MM2 WASM Debug'
+          wasm-pack build --release --target web --out-dir target/target-wasm-release
+        displayName: 'Build MM2 WASM Release'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
           cargo test --target wasm32-unknown-unknown --release --bin mm2
@@ -80,21 +80,21 @@ jobs:
         displayName: 'Check rustfmt warnings'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 target/release/libmm2.a -j
         displayName: 'Prepare release build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
-          cd target/target-wasm-debug/
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Debug mm2_bg.wasm mm2.js snippets -r
-        displayName: 'Prepare debug WASM build upload Linux'
+          cd target/target-wasm-release/
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Release mm2_bg.wasm mm2.js snippets -r
+        displayName: 'Prepare release WASM build upload Linux'
         condition: eq( variables['Agent.OS'], 'Linux' )
       - bash: |
           cd target/release
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
+          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 libmm2.a -r
         displayName: 'Prepare release build upload MacOS'
         condition: eq( variables['Agent.OS'], 'Darwin' )
       - powershell: |
-          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\mm2.lib .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare release build upload Windows'
         condition: eq( variables['Agent.OS'], 'Windows_NT' )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts

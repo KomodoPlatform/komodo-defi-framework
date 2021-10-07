@@ -589,3 +589,14 @@ pub mod trade_preimage_error {
         pub threshold: BigDecimal,
     }
 }
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetPublicKeyResponse {
+    pub mmrpc: String,
+    pub result: GetPublicKeyResult,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetPublicKeyResult {
+    pub public_key: String,
+}
