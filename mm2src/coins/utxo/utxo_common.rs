@@ -95,6 +95,8 @@ impl UtxoCoinBuilder for UtxoArcBuilder<'_> {
 
     fn conf(&self) -> &Json { self.conf }
 
+    fn mode(&self) -> UtxoActivationMode { self.mode.clone() }
+
     fn ticker(&self) -> &str { self.ticker }
 
     fn priv_key(&self) -> &[u8] { self.priv_key }

@@ -1,15 +1,65 @@
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpTransaction, SlpUnspent};
-use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoMergeParams};
 use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
+use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use keys::NetworkPrefix as CashAddrPrefix;
+use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BchActivationParams {
+    #[serde(default)]
+    allow_slp_unsafe_conf: bool,
+    bchd_urls: Vec<String>,
+    mode: UtxoActivationMode,
+    with_tokens: Vec<String>,
+    utxo_merge_params: Option<UtxoMergeParams>,
+    #[serde(default)]
+    tx_history: bool,
+    required_confirmations: Option<u64>,
+    requires_notarization: Option<bool>,
+}
+
+#[derive(Debug, Display)]
+pub enum FromLegacyReqErr {
+    UnexpectedMethod,
+    InvalidElectrumServers(json::Error),
+    InvalidMergeParams(json::Error),
+    InvalidBchdUrls(json::Error),
+}
+
+impl BchActivationParams {
+    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<FromLegacyReqErr>> {
+        let mode = match req["method"].as_str() {
+            Some("enable") => UtxoActivationMode::Native,
+            Some("electrum") => {
+                let servers =
+                    json::from_value(req["servers"].clone()).map_to_mm(FromLegacyReqErr::InvalidElectrumServers)?;
+                UtxoActivationMode::Electrum { servers }
+            },
+            _ => return MmError::err(FromLegacyReqErr::UnexpectedMethod),
+        };
+        let utxo_merge_params =
+            json::from_value(req["utxo_merge_params"].clone()).map_to_mm(FromLegacyReqErr::InvalidMergeParams)?;
+        let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(FromLegacyReqErr::InvalidBchdUrls)?;
+        let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
+
+        Ok(BchActivationParams {
+            allow_slp_unsafe_conf,
+            bchd_urls,
+            mode,
+            with_tokens: Vec::new(),
+            utxo_merge_params,
+        })
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct BchCoin {
@@ -222,17 +272,15 @@ pub async fn bch_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    params: BchActivationParams,
     slp_addr_prefix: CashAddrPrefix,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
-    let bchd_urls: Vec<String> = try_s!(json::from_value(req["bchd_urls"].clone()));
-    let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or(false);
-
-    if bchd_urls.is_empty() && !allow_slp_unsafe_conf {
+    if params.bchd_urls.is_empty() && !params.allow_slp_unsafe_conf {
         return Err("Using empty bchd_urls is unsafe for SLP users!".into());
     }
 
+    let bchd_urls = params.bchd_urls;
     let constructor = {
         move |utxo_arc| BchCoin {
             utxo_arc,
@@ -240,8 +288,18 @@ pub async fn bch_coin_from_conf_and_request(
             bchd_urls: bchd_urls.clone(),
         }
     };
-    let coin: BchCoin =
-        try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, constructor).await);
+    let coin: BchCoin = try_s!(
+        utxo_common::utxo_arc_from_conf_and_request(
+            ctx,
+            ticker,
+            conf,
+            params.mode,
+            params.utxo_merge_params,
+            priv_key,
+            constructor
+        )
+        .await
+    );
     Ok(coin)
 }
 

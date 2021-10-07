@@ -106,7 +106,7 @@ pub use test_coin::TestCoin;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
 
-use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
+use crate::utxo::bch::{bch_coin_from_conf_and_request, BchActivationParams, BchCoin};
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::{UnsupportedAddr, UtxoActivationMode};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
@@ -1271,8 +1271,9 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
+            let params = try_s!(BchActivationParams::from_legacy_req(req));
 
-            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, req, prefix, secret).await);
+            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, params, prefix, secret).await);
             bch.into()
         },
         CoinProtocol::SLPTOKEN {

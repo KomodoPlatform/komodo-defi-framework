@@ -960,12 +960,11 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
 
 pub struct UtxoConfBuilder<'a> {
     conf: &'a Json,
-    req: &'a Json,
     ticker: &'a str,
 }
 
 impl<'a> UtxoConfBuilder<'a> {
-    pub fn new(conf: &'a Json, req: &'a Json, ticker: &'a str) -> Self { UtxoConfBuilder { conf, req, ticker } }
+    pub fn new(conf: &'a Json, ticker: &'a str) -> Self { UtxoConfBuilder { conf, ticker } }
 
     pub fn build(&self) -> Result<UtxoCoinConf, String> {
         let checksum_type = self.checksum_type();
@@ -1195,7 +1194,7 @@ impl<'a> UtxoConfBuilder<'a> {
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum UtxoActivationMode {
     Native,
     Electrum { servers: Vec<ElectrumRpcRequest> },
@@ -1228,14 +1227,14 @@ pub trait UtxoCoinBuilder {
 
     fn conf(&self) -> &Json;
 
-    fn mode(&self) -> &UtxoActivationMode;
+    fn mode(&self) -> UtxoActivationMode;
 
     fn ticker(&self) -> &str;
 
     fn priv_key(&self) -> &[u8];
 
     async fn build_utxo_fields(&self) -> Result<UtxoCoinFields, String> {
-        let conf = try_s!(UtxoConfBuilder::new(self.conf(), self.req(), self.ticker()).build());
+        let conf = try_s!(UtxoConfBuilder::new(self.conf(), self.ticker()).build());
 
         let private = Private {
             prefix: conf.wif_prefix,
@@ -1363,8 +1362,8 @@ pub trait UtxoCoinBuilder {
     }
 
     async fn rpc_client(&self) -> Result<UtxoRpcClientEnum, String> {
-        match self.req()["method"].as_str() {
-            Some("enable") => {
+        match self.mode() {
+            UtxoActivationMode::Native => {
                 #[cfg(target_arch = "wasm32")]
                 {
                     ERR!("Native UTXO mode is only supported in native mode")
@@ -1375,15 +1374,19 @@ pub trait UtxoCoinBuilder {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            Some("electrum") => {
-                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default()).await);
+            UtxoActivationMode::Electrum { servers } => {
+                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default(), servers).await);
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
             _ => ERR!("Expected enable or electrum request"),
         }
     }
 
-    async fn electrum_client(&self, args: ElectrumBuilderArgs) -> Result<ElectrumClient, String> {
+    async fn electrum_client(
+        &self,
+        args: ElectrumBuilderArgs,
+        mut servers: Vec<ElectrumRpcRequest>,
+    ) -> Result<ElectrumClient, String> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
@@ -1398,7 +1401,6 @@ pub trait UtxoCoinBuilder {
             event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
         }
 
-        let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(self.req()["servers"].clone()));
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
         let client = ElectrumClientImpl::new(ticker, event_handlers);

@@ -1,4 +1,5 @@
 use super::{coin_conf, lp_coinfind, CoinProtocol};
+use crate::utxo::bch::BchActivationParams;
 use crate::utxo::utxo_common::UtxoMergeParams;
 use crate::utxo::UtxoActivationMode;
 use common::mm_ctx::MmArc;
@@ -16,14 +17,7 @@ pub enum ZcoinActivationMode {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum EnableProtocolParams {
-    Bch {
-        #[serde(default)]
-        allow_slp_unsafe_conf: bool,
-        bchd_urls: Vec<String>,
-        mode: UtxoActivationMode,
-        with_tokens: Vec<String>,
-        utxo_merge_params: Option<UtxoMergeParams>,
-    },
+    Bch(BchActivationParams),
     SlpToken,
     Eth {
         urls: Vec<String>,
@@ -48,10 +42,6 @@ pub enum EnableProtocolParams {
 #[derive(Debug, Deserialize)]
 pub struct EnableRpcRequest {
     coin: String,
-    #[serde(default)]
-    tx_history: bool,
-    required_confirmations: Option<u64>,
-    requires_notarization: Option<bool>,
     protocol_params: EnableProtocolParams,
 }
 
@@ -93,16 +83,7 @@ pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<En
         json::from_value(conf["protocol"].clone()).map_to_mm(EnableError::InvalidCoinProtocolConf)?;
 
     let coin = match (req.protocol_params, protocol) {
-        (
-            EnableProtocolParams::Bch {
-                allow_slp_unsafe_conf,
-                bchd_urls,
-                mode,
-                with_tokens,
-                utxo_merge_params,
-            },
-            CoinProtocol::BCH { slp_prefix },
-        ) => {
+        (EnableProtocolParams::Bch(_), CoinProtocol::BCH { slp_prefix }) => {
             // BCH
         },
         (

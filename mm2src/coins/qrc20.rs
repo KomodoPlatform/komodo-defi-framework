@@ -189,6 +189,8 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
             Ok(confpath.into())
         }
     }
+
+    fn mode(&self) -> UtxoActivationMode { self.mode.clone() }
 }
 
 pub async fn qrc20_coin_from_conf_and_request(
