@@ -759,6 +759,10 @@ impl From<BalanceError> for WithdrawError {
     }
 }
 
+impl From<GenerateTxError> for WithdrawError {
+    fn from(e: GenerateTxError) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
+}
+
 impl From<CoinFindError> for WithdrawError {
     fn from(e: CoinFindError) -> Self {
         match e {

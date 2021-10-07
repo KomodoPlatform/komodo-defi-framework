@@ -1359,10 +1359,12 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
 }
 
 // Qtum Delegate Transaction - lock UTXO mutex before calling this function
-pub async fn generate_qrc20_transaction_from_qtum(
+pub async fn generate_delegate_qrc20_transaction_from_qtum(
     coin: &QtumCoin,
     contract_outputs: Vec<ContractCallOutput>,
-) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
+    to_address: String,
+    gas_limit: u64,
+) -> WithdrawResult {
     let utxo = coin.as_ref();
     let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
     let mut gas_fee = 0;
@@ -1391,9 +1393,34 @@ pub async fn generate_qrc20_transaction_from_qtum(
     .map_to_mm(GenerateTxError::Internal)?;
 
     let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
-    Ok(GenerateQrc20TxResult {
+    let generated_tx = GenerateQrc20TxResult {
         signed,
         miner_fee,
         gas_fee,
+    };
+    let fee_details = Qrc20FeeDetails {
+        // QRC20 fees are paid in base platform currency (in particular Qtum)
+        coin: coin.ticker().to_string(),
+        miner_fee: utxo_common::big_decimal_from_sat(generated_tx.miner_fee as i64, utxo.decimals),
+        gas_limit,
+        gas_price: QRC20_GAS_PRICE_DEFAULT,
+        total_gas_fee: utxo_common::big_decimal_from_sat(generated_tx.gas_fee as i64, utxo.decimals),
+    };
+    let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    Ok(TransactionDetails {
+        tx_hex: serialize(&generated_tx.signed).into(),
+        tx_hash: generated_tx.signed.hash().reversed().to_vec().into(),
+        from: vec![my_address],
+        to: vec![to_address],
+        total_amount: Default::default(),
+        spent_by_me: Default::default(),
+        received_by_me: Default::default(),
+        my_balance_change: Default::default(),
+        block_height: 0,
+        timestamp: now_ms() / 1000,
+        fee_details: Some(fee_details.into()),
+        coin: coin.ticker().to_string(),
+        internal_id: vec![].into(),
+        kmd_rewards: None,
     })
 }

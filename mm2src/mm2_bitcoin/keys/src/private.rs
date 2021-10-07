@@ -31,6 +31,21 @@ impl Private {
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
     }
+
+    // https://github.com/qtumproject/qtum/blob/master/src/key.cpp#L302
+    pub fn sign_compact(&self, message: &Message) -> Result<Signature, Error> {
+        let mut out = Vec::with_capacity(65);
+        let secret = SecretKey::from_slice(&*self.secret)?;
+        let message = SecpMessage::from_slice(&**message)?;
+
+        let signature = SECP_SIGN.sign_recoverable(&message, &secret);
+        let (_, bytes) = signature.serialize_compact();
+        out = bytes.to_vec();
+        // vchSig[0] = 27 + rec + (fCompressed ? 4 : 0); (rec == -1)
+        let byte: u8 = if self.compressed { 30 } else { 26 };
+        out.insert(0, byte);
+        Ok(out.into())
+    }
 }
 
 impl DisplayLayout for Private {
