@@ -1,10 +1,16 @@
 use super::*;
-use crate::{eth, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
+use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
+use crate::qrc20::{ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT,
+                   QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
+use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             ValidateAddressResult, WithdrawFut};
+use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
+use ethabi::Token;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
+use script::Builder as ScriptBuilder;
 use serialization::CoinVariant;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
@@ -163,6 +169,74 @@ pub async fn qtum_coin_from_conf_and_request(
 }
 
 impl QtumBasedCoin for QtumCoin {}
+
+impl QtumCoin {
+    pub async fn qtum_add_delegation(
+        &self,
+        to_addr: Address,
+        fee: u64,
+    ) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
+        let _utxo_lock = UTXO_LOCK.lock().await;
+        let coin = self.as_ref();
+        let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;
+        unspents.reverse();
+        if unspents[0].value < sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
+            return MmError::err(GenerateTxError::Internal(
+                "Amount for delegation cannot be less than 100 QTUM".to_string(),
+            ));
+        }
+        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
+        let delegation_output = self.add_delegation_output(
+            staker_address_hex,
+            fee,
+            QRC20_GAS_LIMIT_DELEGATION,
+            QRC20_GAS_PRICE_DEFAULT,
+        )?;
+
+        let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
+
+        // Here amount should be `int(delegator_unspent['amount']*COIN) - 2250000*40`
+        let amount_sat = unspents[0].value - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
+        let change_script_output = ContractCallOutput {
+            value: amount_sat,
+            script_pubkey: change_script.to_bytes(),
+            gas_limit: 0,
+            gas_price: 0,
+        };
+        let outputs = vec![delegation_output, change_script_output];
+        let res = qrc20::generate_qrc20_transaction_from_qtum(self, outputs).await?;
+        Ok(res)
+    }
+
+    fn add_delegation_output(
+        &self,
+        to_addr: H160,
+        fee: u64,
+        gas_limit: u64,
+        gas_price: u64,
+    ) -> Qrc20AbiResult<ContractCallOutput> {
+        let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
+        let msg = b"\x15Qtum signed message:\n\x28";
+        let buffer: Vec<u8> = [msg.to_vec(), to_addr.to_vec()].concat();
+        let hashed = dhash256(&buffer);
+        let signature = self.as_ref().key_pair.private().sign(&hashed)?;
+        let params = function.encode_input(&[
+            Token::Address(to_addr),
+            Token::Uint(fee.into()),
+            Token::Bytes(signature.into()),
+        ])?;
+
+        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
+        let script_pubkey =
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
+        Ok(ContractCallOutput {
+            value: OUTPUT_QTUM_AMOUNT,
+            script_pubkey,
+            gas_limit,
+            gas_price,
+        })
+    }
+}
 
 #[async_trait]
 #[cfg_attr(test, mockable)]

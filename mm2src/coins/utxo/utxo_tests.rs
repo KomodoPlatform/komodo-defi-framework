@@ -1605,6 +1605,55 @@ fn test_qtum_unspendable_balance_failed_once() {
 }
 
 #[test]
+fn test_add_delegation_invalid_amount() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"95.217.83.126:10001"}],
+    });
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+    let fake_res = block_on(coin.qtum_add_delegation(address.clone(), 10));
+    assert_eq!(fake_res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_add_delegation() {
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"95.217.83.126:10001"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "tQTUM",
+        &conf,
+        &req,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let res = block_on(coin.qtum_add_delegation(address, 10)).unwrap();
+    assert_ne!(res.gas_fee, 0);
+    assert_ne!(res.miner_fee, 0);
+    assert_eq!(res.signed.hash().is_empty(), false);
+    println!("{:?}", res.gas_fee);
+    println!("{:?}", res.miner_fee);
+    println!("{:?}", res.signed);
+}
+
+#[test]
 fn test_qtum_unspendable_balance_failed() {
     QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());

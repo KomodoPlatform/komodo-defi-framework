@@ -3,7 +3,6 @@ use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
-use common::privkey::key_pair_from_seed;
 use common::DEX_FEE_ADDR_RAW_PUBKEY;
 use itertools::Itertools;
 use mocktopus::mocking::{MockResult, Mockable};
@@ -454,34 +453,6 @@ fn test_generate_token_transfer_script_pubkey() {
             0, // gas_price cannot be zero
         )
         .is_err());
-}
-
-#[test]
-fn test_add_delegation_invalid_amount() {
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
-    let fake_res = block_on(coin.add_delegation(address.clone(), 10));
-    assert_eq!(fake_res.is_err(), true);
-}
-
-#[test]
-fn test_add_delegation() {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
-    let (_ctx, coin) = qrc20_coin_for_test(keypair.private().secret.as_slice(), None);
-    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
-
-    let res = block_on(coin.add_delegation(address, 10)).unwrap();
-    assert_ne!(res.gas_fee, 0);
-    assert_ne!(res.miner_fee, 0);
-    assert_eq!(res.signed.hash().is_empty(), false);
-    println!("{:?}", res.gas_fee);
-    println!("{:?}", res.miner_fee);
-    println!("{:?}", res.signed);
 }
 
 #[test]

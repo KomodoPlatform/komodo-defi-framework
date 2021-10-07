@@ -1,20 +1,20 @@
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
-use crate::utxo::qtum::QtumBasedCoin;
+use crate::utxo::qtum::{QtumBasedCoin, QtumCoin};
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
-use crate::utxo::{qtum, sat_from_big_decimal, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, VerboseTransactionFrom, UTXO_LOCK};
+use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError, HistoryUtxoTx,
+                  HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
+                  VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
             ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use bitcrypto::{dhash160, dhash256, sha256};
+use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
 use common::block_on;
 use common::executor::Timer;
@@ -47,16 +47,16 @@ use std::sync::Arc;
 mod history;
 #[cfg(test)] mod qrc20_tests;
 pub mod rpc_clients;
-mod script_pubkey;
+pub mod script_pubkey;
 mod swap;
 
 /// Qtum amount is always 0 for the QRC20 UTXO outputs,
 /// because we should pay only a fee in Qtum to send the QRC20 transaction.
-const OUTPUT_QTUM_AMOUNT: u64 = 0;
+pub const OUTPUT_QTUM_AMOUNT: u64 = 0;
 const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
 const QRC20_PAYMENT_GAS_LIMIT: u64 = 200_000;
-const QRC20_GAS_LIMIT_DELEGATION: u64 = 2_250_000;
-const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
+pub const QRC20_GAS_LIMIT_DELEGATION: u64 = 2_250_000;
+pub const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
 const QRC20_DUST: u64 = 0;
 // Keccak-256 hash of `Transfer` event
 const QRC20_TRANSFER_TOPIC: &str = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -314,10 +314,10 @@ impl MutContractCallType {
     fn short_signature(&self) -> [u8; 4] { self.as_function().short_signature() }
 }
 
-struct GenerateQrc20TxResult {
-    signed: UtxoTx,
-    miner_fee: u64,
-    gas_fee: u64,
+pub struct GenerateQrc20TxResult {
+    pub signed: UtxoTx,
+    pub miner_fee: u64,
+    pub gas_fee: u64,
 }
 
 #[derive(Debug, Display)]
@@ -433,71 +433,6 @@ impl Qrc20Coin {
             signed,
             miner_fee,
             gas_fee,
-        })
-    }
-
-    async fn add_delegation(
-        &self,
-        to_addr: Address,
-        fee: u64,
-    ) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
-        let balance = self.my_balance().compat().await?;
-        if balance.spendable < 100.0.into() {
-            return MmError::err(GenerateTxError::Internal(
-                "Amount for delegation cannot be less than 100".to_string(),
-            ));
-        }
-        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
-        let delegation_output = self.add_delegation_output(
-            staker_address_hex,
-            fee,
-            QRC20_GAS_LIMIT_DELEGATION,
-            QRC20_GAS_PRICE_DEFAULT,
-        )?;
-
-        let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
-
-        // Here amount should be `int(delegator_unspent['amount']*COIN) - 2250000*40`
-        let amount_sat = sat_from_big_decimal(&balance.spendable, self.decimals()).unwrap()
-            - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
-        let change_script_output = ContractCallOutput {
-            value: amount_sat,
-            script_pubkey: change_script.to_bytes(),
-            gas_limit: 0,
-            gas_price: 0,
-        };
-        let outputs = vec![delegation_output, change_script_output];
-        let _utxo_lock = UTXO_LOCK.lock().await;
-        let res = self.generate_qrc20_transaction(outputs).await?;
-        Ok(res)
-    }
-
-    pub fn add_delegation_output(
-        &self,
-        to_addr: H160,
-        fee: u64,
-        gas_limit: u64,
-        gas_price: u64,
-    ) -> Qrc20AbiResult<ContractCallOutput> {
-        let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
-        let msg = b"\x15Qtum signed message:\n\x28";
-        let buffer: Vec<u8> = [msg.to_vec(), to_addr.to_vec()].concat();
-        let hashed = dhash256(&buffer);
-        let signature = self.utxo.key_pair.private().sign(&hashed)?;
-        let params = function.encode_input(&[
-            Token::Address(to_addr),
-            Token::Uint(fee.into()),
-            Token::Bytes(signature.into()),
-        ])?;
-
-        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
-        let script_pubkey =
-            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
-        Ok(ContractCallOutput {
-            value: OUTPUT_QTUM_AMOUNT,
-            script_pubkey,
-            gas_limit,
-            gas_price,
         })
     }
 
@@ -1420,5 +1355,45 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
         amount,
         sender,
         receiver,
+    })
+}
+
+// Qtum Delegate Transaction - lock UTXO mutex before calling this function
+pub async fn generate_qrc20_transaction_from_qtum(
+    coin: &QtumCoin,
+    contract_outputs: Vec<ContractCallOutput>,
+) -> Result<GenerateQrc20TxResult, MmError<GenerateTxError>> {
+    let utxo = coin.as_ref();
+    let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
+    let mut gas_fee = 0;
+    let mut outputs = Vec::with_capacity(contract_outputs.len());
+    for output in contract_outputs {
+        gas_fee += output.gas_limit * output.gas_price;
+        outputs.push(TransactionOutput::from(output));
+    }
+
+    let (unsigned, data) = UtxoTxBuilder::new(coin)
+        .add_available_inputs(unspents)
+        .add_outputs(outputs)
+        .with_gas_fee(gas_fee)
+        .with_dust(QRC20_DUST)
+        .build()
+        .await?;
+
+    let prev_script = ScriptBuilder::build_p2pkh(&utxo.my_address.hash);
+    let signed = sign_tx(
+        unsigned,
+        &utxo.key_pair,
+        prev_script,
+        utxo.conf.signature_version,
+        utxo.conf.fork_id,
+    )
+    .map_to_mm(GenerateTxError::Internal)?;
+
+    let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
+    Ok(GenerateQrc20TxResult {
+        signed,
+        miner_fee,
+        gas_fee,
     })
 }
