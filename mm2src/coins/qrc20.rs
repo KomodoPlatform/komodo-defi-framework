@@ -470,6 +470,7 @@ impl UtxoTxBroadcastOps for Qrc20Coin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for Qrc20Coin {
+    /// Get only QTUM transaction fee.
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo).await }
 
     async fn calc_interest_if_required(
@@ -485,8 +486,6 @@ impl UtxoTxGenerationOps for Qrc20Coin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoCommonOps for Qrc20Coin {
-    /// Get only QTUM transaction fee.
-
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }

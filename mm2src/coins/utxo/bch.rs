@@ -284,11 +284,7 @@ impl UtxoCommonOps for BchCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> &Public {
-        let public = self.utxo_arc.key_pair.public();
-        println!("{:?}", public);
-        public
-    }
+    fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
         utxo_common::checked_address_from_str(&self.utxo_arc, address)

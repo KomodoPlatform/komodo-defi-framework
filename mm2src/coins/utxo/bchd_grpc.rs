@@ -82,8 +82,7 @@ pub struct ValidateSlpUtxosErr {
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {
     fn from(err: GrpcWebMultiUrlReqErr) -> Self {
         ValidateSlpUtxosErr {
-            // url is already present in the GrpcWebMultiUrlReqErr
-            to_url: "".to_string(),
+            to_url: err.to_url.clone(),
             kind: ValidateSlpUtxosErrKind::MultiReqErr(err),
         }
     }
@@ -185,8 +184,7 @@ pub struct CheckSlpTransactionErr {
 impl From<GrpcWebMultiUrlReqErr> for CheckSlpTransactionErr {
     fn from(err: GrpcWebMultiUrlReqErr) -> Self {
         CheckSlpTransactionErr {
-            // url is already present in the GrpcWebMultiUrlReqErr
-            to_url: "".to_string(),
+            to_url: err.to_url.clone(),
             kind: CheckSlpTransactionErrKind::MultiReqErr(err),
         }
     }
