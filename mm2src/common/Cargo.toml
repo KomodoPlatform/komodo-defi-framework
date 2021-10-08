@@ -78,6 +78,7 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.22", default-features = false, features = ["webpki-tokio"] }
 libc = { version = "0.2" }
+lightning-background-processor = "0.0.101"
 log4rs = { version = "1.0" }
 metrics = { version = "0.12" }
 metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }

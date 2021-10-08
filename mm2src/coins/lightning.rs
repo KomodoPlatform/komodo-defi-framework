@@ -1,10 +1,13 @@
-use crate::utxo::rpc_clients::{ElectrumBlockHeader, ElectrumClient, ElectrumNonce, UtxoRpcClientOps};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, ElectrumBlockHeader, ElectrumClient, ElectrumNonce,
+                               UtxoRpcClientOps};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::consensus::encode::deserialize;
 use bitcoin::hash_types::{BlockHash, TxMerkleNode};
 use bitcoin::network::constants::Network;
 use bitcoin_hashes::{sha256d, Hash};
+use common::executor::{spawn, Timer};
+use common::log;
 use common::log::LogState;
 use common::mm_ctx::MmArc;
 use futures::compat::Future01CompatExt;
@@ -24,7 +27,11 @@ use rand::RngCore;
 use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
+use tokio::net::TcpListener;
+
+const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
+const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 60;
 
 type ChainMonitor = chainmonitor::ChainMonitor<
     InMemorySigner,
@@ -33,6 +40,15 @@ type ChainMonitor = chainmonitor::ChainMonitor<
     Arc<ElectrumClient>,
     Arc<LogState>,
     Arc<FilesystemPersister>,
+>;
+
+type ChannelManager = channelmanager::ChannelManager<
+    InMemorySigner,
+    Arc<ChainMonitor>,
+    Arc<ElectrumClient>,
+    Arc<KeysManager>,
+    Arc<ElectrumClient>,
+    Arc<LogState>,
 >;
 
 type PeerManager = SimpleArcPeerManager<
@@ -44,7 +60,7 @@ type PeerManager = SimpleArcPeerManager<
     LogState,
 >;
 
-type ChannelManager = SimpleArcChannelManager<ChainMonitor, ElectrumClient, ElectrumClient, LogState>;
+type SimpleChannelManager = SimpleArcChannelManager<ChainMonitor, ElectrumClient, ElectrumClient, LogState>;
 
 #[derive(Debug)]
 pub struct LightningConf {
@@ -90,7 +106,10 @@ async fn handle_ln_events(event: &Event) {
     }
 }
 
-pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
+pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> Result<(), String> {
+    if ctx.ln_background_processor.is_some() {
+        return ERR!("Lightning node is already running");
+    }
     // Initialize the FeeEstimator. rpc_client implements the FeeEstimator trait, so it'll act as our fee estimator.
     let fee_estimator = Arc::new(conf.rpc_client.clone());
 
@@ -102,8 +121,11 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
     let broadcaster = Arc::new(conf.rpc_client.clone());
 
     // Initialize Persist
-    // TODO: Error type for handling this unwarp and others
-    let ln_data_dir = my_ln_data_dir(&ctx).as_path().to_str().unwrap().to_string();
+    let ln_data_dir = try_s!(my_ln_data_dir(ctx)
+        .as_path()
+        .to_str()
+        .ok_or("Data dir is a non-UTF-8 string"))
+    .to_string();
     let persister = Arc::new(FilesystemPersister::new(ln_data_dir.clone()));
 
     // Initialize the Filter. rpc_client implements the Filter trait, so it'll act as our filter.
@@ -121,14 +143,13 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
     let seed: [u8; 32] = ctx.secp256k1_key_pair().private().secret.clone().into();
 
     // The current time is used to derive random numbers from the seed where required, to ensure all random generation is unique across restarts.
-    let cur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+    let cur = try_s!(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH));
 
     // Initialize the KeysManager
     let keys_manager = Arc::new(KeysManager::new(&seed, cur.as_secs(), cur.subsec_nanos()));
 
     // Read ChannelMonitor state from disk, important for lightning node is restarting and has at least 1 channel
-    // TODO: Error handling instead of unwrap()
-    let channelmonitors = persister.read_channelmonitors(keys_manager.clone()).unwrap();
+    let channelmonitors = try_s!(persister.read_channelmonitors(keys_manager.clone()));
 
     // This is used for Electrum only to prepare for chain synchronization
     if let Some(ref filter) = filter {
@@ -146,12 +167,11 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
         .peer_channel_config_limits
         .force_announced_channel_preference = false;
 
-    // TODO: Error handling instead of unwrap()
-    let best_block = conf.rpc_client.get_best_block().compat().await.unwrap();
+    let best_block = try_s!(conf.rpc_client.get_best_block().compat().await);
     let chain_params = ChainParameters {
         network: conf.network,
         best_block: BestBlock::new(
-            BlockHash::from_hash(sha256d::Hash::from_slice(&best_block.hash.0).unwrap()),
+            BlockHash::from_hash(try_s!(sha256d::Hash::from_slice(&best_block.hash.0))),
             best_block.height as u32,
         ),
     };
@@ -190,72 +210,18 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
         Arc::new(IgnoringMessageHandler {}),
     ));
 
-    // Initialize networking
-    let peer_manager_connection_handler = peer_manager.clone();
-    let listening_port = conf.ln_peer_listening_port;
-    tokio::spawn(async move {
-        // TODO: Error handling
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", listening_port))
-            .await
-            .unwrap();
-        loop {
-            let peer_mgr = peer_manager_connection_handler.clone();
-            let tcp_stream = listener.accept().await.unwrap().0;
-            tokio::spawn(async move {
-                lightning_net_tokio::setup_inbound(peer_mgr.clone(), tcp_stream.into_std().unwrap()).await;
-            });
-        }
-    });
+    // Initialize p2p networking
+    let listener = try_s!(TcpListener::bind(format!("0.0.0.0:{}", conf.ln_peer_listening_port)).await);
+    spawn(ln_p2p_loop(ctx.clone(), peer_manager.clone(), listener));
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
-    // TODO: Error handling
-    let channel_manager_listener = new_channel_manager.clone();
-    let chain_monitor_listener = chain_monitor.clone();
-    let best_header_listener = conf.rpc_client.clone();
-    tokio::spawn(async move {
-        loop {
-            let best_header = best_header_listener
-                .blockchain_headers_subscribe()
-                .compat()
-                .await
-                .unwrap();
-            if best_block != best_header.clone().into() {
-                let (new_best_header, new_best_height) = match best_header {
-                    ElectrumBlockHeader::V12(h) => {
-                        let nonce = match h.nonce {
-                            ElectrumNonce::Number(n) => n as u32,
-                            ElectrumNonce::Hash(_) => {
-                                tokio::time::sleep(Duration::from_secs(60)).await;
-                                continue;
-                            },
-                        };
-                        (
-                            BlockHeader {
-                                version: h.version as i32,
-                                prev_blockhash: BlockHash::from_hash(
-                                    sha256d::Hash::from_slice(&h.prev_block_hash.0).unwrap(),
-                                ),
-                                merkle_root: TxMerkleNode::from_hash(
-                                    sha256d::Hash::from_slice(&h.merkle_root.0).unwrap(),
-                                ),
-                                time: h.timestamp as u32,
-                                bits: h.bits as u32,
-                                nonce,
-                            },
-                            h.block_height as u32,
-                        )
-                    },
-                    ElectrumBlockHeader::V14(h) => (
-                        deserialize(&h.hex.into_vec()).expect("Can't deserialize block header"),
-                        h.height as u32,
-                    ),
-                };
-                channel_manager_listener.best_block_updated(&new_best_header, new_best_height);
-                chain_monitor_listener.best_block_updated(&new_best_header, new_best_height);
-            }
-            tokio::time::sleep(Duration::from_secs(60)).await;
-        }
-    });
+    spawn(ln_best_block_update_loop(
+        ctx.clone(),
+        chain_monitor.clone(),
+        new_channel_manager.clone(),
+        conf.rpc_client.clone(),
+        best_block,
+    ));
 
     // Handle LN Events
     // TODO: Check if it's better to do this by implementing EventHandler
@@ -265,10 +231,10 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
     // Persist ChannelManager
     // Note: if the ChannelManager is not persisted properly to disk, there is risk of channels force closing the next time LN starts up
     let persist_channel_manager_callback =
-        move |node: &ChannelManager| FilesystemPersister::persist_manager(ln_data_dir.clone(), &*node);
+        move |node: &SimpleChannelManager| FilesystemPersister::persist_manager(ln_data_dir.clone(), &*node);
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational
-    let _background_processor = BackgroundProcessor::start(
+    let background_processor = BackgroundProcessor::start(
         persist_channel_manager_callback,
         event_handler,
         chain_monitor,
@@ -278,14 +244,133 @@ pub async fn start_lightning(ctx: MmArc, conf: LightningConf) {
         logger.0,
     );
 
+    if let Err(e) = ctx.ln_background_processor.pin(background_processor) {
+        return ERR!("Lightning node is already running: {}", e);
+    };
+
     // Broadcast Node Announcement
-    let mut interval = tokio::time::interval(Duration::from_secs(60));
-    loop {
-        interval.tick().await;
-        new_channel_manager.broadcast_node_announcement(
-            [0; 3], // insert node's RGB color. Add to configs later as this is only useful for showing the node in a graph
+    if !conf.ln_announced_listen_addr.is_empty() {
+        spawn(ln_node_announcement_loop(
+            ctx.clone(),
+            new_channel_manager,
             conf.ln_announced_node_name,
-            conf.ln_announced_listen_addr.clone(),
+            conf.ln_announced_listen_addr,
+        ));
+    }
+
+    Ok(())
+}
+
+async fn ln_p2p_loop(ctx: MmArc, peer_manager: Arc<PeerManager>, listener: TcpListener) {
+    loop {
+        if ctx.is_stopping() {
+            break;
+        }
+        let peer_mgr = peer_manager.clone();
+        let tcp_stream = match listener.accept().await {
+            Ok((stream, addr)) => {
+                log::debug!("New incoming lightning connection from peer address: {}", addr);
+                stream
+            },
+            Err(e) => {
+                log::error!("Error on accepting lightning connection: {}", e);
+                continue;
+            },
+        };
+        if let Ok(stream) = tcp_stream.into_std() {
+            spawn(async move {
+                lightning_net_tokio::setup_inbound(peer_mgr.clone(), stream).await;
+            })
+        };
+    }
+}
+
+async fn ln_best_block_update_loop(
+    ctx: MmArc,
+    chain_monitor: Arc<ChainMonitor>,
+    channel_manager: Arc<ChannelManager>,
+    best_header_listener: ElectrumClient,
+    best_block: RpcBestBlock,
+) {
+    let mut current_best_block = best_block;
+    loop {
+        if ctx.is_stopping() {
+            break;
+        }
+        let best_header = match best_header_listener.blockchain_headers_subscribe().compat().await {
+            Ok(h) => h,
+            Err(e) => {
+                log::error!("Error while requesting best header for lightning node: {}", e);
+                Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
+                continue;
+            },
+        };
+        if current_best_block != best_header.clone().into() {
+            current_best_block = best_header.clone().into();
+            let (new_best_header, new_best_height) = match best_header {
+                ElectrumBlockHeader::V12(h) => {
+                    let nonce = match h.nonce {
+                        ElectrumNonce::Number(n) => n as u32,
+                        ElectrumNonce::Hash(_) => {
+                            Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
+                            continue;
+                        },
+                    };
+                    let prev_blockhash = match sha256d::Hash::from_slice(&h.prev_block_hash.0) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            log::error!("Error while parsing previous block hash for lightning node: {}", e);
+                            Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
+                            continue;
+                        },
+                    };
+                    let merkle_root = match sha256d::Hash::from_slice(&h.merkle_root.0) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            log::error!("Error while parsing merkle root for lightning node: {}", e);
+                            Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
+                            continue;
+                        },
+                    };
+                    (
+                        BlockHeader {
+                            version: h.version as i32,
+                            prev_blockhash: BlockHash::from_hash(prev_blockhash),
+                            merkle_root: TxMerkleNode::from_hash(merkle_root),
+                            time: h.timestamp as u32,
+                            bits: h.bits as u32,
+                            nonce,
+                        },
+                        h.block_height as u32,
+                    )
+                },
+                ElectrumBlockHeader::V14(h) => (
+                    deserialize(&h.hex.into_vec()).expect("Can't deserialize block header"),
+                    h.height as u32,
+                ),
+            };
+            channel_manager.best_block_updated(&new_best_header, new_best_height);
+            chain_monitor.best_block_updated(&new_best_header, new_best_height);
+        }
+        Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
+    }
+}
+
+async fn ln_node_announcement_loop(
+    ctx: MmArc,
+    channel_manager: Arc<ChannelManager>,
+    node_name: [u8; 32],
+    addresses: Vec<NetAddress>,
+) {
+    loop {
+        if ctx.is_stopping() {
+            break;
+        }
+        channel_manager.broadcast_node_announcement(
+            [0; 3], // insert node's RGB color. Add to configs later as this is only useful for showing the node in a graph
+            node_name,
+            addresses.clone(),
         );
+        Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }
 }

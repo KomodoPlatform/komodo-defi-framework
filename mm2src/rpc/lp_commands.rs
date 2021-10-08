@@ -160,7 +160,7 @@ pub async fn enable_lightning(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 
     // TODO: get port from req and see if it's used
     let conf = LightningConf::new(client, 9735, node_name);
-    spawn(start_lightning(ctx.clone(), conf));
+    try_s!(start_lightning(&ctx, conf).await);
 
     let json = json!({
         "result": "success"

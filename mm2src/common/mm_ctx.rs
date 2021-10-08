@@ -23,6 +23,7 @@ cfg_wasm32! {
 cfg_native! {
     use crate::executor::Timer;
     use crate::mm_metrics::prometheus;
+    use lightning_background_processor::BackgroundProcessor;
     use rusqlite::Connection;
     use std::net::{IpAddr, SocketAddr};
     use std::sync::MutexGuard;
@@ -92,6 +93,9 @@ pub struct MmCtx {
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
+    /// The lightning node background processor that takes care of tasks that need to happen periodically
+    #[cfg(not(target_arch = "wasm32"))]
+    pub ln_background_processor: Constructible<BackgroundProcessor>,
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Mutex<Connection>>,
     pub mm_version: String,
@@ -120,6 +124,8 @@ impl MmCtx {
             swaps_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            ln_background_processor: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
