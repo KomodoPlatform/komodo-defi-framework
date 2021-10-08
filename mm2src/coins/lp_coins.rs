@@ -111,7 +111,7 @@ use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCo
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-use z_coin::{z_coin_from_conf_and_request, ZCoin};
+use z_coin::{z_coin_from_conf_and_params, ZCoin};
 
 cfg_native! {
     use async_std::fs;
@@ -1274,7 +1274,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
         CoinProtocol::ZHTLC => {
             let dbdir = ctx.dbdir();
-            try_s!(z_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, dbdir).await).into()
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret, dbdir).await).into()
         },
     };
 
