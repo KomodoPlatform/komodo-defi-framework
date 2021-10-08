@@ -79,7 +79,7 @@ impl FetchRequest {
                 .await
                 .map_err(|e| ERRL!("{}", stringify_js_error(&e)));
             if let Err(_res) = tx.send(result) {
-                warn!("spawn_fetch_str] the channgel already closed");
+                warn!("spawn_fetch_str] the channel already closed");
             }
         };
         spawn_local(fut);

@@ -1,18 +1,26 @@
+/// The module implementing Simple Ledger Protocol (SLP) support.
+/// It's a custom token format mostly used on the Bitcoin Cash blockchain.
+/// Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
+/// More info about the protocol and implementation guides can be found at https://slp.dev/
 use super::p2pkh_spend;
 
 use crate::utxo::bch::BchCoin;
+use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, p2sh_spend, payment_script, UtxoTxBuilder};
-use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, sign_tx, ActualTxFee, FeePolicy, GenerateTxError,
-                  RecentlySpentOutPoints, UtxoCoinConf, UtxoCommonOps, UtxoTx};
+use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr,
+                  FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
+                  UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
             ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 
+use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
+use common::jsonrpc_client::JsonRpcError;
 use common::log::warn;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -27,9 +35,9 @@ use hex::FromHexError;
 use keys::hash::H160;
 use keys::{Address, CashAddrType, CashAddress, NetworkPrefix as CashAddrPrefix, Public};
 use primitives::hash::H256;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::bytes::Bytes;
-use script::{Builder as ScriptBuilder, Opcode, Script};
+use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error, Reader};
 use serialization_derive::Deserializable;
@@ -60,7 +68,7 @@ pub struct SlpToken {
     platform_coin: BchCoin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SlpUnspent {
     pub bch_unspent: UnspentInfo,
     pub slp_amount: u64,
@@ -74,7 +82,7 @@ pub struct SlpOutput {
 
 /// The SLP transaction preimage
 struct SlpTxPreimage {
-    slp_inputs: Vec<UnspentInfo>,
+    slp_inputs: Vec<SlpUnspent>,
     available_bch_inputs: Vec<UnspentInfo>,
     outputs: Vec<TransactionOutput>,
 }
@@ -85,8 +93,9 @@ enum ValidateHtlcError {
     #[display(fmt = "TxParseError: {:?}", _0)]
     TxParseError(Error),
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
-    OpReturnParseError(Error),
+    OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
+    InvalidSlpUtxo(ValidateSlpUtxosErr),
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
 }
@@ -95,11 +104,19 @@ impl From<NumConversError> for ValidateHtlcError {
     fn from(err: NumConversError) -> ValidateHtlcError { ValidateHtlcError::NumConversionErr(err) }
 }
 
+impl From<ParseSlpScriptError> for ValidateHtlcError {
+    fn from(err: ParseSlpScriptError) -> Self { ValidateHtlcError::OpReturnParseError(err) }
+}
+
+impl From<ValidateSlpUtxosErr> for ValidateHtlcError {
+    fn from(err: ValidateSlpUtxosErr) -> Self { ValidateHtlcError::InvalidSlpUtxo(err) }
+}
+
 #[derive(Debug, Display)]
 enum ValidateDexFeeError {
     TxLackOfOutputs,
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
-    OpReturnParseError(Error),
+    OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
@@ -107,6 +124,10 @@ enum ValidateDexFeeError {
 
 impl From<NumConversError> for ValidateDexFeeError {
     fn from(err: NumConversError) -> ValidateDexFeeError { ValidateDexFeeError::NumConversionErr(err) }
+}
+
+impl From<ParseSlpScriptError> for ValidateDexFeeError {
+    fn from(err: ParseSlpScriptError) -> Self { ValidateDexFeeError::OpReturnParseError(err) }
 }
 
 #[allow(clippy::upper_case_acronyms, clippy::large_enum_variant)]
@@ -141,6 +162,7 @@ pub enum SpendHtlcError {
     RpcErr(UtxoRpcError),
     #[allow(clippy::upper_case_acronyms)]
     SpendP2SHErr(SpendP2SHError),
+    OpReturnParseError(ParseSlpScriptError),
 }
 
 impl From<NumConversError> for SpendHtlcError {
@@ -161,6 +183,10 @@ impl From<SpendP2SHError> for SpendHtlcError {
 
 impl From<UtxoRpcError> for SpendHtlcError {
     fn from(err: UtxoRpcError) -> SpendHtlcError { SpendHtlcError::RpcErr(err) }
+}
+
+impl From<ParseSlpScriptError> for SpendHtlcError {
+    fn from(err: ParseSlpScriptError) -> Self { SpendHtlcError::OpReturnParseError(err) }
 }
 
 fn slp_send_output(token_id: &H256, amounts: &[u64]) -> TransactionOutput {
@@ -275,7 +301,6 @@ impl SlpToken {
         if slp_outputs.len() > 18 {
             return MmError::err(GenSlpSpendErr::TooManyOutputs);
         }
-
         let (slp_unspents, bch_unspents, recently_spent) = self.slp_unspents_for_spend().await?;
         let total_slp_output = slp_outputs.iter().fold(0, |cur, slp_out| cur + slp_out.amount);
         let mut total_slp_input = 0;
@@ -287,7 +312,7 @@ impl SlpToken {
             }
 
             total_slp_input += slp_utxo.slp_amount;
-            inputs.push(slp_utxo.bch_unspent);
+            inputs.push(slp_utxo);
         }
 
         if total_slp_input < total_slp_output {
@@ -321,6 +346,7 @@ impl SlpToken {
             outputs.push(slp_change_out);
         }
 
+        validate_slp_utxos(self.platform_coin.bchd_urls(), &inputs, self.token_id()).await?;
         let preimage = SlpTxPreimage {
             slp_inputs: inputs,
             available_bch_inputs: bch_unspents,
@@ -332,9 +358,9 @@ impl SlpToken {
     pub async fn send_slp_outputs(&self, slp_outputs: Vec<SlpOutput>) -> Result<UtxoTx, String> {
         let (preimage, recently_spent) = try_s!(self.generate_slp_tx_preimage(slp_outputs).await);
         generate_and_send_tx(
-            &self.platform_coin,
+            self,
             preimage.available_bch_inputs,
-            Some(preimage.slp_inputs),
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
             FeePolicy::SendExact,
             recently_spent,
             preimage.outputs,
@@ -354,9 +380,9 @@ impl SlpToken {
         let slp_out = SlpOutput { amount, script_pubkey };
         let (preimage, recently_spent) = try_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
         generate_and_send_tx(
-            &self.platform_coin,
+            self,
             preimage.available_bch_inputs,
-            Some(preimage.slp_inputs),
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
             FeePolicy::SendExact,
             recently_spent,
             preimage.outputs,
@@ -378,8 +404,22 @@ impl SlpToken {
             return MmError::err(ValidateHtlcError::TxLackOfOutputs);
         }
 
-        let slp_tx: SlpTxDetails =
-            deserialize(tx.outputs[0].script_pubkey.as_slice()).map_to_mm(ValidateHtlcError::OpReturnParseError)?;
+        let slp_satoshis = sat_from_big_decimal(&amount, self.decimals())?;
+
+        let slp_unspent = SlpUnspent {
+            bch_unspent: UnspentInfo {
+                outpoint: OutPoint {
+                    hash: tx.hash(),
+                    index: 1,
+                },
+                value: 0,
+                height: None,
+            },
+            slp_amount: slp_satoshis,
+        };
+        validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id()).await?;
+
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -391,9 +431,7 @@ impl SlpToken {
                     return MmError::err(ValidateHtlcError::InvalidSlpDetails);
                 }
 
-                let expected = sat_from_big_decimal(&amount, self.decimals())?;
-
-                if amounts[0] != expected {
+                if amounts[0] != slp_satoshis {
                     return MmError::err(ValidateHtlcError::InvalidSlpDetails);
                 }
             },
@@ -431,7 +469,7 @@ impl SlpToken {
             return MmError::err(SpendHtlcError::TxLackOfOutputs);
         }
 
-        let slp_tx: SlpTxDetails = deserialize(tx.outputs[0].script_pubkey.as_slice())?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
 
         let other_pub = Public::from_slice(other_pub)?;
         let redeem_script = payment_script(time_lock, secret_hash, self.platform_coin.my_public_key(), &other_pub);
@@ -617,8 +655,7 @@ impl SlpToken {
             return MmError::err(ValidateDexFeeError::TxLackOfOutputs);
         }
 
-        let slp_tx: SlpTxDetails =
-            deserialize(tx.outputs[0].script_pubkey.as_slice()).map_to_mm(ValidateDexFeeError::OpReturnParseError)?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -880,17 +917,24 @@ enum GenSlpSpendErr {
         available: BigDecimal,
         required: BigDecimal,
     },
+    InvalidSlpUtxos(ValidateSlpUtxosErr),
 }
 
 impl From<UtxoRpcError> for GenSlpSpendErr {
     fn from(err: UtxoRpcError) -> GenSlpSpendErr { GenSlpSpendErr::RpcError(err) }
 }
 
+impl From<ValidateSlpUtxosErr> for GenSlpSpendErr {
+    fn from(err: ValidateSlpUtxosErr) -> GenSlpSpendErr { GenSlpSpendErr::InvalidSlpUtxos(err) }
+}
+
 impl From<GenSlpSpendErr> for WithdrawError {
     fn from(err: GenSlpSpendErr) -> WithdrawError {
         match err {
             GenSlpSpendErr::RpcError(e) => e.into(),
-            GenSlpSpendErr::TooManyOutputs => WithdrawError::InternalError(err.to_string()),
+            GenSlpSpendErr::TooManyOutputs | GenSlpSpendErr::InvalidSlpUtxos(_) => {
+                WithdrawError::InternalError(err.to_string())
+            },
             GenSlpSpendErr::InsufficientSlpBalance {
                 coin,
                 available,
@@ -901,6 +945,40 @@ impl From<GenSlpSpendErr> for WithdrawError {
                 required,
             },
         }
+    }
+}
+
+impl AsRef<UtxoCoinFields> for SlpToken {
+    fn as_ref(&self) -> &UtxoCoinFields { self.platform_coin.as_ref() }
+}
+
+#[async_trait]
+impl UtxoTxBroadcastOps for SlpToken {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>> {
+        let tx_bytes = serialize(tx);
+        check_slp_transaction(self.platform_coin.bchd_urls(), tx_bytes.clone().take())
+            .await
+            .mm_err(|e| BroadcastTxErr::Other(e.to_string()))?;
+
+        let hash = self.rpc().send_raw_transaction(tx_bytes.into()).compat().await?;
+
+        Ok(hash)
+    }
+}
+
+#[async_trait]
+impl UtxoTxGenerationOps for SlpToken {
+    async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { self.platform_coin.get_tx_fee().await }
+
+    async fn calc_interest_if_required(
+        &self,
+        unsigned: TransactionInputSigner,
+        data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
+        self.platform_coin
+            .calc_interest_if_required(unsigned, data, my_script_pub)
+            .await
     }
 }
 
@@ -931,7 +1009,17 @@ impl MarketCoinOps for SlpToken {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        self.platform_coin.send_raw_tx(tx)
+        let coin = self.clone();
+        let tx = tx.to_owned();
+        let fut = async move {
+            let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
+            let tx = deserialize(bytes.as_slice())
+                .map_to_mm(|e| e)
+                .map_err(|e| format!("{:?}", e))?;
+            let hash = coin.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
+            Ok(format!("{:?}", hash))
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn wait_for_confirmations(
@@ -986,9 +1074,9 @@ impl SwapOps for SlpToken {
             let slp_out = SlpOutput { amount, script_pubkey };
             let (preimage, recently_spent) = try_s!(coin.generate_slp_tx_preimage(vec![slp_out]).await);
             generate_and_send_tx(
-                &coin.platform_coin,
+                &coin,
                 preimage.available_bch_inputs,
-                Some(preimage.slp_inputs),
+                Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
                 FeePolicy::SendExact,
                 recently_spent,
                 preimage.outputs,
@@ -1268,7 +1356,9 @@ impl From<GenSlpSpendErr> for TradePreimageError {
                 required,
             },
             GenSlpSpendErr::RpcError(e) => e.into(),
-            GenSlpSpendErr::TooManyOutputs => TradePreimageError::InternalError(slp.to_string()),
+            GenSlpSpendErr::TooManyOutputs | GenSlpSpendErr::InvalidSlpUtxos(_) => {
+                TradePreimageError::InternalError(slp.to_string())
+            },
         }
     }
 }
@@ -1322,7 +1412,7 @@ impl MmCoin for SlpToken {
             let slp_output = SlpOutput { amount, script_pubkey };
             let (slp_preimage, _) = coin.generate_slp_tx_preimage(vec![slp_output]).await?;
             let mut tx_builder = UtxoTxBuilder::new(&coin.platform_coin)
-                .add_required_inputs(slp_preimage.slp_inputs)
+                .add_required_inputs(slp_preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent))
                 .add_available_inputs(slp_preimage.available_bch_inputs)
                 .add_outputs(slp_preimage.outputs);
 
@@ -1572,6 +1662,8 @@ pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, Mm
 mod slp_tests {
     use super::*;
     use crate::utxo::bch::tbch_coin_for_test;
+    use common::block_on;
+    use mocktopus::mocking::{MockResult, Mockable};
 
     // https://slp.dev/specs/slp-token-type-1/#examples
     #[test]
@@ -1731,5 +1823,128 @@ mod slp_tests {
 
         let slp_address = fusd.my_address().unwrap();
         assert_eq!("slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8", slp_address);
+    }
+
+    #[test]
+    fn test_validate_htlc_valid() {
+        let bch = tbch_coin_for_test();
+        let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
+        let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
+
+        // https://testnet.simpleledger.info/tx/e935160bfb5b45007a0fc6f8fbe8da618f28df6573731f1ffb54d9560abb49b2
+        let tx = hex::decode("0100000002736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5020000006a47304402206be99fe56a98e7a8c2ffe6f2d05c5c1f46a6577064b84d27d45fe0e959f6e77402201c512629313b48cd4df873222aa49046ae9a3a6e34e359d10d4308cb40438fba4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5030000006a473044022020d774d045bbe3dce5b04af836f6a5629c6c4ce75b0b5ba8a1da0ae9a4ecc0530220522f86d20c9e4142e40f9a9c8d25db16fde91d4a0ad6f6ff2107e201386131b64121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8080000000000001f3ee80300000000000017a914b0ca1fea17cf522c7e858416093fc6d95e55824087e8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88accf614801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8c83d460").unwrap();
+
+        let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
+        let other_pub = Public::from_slice(&other_pub).unwrap();
+
+        let my_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
+        let my_pub = Public::from_slice(&my_pub).unwrap();
+        BchCoin::my_public_key.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(my_pub))));
+
+        let lock_time = 1624547837;
+        let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
+        let amount = "0.1".parse().unwrap();
+
+        block_on(fusd.validate_htlc(&tx, &other_pub, lock_time, &secret_hash, amount)).unwrap();
+    }
+
+    #[test]
+    fn construct_and_send_invalid_slp_htlc_should_fail() {
+        let bch = tbch_coin_for_test();
+        let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
+        let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
+
+        let (unspents, recently_spent) = block_on(bch.list_unspent_ordered(&bch.as_ref().my_address)).unwrap();
+
+        let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
+        let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
+        let other_pub = Public::from_slice(&other_pub).unwrap();
+
+        let htlc_script = payment_script(1624547837, &secret_hash, &other_pub, bch.my_public_key());
+
+        let slp_send_op_return_out = slp_send_output(&token_id, &[1000]);
+
+        let invalid_slp_send_out = TransactionOutput {
+            value: 1000,
+            script_pubkey: ScriptBuilder::build_p2sh(&dhash160(&htlc_script)).into(),
+        };
+
+        let err = block_on(generate_and_send_tx(
+            &fusd,
+            unspents,
+            None,
+            FeePolicy::SendExact,
+            recently_spent,
+            vec![slp_send_op_return_out, invalid_slp_send_out],
+        ))
+        .unwrap_err();
+        println!("{:?}", err);
+        assert!(err.contains("is not valid with reason outputs greater than inputs"));
+
+        // this is invalid tx bytes generated by one of this test runs, ensure that FUSD won't broadcast it using
+        // different methods
+        let tx_bytes: &[u8] = &[
+            1, 0, 0, 0, 1, 105, 91, 221, 196, 250, 138, 113, 118, 165, 149, 181, 70, 15, 224, 124, 67, 133, 237, 31,
+            88, 125, 178, 69, 166, 27, 211, 32, 54, 1, 238, 134, 102, 2, 0, 0, 0, 106, 71, 48, 68, 2, 32, 103, 105,
+            238, 187, 198, 194, 7, 162, 250, 17, 240, 45, 93, 168, 223, 35, 92, 23, 84, 70, 193, 234, 183, 130, 114,
+            49, 198, 118, 69, 22, 128, 118, 2, 32, 127, 44, 73, 98, 217, 254, 44, 181, 87, 175, 114, 138, 223, 173,
+            201, 168, 38, 198, 49, 23, 9, 101, 50, 154, 55, 236, 126, 253, 37, 114, 111, 218, 65, 33, 3, 104, 121, 223,
+            35, 6, 99, 219, 76, 208, 131, 200, 238, 176, 242, 147, 244, 106, 188, 70, 10, 211, 194, 153, 176, 8, 155,
+            114, 230, 212, 114, 32, 44, 255, 255, 255, 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 55, 106, 4, 83, 76, 80, 0, 1, 1,
+            4, 83, 69, 78, 68, 32, 187, 48, 158, 72, 147, 6, 113, 88, 43, 234, 80, 143, 154, 29, 155, 73, 30, 73, 182,
+            155, 227, 214, 243, 114, 220, 8, 218, 42, 198, 233, 14, 183, 8, 0, 0, 0, 0, 0, 0, 3, 232, 232, 3, 0, 0, 0,
+            0, 0, 0, 23, 169, 20, 149, 59, 57, 9, 255, 106, 162, 105, 248, 93, 163, 76, 19, 42, 146, 66, 68, 64, 225,
+            142, 135, 205, 228, 173, 0, 0, 0, 0, 0, 25, 118, 169, 20, 140, 255, 252, 36, 9, 208, 99, 67, 125, 106, 168,
+            183, 90, 0, 155, 155, 165, 27, 113, 252, 136, 172, 216, 36, 92, 97,
+        ];
+        let tx_bytes_str = hex::encode(tx_bytes);
+
+        let err = fusd.send_raw_tx(&tx_bytes_str).wait().unwrap_err();
+        println!("{:?}", err);
+        assert!(err.contains("is not valid with reason outputs greater than inputs"));
+
+        let utxo_tx: UtxoTx = deserialize(tx_bytes).unwrap();
+        let err = block_on(fusd.broadcast_tx(&utxo_tx)).unwrap_err();
+        match err.into_inner() {
+            BroadcastTxErr::Other(err) => assert!(err.contains("is not valid with reason outputs greater than inputs")),
+            e @ _ => panic!("Unexpected err {:?}", e),
+        };
+    }
+
+    #[test]
+    fn test_validate_htlc_invalid_slp_utxo() {
+        let bch = tbch_coin_for_test();
+        let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
+        let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
+
+        // https://www.blockchain.com/ru/bch-testnet/tx/6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69
+        let tx = hex::decode("0100000001ce59a734f33811afcc00c19dcb12202ed00067a50efed80424fabd2b723678c0020000006b483045022100ec1fecff9c60fb7e821b9a412bd8c4ce4a757c68287f9cf9e0f461165492d6530220222f020dd05d65ba35cddd0116c99255612ec90d63019bb1cea45e2cf09a62a94121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff030000000000000000376a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8e80300000000000017a914953b3909ff6aa269f85da34c132a92424440e18e879decad00000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88acd1215c61").unwrap();
+
+        let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
+        let other_pub = Public::from_slice(&other_pub).unwrap();
+
+        let lock_time = 1624547837;
+        let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
+        let amount: BigDecimal = "0.1".parse().unwrap();
+
+        // standard BCH validation should pass as the output itself is correct
+        utxo_common::validate_payment(
+            bch.clone(),
+            deserialize(tx.as_slice()).unwrap(),
+            SLP_SWAP_VOUT,
+            bch.my_public_key(),
+            &other_pub,
+            &secret_hash,
+            fusd.platform_dust_dec(),
+            lock_time,
+        )
+        .wait()
+        .unwrap();
+
+        let validity_err = block_on(fusd.validate_htlc(&tx, &other_pub, lock_time, &secret_hash, amount)).unwrap_err();
+        match validity_err.into_inner() {
+            ValidateHtlcError::InvalidSlpUtxo(e) => println!("{:?}", e),
+            err @ _ => panic!("Unexpected err {:?}", err),
+        };
     }
 }

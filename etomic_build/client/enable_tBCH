@@ -1,3 +1,14 @@
 #!/bin/bash
 source userpass
-curl --url "http://127.0.0.1:7783" --data '{"userpass":"'$userpass'","method":"electrum","coin":"tBCH","servers":[{"url":"tbch.loping.net:60002","protocol":"SSL"},{"url":"electroncash.de:50004","protocol":"SSL"},{"url":"testnet.bitcoincash.network:60002","protocol":"SSL"},{"url":"electrs.electroncash.de:60002","protocol":"SSL"}]}'
+curl --url "http://127.0.0.1:7783" --data '{
+  "userpass":"'$userpass'",
+  "method":"electrum",
+  "coin":"tBCH",
+  "servers":[
+    {"url":"tbch.loping.net:60002","protocol":"SSL"},
+    {"url":"electroncash.de:50004","protocol":"SSL"},
+    {"url":"testnet.bitcoincash.network:60002","protocol":"SSL"},
+    {"url":"electrs.electroncash.de:60002","protocol":"SSL"}
+  ],
+  "bchd_urls": ["https://bchd-testnet.greyh.at:18335"]
+}'

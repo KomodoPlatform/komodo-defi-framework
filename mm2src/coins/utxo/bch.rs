@@ -15,6 +15,7 @@ use serialization::{deserialize, CoinVariant};
 pub struct BchCoin {
     utxo_arc: UtxoArc,
     slp_addr_prefix: CashAddrPrefix,
+    bchd_urls: Vec<String>,
 }
 
 pub enum IsSlpUtxoError {
@@ -61,6 +62,8 @@ impl From<serialization::Error> for IsSlpUtxoError {
 
 impl BchCoin {
     pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
+
+    pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
         let mut result = BchUnspents::default();
@@ -223,11 +226,18 @@ pub async fn bch_coin_from_conf_and_request(
     slp_addr_prefix: CashAddrPrefix,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
+    let bchd_urls: Vec<String> = try_s!(json::from_value(req["bchd_urls"].clone()));
+    let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or(false);
+
+    if bchd_urls.is_empty() && !allow_slp_unsafe_conf {
+        return Err("Using empty bchd_urls is unsafe for SLP users!".into());
+    }
+
     let constructor = {
-        let prefix = slp_addr_prefix.clone();
         move |utxo_arc| BchCoin {
             utxo_arc,
-            slp_addr_prefix: prefix.clone(),
+            slp_addr_prefix: slp_addr_prefix.clone(),
+            bchd_urls: bchd_urls.clone(),
         }
     };
     let coin: BchCoin =
@@ -238,9 +248,32 @@ pub async fn bch_coin_from_conf_and_request(
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
-impl UtxoCommonOps for BchCoin {
+impl UtxoTxBroadcastOps for BchCoin {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>> {
+        utxo_common::broadcast_tx(self, tx).await
+    }
+}
+
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoTxGenerationOps for BchCoin {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
+    async fn calc_interest_if_required(
+        &self,
+        unsigned: TransactionInputSigner,
+        data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+    }
+}
+
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoCommonOps for BchCoin {
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }
@@ -263,15 +296,6 @@ impl UtxoCommonOps for BchCoin {
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
         utxo_common::is_unspent_mature(self.utxo_arc.conf.mature_confirmations, output)
-    }
-
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
     }
 
     async fn calc_interest_of_tx(&self, tx: &UtxoTx, input_transactions: &mut HistoryUtxoTxMap) -> UtxoRpcResult<u64> {
@@ -737,6 +761,8 @@ pub fn tbch_coin_for_test() -> BchCoin {
         "method": "electrum",
         "coin": "BCH",
         "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"},{"url":"electroncash.de:50003"}],
+        "bchd_urls": ["https://bchd-testnet.greyh.at:18335"],
+        "allow_slp_unsafe_conf": false,
     });
     block_on(bch_coin_from_conf_and_request(
         &ctx,
@@ -765,6 +791,8 @@ pub fn bch_coin_for_test() -> BchCoin {
         "method": "electrum",
         "coin": "BCH",
         "servers": [{"url":"electrum1.cipig.net:10055"},{"url":"electrum2.cipig.net:10055"},{"url":"electrum3.cipig.net:10055"}],
+        "bchd_urls": [],
+        "allow_slp_unsafe_conf": true,
     });
     block_on(bch_coin_from_conf_and_request(
         &ctx,
