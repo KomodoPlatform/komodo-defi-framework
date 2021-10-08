@@ -1,6 +1,5 @@
 use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::qrc20::{QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT};
 use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
@@ -1625,7 +1624,7 @@ fn test_add_delegation_invalid_amount() {
 }
 
 #[test]
-fn test_qtum_add_delegation() {
+fn test_qtum_generate_pod() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
@@ -1644,26 +1643,11 @@ fn test_qtum_add_delegation() {
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
+    let expected_res = "206b4fb3baec905f6ed903855b313ad1ca35524db9e8f4e8059563496ef66ad9cf3b74634ee816ad1ac203b0f77e581100d998e3bed10b54442f4fa11ef542bf9c";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let staker_address_hex = qtum::contract_addr_from_utxo_addr(address.clone());
-
-    /*let res = coin.add_delegation_output(
-        staker_address_hex,
-        address.hash,
-        10,
-        QRC20_GAS_LIMIT_DELEGATION,
-        QRC20_GAS_PRICE_DEFAULT,
-    );*/
-    //let res = coin.qtum_add_delegation(address, 10).wait().unwrap();
-    //let str = json::to_string(&res).unwrap();
-    //println!("{:?}", res);
-    //println!("{}", str);
-    //assert_ne!(res.gas_fee, 0);
-    //assert_ne!(res.miner_fee, 0);
-    //assert_eq!(res.signed.hash().is_empty(), false);
-    //println!("{:?}", res.gas_fee);
-    //println!("{:?}", res.miner_fee);
-    //println!("{:?}", res.signed);
+    let res = coin.generate_pod(address.hash).unwrap();
+    assert_eq!(expected_res, res.to_string());
 }
 
 #[test]
