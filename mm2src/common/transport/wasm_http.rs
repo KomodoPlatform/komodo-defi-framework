@@ -3,6 +3,7 @@ use crate::log::warn;
 use crate::stringify_js_error;
 use futures::channel::oneshot;
 use http::StatusCode;
+use js_sys::Uint8Array;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -111,6 +112,7 @@ impl FetchRequest {
             Err(origin_val) => return js_err!("Error casting {:?} to 'JsResponse'", origin_val),
         };
 
+        // js_response.blob()
         let resp_txt_fut = match js_response.text() {
             Ok(txt) => txt,
             Err(e) => {
@@ -122,6 +124,7 @@ impl FetchRequest {
             },
         };
         let resp_txt = JsFuture::from(resp_txt_fut).await?;
+        // let array: Uint8Array = resp_txt.clone().dyn_into().unwrap();
 
         let resp_str = match resp_txt.as_string() {
             Some(string) => string,
@@ -153,12 +156,19 @@ impl FetchMethod {
 
 enum RequestBody {
     Utf8(String),
+    Bytes(Vec<u8>),
 }
 
 impl RequestBody {
     fn into_js_value(self) -> JsValue {
+        use js_sys::Uint8Array;
+
         match self {
             RequestBody::Utf8(string) => JsValue::from_str(&string),
+            RequestBody::Bytes(bytes) => {
+                let js_array = Uint8Array::from(bytes.as_slice());
+                js_array.into()
+            },
         }
     }
 }
