@@ -1019,7 +1019,7 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// Deserializable Electrum protocol representation for RPC
 pub enum ElectrumProtocol {
     /// TCP
@@ -1050,7 +1050,7 @@ pub struct ElectrumProtocolVersion {
     pub protocol_version: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// Electrum request RPC representation
 pub struct ElectrumRpcRequest {
     pub url: String,

@@ -1,7 +1,7 @@
 use super::{coin_conf, lp_coinfind, CoinProtocol};
+use crate::qrc20::Qrc20ActivationParams;
 use crate::utxo::bch::BchActivationParams;
-use crate::utxo::utxo_common::UtxoMergeParams;
-use crate::utxo::UtxoActivationMode;
+use crate::utxo::UtxoActivationParams;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use derive_more::Display;
@@ -26,14 +26,8 @@ pub enum EnableProtocolParams {
         with_tokens: Vec<String>,
     },
     Erc20,
-    Utxo {
-        mode: UtxoActivationMode,
-        utxo_merge_params: Option<UtxoMergeParams>,
-    },
-    Qrc20 {
-        swap_contract_address: Address,
-        fallback_swap_contract: Option<Address>,
-    },
+    Utxo(UtxoActivationParams),
+    Qrc20(Qrc20ActivationParams),
     Zcoin {
         mode: ZcoinActivationMode,
     },
@@ -48,6 +42,7 @@ pub struct EnableRpcRequest {
 pub struct EnableResult {}
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum EnableError {
     /// With ticker
     CoinIsAlreadyActivated(String),
@@ -117,20 +112,11 @@ pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<En
         ) => {
             // Erc20
         },
-        (
-            EnableProtocolParams::Utxo {
-                mode,
-                utxo_merge_params,
-            },
-            CoinProtocol::UTXO,
-        ) => {
+        (EnableProtocolParams::Utxo(_), CoinProtocol::UTXO) => {
             // UTXO
         },
         (
-            EnableProtocolParams::Qrc20 {
-                swap_contract_address,
-                fallback_swap_contract,
-            },
+            EnableProtocolParams::Qrc20(_),
             CoinProtocol::QRC20 {
                 platform,
                 contract_address,

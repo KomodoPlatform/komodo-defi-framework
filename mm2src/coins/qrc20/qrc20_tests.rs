@@ -32,12 +32,14 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
     });
     let contract_address = "0xd362e096e873eb7907e205fadc6175c6fec7bc44".into();
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qrc20_coin_from_conf_and_request(
+    let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qrc20_coin_from_conf_and_params(
         &ctx,
         "QRC20",
         "QTUM",
         &conf,
-        &req,
+        params,
         priv_key,
         contract_address,
     ))
@@ -796,12 +798,14 @@ fn test_coin_from_conf_without_decimals() {
     // 0459c999c3edf05e73c83f3fbae9f0f020919f91 has 12 decimals instead of standard 8
     let contract_address = "0x0459c999c3edf05e73c83f3fbae9f0f020919f91".into();
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qrc20_coin_from_conf_and_request(
+    let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qrc20_coin_from_conf_and_params(
         &ctx,
         "QRC20",
         "QTUM",
         &conf,
-        &req,
+        params,
         &priv_key,
         contract_address,
     ))

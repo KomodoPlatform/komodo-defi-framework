@@ -60,7 +60,7 @@ pub struct UtxoArcBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    mode: UtxoActivationMode,
+    activation_params: UtxoActivationParams,
     priv_key: &'a [u8],
 }
 
@@ -69,14 +69,14 @@ impl<'a> UtxoArcBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        mode: UtxoActivationMode,
+        activation_params: UtxoActivationParams,
         priv_key: &'a [u8],
     ) -> UtxoArcBuilder<'a> {
         UtxoArcBuilder {
             ctx,
             ticker,
             conf,
-            mode,
+            activation_params,
             priv_key,
         }
     }
@@ -95,30 +95,29 @@ impl UtxoCoinBuilder for UtxoArcBuilder<'_> {
 
     fn conf(&self) -> &Json { self.conf }
 
-    fn mode(&self) -> UtxoActivationMode { self.mode.clone() }
+    fn activation_params(&self) -> UtxoActivationParams { self.activation_params.clone() }
 
     fn ticker(&self) -> &str { self.ticker }
 
     fn priv_key(&self) -> &[u8] { self.priv_key }
 }
 
-pub async fn utxo_arc_from_conf_and_request<T>(
+pub async fn utxo_arc_from_conf_and_params<T>(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    mode: UtxoActivationMode,
-    merge_params: Option<UtxoMergeParams>,
+    activation_params: UtxoActivationParams,
     priv_key: &[u8],
     constructor: impl Fn(UtxoArc) -> T + Send + 'static,
 ) -> Result<T, String>
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, mode, priv_key);
+    let builder = UtxoArcBuilder::new(ctx, ticker, conf, activation_params.clone(), priv_key);
     let utxo_arc = try_s!(builder.build().await);
     let coin = constructor(utxo_arc.clone());
 
-    if let Some(merge_params) = merge_params {
+    if let Some(merge_params) = activation_params.utxo_merge_params {
         let weak = utxo_arc.downgrade();
         let merge_loop = merge_utxo_loop(
             weak,
@@ -137,7 +136,7 @@ fn ten_f64() -> f64 { 10. }
 
 fn one_hundred() -> usize { 100 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoMergeParams {
     merge_at: usize,
     #[serde(default = "ten_f64")]

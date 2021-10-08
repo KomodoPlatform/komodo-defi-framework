@@ -1,5 +1,4 @@
 use super::*;
-use crate::utxo::utxo_common::UtxoMergeParams;
 use crate::{eth, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
@@ -151,16 +150,15 @@ impl From<QtumCoin> for UtxoArc {
     fn from(coin: QtumCoin) -> Self { coin.utxo_arc }
 }
 
-pub async fn qtum_coin_from_conf_and_request(
+pub async fn qtum_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    mode: UtxoActivationMode,
-    merge_params: Option<UtxoMergeParams>,
+    activation_params: UtxoActivationParams,
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
     let coin: QtumCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, mode, merge_params, priv_key, QtumCoin::from)
+        utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, activation_params, priv_key, QtumCoin::from)
             .await
     );
     Ok(coin)

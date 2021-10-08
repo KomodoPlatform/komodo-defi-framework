@@ -6,9 +6,9 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationMode, UtxoCoinBuilder,
-                  UtxoCoinFields, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps,
-                  VerboseTransactionFrom, UTXO_LOCK};
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoCoinBuilder,
+                  UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
+                  UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -66,14 +66,48 @@ const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Qrc20ActivationParams {
+    swap_contract_address: H160,
+    fallback_swap_contract: Option<H160>,
+    #[serde(flatten)]
+    utxo_params: UtxoActivationParams,
+}
+
+#[derive(Debug, Display)]
+pub enum Qrc20FromLegacyReqErr {
+    InvalidSwapContractAddr(json::Error),
+    InvalidFallbackSwapContract(json::Error),
+    InvalidUtxoParams(UtxoFromLegacyReqErr),
+}
+
+impl From<UtxoFromLegacyReqErr> for Qrc20FromLegacyReqErr {
+    fn from(err: UtxoFromLegacyReqErr) -> Self { Qrc20FromLegacyReqErr::InvalidUtxoParams(err) }
+}
+
+impl Qrc20ActivationParams {
+    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<Qrc20FromLegacyReqErr>> {
+        let swap_contract_address = json::from_value(req["swap_contract_address"].clone())
+            .map_to_mm(Qrc20FromLegacyReqErr::InvalidSwapContractAddr)?;
+        let fallback_swap_contract = json::from_value(req["fallback_swap_contract"].clone())
+            .map_to_mm(Qrc20FromLegacyReqErr::InvalidFallbackSwapContract)?;
+        let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
+        Ok(Qrc20ActivationParams {
+            swap_contract_address,
+            fallback_swap_contract,
+            utxo_params,
+        })
+    }
+}
+
 struct Qrc20CoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    mode: UtxoActivationMode,
+    activation_params: Qrc20ActivationParams,
     priv_key: &'a [u8],
     platform: String,
-    contract_address: H160,
+    token_contract_address: H160,
 }
 
 impl<'a> Qrc20CoinBuilder<'a> {
@@ -81,37 +115,19 @@ impl<'a> Qrc20CoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        mode: UtxoActivationMode,
+        activation_params: Qrc20ActivationParams,
         priv_key: &'a [u8],
         platform: String,
-        contract_address: H160,
+        token_contract_address: H160,
     ) -> Qrc20CoinBuilder<'a> {
         Qrc20CoinBuilder {
             ctx,
             ticker,
             conf,
-            mode,
+            activation_params,
             priv_key,
             platform,
-            contract_address,
-        }
-    }
-}
-
-impl Qrc20CoinBuilder<'_> {
-    fn swap_contract_address(&self) -> Result<H160, String> {
-        match self.req()["swap_contract_address"].as_str() {
-            Some(address) => qtum::contract_addr_from_str(address).map_err(|e| ERRL!("{}", e)),
-            None => return ERR!("\"swap_contract_address\" field is expected"),
-        }
-    }
-
-    fn fallback_swap_contract(&self) -> Result<Option<H160>, String> {
-        match self.req()["fallback_swap_contract"].as_str() {
-            Some(address) => qtum::contract_addr_from_str(address)
-                .map_err(|e| ERRL!("{}", e))
-                .map(Some),
-            None => Ok(None),
+            token_contract_address,
         }
     }
 }
@@ -121,15 +137,13 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
     type ResultCoin = Qrc20Coin;
 
     async fn build(self) -> Result<Self::ResultCoin, String> {
-        let swap_contract_address = try_s!(self.swap_contract_address());
-        let fallback_swap_contract = try_s!(self.fallback_swap_contract());
         let utxo = try_s!(self.build_utxo_fields().await);
         let inner = Qrc20CoinFields {
             utxo,
             platform: self.platform,
-            contract_address: self.contract_address,
-            swap_contract_address,
-            fallback_swap_contract,
+            contract_address: self.token_contract_address,
+            swap_contract_address: self.activation_params.swap_contract_address,
+            fallback_swap_contract: self.activation_params.fallback_swap_contract,
         };
         Ok(Qrc20Coin(Arc::new(inner)))
     }
@@ -148,7 +162,7 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
         }
 
         rpc_client
-            .token_decimals(&self.contract_address)
+            .token_decimals(&self.token_contract_address)
             .compat()
             .await
             .map_err(|e| ERRL!("{}", e))
@@ -190,19 +204,27 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
         }
     }
 
-    fn mode(&self) -> UtxoActivationMode { self.mode.clone() }
+    fn activation_params(&self) -> UtxoActivationParams { self.activation_params.utxo_params.clone() }
 }
 
-pub async fn qrc20_coin_from_conf_and_request(
+pub async fn qrc20_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     platform: &str,
     conf: &Json,
-    mode: UtxoActivationMode,
+    params: Qrc20ActivationParams,
     priv_key: &[u8],
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
-    let builder = Qrc20CoinBuilder::new(ctx, ticker, conf, mode, priv_key, platform.to_owned(), contract_address);
+    let builder = Qrc20CoinBuilder::new(
+        ctx,
+        ticker,
+        conf,
+        params,
+        priv_key,
+        platform.to_owned(),
+        contract_address,
+    );
     builder.build().await
 }
 

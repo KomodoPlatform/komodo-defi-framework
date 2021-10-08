@@ -3,10 +3,10 @@ use crate::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
-use coins::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
+use coins::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin};
 use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
-use coins::utxo::UtxoCommonOps;
+use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TradePreimageValue, TransactionEnum};
 use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
@@ -47,7 +47,8 @@ impl QtumDockerOps {
             "method": "enable",
         });
         let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
-        let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "QTUM", &conf, &req, &priv_key)).unwrap();
+        let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+        let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "QTUM", &conf, params, &priv_key)).unwrap();
         QtumDockerOps { ctx, coin }
     }
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpTransaction, SlpUnspent};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoMergeParams};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             ValidateAddressResult, WithdrawFut};
 use common::log::warn;
@@ -18,45 +18,32 @@ pub struct BchActivationParams {
     #[serde(default)]
     allow_slp_unsafe_conf: bool,
     bchd_urls: Vec<String>,
-    mode: UtxoActivationMode,
     with_tokens: Vec<String>,
-    utxo_merge_params: Option<UtxoMergeParams>,
-    #[serde(default)]
-    tx_history: bool,
-    required_confirmations: Option<u64>,
-    requires_notarization: Option<bool>,
+    #[serde(flatten)]
+    utxo_params: UtxoActivationParams,
 }
 
 #[derive(Debug, Display)]
-pub enum FromLegacyReqErr {
-    UnexpectedMethod,
-    InvalidElectrumServers(json::Error),
-    InvalidMergeParams(json::Error),
+pub enum BchFromLegacyReqErr {
+    InvalidUtxoParams(UtxoFromLegacyReqErr),
     InvalidBchdUrls(json::Error),
 }
 
+impl From<UtxoFromLegacyReqErr> for BchFromLegacyReqErr {
+    fn from(err: UtxoFromLegacyReqErr) -> Self { BchFromLegacyReqErr::InvalidUtxoParams(err) }
+}
+
 impl BchActivationParams {
-    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<FromLegacyReqErr>> {
-        let mode = match req["method"].as_str() {
-            Some("enable") => UtxoActivationMode::Native,
-            Some("electrum") => {
-                let servers =
-                    json::from_value(req["servers"].clone()).map_to_mm(FromLegacyReqErr::InvalidElectrumServers)?;
-                UtxoActivationMode::Electrum { servers }
-            },
-            _ => return MmError::err(FromLegacyReqErr::UnexpectedMethod),
-        };
-        let utxo_merge_params =
-            json::from_value(req["utxo_merge_params"].clone()).map_to_mm(FromLegacyReqErr::InvalidMergeParams)?;
-        let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(FromLegacyReqErr::InvalidBchdUrls)?;
+    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<BchFromLegacyReqErr>> {
+        let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(BchFromLegacyReqErr::InvalidBchdUrls)?;
         let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
+        let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
 
         Ok(BchActivationParams {
             allow_slp_unsafe_conf,
             bchd_urls,
-            mode,
             with_tokens: Vec::new(),
-            utxo_merge_params,
+            utxo_params,
         })
     }
 }
@@ -268,7 +255,7 @@ impl AsRef<UtxoCoinFields> for BchCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
-pub async fn bch_coin_from_conf_and_request(
+pub async fn bch_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
@@ -289,16 +276,7 @@ pub async fn bch_coin_from_conf_and_request(
         }
     };
     let coin: BchCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_request(
-            ctx,
-            ticker,
-            conf,
-            params.mode,
-            params.utxo_merge_params,
-            priv_key,
-            constructor
-        )
-        .await
+        utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, params.utxo_params, priv_key, constructor).await
     );
     Ok(coin)
 }
@@ -822,11 +800,13 @@ pub fn tbch_coin_for_test() -> BchCoin {
         "bchd_urls": ["https://bchd-testnet.greyh.at:18335"],
         "allow_slp_unsafe_conf": false,
     });
-    block_on(bch_coin_from_conf_and_request(
+
+    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
         &conf,
-        &req,
+        params,
         CashAddrPrefix::SlpTest,
         &*keypair.private().secret,
     ))
@@ -852,11 +832,13 @@ pub fn bch_coin_for_test() -> BchCoin {
         "bchd_urls": [],
         "allow_slp_unsafe_conf": true,
     });
-    block_on(bch_coin_from_conf_and_request(
+
+    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
         &conf,
-        &req,
+        params,
         CashAddrPrefix::SimpleLedger,
         &*keypair.private().secret,
     ))
