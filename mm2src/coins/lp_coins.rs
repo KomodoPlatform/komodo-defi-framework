@@ -711,9 +711,9 @@ pub enum BalanceError {
 
 #[derive(Debug, PartialEq, Display)]
 pub enum GetNonZeroBalance {
-    #[display(fmt = "Internal error when retrieving balance - skipping")]
+    #[display(fmt = "Internal error when retrieving balance")]
     MyBalanceError(BalanceError),
-    #[display(fmt = "Balance is zero - skipping")]
+    #[display(fmt = "Balance is zero")]
     BalanceIsZero,
 }
 

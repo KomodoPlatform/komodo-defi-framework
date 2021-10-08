@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
     #[display(fmt = "Error saving the a swap: {}", _0)]
     ErrorSaving(String),

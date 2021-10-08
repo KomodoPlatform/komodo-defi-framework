@@ -7,7 +7,6 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
-use bigdecimal::Zero;
 use coins::{lp_coinfind, GetNonZeroBalance};
 use common::mm_error::prelude::MapToMmResult;
 use common::{executor::{spawn, Timer},
@@ -19,7 +18,6 @@ use common::{executor::{spawn, Timer},
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
-use num_traits::ToPrimitive;
 use serde_json::Value as Json;
 use std::time::SystemTimeError;
 use std::{collections::{HashMap, HashSet},
@@ -305,9 +303,9 @@ pub async fn vwap(
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
     // since the limit is `1000` unwrap is fine here.
-    let nb_diff_swaps = rel_swaps.swaps.len().to_isize().unwrap() - base_swaps.swaps.len().to_isize().unwrap();
+    let is_equal_history_len = rel_swaps.swaps.len() == base_swaps.swaps.len();
     let have_precedent_swaps = !rel_swaps.swaps.is_empty() && !base_swaps.swaps.is_empty();
-    if nb_diff_swaps.is_zero() && !have_precedent_swaps {
+    if is_equal_history_len && !have_precedent_swaps {
         info!(
             "No last trade for trading pair: [{}/{}] - keeping calculated price: {}",
             cfg.base, cfg.rel, calculated_price
@@ -413,8 +411,8 @@ async fn checks_order_prerequisites(
 
 async fn prepare_order(
     rates: RateInfos,
-    cfg: SimpleCoinMarketMakerCfg,
-    key_trade_pair: String,
+    cfg: &SimpleCoinMarketMakerCfg,
+    key_trade_pair: &String,
     ctx: &MmArc,
 ) -> OrderPreparationResult {
     checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
@@ -434,17 +432,17 @@ async fn prepare_order(
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
     }
 
-    let volume = match cfg.balance_percent {
-        Some(balance_percent) => balance_percent * base_balance.clone(),
+    let volume = match &cfg.balance_percent {
+        Some(balance_percent) => balance_percent * &base_balance,
         None => MmNumber::default(),
     };
 
-    let min_vol: Option<MmNumber> = match cfg.min_volume_percentage {
+    let min_vol: Option<MmNumber> = match &cfg.min_volume_percentage {
         Some(min_volume_percentage) => {
             if cfg.max.unwrap_or(false) {
-                Some(min_volume_percentage * base_balance.clone())
+                Some(min_volume_percentage * &base_balance)
             } else {
-                Some(min_volume_percentage * volume.clone())
+                Some(min_volume_percentage * &volume)
             }
         },
         None => None,
@@ -456,12 +454,11 @@ async fn update_single_order(
     rates: RateInfos,
     cfg: SimpleCoinMarketMakerCfg,
     uuid: Uuid,
-    _order: MakerOrder,
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     info!("need to update order: {} of {} - cfg: {}", uuid, key_trade_pair, cfg);
-    let (min_vol, _, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), ctx).await?;
+    let (min_vol, _, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
@@ -484,23 +481,23 @@ async fn update_single_order(
 
 async fn execute_update_order(
     uuid: Uuid,
-    value: MakerOrder,
+    order: MakerOrder,
     cloned_infos: (MmArc, RateInfos, TradingPair, SimpleCoinMarketMakerCfg),
 ) -> bool {
     let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
-    match update_single_order(rates, cfg, uuid, value.clone(), key_trade_pair.as_combination(), &ctx).await {
+    match update_single_order(rates, cfg, uuid, key_trade_pair.as_combination(), &ctx).await {
         Ok(resp) => {
-            info!("Order with uuid: {} successfully updated", uuid);
+            info!("Order with uuid: {} successfully updated", order.uuid);
             resp
         },
         Err(err) => {
             error!(
                 "Order with uuid: {} for {} cannot be updated - {}",
-                uuid,
+                order.uuid,
                 key_trade_pair.as_combination(),
                 err
             );
-            cancel_single_order(&ctx, uuid).await;
+            cancel_single_order(&ctx, order.uuid).await;
             false
         },
     }
@@ -513,7 +510,7 @@ async fn create_single_order(
     ctx: MmArc,
 ) -> OrderProcessingResult {
     info!("need to create order for: {} - cfg: {}", key_trade_pair, cfg);
-    let (min_vol, volume, calculated_price) = prepare_order(rates, cfg.clone(), key_trade_pair.clone(), &ctx).await?;
+    let (min_vol, volume, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
@@ -554,10 +551,7 @@ async fn execute_create_single_order(
 
 async fn process_bot_logic(ctx: &MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    // note: Copy the cfg here will not be expensive, and this will be thread safe.
-    let cfg_guard = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-    let cfg = cfg_guard.clone();
-    drop(cfg_guard);
+    let cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await.clone();
     let rates_registry = match fetch_price_tickers().await {
         Ok(model) => {
             info!("price successfully fetched");
@@ -572,10 +566,7 @@ async fn process_bot_logic(ctx: &MmArc) {
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let maker_orders_guard = ordermatch_ctx.my_maker_orders.lock().await;
-    let maker_orders = maker_orders_guard.clone();
-    drop(maker_orders_guard);
-
+    let maker_orders = ordermatch_ctx.my_maker_orders.lock().await.clone();
     let mut futures_order_update = Vec::with_capacity(0);
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
     for (uuid, value) in maker_orders.into_iter() {
@@ -662,22 +653,22 @@ async fn fetch_price_tickers() -> Result<TickerInfosRegistry, MmError<PriceServi
 
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-    {
-        let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-        match *state {
-            TradingBotState::Running => return MmError::err(StartSimpleMakerBotError::AlreadyStarted),
-            TradingBotState::Stopping => return MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
-            TradingBotState::Stopped => *state = TradingBotState::Running,
-        }
-        let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-        *trading_bot_cfg = req.cfg;
+    let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    match *state {
+        TradingBotState::Running => return MmError::err(StartSimpleMakerBotError::AlreadyStarted),
+        TradingBotState::Stopping => return MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
+        TradingBotState::Stopped => {
+            *state = TradingBotState::Running;
+            drop(state);
+            let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
+            *trading_bot_cfg = req.cfg;
+            info!("simple_market_maker_bot successfully started");
+            spawn(lp_bot_loop(ctx.clone()));
+            Ok(StartSimpleMakerBotRes {
+                result: "Success".to_string(),
+            })
+        },
     }
-
-    info!("simple_market_maker_bot successfully started");
-    spawn(lp_bot_loop(ctx.clone()));
-    Ok(StartSimpleMakerBotRes {
-        result: "Success".to_string(),
-    })
 }
 
 pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleMakerBotResult {

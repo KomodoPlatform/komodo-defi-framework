@@ -97,6 +97,7 @@ mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
 use common::mm_error::MmError;
+use derive_more::Display;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedSwap, MakerSwap, MakerTradePreimage, RunMakerSwapInput};
@@ -864,12 +865,14 @@ pub struct MyRecentSwapsResponse {
     pub swaps: Vec<SavedSwap>,
 }
 
-#[derive(Debug, Deserialize, Serialize, SerializeErrorType)]
+#[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MyRecentSwapsErr {
-    UUIDNotPresentInDb(String),
-    UnableToLoadSavedSwaps(String),
-    UnableToQuerySwapStorage(String),
+    #[display(fmt = "No such swap with the uuid '{}'", _0)]
+    UUIDNotPresentInDb(Uuid),
+    UnableToLoadSavedSwaps(SavedSwapError),
+    #[display(fmt = "Unable to query swaps storage")]
+    UnableToQuerySwapStorage,
 }
 
 pub type MyRecentSwapsResult = Result<MyRecentSwapsResponse, MmError<MyRecentSwapsErr>>;
@@ -880,24 +883,15 @@ pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwaps
         .await
     {
         Ok(x) => x,
-        Err(_) => {
-            return Err(MmError::new(MyRecentSwapsErr::UnableToQuerySwapStorage(
-                "unable to query swaps storage".to_string(),
-            )))
-        },
+        Err(_) => return Err(MmError::new(MyRecentSwapsErr::UnableToQuerySwapStorage)),
     };
 
     let mut swaps = Vec::with_capacity(db_result.uuids.len());
     for uuid in db_result.uuids.iter() {
         let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
             Ok(Some(swap)) => swap,
-            Ok(None) => {
-                return Err(MmError::new(MyRecentSwapsErr::UUIDNotPresentInDb(format!(
-                    "No such swap with the uuid '{}'",
-                    uuid
-                ))))
-            },
-            Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.to_string()))),
+            Ok(None) => return Err(MmError::new(MyRecentSwapsErr::UUIDNotPresentInDb(*uuid))),
+            Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
         };
         swaps.push(swap);
     }
