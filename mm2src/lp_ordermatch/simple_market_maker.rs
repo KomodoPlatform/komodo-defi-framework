@@ -373,7 +373,7 @@ async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
 async fn checks_order_prerequisites(
     rates: &RateInfos,
     cfg: &SimpleCoinMarketMakerCfg,
-    key_trade_pair: String,
+    key_trade_pair: &str,
 ) -> OrderProcessingResult {
     if rates.base_provider == Provider::Unknown || rates.rel_provider == Provider::Unknown {
         warn!("rates from provider are Unknown - skipping for {}", key_trade_pair);
@@ -412,10 +412,10 @@ async fn checks_order_prerequisites(
 async fn prepare_order(
     rates: RateInfos,
     cfg: &SimpleCoinMarketMakerCfg,
-    key_trade_pair: &String,
+    key_trade_pair: &str,
     ctx: &MmArc,
 ) -> OrderPreparationResult {
-    checks_order_prerequisites(&rates, &cfg, key_trade_pair.clone()).await?;
+    checks_order_prerequisites(&rates, &cfg, key_trade_pair).await?;
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -655,8 +655,8 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
     match *state {
-        TradingBotState::Running => return MmError::err(StartSimpleMakerBotError::AlreadyStarted),
-        TradingBotState::Stopping => return MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
+        TradingBotState::Running => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
+        TradingBotState::Stopping => MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
         TradingBotState::Stopped => {
             *state = TradingBotState::Running;
             drop(state);
