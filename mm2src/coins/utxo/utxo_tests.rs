@@ -1650,6 +1650,34 @@ fn test_qtum_generate_pod() {
 }
 
 #[test]
+fn test_qtum_add_delegation() {
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"95.217.83.126:10001"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "tQTUM",
+        &conf,
+        &req,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let res = coin.qtum_add_delegation(address, 10).wait().unwrap();
+    let _json = serde_json::to_string(&res).unwrap();
+    assert_eq!(res.coin, "tQTUM");
+    assert_eq!(res.fee_details.is_some(), true);
+    //println!("json: {}", json);
+}
+
+#[test]
 fn test_qtum_unspendable_balance_failed() {
     QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
