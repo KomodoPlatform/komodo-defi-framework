@@ -1645,7 +1645,6 @@ fn test_qtum_generate_pod() {
     .unwrap();
     let expected_res = "206b4fb3baec905f6ed903855b313ad1ca35524db9e8f4e8059563496ef66ad9cf3b74634ee816ad1ac203b0f77e581100d998e3bed10b54442f4fa11ef542bf9c";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
-    let staker_address_hex = qtum::contract_addr_from_utxo_addr(address.clone());
     let res = coin.generate_pod(address.hash).unwrap();
     assert_eq!(expected_res, res.to_string());
 }

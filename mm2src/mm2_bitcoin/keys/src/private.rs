@@ -37,10 +37,10 @@ impl Private {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
         let signature = SECP_SIGN.sign_recoverable(&message, &secret);
-        let (_, bytes) = signature.serialize_compact();
+        let (recover_id, bytes) = signature.serialize_compact();
         let mut out = bytes.to_vec();
-        // vchSig[0] = 27 + rec + (fCompressed ? 4 : 0); (rec == -1)
-        let byte: u8 = if self.compressed { 32 } else { 28 };
+        let header = 27 + recover_id.to_i32() as u8;
+        let byte: u8 = if self.compressed { header + 4 } else { header };
         out.insert(0, byte);
         Ok(out.into())
     }
