@@ -206,7 +206,7 @@ impl QtumCoin {
             QRC20_GAS_PRICE_DEFAULT,
         )?;
 
-        let change_script = ScriptBuilder::build_p2pkh(&to_addr.hash);
+        let change_script = ScriptBuilder::build_p2pkh(&self.as_ref().my_address.hash);
 
         // Here amount should be `int(delegator_unspent['amount']*COIN) - 2250000*40`
         let amount_sat = unspents[0].value - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
