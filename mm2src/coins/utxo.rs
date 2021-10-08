@@ -20,6 +20,11 @@
 //
 
 pub mod bch;
+pub mod bchd_grpc;
+#[allow(clippy::large_enum_variant)]
+#[rustfmt::skip]
+#[path = "utxo/pb.rs"]
+pub mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
@@ -563,11 +568,43 @@ impl UtxoCoinFields {
     }
 }
 
+#[derive(Debug, Display)]
+pub enum BroadcastTxErr {
+    /// RPC client error
+    Rpc(UtxoRpcError),
+    /// Other specific error
+    Other(String),
+}
+
+impl From<UtxoRpcError> for BroadcastTxErr {
+    fn from(err: UtxoRpcError) -> Self { BroadcastTxErr::Rpc(err) }
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
-pub trait UtxoCommonOps {
+pub trait UtxoTxBroadcastOps {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>>;
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait UtxoTxGenerationOps {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError>;
 
+    /// Calculates interest if the coin is KMD
+    /// Adds the value to existing output to my_script_pub or creates additional interest output
+    /// returns transaction and data as is if the coin is not KMD
+    async fn calc_interest_if_required(
+        &self,
+        mut unsigned: TransactionInputSigner,
+        mut data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
@@ -584,16 +621,6 @@ pub trait UtxoCommonOps {
 
     /// Check if the output is spendable (is not coinbase or it has enough confirmations).
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool;
-
-    /// Calculates interest if the coin is KMD
-    /// Adds the value to existing output to my_script_pub or creates additional interest output
-    /// returns transaction and data as is if the coin is not KMD
-    async fn calc_interest_if_required(
-        &self,
-        mut unsigned: TransactionInputSigner,
-        mut data: AdditionalTxData,
-        my_script_pub: Bytes,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 
     /// Calculates interest of the specified transaction.
     /// Please note, this method has to be used for KMD transactions only.
@@ -1855,7 +1882,7 @@ async fn generate_and_send_tx<T>(
     outputs: Vec<TransactionOutput>,
 ) -> Result<UtxoTx, String>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+    T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
     let mut builder = UtxoTxBuilder::new(coin)
         .add_available_inputs(unspents)
@@ -1890,14 +1917,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    try_s!(
-        coin.as_ref()
-            .rpc_client
-            .send_transaction(&signed)
-            .map_err(|e| ERRL!("{}", e))
-            .compat()
-            .await
-    );
+    try_s!(coin.broadcast_tx(&signed).await);
 
     recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
 

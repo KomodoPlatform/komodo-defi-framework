@@ -288,7 +288,7 @@ where
     Box::new(fut.boxed().compat().map(|tx| tx.into()))
 }
 
-pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> {
+pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
     coin: &'a T,
     /// The available inputs that *can* be included in the resulting tx
     available_inputs: Vec<UnspentInfo>,
@@ -304,7 +304,7 @@ pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> {
     dust: Option<u64>,
 }
 
-impl<'a, T: AsRef<UtxoCoinFields> + UtxoCommonOps> UtxoTxBuilder<'a, T> {
+impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     pub fn new(coin: &'a T) -> Self {
         UtxoTxBuilder {
             tx: coin.as_ref().transaction_preimage(),
@@ -3046,6 +3046,18 @@ where
         coin.get_current_mtp().await? - 1
     };
     Ok(lock_time.max(htlc_locktime))
+}
+
+pub async fn broadcast_tx<T>(coin: &T, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>>
+where
+    T: AsRef<UtxoCoinFields>,
+{
+    coin.as_ref()
+        .rpc_client
+        .send_transaction(tx)
+        .compat()
+        .await
+        .mm_err(From::from)
 }
 
 #[test]

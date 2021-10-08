@@ -290,7 +290,7 @@ mod docker_tests {
     impl BchDockerOps {
         fn from_ticker(ticker: &str) -> BchDockerOps {
             let conf = json!({"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
-            let req = json!({"method":"enable"});
+            let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
             let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
             let ctx = MmCtxBuilder::new().into_mm_arc();
             let coin = block_on(bch_coin_from_conf_and_request(

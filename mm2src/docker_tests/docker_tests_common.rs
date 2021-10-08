@@ -1,8 +1,8 @@
 // re-export the most common imports
 pub use crate::mm2::mm2_tests::structs::*;
-pub use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native, mm_dump,
-                            MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                            TAKER_SUCCESS_EVENTS};
+pub use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
+                            enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                            TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use common::mm_number::MmNumber;
 pub use common::{block_on, now_ms};
 pub use secp256k1::{PublicKey, SecretKey};
@@ -592,7 +592,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_bob, "QTUM", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "FORSLP", &[]))]);
+    log!([block_on(enable_native_bch(&mm_bob, "FORSLP", &[]))]);
     log!([block_on(enable_native(&mm_bob, "ADEXSLP", &[]))]);
 
     log!([block_on(enable_qrc20_native(&mm_alice, "QICK"))]);
@@ -600,7 +600,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "QTUM", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "FORSLP", &[]))]);
+    log!([block_on(enable_native_bch(&mm_alice, "FORSLP", &[]))]);
     log!([block_on(enable_native(&mm_alice, "ADEXSLP", &[]))]);
     let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,

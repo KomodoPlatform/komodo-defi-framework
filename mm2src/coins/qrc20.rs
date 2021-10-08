@@ -5,9 +5,9 @@ use crate::utxo::qtum::{QtumBasedCoin, QtumCoin};
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
-use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, FeePolicy, GenerateTxError, HistoryUtxoTx,
-                  HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoTx,
-                  VerboseTransactionFrom, UTXO_LOCK};
+use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
+                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -478,12 +478,34 @@ impl Qrc20Coin {
     }
 }
 
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
-impl UtxoCommonOps for Qrc20Coin {
+impl UtxoTxBroadcastOps for Qrc20Coin {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>> {
+        utxo_common::broadcast_tx(self, tx).await
+    }
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoTxGenerationOps for Qrc20Coin {
     /// Get only QTUM transaction fee.
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo).await }
 
+    async fn calc_interest_if_required(
+        &self,
+        unsigned: TransactionInputSigner,
+        data: AdditionalTxData,
+        my_script_pub: ScriptBytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+    }
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoCommonOps for Qrc20Coin {
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }
@@ -505,15 +527,6 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
-
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: ScriptBytes,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
-    }
 
     async fn calc_interest_of_tx(
         &self,

@@ -171,6 +171,15 @@ pub async fn qtum_coin_from_conf_and_request(
 
 impl QtumBasedCoin for QtumCoin {}
 
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoTxBroadcastOps for QtumCoin {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>> {
+        utxo_common::broadcast_tx(self, tx).await
+    }
+}
+
 impl QtumCoin {
     pub fn qtum_add_delegation(&self, to_addr: Address, fee: u64) -> WithdrawFut {
         let coin = self.clone();
@@ -254,9 +263,22 @@ impl QtumCoin {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
-impl UtxoCommonOps for QtumCoin {
+impl UtxoTxGenerationOps for QtumCoin {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
+    async fn calc_interest_if_required(
+        &self,
+        unsigned: TransactionInputSigner,
+        data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
+        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
+    }
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl UtxoCommonOps for QtumCoin {
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }
@@ -278,15 +300,6 @@ impl UtxoCommonOps for QtumCoin {
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
-
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub).await
-    }
 
     async fn calc_interest_of_tx(
         &self,

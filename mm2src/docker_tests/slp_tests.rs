@@ -14,7 +14,7 @@ fn test_bch_and_slp_balance() {
     // MM2 should mark the SLP-related and other UTXOs as unspendable BCH balance
     let mm = slp_supplied_node();
 
-    let enable_bch = block_on(enable_native(&mm, "FORSLP", &[]));
+    let enable_bch = block_on(enable_native_bch(&mm, "FORSLP", &[]));
     let enable_bch: EnableElectrumResponse = json::from_value(enable_bch).unwrap();
 
     let expected_spendable = BigDecimal::from(1000);
@@ -47,7 +47,7 @@ fn test_bch_and_slp_balance() {
 fn test_withdraw_bch_max_must_not_spend_slp() {
     let mm = slp_supplied_node();
 
-    block_on(enable_native(&mm, "FORSLP", &[]));
+    block_on(enable_native_bch(&mm, "FORSLP", &[]));
     block_on(enable_native(&mm, "ADEXSLP", &[]));
 
     withdraw_max_and_send_v1(&mm, "FORSLP", &utxo_burn_address().to_string());

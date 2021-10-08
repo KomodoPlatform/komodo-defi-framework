@@ -889,6 +889,22 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
     json::from_str(&native.1).unwrap()
 }
 
+pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
+    let native = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "bchd_urls": bchd_urls,
+            "allow_slp_unsafe_conf": true,
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
+    json::from_str(&native.1).unwrap()
+}
+
 /// Use a separate (unique) temporary folder for each MM.
 /// We could also remove the old folders after some time in order not to spam the temporary folder.
 /// Though we don't always want to remove them right away, allowing developers to check the files).
