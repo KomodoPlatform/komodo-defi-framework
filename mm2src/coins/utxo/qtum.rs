@@ -3,7 +3,7 @@ use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{ContractCallOutput, Qrc20AbiError, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DELEGATION,
                    QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
 use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
-            ValidateAddressResult, WithdrawFut, WithdrawResult};
+            TransactionType, ValidateAddressResult, WithdrawFut, WithdrawResult};
 use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -207,10 +207,14 @@ impl QtumCoin {
 
         let outputs = vec![delegation_output];
         let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
-        Ok(
-            qrc20::generate_delegate_qrc20_transaction_from_qtum(self, outputs, to_address, QRC20_GAS_LIMIT_DELEGATION)
-                .await?,
+        Ok(qrc20::generate_delegate_qrc20_transaction_from_qtum(
+            self,
+            outputs,
+            to_address,
+            QRC20_GAS_LIMIT_DELEGATION,
+            TransactionType::StakingDelegation,
         )
+        .await?)
     }
 
     pub fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<Qrc20AbiError>> {
@@ -230,7 +234,6 @@ impl QtumCoin {
         gas_price: u64,
     ) -> Qrc20AbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
-        // sha256d("\x15Qtum signed message:\n\x28"+staker{hexpubkeyhash})
         let pod = self.generate_pod(addr_hash)?;
         let params = function.encode_input(&[
             Token::Address(to_addr),

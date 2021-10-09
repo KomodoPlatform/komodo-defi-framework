@@ -491,6 +491,17 @@ impl KmdRewardsDetails {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum TransactionType {
+    StakingDelegation,
+    RemoveDelegation,
+    StandardTransfer,
+}
+
+impl Default for TransactionType {
+    fn default() -> Self { TransactionType::StandardTransfer }
+}
+
 /// Transaction details
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionDetails {
@@ -525,6 +536,9 @@ pub struct TransactionDetails {
     /// Amount of accrued rewards.
     #[serde(skip_serializing_if = "Option::is_none")]
     kmd_rewards: Option<KmdRewardsDetails>,
+    /// Type of transactions, default is StandardTransfer
+    #[serde(default)]
+    transaction_type: TransactionType,
 }
 
 impl TransactionDetails {

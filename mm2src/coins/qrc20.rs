@@ -11,7 +11,8 @@ use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, 
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
-            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -1312,6 +1313,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
+        transaction_type: Default::default(),
     })
 }
 
@@ -1377,6 +1379,7 @@ pub async fn generate_delegate_qrc20_transaction_from_qtum(
     contract_outputs: Vec<ContractCallOutput>,
     to_address: String,
     gas_limit: u64,
+    transaction_type: TransactionType,
 ) -> WithdrawResult {
     let utxo = coin.as_ref();
     let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
@@ -1435,5 +1438,6 @@ pub async fn generate_delegate_qrc20_transaction_from_qtum(
         coin: coin.ticker().to_string(),
         internal_id: vec![].into(),
         kmd_rewards: None,
+        transaction_type,
     })
 }

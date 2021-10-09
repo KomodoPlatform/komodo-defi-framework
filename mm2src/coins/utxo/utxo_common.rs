@@ -1558,6 +1558,7 @@ where
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: data.kmd_rewards,
+        transaction_type: Default::default(),
     })
 }
 
@@ -2081,6 +2082,7 @@ where
         internal_id: tx.hash().reversed().to_vec().into(),
         timestamp: verbose_tx.time.into(),
         kmd_rewards,
+        transaction_type: Default::default(),
     })
 }
 

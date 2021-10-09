@@ -599,6 +599,7 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Withd
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
+        transaction_type: Default::default(),
     })
 }
 
@@ -2231,6 +2232,7 @@ impl EthCoin {
                     internal_id: BytesJson(internal_id.to_vec()),
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
+                    transaction_type: Default::default(),
                 };
 
                 existing_history.push(details);
@@ -2600,6 +2602,7 @@ impl EthCoin {
                     internal_id,
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
+                    transaction_type: Default::default(),
                 };
 
                 existing_history.push(details);
