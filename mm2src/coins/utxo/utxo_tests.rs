@@ -1625,25 +1625,20 @@ fn test_add_delegation_invalid_amount() {
 
 #[test]
 fn test_qtum_generate_pod() {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = block_on(qtum_coin_from_conf_and_request(
-        &ctx,
-        "tQTUM",
-        &conf,
-        &req,
-        keypair.private().secret.as_slice(),
-    ))
-    .unwrap();
-    let expected_res = "206b4fb3baec905f6ed903855b313ad1ca35524db9e8f4e8059563496ef66ad9cf3b74634ee816ad1ac203b0f77e581100d998e3bed10b54442f4fa11ef542bf9c";
+    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+    let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.generate_pod(address.hash).unwrap();
     assert_eq!(expected_res, res.to_string());
@@ -1656,7 +1651,7 @@ fn test_qtum_add_delegation() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1669,12 +1664,14 @@ fn test_qtum_add_delegation() {
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
+    println!("my_address: {}", coin.as_ref().my_address.to_string());
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.qtum_add_delegation(address, 10).wait().unwrap();
-    let _json = serde_json::to_string(&res).unwrap();
+    let json = serde_json::to_value(&res).unwrap();
     assert_eq!(res.coin, "tQTUM");
     assert_eq!(res.fee_details.is_some(), true);
-    //println!("json: {}", json);
+    let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
+    assert_eq!(res_broadcast.is_err(), false);
 }
 
 #[test]

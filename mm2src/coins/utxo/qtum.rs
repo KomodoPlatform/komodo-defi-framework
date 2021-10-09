@@ -11,7 +11,6 @@ use ethabi::Token;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
 use keys::AddressHash;
-use script::Builder as ScriptBuilder;
 use serialization::CoinVariant;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
@@ -206,17 +205,7 @@ impl QtumCoin {
             QRC20_GAS_PRICE_DEFAULT,
         )?;
 
-        let change_script = ScriptBuilder::build_p2pkh(&self.as_ref().my_address.hash);
-
-        // Here amount should be `int(delegator_unspent['amount']*COIN) - 2250000*40`
-        let amount_sat = unspents[0].value - (QRC20_GAS_LIMIT_DELEGATION * QRC20_GAS_PRICE_DEFAULT);
-        let change_script_output = ContractCallOutput {
-            value: amount_sat,
-            script_pubkey: change_script.to_bytes(),
-            gas_limit: 0,
-            gas_price: 0,
-        };
-        let outputs = vec![delegation_output, change_script_output];
+        let outputs = vec![delegation_output];
         let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
         Ok(
             qrc20::generate_delegate_qrc20_transaction_from_qtum(self, outputs, to_address, QRC20_GAS_LIMIT_DELEGATION)
