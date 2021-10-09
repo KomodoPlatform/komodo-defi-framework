@@ -54,7 +54,7 @@ mod swap;
 /// Qtum amount is always 0 for the QRC20 UTXO outputs,
 /// because we should pay only a fee in Qtum to send the QRC20 transaction.
 pub const OUTPUT_QTUM_AMOUNT: u64 = 0;
-const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
 const QRC20_PAYMENT_GAS_LIMIT: u64 = 200_000;
 pub const QRC20_GAS_LIMIT_DELEGATION: u64 = 2_250_000;
 pub const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
@@ -1383,6 +1383,7 @@ pub async fn generate_delegate_qrc20_transaction_from_qtum(
 ) -> WithdrawResult {
     let utxo = coin.as_ref();
     let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
+    println!("unspents: {:?}", unspents);
     let mut gas_fee = 0;
     let mut outputs = Vec::with_capacity(contract_outputs.len());
     for output in contract_outputs {

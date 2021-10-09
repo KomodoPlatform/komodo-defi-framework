@@ -1,7 +1,7 @@
 use super::*;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
-use crate::qrc20::{ContractCallOutput, Qrc20AbiError, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DELEGATION,
-                   QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
+use crate::qrc20::{ContractCallOutput, Qrc20AbiError, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT,
+                   QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
 use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
             TransactionType, ValidateAddressResult, WithdrawFut, WithdrawResult};
 use bitcrypto::dhash256;
@@ -186,6 +186,25 @@ impl QtumCoin {
         Box::new(fut.boxed().compat())
     }
 
+    pub fn qtum_remove_delegation(&self) -> WithdrawFut {
+        let coin = self.clone();
+        let fut = async move { coin.qtum_remove_delegation_impl().await };
+        Box::new(fut.boxed().compat())
+    }
+
+    async fn qtum_remove_delegation_impl(&self) -> WithdrawResult {
+        let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
+        let outputs = vec![delegation_output];
+        Ok(qrc20::generate_delegate_qrc20_transaction_from_qtum(
+            self,
+            outputs,
+            self.as_ref().my_address.to_string(),
+            QRC20_GAS_LIMIT_DEFAULT,
+            TransactionType::RemoveDelegation,
+        )
+        .await?)
+    }
+
     async fn qtum_add_delegation_impl(&self, to_addr: Address, fee: u64) -> WithdrawResult {
         let _utxo_lock = UTXO_LOCK.lock();
         let coin = self.as_ref();
@@ -223,6 +242,20 @@ impl QtumCoin {
         let hashed = dhash256(&buffer);
         let signature = self.as_ref().key_pair.private().sign_compact(&hashed)?;
         Ok(signature)
+    }
+
+    pub fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> Qrc20AbiResult<ContractCallOutput> {
+        let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("removeDelegation")?;
+        let params = function.encode_input(&[])?;
+        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
+        let script_pubkey =
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
+        Ok(ContractCallOutput {
+            value: OUTPUT_QTUM_AMOUNT,
+            script_pubkey,
+            gas_limit,
+            gas_price,
+        })
     }
 
     pub fn add_delegation_output(

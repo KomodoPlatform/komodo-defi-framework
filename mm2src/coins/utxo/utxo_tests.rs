@@ -1648,7 +1648,7 @@ fn test_qtum_generate_pod() {
 fn test_qtum_add_delegation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
-    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
     let req = json!({
         "method": "electrum",
         "servers": [{"url":"electrum1.cipig.net:10071"}],
@@ -1667,16 +1667,35 @@ fn test_qtum_add_delegation() {
     println!("my_address: {}", coin.as_ref().my_address.to_string());
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.qtum_add_delegation(address, 10).wait().unwrap();
-    assert_eq!(res.coin, "tQTUM");
-    assert_eq!(res.fee_details.is_some(), true);
-    /*let json = serde_json::to_value(&res).unwrap();
-    println!("json: {}", json.to_string());
+    let json = serde_json::to_value(&res).unwrap();
     let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
-    match &res_broadcast {
-        Ok(good) => println!("good: {}", good),
-        Err(bad) => println!("bad: {}", bad),
-    }
-    assert_eq!(res_broadcast.is_err(), false);*/
+    assert_eq!(res_broadcast.is_err(), false);
+}
+
+#[test]
+fn test_qtum_remove_delegation() {
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "tQTUM",
+        &conf,
+        &req,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let res = coin.qtum_remove_delegation().wait().unwrap();
+    let json = serde_json::to_value(&res).unwrap();
+    let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
+    assert_eq!(res_broadcast.is_err(), false);
 }
 
 #[test]
