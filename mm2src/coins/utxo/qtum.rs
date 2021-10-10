@@ -201,7 +201,7 @@ impl QtumCoin {
     async fn qtum_remove_delegation_impl(&self) -> WithdrawResult {
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
-        Ok(qrc20::generate_delegate_qrc20_transaction_from_qtum(
+        Ok(qrc20::generate_delegate_qrc20_delegation_transaction_from_qtum(
             self,
             outputs,
             self.as_ref().my_address.to_string(),
@@ -233,11 +233,10 @@ impl QtumCoin {
         )?;
 
         let outputs = vec![delegation_output];
-        let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
-        Ok(qrc20::generate_delegate_qrc20_transaction_from_qtum(
+        Ok(qrc20::generate_delegate_qrc20_delegation_transaction_from_qtum(
             self,
             outputs,
-            to_address,
+            self.as_ref().my_address.to_string(),
             QRC20_GAS_LIMIT_DELEGATION,
             TransactionType::StakingDelegation,
         )

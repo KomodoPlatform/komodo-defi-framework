@@ -1374,7 +1374,7 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
 }
 
 // Qtum Delegate Transaction - lock UTXO mutex before calling this function
-pub async fn generate_delegate_qrc20_transaction_from_qtum(
+pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
     coin: &QtumCoin,
     contract_outputs: Vec<ContractCallOutput>,
     to_address: String,
@@ -1423,15 +1423,21 @@ pub async fn generate_delegate_qrc20_transaction_from_qtum(
         total_gas_fee: utxo_common::big_decimal_from_sat(generated_tx.gas_fee as i64, utxo.decimals),
     };
     let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+
+    // Delegation transaction always transfer all the UTXO's to ourselves
+    let qtum_amount = coin.my_spendable_balance().compat().await?;
+    let received_by_me = qtum_amount.clone();
+    let my_balance_change = &received_by_me - &qtum_amount;
+
     Ok(TransactionDetails {
         tx_hex: serialize(&generated_tx.signed).into(),
         tx_hash: generated_tx.signed.hash().reversed().to_vec().into(),
         from: vec![my_address],
         to: vec![to_address],
-        total_amount: Default::default(),
-        spent_by_me: Default::default(),
-        received_by_me: Default::default(),
-        my_balance_change: Default::default(),
+        total_amount: qtum_amount.clone(),
+        spent_by_me: qtum_amount,
+        received_by_me,
+        my_balance_change,
         block_height: 0,
         timestamp: now_ms() / 1000,
         fee_details: Some(fee_details.into()),
