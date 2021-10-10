@@ -170,6 +170,12 @@ pub async fn qtum_coin_from_conf_and_request(
 
 impl QtumBasedCoin for QtumCoin {}
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct QtumDelegationRequest {
+    pub address: String,
+    pub fee: Option<u64>,
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -180,9 +186,9 @@ impl UtxoTxBroadcastOps for QtumCoin {
 }
 
 impl QtumCoin {
-    pub fn qtum_add_delegation(&self, to_addr: Address, fee: u64) -> WithdrawFut {
+    pub fn qtum_add_delegation(&self, request: QtumDelegationRequest) -> WithdrawFut {
         let coin = self.clone();
-        let fut = async move { coin.qtum_add_delegation_impl(to_addr, fee).await };
+        let fut = async move { coin.qtum_add_delegation_impl(request).await };
         Box::new(fut.boxed().compat())
     }
 
@@ -205,7 +211,9 @@ impl QtumCoin {
         .await?)
     }
 
-    async fn qtum_add_delegation_impl(&self, to_addr: Address, fee: u64) -> WithdrawResult {
+    async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> WithdrawResult {
+        let to_addr = Address::from_str(request.address.as_str())?;
+        let fee = request.fee.unwrap_or(10);
         let _utxo_lock = UTXO_LOCK.lock();
         let coin = self.as_ref();
         let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;

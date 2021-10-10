@@ -104,6 +104,7 @@ pub use test_coin::TestCoin;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
 use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
+use crate::utxo::qtum::QtumDelegationRequest;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::UnsupportedAddr;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
@@ -417,6 +418,19 @@ pub struct WithdrawRequest {
     #[serde(default)]
     max: bool,
     fee: Option<WithdrawFee>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum StakingDetails {
+    Qtum(QtumDelegationRequest),
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+pub struct AddDelegateRequest {
+    pub coin: String,
+    pub staking_details: StakingDetails,
 }
 
 impl WithdrawRequest {
@@ -775,6 +789,10 @@ impl From<BalanceError> for WithdrawError {
 
 impl From<GenerateTxError> for WithdrawError {
     fn from(e: GenerateTxError) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
+}
+
+impl From<keys::Error> for WithdrawError {
+    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
 }
 
 impl From<CoinFindError> for WithdrawError {
@@ -1424,6 +1442,23 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> WithdrawResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    // Need to find a way to do a proper dispatch
+    let coin_concrete = match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum,
+        _ => {
+            return MmError::err(WithdrawError::InternalError(format!(
+                "Staking not available for: {}",
+                req.coin
+            )))
+        },
+    };
+    match req.staking_details {
+        StakingDetails::Qtum(qtum_staking) => coin_concrete.qtum_add_delegation(qtum_staking).compat().await,
+    }
 }
 
 pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {

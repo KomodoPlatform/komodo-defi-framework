@@ -1383,7 +1383,6 @@ pub async fn generate_delegate_qrc20_transaction_from_qtum(
 ) -> WithdrawResult {
     let utxo = coin.as_ref();
     let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
-    println!("unspents: {:?}", unspents);
     let mut gas_fee = 0;
     let mut outputs = Vec::with_capacity(contract_outputs.len());
     for output in contract_outputs {

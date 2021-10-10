@@ -1,6 +1,6 @@
 use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
+use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
@@ -1619,7 +1619,11 @@ fn test_add_delegation_invalid_amount() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
-    let fake_res = coin.qtum_add_delegation(address.clone(), 10).wait();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let fake_res = coin.qtum_add_delegation(request).wait();
     assert_eq!(fake_res.is_err(), true);
 }
 
@@ -1666,7 +1670,11 @@ fn test_qtum_add_delegation() {
     .unwrap();
     println!("my_address: {}", coin.as_ref().my_address.to_string());
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
-    let res = coin.qtum_add_delegation(address, 10).wait().unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.qtum_add_delegation(request).wait().unwrap();
     let json = serde_json::to_value(&res).unwrap();
     let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
     assert_eq!(res_broadcast.is_err(), false);
