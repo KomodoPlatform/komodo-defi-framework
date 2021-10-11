@@ -11,7 +11,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use crate::wasm_http::FetchRequest;
+    use crate::wasm_http::{FetchRequest};
 }
 
 // one byte for the compression flag plus four bytes for the length
@@ -133,6 +133,18 @@ where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,
 {
-    let mut request = FetchRequest::post(url);
-    unimplemented!()
+    let body = encode_body(req)?;
+    let request = FetchRequest::post(url)
+        .body_bytes(body)
+        .header("content-type", "application/grpc-web")
+        .header("accept", "application/grpc-web");
+
+    let response = request
+        .request_blob()
+        .await
+        .map_to_mm(|e| PostGrpcWebErr::Request(format!("{:?}", e)))?;
+
+    let reply = decode_body(response.1.into())?;
+
+    Ok(reply)
 }

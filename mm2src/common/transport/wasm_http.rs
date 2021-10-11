@@ -53,6 +53,11 @@ impl FetchRequest {
         self
     }
 
+    pub fn body_bytes(mut self, body: Vec<u8>) -> FetchRequest {
+        self.body = Some(RequestBody::Bytes(body));
+        self
+    }
+
     /// Set the mode to [`RequestMode::Cors`].
     /// The request is no-cors by default.
     pub fn cors(mut self) -> FetchRequest {
@@ -74,6 +79,15 @@ impl FetchRequest {
         }
     }
 
+    pub async fn request_blob(self) -> FetchResult<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+        Self::spawn_fetch_blob(self, tx);
+        match rx.await {
+            Ok(res) => res,
+            Err(_e) => ERR!("Spawned future has been canceled"),
+        }
+    }
+
     fn spawn_fetch_str(request: Self, tx: oneshot::Sender<FetchResult<String>>) {
         let fut = async move {
             let result = Self::fetch_str(request)
@@ -81,6 +95,18 @@ impl FetchRequest {
                 .map_err(|e| ERRL!("{}", stringify_js_error(&e)));
             if let Err(_res) = tx.send(result) {
                 warn!("spawn_fetch_str] the channel already closed");
+            }
+        };
+        spawn_local(fut);
+    }
+
+    fn spawn_fetch_blob(request: Self, tx: oneshot::Sender<FetchResult<Vec<u8>>>) {
+        let fut = async move {
+            let result = Self::fetch_blob(request)
+                .await
+                .map_err(|e| ERRL!("{}", stringify_js_error(&e)));
+            if let Err(_res) = tx.send(result) {
+                warn!("spawn_fetch_blob] the channel already closed");
             }
         };
         spawn_local(fut);
@@ -112,7 +138,6 @@ impl FetchRequest {
             Err(origin_val) => return js_err!("Error casting {:?} to 'JsResponse'", origin_val),
         };
 
-        // js_response.blob()
         let resp_txt_fut = match js_response.text() {
             Ok(txt) => txt,
             Err(e) => {
@@ -124,7 +149,6 @@ impl FetchRequest {
             },
         };
         let resp_txt = JsFuture::from(resp_txt_fut).await?;
-        // let array: Uint8Array = resp_txt.clone().dyn_into().unwrap();
 
         let resp_str = match resp_txt.as_string() {
             Some(string) => string,
@@ -137,6 +161,53 @@ impl FetchRequest {
             Err(e) => return js_err!("Unexpected HTTP status code, found {}: {}", status_code, e),
         };
         Ok((status_code, resp_str))
+    }
+
+    /// The private non-Send method that is called in a spawned future.
+    async fn fetch_blob(request: Self) -> Result<(StatusCode, Vec<u8>), JsValue> {
+        let window = web_sys::window().expect("!window");
+
+        let mut req_init = RequestInit::new();
+        req_init.method(request.method.as_str());
+        req_init.body(request.body.map(RequestBody::into_js_value).as_ref());
+
+        if let Some(mode) = request.mode {
+            req_init.mode(mode);
+        }
+
+        let js_request = Request::new_with_str_and_init(&request.uri, &req_init)?;
+        for (hkey, hval) in request.headers {
+            js_request.headers().set(&hkey, &hval)?;
+        }
+
+        let request_promise = window.fetch_with_request(&js_request);
+
+        let future = JsFuture::from(request_promise);
+        let resp_value = future.await?;
+        let js_response: JsResponse = match resp_value.dyn_into() {
+            Ok(res) => res,
+            Err(origin_val) => return js_err!("Error casting {:?} to 'JsResponse'", origin_val),
+        };
+
+        let resp_blob_fut = match js_response.blob() {
+            Ok(blob) => blob,
+            Err(e) => {
+                return js_err!(
+                    "Expected blob, found {:?}: {}",
+                    js_response,
+                    crate::stringify_js_error(&e)
+                )
+            },
+        };
+        let resp_blob = JsFuture::from(resp_blob_fut).await?;
+        let array: Uint8Array = resp_blob.clone().dyn_into().unwrap();
+
+        let status_code = js_response.status();
+        let status_code = match StatusCode::from_u16(status_code) {
+            Ok(code) => code,
+            Err(e) => return js_err!("Unexpected HTTP status code, found {}: {}", status_code, e),
+        };
+        Ok((status_code, array.to_vec()))
     }
 }
 
@@ -161,8 +232,6 @@ enum RequestBody {
 
 impl RequestBody {
     fn into_js_value(self) -> JsValue {
-        use js_sys::Uint8Array;
-
         match self {
             RequestBody::Utf8(string) => JsValue::from_str(&string),
             RequestBody::Bytes(bytes) => {
@@ -187,6 +256,19 @@ mod tests {
         .request_str()
         .await
         .expect("!FetchRequest::request_str");
+
+        let expected = "02000000017059c44c764ce06c22b1144d05a19b72358e75708836fc9472490a6f68862b79010000004847304402204ecc54f493c5c75efdbad0771f76173b3314ee7836c469f97a4659e1eef9de4a02200dfe70294e0aa0c6795ae349ddc858212c3293b8affd8c44a6bf6699abaef9d701ffffffff0300000000000000000016c3e748040000002321037d86ede18754defcd4759cf7fda52bff47703701a7feb66e2045e8b6c6aac236ace8b9df05000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac00000000".to_string();
+
+        assert!(status.is_success(), "{:?} {:?}", status, body);
+        assert_eq!(body, expected);
+    }
+
+    #[wasm_bindgen_test]
+    async fn fetch_get_test_bchd() {
+        let (status, body) = FetchRequest::get("http://bchd-testnet.greyh.at:18335/pb.bchrpc/CheckSlpTransaction")
+            .request_str()
+            .await
+            .expect("!FetchRequest::request_str");
 
         let expected = "02000000017059c44c764ce06c22b1144d05a19b72358e75708836fc9472490a6f68862b79010000004847304402204ecc54f493c5c75efdbad0771f76173b3314ee7836c469f97a4659e1eef9de4a02200dfe70294e0aa0c6795ae349ddc858212c3293b8affd8c44a6bf6699abaef9d701ffffffff0300000000000000000016c3e748040000002321037d86ede18754defcd4759cf7fda52bff47703701a7feb66e2045e8b6c6aac236ace8b9df05000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac00000000".to_string();
 
