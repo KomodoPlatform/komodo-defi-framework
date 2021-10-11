@@ -1650,19 +1650,6 @@ fn test_qtum_generate_pod() {
 
 #[test]
 fn test_qtum_add_delegation() {
-    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        // spendable balance (69.0) > balance (68.0)
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 11000000000,
-            height: Default::default(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
-    });
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
@@ -1696,19 +1683,6 @@ fn test_qtum_add_delegation() {
 
 #[test]
 fn test_qtum_remove_delegation() {
-    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        // spendable balance (69.0) > balance (68.0)
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 11000000000,
-            height: Default::default(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
-    });
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let keypair = key_pair_from_seed(bob_passphrase.as_str()).unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
