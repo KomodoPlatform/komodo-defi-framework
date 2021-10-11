@@ -1586,7 +1586,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1614,7 +1614,7 @@ fn test_add_delegation_invalid_amount() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1636,7 +1636,7 @@ fn test_qtum_generate_pod() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1655,7 +1655,7 @@ fn test_qtum_add_delegation() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1687,7 +1687,7 @@ fn test_qtum_remove_delegation() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":2000});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1735,7 +1735,7 @@ fn test_qtum_unspendable_balance_failed() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1781,7 +1781,7 @@ fn test_qtum_my_balance() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -2447,7 +2447,7 @@ fn test_qtum_is_unspent_mature() {
 #[ignore]
 // TODO it fails at least when fee is 2055837 sat per kbyte, need to investigate
 fn test_get_sender_trade_fee_dynamic_tx_fee() {
-    let rpc_client = electrum_client_for_test(&["95.217.83.126:10001"]);
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:10071"]);
     let mut coin_fields = utxo_coin_fields_for_test(
         UtxoRpcClientEnum::Electrum(rpc_client),
         Some("bob passphrase max taker vol with dynamic trade fee"),

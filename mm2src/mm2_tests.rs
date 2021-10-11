@@ -4721,7 +4721,11 @@ fn test_convert_qrc20_address() {
     let _electrum = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
 
@@ -5238,7 +5242,11 @@ fn qrc20_activate_electrum() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
@@ -5282,7 +5290,11 @@ fn test_qrc20_withdraw() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
@@ -5358,7 +5370,11 @@ fn test_qrc20_withdraw_error() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     let balance = electrum_json["balance"].as_str().unwrap();
