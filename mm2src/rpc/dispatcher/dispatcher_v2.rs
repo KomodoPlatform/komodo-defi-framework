@@ -3,7 +3,7 @@ use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection},
             mm2::lp_swap::trade_preimage_rpc,
             mm2::rpc::get_public_key::get_public_key};
-use coins::{add_delegation, withdraw};
+use coins::{add_delegation, remove_delegation, withdraw};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -88,6 +88,7 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
+        "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,

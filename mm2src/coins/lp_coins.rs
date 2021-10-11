@@ -433,6 +433,12 @@ pub struct AddDelegateRequest {
     pub staking_details: StakingDetails,
 }
 
+#[allow(dead_code)]
+#[derive(Deserialize)]
+pub struct RemoveDelegateRequest {
+    pub coin: String,
+}
+
 impl WithdrawRequest {
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
@@ -1442,6 +1448,19 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> WithdrawResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum.qtum_remove_delegation().compat().await,
+        _ => {
+            return MmError::err(WithdrawError::InternalError(format!(
+                "Staking not available for: {}",
+                req.coin
+            )))
+        },
+    }
 }
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> WithdrawResult {
