@@ -4805,7 +4805,7 @@ fn test_remove_delegation_qtum() {
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,
-      "mature_confirmations": 2000,
+      "mature_confirmations": 200,
       "avg_blocktime": 0.53,
       "protocol": {
         "type": "QTUM"
@@ -4859,7 +4859,7 @@ fn test_remove_delegation_qtum() {
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":200,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
