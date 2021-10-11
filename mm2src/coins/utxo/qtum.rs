@@ -218,7 +218,7 @@ impl QtumCoin {
         let coin = self.as_ref();
         let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;
         unspents.reverse();
-        if unspents[0].value < sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
+        if unspents.is_empty() || unspents[0].value < sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
             return MmError::err(WithdrawError::InternalError(
                 "Amount for delegation cannot be less than 100 QTUM".to_string(),
             ));
