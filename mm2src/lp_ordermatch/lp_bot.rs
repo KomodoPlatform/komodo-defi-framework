@@ -7,9 +7,10 @@ use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH};
 use std::{collections::HashMap, sync::Arc};
 
+use common::mm_error::MmError;
 #[cfg(test)] use mocktopus::macros::*;
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
@@ -107,10 +108,10 @@ pub struct RateInfos {
 }
 
 impl RateInfos {
-    pub fn retrieve_elapsed_times(&self) -> SystemTime {
+    pub fn retrieve_elapsed_times(&self) -> Result<f64, MmError<SystemTimeError>> {
         let last_updated_time = UNIX_EPOCH + Duration::from_secs(self.last_updated_timestamp.unwrap_or_default());
-        let time_diff: SystemTime = SystemTime::now() - last_updated_time.elapsed().unwrap();
-        time_diff
+        let time_diff: SystemTime = SystemTime::now() - last_updated_time.elapsed()?;
+        Ok(time_diff.elapsed()?.as_secs_f64())
     }
 
     pub fn new(base: String, rel: String) -> RateInfos {

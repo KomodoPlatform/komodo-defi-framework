@@ -394,8 +394,7 @@ async fn checks_order_prerequisites(
     }
 
     // Elapsed validity is the field defined in the cfg or 5 min by default (300 sec)
-    let time_diff = rates.retrieve_elapsed_times();
-    let elapsed = time_diff.elapsed()?.as_secs_f64();
+    let elapsed = rates.retrieve_elapsed_times()?;
     let elapsed_validity = cfg.price_elapsed_validity.unwrap_or(300.0);
 
     if elapsed > elapsed_validity {
