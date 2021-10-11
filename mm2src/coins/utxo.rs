@@ -423,6 +423,11 @@ pub struct UtxoCoinConf {
     pub mature_confirmations: u32,
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
     pub estimate_fee_blocks: u32,
+    /// Defines if the coin can be used in the lightning network
+    /// For now BTC is only supported by LDK but in the future any segwit coins can be supported in lightning network
+    pub lightning: bool,
+    /// bitcoin/testnet/signet/regtest Needed for lightning node to know which network to connect to
+    pub network: Option<String>,
 }
 
 #[derive(Debug)]
@@ -972,6 +977,8 @@ impl<'a> UtxoConfBuilder<'a> {
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
+        let lightning = self.lightning();
+        let network = self.network();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -1001,6 +1008,8 @@ impl<'a> UtxoConfBuilder<'a> {
             estimate_fee_mode,
             mature_confirmations,
             estimate_fee_blocks,
+            lightning,
+            network,
         })
     }
 
@@ -1161,6 +1170,16 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
+
+    fn lightning(&self) -> bool {
+        if self.segwit() && self.bech32_hrp().is_some() {
+            self.conf["lightning"].as_bool().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    fn network(&self) -> Option<String> { json::from_value(self.conf["network"].clone()).unwrap_or(None) }
 }
 
 #[derive(Debug)]

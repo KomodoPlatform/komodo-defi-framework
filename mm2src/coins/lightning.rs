@@ -25,6 +25,7 @@ use lightning_net_tokio::SocketDescriptor;
 use lightning_persister::FilesystemPersister;
 use rand::RngCore;
 use std::convert::TryInto;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -78,16 +79,46 @@ pub struct LightningConf {
 }
 
 impl LightningConf {
-    // TODO: add network, listen address to fn params
-    pub fn new(rpc_client: ElectrumClient, port: u16, node_name: String) -> Self {
+    pub fn new(
+        rpc_client: ElectrumClient,
+        network: Network,
+        addr: Vec<NetAddress>,
+        port: u16,
+        node_name: String,
+    ) -> Self {
         LightningConf {
             rpc_client,
-            network: Network::Testnet,
+            network,
             ln_peer_listening_port: port,
-            ln_announced_listen_addr: Vec::new(),
+            ln_announced_listen_addr: addr,
             ln_announced_node_name: node_name.as_bytes().try_into().expect("Node name has incorrect length"),
         }
     }
+}
+
+pub fn network_from_string(network: String) -> Result<Network, String> {
+    let res = try_s!(network.as_str().parse::<Network>());
+    Ok(res)
+}
+
+// TODO: add TOR address option
+pub fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
+    if addr == Ipv4Addr::new(0, 0, 0, 0) || addr == Ipv4Addr::new(127, 0, 0, 1) {
+        return Vec::new();
+    }
+    let mut addresses = Vec::new();
+    let address = match addr {
+        IpAddr::V4(addr) => NetAddress::IPv4 {
+            addr: u32::from(addr).to_be_bytes(),
+            port,
+        },
+        IpAddr::V6(addr) => NetAddress::IPv6 {
+            addr: u128::from(addr).to_be_bytes(),
+            port,
+        },
+    };
+    addresses.push(address);
+    addresses
 }
 
 fn my_ln_data_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("LIGHTNING") }
@@ -249,14 +280,12 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> Result<(), Str
     };
 
     // Broadcast Node Announcement
-    if !conf.ln_announced_listen_addr.is_empty() {
-        spawn(ln_node_announcement_loop(
-            ctx.clone(),
-            new_channel_manager,
-            conf.ln_announced_node_name,
-            conf.ln_announced_listen_addr,
-        ));
-    }
+    spawn(ln_node_announcement_loop(
+        ctx.clone(),
+        new_channel_manager,
+        conf.ln_announced_node_name,
+        conf.ln_announced_listen_addr,
+    ));
 
     Ok(())
 }
