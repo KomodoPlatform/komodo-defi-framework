@@ -4,6 +4,7 @@
 /// backwards compatibility
 /// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
 use bigdecimal::BigDecimal;
+use coins::TransactionType;
 use common::mm_number::{Fraction, MmNumber};
 use num_rational::BigRational;
 use rpc::v1::types::H256 as H256Json;
@@ -519,6 +520,7 @@ pub struct TransactionDetails {
     pub fee_details: Json,
     pub coin: String,
     pub internal_id: String,
+    pub transaction_type: TransactionType,
 }
 
 #[derive(Debug, Deserialize)]
