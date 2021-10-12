@@ -4692,12 +4692,6 @@ fn test_convert_eth_address() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_add_delegation_qtum() {
-    let (bob_file_passphrase, _bob_file_userpass) = from_env_file(slurp(&".env.seed").unwrap());
-    let bob_passphrase = var("BOB_PASSPHRASE")
-        .ok()
-        .or(bob_file_passphrase)
-        .expect("No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
-
     let coins = json!([{
       "coin": "tQTUM",
       "name": "qtumtest",
@@ -4723,7 +4717,7 @@ fn test_add_delegation_qtum() {
             "myipaddr": env::var("BOB_TRADE_IP").ok(),
             "rpcip": env::var("BOB_TRADE_IP").ok(),
             "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
+            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -4787,12 +4781,6 @@ fn test_add_delegation_qtum() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_remove_delegation_qtum() {
-    let (bob_file_passphrase, _bob_file_userpass) = from_env_file(slurp(&".env.seed").unwrap());
-    let bob_passphrase = var("BOB_PASSPHRASE")
-        .ok()
-        .or(bob_file_passphrase)
-        .expect("No BOB_PASSPHRASE or .env.seed/PASSPHRASE");
-
     let coins = json!([{
       "coin": "tQTUM",
       "name": "qtumtest",
@@ -4818,7 +4806,7 @@ fn test_remove_delegation_qtum() {
             "myipaddr": env::var("BOB_TRADE_IP").ok(),
             "rpcip": env::var("BOB_TRADE_IP").ok(),
             "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
+            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
