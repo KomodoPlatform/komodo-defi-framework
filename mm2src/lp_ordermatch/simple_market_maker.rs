@@ -91,6 +91,7 @@ impl From<std::string::String> for OrderProcessingError {
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
+    price_url: Option<String>,
 }
 
 #[cfg(test)]
@@ -98,6 +99,7 @@ impl StartSimpleMakerBotRequest {
     pub fn new() -> StartSimpleMakerBotRequest {
         return StartSimpleMakerBotRequest {
             cfg: Default::default(),
+            price_url: None,
         };
     }
 }
@@ -551,7 +553,8 @@ async fn execute_create_single_order(
 async fn process_bot_logic(ctx: &MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
     let cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await.clone();
-    let rates_registry = match fetch_price_tickers().await {
+    let price_url = simple_market_maker_bot_ctx.price_url.lock().await.clone();
+    let rates_registry = match fetch_price_tickers(price_url.as_str()).await {
         Ok(model) => {
             info!("price successfully fetched");
             model
@@ -633,9 +636,9 @@ pub async fn lp_bot_loop(ctx: MmArc) {
     info!("lp_bot_loop successfully stopped");
 }
 
-pub async fn process_price_request() -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    info!("Fetching price from: {}", KMD_PRICE_ENDPOINT);
-    let (status, headers, body) = slurp_url(KMD_PRICE_ENDPOINT).await?;
+pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
+    info!("Fetching price from: {}", price_url);
+    let (status, headers, body) = slurp_url(price_url).await?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
     if status_code != StatusCode::OK {
         return MmError::err(PriceServiceRequestError::HttpProcessError(body));
@@ -644,8 +647,8 @@ pub async fn process_price_request() -> Result<TickerInfosRegistry, MmError<Pric
     Ok(TickerInfosRegistry(model))
 }
 
-async fn fetch_price_tickers() -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    let model = process_price_request().await?;
+async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
+    let model = process_price_request(price_url).await?;
     info!("price registry size: {}", model.0.len());
     Ok(model)
 }
@@ -653,6 +656,7 @@ async fn fetch_price_tickers() -> Result<TickerInfosRegistry, MmError<PriceServi
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    let mut price_url = simple_market_maker_bot_ctx.price_url.lock().await;
     match *state {
         TradingBotState::Running => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
         TradingBotState::Stopping => MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
@@ -661,6 +665,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             drop(state);
             let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
             *trading_bot_cfg = req.cfg;
+            *price_url = req.price_url.unwrap_or(KMD_PRICE_ENDPOINT.to_string());
             info!("simple_market_maker_bot successfully started");
             spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
