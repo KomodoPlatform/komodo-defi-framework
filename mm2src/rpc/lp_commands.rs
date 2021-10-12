@@ -163,7 +163,7 @@ pub async fn enable_lightning(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 
     let network = match &utxo_coin.as_ref().conf.network {
         Some(n) => try_s!(network_from_string(n.clone())),
-        None => return ERR!("network field not found coin config"),
+        None => return ERR!("network field not found in coin config"),
     };
 
     let ip = try_s!(myipaddr(ctx.clone()).await);

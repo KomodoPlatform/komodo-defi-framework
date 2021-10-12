@@ -111,6 +111,8 @@ fn utxo_coin_fields_for_test(
             estimate_fee_mode: None,
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
+            lightning: false,
+            network: None,
         },
         decimals: 8,
         dust_amount: UTXO_DUST_AMOUNT,
