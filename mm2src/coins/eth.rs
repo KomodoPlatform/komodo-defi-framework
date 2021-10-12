@@ -22,6 +22,7 @@ use bigdecimal::BigDecimal;
 use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
+use common::log::error;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::{now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -32,7 +33,6 @@ use ethereum_types::{Address, H160, U256};
 use ethkey::{public_to_address, KeyPair, Public};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
-use futures01::future::Either as Either01;
 use futures01::Future;
 use http::StatusCode;
 #[cfg(test)] use mocktopus::macros::*;
@@ -62,8 +62,8 @@ pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
 mod web3_transport;
-use self::web3_transport::Web3Transport;
 use common::mm_number::MmNumber;
+use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
@@ -82,6 +82,8 @@ pub const PAYMENT_STATE_SENT: u8 = 1;
 const _PAYMENT_STATE_SPENT: u8 = 2;
 const _PAYMENT_STATE_REFUNDED: u8 = 3;
 const GAS_PRICE_PERCENT: u64 = 10;
+/// It can change 12.5% max each block according to https://www.blocknative.com/blog/eip-1559-fees
+const BASE_BLOCK_FEE_DIFF_PCT: u64 = 13;
 const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
 /// Take into account that the dynamic fee may increase by 3% during the swap.
@@ -410,18 +412,6 @@ impl EthCoinImpl {
         input.extend_from_slice(&time_lock.to_le_bytes());
         input.extend_from_slice(secret_hash);
         sha256(&input).to_vec()
-    }
-
-    /// Get gas price
-    fn get_gas_price(&self) -> Web3RpcFut<U256> {
-        let fut = if let Some(url) = &self.gas_station_url {
-            Either01::A(
-                GasStationData::get_gas_price(url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
-            )
-        } else {
-            Either01::B(self.web3.eth().gas_price().map_to_mm_fut(Web3RpcError::from))
-        };
-        Box::new(fut)
     }
 
     fn estimate_gas(&self, req: CallRequest) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
@@ -2721,6 +2711,56 @@ impl EthCoin {
         }
 
         Ok(None)
+    }
+
+    /// Get gas price
+    fn get_gas_price(&self) -> Web3RpcFut<U256> {
+        let coin = self.clone();
+        let fut = async move {
+            // TODO refactor to error_log_passthrough once simple maker bot is merged
+            let gas_station_price = match &coin.gas_station_url {
+                Some(url) => match GasStationData::get_gas_price(url).compat().await {
+                    Ok(from_station) => Some(increase_by_percent_one_gwei(from_station, GAS_PRICE_PERCENT)),
+                    Err(e) => {
+                        error!("Error {} on request to gas station url {}", e, url);
+                        None
+                    },
+                },
+                None => None,
+            };
+
+            let eth_gas_price = match coin.web3.eth().gas_price().compat().await {
+                Ok(eth_gas) => Some(eth_gas),
+                Err(e) => {
+                    error!("Error {} on eth_gasPrice request", e);
+                    None
+                },
+            };
+
+            let fee_history_namespace: EthFeeHistoryNamespace<_> = coin.web3.api();
+            let eth_fee_history_price = match fee_history_namespace
+                .eth_fee_history(U256::from(1u64), BlockNumber::Latest, &[])
+                .compat()
+                .await
+            {
+                Ok(res) => res
+                    .base_fee_per_gas
+                    .first()
+                    .map(|val| increase_by_percent_one_gwei(*val, BASE_BLOCK_FEE_DIFF_PCT)),
+                Err(e) => {
+                    error!("Error {} on eth_feeHistory request", e);
+                    None
+                },
+            };
+
+            let all_prices = vec![gas_station_price, eth_gas_price, eth_fee_history_price];
+            all_prices
+                .into_iter()
+                .flatten()
+                .max()
+                .or_mm_err(|| Web3RpcError::Internal("All requests failed".into()))
+        };
+        Box::new(fut.boxed().compat())
     }
 }
 
