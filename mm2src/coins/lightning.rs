@@ -31,6 +31,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::net::TcpListener;
 
+mod ln_rpc;
+
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 60;
 
@@ -193,7 +195,8 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> Result<(), Str
     // TODO: Add the case of restarting a node
     let mut user_config = UserConfig::default();
 
-    // TODO: need more research to find the best case for a node inside mm2
+    // When set to false an incoming channel doesn't have to match our announced channel preference which allows public channels
+    // TODO: Add user config to LightningConf maybe get it from coin config
     user_config
         .peer_channel_config_limits
         .force_announced_channel_preference = false;
@@ -255,7 +258,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> Result<(), Str
     ));
 
     // Handle LN Events
-    // TODO: Check if it's better to do this by implementing EventHandler
+    // TODO: Implement EventHandler trait instead of this
     let handle = tokio::runtime::Handle::current();
     let event_handler = move |event: &Event| handle.block_on(handle_ln_events(event));
 
