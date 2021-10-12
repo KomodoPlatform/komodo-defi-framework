@@ -80,7 +80,7 @@ cfg_wasm32! {
 #[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
 use common::mm_error::prelude::MapToMmResult;
 pub use lp_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                 StartSimpleMakerBotRequest};
+                 StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
 #[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;

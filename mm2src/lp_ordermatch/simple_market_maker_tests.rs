@@ -249,11 +249,36 @@ mod tests {
             change_24_h_provider: Default::default(),
         });
 
+        registry.0.insert("USDT".to_string(), TickerInfos {
+            ticker: "USDT".to_string(),
+            last_price: MmNumber::from("1"),
+            last_updated: "".to_string(),
+            last_updated_timestamp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            volume24_h: MmNumber::from("25000"),
+            price_provider: Provider::Coingecko,
+            volume_provider: Provider::Binance,
+            sparkline_7_d: None,
+            sparkline_provider: Default::default(),
+            change_24_h: MmNumber::default(),
+            change_24_h_provider: Default::default(),
+        });
+
         let rates = registry
             .get_cex_rates("KMD".to_string(), "LTC".to_string())
             .unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Binance);
         assert_eq!(rates.rel_provider, Provider::Coingecko);
         assert_eq!(rates.price, MmNumber::from("0.02"));
+
+        let usdt_infos = registry.get_infos("USDT-PLG20");
+        assert_eq!(usdt_infos.is_some(), true);
+        assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
+
+        let usdt_infos = registry.get_infos("USDT");
+        assert_eq!(usdt_infos.is_some(), true);
+        assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
     }
 }

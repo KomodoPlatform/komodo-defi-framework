@@ -26,7 +26,7 @@ use std::{collections::{HashMap, HashSet},
 use uuid::Uuid;
 
 // !< constants
-const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v1/tickers";
+pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v1/tickers";
 
 // !< Type definitions
 pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<StartSimpleMakerBotError>>;
@@ -665,7 +665,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             drop(state);
             let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
             *trading_bot_cfg = req.cfg;
-            *price_url = req.price_url.unwrap_or(KMD_PRICE_ENDPOINT.to_string());
+            *price_url = req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string());
             info!("simple_market_maker_bot successfully started");
             spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {

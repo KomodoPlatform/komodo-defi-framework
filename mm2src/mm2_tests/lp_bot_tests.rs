@@ -6,12 +6,13 @@ use serde_json::Value as Json;
 
 mod tests {
     use super::*;
+    use crate::mm2::lp_ordermatch::KMD_PRICE_ENDPOINT;
     use http::HeaderMap;
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_process_price_request() {
-        let resp = block_on(process_price_request());
+        let resp = block_on(process_price_request(KMD_PRICE_ENDPOINT));
         assert_ne!(resp.is_err(), true);
     }
 

@@ -15,7 +15,7 @@ use common::mm_error::MmError;
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                                  StartSimpleMakerBotRequest};
+                                  StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "simple_market_maker_tests.rs"]
@@ -128,7 +128,15 @@ impl RateInfos {
 }
 
 impl TickerInfosRegistry {
-    fn get_infos(&self, ticker: &str) -> Option<&TickerInfos> { self.0.get(ticker) }
+    fn get_infos(&self, ticker: &str) -> Option<&TickerInfos> {
+        let mut ticker_infos = self.0.get(ticker);
+        let limit = ticker.len() - 1;
+        let pos = ticker.find('-').unwrap_or(limit);
+        if ticker_infos.is_none() && pos < limit {
+            ticker_infos = self.0.get(&ticker[0..pos])
+        }
+        ticker_infos
+    }
 
     fn get_infos_pair(&self, base: &str, rel: &str) -> Option<(&TickerInfos, &TickerInfos)> {
         self.get_infos(base).zip(self.get_infos(rel))
