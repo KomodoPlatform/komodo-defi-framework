@@ -43,7 +43,7 @@ async fn test_electrum_rpc_client() {
         .as_slice()
         .into();
     let verbose_tx = client
-        .get_verbose_transaction(tx_hash)
+        .get_verbose_transaction(&tx_hash)
         .compat()
         .await
         .expect("!get_verbose_transaction");

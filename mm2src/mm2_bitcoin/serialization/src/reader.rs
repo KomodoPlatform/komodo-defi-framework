@@ -1,4 +1,5 @@
 use compact_integer::CompactInteger;
+use derive_more::Display;
 use std::{io, marker};
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
@@ -27,13 +28,15 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Display, PartialEq)]
 pub enum Error {
     MalformedData,
     UnexpectedEnd,
     UnreadData,
     Custom(String),
 }
+
+impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
     fn from(_: io::Error) -> Self { Error::UnexpectedEnd }

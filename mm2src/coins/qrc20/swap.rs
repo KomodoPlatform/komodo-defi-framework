@@ -163,7 +163,13 @@ impl Qrc20Coin {
         expected_value: U256,
         min_block_number: u64,
     ) -> Result<(), String> {
-        let verbose_tx = try_s!(self.utxo.rpc_client.get_verbose_transaction(fee_tx_hash).compat().await);
+        let verbose_tx = try_s!(
+            self.utxo
+                .rpc_client
+                .get_verbose_transaction(&fee_tx_hash)
+                .compat()
+                .await
+        );
         let conf_before_block = utxo_common::is_tx_confirmed_before_block(self, &verbose_tx, min_block_number);
         if try_s!(conf_before_block.await) {
             return ERR!(
@@ -218,7 +224,7 @@ impl Qrc20Coin {
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let tx_hash = tx.hash().reversed().into();
-        let verbose_tx = try_s!(self.utxo.rpc_client.get_verbose_transaction(tx_hash).compat().await);
+        let verbose_tx = try_s!(self.utxo.rpc_client.get_verbose_transaction(&tx_hash).compat().await);
         if verbose_tx.confirmations < 1 {
             return ERR!("'erc20Payment' was not confirmed yet. Please wait for at least one confirmation");
         }
@@ -341,14 +347,21 @@ impl Qrc20Coin {
         wait_until: u64,
         check_every: u64,
     ) -> Result<(), String> {
+        let tx_hash = H256Json::from(qtum_tx.hash().reversed());
         try_s!(
             self.utxo
                 .rpc_client
-                .wait_for_confirmations(&qtum_tx, confirmations as u32, requires_nota, wait_until, check_every)
+                .wait_for_confirmations(
+                    tx_hash.clone(),
+                    qtum_tx.expiry_height,
+                    confirmations as u32,
+                    requires_nota,
+                    wait_until,
+                    check_every
+                )
                 .compat()
                 .await
         );
-        let tx_hash = qtum_tx.hash().reversed().into();
         let receipts = try_s!(self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await);
 
         for receipt in receipts {
@@ -771,7 +784,7 @@ impl Qrc20Coin {
             let verbose_tx = try_s!(
                 self.utxo
                     .rpc_client
-                    .get_verbose_transaction(receipt.transaction_hash)
+                    .get_verbose_transaction(&receipt.transaction_hash)
                     .compat()
                     .await
             );

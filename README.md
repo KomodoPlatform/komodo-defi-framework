@@ -15,8 +15,8 @@ The current state can be considered as very early alpha.
 1. (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 1. Run
     ```
-    rustup install nightly-2021-07-18
-    rustup default nightly-2021-07-18
+    rustup install nightly-2021-05-17
+    rustup default nightly-2021-05-17
     rustup component add rustfmt-preview
     ```
 1. Run `cargo build` (or `cargo build -vv` to get verbose build output).
@@ -24,3 +24,9 @@ The current state can be considered as very early alpha.
 ## Help and troubleshooting
 
 If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/artemii235/SuperNET/issues/new) or reach the team at [Discord `dev-marketmaker` channel](https://discord.gg/PGxVm2y).  
+
+## Additional docs for developers
+
+[Contribution guide](./CONTRIBUTING.md)  
+[Setting up the environment to run the full tests suite](./docs/DEV_ENVIRONMENT.md)  
+[Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)  

@@ -3,10 +3,8 @@ source userpass
 curl --url "http://127.0.0.1:7783" --data '
 {
   "userpass":"'$userpass'",
-  "method":"buy",
-  "base":"'$1'",
-  "rel":"'$2'",
-  "volume":"0.777",
-  "price":"1"
+  "method":"validateaddress",
+  "coin":"'$1'",
+  "address":"'$2'"
 }
 '

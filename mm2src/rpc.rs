@@ -38,6 +38,7 @@ mod dispatcher_legacy;
 
 #[path = "rpc/dispatcher/dispatcher_v2.rs"] mod dispatcher_v2;
 
+#[path = "rpc/get_public_key.rs"] mod get_public_key;
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 #[path = "rpc/lp_protocol.rs"] mod lp_protocol;
 use self::lp_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};

@@ -232,7 +232,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0de5164e5edbf51c45fb8c2d9664ae1c095cce1b265ecf7569093c0d66ef690"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures-sink",
  "futures-util",
  "memchr",
@@ -439,7 +439,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "sha-1 0.9.4",
+ "sha-1 0.9.6",
  "sha2 0.9.5",
 ]
 
@@ -721,9 +721,9 @@ checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
 name = "bytes"
-version = "1.0.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
+checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
 
 [[package]]
 name = "cache-padded"
@@ -877,10 +877,13 @@ dependencies = [
  "mocktopus",
  "num-traits 0.2.12",
  "primitives",
+ "prost",
+ "prost-build",
  "rand 0.7.3",
  "rlp 0.3.0",
  "rmp-serde",
  "rpc",
+ "rusqlite",
  "rust-ini",
  "rustls",
  "script",
@@ -920,7 +923,7 @@ dependencies = [
  "base64 0.10.1",
  "bigdecimal",
  "bitcrypto",
- "bytes 0.4.12",
+ "bytes 1.1.0",
  "cc",
  "cfg-if 1.0.0",
  "chrono",
@@ -963,6 +966,7 @@ dependencies = [
  "parking_lot_core 0.6.2",
  "paste",
  "primitives",
+ "prost",
  "rand 0.7.3",
  "regex",
  "rusqlite",
@@ -1043,12 +1047,6 @@ checksum = "ed00c67cb5d0a7d64a44f6ad2668db7e7530311dd53ea79bcd4fb022c64911c8"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "cpuid-bool"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aebca1129a03dc6dc2b127edd729435bbc4a37e1d5f4d7513165089ceb02634"
 
 [[package]]
 name = "crc"
@@ -1437,7 +1435,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#7da40e902463a78c93390686ee34e0379c121b40"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
 dependencies = [
  "blake2b_simd",
  "byteorder 1.4.3",
@@ -1948,7 +1946,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "825343c4eef0b63f541f8903f395dc5beb362a979b5799a84062527ef1e37726"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -2162,7 +2160,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60daa14be0e0786db0f03a9e57cb404c9d756eed2b6c62b9ea98ec5743ec75a9"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "http 0.2.1",
  "pin-project-lite 0.2.6",
 ]
@@ -2200,7 +2198,7 @@ version = "0.14.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b61cf2d1aebcf6e6352c97b81dc2244ca29194be1b276f5d8ad5c6330fffb11"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -2512,7 +2510,7 @@ version = "0.39.1"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
  "atomic",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures 0.3.15",
  "lazy_static",
  "libp2p-core",
@@ -2616,7 +2614,7 @@ version = "0.29.0"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
  "asynchronous-codec",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures 0.3.15",
  "libp2p-core",
  "log 0.4.11",
@@ -2632,7 +2630,7 @@ name = "libp2p-noise"
 version = "0.32.0"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "curve25519-dalek",
  "futures 0.3.15",
  "lazy_static",
@@ -2668,7 +2666,7 @@ version = "0.29.0"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
  "asynchronous-codec",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures 0.3.15",
  "libp2p-core",
  "log 0.4.11",
@@ -2684,7 +2682,7 @@ version = "0.12.0"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
  "async-trait",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures 0.3.15",
  "libp2p-core",
  "libp2p-swarm",
@@ -3177,7 +3175,6 @@ dependencies = [
  "async-std",
  "async-trait",
  "bigdecimal",
- "bitcoin-cash-slp",
  "bitcrypto",
  "blake2",
  "bytes 0.4.12",
@@ -3357,7 +3354,7 @@ name = "multistream-select"
 version = "0.10.3"
 source = "git+https://github.com/libp2p/rust-libp2p.git#20183c1ea152f5bfe183543e4934e082c1428011"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures 0.3.15",
  "log 0.4.11",
  "pin-project 1.0.7",
@@ -3970,7 +3967,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de5e2533f59d08fcf364fd374ebda0692a70bd6d7e66ef97f306f45c6c5d8020"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "prost-derive",
 ]
 
@@ -3980,7 +3977,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "355f634b43cdd80724ee7848f95770e7e70eefa6dcf14fea676216573b8fd603"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "heck",
  "itertools 0.10.1",
  "log 0.4.11",
@@ -4011,7 +4008,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "603bbd6394701d13f3f25aada59c7de9d35a6a5887cfc156181234a44002771b"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "prost",
 ]
 
@@ -4495,7 +4492,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e54369147e3e7796c9b885c7304db87ca3d09a0a98f72843d532868675bbfba8"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "rustc-hex 2.1.0",
 ]
 
@@ -4874,6 +4871,7 @@ name = "serialization"
 version = "0.1.0"
 dependencies = [
  "byteorder 1.4.3",
+ "derive_more",
  "primitives",
 ]
 
@@ -4900,13 +4898,13 @@ dependencies = [
 
 [[package]]
 name = "sha-1"
-version = "0.9.4"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfebf75d25bd900fd1e7d11501efab59bc846dbc76196839663e6637bba9f25f"
+checksum = "8c4cfa741c5832d0ef7fab46cabed29c2aae926db0b11bb2069edd8db5e64e16"
 dependencies = [
  "block-buffer 0.9.0",
  "cfg-if 1.0.0",
- "cpuid-bool",
+ "cpufeatures",
  "digest 0.9.0",
  "opaque-debug 0.3.0",
 ]
@@ -5634,7 +5632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98c8b05dc14c75ea83d63dd391100353789f5f24b8b3866542a5e85c8be8e985"
 dependencies = [
  "autocfg 1.0.0",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "libc",
  "memchr",
  "mio",
@@ -5692,7 +5690,7 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1caa0b0c8d94a049db56b5acf8cba99dc0623aab1b26d5b5f5e2d945846b3592"
 dependencies = [
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures-core",
  "futures-sink",
  "log 0.4.11",
@@ -5947,7 +5945,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f8d425fafb8cd76bc3f22aace4af471d3156301d7508f2107e98fbeae10bc7f"
 dependencies = [
  "asynchronous-codec",
- "bytes 1.0.1",
+ "bytes 1.1.0",
  "futures-io",
  "futures-util",
 ]
@@ -6373,7 +6371,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#7da40e902463a78c93390686ee34e0379c121b40"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
 dependencies = [
  "base64 0.13.0",
  "bech32",
@@ -6397,7 +6395,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#7da40e902463a78c93390686ee34e0379c121b40"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
 dependencies = [
  "blake2b_simd",
  "byteorder 1.4.3",
@@ -6411,7 +6409,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#7da40e902463a78c93390686ee34e0379c121b40"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
 dependencies = [
  "aes 0.6.0",
  "bitvec 0.18.5",
@@ -6441,7 +6439,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#7da40e902463a78c93390686ee34e0379c121b40"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
 dependencies = [
  "bellman",
  "blake2b_simd",

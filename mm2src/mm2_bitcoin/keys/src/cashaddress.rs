@@ -19,6 +19,11 @@ pub enum NetworkPrefix {
     BitcoinCash,
     BchTest,
     BchReg,
+    // SLP on BCH mainnet
+    SimpleLedger,
+    // SLP on BCH testnet
+    SlpTest,
+    Other(String),
 }
 
 impl fmt::Display for NetworkPrefix {
@@ -27,6 +32,9 @@ impl fmt::Display for NetworkPrefix {
             NetworkPrefix::BitcoinCash => "bitcoincash",
             NetworkPrefix::BchTest => "bchtest",
             NetworkPrefix::BchReg => "bchreg",
+            NetworkPrefix::SimpleLedger => "simpleledger",
+            NetworkPrefix::SlpTest => "slptest",
+            NetworkPrefix::Other(network) => network,
         };
         write!(f, "{}", as_str)
     }
@@ -41,7 +49,9 @@ impl FromStr for NetworkPrefix {
             "bitcoincash" => NetworkPrefix::BitcoinCash,
             "bchtest" => NetworkPrefix::BchTest,
             "bchreg" => NetworkPrefix::BchReg,
-            _ => return Err("Unexpected network prefix".into()),
+            "simpleledger" => NetworkPrefix::SimpleLedger,
+            "slptest" => NetworkPrefix::SlpTest,
+            _ => NetworkPrefix::Other(s),
         };
         Ok(prefix)
     }
@@ -55,7 +65,7 @@ impl NetworkPrefix {
     /// The method converts self to string and returns a byte array with each element
     /// being the corresponding character's right-most 5 bits.
     /// Result additionally includes a null termination byte.
-    fn encode_to_ckecksum(&self) -> Vec<u8> {
+    fn encode_to_checksum(&self) -> Vec<u8> {
         // Grab the right most 5 bits of each char.
         let mut prefix: Vec<u8> = self.to_string().as_bytes().iter().map(|x| x & 0b11111).collect();
         prefix.push(0);
@@ -248,7 +258,7 @@ fn addr_type_from_version(version: u8) -> Result<AddressType, String> {
 // CalculateChecksum calculates a BCH checksum for a nibble-packed cashaddress
 // that properly includes the network prefix.
 fn calculate_checksum(prefix: &NetworkPrefix, payload: &[u8]) -> u64 {
-    let mut raw_data = prefix.encode_to_ckecksum();
+    let mut raw_data = prefix.encode_to_checksum();
     raw_data.extend(payload);
     poly_mod(&raw_data)
 }
@@ -503,6 +513,7 @@ mod tests {
             "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyn",
             "bchtest:testnetaddress4d6njnut",
             "bchreg:555555555555555555555555555555555555555555555udxmlmrz",
+            "ergon:qq0fj6kgmpxet2za56lxv4zlkjhu6a6psq0jqd4tvs",
         ];
 
         for addr in addresses {
@@ -515,6 +526,7 @@ mod tests {
             "bchtest:9adhakpwzztepkpwp5z0dq62m6u5v5xtyj7j3h2u94tsynr",
             "bitcoincash:qpzry9x8gf2tvdw0s3jn54khce6mua7lcw20ayyc",
             "bchtest:testnetaddress4d6njnu",
+            "ergon:p9adhakpwzztepkpwp5z0dq62m6u5v5xtyj7j3h2u94tsynr",
         ];
 
         for addr in incorrect_addresses {

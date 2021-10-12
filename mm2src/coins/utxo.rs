@@ -19,6 +19,12 @@
 //  Copyright © 2017-2019 SuperNET. All rights reserved.
 //
 
+pub mod bch;
+pub mod bchd_grpc;
+#[allow(clippy::large_enum_variant)]
+#[rustfmt::skip]
+#[path = "utxo/pb.rs"]
+pub mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
@@ -78,11 +84,12 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, Coins
             NumConversResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
             TransactionEnum, TransactionFut, WithdrawError, WithdrawFee, WithdrawRequest};
+use crate::utxo::rpc_clients::UtxoRpcFut;
+use crate::utxo::utxo_common::UtxoTxBuilder;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
 
-const SWAP_TX_SPEND_SIZE: u64 = 305;
 const KILO_BYTE: u64 = 1000;
 /// https://bitcoin.stackexchange.com/a/77192
 const MAX_DER_SIGNATURE_LEN: usize = 72;
@@ -206,7 +213,7 @@ pub enum TxFee {
 }
 
 /// The actual "runtime" fee that is received from RPC in case of dynamic calculation
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ActualTxFee {
     /// fixed tx fee not depending on transaction size
     Fixed(u64),
@@ -280,7 +287,7 @@ impl RecentlySpentOutPoints {
                 if output.script_pubkey == self.for_script_pubkey {
                     Some(CachedUnspentInfo {
                         outpoint: OutPoint {
-                            hash: spend_tx_hash.clone(),
+                            hash: spend_tx_hash,
                             index: index as u32,
                         },
                         value: output.value,
@@ -488,9 +495,21 @@ impl UtxoCoinFields {
             (now_ms() / 1000) as u32
         };
 
+        let str_d_zeel = if self.conf.ticker == "NAV" {
+            Some("".into())
+        } else {
+            None
+        };
+
+        let n_time = if self.conf.is_pos {
+            Some((now_ms() / 1000) as u32)
+        } else {
+            None
+        };
+
         TransactionInputSigner {
             version: self.conf.tx_version,
-            n_time: None,
+            n_time,
             overwintered: self.conf.overwintered,
             version_group_id: self.conf.version_group_id,
             consensus_branch_id: self.conf.consensus_branch_id,
@@ -503,7 +522,7 @@ impl UtxoCoinFields {
             shielded_spends: vec![],
             shielded_outputs: vec![],
             zcash: self.conf.zcash,
-            str_d_zeel: None,
+            str_d_zeel,
             hash_algo: self.tx_hash_algo.into(),
         }
     }
@@ -554,12 +573,44 @@ impl UtxoCoinFields {
     }
 }
 
+#[derive(Debug, Display)]
+pub enum BroadcastTxErr {
+    /// RPC client error
+    Rpc(UtxoRpcError),
+    /// Other specific error
+    Other(String),
+}
+
+impl From<UtxoRpcError> for BroadcastTxErr {
+    fn from(err: UtxoRpcError) -> Self { BroadcastTxErr::Rpc(err) }
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
-pub trait UtxoCommonOps {
+pub trait UtxoTxBroadcastOps {
+    async fn broadcast_tx(&self, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>>;
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait UtxoTxGenerationOps {
     async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError>;
 
-    async fn get_htlc_spend_fee(&self) -> UtxoRpcResult<u64>;
+    /// Calculates interest if the coin is KMD
+    /// Adds the value to existing output to my_script_pub or creates additional interest output
+    /// returns transaction and data as is if the coin is not KMD
+    async fn calc_interest_if_required(
+        &self,
+        mut unsigned: TransactionInputSigner,
+        mut data: AdditionalTxData,
+        my_script_pub: Bytes,
+    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
+    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
 
@@ -575,30 +626,6 @@ pub trait UtxoCommonOps {
 
     /// Check if the output is spendable (is not coinbase or it has enough confirmations).
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool;
-
-    /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
-    /// This function expects that utxos are sorted by amounts in ascending order
-    /// Consider sorting before calling this function
-    /// Sends the change (inputs amount - outputs amount) to "my_address"
-    /// Also returns additional transaction data
-    async fn generate_transaction(
-        &self,
-        utxos: Vec<UnspentInfo>,
-        outputs: Vec<TransactionOutput>,
-        fee_policy: FeePolicy,
-        fee: Option<ActualTxFee>,
-        gas_fee: Option<u64>,
-    ) -> GenerateTxResult;
-
-    /// Calculates interest if the coin is KMD
-    /// Adds the value to existing output to my_script_pub or creates additional interest output
-    /// returns transaction and data as is if the coin is not KMD
-    async fn calc_interest_if_required(
-        &self,
-        mut unsigned: TransactionInputSigner,
-        mut data: AdditionalTxData,
-        my_script_pub: Bytes,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 
     /// Calculates interest of the specified transaction.
     /// Please note, this method has to be used for KMD transactions only.
@@ -628,10 +655,7 @@ pub trait UtxoCommonOps {
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
 
     /// Try to load verbose transaction from cache or try to request it from Rpc client.
-    fn get_verbose_transaction_from_cache_or_rpc(
-        &self,
-        txid: H256Json,
-    ) -> Box<dyn Future<Item = VerboseTransactionFrom, Error = String> + Send>;
+    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom>;
 
     /// Cache transaction if the coin supports `TX_CACHE` and tx height is set and not zero.
     async fn cache_transaction_if_possible(&self, tx: &RpcTransaction) -> Result<(), String>;
@@ -697,7 +721,7 @@ impl From<Arc<UtxoCoinFields>> for UtxoArc {
 
 impl UtxoArc {
     /// Returns weak reference to the inner UtxoCoinFields
-    fn downgrade(&self) -> UtxoWeak {
+    pub fn downgrade(&self) -> UtxoWeak {
         let weak = Arc::downgrade(&self.0);
         UtxoWeak(weak)
     }
@@ -711,7 +735,7 @@ impl From<Weak<UtxoCoinFields>> for UtxoWeak {
 }
 
 impl UtxoWeak {
-    fn upgrade(&self) -> Option<UtxoArc> { self.0.upgrade().map(UtxoArc::from) }
+    pub fn upgrade(&self) -> Option<UtxoArc> { self.0.upgrade().map(UtxoArc::from) }
 }
 
 // We can use a shared UTXO lock for all UTXO coins at 1 time.
@@ -784,6 +808,14 @@ pub enum RequestTxHistoryResult {
 pub enum VerboseTransactionFrom {
     Cache(RpcTransaction),
     Rpc(RpcTransaction),
+}
+
+impl VerboseTransactionFrom {
+    fn into_inner(self) -> RpcTransaction {
+        match self {
+            VerboseTransactionFrom::Rpc(tx) | VerboseTransactionFrom::Cache(tx) => tx,
+        }
+    }
 }
 
 pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
@@ -1743,7 +1775,7 @@ where
     let mut result = Vec::with_capacity(unspents.len());
     for unspent in unspents {
         let tx_hash: H256Json = unspent.outpoint.hash.reversed().into();
-        let tx_info = try_s!(rpc_client.get_verbose_transaction(tx_hash.clone()).compat().await);
+        let tx_info = try_s!(rpc_client.get_verbose_transaction(&tx_hash).compat().await);
 
         let value = unspent.value;
         let locktime = tx_info.locktime as u64;
@@ -1856,24 +1888,29 @@ where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
     let (unspents, recently_sent_txs) = try_s!(coin.list_unspent_ordered(&coin.as_ref().my_address).await);
-    generate_and_send_tx(&coin, unspents, outputs, FeePolicy::SendExact, recently_sent_txs).await
+    generate_and_send_tx(&coin, unspents, None, FeePolicy::SendExact, recently_sent_txs, outputs).await
 }
 
 /// Generates and sends tx using unspents and outputs adding new record to the recently_spent in case of success
 async fn generate_and_send_tx<T>(
     coin: &T,
     unspents: Vec<UnspentInfo>,
-    outputs: Vec<TransactionOutput>,
+    required_inputs: Option<Vec<UnspentInfo>>,
     fee_policy: FeePolicy,
     mut recently_spent: AsyncMutexGuard<'_, RecentlySpentOutPoints>,
+    outputs: Vec<TransactionOutput>,
 ) -> Result<UtxoTx, String>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+    T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
-    let (unsigned, _) = try_s!(
-        coin.generate_transaction(unspents, outputs, fee_policy, None, None)
-            .await
-    );
+    let mut builder = UtxoTxBuilder::new(coin)
+        .add_available_inputs(unspents)
+        .add_outputs(outputs)
+        .with_fee_policy(fee_policy);
+    if let Some(required) = required_inputs {
+        builder = builder.add_required_inputs(required);
+    }
+    let (unsigned, _) = try_s!(builder.build().await);
 
     let spent_unspents = unsigned
         .inputs
@@ -1899,14 +1936,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    try_s!(
-        coin.as_ref()
-            .rpc_client
-            .send_transaction(&signed)
-            .map_err(|e| ERRL!("{}", e))
-            .compat()
-            .await
-    );
+    try_s!(coin.broadcast_tx(&signed).await);
 
     recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
 

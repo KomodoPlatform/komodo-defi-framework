@@ -67,3 +67,13 @@ pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
     assert_eq!(pair.public().len(), 33);
     Ok(pair)
 }
+
+pub fn key_pair_from_secret(secret: [u8; 32]) -> Result<KeyPair, String> {
+    let private = Private {
+        prefix: 0,
+        secret: secret.into(),
+        compressed: true,
+        checksum_type: Default::default(),
+    };
+    KeyPair::from_private(private).map_err(|e| format!("{}", e))
+}

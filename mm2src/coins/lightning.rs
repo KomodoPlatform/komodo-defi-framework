@@ -173,7 +173,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> Result<(), Str
         persister.clone(),
     ));
 
-    let seed: [u8; 32] = ctx.secp256k1_key_pair().private().secret.clone().into();
+    let seed: [u8; 32] = ctx.secp256k1_key_pair().private().secret.into();
 
     // The current time is used to derive random numbers from the seed where required, to ensure all random generation is unique across restarts.
     let cur = try_s!(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH));

@@ -17,7 +17,7 @@ backtrace = "0.3"
 base64 = "0.10.0"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-bytes = "0.4"
+bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.7"
 derive_more = "0.99"
@@ -42,6 +42,7 @@ parking_lot = { version = "0.11", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
 primitives = { path = "../mm2_bitcoin/primitives" }
+prost = "0.8"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
 serde = "1"

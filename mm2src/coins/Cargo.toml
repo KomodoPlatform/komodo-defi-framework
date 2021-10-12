@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-zhtlc = ["zcash_client_backend", "zcash_primitives", "zcash_proofs"]
+zhtlc = ["rusqlite", "zcash_client_backend", "zcash_primitives", "zcash_proofs"]
 
 [lib]
 name = "coins"
@@ -49,6 +49,7 @@ metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
+prost = "0.8"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { git = "https://github.com/artemii235/parity-common" }
 rmp-serde = "0.14.3"
@@ -81,6 +82,7 @@ dirs = { version = "1" }
 lightning-background-processor = "0.0.101"
 lightning-persister = "0.0.101"
 lightning-net-tokio = "0.0.101"
+rusqlite = { version = "0.24.2", features = ["bundled"], optional = true }
 rust-ini = { version = "0.13" }
 rustls = { version = "0.19", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
@@ -89,3 +91,6 @@ webpki-roots = { version = "0.19.0" }
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
 zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
 zcash_proofs = { features = ["bundled-prover"], git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
+
+[build-dependencies]
+prost-build = "0.8"

@@ -610,7 +610,7 @@ impl Deref for EthCoin {
 }
 
 impl SwapOps for EthCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal) -> TransactionFut {
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let address = try_fus!(addr_from_raw_pubkey(fee_addr));
 
         Box::new(
@@ -745,6 +745,7 @@ impl SwapOps for EthCoin {
         fee_addr: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
+        _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
         let tx = match fee_tx {
@@ -1100,7 +1101,8 @@ impl MarketCoinOps for EthCoin {
                                 continue;
                             },
                         };
-                        if current_block - confirmed_at + 1 >= required_confirms {
+                        // checking if the current block is above the confirmed_at block prediction for pos chain to prevent overflow
+                        if current_block >= confirmed_at && current_block - confirmed_at + 1 >= required_confirms {
                             status.append(" Confirmed.");
                             return Ok(());
                         }
@@ -1334,7 +1336,7 @@ impl EthCoin {
         Box::new(fut.compat())
     }
 
-    fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
+    pub fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
         match &self.coin_type {
             EthCoinType::Eth => self.sign_and_send_transaction(value, Action::Call(address), vec![], U256::from(21000)),
             EthCoinType::Erc20 {
@@ -3064,22 +3066,8 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 
 #[derive(Deserialize, Debug)]
 struct GasStationData {
-    fast: f64,
-    speed: f64,
-    fastest: f64,
-    #[serde(rename = "avgWait")]
-    avg_wait: f64,
-    #[serde(rename = "fastWait")]
-    fast_wait: f64,
-    #[serde(rename = "blockNum")]
-    block_num: u64,
-    #[serde(rename = "safeLowWait")]
-    safe_low_wait: f64,
-    block_time: f64,
-    #[serde(rename = "fastestWait")]
-    fastest_wait: f64,
-    #[serde(rename = "safeLow")]
-    safe_low: f64,
+    // matic gas station average fees is named standard, using alias to support both format.
+    #[serde(alias = "average", alias = "standard")]
     average: f64,
 }
 

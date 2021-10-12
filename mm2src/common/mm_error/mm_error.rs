@@ -380,4 +380,57 @@ mod tests {
         assert_eq!(mm_err.etype, 8);
         assert_eq!(mm_err.trace, vec![TraceLocation::new("mm_error", into_mm_line)]);
     }
+
+    #[derive(Display)]
+    #[allow(dead_code)]
+    enum ForwardedErrorWithBox {
+        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        NotSufficientBalance {
+            missing: u64,
+        },
+        Box(Box<dyn std::error::Error>),
+    }
+
+    impl From<ErrorKind> for ForwardedErrorWithBox {
+        fn from(kind: ErrorKind) -> Self {
+            match kind {
+                ErrorKind::NotSufficientBalance { actual, required } => ForwardedErrorWithBox::NotSufficientBalance {
+                    missing: required - actual,
+                },
+            }
+        }
+    }
+
+    #[test]
+    // Testing that error conversion works for error containing Box<dyn ...>
+    fn test_mm_error_with_box() {
+        const GENERATED_LINE: u32 = line!() + 2;
+        fn generate_error_for_box(actual: u64, required: u64) -> Result<(), MmError<ErrorKind>> {
+            Err(MmError::new(ErrorKind::NotSufficientBalance { actual, required }))
+        }
+
+        const FORWARDED_LINE: u32 = line!() + 2;
+        fn forward_error_for_box(actual: u64, required: u64) -> Result<(), MmError<ForwardedErrorWithBox>> {
+            let _ = generate_error_for_box(actual, required)?;
+            unreachable!("'generate_error' must return an error")
+        }
+
+        let actual = 1000;
+        let required = 1500;
+        let missing = required - actual;
+        let error = forward_error_for_box(actual, required).expect_err("'forward_error' must return an error");
+
+        let expected_display = format!(
+            "mm_error:{}] mm_error:{}] Not sufficient balance. Top up your balance by {}",
+            FORWARDED_LINE, GENERATED_LINE, missing
+        );
+        assert_eq!(error.to_string(), expected_display);
+
+        // the path is deduplicated
+        let expected_path = "mm_error";
+        assert_eq!(error.path(), expected_path);
+
+        let expected_stack_trace = format!("mm_error:{}] mm_error:{}]", FORWARDED_LINE, GENERATED_LINE);
+        assert_eq!(error.stack_trace(), expected_stack_trace);
+    }
 }

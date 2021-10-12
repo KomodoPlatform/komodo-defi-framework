@@ -411,13 +411,7 @@ impl Qrc20Coin {
     ) -> ProcessCachedTransferMapResult {
         async fn get_verbose_transaction(coin: &Qrc20Coin, ctx: &MmArc, tx_hash: H256Json) -> Option<RpcTransaction> {
             mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => coin.utxo.conf.ticker.clone(), "method" => "get_verbose_transaction");
-            match coin
-                .utxo
-                .rpc_client
-                .get_verbose_transaction(tx_hash.clone())
-                .compat()
-                .await
-            {
+            match coin.utxo.rpc_client.get_verbose_transaction(&tx_hash).compat().await {
                 Ok(d) => {
                     mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.utxo.conf.ticker.clone(), "method" => "get_verbose_transaction");
                     Some(d)

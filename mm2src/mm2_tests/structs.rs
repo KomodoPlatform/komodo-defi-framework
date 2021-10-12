@@ -521,6 +521,15 @@ pub struct TransactionDetails {
     pub internal_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MyBalanceResponse {
+    pub address: String,
+    pub balance: BigDecimal,
+    pub unspendable_balance: BigDecimal,
+    pub coin: String,
+}
+
 pub mod withdraw_error {
     use bigdecimal::BigDecimal;
 
@@ -579,4 +588,15 @@ pub mod trade_preimage_error {
         pub price: BigDecimal,
         pub threshold: BigDecimal,
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetPublicKeyResponse {
+    pub mmrpc: String,
+    pub result: GetPublicKeyResult,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetPublicKeyResult {
+    pub public_key: String,
 }

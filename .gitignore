@@ -57,3 +57,5 @@ iguana/exchanges/manychains
 
 # coins configuration file
 /coins
+# MM2 conf to avoid occasional adding to git by someone
+MM2.json

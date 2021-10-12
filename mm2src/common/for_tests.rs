@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::process::Child;
 use std::sync::Mutex;
+use uuid::Uuid;
 
 use crate::executor::Timer;
 use crate::mm_ctx::MmArc;
@@ -888,6 +889,22 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
     json::from_str(&native.1).unwrap()
 }
 
+pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
+    let native = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "bchd_urls": bchd_urls,
+            "allow_slp_unsafe_conf": true,
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
+    json::from_str(&native.1).unwrap()
+}
+
 /// Use a separate (unique) temporary folder for each MM.
 /// We could also remove the old folders after some time in order not to spam the temporary folder.
 /// Though we don't always want to remove them right away, allowing developers to check the files).
@@ -967,6 +984,32 @@ pub async fn check_my_swap_status(
     let actual_events = events_array.iter().map(|item| item["event"]["type"].as_str().unwrap());
     let actual_events: Vec<&str> = actual_events.collect();
     assert_eq!(expected_success_events, actual_events.as_slice());
+}
+
+pub async fn check_my_swap_status_amounts(
+    mm: &MarketMakerIt,
+    uuid: Uuid,
+    maker_amount: BigDecimal,
+    taker_amount: BigDecimal,
+) {
+    let response = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "my_swap_status",
+            "params": {
+                "uuid": uuid,
+            }
+        }))
+        .await
+        .unwrap();
+    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+    let status_response: Json = json::from_str(&response.1).unwrap();
+
+    let events_array = status_response["result"]["events"].as_array().unwrap();
+    let actual_maker_amount = json::from_value(events_array[0]["event"]["data"]["maker_amount"].clone()).unwrap();
+    assert_eq!(maker_amount, actual_maker_amount);
+    let actual_taker_amount = json::from_value(events_array[0]["event"]["data"]["taker_amount"].clone()).unwrap();
+    assert_eq!(taker_amount, actual_taker_amount);
 }
 
 pub async fn check_stats_swap_status(

@@ -7,6 +7,7 @@ use std::{fmt, ops};
 use {AddressHash, Error, Message, Signature};
 
 /// Secret public key
+#[derive(Copy, Clone)]
 pub enum Public {
     /// Normal version of public key
     Normal(H520),

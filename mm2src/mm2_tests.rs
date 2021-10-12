@@ -9,7 +9,7 @@ use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_sw
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 use num_rational::BigRational;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -80,8 +80,6 @@ async fn enable_coins_eth_electrum(
     );
     replies.insert("ETH", enable_native(mm, "ETH", eth_urls).await);
     replies.insert("JST", enable_native(mm, "JST", eth_urls).await);
-    #[cfg(feature = "zhtlc")]
-    replies.insert("ZOMBIE", enable_native(mm, "ZOMBIE", eth_urls).await);
     replies
 }
 
@@ -1066,7 +1064,7 @@ async fn trade_base_rel_electrum(
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"}},
+        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
         {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
     ]);
 
@@ -1129,6 +1127,29 @@ async fn trade_base_rel_electrum(
         log! ({"Alice log path: {}", mm_alice.log_path.display()})
     }
 
+    #[cfg(all(feature = "zhtlc", not(target_arch = "wasm32")))]
+    {
+        Timer::sleep(1.).await;
+        let rmd = rmd160_from_passphrase(&bob_passphrase);
+        let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
+        log!("bob_zombie_cache_path "(bob_zombie_cache_path.display()));
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
+
+        let rmd = rmd160_from_passphrase(&alice_passphrase);
+        let alice_zombie_cache_path = mm_alice
+            .folder
+            .join("DB")
+            .join(hex::encode(rmd))
+            .join("ZOMBIE_CACHE.db");
+        log!("alice_zombie_cache_path "(alice_zombie_cache_path.display()));
+
+        std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", alice_zombie_cache_path).unwrap();
+
+        let zombie_bob = enable_native(&mm_bob, "ZOMBIE", &["http://195.201.0.6:8565"]).await;
+        log!("enable ZOMBIE bob "[zombie_bob]);
+        let zombie_alice = enable_native(&mm_alice, "ZOMBIE", &["http://195.201.0.6:8565"]).await;
+        log!("enable ZOMBIE alice "[zombie_alice]);
+    }
     // Enable coins on Bob side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]).await;
     log! ({"enable_coins (bob): {:?}", rc});
@@ -1222,12 +1243,12 @@ async fn trade_base_rel_electrum(
 
     for uuid in uuids.iter() {
         mm_bob
-            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
         mm_alice
-            .wait_for_log(300., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
             .await
             .unwrap();
 
@@ -1300,7 +1321,7 @@ async fn trade_base_rel_electrum(
 #[cfg(not(target_arch = "wasm32"))]
 fn trade_test_electrum_and_eth_coins() {
     let pairs: &[_] = if cfg!(feature = "zhtlc") {
-        &[("ETH", "JST"), ("RICK", "ZOMBIE")]
+        &[("RICK", "ZOMBIE")]
     } else {
         &[("ETH", "JST")]
     };
@@ -8387,4 +8408,46 @@ fn test_enable_lightning() {
     block_on(mm.wait_for_log(60., |log| log.contains("Calling PeerManager's timer_tick_occurred"))).unwrap();
 
     block_on(mm.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_public_key() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+    fn get_public_key_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
+        block_on(mm.rpc(json!({
+                 "userpass": "password",
+                 "mmrpc": "2.0",
+                 "method": "get_public_key",
+                 "params": {},
+                 "id": 0})))
+        .unwrap()
+    }
+    let resp = get_public_key_bot_rpc(&mm);
+
+    // Must be 200
+    assert_eq!(resp.0, 200);
+    let v: GetPublicKeyResponse = serde_json::from_str(&*resp.1).unwrap();
+    assert_eq!(
+        v.result.public_key,
+        "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"
+    )
 }

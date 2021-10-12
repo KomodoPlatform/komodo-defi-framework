@@ -784,7 +784,7 @@ impl TakerSwap {
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
             taker_payment_lock: started_at + self.payment_locktime,
-            my_persistent_pub: self.my_persistent_pub.clone().into(),
+            my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_payment_wait: started_at + (self.payment_locktime * 2) / 5,
             maker_coin_start_block,
@@ -920,7 +920,7 @@ impl TakerSwap {
             dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
         let fee_tx = self
             .taker_coin
-            .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into())
+            .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), self.uuid.as_bytes())
             .compat()
             .await;
         let transaction = match fee_tx {
@@ -945,7 +945,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 180;
+        const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 600;
         let tx_hex = self.r().taker_fee.as_ref().unwrap().tx_hex.0.clone();
         let msg = SwapMsg::TakerFee(tx_hex);
         let abort_send_handle = broadcast_swap_message_every(

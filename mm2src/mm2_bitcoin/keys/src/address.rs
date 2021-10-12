@@ -274,7 +274,7 @@ impl Address {
             ));
         };
 
-        CashAddress::new(network_prefix, self.hash.clone().take().to_vec(), address_type)
+        CashAddress::new(network_prefix, self.hash.take().to_vec(), address_type)
     }
 
     pub fn from_segwitaddress(
@@ -314,7 +314,8 @@ impl Address {
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, AddressFormat, ChecksumType};
+    use super::{Address, AddressFormat, CashAddrType, CashAddress, ChecksumType};
+    use crate::NetworkPrefix;
 
     #[test]
     fn test_address_to_string() {
@@ -526,11 +527,18 @@ mod tests {
             address.to_cashaddress("bitcoincash", 0, 5),
             Err("Unknown address prefix 2. Expect: 0, 5".into())
         );
+    }
 
+    #[test]
+    fn test_to_cashaddress_other_prefix() {
+        let expected_address = CashAddress {
+            prefix: NetworkPrefix::Other("prefix".into()),
+            hash: vec![
+                140, 0, 44, 191, 189, 83, 144, 173, 47, 216, 127, 59, 80, 232, 159, 100, 156, 132, 78, 192,
+            ],
+            address_type: CashAddrType::P2PKH,
+        };
         let address: Address = "1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM".into();
-        assert_eq!(
-            address.to_cashaddress("prefix", 0, 5),
-            Err("Unexpected network prefix".into())
-        );
+        assert_eq!(address.to_cashaddress("prefix", 0, 5).unwrap(), expected_address);
     }
 }
