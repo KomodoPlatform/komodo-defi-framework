@@ -1,10 +1,16 @@
 use super::*;
+use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
+use bigdecimal::Zero;
+//use crate::qrc20::rpc_clients::Qrc20NativeOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
-use crate::qrc20::{ContractCallOutput, Qrc20AbiError, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT,
-                   QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
+use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, Qrc20AbiError, Qrc20AbiResult,
+                   OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT,
+                   QTUM_ADD_DELEGATION_TOPIC, QTUM_DELEGATE_CONTRACT, QTUM_DELEGATE_CONTRACT_ADDRESS,
+                   QTUM_REMOVE_DELEGATION_TOPIC};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, DelegationResult,
-            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, TransactionType, ValidateAddressResult,
-            WithdrawFut};
+            NegotiateSwapContractAddrErr, StakingInfos, StakingInfosError, StakingInfosFut, StakingInfosResult,
+            SwapOps, TradePreimageValue, TransactionType, ValidateAddressResult, WithdrawFut};
 use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -177,6 +183,13 @@ pub struct QtumDelegationRequest {
     pub fee: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QtumStakingInfosDetails {
+    pub amount: BigDecimal,
+    pub staker: Option<String>,
+    pub am_i_staking: bool,
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -190,6 +203,12 @@ impl QtumCoin {
     pub fn qtum_add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut {
         let coin = self.clone();
         let fut = async move { coin.qtum_add_delegation_impl(request).await };
+        Box::new(fut.boxed().compat())
+    }
+
+    pub fn qtum_get_delegation_infos(&self) -> StakingInfosFut {
+        let coin = self.clone();
+        let fut = async move { coin.qtum_get_staking_infos_impl().await };
         Box::new(fut.boxed().compat())
     }
 
@@ -210,6 +229,77 @@ impl QtumCoin {
             TransactionType::RemoveDelegation,
         )
         .await?)
+    }
+
+    pub async fn am_i_currently_staking(&self) -> Result<(bool, Option<String>), MmError<StakingInfosError>> {
+        let utxo = self.as_ref();
+        let contract_address = contract_addr_into_rpc_format(&QTUM_DELEGATE_CONTRACT_ADDRESS);
+        let client = match &utxo.rpc_client {
+            UtxoRpcClientEnum::Native(_) => {
+                return MmError::err(StakingInfosError::Internal("Native not supported yet".to_string()))
+            },
+            UtxoRpcClientEnum::Electrum(electrum) => electrum,
+        };
+        let v = contract_addr_from_utxo_addr(utxo.my_address.clone());
+        let address = contract_addr_into_rpc_format(&v);
+        let add_delegation_history = client
+            .blockchain_contract_event_get_history(&address, &contract_address, QTUM_ADD_DELEGATION_TOPIC)
+            .compat()
+            .await
+            .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+        let remove_delegation_history = client
+            .blockchain_contract_event_get_history(&address, &contract_address, QTUM_REMOVE_DELEGATION_TOPIC)
+            .compat()
+            .await
+            .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+        let am_i_staking = add_delegation_history.len() > remove_delegation_history.len();
+        if am_i_staking {
+            let last_tx_add = &add_delegation_history[add_delegation_history.len() - 1];
+            let res = &client
+                .blochchain_transaction_get_receipt(&last_tx_add.tx_hash)
+                .compat()
+                .await
+                .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+            // there is only one receipt and 3 topics,
+            // the second entry is always the staker as hexadecimal 32 byte padded
+            // by trimming the start we retrieve the standard hex hash format
+            // https://testnet.qtum.info/tx/c62d707b67267a13a53b5910ffbf393c47f00734cff1c73aae6e05d24258372f
+            let raw = res[0].log[0].topics[1].trim_start_matches('0');
+            // unwrap is safe here because we have the garanty that the tx exist and therefore
+            // this topics is always a valid delegation staker address
+            let hash = AddressHash::from_str(raw).unwrap();
+            let address = Address {
+                prefix: utxo.my_address.prefix,
+                t_addr_prefix: utxo.my_address.t_addr_prefix,
+                hash,
+                checksum_type: utxo.my_address.checksum_type,
+                hrp: utxo.my_address.hrp.clone(),
+                addr_format: utxo.my_address.addr_format.clone(),
+            };
+            return Ok((am_i_staking, Some(address.to_string())));
+        }
+        Ok((am_i_staking, None))
+    }
+
+    pub async fn qtum_get_staking_infos_impl(&self) -> StakingInfosResult {
+        let coin = self.as_ref();
+        let (am_i_staking, staker) = self.am_i_currently_staking().await?;
+        let (unspents, _) = self.list_unspent_ordered(&coin.my_address).await?;
+        let mut accumulate = BigDecimal::zero();
+        for unspent in unspents.iter() {
+            if unspent.value >= sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
+                accumulate += big_decimal_from_sat_unsigned(unspent.value, coin.decimals);
+            }
+        }
+        let infos = StakingInfos {
+            staking_infos_details: QtumStakingInfosDetails {
+                amount: accumulate,
+                staker,
+                am_i_staking,
+            }
+            .into(),
+        };
+        Ok(infos)
     }
 
     async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
@@ -261,9 +351,9 @@ impl QtumCoin {
     pub fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> Qrc20AbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("removeDelegation")?;
         let params = function.encode_input(&[])?;
-        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
         let script_pubkey =
-            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &QTUM_DELEGATE_CONTRACT_ADDRESS)?
+                .to_bytes();
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
             script_pubkey,
@@ -288,9 +378,9 @@ impl QtumCoin {
             Token::Bytes(pod.into()),
         ])?;
 
-        let contract_address = ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
         let script_pubkey =
-            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &contract_address)?.to_bytes();
+            generate_contract_call_script_pubkey(&params, gas_limit, gas_price, &QTUM_DELEGATE_CONTRACT_ADDRESS)?
+                .to_bytes();
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
             script_pubkey,
@@ -400,7 +490,7 @@ impl UtxoCommonOps for QtumCoin {
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_unspent_ordered(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(

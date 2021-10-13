@@ -1689,6 +1689,32 @@ fn test_qtum_add_delegation() {
 }
 
 #[test]
+fn test_qtum_get_delegation_infos() {
+    let keypair =
+        key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let coin = block_on(qtum_coin_from_conf_and_request(
+        &ctx,
+        "tQTUM",
+        &conf,
+        &req,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let (res, _) = block_on(coin.am_i_currently_staking()).unwrap();
+    let staking_infos = block_on(coin.qtum_get_staking_infos_impl()).unwrap();
+    assert_eq!(res, true);
+    println!("{:?}", staking_infos);
+}
+
+#[test]
 fn test_qtum_remove_delegation() {
     let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});

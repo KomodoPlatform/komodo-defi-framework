@@ -64,12 +64,16 @@ const QRC20_TRANSFER_TOPIC: &str = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4
 const QRC20_PAYMENT_SENT_TOPIC: &str = "ccc9c05183599bd3135da606eaaf535daffe256e9de33c048014cffcccd4ad57";
 const QRC20_RECEIVER_SPENT_TOPIC: &str = "36c177bcb01c6d568244f05261e2946c8c977fa50822f3fa098c470770ee1f3e";
 const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f50ebc7dbda3c7c81778973f35ba";
+pub const QTUM_ADD_DELEGATION_TOPIC: &str = "a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5";
+pub const QTUM_REMOVE_DELEGATION_TOPIC: &str = "7fe28d2d0b16cf95b5ea93f4305f89133b3892543e616381a1336fc1e7a01fa0";
 const QTUM_DELEGATE_CONTRACT_ABI: &str = r#"[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"_staker","type":"address"},{"indexed":true,"internalType":"address","name":"_delegate","type":"address"},{"indexed":false,"internalType":"uint8","name":"fee","type":"uint8"},{"indexed":false,"internalType":"uint256","name":"blockHeight","type":"uint256"},{"indexed":false,"internalType":"bytes","name":"PoD","type":"bytes"}],"name":"AddDelegation","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"_staker","type":"address"},{"indexed":true,"internalType":"address","name":"_delegate","type":"address"}],"name":"RemoveDelegation","type":"event"},{"constant":false,"inputs":[{"internalType":"address","name":"_staker","type":"address"},{"internalType":"uint8","name":"_fee","type":"uint8"},{"internalType":"bytes","name":"_PoD","type":"bytes"}],"name":"addDelegation","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"delegations","outputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint8","name":"fee","type":"uint8"},{"internalType":"uint256","name":"blockHeight","type":"uint256"},{"internalType":"bytes","name":"PoD","type":"bytes"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"removeDelegation","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]"#;
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
 
 lazy_static! {
     pub static ref QTUM_DELEGATE_CONTRACT: Contract = Contract::load(QTUM_DELEGATE_CONTRACT_ABI.as_bytes()).unwrap();
+    pub static ref QTUM_DELEGATE_CONTRACT_ADDRESS: H160 =
+        ethabi::Address::from_str("0000000000000000000000000000000000000086").unwrap();
 }
 
 struct Qrc20CoinBuilder<'a> {
@@ -1200,7 +1204,7 @@ pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
     sha256(&input).to_vec()
 }
 
-fn contract_addr_into_rpc_format(address: &H160) -> H160Json { H160Json::from(address.0) }
+pub fn contract_addr_into_rpc_format(address: &H160) -> H160Json { H160Json::from(address.0) }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Qrc20FeeDetails {

@@ -104,7 +104,8 @@ pub use test_coin::TestCoin;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
 use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
-use crate::utxo::qtum::QtumDelegationRequest;
+use crate::utxo::qtum::{QtumDelegationRequest, QtumStakingInfosDetails};
+use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::UnsupportedAddr;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
@@ -127,9 +128,11 @@ pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
-pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
+pub type StakingInfosResult = Result<StakingInfos, MmError<StakingInfosError>>;
+pub type StakingInfosFut = Box<dyn Future<Item = StakingInfos, Error = MmError<StakingInfosError>> + Send>;
 pub type DelegationResult = Result<TransactionDetails, MmError<DelegationError>>;
 pub type DelegationFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<DelegationError>> + Send>;
+pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
 pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
 pub type TradePreimageResult<T> = Result<T, MmError<TradePreimageError>>;
 pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePreimageError>> + Send>;
@@ -452,6 +455,11 @@ pub struct RemoveDelegateRequest {
     pub coin: String,
 }
 
+#[derive(Deserialize)]
+pub struct GetStakingInfosRequest {
+    pub coin: String,
+}
+
 impl WithdrawRequest {
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
@@ -462,6 +470,41 @@ impl WithdrawRequest {
             fee: None,
         }
     }
+}
+
+/// Please note that no type should have the same structure as another type,
+/// because this enum has the `untagged` deserialization.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type")]
+pub enum StakingInfosDetails {
+    Qtum(QtumStakingInfosDetails),
+}
+
+/// Deserialize the StakingInfosDetails as an untagged enum.
+impl<'de> Deserialize<'de> for StakingInfosDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StakingInfosDetailsUnTagged {
+            Qtum(QtumStakingInfosDetails),
+        }
+
+        match Deserialize::deserialize(deserializer)? {
+            StakingInfosDetailsUnTagged::Qtum(f) => Ok(StakingInfosDetails::Qtum(f)),
+        }
+    }
+}
+
+impl From<QtumStakingInfosDetails> for StakingInfosDetails {
+    fn from(qtum_staking_infos: QtumStakingInfosDetails) -> Self { StakingInfosDetails::Qtum(qtum_staking_infos) }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StakingInfos {
+    staking_infos_details: StakingInfosDetails,
 }
 
 /// Please note that no type should have the same structure as another type,
@@ -759,6 +802,46 @@ impl From<BalanceError> for GetNonZeroBalance {
 
 impl From<NumConversError> for BalanceError {
     fn from(e: NumConversError) -> Self { BalanceError::Internal(e.to_string()) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum StakingInfosError {
+    #[display(fmt = "Staking infos not available for: {}", coin)]
+    CoinDoesntSupportStakingInfos { coin: String },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl From<UtxoRpcError> for StakingInfosError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(rpc) | UtxoRpcError::ResponseParseError(rpc) => {
+                StakingInfosError::Transport(rpc.to_string())
+            },
+            UtxoRpcError::InvalidResponse(error) => StakingInfosError::Transport(error),
+            UtxoRpcError::Internal(error) => StakingInfosError::Internal(error),
+        }
+    }
+}
+
+impl HttpStatusCode for StakingInfosError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            StakingInfosError::CoinDoesntSupportStakingInfos { .. } => StatusCode::BAD_REQUEST,
+            StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for StakingInfosError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => StakingInfosError::CoinDoesntSupportStakingInfos { coin },
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -1534,6 +1617,18 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
         MmCoinEnum::QtumCoin(qtum) => qtum.qtum_remove_delegation().compat().await,
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            })
+        },
+    }
+}
+
+pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum.qtum_get_delegation_infos().compat().await,
+        _ => {
+            return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
                 coin: coin.ticker().to_string(),
             })
         },
