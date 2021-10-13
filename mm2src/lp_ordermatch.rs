@@ -2360,6 +2360,10 @@ struct OrdermatchContext {
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub my_cancelled_orders: AsyncMutex<HashMap<Uuid, MakerOrder>>,
     pub orderbook: AsyncMutex<Orderbook>,
+    /// The map from coin original ticker to the orderbook ticker
+    /// It is used to share the same orderbooks for concurrently activated coins with different protocols
+    /// E.g. BTC and BTC-Segwit
+    pub orderbook_tickers: HashMap<String, String>,
     /// Pending MakerReserved messages for a specific TakerOrder UUID
     /// Used to select a trade with the best price upon matching
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
@@ -2367,6 +2371,11 @@ struct OrdermatchContext {
 
 #[cfg_attr(test, mockable)]
 impl OrdermatchContext {
+    /// Store the pre-initialized context into MmCtx, ensure that this is called *before* from_ctx
+    fn init(self, ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
+        Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || { Ok(self) })))
+    }
+
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
