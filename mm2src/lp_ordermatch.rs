@@ -77,6 +77,11 @@ cfg_wasm32! {
 }
 
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
+#[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
+use common::mm_error::prelude::MapToMmResult;
+pub use lp_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
+                 StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
+
 #[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;
 #[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
@@ -111,6 +116,18 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
 type PubkeyOrders = Vec<(Uuid, OrderbookP2PItem)>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CancelAllOrdersResponse {
+    cancelled: Vec<Uuid>,
+    currently_matching: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CancelAllOrdersError {
+    LegacyError(String),
+}
 
 impl From<(new_protocol::MakerOrderCreated, String)> for OrderbookItem {
     fn from(tuple: (new_protocol::MakerOrderCreated, String)) -> OrderbookItem {
@@ -3577,7 +3594,7 @@ impl OrderbookItem {
 fn get_true() -> bool { true }
 
 #[derive(Deserialize)]
-struct SetPriceReq {
+pub struct SetPriceReq {
     base: String,
     rel: String,
     price: MmNumber,
@@ -3597,7 +3614,7 @@ struct SetPriceReq {
 }
 
 #[derive(Deserialize)]
-struct MakerOrderUpdateReq {
+pub struct MakerOrderUpdateReq {
     uuid: Uuid,
     new_price: Option<MmNumber>,
     max: Option<bool>,
@@ -3757,7 +3774,7 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/794
 async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) -> Result<T, E> {
     if req.cancel_previous {
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
         cancel_previous_maker_orders(ctx, &ordermatch_ctx, &req.base, &req.rel).await;
     }
     Err(error)
@@ -3780,36 +3797,34 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
     ))
 }
 
-pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: SetPriceReq = try_s!(json::from_value(req));
-
-    let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.base).await) {
+pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOrder, String> {
+    let base_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, &req.base).await) {
         Some(coin) => coin,
         None => return ERR!("Base coin {} is not found", req.base),
     };
 
-    let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, &req.rel).await) {
+    let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, &req.rel).await) {
         Some(coin) => coin,
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
 
-    if base_coin.wallet_only(&ctx) {
+    if base_coin.wallet_only(ctx) {
         return ERR!("Base coin {} is wallet only", req.base);
     }
-    if rel_coin.wallet_only(&ctx) {
+    if rel_coin.wallet_only(ctx) {
         return ERR!("Rel coin {} is wallet only", req.rel);
     }
 
     let volume = if req.max {
         try_s!(
-            get_max_volume(&ctx, &base_coin, &rel_coin)
-                .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+            get_max_volume(ctx, &base_coin, &rel_coin)
+                .or_else(|e| cancel_orders_on_error(ctx, &req, e))
                 .await
         )
     } else {
         try_s!(
             check_balance_for_maker_swap(
-                &ctx,
+                ctx,
                 &base_coin,
                 &rel_coin,
                 req.volume.clone(),
@@ -3817,16 +3832,16 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
                 None,
                 FeeApproxStage::OrderIssue
             )
-            .or_else(|e| cancel_orders_on_error(&ctx, &req, e))
+            .or_else(|e| cancel_orders_on_error(ctx, &req, e))
             .await
         );
         req.volume.clone()
     };
 
-    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
     if req.cancel_previous {
-        cancel_previous_maker_orders(&ctx, &ordermatch_ctx, &req.base, &req.rel).await;
+        cancel_previous_maker_orders(ctx, &ordermatch_ctx, &req.base, &req.rel).await;
     }
 
     let conf_settings = OrderConfirmationsSettings {
@@ -3845,7 +3860,7 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
     let new_order = try_s!(builder.build());
 
     let request_orderbook = false;
-    try_s!(subscribe_to_orderbook_topic(&ctx, &new_order.base, &new_order.rel, request_orderbook).await);
+    try_s!(subscribe_to_orderbook_topic(ctx, &new_order.base, &new_order.rel, request_orderbook).await);
     save_my_new_maker_order(ctx.clone(), &new_order).await;
     maker_order_created_p2p_notify(
         ctx.clone(),
@@ -3854,12 +3869,17 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         rel_coin.coin_protocol_info(),
     )
     .await;
-    let rpc_result = MakerOrderForRpc::from(&new_order);
-    let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
 
     let mut my_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    my_orders.insert(new_order.uuid, new_order);
+    my_orders.insert(new_order.uuid, new_order.clone());
+    Ok(new_order)
+}
 
+pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: SetPriceReq = try_s!(json::from_value(req));
+    let maker_order = create_maker_order(&ctx, req).await?;
+    let rpc_result = MakerOrderForRpc::from(&maker_order);
+    let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
     Ok(try_s!(Response::builder().body(res)))
 }
 
@@ -3898,10 +3918,8 @@ async fn cancel_previous_maker_orders(
     *my_maker_orders = my_actual_maker_orders;
 }
 
-pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
-
-    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
 
     let (base_coin, rel_coin, original_price, original_volume, updated_conf_settings, matches, reserved_amount) =
@@ -3911,13 +3929,13 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
                     return ERR!("Can't update an order that has ongoing matches");
                 }
                 let base = order.base.as_str();
-                let base_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, base).await) {
+                let base_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, base).await) {
                     Some(coin) => coin,
                     None => return ERR!("Base coin {} has been removed from config", base),
                 };
 
                 let rel = order.rel.as_str();
-                let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(&ctx, rel).await) {
+                let rel_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, rel).await) {
                     Some(coin) => coin,
                     None => return ERR!("Rel coin {} has been removed from config", rel),
                 };
@@ -3976,7 +3994,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
 
     // Calculate order volume and add to update_msg if new_volume is found in the request
     let new_volume = if req.max.unwrap_or(false) {
-        let max_volume = try_s!(get_max_volume(&ctx, &base_coin, &rel_coin).await) + reserved_amount.clone();
+        let max_volume = try_s!(get_max_volume(ctx, &base_coin, &rel_coin).await) + reserved_amount.clone();
         update_msg.with_new_max_volume(max_volume.clone().into());
         max_volume
     } else if Option::is_some(&req.volume_delta) {
@@ -3986,7 +4004,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
         }
         try_s!(
             check_balance_for_maker_swap(
-                &ctx,
+                ctx,
                 &base_coin,
                 &rel_coin,
                 volume.clone(),
@@ -4020,7 +4038,7 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
     ));
 
     let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
-    let (rpc_result, base, rel) = match my_maker_orders.get_mut(&req.uuid) {
+    match my_maker_orders.get_mut(&req.uuid) {
         None => return ERR!("Order with UUID: {} has been deleted", req.uuid),
         Some(order) => {
             if order.matches.len() != matches.len() || !order.matches.keys().all(|k| matches.contains_key(k)) {
@@ -4031,11 +4049,17 @@ pub async fn update_maker_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8
             order.apply_updated(&update_msg);
             save_maker_order_on_update(ctx.clone(), order, new_change).await;
             update_msg.with_new_max_volume((new_volume - reserved_amount).into());
-            (MakerOrderForRpc::from(&*order), order.base.as_str(), order.rel.as_str())
+            maker_order_updated_p2p_notify(ctx.clone(), order.base.as_str(), order.rel.as_str(), update_msg).await;
+            Ok(order.clone())
         },
-    };
+    }
+}
+
+pub async fn update_maker_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
+    let order = try_s!(update_maker_order(&ctx, req).await);
+    let rpc_result = MakerOrderForRpc::from(&order);
     let res = try_s!(json::to_vec(&json!({ "result": rpc_result })));
-    maker_order_updated_p2p_notify(ctx.clone(), base, rel, update_msg).await;
 
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -4258,11 +4282,73 @@ pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<
 }
 
 #[derive(Deserialize)]
-struct CancelOrderReq {
+pub struct CancelOrderReq {
     uuid: Uuid,
 }
 
-pub async fn cancel_order(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+#[derive(Debug, Deserialize, Serialize, SerializeErrorType, Display)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CancelOrderError {
+    #[display(fmt = "Cannot retrieve order match context.")]
+    CannotRetrieveOrderMatchContext,
+    #[display(fmt = "Order {} is being matched now, can't cancel", uuid)]
+    OrderBeingMatched { uuid: Uuid },
+    #[display(fmt = "Order {} not found", uuid)]
+    UUIDNotFound { uuid: Uuid },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CancelOrderResponse {
+    result: String,
+}
+
+pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
+    let ordermatch_ctx = match OrdermatchContext::from_ctx(&ctx) {
+        Ok(x) => x,
+        Err(_) => return MmError::err(CancelOrderError::CannotRetrieveOrderMatchContext),
+    };
+    let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
+    match maker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return MmError::err(CancelOrderError::OrderBeingMatched { uuid: req.uuid });
+            }
+            let order = order.remove();
+            maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
+            delete_my_maker_order(ctx, order, MakerOrderCancellationReason::Cancelled)
+                .compat()
+                .await
+                .ok();
+            return Ok(CancelOrderResponse {
+                result: "success".to_string(),
+            });
+        },
+        // look for taker order with provided uuid
+        Entry::Vacant(_) => (),
+    }
+
+    let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+    match taker_orders.entry(req.uuid) {
+        Entry::Occupied(order) => {
+            if !order.get().is_cancellable() {
+                return MmError::err(CancelOrderError::UUIDNotFound { uuid: req.uuid });
+            }
+            let order = order.remove();
+            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled)
+                .compat()
+                .await
+                .ok();
+            return Ok(CancelOrderResponse {
+                result: "success".to_string(),
+            });
+        },
+        // error is returned
+        Entry::Vacant(_) => (),
+    }
+    MmError::err(CancelOrderError::UUIDNotFound { uuid: req.uuid })
+}
+
+pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: CancelOrderReq = try_s!(json::from_value(req));
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
@@ -4609,7 +4695,20 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
     Ok((cancelled, currently_matching))
 }
 
-pub async fn cancel_all_orders(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+pub async fn cancel_all_orders(
+    ctx: MmArc,
+    cancel_by: CancelBy,
+) -> Result<CancelAllOrdersResponse, MmError<CancelAllOrdersError>> {
+    cancel_orders_by(&ctx, cancel_by)
+        .await
+        .map(|(cancelled, currently_matching)| CancelAllOrdersResponse {
+            cancelled,
+            currently_matching,
+        })
+        .map_to_mm(CancelAllOrdersError::LegacyError)
+}
+
+pub async fn cancel_all_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let cancel_by: CancelBy = try_s!(json::from_value(req["cancel_by"].clone()));
 
     let (cancelled, currently_matching) = try_s!(cancel_orders_by(&ctx, cancel_by).await);

@@ -96,6 +96,8 @@ use uuid::Uuid;
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use common::mm_error::MmError;
+use derive_more::Display;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedSwap, MakerSwap, MakerTradePreimage, RunMakerSwapInput};
@@ -103,6 +105,7 @@ use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
+use std::num::NonZeroUsize;
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
@@ -664,8 +667,8 @@ async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
 pub struct MySwapInfo {
     pub my_coin: String,
     pub other_coin: String,
-    my_amount: BigDecimal,
-    other_amount: BigDecimal,
+    pub my_amount: BigDecimal,
+    pub other_amount: BigDecimal,
     pub started_at: u64,
 }
 
@@ -835,9 +838,9 @@ pub async fn all_swaps_uuids_by_filter(ctx: MmArc, req: Json) -> Result<Response
 #[derive(Debug, Deserialize)]
 pub struct MyRecentSwapsReq {
     #[serde(flatten)]
-    paging_options: PagingOptions,
+    pub paging_options: PagingOptions,
     #[serde(flatten)]
-    filter: MySwapsFilter,
+    pub filter: MySwapsFilter,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -850,8 +853,63 @@ pub struct MyRecentSwapsUuids {
     pub skipped: usize,
 }
 
+#[derive(Debug)]
+pub struct MyRecentSwapsResponse {
+    pub from_uuid: Option<Uuid>,
+    pub limit: usize,
+    pub skipped: usize,
+    pub total: usize,
+    pub found_records: usize,
+    pub page_number: NonZeroUsize,
+    pub total_pages: usize,
+    pub swaps: Vec<SavedSwap>,
+}
+
+#[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum MyRecentSwapsErr {
+    #[display(fmt = "No such swap with the uuid '{}'", _0)]
+    UUIDNotPresentInDb(Uuid),
+    UnableToLoadSavedSwaps(SavedSwapError),
+    #[display(fmt = "Unable to query swaps storage")]
+    UnableToQuerySwapStorage,
+}
+
+pub type MyRecentSwapsResult = Result<MyRecentSwapsResponse, MmError<MyRecentSwapsErr>>;
+
+pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwapsResult {
+    let db_result = match MySwapsStorage::new(ctx.clone())
+        .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
+        .await
+    {
+        Ok(x) => x,
+        Err(_) => return Err(MmError::new(MyRecentSwapsErr::UnableToQuerySwapStorage)),
+    };
+
+    let mut swaps = Vec::with_capacity(db_result.uuids.len());
+    for uuid in db_result.uuids.iter() {
+        let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+            Ok(Some(swap)) => swap,
+            Ok(None) => return Err(MmError::new(MyRecentSwapsErr::UUIDNotPresentInDb(*uuid))),
+            Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
+        };
+        swaps.push(swap);
+    }
+
+    Ok(MyRecentSwapsResponse {
+        from_uuid: req.paging_options.from_uuid,
+        limit: req.paging_options.limit,
+        skipped: db_result.skipped,
+        total: db_result.total_count,
+        found_records: db_result.uuids.len(),
+        page_number: req.paging_options.page_number,
+        total_pages: calc_total_pages(db_result.total_count, req.paging_options.limit),
+        swaps,
+    })
+}
+
 /// Returns the data of recent swaps of `my` node.
-pub async fn my_recent_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
+pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: MyRecentSwapsReq = try_s!(json::from_value(req));
     let db_result = try_s!(
         MySwapsStorage::new(ctx.clone())
