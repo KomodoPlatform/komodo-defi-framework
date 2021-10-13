@@ -6,7 +6,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use derive_more::Display;
 use ethereum_types::Address;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ZcoinActivationMode {
@@ -16,6 +16,7 @@ pub enum ZcoinActivationMode {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "protocol_name", content = "protocol_data")]
 pub enum EnableProtocolParams {
     Bch(BchActivationParams),
     SlpToken,
@@ -48,7 +49,6 @@ pub enum EnableError {
     CoinIsAlreadyActivated(String),
     /// With ticker
     CoinConfigNotFound(String),
-    RequestDeserializationErr(serde_json::Error),
     InvalidCoinProtocolConf(serde_json::Error),
     #[display(
         fmt = "Request {:?} is not compatible with protocol {:?}",
@@ -62,9 +62,7 @@ pub enum EnableError {
 }
 
 #[allow(unused_variables)]
-pub async fn enable_v2(ctx: MmArc, req: Json) -> Result<EnableResult, MmError<EnableError>> {
-    let req: EnableRpcRequest = json::from_value(req).map_to_mm(EnableError::RequestDeserializationErr)?;
-
+pub async fn enable_v2(ctx: MmArc, req: EnableRpcRequest) -> Result<EnableResult, MmError<EnableError>> {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.coin).await {
         return MmError::err(EnableError::CoinIsAlreadyActivated(req.coin));
     }
