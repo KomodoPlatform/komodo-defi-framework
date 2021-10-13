@@ -9,11 +9,11 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 use super::lp_commands::*;
-use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_order, my_orders, order_status,
-                                orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
-                                update_maker_order};
+use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders,
+                                order_status, orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell,
+                                set_price, update_maker_order_rpc};
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
-                          import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
+                          import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status,
                           recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
 use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
             send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
@@ -64,8 +64,8 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "ban_pubkey" => hyres(ban_pubkey_rpc(ctx, req)),
         "best_orders" => hyres(best_orders_rpc(ctx, req)),
         "buy" => hyres(buy(ctx, req)),
-        "cancel_all_orders" => hyres(cancel_all_orders(ctx, req)),
-        "cancel_order" => hyres(cancel_order(ctx, req)),
+        "cancel_all_orders" => hyres(cancel_all_orders_rpc(ctx, req)),
+        "cancel_order" => hyres(cancel_order_rpc(ctx, req)),
         "coins_needed_for_kick_start" => hyres(coins_needed_for_kick_start(ctx)),
         "convertaddress" => hyres(convert_address(ctx, req)),
         "convert_utxo_address" => hyres(convert_utxo_address(ctx, req)),
@@ -91,7 +91,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "min_trading_vol" => hyres(min_trading_vol(ctx, req)),
         "my_balance" => hyres(my_balance(ctx, req)),
         "my_orders" => hyres(my_orders(ctx)),
-        "my_recent_swaps" => hyres(my_recent_swaps(ctx, req)),
+        "my_recent_swaps" => hyres(my_recent_swaps_rpc(ctx, req)),
         "my_swap_status" => hyres(my_swap_status(ctx, req)),
         "my_tx_history" => hyres(my_tx_history(ctx, req)),
         "orders_history_by_filter" => hyres(orders_history_by_filter(ctx, req)),
@@ -110,7 +110,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "stop" => stop(ctx),
         "trade_preimage" => hyres(into_legacy::trade_preimage(ctx, req)),
         "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
-        "update_maker_order" => hyres(update_maker_order(ctx, req)),
+        "update_maker_order" => hyres(update_maker_order_rpc(ctx, req)),
         "validateaddress" => hyres(validate_address(ctx, req)),
         "version" => version(),
         "withdraw" => hyres(into_legacy::withdraw(ctx, req)),

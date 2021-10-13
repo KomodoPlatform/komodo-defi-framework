@@ -36,6 +36,10 @@ cfg_wasm32! {
 #[path = "mm2_tests/electrums.rs"] pub mod electrums;
 use electrums::*;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "mm2_tests/lp_bot_tests.rs"]
+mod lp_bot_tests;
+
 #[path = "mm2_tests/structs.rs"] pub mod structs;
 use structs::*;
 
