@@ -4776,7 +4776,7 @@ fn test_add_delegation_qtum() {
     })))
     .unwrap();
     assert!(
-        rc.0.is_server_error(),
+        rc.0.is_client_error(),
         "!add_delegation success but should be error: {}",
         rc.1
     );

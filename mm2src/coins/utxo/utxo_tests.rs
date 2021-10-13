@@ -1675,6 +1675,14 @@ fn test_qtum_add_delegation() {
     let res = coin.qtum_add_delegation(request).wait();
     println!("{:?}", res);
     assert_eq!(res.is_err(), false);
+
+    let request = QtumDelegationRequest {
+        address: "fake_address".to_string(),
+        fee: Some(10),
+    };
+    let res = coin.qtum_add_delegation(request).wait();
+    println!("{:?}", res);
+    assert_eq!(res.is_err(), true);
     //let json = serde_json::to_value(&res).unwrap();
     /*let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
     assert_eq!(res_broadcast.is_err(), false);*/
