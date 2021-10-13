@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
     #[display(fmt = "Error saving the a swap: {}", _0)]
     ErrorSaving(String),
@@ -33,6 +33,13 @@ pub enum SavedSwap {
 }
 
 impl SavedSwap {
+    pub fn is_finished_and_success(&self) -> bool {
+        match self {
+            SavedSwap::Maker(swap) => swap.is_success().unwrap_or(false),
+            SavedSwap::Taker(swap) => swap.is_success().unwrap_or(false),
+        }
+    }
+
     pub fn is_finished(&self) -> bool {
         match self {
             SavedSwap::Maker(swap) => swap.is_finished(),

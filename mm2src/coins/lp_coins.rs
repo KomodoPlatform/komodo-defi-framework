@@ -31,7 +31,7 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use bigdecimal::{BigDecimal, ParseBigDecimalError};
+use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_error::prelude::*;
@@ -124,6 +124,7 @@ cfg_wasm32! {
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
+pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
 pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
 pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
@@ -343,6 +344,16 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> Result<String, String>;
+
+    fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
+        let closure = |spendable: BigDecimal| {
+            if spendable.is_zero() {
+                return MmError::err(GetNonZeroBalance::BalanceIsZero);
+            }
+            Ok(MmNumber::from(spendable))
+        };
+        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
 
@@ -696,6 +707,18 @@ pub enum BalanceError {
     InvalidResponse(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+}
+
+#[derive(Debug, PartialEq, Display)]
+pub enum GetNonZeroBalance {
+    #[display(fmt = "Internal error when retrieving balance")]
+    MyBalanceError(BalanceError),
+    #[display(fmt = "Balance is zero")]
+    BalanceIsZero,
+}
+
+impl From<BalanceError> for GetNonZeroBalance {
+    fn from(e: BalanceError) -> Self { GetNonZeroBalance::MyBalanceError(e) }
 }
 
 impl From<NumConversError> for BalanceError {
