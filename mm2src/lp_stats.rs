@@ -33,6 +33,8 @@ pub enum NodeVersionError {
     UnsupportedMode(String),
     #[display(fmt = "start_version_stat_collection is already running")]
     AlreadyRunning,
+    #[display(fmt = "Version stat collection is currently stopping")]
+    CurrentlyStopping,
     #[display(fmt = "start_version_stat_collection is not running")]
     NotRunning,
 }
@@ -43,9 +45,10 @@ impl HttpStatusCode for NodeVersionError {
             NodeVersionError::InvalidRequest(_)
             | NodeVersionError::InvalidAddress(_)
             | NodeVersionError::PeerIdParseError(_, _) => StatusCode::BAD_REQUEST,
-            NodeVersionError::UnsupportedMode(_) | NodeVersionError::AlreadyRunning | NodeVersionError::NotRunning => {
-                StatusCode::METHOD_NOT_ALLOWED
-            },
+            NodeVersionError::UnsupportedMode(_)
+            | NodeVersionError::AlreadyRunning
+            | NodeVersionError::CurrentlyStopping
+            | NodeVersionError::NotRunning => StatusCode::METHOD_NOT_ALLOWED,
             NodeVersionError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -219,6 +222,9 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
     let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
     {
         let state = stats_ctx.status.lock().await;
+        if *state == StatsCollectionStatus::Stopping {
+            return MmError::err(NodeVersionError::CurrentlyStopping);
+        }
         if *state != StatsCollectionStatus::Stopped {
             return MmError::err(NodeVersionError::AlreadyRunning);
         }
