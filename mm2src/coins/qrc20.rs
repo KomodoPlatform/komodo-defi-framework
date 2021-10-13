@@ -335,10 +335,6 @@ impl From<ethabi::Error> for Qrc20AbiError {
     fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
 }
 
-impl From<keys::Error> for Qrc20AbiError {
-    fn from(e: keys::Error) -> Self { Qrc20AbiError::PodSigningError(e.to_string()) }
-}
-
 impl From<Qrc20AbiError> for GenerateTxError {
     fn from(e: Qrc20AbiError) -> Self { GenerateTxError::Internal(e.to_string()) }
 }

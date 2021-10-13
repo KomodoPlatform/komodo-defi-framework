@@ -249,7 +249,12 @@ impl QtumCoin {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
-        let signature = self.as_ref().key_pair.private().sign_compact(&hashed)?;
+        let signature = self
+            .as_ref()
+            .key_pair
+            .private()
+            .sign_compact(&hashed)
+            .map_to_mm(|e| Qrc20AbiError::PodSigningError(e.to_string()))?;
         Ok(signature)
     }
 
