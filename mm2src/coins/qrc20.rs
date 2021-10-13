@@ -8,11 +8,11 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_sign
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
                   HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
-            TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinBalance, DelegationError, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -354,6 +354,13 @@ impl From<Qrc20AbiError> for WithdrawError {
     fn from(e: Qrc20AbiError) -> Self {
         // `Qrc20ABIError` is always an internal error
         WithdrawError::InternalError(e.to_string())
+    }
+}
+
+impl From<Qrc20AbiError> for DelegationError {
+    fn from(e: Qrc20AbiError) -> Self {
+        // `Qrc20ABIError` is always an internal error
+        DelegationError::CannotInteractWithSmartContract(e.to_string())
     }
 }
 

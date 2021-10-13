@@ -127,6 +127,8 @@ pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
 pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
+pub type DelegationResult = Result<TransactionDetails, MmError<DelegationError>>;
+pub type DelegationFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<DelegationError>> + Send>;
 pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
 pub type TradePreimageResult<T> = Result<T, MmError<TradePreimageError>>;
 pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePreimageError>> + Send>;
@@ -738,6 +740,60 @@ impl From<NumConversError> for BalanceError {
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
+pub enum DelegationError {
+    #[display(fmt = "Transfer error: {}", _0)]
+    TransferError(WithdrawError),
+    #[display(fmt = "Delegation not available for: {}", coin)]
+    CoinDoesntSupportDelegation { coin: String },
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "{}", _0)]
+    CannotInteractWithSmartContract(String),
+    #[display(fmt = "{}", _0)]
+    GenerateTransactionError(GenerateTxError),
+    #[display(fmt = "{}", _0)]
+    AddressError(String),
+    #[display(fmt = "{}", _0)]
+    NotEnoughFundsToDelegate(String),
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl From<WithdrawError> for DelegationError {
+    fn from(e: WithdrawError) -> Self { DelegationError::TransferError(e) }
+}
+
+impl From<CoinFindError> for DelegationError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
+        }
+    }
+}
+
+impl From<GenerateTxError> for DelegationError {
+    fn from(e: GenerateTxError) -> Self { DelegationError::GenerateTransactionError(e) }
+}
+
+impl HttpStatusCode for DelegationError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            DelegationError::TransferError(e) => e.status_code(),
+            DelegationError::CoinDoesntSupportDelegation { .. }
+            | DelegationError::NoSuchCoin { .. }
+            | DelegationError::CannotInteractWithSmartContract(_)
+            | DelegationError::GenerateTransactionError(_)
+            | DelegationError::AddressError(_)
+            | DelegationError::NotEnoughFundsToDelegate(_) => StatusCode::BAD_REQUEST,
+            DelegationError::Transport(_) | DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     #[display(
         fmt = "Not enough {} to withdraw: available {}, required at least {}",
@@ -758,6 +814,8 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "{}", _0)]
+    GenerateTransactionError(GenerateTxError),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[display(fmt = "Transport error: {}", _0)]
@@ -774,6 +832,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::GenerateTransactionError(_)
             | WithdrawError::NoSuchCoin { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -793,20 +852,16 @@ impl From<BalanceError> for WithdrawError {
     }
 }
 
-impl From<GenerateTxError> for WithdrawError {
-    fn from(e: GenerateTxError) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
-}
-
-impl From<keys::Error> for WithdrawError {
-    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
-}
-
 impl From<CoinFindError> for WithdrawError {
     fn from(e: CoinFindError) -> Self {
         match e {
             CoinFindError::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
+}
+
+impl From<GenerateTxError> for WithdrawError {
+    fn from(e: GenerateTxError) -> Self { WithdrawError::GenerateTransactionError(e) }
 }
 
 impl From<UnsupportedAddr> for WithdrawError {
@@ -1450,29 +1505,27 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     coin.withdraw(req).compat().await
 }
 
-pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> WithdrawResult {
+pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
         MmCoinEnum::QtumCoin(qtum) => qtum.qtum_remove_delegation().compat().await,
         _ => {
-            return MmError::err(WithdrawError::InternalError(format!(
-                "Staking not available for: {}",
-                req.coin
-            )))
+            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            })
         },
     }
 }
 
-pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> WithdrawResult {
+pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     // Need to find a way to do a proper dispatch
     let coin_concrete = match coin {
         MmCoinEnum::QtumCoin(qtum) => qtum,
         _ => {
-            return MmError::err(WithdrawError::InternalError(format!(
-                "Staking not available for: {}",
-                req.coin
-            )))
+            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            })
         },
     };
     match req.staking_details {

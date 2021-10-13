@@ -2,8 +2,9 @@ use super::*;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{ContractCallOutput, Qrc20AbiError, Qrc20AbiResult, OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT,
                    QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT, QTUM_DELEGATE_CONTRACT};
-use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
-            TransactionType, ValidateAddressResult, WithdrawFut, WithdrawResult};
+use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, DelegationResult,
+            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, TransactionType, ValidateAddressResult,
+            WithdrawFut};
 use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -186,19 +187,19 @@ impl UtxoTxBroadcastOps for QtumCoin {
 }
 
 impl QtumCoin {
-    pub fn qtum_add_delegation(&self, request: QtumDelegationRequest) -> WithdrawFut {
+    pub fn qtum_add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut {
         let coin = self.clone();
         let fut = async move { coin.qtum_add_delegation_impl(request).await };
         Box::new(fut.boxed().compat())
     }
 
-    pub fn qtum_remove_delegation(&self) -> WithdrawFut {
+    pub fn qtum_remove_delegation(&self) -> DelegationFut {
         let coin = self.clone();
         let fut = async move { coin.qtum_remove_delegation_impl().await };
         Box::new(fut.boxed().compat())
     }
 
-    async fn qtum_remove_delegation_impl(&self) -> WithdrawResult {
+    async fn qtum_remove_delegation_impl(&self) -> DelegationResult {
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
         Ok(qrc20::generate_delegate_qrc20_delegation_transaction_from_qtum(
@@ -211,15 +212,16 @@ impl QtumCoin {
         .await?)
     }
 
-    async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> WithdrawResult {
-        let to_addr = Address::from_str(request.address.as_str())?;
+    async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
+        let to_addr =
+            Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
         let fee = request.fee.unwrap_or(10);
         let _utxo_lock = UTXO_LOCK.lock();
         let coin = self.as_ref();
         let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;
         unspents.reverse();
         if unspents.is_empty() || unspents[0].value < sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
-            return MmError::err(WithdrawError::InternalError(
+            return MmError::err(DelegationError::NotEnoughFundsToDelegate(
                 "Amount for delegation cannot be less than 100 QTUM".to_string(),
             ));
         }

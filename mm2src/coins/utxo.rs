@@ -79,11 +79,12 @@ pub use chain::Transaction as UtxoTx;
 use self::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
 use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
-use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, CoinsContext, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin, NumConversError,
-            NumConversResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, TransactionFut, WithdrawError, WithdrawFee, WithdrawRequest};
+use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, CoinsContext, DelegationError,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin,
+            NumConversError, NumConversResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawFee,
+            WithdrawRequest};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::utxo_common::UtxoTxBuilder;
 
@@ -164,6 +165,18 @@ impl From<UtxoRpcError> for WithdrawError {
             },
             UtxoRpcError::InvalidResponse(resp) => WithdrawError::Transport(resp),
             UtxoRpcError::Internal(internal) => WithdrawError::InternalError(internal),
+        }
+    }
+}
+
+impl From<UtxoRpcError> for DelegationError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(transport) | UtxoRpcError::ResponseParseError(transport) => {
+                DelegationError::Transport(transport.to_string())
+            },
+            UtxoRpcError::InvalidResponse(resp) => DelegationError::Transport(resp),
+            UtxoRpcError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
 }
@@ -739,7 +752,7 @@ lazy_static! {
     pub static ref UTXO_LOCK: AsyncMutex<()> = AsyncMutex::new(());
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Deserialize, Serialize)]
 pub enum GenerateTxError {
     #[display(
         fmt = "Couldn't generate tx from empty UTXOs set, required no less than {} satoshis",
