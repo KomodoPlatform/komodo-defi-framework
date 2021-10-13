@@ -18,9 +18,6 @@
 //
 
 use bigdecimal::BigDecimal;
-#[cfg(not(target_arch = "wasm32"))]
-use coins::lightning::{netaddress_from_ipaddr, network_from_string, start_lightning, LightningConf};
-use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
@@ -32,8 +29,6 @@ use http::Response;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::mm2::lp_network::myipaddr;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use crate::mm2::lp_swap::active_swaps_using_coin;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -133,59 +128,6 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     };
     let res = try_s!(json::to_vec(&res));
     Ok(try_s!(Response::builder().body(res)))
-}
-
-/// Start a BTC lightning node (LTC should be added later).
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn enable_lightning(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-
-    // coin has to be enabled in electrum to start a lightning node
-    let coin = match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): ", err),
-    };
-
-    let utxo_coin = match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo,
-        _ => return ERR!("Only utxo coins are supported in lightning"),
-    };
-
-    if !utxo_coin.as_ref().conf.lightning {
-        return ERR!("Lightning network is not supported for {}", ticker);
-    }
-
-    let client = match &utxo_coin.as_ref().rpc_client {
-        UtxoRpcClientEnum::Electrum(c) => c,
-        UtxoRpcClientEnum::Native(_) => return ERR!("Only electrum client is supported for now"),
-    };
-
-    let network = match &utxo_coin.as_ref().conf.network {
-        Some(n) => try_s!(network_from_string(n.clone())),
-        None => return ERR!("network field not found in coin config"),
-    };
-
-    let ip = try_s!(myipaddr(ctx.clone()).await);
-    let port = req["port"].as_u64().unwrap_or(9735) as u16;
-    let listen_addr = netaddress_from_ipaddr(ip, port);
-
-    let name = req["name"].as_str().unwrap_or_default();
-    let node_name = format!("{}{:width$}", name, " ", width = 32 - name.len());
-
-    let conf = LightningConf::new(client.clone(), network, listen_addr, port, node_name);
-    try_s!(start_lightning(&ctx, conf).await);
-
-    let json = json!({
-        "result": "success"
-    });
-    let res = try_s!(json::to_vec(&json));
-    Ok(try_s!(Response::builder().body(res)))
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn enable_lightning(_ctx: MmArc, _req: Json) -> Result<Response<Vec<u8>>, String> {
-    ERR!("'enable_lightning' is only supported in native mode")
 }
 
 #[cfg(target_arch = "wasm32")]

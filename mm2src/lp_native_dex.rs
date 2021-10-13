@@ -28,8 +28,6 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::mm2::lp_network::myipaddr;
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, P2PContext};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, lp_ordermatch_loop,
                                 orders_kick_start, BalanceUpdateOrdermatchHandler};
@@ -38,6 +36,8 @@ use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
 use bitcrypto::sha256;
 use common::executor::{spawn, spawn_boxed, Timer};
+#[cfg(not(target_arch = "wasm32"))]
+use common::ip_addr::myipaddr;
 use common::log::{error, info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
 use common::privkey::key_pair_from_seed;

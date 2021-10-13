@@ -94,7 +94,7 @@ use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
 pub mod qrc20;
 use qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
 
-#[cfg(not(target_arch = "wasm32"))] pub mod lightning;
+pub mod lightning;
 
 #[doc(hidden)]
 #[allow(unused_variables)]

@@ -8389,10 +8389,13 @@ fn test_enable_lightning() {
     );
 
     let enable_lightning = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
+        "mmrpc": "2.0",
         "method": "enable_lightning",
-        "coin": "tBTC",
-        "name": "test_node",
+        "userpass": mm.userpass,
+        "params": {
+            "coin": "tBTC",
+            "name": "test_node",
+        },
     })))
     .unwrap();
     assert_eq!(
