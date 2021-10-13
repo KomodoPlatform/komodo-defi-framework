@@ -367,10 +367,6 @@ impl From<Qrc20AbiError> for UtxoRpcError {
     }
 }
 
-impl From<BalanceError> for GenerateTxError {
-    fn from(e: BalanceError) -> Self { GenerateTxError::Internal(e.to_string()) }
-}
-
 impl Qrc20Coin {
     /// `gas_fee` should be calculated by: gas_limit * gas_price * (count of contract calls),
     /// or should be sum of gas fee of all contract calls.
