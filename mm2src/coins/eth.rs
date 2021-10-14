@@ -237,6 +237,7 @@ pub struct EthCoinImpl {
     web3_instances: Vec<Web3Instance>,
     decimals: u8,
     gas_station_url: Option<String>,
+    gas_station_decimals: Option<u8>,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
@@ -416,7 +417,8 @@ impl EthCoinImpl {
     fn get_gas_price(&self) -> Web3RpcFut<U256> {
         let fut = if let Some(url) = &self.gas_station_url {
             Either01::A(
-                GasStationData::get_gas_price(url).map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
+                GasStationData::get_gas_price(url, self.gas_station_decimals.unwrap_or(8))
+                    .map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
             )
         } else {
             Either01::B(self.web3.eth().gas_price().map_to_mm_fut(Web3RpcError::from))
@@ -3071,28 +3073,25 @@ struct GasStationData {
 }
 
 impl GasStationData {
-    fn average_gwei(&self) -> U256 {
+    fn average_gwei(&self, decimals: u8) -> U256 {
         // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
-        U256::from(self.average as u64) * U256::exp10(8)
+        U256::from(self.average as u64) * U256::exp10(decimals as usize)
     }
 
-    fn get_gas_price(uri: &str) -> Web3RpcFut<U256> {
+    fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
         let fut = async move { slurp_url(&uri).await };
-        Box::new(
-            fut.boxed()
-                .compat()
-                .map_to_mm_fut(Web3RpcError::Transport)
-                .and_then(|res| -> Web3RpcResult<U256> {
-                    if res.0 != StatusCode::OK {
-                        let error = format!("Gas price request failed with status code {}", res.0);
-                        return MmError::err(Web3RpcError::Transport(error));
-                    }
+        Box::new(fut.boxed().compat().map_to_mm_fut(Web3RpcError::Transport).and_then(
+            move |res| -> Web3RpcResult<U256> {
+                if res.0 != StatusCode::OK {
+                    let error = format!("Gas price request failed with status code {}", res.0);
+                    return MmError::err(Web3RpcError::Transport(error));
+                }
 
-                    let result: GasStationData = json::from_slice(&res.2)?;
-                    Ok(result.average_gwei())
-                }),
-        )
+                let result: GasStationData = json::from_slice(&res.2)?;
+                Ok(result.average_gwei(decimals))
+            },
+        ))
     }
 }
 
@@ -3231,6 +3230,7 @@ pub async fn eth_coin_from_conf_and_request(
     } else {
         HistorySyncState::NotEnabled
     };
+
     let coin = EthCoinImpl {
         key_pair,
         my_address,
@@ -3240,6 +3240,7 @@ pub async fn eth_coin_from_conf_and_request(
         decimals,
         ticker: ticker.into(),
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
+        gas_station_decimals: try_s!(json::from_value(req["gas_station_decimals"].clone())),
         web3,
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
