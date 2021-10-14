@@ -1412,7 +1412,7 @@ pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
         utxo.conf.signature_version,
         utxo.conf.fork_id,
     )
-    .map_to_mm(|e| DelegationError::InternalError(e))?;
+    .map_to_mm(DelegationError::InternalError)?;
 
     let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
     let generated_tx = GenerateQrc20TxResult {
