@@ -277,7 +277,7 @@ pub trait Qrc20ElectrumOps {
     /// This can be used to get eventlogs in the transaction, the returned data is the same as Qtum Core RPC gettransactionreceipt.
     /// from the eventlogs, we can get QRC20 Token transafer informations(from, to, amount).
     /// https://github.com/qtumproject/qtum-electrumx-server/blob/master/docs/qrc20-integration.md#blochchaintransactionget_receipttxid
-    fn blochchain_transaction_get_receipt(&self, hash: &H256Json) -> RpcRes<Vec<TxReceipt>>;
+    fn blockchain_transaction_get_receipt(&self, hash: &H256Json) -> RpcRes<Vec<TxReceipt>>;
 }
 
 pub trait Qrc20NativeOps {
@@ -359,7 +359,7 @@ impl Qrc20ElectrumOps for ElectrumClient {
         )
     }
 
-    fn blochchain_transaction_get_receipt(&self, hash: &H256Json) -> RpcRes<Vec<TxReceipt>> {
+    fn blockchain_transaction_get_receipt(&self, hash: &H256Json) -> RpcRes<Vec<TxReceipt>> {
         rpc_func!(self, "blochchain.transaction.get_receipt", hash)
     }
 }
@@ -380,7 +380,7 @@ pub trait Qrc20RpcOps {
 impl Qrc20RpcOps for UtxoRpcClientEnum {
     fn get_transaction_receipts(&self, tx_hash: &H256) -> RpcRes<Vec<TxReceipt>> {
         match self {
-            UtxoRpcClientEnum::Electrum(electrum) => electrum.blochchain_transaction_get_receipt(tx_hash),
+            UtxoRpcClientEnum::Electrum(electrum) => electrum.blockchain_transaction_get_receipt(tx_hash),
             UtxoRpcClientEnum::Native(native) => native.get_transaction_receipt(tx_hash),
         }
     }

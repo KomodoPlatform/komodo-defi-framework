@@ -650,7 +650,7 @@ impl BuildTransferHistory for ElectrumClient {
 
         let mut receipts = Vec::new();
         for (tx_hash, _height) in tx_idents {
-            let mut tx_receipts = self.blochchain_transaction_get_receipt(&tx_hash).compat().await?;
+            let mut tx_receipts = self.blockchain_transaction_get_receipt(&tx_hash).compat().await?;
             // remove receipts of contract calls didn't emit at least one `Transfer` event
             tx_receipts.retain(|receipt| receipt.log.iter().any(is_transfer_event_log));
             receipts.extend(tx_receipts.into_iter());

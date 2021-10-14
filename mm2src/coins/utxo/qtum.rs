@@ -256,7 +256,7 @@ impl QtumCoin {
         if am_i_staking {
             let last_tx_add = &add_delegation_history[add_delegation_history.len() - 1];
             let res = &client
-                .blochchain_transaction_get_receipt(&last_tx_add.tx_hash)
+                .blockchain_transaction_get_receipt(&last_tx_add.tx_hash)
                 .compat()
                 .await
                 .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
@@ -288,15 +288,15 @@ impl QtumCoin {
         let coin = self.as_ref();
         let (am_i_staking, staker) = self.am_i_currently_staking().await?;
         let (unspents, _) = self.list_unspent_ordered(&coin.my_address).await?;
-        let mut accumulate = BigDecimal::zero();
-        for unspent in unspents.iter() {
-            if unspent.value >= sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
-                accumulate += big_decimal_from_sat_unsigned(unspent.value, coin.decimals);
-            }
-        }
+        let lower_bound = 100.into();
+        let amount = unspents
+            .iter()
+            .map(|unspent| big_decimal_from_sat_unsigned(unspent.value, coin.decimals))
+            .filter(|unspent_value| unspent_value >= &lower_bound)
+            .fold(BigDecimal::zero(), |total, unspent_value| total + unspent_value);
         let infos = StakingInfos {
             staking_infos_details: QtumStakingInfosDetails {
-                amount: accumulate,
+                amount,
                 staker,
                 am_i_staking,
             }
