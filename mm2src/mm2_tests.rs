@@ -4848,6 +4848,70 @@ fn test_remove_delegation_qtum() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_get_staking_infos_qtum() {
+    let coins = json!([{
+      "coin": "tQTUM",
+      "name": "qtumtest",
+      "fname": "Qtum test",
+      "rpcport": 13889,
+      "pubtype": 120,
+      "p2shtype": 110,
+      "wiftype": 239,
+      "segwit": true,
+      "txfee": 400000,
+      "mm2": 1,
+      "required_confirmations": 1,
+      "mature_confirmations": 200,
+      "avg_blocktime": 0.53,
+      "protocol": {
+        "type": "QTUM"
+      }
+    }]);
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var("BOB_TRADE_IP").ok(),
+            "rpcip": env::var("BOB_TRADE_IP").ok(),
+            "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
+            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+        .unwrap();
+
+    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
+        "electrum1.cipig.net:10071",
+        "electrum2.cipig.net:10071",
+        "electrum3.cipig.net:10071",
+    ]));
+    println!("{}", json.balance);
+
+    let rc = block_on(mm.rpc(json!({
+        "userpass": "pass",
+        "mmrpc": "2.0",
+        "method": "get_staking_infos",
+        "params": {"coin": "tQTUM"},
+        "id": 0
+    })))
+    .unwrap();
+    assert_eq!(
+        rc.0,
+        StatusCode::OK,
+        "RPC «get_staking_infos» failed with status «{}»",
+        rc.0
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([

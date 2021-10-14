@@ -208,7 +208,7 @@ impl QtumCoin {
 
     pub fn qtum_get_delegation_infos(&self) -> StakingInfosFut {
         let coin = self.clone();
-        let fut = async move { coin.qtum_get_staking_infos_impl().await };
+        let fut = async move { coin.qtum_get_delegation_infos_impl().await };
         Box::new(fut.boxed().compat())
     }
 
@@ -264,6 +264,9 @@ impl QtumCoin {
             // the second entry is always the staker as hexadecimal 32 byte padded
             // by trimming the start we retrieve the standard hex hash format
             // https://testnet.qtum.info/tx/c62d707b67267a13a53b5910ffbf393c47f00734cff1c73aae6e05d24258372f
+            // topic[0] -> a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5
+            // topic[1] -> 000000000000000000000000d4ea77298fdac12c657a18b222adc8b307e18127 -> staker_address
+            // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
             let raw = res[0].log[0].topics[1].trim_start_matches('0');
             // unwrap is safe here because we have the garanty that the tx exist and therefore
             // this topics is always a valid delegation staker address
@@ -281,7 +284,7 @@ impl QtumCoin {
         Ok((am_i_staking, None))
     }
 
-    pub async fn qtum_get_staking_infos_impl(&self) -> StakingInfosResult {
+    pub async fn qtum_get_delegation_infos_impl(&self) -> StakingInfosResult {
         let coin = self.as_ref();
         let (am_i_staking, staker) = self.am_i_currently_staking().await?;
         let (unspents, _) = self.list_unspent_ordered(&coin.my_address).await?;

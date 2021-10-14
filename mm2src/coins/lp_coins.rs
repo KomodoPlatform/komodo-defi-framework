@@ -504,7 +504,7 @@ impl From<QtumStakingInfosDetails> for StakingInfosDetails {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StakingInfos {
-    staking_infos_details: StakingInfosDetails,
+    pub staking_infos_details: StakingInfosDetails,
 }
 
 /// Please note that no type should have the same structure as another type,

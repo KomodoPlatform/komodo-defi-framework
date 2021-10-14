@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddr
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{CoinBalance, SwapOps, TradePreimageValue, TxFeeDetails};
+use crate::{CoinBalance, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
 use bigdecimal::BigDecimal;
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
@@ -1708,9 +1708,13 @@ fn test_qtum_get_delegation_infos() {
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
-    let (res, _) = block_on(coin.am_i_currently_staking()).unwrap();
-    //let staking_infos = block_on(coin.qtum_get_staking_infos_impl()).unwrap();
-    assert_eq!(res, false);
+    let staking_infos = coin.qtum_get_delegation_infos().wait().unwrap();
+    match staking_infos.staking_infos_details {
+        StakingInfosDetails::Qtum(staking_details) => {
+            assert_eq!(staking_details.am_i_staking, true);
+            assert_eq!(staking_details.staker.unwrap(), "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+        },
+    };
 }
 
 #[test]
