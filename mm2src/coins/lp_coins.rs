@@ -474,28 +474,10 @@ impl WithdrawRequest {
 
 /// Please note that no type should have the same structure as another type,
 /// because this enum has the `untagged` deserialization.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum StakingInfosDetails {
     Qtum(QtumStakingInfosDetails),
-}
-
-/// Deserialize the StakingInfosDetails as an untagged enum.
-impl<'de> Deserialize<'de> for StakingInfosDetails {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum StakingInfosDetailsUnTagged {
-            Qtum(QtumStakingInfosDetails),
-        }
-
-        match Deserialize::deserialize(deserializer)? {
-            StakingInfosDetailsUnTagged::Qtum(f) => Ok(StakingInfosDetails::Qtum(f)),
-        }
-    }
 }
 
 impl From<QtumStakingInfosDetails> for StakingInfosDetails {
@@ -847,8 +829,19 @@ impl From<CoinFindError> for StakingInfosError {
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum DelegationError {
-    #[display(fmt = "Transfer error: {}", _0)]
-    TransferError(WithdrawError),
+    #[display(
+        fmt = "Not enough {} to delegate: available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalance {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+    #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
+    AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
     #[display(fmt = "Delegation not available for: {}", coin)]
     CoinDoesntSupportDelegation { coin: String },
     #[display(fmt = "No such coin {}", coin)]
@@ -867,14 +860,19 @@ pub enum DelegationError {
     InternalError(String),
 }
 
-impl From<WithdrawError> for DelegationError {
-    fn from(e: WithdrawError) -> Self { DelegationError::TransferError(e) }
-}
-
 impl From<CoinFindError> for DelegationError {
     fn from(e: CoinFindError) -> Self {
         match e {
             CoinFindError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
+        }
+    }
+}
+
+impl From<BalanceError> for DelegationError {
+    fn from(e: BalanceError) -> Self {
+        match e {
+            BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => DelegationError::Transport(error),
+            BalanceError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
 }
@@ -886,14 +884,51 @@ impl From<GenerateTxError> for DelegationError {
 impl HttpStatusCode for DelegationError {
     fn status_code(&self) -> StatusCode {
         match self {
-            DelegationError::TransferError(e) => e.status_code(),
-            DelegationError::CoinDoesntSupportDelegation { .. }
-            | DelegationError::NoSuchCoin { .. }
-            | DelegationError::CannotInteractWithSmartContract(_)
-            | DelegationError::GenerateTransactionError(_)
-            | DelegationError::AddressError(_)
-            | DelegationError::NotEnoughFundsToDelegate(_) => StatusCode::BAD_REQUEST,
             DelegationError::Transport(_) | DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+impl DelegationError {
+    pub fn from_generate_tx_error(gen_tx_err: GenerateTxError, coin: String, decimals: u8) -> DelegationError {
+        match gen_tx_err {
+            GenerateTxError::EmptyUtxoSet { required } => {
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available: BigDecimal::from(0),
+                    required,
+                }
+            },
+            GenerateTxError::EmptyOutputs => DelegationError::InternalError(gen_tx_err.to_string()),
+            GenerateTxError::OutputValueLessThanDust { value, dust } => {
+                let amount = big_decimal_from_sat_unsigned(value, decimals);
+                let threshold = big_decimal_from_sat_unsigned(dust, decimals);
+                DelegationError::AmountTooLow { amount, threshold }
+            },
+            GenerateTxError::DeductFeeFromOutputFailed {
+                output_value, required, ..
+            } => {
+                let available = big_decimal_from_sat_unsigned(output_value, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::NotEnoughUtxos { sum_utxos, required } => {
+                let available = big_decimal_from_sat_unsigned(sum_utxos, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::Transport(e) => DelegationError::Transport(e),
+            GenerateTxError::Internal(e) => DelegationError::InternalError(e),
         }
     }
 }
@@ -964,10 +999,6 @@ impl From<CoinFindError> for WithdrawError {
             CoinFindError::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
-}
-
-impl From<GenerateTxError> for WithdrawError {
-    fn from(e: GenerateTxError) -> Self { WithdrawError::GenerateTransactionError(e) }
 }
 
 impl From<UnsupportedAddr> for WithdrawError {

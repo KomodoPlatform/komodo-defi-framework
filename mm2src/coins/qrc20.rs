@@ -8,11 +8,11 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_sign
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
                   HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoCoinBuilder, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, DelegationError, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinBalance, DelegationError, DelegationResult, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -1383,7 +1383,7 @@ pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
     to_address: String,
     gas_limit: u64,
     transaction_type: TransactionType,
-) -> WithdrawResult {
+) -> DelegationResult {
     let utxo = coin.as_ref();
     let (unspents, _) = coin.ordered_mature_unspents(&utxo.my_address).await?;
     let mut gas_fee = 0;
@@ -1399,7 +1399,10 @@ pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
         .with_gas_fee(gas_fee)
         .with_dust(QRC20_DUST)
         .build()
-        .await?;
+        .await
+        .mm_err(|gen_tx_error| {
+            DelegationError::from_generate_tx_error(gen_tx_error, coin.ticker().to_string(), utxo.decimals)
+        })?;
 
     let prev_script = ScriptBuilder::build_p2pkh(&utxo.my_address.hash);
     let signed = sign_tx(
@@ -1409,7 +1412,7 @@ pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
         utxo.conf.signature_version,
         utxo.conf.fork_id,
     )
-    .map_to_mm(GenerateTxError::Internal)?;
+    .map_to_mm(|e| DelegationError::InternalError(e))?;
 
     let miner_fee = data.fee_amount + data.unused_change.unwrap_or_default();
     let generated_tx = GenerateQrc20TxResult {
@@ -1425,7 +1428,7 @@ pub async fn generate_delegate_qrc20_delegation_transaction_from_qtum(
         gas_price: QRC20_GAS_PRICE_DEFAULT,
         total_gas_fee: utxo_common::big_decimal_from_sat(generated_tx.gas_fee as i64, utxo.decimals),
     };
-    let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    let my_address = coin.my_address().map_to_mm(DelegationError::InternalError)?;
 
     // Delegation transaction always transfer all the UTXO's to ourselves
     let qtum_amount = coin.my_spendable_balance().compat().await?;
