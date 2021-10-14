@@ -1316,7 +1316,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
-        transaction_type: Default::default(),
+        transaction_type: TransactionType::StandardTransfer,
     })
 }
 
