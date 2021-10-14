@@ -69,7 +69,7 @@ futures = { version = "0.3.1", package = "futures", features = ["compat", "async
 gstuff = { version = "0.7", features = ["nightly"] }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
-hex = "0.3.2"
+hex = "0.4.2"
 hex-literal = "0.3.1"
 http = "0.2"
 itertools = "0.9"

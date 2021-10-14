@@ -78,6 +78,8 @@ pub struct LightningConf {
     pub listening_addr: IpAddr,
     // Printable human-readable string to describe this node to other users.
     pub node_name: [u8; 32],
+    // Node's RGB color. This is used for showing the node in a network graph with the desired color.
+    pub node_color: [u8; 3],
 }
 
 impl LightningConf {
@@ -87,6 +89,7 @@ impl LightningConf {
         listening_addr: IpAddr,
         listening_port: u16,
         node_name: String,
+        node_color: [u8; 3],
     ) -> Self {
         LightningConf {
             rpc_client,
@@ -94,6 +97,7 @@ impl LightningConf {
             listening_port,
             listening_addr,
             node_name: node_name.as_bytes().try_into().expect("Node name has incorrect length"),
+            node_color,
         }
     }
 }
@@ -300,6 +304,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> EnableLightnin
         ctx.clone(),
         new_channel_manager,
         conf.node_name,
+        conf.node_color,
         conf.listening_addr,
         conf.listening_port,
     ));
@@ -406,6 +411,7 @@ async fn ln_node_announcement_loop(
     ctx: MmArc,
     channel_manager: Arc<ChannelManager>,
     node_name: [u8; 32],
+    node_color: [u8; 3],
     addr: IpAddr,
     port: u16,
 ) {
@@ -432,11 +438,7 @@ async fn ln_node_announcement_loop(
             addresses.clone()
         };
 
-        channel_manager.broadcast_node_announcement(
-            [0; 3], // insert node's RGB color. Add to configs later as this is only useful for showing the node in a graph
-            node_name,
-            addresses_to_announce,
-        );
+        channel_manager.broadcast_node_announcement(node_color, node_name, addresses_to_announce);
 
         Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }
