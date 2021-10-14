@@ -36,6 +36,7 @@ async fn test_send() {
         web3,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: None,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
