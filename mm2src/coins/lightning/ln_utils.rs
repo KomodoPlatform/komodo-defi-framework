@@ -8,6 +8,7 @@ use bitcoin::hash_types::{BlockHash, TxMerkleNode};
 use bitcoin::network::constants::Network;
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
+use common::ip_addr::fetch_external_ip;
 use common::log;
 use common::log::LogState;
 use common::mm_ctx::MmArc;
@@ -71,28 +72,28 @@ pub struct LightningConf {
     // Mainnet/Testnet/Signet/RegTest
     pub network: Network,
     // The listening port for the p2p LN node
-    pub ln_peer_listening_port: u16,
+    pub listening_port: u16,
     /// The set (possibly empty) of socket addresses on which this node accepts incoming connections.
     /// If the user wishes to preserve privacy, addresses should likely contain only Tor Onion addresses.
-    pub ln_announced_listen_addr: Vec<NetAddress>,
+    pub listening_addr: IpAddr,
     // Printable human-readable string to describe this node to other users.
-    pub ln_announced_node_name: [u8; 32],
+    pub node_name: [u8; 32],
 }
 
 impl LightningConf {
     pub fn new(
         rpc_client: ElectrumClient,
         network: Network,
-        addr: Vec<NetAddress>,
-        port: u16,
+        listening_addr: IpAddr,
+        listening_port: u16,
         node_name: String,
     ) -> Self {
         LightningConf {
             rpc_client,
             network,
-            ln_peer_listening_port: port,
-            ln_announced_listen_addr: addr,
-            ln_announced_node_name: node_name.as_bytes().try_into().expect("Node name has incorrect length"),
+            listening_port,
+            listening_addr,
+            node_name: node_name.as_bytes().try_into().expect("Node name has incorrect length"),
         }
     }
 }
@@ -105,7 +106,7 @@ pub fn network_from_string(network: String) -> EnableLightningResult<Network> {
 }
 
 // TODO: add TOR address option
-pub fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
+fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
     if addr == Ipv4Addr::new(0, 0, 0, 0) || addr == Ipv4Addr::new(127, 0, 0, 1) {
         return Vec::new();
     }
@@ -255,7 +256,7 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> EnableLightnin
     ));
 
     // Initialize p2p networking
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", conf.ln_peer_listening_port))
+    let listener = TcpListener::bind(format!("{}:{}", conf.listening_addr, conf.listening_port))
         .await
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;
     spawn(ln_p2p_loop(ctx.clone(), peer_manager.clone(), listener));
@@ -298,8 +299,9 @@ pub async fn start_lightning(ctx: &MmArc, conf: LightningConf) -> EnableLightnin
     spawn(ln_node_announcement_loop(
         ctx.clone(),
         new_channel_manager,
-        conf.ln_announced_node_name,
-        conf.ln_announced_listen_addr,
+        conf.node_name,
+        conf.listening_addr,
+        conf.listening_port,
     ));
 
     Ok(())
@@ -404,17 +406,38 @@ async fn ln_node_announcement_loop(
     ctx: MmArc,
     channel_manager: Arc<ChannelManager>,
     node_name: [u8; 32],
-    addresses: Vec<NetAddress>,
+    addr: IpAddr,
+    port: u16,
 ) {
+    let addresses = netaddress_from_ipaddr(addr, port);
     loop {
         if ctx.is_stopping() {
             break;
         }
+
+        let addresses_to_announce = if addresses.is_empty() {
+            // Right now if the node is behind NAT the external ip is fetched on every loop
+            // If the node does not announce a public IP, it will not be displayed on the network graph,
+            // and other nodes will not be able to open a channel with it. But it can open channels with other nodes.
+            // TODO: Fetch external ip on reconnection only
+            match fetch_external_ip().await {
+                Ok(ip) => netaddress_from_ipaddr(ip, port),
+                Err(e) => {
+                    log::error!("Error while fetching external ip for node announcement: {}", e);
+                    Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
+                    continue;
+                },
+            }
+        } else {
+            addresses.clone()
+        };
+
         channel_manager.broadcast_node_announcement(
             [0; 3], // insert node's RGB color. Add to configs later as this is only useful for showing the node in a graph
             node_name,
-            addresses.clone(),
+            addresses_to_announce,
         );
+
         Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }
 }

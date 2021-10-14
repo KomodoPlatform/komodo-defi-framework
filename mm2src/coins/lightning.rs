@@ -6,7 +6,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use ln_errors::{EnableLightningError, EnableLightningResult};
 #[cfg(not(target_arch = "wasm32"))]
-use ln_utils::{netaddress_from_ipaddr, network_from_string, start_lightning, LightningConf};
+use ln_utils::{network_from_string, start_lightning, LightningConf};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::{lp_coinfind_or_err, MmCoinEnum};
@@ -73,11 +73,10 @@ pub async fn enable_lightning(ctx: MmArc, req: EnableLightningRequest) -> Enable
         },
     };
 
-    let ip = myipaddr(ctx.clone())
+    let listen_addr = myipaddr(ctx.clone())
         .await
         .map_to_mm(EnableLightningError::InvalidAddress)?;
     let port = req.port.unwrap_or(9735);
-    let listen_addr = netaddress_from_ipaddr(ip, port);
 
     let node_name = format!("{}{:width$}", req.name, " ", width = 32 - req.name.len());
 
