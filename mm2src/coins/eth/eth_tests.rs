@@ -1,5 +1,4 @@
 use super::*;
-use bigdecimal::ToPrimitive;
 use common::block_on;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use mocktopus::mocking::*;
@@ -520,8 +519,8 @@ fn test_gas_station() {
     let res = block_on(slurp_url("https://ethgasstation.info/api/ethgasAPI.json")).unwrap();
     let result_eth: GasStationData = json::from_slice(&*res.2).unwrap();
     assert_eq!(
-        result_eth.average,
-        u256_to_big_decimal(res_eth, 8).unwrap().to_f64().unwrap()
+        BigDecimal::from(result_eth.average),
+        u256_to_big_decimal(res_eth, 8).unwrap()
     );
     let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
         .wait()
@@ -529,8 +528,8 @@ fn test_gas_station() {
     let res = block_on(slurp_url("https://gasstation-mainnet.matic.network/")).unwrap();
     let result_polygon: GasStationData = json::from_slice(&*res.2).unwrap();
     assert_eq!(
-        result_polygon.average,
-        u256_to_big_decimal(res_polygon, 9).unwrap().to_f64().unwrap()
+        BigDecimal::from(result_polygon.average),
+        u256_to_big_decimal(res_polygon, 9).unwrap()
     );
 }
 
