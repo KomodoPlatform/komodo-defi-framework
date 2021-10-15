@@ -4721,7 +4721,7 @@ fn test_add_delegation_qtum() {
             "myipaddr": env::var("BOB_TRADE_IP").ok(),
             "rpcip": env::var("BOB_TRADE_IP").ok(),
             "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
+            "passphrase": "asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,

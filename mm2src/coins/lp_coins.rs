@@ -856,10 +856,24 @@ pub enum DelegationError {
     AddressError(String),
     #[display(fmt = "{}", _0)]
     NotEnoughFundsToDelegate(String),
+    #[display(fmt = "Already delegating to: {}", _0)]
+    AlreadyDelegating(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+}
+
+impl From<StakingInfosError> for DelegationError {
+    fn from(e: StakingInfosError) -> Self {
+        match e {
+            StakingInfosError::CoinDoesntSupportStakingInfos { coin } => {
+                DelegationError::CoinDoesntSupportDelegation { coin }
+            },
+            StakingInfosError::Transport(e) => DelegationError::Transport(e),
+            StakingInfosError::Internal(e) => DelegationError::InternalError(e),
+        }
+    }
 }
 
 impl From<CoinFindError> for DelegationError {

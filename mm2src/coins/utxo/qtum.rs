@@ -312,6 +312,10 @@ impl QtumCoin {
     }
 
     async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
+        let am_i_staking = self.am_i_currently_staking().await?;
+        if am_i_staking.is_some() {
+            return MmError::err(DelegationError::AlreadyDelegating(am_i_staking.unwrap()));
+        }
         let to_addr =
             Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);

@@ -1606,6 +1606,43 @@ fn test_qtum_generate_pod() {
 
 #[test]
 fn test_qtum_add_delegation() {
+    let keypair = key_pair_from_seed("asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.qtum_add_delegation(request).wait();
+    // Eligible for delegation
+    assert_eq!(res.is_err(), false);
+
+    let request = QtumDelegationRequest {
+        address: "fake_address".to_string(),
+        fee: Some(10),
+    };
+    let res = coin.qtum_add_delegation(request).wait();
+    // Wrong address
+    assert_eq!(res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_add_delegation_on_already_delegating() {
     let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
     let req = json!({
@@ -1629,13 +1666,7 @@ fn test_qtum_add_delegation() {
         fee: Some(10),
     };
     let res = coin.qtum_add_delegation(request).wait();
-    assert_eq!(res.is_err(), false);
-
-    let request = QtumDelegationRequest {
-        address: "fake_address".to_string(),
-        fee: Some(10),
-    };
-    let res = coin.qtum_add_delegation(request).wait();
+    // Already Delegating
     assert_eq!(res.is_err(), true);
 }
 
