@@ -1045,6 +1045,7 @@ impl TakerRequest {
 pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
+    base_orderbook_ticker: O
     base_amount: MmNumber,
     rel_amount: MmNumber,
     sender_pubkey: H256Json,
@@ -1122,6 +1123,7 @@ impl<'a> TakerOrderBuilder<'a> {
         TakerOrderBuilder {
             base_coin,
             rel_coin,
+            ctx,
             base_amount: MmNumber::from(0),
             rel_amount: MmNumber::from(0),
             sender_pubkey: H256Json::default(),
@@ -1236,11 +1238,14 @@ impl<'a> TakerOrderBuilder<'a> {
             });
         }
 
+        let original_base_ticker = self.base_coin.ticker();
+        let original_rel_ticker = self.rel_coin.ticker();
+
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
-                base: self.base_coin.ticker().to_owned(),
-                rel: self.rel_coin.ticker().to_owned(),
+                base: self.ctx.orderbook_ticker(original_base_ticker),
+                rel: self.ctx.orderbook_ticker(original_rel_ticker),
                 base_amount: self.base_amount,
                 rel_amount: self.rel_amount,
                 action: self.action,
@@ -1257,6 +1262,8 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: self.order_type,
             timeout: self.timeout,
             save_in_history: self.save_in_history,
+            original_base_ticker: Some(original_base_ticker.into()),
+            original_rel_ticker: Some(original_rel_ticker.into()),
         })
     }
 
@@ -1284,6 +1291,8 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: Default::default(),
             timeout: self.timeout,
             save_in_history: false,
+            original_base_ticker: None,
+            original_rel_ticker: None,
         }
     }
 }
@@ -1321,6 +1330,10 @@ pub struct TakerOrder {
     timeout: u64,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    #[serde(default)]
+    original_base_ticker: Option<String>,
+    #[serde(default)]
+    original_rel_ticker: Option<String>,
 }
 
 /// Result of match_reserved function
@@ -1403,6 +1416,10 @@ pub struct MakerOrder {
     changes_history: Option<Vec<HistoricalOrder>>,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    #[serde(default)]
+    original_base_ticker: Option<String>,
+    #[serde(default)]
+    original_rel_ticker: Option<String>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -2389,6 +2406,13 @@ impl OrdermatchContext {
         let ctx = try_s!(MmArc::from_weak(ctx_weak).ok_or("Context expired"));
         Self::from_ctx(&ctx)
     }
+
+    fn orderbook_ticker(&self, ticker: &str) -> String {
+        self.orderbook_tickers
+            .get(ticker)
+            .map(|t| t.to_owned())
+            .unwrap_or(ticker.to_owned())
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3153,7 +3177,7 @@ pub async fn lp_auto_buy(
         rel_confs: input.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
-    let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
+    let mut order_builder = TakerOrderBuilder::new(&ordermatch_ctx, base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
         .with_action(action)
