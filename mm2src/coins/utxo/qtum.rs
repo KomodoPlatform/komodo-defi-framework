@@ -1,15 +1,14 @@
 use super::*;
 use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
-use bigdecimal::Zero;
-//use crate::qrc20::rpc_clients::Qrc20NativeOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, Qrc20AbiError, Qrc20AbiResult,
                    OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
-use crate::utxo::qtum::qtum_delegation::generate_delegation_transaction;
+use crate::utxo::qtum::qtum_delegation::{generate_delegation_transaction, QTUM_LOWER_BOUND_DELEGATION_AMOUNT};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, DelegationResult,
             NegotiateSwapContractAddrErr, StakingInfos, StakingInfosError, StakingInfosFut, StakingInfosResult,
             SwapOps, TradePreimageValue, TransactionType, ValidateAddressResult, WithdrawFut};
+use bigdecimal::Zero;
 use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -236,12 +235,12 @@ impl QtumCoin {
         .await?)
     }
 
-    pub async fn am_i_currently_staking(&self) -> Result<(bool, Option<String>), MmError<StakingInfosError>> {
+    pub async fn am_i_currently_staking(&self) -> Result<Option<String>, MmError<StakingInfosError>> {
         let utxo = self.as_ref();
         let contract_address = contract_addr_into_rpc_format(&QTUM_DELEGATE_CONTRACT_ADDRESS);
         let client = match &utxo.rpc_client {
             UtxoRpcClientEnum::Native(_) => {
-                return MmError::err(StakingInfosError::Internal("Native not supported yet".to_string()))
+                return MmError::err(StakingInfosError::Internal("Native not supported".to_string()))
             },
             UtxoRpcClientEnum::Electrum(electrum) => electrum,
         };
@@ -273,9 +272,7 @@ impl QtumCoin {
             // topic[1] -> 000000000000000000000000d4ea77298fdac12c657a18b222adc8b307e18127 -> staker_address
             // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
             let raw = res[0].log[0].topics[1].trim_start_matches('0');
-            // unwrap is safe here because we have the garanty that the tx exist and therefore
-            // this topics is always a valid delegation staker address
-            let hash = AddressHash::from_str(raw).unwrap();
+            let hash = AddressHash::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
             let address = Address {
                 prefix: utxo.my_address.prefix,
                 t_addr_prefix: utxo.my_address.t_addr_prefix,
@@ -284,21 +281,25 @@ impl QtumCoin {
                 hrp: utxo.my_address.hrp.clone(),
                 addr_format: utxo.my_address.addr_format.clone(),
             };
-            return Ok((am_i_staking, Some(address.to_string())));
+            return Ok(Some(address.to_string()));
         }
-        Ok((am_i_staking, None))
+        Ok(None)
     }
 
     pub async fn qtum_get_delegation_infos_impl(&self) -> StakingInfosResult {
         let coin = self.as_ref();
-        let (am_i_staking, staker) = self.am_i_currently_staking().await?;
+        let staker = self.am_i_currently_staking().await?;
         let (unspents, _) = self.list_unspent_ordered(&coin.my_address).await?;
-        let lower_bound = 100.into();
-        let amount = unspents
-            .iter()
-            .map(|unspent| big_decimal_from_sat_unsigned(unspent.value, coin.decimals))
-            .filter(|unspent_value| unspent_value >= &lower_bound)
-            .fold(BigDecimal::zero(), |total, unspent_value| total + unspent_value);
+        let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT.into();
+        let mut amount = BigDecimal::zero();
+        if staker.is_some() {
+            amount = unspents
+                .iter()
+                .map(|unspent| big_decimal_from_sat_unsigned(unspent.value, coin.decimals))
+                .filter(|unspent_value| unspent_value >= &lower_bound)
+                .fold(BigDecimal::zero(), |total, unspent_value| total + unspent_value);
+        }
+        let am_i_staking = staker.is_some();
         let infos = StakingInfos {
             staking_infos_details: QtumStakingInfosDetails {
                 amount,
