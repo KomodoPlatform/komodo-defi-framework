@@ -23,15 +23,23 @@ impl From<UtxoStandardCoin> for UtxoArc {
     fn from(coin: UtxoStandardCoin) -> Self { coin.utxo_arc }
 }
 
-pub async fn utxo_standard_coin_from_conf_and_request(
+pub async fn utxo_standard_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    activation_params: UtxoActivationParams,
     priv_key: &[u8],
 ) -> Result<UtxoStandardCoin, String> {
     let coin: UtxoStandardCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, UtxoStandardCoin::from).await
+        utxo_common::utxo_arc_from_conf_and_params(
+            ctx,
+            ticker,
+            conf,
+            activation_params,
+            priv_key,
+            UtxoStandardCoin::from
+        )
+        .await
     );
     Ok(coin)
 }

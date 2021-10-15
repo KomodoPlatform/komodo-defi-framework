@@ -98,13 +98,13 @@ mod docker_tests {
     use bitcrypto::ChecksumType;
     use chain::{OutPoint, TransactionOutput};
     use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
-    use coins::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
+    use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
     use coins::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum};
     use coins::utxo::slp::SlpToken;
     use coins::utxo::slp::{slp_genesis_output, SlpOutput};
     use coins::utxo::utxo_common::send_outputs_from_my_address;
-    use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-    use coins::utxo::{dhash160, UtxoCommonOps};
+    use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
+    use coins::utxo::{dhash160, UtxoActivationParams, UtxoCommonOps};
     use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum,
                 WithdrawRequest};
     use common::for_tests::{check_my_swap_status_amounts, enable_electrum};
@@ -234,8 +234,10 @@ mod docker_tests {
             let req = json!({"method":"enable"});
             let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
             let ctx = MmCtxBuilder::new().into_mm_arc();
-            let coin = block_on(utxo_standard_coin_from_conf_and_request(
-                &ctx, ticker, &conf, &req, &priv_key,
+            let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+            let coin = block_on(utxo_standard_coin_from_conf_and_params(
+                &ctx, ticker, &conf, params, &priv_key,
             ))
             .unwrap();
             UtxoAssetDockerOps { ctx, coin }
@@ -293,11 +295,13 @@ mod docker_tests {
             let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
             let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
             let ctx = MmCtxBuilder::new().into_mm_arc();
-            let coin = block_on(bch_coin_from_conf_and_request(
+            let params = BchActivationParams::from_legacy_req(&req).unwrap();
+
+            let coin = block_on(bch_coin_from_conf_and_params(
                 &ctx,
                 ticker,
                 &conf,
-                &req,
+                params,
                 CashAddrPrefix::SlpTest,
                 &priv_key,
             ))

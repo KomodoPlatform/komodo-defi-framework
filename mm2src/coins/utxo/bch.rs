@@ -7,9 +7,46 @@ use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, T
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
+use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use keys::NetworkPrefix as CashAddrPrefix;
+use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BchActivationParams {
+    #[serde(default)]
+    allow_slp_unsafe_conf: bool,
+    bchd_urls: Vec<String>,
+    with_tokens: Vec<String>,
+    #[serde(flatten)]
+    utxo_params: UtxoActivationParams,
+}
+
+#[derive(Debug, Display)]
+pub enum BchFromLegacyReqErr {
+    InvalidUtxoParams(UtxoFromLegacyReqErr),
+    InvalidBchdUrls(json::Error),
+}
+
+impl From<UtxoFromLegacyReqErr> for BchFromLegacyReqErr {
+    fn from(err: UtxoFromLegacyReqErr) -> Self { BchFromLegacyReqErr::InvalidUtxoParams(err) }
+}
+
+impl BchActivationParams {
+    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<BchFromLegacyReqErr>> {
+        let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(BchFromLegacyReqErr::InvalidBchdUrls)?;
+        let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
+        let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
+
+        Ok(BchActivationParams {
+            allow_slp_unsafe_conf,
+            bchd_urls,
+            with_tokens: Vec::new(),
+            utxo_params,
+        })
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct BchCoin {
@@ -218,21 +255,19 @@ impl AsRef<UtxoCoinFields> for BchCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
-pub async fn bch_coin_from_conf_and_request(
+pub async fn bch_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    params: BchActivationParams,
     slp_addr_prefix: CashAddrPrefix,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
-    let bchd_urls: Vec<String> = try_s!(json::from_value(req["bchd_urls"].clone()));
-    let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or(false);
-
-    if bchd_urls.is_empty() && !allow_slp_unsafe_conf {
+    if params.bchd_urls.is_empty() && !params.allow_slp_unsafe_conf {
         return Err("Using empty bchd_urls is unsafe for SLP users!".into());
     }
 
+    let bchd_urls = params.bchd_urls;
     let constructor = {
         move |utxo_arc| BchCoin {
             utxo_arc,
@@ -240,8 +275,9 @@ pub async fn bch_coin_from_conf_and_request(
             bchd_urls: bchd_urls.clone(),
         }
     };
-    let coin: BchCoin =
-        try_s!(utxo_common::utxo_arc_from_conf_and_request(ctx, ticker, conf, req, priv_key, constructor).await);
+    let coin: BchCoin = try_s!(
+        utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, params.utxo_params, priv_key, constructor).await
+    );
     Ok(coin)
 }
 
@@ -764,11 +800,13 @@ pub fn tbch_coin_for_test() -> BchCoin {
         "bchd_urls": ["https://bchd-testnet.greyh.at:18335"],
         "allow_slp_unsafe_conf": false,
     });
-    block_on(bch_coin_from_conf_and_request(
+
+    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
         &conf,
-        &req,
+        params,
         CashAddrPrefix::SlpTest,
         &*keypair.private().secret,
     ))
@@ -794,11 +832,13 @@ pub fn bch_coin_for_test() -> BchCoin {
         "bchd_urls": [],
         "allow_slp_unsafe_conf": true,
     });
-    block_on(bch_coin_from_conf_and_request(
+
+    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
         &conf,
-        &req,
+        params,
         CashAddrPrefix::SimpleLedger,
         &*keypair.private().secret,
     ))

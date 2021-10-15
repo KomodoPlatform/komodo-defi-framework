@@ -25,7 +25,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let db_dir = PathBuf::from("./for_tests");
-    let coin = block_on(z_coin_from_conf_and_request_with_z_key(
+    let coin = block_on(z_coin_from_conf_and_params_with_z_key(
         &ctx, "ZOMBIE", &conf, &req, &priv_key, db_dir, z_key,
     ))
     .unwrap();
@@ -66,7 +66,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let db_dir = PathBuf::from("./for_tests");
-    let coin = block_on(z_coin_from_conf_and_request_with_z_key(
+    let coin = block_on(z_coin_from_conf_and_params_with_z_key(
         &ctx, "ZOMBIE", &conf, &req, &priv_key, db_dir, z_key,
     ))
     .unwrap();
@@ -109,7 +109,7 @@ fn zombie_coin_send_dex_fee() {
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let db_dir = PathBuf::from("./for_tests");
-    let coin = block_on(z_coin_from_conf_and_request_with_z_key(
+    let coin = block_on(z_coin_from_conf_and_params_with_z_key(
         &ctx, "ZOMBIE", &conf, &req, &priv_key, db_dir, z_key,
     ))
     .unwrap();
@@ -138,7 +138,7 @@ fn prepare_zombie_sapling_cache() {
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let db_dir = PathBuf::from("./for_tests");
-    let coin = block_on(z_coin_from_conf_and_request_with_z_key(
+    let coin = block_on(z_coin_from_conf_and_params_with_z_key(
         &ctx, "ZOMBIE", &conf, &req, &priv_key, db_dir, z_key,
     ))
     .unwrap();
@@ -166,7 +166,7 @@ fn zombie_coin_validate_dex_fee() {
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let db_dir = PathBuf::from("./for_tests");
-    let coin = block_on(z_coin_from_conf_and_request_with_z_key(
+    let coin = block_on(z_coin_from_conf_and_params_with_z_key(
         &ctx, "ZOMBIE", &conf, &req, &priv_key, db_dir, z_key,
     ))
     .unwrap();

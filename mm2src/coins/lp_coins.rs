@@ -81,18 +81,21 @@ macro_rules! try_f {
 #[cfg(test)]
 pub mod coins_tests;
 
+pub mod enable_v2;
+
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 
 pub mod utxo;
-use utxo::qtum::{self, qtum_coin_from_conf_and_request, QtumCoin};
+use utxo::qtum::{self, qtum_coin_from_conf_and_params, QtumCoin};
 use utxo::slp::SlpToken;
 use utxo::utxo_common::big_decimal_from_sat_unsigned;
-use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
+use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
 use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
+use crate::utxo::qtum::{QtumDelegationRequest, QtumStakingInfosDetails};
+use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -103,13 +106,14 @@ pub use test_coin::TestCoin;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
-use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
-use crate::utxo::qtum::{QtumDelegationRequest, QtumStakingInfosDetails};
+
+use crate::qrc20::Qrc20ActivationParams;
+use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use crate::utxo::UnsupportedAddr;
+use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-use z_coin::{z_coin_from_conf_and_request, ZCoin};
+use z_coin::{z_coin_from_conf_and_params, ZCoin};
 
 cfg_native! {
     use async_std::fs;
@@ -1445,9 +1449,13 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
-            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into()
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(utxo_standard_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret).await).into()
         },
-        CoinProtocol::QTUM => try_s!(qtum_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into(),
+        CoinProtocol::QTUM => {
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(qtum_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret).await).into()
+        },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, protocol).await).into()
         },
@@ -1455,16 +1463,20 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             platform,
             contract_address,
         } => {
+            let params = try_s!(Qrc20ActivationParams::from_legacy_req(&req));
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
+
             try_s!(
-                qrc20_coin_from_conf_and_request(ctx, ticker, platform, &coins_en, req, secret, contract_address).await
+                qrc20_coin_from_conf_and_params(ctx, ticker, platform, &coins_en, params, secret, contract_address)
+                    .await
             )
             .into()
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
+            let params = try_s!(BchActivationParams::from_legacy_req(req));
 
-            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, req, prefix, secret).await);
+            let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, secret).await);
             bch.into()
         },
         CoinProtocol::SLPTOKEN {
@@ -1487,7 +1499,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
         CoinProtocol::ZHTLC => {
             let dbdir = ctx.dbdir();
-            try_s!(z_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, dbdir).await).into()
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret, dbdir).await).into()
         },
     };
 
