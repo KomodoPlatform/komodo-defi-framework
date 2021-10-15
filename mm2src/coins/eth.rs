@@ -81,6 +81,8 @@ pub const PAYMENT_STATE_UNINITIALIZED: u8 = 0;
 pub const PAYMENT_STATE_SENT: u8 = 1;
 const _PAYMENT_STATE_SPENT: u8 = 2;
 const _PAYMENT_STATE_REFUNDED: u8 = 3;
+// Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
+const ETH_GAS_STATION_DECIMALS: u8 = 8;
 const GAS_PRICE_PERCENT: u64 = 10;
 const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
@@ -237,7 +239,7 @@ pub struct EthCoinImpl {
     web3_instances: Vec<Web3Instance>,
     decimals: u8,
     gas_station_url: Option<String>,
-    gas_station_decimals: Option<u8>,
+    gas_station_decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
@@ -417,7 +419,7 @@ impl EthCoinImpl {
     fn get_gas_price(&self) -> Web3RpcFut<U256> {
         let fut = if let Some(url) = &self.gas_station_url {
             Either01::A(
-                GasStationData::get_gas_price(url, self.gas_station_decimals.unwrap_or(8))
+                GasStationData::get_gas_price(url, self.gas_station_decimals)
                     .map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
             )
         } else {
@@ -3073,10 +3075,7 @@ struct GasStationData {
 }
 
 impl GasStationData {
-    fn average_gwei(&self, decimals: u8) -> U256 {
-        // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
-        U256::from(self.average as u64) * U256::exp10(decimals as usize)
-    }
+    fn average_gwei(&self, decimals: u8) -> U256 { U256::from(self.average as u64) * U256::exp10(decimals as usize) }
 
     fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
@@ -3231,6 +3230,8 @@ pub async fn eth_coin_from_conf_and_request(
         HistorySyncState::NotEnabled
     };
 
+    let gas_station_decimals: Option<u8> = try_s!(json::from_value(req["gas_station_decimals"].clone()));
+
     let coin = EthCoinImpl {
         key_pair,
         my_address,
@@ -3240,7 +3241,7 @@ pub async fn eth_coin_from_conf_and_request(
         decimals,
         ticker: ticker.into(),
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
-        gas_station_decimals: try_s!(json::from_value(req["gas_station_decimals"].clone())),
+        gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         web3,
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
