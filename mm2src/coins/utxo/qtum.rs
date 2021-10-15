@@ -4,11 +4,10 @@ use bigdecimal::Zero;
 //use crate::qrc20::rpc_clients::Qrc20NativeOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, Qrc20AbiError, Qrc20AbiResult,
-                   OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_LIMIT_DELEGATION, QRC20_GAS_PRICE_DEFAULT,
-                   QTUM_ADD_DELEGATION_TOPIC, QTUM_DELEGATE_CONTRACT, QTUM_DELEGATE_CONTRACT_ADDRESS,
-                   QTUM_REMOVE_DELEGATION_TOPIC};
+                   OUTPUT_QTUM_AMOUNT, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
+use crate::utxo::qtum::qtum_delegation::generate_delegation_transaction;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{eth, qrc20, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, DelegationResult,
+use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, DelegationResult,
             NegotiateSwapContractAddrErr, StakingInfos, StakingInfosError, StakingInfosFut, StakingInfosResult,
             SwapOps, TradePreimageValue, TransactionType, ValidateAddressResult, WithdrawFut};
 use bitcrypto::dhash256;
@@ -21,6 +20,10 @@ use keys::AddressHash;
 use serialization::CoinVariant;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
+
+#[path = "qtum_delegation.rs"] mod qtum_delegation;
+use qtum_delegation::{QRC20_GAS_LIMIT_DELEGATION, QTUM_ADD_DELEGATION_TOPIC, QTUM_DELEGATE_CONTRACT,
+                      QTUM_DELEGATE_CONTRACT_ADDRESS, QTUM_DELEGATION_STANDARD_FEE, QTUM_REMOVE_DELEGATION_TOPIC};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "format")]
@@ -223,7 +226,7 @@ impl QtumCoin {
     async fn qtum_remove_delegation_impl(&self) -> DelegationResult {
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
-        Ok(qrc20::generate_delegate_qrc20_delegation_transaction_from_qtum(
+        Ok(generate_delegation_transaction(
             self,
             outputs,
             self.as_ref().my_address.to_string(),
@@ -310,7 +313,7 @@ impl QtumCoin {
     async fn qtum_add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
         let to_addr =
             Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
-        let fee = request.fee.unwrap_or(10);
+        let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
         let coin = self.as_ref();
         let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;
@@ -330,7 +333,7 @@ impl QtumCoin {
         )?;
 
         let outputs = vec![delegation_output];
-        Ok(qrc20::generate_delegate_qrc20_delegation_transaction_from_qtum(
+        Ok(generate_delegation_transaction(
             self,
             outputs,
             self.as_ref().my_address.to_string(),
