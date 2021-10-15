@@ -849,8 +849,6 @@ pub enum DelegationError {
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[display(fmt = "{}", _0)]
-    GenerateTransactionError(GenerateTxError),
-    #[display(fmt = "{}", _0)]
     AddressError(String),
     #[display(fmt = "{}", _0)]
     NotEnoughFundsToDelegate(String),
@@ -875,10 +873,6 @@ impl From<BalanceError> for DelegationError {
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
-}
-
-impl From<GenerateTxError> for DelegationError {
-    fn from(e: GenerateTxError) -> Self { DelegationError::GenerateTransactionError(e) }
 }
 
 impl HttpStatusCode for DelegationError {
@@ -955,8 +949,6 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
-    #[display(fmt = "{}", _0)]
-    GenerateTransactionError(GenerateTxError),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[display(fmt = "Transport error: {}", _0)]
@@ -973,7 +965,6 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
-            | WithdrawError::GenerateTransactionError(_)
             | WithdrawError::NoSuchCoin { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
