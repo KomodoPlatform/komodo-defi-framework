@@ -1572,7 +1572,8 @@ fn test_add_delegation_invalid_amount() {
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
     let request = QtumDelegationRequest {
         address: address.to_string(),
         fee: Some(10),
@@ -1595,7 +1596,8 @@ fn test_qtum_generate_pod() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
     let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.generate_pod(address.hash).unwrap();
@@ -1612,12 +1614,12 @@ fn test_qtum_add_delegation() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let coin = block_on(qtum_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
         &ctx,
         "tQTUM",
         &conf,
-        &req,
+        params,
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
@@ -1627,7 +1629,6 @@ fn test_qtum_add_delegation() {
         fee: Some(10),
     };
     let res = coin.qtum_add_delegation(request).wait();
-    println!("{:?}", res);
     assert_eq!(res.is_err(), false);
 
     let request = QtumDelegationRequest {
@@ -1635,11 +1636,7 @@ fn test_qtum_add_delegation() {
         fee: Some(10),
     };
     let res = coin.qtum_add_delegation(request).wait();
-    println!("{:?}", res);
     assert_eq!(res.is_err(), true);
-    //let json = serde_json::to_value(&res).unwrap();
-    /*let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
-    assert_eq!(res_broadcast.is_err(), false);*/
 }
 
 #[test]
@@ -1654,11 +1651,12 @@ fn test_qtum_get_delegation_infos() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
-    let coin = block_on(qtum_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
         &ctx,
         "tQTUM",
         &conf,
-        &req,
+        params,
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
@@ -1681,21 +1679,17 @@ fn test_qtum_remove_delegation() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let coin = block_on(qtum_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
         &ctx,
         "tQTUM",
         &conf,
-        &req,
+        params,
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
     let res = coin.qtum_remove_delegation().wait();
-    println!("{:?}", res);
     assert_eq!(res.is_err(), false);
-    //let json = serde_json::to_value(&res).unwrap();
-    //let res_broadcast = coin.send_raw_tx(json["tx_hex"].as_str().unwrap()).wait();
-    //assert_eq!(res_broadcast.is_err(), false);
 }
 
 #[test]
