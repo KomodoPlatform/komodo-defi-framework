@@ -324,8 +324,10 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
                     "Outbound failure {:?} while requesting {:?} to peer {}",
                     error, request_id, peer
                 );
-                self.forget_peer(&peer);
-                self.request_known_peers_from_random_peer();
+                if !self.is_reserved_peer(&peer) {
+                    self.forget_peer(&peer);
+                    self.request_known_peers_from_random_peer();
+                }
             },
             RequestResponseEvent::InboundFailure { peer, error, .. } => {
                 error!(
