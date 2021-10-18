@@ -364,9 +364,9 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
 name = "bech32"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c7f7096bc256f5e5cb960f60dfc4f4ef979ca65abe7fb9d5a4f77150d3783d4"
+checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 
 [[package]]
 name = "bellman"
@@ -399,6 +399,23 @@ dependencies = [
  "num-traits 0.2.12",
  "serde",
 ]
+
+[[package]]
+name = "bitcoin"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
+dependencies = [
+ "bech32",
+ "bitcoin_hashes",
+ "secp256k1",
+]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
 
 [[package]]
 name = "bitcrypto"
@@ -753,6 +770,8 @@ dependencies = [
  "async-trait",
  "base64 0.10.1",
  "bigdecimal",
+ "bitcoin",
+ "bitcoin_hashes",
  "bitcrypto",
  "byteorder 1.4.3",
  "bytes 0.4.12",
@@ -769,7 +788,7 @@ dependencies = [
  "futures 0.1.29",
  "futures 0.3.15",
  "gstuff",
- "hex 0.3.2",
+ "hex 0.4.3",
  "http 0.2.1",
  "itertools 0.9.0",
  "js-sys",
@@ -777,6 +796,10 @@ dependencies = [
  "keys",
  "lazy_static",
  "libc",
+ "lightning",
+ "lightning-background-processor",
+ "lightning-net-tokio",
+ "lightning-persister",
  "metrics",
  "mocktopus",
  "num-traits 0.2.12",
@@ -855,6 +878,8 @@ dependencies = [
  "keys",
  "lazy_static",
  "libc",
+ "lightning",
+ "lightning-background-processor",
  "log 0.4.11",
  "log4rs",
  "metrics",
@@ -1970,9 +1995,9 @@ checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
 name = "hex"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hex-literal"
@@ -2751,6 +2776,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightning"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b0bcd8d72c1177579fe7cfe42309967e11e432688b2e87c86d0d8b707d60530"
+dependencies = [
+ "bitcoin",
+ "secp256k1",
+]
+
+[[package]]
+name = "lightning-background-processor"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0629a41f3450eac5a702562cbcc52a3375b97524990c12442bdcd72dceb30c5"
+dependencies = [
+ "bitcoin",
+ "lightning",
+ "lightning-persister",
+]
+
+[[package]]
+name = "lightning-net-tokio"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a71819192c8aa987bf0db3ff1effd55bdc945d546ed2a401a137946c7ef2f88"
+dependencies = [
+ "bitcoin",
+ "lightning",
+ "tokio",
+]
+
+[[package]]
+name = "lightning-persister"
+version = "0.0.101"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1888e0a7bc69df004b49b087648e95a3ee5540eb762768d9b4f35148234cd599"
+dependencies = [
+ "bitcoin",
+ "libc",
+ "lightning",
+ "winapi",
+]
+
+[[package]]
 name = "linked-hash-map"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3056,7 +3125,7 @@ dependencies = [
  "gstuff",
  "hash-db",
  "hash256-std-hasher",
- "hex 0.3.2",
+ "hex 0.4.3",
  "hex-literal",
  "http 0.2.1",
  "hyper",
@@ -3115,7 +3184,7 @@ dependencies = [
  "env_logger",
  "futures 0.3.15",
  "getrandom 0.2.2",
- "hex 0.4.2",
+ "hex 0.4.3",
  "lazy_static",
  "libp2p",
  "libp2p-floodsub 0.22.0",
@@ -4477,9 +4546,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.20.2"
+version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee5070fdc6f26ca5be6dcfc3d07c76fdb974a63a8b246b459854274145f5a258"
+checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
 dependencies = [
  "rand 0.6.5",
  "secp256k1-sys",
@@ -5630,7 +5699,7 @@ checksum = "6470ab50f482bde894a037a57064480a246dbfdd5960bd65a44824693f08da5f"
 dependencies = [
  "byteorder 1.4.3",
  "crunchy 0.2.2",
- "hex 0.4.2",
+ "hex 0.4.3",
  "static_assertions",
 ]
 
@@ -6134,7 +6203,7 @@ dependencies = [
  "bs58",
  "ff",
  "group",
- "hex 0.4.2",
+ "hex 0.4.3",
  "jubjub",
  "nom",
  "percent-encoding 2.1.0",
@@ -6178,7 +6247,7 @@ dependencies = [
  "fpe",
  "funty",
  "group",
- "hex 0.4.2",
+ "hex 0.4.3",
  "jubjub",
  "lazy_static",
  "log 0.4.11",

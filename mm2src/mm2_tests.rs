@@ -8563,6 +8563,95 @@ fn test_mm2_db_migration() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_enable_lightning() {
+    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
+
+    let coins = json! ([
+        {
+            "coin": "tBTC",
+            "name": "tbitcoin",
+            "fname": "tBitcoin",
+            "rpcport": 18332,
+            "pubtype": 111,
+            "p2shtype": 196,
+            "wiftype": 239,
+            "segwit": true,
+            "bech32_hrp": "tb",
+            "lightning": true,
+            "network": "testnet",
+            "txfee": 0,
+            "estimate_fee_mode": "ECONOMICAL",
+            "mm2": 1,
+            "required_confirmations": 0,
+            "protocol": {
+                "type": "UTXO"
+            }
+        }
+    ]);
+
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "address_format": {
+            "format": "segwit",
+        },
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+
+    let enable_lightning = block_on(mm.rpc(json!({
+        "mmrpc": "2.0",
+        "method": "enable_lightning",
+        "userpass": mm.userpass,
+        "params": {
+            "coin": "tBTC",
+            "name": "test_node",
+        },
+    })))
+    .unwrap();
+    assert_eq!(
+        enable_lightning.0,
+        StatusCode::OK,
+        "RPC «enable_lightning» failed with {} {}",
+        enable_lightning.0,
+        enable_lightning.1
+    );
+
+    block_on(mm.wait_for_log(60., |log| log.contains("Calling ChannelManager's timer_tick_occurred"))).unwrap();
+
+    block_on(mm.wait_for_log(60., |log| log.contains("Calling PeerManager's timer_tick_occurred"))).unwrap();
+
+    block_on(mm.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_public_key() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
