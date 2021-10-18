@@ -6,7 +6,6 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::lp_swap::trade_preimage_rpc,
             mm2::rpc::get_public_key::get_public_key};
 use coins::lightning::enable_lightning;
-use coins::withdraw;
 use coins::{add_delegation, get_staking_infos, remove_delegation, withdraw};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
