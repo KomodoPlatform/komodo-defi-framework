@@ -1,14 +1,16 @@
 /// The module is responsible for mm2 network stats collection
 ///
 use common::executor::{spawn, Timer};
-use common::mm_ctx::MmArc;
+use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_error::prelude::*;
 use common::{log, now_ms, HttpStatusCode};
 use derive_more::Display;
+use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::mm2::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
                              ParseAddressError, PeerDecodedResponse};
@@ -29,6 +31,12 @@ pub enum NodeVersionError {
     PeerIdParseError(String, String),
     #[display(fmt = "{} is only supported in native mode", _0)]
     UnsupportedMode(String),
+    #[display(fmt = "start_version_stat_collection is already running")]
+    AlreadyRunning,
+    #[display(fmt = "Version stat collection is currently stopping")]
+    CurrentlyStopping,
+    #[display(fmt = "start_version_stat_collection is not running")]
+    NotRunning,
 }
 
 impl HttpStatusCode for NodeVersionError {
@@ -37,7 +45,10 @@ impl HttpStatusCode for NodeVersionError {
             NodeVersionError::InvalidRequest(_)
             | NodeVersionError::InvalidAddress(_)
             | NodeVersionError::PeerIdParseError(_, _) => StatusCode::BAD_REQUEST,
-            NodeVersionError::UnsupportedMode(_) => StatusCode::METHOD_NOT_ALLOWED,
+            NodeVersionError::UnsupportedMode(_)
+            | NodeVersionError::AlreadyRunning
+            | NodeVersionError::CurrentlyStopping
+            | NodeVersionError::NotRunning => StatusCode::METHOD_NOT_ALLOWED,
             NodeVersionError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -177,6 +188,32 @@ pub async fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Re
     }
 }
 
+#[derive(PartialEq)]
+enum StatsCollectionStatus {
+    Running,
+    Updating(f64),
+    Stopping,
+    Stopped,
+}
+
+impl Default for StatsCollectionStatus {
+    fn default() -> Self { StatsCollectionStatus::Stopped }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
+struct StatsContext {
+    pub status: AsyncMutex<StatsCollectionStatus>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl StatsContext {
+    fn from_ctx(ctx: &MmArc) -> Result<Arc<StatsContext>, String> {
+        Ok(try_s!(from_ctx(&ctx.stats_ctx, move || {
+            Ok(StatsContext::default())
+        })))
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
     MmError::err(NodeVersionError::UnsupportedMode(
@@ -186,6 +223,17 @@ pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersi
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
+    {
+        let state = stats_ctx.status.lock().await;
+        if *state == StatsCollectionStatus::Stopping {
+            return MmError::err(NodeVersionError::CurrentlyStopping);
+        }
+        if *state != StatsCollectionStatus::Stopped {
+            return MmError::err(NodeVersionError::AlreadyRunning);
+        }
+    }
+
     let interval: f64 = json::from_value(req["interval"].clone())?;
 
     let peers_addresses = select_peers_addresses_from_db(&ctx).map_to_mm(NodeVersionError::DatabaseError)?;
@@ -220,11 +268,29 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
     use crate::mm2::database::stats_nodes::select_peers_names;
 
+    let mut interval = interval;
     loop {
         if ctx.is_stopping() {
             break;
         };
         {
+            let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
+            {
+                let mut state = stats_ctx.status.lock().await;
+                match *state {
+                    StatsCollectionStatus::Running => (),
+                    StatsCollectionStatus::Updating(i) => {
+                        interval = i;
+                        *state = StatsCollectionStatus::Running;
+                    },
+                    StatsCollectionStatus::Stopping => {
+                        *state = StatsCollectionStatus::Stopped;
+                        break;
+                    },
+                    StatsCollectionStatus::Stopped => *state = StatsCollectionStatus::Running,
+                }
+            }
+
             let peers_names = match select_peers_names(&ctx) {
                 Ok(n) => n,
                 Err(e) => {
@@ -303,4 +369,45 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
         }
         Timer::sleep(interval).await;
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn update_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    MmError::err(NodeVersionError::UnsupportedMode(
+        "'update_version_stat_collection'".into(),
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn update_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
+    let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
+    let mut state = stats_ctx.status.lock().await;
+    if *state == StatsCollectionStatus::Stopped || *state == StatsCollectionStatus::Stopping {
+        return MmError::err(NodeVersionError::NotRunning);
+    }
+
+    let interval: f64 = json::from_value(req["interval"].clone())?;
+    *state = StatsCollectionStatus::Updating(interval);
+
+    Ok("success".into())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn stop_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    MmError::err(NodeVersionError::UnsupportedMode(
+        "'stop_version_stat_collection'".into(),
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn stop_version_stat_collection(ctx: MmArc, _req: Json) -> NodeVersionResult<String> {
+    let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
+    let mut state = stats_ctx.status.lock().await;
+    if *state == StatsCollectionStatus::Stopped || *state == StatsCollectionStatus::Stopping {
+        return MmError::err(NodeVersionError::NotRunning);
+    }
+
+    *state = StatsCollectionStatus::Stopping;
+
+    Ok("success".into())
 }

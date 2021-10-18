@@ -44,6 +44,7 @@ fn eth_coin_for_test(
         coin_type,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -218,6 +219,7 @@ fn send_and_refund_erc20_payment() {
         web3,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -279,6 +281,7 @@ fn send_and_refund_eth_payment() {
         web3,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -359,6 +362,7 @@ fn test_nonce_several_urls() {
         web3: web3_infura,
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -394,6 +398,7 @@ fn test_wait_for_payment_spend_timeout() {
         coin_type: EthCoinType::Eth,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -452,6 +457,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         coin_type: EthCoinType::Eth,
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -505,6 +511,29 @@ fn test_search_for_swap_tx_spend_was_spent() {
 }
 
 #[test]
+fn test_gas_station() {
+    let res_eth = GasStationData::get_gas_price("https://ethgasstation.info/api/ethgasAPI.json", 8)
+        .wait()
+        .unwrap();
+
+    let res = block_on(slurp_url("https://ethgasstation.info/api/ethgasAPI.json")).unwrap();
+    let result_eth: GasStationData = json::from_slice(&*res.2).unwrap();
+    assert_eq!(
+        BigDecimal::from(result_eth.average),
+        u256_to_big_decimal(res_eth, 8).unwrap()
+    );
+    let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
+        .wait()
+        .unwrap();
+    let res = block_on(slurp_url("https://gasstation-mainnet.matic.network/")).unwrap();
+    let result_polygon: GasStationData = json::from_slice(&*res.2).unwrap();
+    assert_eq!(
+        BigDecimal::from(result_polygon.average),
+        u256_to_big_decimal(res_polygon, 9).unwrap()
+    );
+}
+
+#[test]
 fn test_search_for_swap_tx_spend_was_refunded() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -525,6 +554,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         },
         decimals: 18,
         gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
