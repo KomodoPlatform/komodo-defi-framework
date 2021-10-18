@@ -1,6 +1,7 @@
 use super::*;
 use common::block_on;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
+use http::HeaderMap;
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -512,11 +513,16 @@ fn test_search_for_swap_tx_spend_was_spent() {
 
 #[test]
 fn test_gas_station() {
+    slurp_url_wrapper.mock_safe(|_| {
+        let data = GasStationData { average: 500.0 };
+        let res = Ok((StatusCode::OK, HeaderMap::new(), serde_json::to_vec(&data).unwrap()));
+        MockResult::Return(Box::pin(async move { res }))
+    });
     let res_eth = GasStationData::get_gas_price("https://ethgasstation.info/api/ethgasAPI.json", 8)
         .wait()
         .unwrap();
 
-    let res = block_on(slurp_url("https://ethgasstation.info/api/ethgasAPI.json")).unwrap();
+    let res = block_on(slurp_url_wrapper("https://ethgasstation.info/api/ethgasAPI.json")).unwrap();
     let result_eth: GasStationData = json::from_slice(&*res.2).unwrap();
     assert_eq!(
         BigDecimal::from(result_eth.average),
@@ -525,7 +531,7 @@ fn test_gas_station() {
     let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
         .wait()
         .unwrap();
-    let res = block_on(slurp_url("https://gasstation-mainnet.matic.network/")).unwrap();
+    let res = block_on(slurp_url_wrapper("https://gasstation-mainnet.matic.network/")).unwrap();
     let result_polygon: GasStationData = json::from_slice(&*res.2).unwrap();
     assert_eq!(
         BigDecimal::from(result_polygon.average),
