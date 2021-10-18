@@ -3812,4 +3812,106 @@ mod docker_tests {
         block_on(mm_bob.stop()).unwrap();
         block_on(mm_alice.stop()).unwrap();
     }
+
+    #[test]
+    fn test_ordermatch_orderbook_ticker() {
+        let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
+        let (_ctx, _, alice_priv_key) = generate_coin_with_random_privkey("MYCOIN1", 2000.into());
+        let coins_bob = json! ([
+            {"coin":"MYCOIN", "asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1", "asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN-Custom", "orderbook_ticker":"MYCOIN", "asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1-Custom", "orderbook_ticker":"MYCOIN1", "asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm_bob = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
+                "coins": coins_bob,
+                "rpc_password": "pass",
+                "i_am_seed": true,
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+        let coins_alice = json! ([
+            {"coin":"MYCOIN", "asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+            {"coin":"MYCOIN1", "asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        ]);
+        let mut mm_alice = MarketMakerIt::start(
+            json! ({
+                "gui": "nogui",
+                "netid": 9000,
+                "dht": "on",  // Enable DHT without delay.
+                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
+                "coins": coins_alice,
+                "rpc_password": "pass",
+                "seednodes": vec![format!("{}", mm_bob.ip)],
+            }),
+            "pass".to_string(),
+            None,
+        )
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+        log!([block_on(enable_native(&mm_bob, "MYCOIN-Custom", &[]))]);
+        log!([block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": "MYCOIN-Custom",
+            "rel": "MYCOIN1-Custom",
+            "price": 1,
+            "max": true,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+        log!("Get MYCOIN/MYCOIN1 orderbook");
+        let rc = block_on(mm_bob.rpc(json! ({
+            "userpass": mm_bob.userpass,
+            "method": "orderbook",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+        let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+        log!("orderbook "[bob_orderbook]);
+        assert_eq!(
+            bob_orderbook.asks.len(),
+            1,
+            "MYCOIN/MYCOIN1 orderbook must have exactly 1 ask"
+        );
+
+        let rc = block_on(mm_alice.rpc(json! ({
+            "userpass": mm_alice.userpass,
+            "method": "buy",
+            "base": "MYCOIN",
+            "rel": "MYCOIN1",
+            "price": 1,
+            "volume": "999.99999",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+        block_on(mm_bob.wait_for_log(22., |log| {
+            log.contains("Entering the maker_swap_loop MYCOIN-Custom/MYCOIN1-Custom")
+        }))
+        .unwrap();
+        block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1")))
+            .unwrap();
+
+        thread::sleep(Duration::from_secs(3));
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+    }
 }

@@ -1045,7 +1045,8 @@ impl TakerRequest {
 pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
-    base_orderbook_ticker: O
+    base_orderbook_ticker: Option<String>,
+    rel_orderbook_ticker: Option<String>,
     base_amount: MmNumber,
     rel_amount: MmNumber,
     sender_pubkey: H256Json,
@@ -1123,7 +1124,8 @@ impl<'a> TakerOrderBuilder<'a> {
         TakerOrderBuilder {
             base_coin,
             rel_coin,
-            ctx,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
             base_amount: MmNumber::from(0),
             rel_amount: MmNumber::from(0),
             sender_pubkey: H256Json::default(),
@@ -1238,14 +1240,14 @@ impl<'a> TakerOrderBuilder<'a> {
             });
         }
 
-        let original_base_ticker = self.base_coin.ticker();
-        let original_rel_ticker = self.rel_coin.ticker();
+        let original_base_ticker = self.base_coin.ticker().to_owned();
+        let original_rel_ticker = self.rel_coin.ticker().to_owned();
 
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
-                base: self.ctx.orderbook_ticker(original_base_ticker),
-                rel: self.ctx.orderbook_ticker(original_rel_ticker),
+                base: self.base_orderbook_ticker.unwrap_or(original_base_ticker.clone()),
+                rel: self.rel_orderbook_ticker.unwrap_or(original_rel_ticker.clone()),
                 base_amount: self.base_amount,
                 rel_amount: self.rel_amount,
                 action: self.action,
@@ -1262,8 +1264,8 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: self.order_type,
             timeout: self.timeout,
             save_in_history: self.save_in_history,
-            original_base_ticker: Some(original_base_ticker.into()),
-            original_rel_ticker: Some(original_rel_ticker.into()),
+            original_base_ticker: Some(original_base_ticker),
+            original_rel_ticker: Some(original_rel_ticker),
         })
     }
 
@@ -1428,6 +1430,8 @@ pub struct MakerOrderBuilder<'a> {
     price: MmNumber,
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
+    base_orderbook_ticker: Option<String>,
+    rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
 }
@@ -1569,6 +1573,8 @@ impl<'a> MakerOrderBuilder<'a> {
         MakerOrderBuilder {
             base_coin,
             rel_coin,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
             max_base_vol: 0.into(),
             min_base_vol: None,
             price: 0.into(),
@@ -1602,6 +1608,16 @@ impl<'a> MakerOrderBuilder<'a> {
         self
     }
 
+    pub fn with_base_orderbook_ticker(mut self, base_orderbook_ticker: Option<String>) -> Self {
+        self.base_orderbook_ticker = base_orderbook_ticker;
+        self
+    }
+
+    pub fn with_rel_orderbook_ticker(mut self, rel_orderbook_ticker: Option<String>) -> Self {
+        self.rel_orderbook_ticker = rel_orderbook_ticker;
+        self
+    }
+
     /// Build MakerOrder
     pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
@@ -1632,9 +1648,12 @@ impl<'a> MakerOrderBuilder<'a> {
             self.price.clone(),
         )?;
 
+        let original_base_ticker = self.base_coin.ticker().to_owned();
+        let original_rel_ticker = self.rel_coin.ticker().to_owned();
+
         Ok(MakerOrder {
-            base: self.base_coin.ticker().to_owned(),
-            rel: self.rel_coin.ticker().to_owned(),
+            base: self.base_orderbook_ticker.unwrap_or(original_base_ticker.clone()),
+            rel: self.rel_orderbook_ticker.unwrap_or(original_rel_ticker.clone()),
             created_at: now_ms(),
             updated_at: Some(now_ms()),
             max_base_vol: self.max_base_vol,
@@ -1646,6 +1665,8 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: self.conf_settings,
             changes_history: None,
             save_in_history: self.save_in_history,
+            original_base_ticker: Some(original_base_ticker),
+            original_rel_ticker: Some(original_rel_ticker),
         })
     }
 
@@ -1665,6 +1686,8 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: self.conf_settings,
             changes_history: None,
             save_in_history: false,
+            original_base_ticker: None,
+            original_rel_ticker: None,
         }
     }
 }
@@ -1794,6 +1817,8 @@ impl From<TakerOrder> for MakerOrder {
                 conf_settings: taker_order.request.conf_settings,
                 changes_history: None,
                 save_in_history: taker_order.save_in_history,
+                original_base_ticker: taker_order.original_base_ticker,
+                original_rel_ticker: taker_order.original_rel_ticker,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -1813,6 +1838,8 @@ impl From<TakerOrder> for MakerOrder {
                     conf_settings: taker_order.request.conf_settings.map(|s| s.reversed()),
                     changes_history: None,
                     save_in_history: taker_order.save_in_history,
+                    original_base_ticker: taker_order.original_rel_ticker,
+                    original_rel_ticker: taker_order.original_base_ticker,
                 }
             },
         }
@@ -2386,13 +2413,32 @@ struct OrdermatchContext {
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
 }
 
-#[cfg_attr(test, mockable)]
-impl OrdermatchContext {
-    /// Store the pre-initialized context into MmCtx, ensure that this is called *before* from_ctx
-    fn init(self, ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || { Ok(self) })))
+pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
+    // Helper
+    #[derive(Deserialize)]
+    struct CoinConf {
+        coin: String,
+        orderbook_ticker: Option<String>,
     }
 
+    let coins: Vec<CoinConf> = try_s!(json::from_value(ctx.conf["coins"].clone()));
+    let mut orderbook_tickers = HashMap::new();
+    for coin in coins {
+        if let Some(orderbook_ticker) = coin.orderbook_ticker {
+            orderbook_tickers.insert(coin.coin, orderbook_ticker);
+        }
+    }
+
+    let ordermatch_context = OrdermatchContext {
+        orderbook_tickers,
+        ..Default::default()
+    };
+
+    from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context)).map(|_| ())
+}
+
+#[cfg_attr(test, mockable)]
+impl OrdermatchContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
@@ -2407,12 +2453,7 @@ impl OrdermatchContext {
         Self::from_ctx(&ctx)
     }
 
-    fn orderbook_ticker(&self, ticker: &str) -> String {
-        self.orderbook_tickers
-            .get(ticker)
-            .map(|t| t.to_owned())
-            .unwrap_or(ticker.to_owned())
-    }
+    fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3177,7 +3218,7 @@ pub async fn lp_auto_buy(
         rel_confs: input.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
-    let mut order_builder = TakerOrderBuilder::new(&ordermatch_ctx, base_coin, rel_coin)
+    let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
         .with_action(action)
@@ -3818,7 +3859,9 @@ pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Strin
         .with_min_base_vol(req.min_volume)
         .with_price(req.price)
         .with_conf_settings(conf_settings)
-        .with_save_in_history(req.save_in_history);
+        .with_save_in_history(req.save_in_history)
+        .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
 
     let new_order = try_s!(builder.build());
 
