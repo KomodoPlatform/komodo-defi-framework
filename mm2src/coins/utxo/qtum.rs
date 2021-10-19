@@ -1,5 +1,6 @@
 use super::*;
-use crate::qrc20::{ContractCallOutput, Qrc20AbiError};
+use crate::qrc20::ContractCallOutput;
+use crate::utxo::qtum::qtum_delegation::{QtumStakingAbiError, QtumStakingAbiResult};
 use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, DelegationResult, NegotiateSwapContractAddrErr,
             StakingInfosError, StakingInfosFut, StakingInfosResult, SwapOps, TradePreimageValue, TransactionType,
             ValidateAddressResult, WithdrawFut};
@@ -29,7 +30,19 @@ pub trait QtumDelegationOps {
     fn add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut;
     fn get_delegation_infos(&self) -> StakingInfosFut;
     fn remove_delegation(&self) -> DelegationFut;
-    fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<Qrc20AbiError>>;
+    fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<QtumStakingAbiError>>;
+}
+
+trait QtumPrivateDelegationOps {
+    fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> QtumStakingAbiResult<ContractCallOutput>;
+    fn add_delegation_output(
+        &self,
+        to_addr: H160,
+        addr_hash: AddressHash,
+        fee: u64,
+        gas_limit: u64,
+        gas_price: u64,
+    ) -> QtumStakingAbiResult<ContractCallOutput>;
 }
 
 #[async_trait]

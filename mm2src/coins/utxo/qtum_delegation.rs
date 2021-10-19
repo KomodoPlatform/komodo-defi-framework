@@ -1,10 +1,9 @@
 use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
-                   Qrc20AbiResult, Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT,
-                   QRC20_GAS_PRICE_DEFAULT};
+                   Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
 use crate::utxo::qtum::{contract_addr_from_utxo_addr, QtumAsyncPrivateDelegationOps, QtumCoin, QtumDelegationOps,
-                        QtumDelegationRequest, QtumStakingInfosDetails};
+                        QtumDelegationRequest, QtumPrivateDelegationOps, QtumStakingInfosDetails};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::UTXO_LOCK;
@@ -18,6 +17,7 @@ use common::mm_error::prelude::{MapMmError, MapToMmResult};
 use common::mm_error::MmError;
 use common::mm_number::BigDecimal;
 use common::now_ms;
+use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
@@ -38,6 +38,35 @@ lazy_static! {
     pub static ref QTUM_DELEGATE_CONTRACT: Contract = Contract::load(QTUM_DELEGATE_CONTRACT_ABI.as_bytes()).unwrap();
     pub static ref QTUM_DELEGATE_CONTRACT_ADDRESS: H160 =
         H160::from_str("0000000000000000000000000000000000000086").unwrap();
+}
+
+pub type QtumStakingAbiResult<T> = Result<T, MmError<QtumStakingAbiError>>;
+
+#[derive(Debug, Display)]
+pub enum QtumStakingAbiError {
+    #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
+    InvalidParams(String),
+    #[display(fmt = "QRC20 ABI error: {}", _0)]
+    AbiError(String),
+    #[display(fmt = "Qtum POD error: {}", _0)]
+    PodSigningError(String),
+}
+
+impl From<Qrc20AbiError> for QtumStakingAbiError {
+    fn from(e: Qrc20AbiError) -> Self {
+        match e {
+            Qrc20AbiError::InvalidParams(e) => QtumStakingAbiError::InvalidParams(e),
+            Qrc20AbiError::AbiError(e) => QtumStakingAbiError::AbiError(e),
+        }
+    }
+}
+
+impl From<QtumStakingAbiError> for DelegationError {
+    fn from(e: QtumStakingAbiError) -> Self { DelegationError::CannotInteractWithSmartContract(e.to_string()) }
+}
+
+impl From<ethabi::Error> for QtumStakingAbiError {
+    fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::AbiError(e.to_string()) }
 }
 
 // Qtum Delegate Transaction - lock UTXO mutex before calling this function
@@ -61,7 +90,7 @@ impl QtumDelegationOps for QtumCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn generate_pod(&self, addr_hash: AddressHash) -> Result<Signature, MmError<Qrc20AbiError>> {
+    fn generate_pod(&self, addr_hash: AddressHash) -> Result<Signature, MmError<QtumStakingAbiError>> {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
@@ -70,7 +99,7 @@ impl QtumDelegationOps for QtumCoin {
             .key_pair
             .private()
             .sign_compact(&hashed)
-            .map_to_mm(|e| Qrc20AbiError::PodSigningError(e.to_string()))?;
+            .map_to_mm(|e| QtumStakingAbiError::PodSigningError(e.to_string()))?;
         Ok(signature)
     }
 }
@@ -273,8 +302,8 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
     }
 }
 
-impl QtumCoin {
-    fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> Qrc20AbiResult<ContractCallOutput> {
+impl QtumPrivateDelegationOps for QtumCoin {
+    fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> QtumStakingAbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("removeDelegation")?;
         let params = function.encode_input(&[])?;
         let script_pubkey =
@@ -295,7 +324,7 @@ impl QtumCoin {
         fee: u64,
         gas_limit: u64,
         gas_price: u64,
-    ) -> Qrc20AbiResult<ContractCallOutput> {
+    ) -> QtumStakingAbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("addDelegation")?;
         let pod = self.generate_pod(addr_hash)?;
         let params = function.encode_input(&[

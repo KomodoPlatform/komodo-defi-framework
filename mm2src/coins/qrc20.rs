@@ -9,11 +9,11 @@ use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, 
                   HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoCoinBuilder,
                   UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
                   UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, DelegationError, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
+            TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -344,8 +344,6 @@ pub enum Qrc20AbiError {
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
     AbiError(String),
-    #[display(fmt = "Qtum POD error: {}", _0)]
-    PodSigningError(String),
 }
 
 impl From<ethabi::Error> for Qrc20AbiError {
@@ -367,13 +365,6 @@ impl From<Qrc20AbiError> for WithdrawError {
     fn from(e: Qrc20AbiError) -> Self {
         // `Qrc20ABIError` is always an internal error
         WithdrawError::InternalError(e.to_string())
-    }
-}
-
-impl From<Qrc20AbiError> for DelegationError {
-    fn from(e: Qrc20AbiError) -> Self {
-        // `Qrc20ABIError` is always an internal error
-        DelegationError::CannotInteractWithSmartContract(e.to_string())
     }
 }
 
