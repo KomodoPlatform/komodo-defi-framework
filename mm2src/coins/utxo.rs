@@ -84,7 +84,6 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, Coins
             NumConversResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
             TransactionEnum, TransactionFut, WithdrawError, WithdrawFee, WithdrawRequest};
-use crate::DelegationError;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -163,18 +162,6 @@ impl From<UtxoRpcError> for WithdrawError {
             },
             UtxoRpcError::InvalidResponse(resp) => WithdrawError::Transport(resp),
             UtxoRpcError::Internal(internal) => WithdrawError::InternalError(internal),
-        }
-    }
-}
-
-impl From<UtxoRpcError> for DelegationError {
-    fn from(e: UtxoRpcError) -> Self {
-        match e {
-            UtxoRpcError::Transport(transport) | UtxoRpcError::ResponseParseError(transport) => {
-                DelegationError::Transport(transport.to_string())
-            },
-            UtxoRpcError::InvalidResponse(resp) => DelegationError::Transport(resp),
-            UtxoRpcError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
 }

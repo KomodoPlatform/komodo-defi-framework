@@ -1,6 +1,6 @@
 use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationRequest};
+use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
@@ -1606,7 +1606,7 @@ fn test_qtum_add_delegation() {
         address: address.to_string(),
         fee: Some(10),
     };
-    let res = coin.qtum_add_delegation(request).wait();
+    let res = coin.add_delegation(request).wait();
     // Eligible for delegation
     assert_eq!(res.is_err(), false);
 
@@ -1614,7 +1614,7 @@ fn test_qtum_add_delegation() {
         address: "fake_address".to_string(),
         fee: Some(10),
     };
-    let res = coin.qtum_add_delegation(request).wait();
+    let res = coin.add_delegation(request).wait();
     // Wrong address
     assert_eq!(res.is_err(), true);
 }
@@ -1643,7 +1643,7 @@ fn test_qtum_add_delegation_on_already_delegating() {
         address: address.to_string(),
         fee: Some(10),
     };
-    let res = coin.qtum_add_delegation(request).wait();
+    let res = coin.add_delegation(request).wait();
     // Already Delegating
     assert_eq!(res.is_err(), true);
 }
@@ -1669,7 +1669,7 @@ fn test_qtum_get_delegation_infos() {
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
-    let staking_infos = coin.qtum_get_delegation_infos().wait().unwrap();
+    let staking_infos = coin.get_delegation_infos().wait().unwrap();
     match staking_infos.staking_infos_details {
         StakingInfosDetails::Qtum(staking_details) => {
             assert_eq!(staking_details.am_i_staking, true);
@@ -1697,7 +1697,7 @@ fn test_qtum_remove_delegation() {
         keypair.private().secret.as_slice(),
     ))
     .unwrap();
-    let res = coin.qtum_remove_delegation().wait();
+    let res = coin.remove_delegation().wait();
     assert_eq!(res.is_err(), false);
 }
 

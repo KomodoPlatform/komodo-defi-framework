@@ -94,7 +94,7 @@ use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardC
 use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod qrc20;
-use crate::utxo::qtum::{QtumDelegationRequest, QtumStakingInfosDetails};
+use crate::utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod lightning;
@@ -862,6 +862,18 @@ pub enum DelegationError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+}
+
+impl From<UtxoRpcError> for DelegationError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(transport) | UtxoRpcError::ResponseParseError(transport) => {
+                DelegationError::Transport(transport.to_string())
+            },
+            UtxoRpcError::InvalidResponse(resp) => DelegationError::Transport(resp),
+            UtxoRpcError::Internal(internal) => DelegationError::InternalError(internal),
+        }
+    }
 }
 
 impl From<StakingInfosError> for DelegationError {
@@ -1663,7 +1675,7 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.qtum_remove_delegation().compat().await,
+        MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
@@ -1675,7 +1687,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.qtum_get_delegation_infos().compat().await,
+        MmCoinEnum::QtumCoin(qtum) => qtum.get_delegation_infos().compat().await,
         _ => {
             return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
                 coin: coin.ticker().to_string(),
@@ -1696,7 +1708,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
         },
     };
     match req.staking_details {
-        StakingDetails::Qtum(qtum_staking) => coin_concrete.qtum_add_delegation(qtum_staking).compat().await,
+        StakingDetails::Qtum(qtum_staking) => coin_concrete.add_delegation(qtum_staking).compat().await,
     }
 }
 
