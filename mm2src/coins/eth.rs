@@ -3114,11 +3114,8 @@ impl GasStationData {
 
     fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
-        let fut = async move {
-            let res = make_gas_station_request(&uri).await?;
-            Ok::<U256, MmError<GasStationReqErr>>(res.average_gwei(decimals))
-        };
-        Box::new(fut.boxed().compat().map_err(From::from))
+        let fut = async move { Ok(make_gas_station_request(&uri).await?.average_gwei(decimals)) };
+        Box::new(fut.boxed().compat())
     }
 }
 
