@@ -24,7 +24,7 @@ use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
-use common::{now_ms, slurp_url, small_rng, SlurpRes, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -105,6 +105,19 @@ lazy_static! {
 
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
+pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
+
+#[derive(Debug, Display)]
+pub enum GasStationReqErr {
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Invalid response: {}", _0)]
+    InvalidResponse(String),
+}
+
+impl From<serde_json::Error> for GasStationReqErr {
+    fn from(e: serde_json::Error) -> Self { GasStationReqErr::InvalidResponse(e.to_string()) }
+}
 
 #[derive(Debug, Display)]
 pub enum Web3RpcError {
@@ -114,6 +127,15 @@ pub enum Web3RpcError {
     InvalidResponse(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+}
+
+impl From<GasStationReqErr> for Web3RpcError {
+    fn from(err: GasStationReqErr) -> Self {
+        match err {
+            GasStationReqErr::Transport(err) => Web3RpcError::Transport(err),
+            GasStationReqErr::InvalidResponse(err) => Web3RpcError::InvalidResponse(err),
+        }
+    }
 }
 
 impl From<serde_json::Error> for Web3RpcError {
@@ -269,7 +291,15 @@ pub enum EthAddressFormat {
 }
 
 #[cfg_attr(test, mockable)]
-async fn slurp_url_wrapper(url: &str) -> SlurpRes { slurp_url(url).await }
+async fn make_gas_station_request(url: &str) -> GasStationResult {
+    let resp = slurp_url(url).await.map_to_mm(GasStationReqErr::Transport)?;
+    if resp.0 != StatusCode::OK {
+        let error = format!("Gas price request failed with status code {}", resp.0);
+        return MmError::err(GasStationReqErr::Transport(error));
+    }
+    let result: GasStationData = json::from_slice(&resp.2)?;
+    Ok(result)
+}
 
 #[cfg_attr(test, mockable)]
 impl EthCoinImpl {
@@ -3073,7 +3103,7 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 }
 
 #[derive(Deserialize, Debug, Serialize)]
-struct GasStationData {
+pub struct GasStationData {
     // matic gas station average fees is named standard, using alias to support both format.
     #[serde(alias = "average", alias = "standard")]
     average: f64,
@@ -3084,18 +3114,11 @@ impl GasStationData {
 
     fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
-        let fut = async move { slurp_url_wrapper(&uri).await };
-        Box::new(fut.boxed().compat().map_to_mm_fut(Web3RpcError::Transport).and_then(
-            move |res| -> Web3RpcResult<U256> {
-                if res.0 != StatusCode::OK {
-                    let error = format!("Gas price request failed with status code {}", res.0);
-                    return MmError::err(Web3RpcError::Transport(error));
-                }
-
-                let result: GasStationData = json::from_slice(&res.2)?;
-                Ok(result.average_gwei(decimals))
-            },
-        ))
+        let fut = async move {
+            let res = make_gas_station_request(&uri).await?;
+            Ok::<U256, MmError<GasStationReqErr>>(res.average_gwei(decimals))
+        };
+        Box::new(fut.boxed().compat().map_err(From::from))
     }
 }
 
