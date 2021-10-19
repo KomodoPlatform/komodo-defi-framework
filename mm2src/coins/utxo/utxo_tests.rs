@@ -1561,30 +1561,6 @@ fn test_qtum_unspendable_balance_failed_once() {
 }
 
 #[test]
-fn test_add_delegation_invalid_amount() {
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
-    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
-    let req = json!({
-        "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
-    });
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
-    let request = QtumDelegationRequest {
-        address: address.to_string(),
-        fee: Some(10),
-    };
-    let fake_res = coin.qtum_add_delegation(request).wait();
-    assert_eq!(fake_res.is_err(), true);
-}
-
-#[test]
 fn test_qtum_generate_pod() {
     let priv_key = [
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,

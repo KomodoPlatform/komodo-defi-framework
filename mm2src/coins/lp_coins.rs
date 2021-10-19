@@ -856,8 +856,6 @@ pub enum DelegationError {
     CannotInteractWithSmartContract(String),
     #[display(fmt = "{}", _0)]
     AddressError(String),
-    #[display(fmt = "{}", _0)]
-    NotEnoughFundsToDelegate(String),
     #[display(fmt = "Already delegating to: {}", _0)]
     AlreadyDelegating(String),
     #[display(fmt = "Transport error: {}", _0)]

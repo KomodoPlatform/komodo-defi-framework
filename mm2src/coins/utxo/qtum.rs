@@ -320,14 +320,6 @@ impl QtumCoin {
             Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
-        let coin = self.as_ref();
-        let (mut unspents, _) = self.ordered_mature_unspents(&coin.my_address).await?;
-        unspents.reverse();
-        if unspents.is_empty() || unspents[0].value < sat_from_big_decimal(&100.0.into(), coin.decimals).unwrap() {
-            return MmError::err(DelegationError::NotEnoughFundsToDelegate(
-                "Amount for delegation cannot be less than 100 QTUM".to_string(),
-            ));
-        }
         let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
