@@ -327,7 +327,7 @@ impl UtxoCommonOps for QtumCoin {
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_unspent_ordered(self, address).await
+        utxo_common::ordered_mature_unspents(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(

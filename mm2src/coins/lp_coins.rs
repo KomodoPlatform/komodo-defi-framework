@@ -797,6 +797,8 @@ impl From<NumConversError> for BalanceError {
 pub enum StakingInfosError {
     #[display(fmt = "Staking infos not available for: {}", coin)]
     CoinDoesntSupportStakingInfos { coin: String },
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -818,7 +820,9 @@ impl From<UtxoRpcError> for StakingInfosError {
 impl HttpStatusCode for StakingInfosError {
     fn status_code(&self) -> StatusCode {
         match self {
-            StakingInfosError::CoinDoesntSupportStakingInfos { .. } => StatusCode::BAD_REQUEST,
+            StakingInfosError::NoSuchCoin { .. } | StakingInfosError::CoinDoesntSupportStakingInfos { .. } => {
+                StatusCode::BAD_REQUEST
+            },
             StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -827,7 +831,7 @@ impl HttpStatusCode for StakingInfosError {
 impl From<CoinFindError> for StakingInfosError {
     fn from(e: CoinFindError) -> Self {
         match e {
-            CoinFindError::NoSuchCoin { coin } => StakingInfosError::CoinDoesntSupportStakingInfos { coin },
+            CoinFindError::NoSuchCoin { coin } => StakingInfosError::NoSuchCoin { coin },
         }
     }
 }
@@ -882,6 +886,7 @@ impl From<StakingInfosError> for DelegationError {
             StakingInfosError::CoinDoesntSupportStakingInfos { coin } => {
                 DelegationError::CoinDoesntSupportDelegation { coin }
             },
+            StakingInfosError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
             StakingInfosError::Transport(e) => DelegationError::Transport(e),
             StakingInfosError::Internal(e) => DelegationError::InternalError(e),
         }

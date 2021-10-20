@@ -4,7 +4,6 @@
 /// backwards compatibility
 /// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
 use bigdecimal::BigDecimal;
-use coins::TransactionType;
 use common::mm_number::{Fraction, MmNumber};
 use num_rational::BigRational;
 use rpc::v1::types::H256 as H256Json;
@@ -502,6 +501,13 @@ impl TradePreimageResponse {
 pub struct MaxTakerVolResponse {
     pub result: Fraction,
     pub coin: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum TransactionType {
+    StakingDelegation,
+    RemoveDelegation,
+    StandardTransfer,
 }
 
 #[derive(Debug, Deserialize)]

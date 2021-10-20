@@ -173,7 +173,7 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
     async fn get_delegation_infos_impl(&self) -> StakingInfosResult {
         let coin = self.as_ref();
         let staker = self.am_i_currently_staking().await?;
-        let (unspents, _) = self.list_unspent_ordered(&coin.my_address).await?;
+        let (unspents, _) = utxo_common::list_unspent_ordered(self, &coin.my_address).await?;
         let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT.into();
         let mut amount = BigDecimal::zero();
         if staker.is_some() {
@@ -196,9 +196,8 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
     }
 
     async fn add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
-        let am_i_staking = self.am_i_currently_staking().await?;
-        if am_i_staking.is_some() {
-            return MmError::err(DelegationError::AlreadyDelegating(am_i_staking.unwrap()));
+        if let Some(staking_addr) = self.am_i_currently_staking().await? {
+            return MmError::err(DelegationError::AlreadyDelegating(staking_addr));
         }
         let to_addr =
             Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
@@ -277,9 +276,12 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
         };
         let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
 
-        // Delegation transaction always transfer all the UTXO's to ourselves
         let qtum_amount = self.my_spendable_balance().compat().await?;
-        let received_by_me = qtum_amount.clone();
+        let received_by_me = if to_address == self.as_ref().my_address.to_string() {
+            qtum_amount.clone()
+        } else {
+            0.into()
+        };
         let my_balance_change = &received_by_me - &qtum_amount;
 
         Ok(TransactionDetails {
