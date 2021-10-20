@@ -15,7 +15,6 @@ pub enum TelegramError {
     ChatIdNotAvailable(String),
     Transport(String),
     InvalidResponse(String),
-    InvalidRequest(String),
 }
 
 impl From<serde_json::Error> for TelegramError {
@@ -32,7 +31,7 @@ pub struct TgClient {
 impl TgClient {
     pub fn new(api_key: String, url: Option<String>) -> Self {
         TgClient {
-            url: url.unwrap_or(TELEGRAM_BOT_API_ENDPOINT.to_string()),
+            url: url.unwrap_or_else(|| TELEGRAM_BOT_API_ENDPOINT.to_string()),
             api_key,
         }
     }
