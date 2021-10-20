@@ -1,9 +1,5 @@
-use crate::mm2::telegram::{TelegramError, TelegramResult, TELEGRAM_BOT_API_ENDPOINT};
-use common::mm_error::prelude::MapToMmResult;
+use crate::mm2::telegram::{TelegramError, TelegramResult};
 use common::mm_error::MmError;
-use common::slurp_url;
-use http::StatusCode;
-use serde_json as json;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetUpdates {
@@ -20,17 +16,6 @@ impl GetUpdates {
             ));
         }
         Ok(self.result[0].message.chat.id.to_string())
-    }
-
-    pub async fn new(api_token: &str) -> TelegramResult<GetUpdates> {
-        let uri = TELEGRAM_BOT_API_ENDPOINT.to_owned() + api_token + "/getUpdates";
-        let resp = slurp_url(uri.as_str()).await.map_to_mm(TelegramError::Transport)?;
-        if resp.0 != StatusCode::OK {
-            let error = format!("Get updates request failed with status code {}", resp.0);
-            return MmError::err(TelegramError::Transport(error));
-        }
-        let result: GetUpdates = json::from_slice(&resp.2)?;
-        Ok(result)
     }
 }
 

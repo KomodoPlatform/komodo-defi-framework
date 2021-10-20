@@ -1164,6 +1164,16 @@ pub async fn slurp_url(url: &str) -> SlurpRes {
 }
 
 /// Executes a GET request, returning the response status, headers and body.
+/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
+#[cfg(target_arch = "wasm32")]
+pub async fn slurp_url(url: &str) -> SlurpRes {
+    wasm_http::FetchRequest::get(url)
+        .request_str()
+        .await
+        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+}
+
+/// Executes a POST request, returning the response status, headers and body.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn slurp_post_json(url: &str, body: String) -> SlurpRes {
     let request = try_s!(Request::builder()
@@ -1174,11 +1184,13 @@ pub async fn slurp_post_json(url: &str, body: String) -> SlurpRes {
     wio::slurp_req(request).await
 }
 
-/// Executes a GET request, returning the response status, headers and body.
+/// Executes a POST request, returning the response status, headers and body.
 /// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
 #[cfg(target_arch = "wasm32")]
-pub async fn slurp_url(url: &str) -> SlurpRes {
-    wasm_http::FetchRequest::get(url)
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpRes {
+    wasm_http::FetchRequest::post(url)
+        .header("Content-Type", "application/json")
+        .body_utf8(body)
         .request_str()
         .await
         .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
@@ -1187,6 +1199,12 @@ pub async fn slurp_url(url: &str) -> SlurpRes {
 #[test]
 fn test_slurp_req() {
     let (status, headers, body) = block_on(slurp_url("https://httpbin.org/get")).unwrap();
+    assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
+}
+
+#[test]
+fn test_slurp_post_req() {
+    let (status, headers, body) = block_on(slurp_post_json("https://httpbin.org/post", "".to_string())).unwrap();
     assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
 }
 
@@ -1201,18 +1219,11 @@ where
 }
 
 /// Send POST JSON HTTPS request and parse response
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn post_json<T>(url: &str, json: String) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + Send + 'static,
 {
-    let request = try_s!(Request::builder()
-        .method("POST")
-        .uri(url)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(json.into()));
-
-    let result = try_s!(wio::slurp_req(request).await);
+    let result = try_s!(slurp_post_json(url, json).await);
     let result = try_s!(serde_json::from_slice(&result.2));
     Ok(result)
 }
