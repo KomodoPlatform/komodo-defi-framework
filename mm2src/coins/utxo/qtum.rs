@@ -216,6 +216,7 @@ pub struct QtumStakingInfosDetails {
     pub amount: BigDecimal,
     pub staker: Option<String>,
     pub am_i_staking: bool,
+    pub is_staking_supported: bool,
 }
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt

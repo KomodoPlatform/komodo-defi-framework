@@ -107,6 +107,9 @@ impl QtumDelegationOps for QtumCoin {
 #[async_trait]
 impl QtumAsyncPrivateDelegationOps for QtumCoin {
     async fn remove_delegation_impl(&self) -> DelegationResult {
+        if self.as_ref().my_address.addr_format.is_segwit() {
+            return MmError::err(DelegationError::NonLegacyStakingNotSupported);
+        }
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
         Ok(self
@@ -189,6 +192,7 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
                 amount,
                 staker,
                 am_i_staking,
+                is_staking_supported: !coin.my_address.addr_format.is_segwit(),
             }
             .into(),
         };
@@ -196,6 +200,9 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
     }
 
     async fn add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
+        if self.as_ref().my_address.addr_format.is_segwit() {
+            return MmError::err(DelegationError::NonLegacyStakingNotSupported);
+        }
         if let Some(staking_addr) = self.am_i_currently_staking().await? {
             return MmError::err(DelegationError::AlreadyDelegating(staking_addr));
         }

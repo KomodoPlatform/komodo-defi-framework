@@ -1676,6 +1676,8 @@ fn test_qtum_get_delegation_infos() {
         StakingInfosDetails::Qtum(staking_details) => {
             assert_eq!(staking_details.am_i_staking, true);
             assert_eq!(staking_details.staker.unwrap(), "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+            // Will return false for segwit.
+            assert_eq!(staking_details.is_staking_supported, true);
         },
     };
 }
