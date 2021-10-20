@@ -512,12 +512,18 @@ fn test_search_for_swap_tx_spend_was_spent() {
 
 #[test]
 fn test_gas_station() {
+    make_gas_station_request.mock_safe(|_| {
+        let data = GasStationData { average: 500.0 };
+        MockResult::Return(Box::pin(async move { Ok(data) }))
+    });
     let res_eth = GasStationData::get_gas_price("https://ethgasstation.info/api/ethgasAPI.json", 8)
         .wait()
         .unwrap();
 
-    let res = block_on(slurp_url("https://ethgasstation.info/api/ethgasAPI.json")).unwrap();
-    let result_eth: GasStationData = json::from_slice(&*res.2).unwrap();
+    let result_eth = block_on(make_gas_station_request(
+        "https://ethgasstation.info/api/ethgasAPI.json",
+    ))
+    .unwrap();
     assert_eq!(
         BigDecimal::from(result_eth.average),
         u256_to_big_decimal(res_eth, 8).unwrap()
@@ -525,8 +531,7 @@ fn test_gas_station() {
     let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
         .wait()
         .unwrap();
-    let res = block_on(slurp_url("https://gasstation-mainnet.matic.network/")).unwrap();
-    let result_polygon: GasStationData = json::from_slice(&*res.2).unwrap();
+    let result_polygon = block_on(make_gas_station_request("https://gasstation-mainnet.matic.network/")).unwrap();
     assert_eq!(
         BigDecimal::from(result_polygon.average),
         u256_to_big_decimal(res_polygon, 9).unwrap()
