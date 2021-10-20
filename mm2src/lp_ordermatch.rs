@@ -1269,8 +1269,10 @@ impl<'a> TakerOrderBuilder<'a> {
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
-                base: self.base_orderbook_ticker.unwrap_or(original_base_ticker.clone()),
-                rel: self.rel_orderbook_ticker.unwrap_or(original_rel_ticker.clone()),
+                base: self
+                    .base_orderbook_ticker
+                    .unwrap_or_else(|| original_base_ticker.clone()),
+                rel: self.rel_orderbook_ticker.unwrap_or_else(|| original_rel_ticker.clone()),
                 base_amount: self.base_amount,
                 rel_amount: self.rel_amount,
                 action: self.action,
@@ -1414,6 +1416,28 @@ impl TakerOrder {
                     MatchReservedResult::NotMatched
                 }
             },
+        }
+    }
+
+    /// Returns the ticker of base coin, for which the order was created
+    fn original_base_ticker(&self) -> &str { self.original_base_ticker.as_ref().unwrap_or(&self.request.base) }
+
+    /// Returns the ticker of rel coin, for which the order was created
+    fn original_rel_ticker(&self) -> &str { self.original_rel_ticker.as_ref().unwrap_or(&self.request.rel) }
+
+    /// Returns the ticker of the taker coin
+    fn taker_coin_ticker(&self) -> &str {
+        match &self.request.action {
+            TakerAction::Buy => self.original_rel_ticker(),
+            TakerAction::Sell => self.original_base_ticker(),
+        }
+    }
+
+    /// Returns the ticker of the maker coin
+    fn maker_coin_ticker(&self) -> &str {
+        match &self.request.action {
+            TakerAction::Buy => self.original_base_ticker(),
+            TakerAction::Sell => self.original_rel_ticker(),
         }
     }
 }
@@ -1673,8 +1697,10 @@ impl<'a> MakerOrderBuilder<'a> {
         let original_rel_ticker = self.rel_coin.ticker().to_owned();
 
         Ok(MakerOrder {
-            base: self.base_orderbook_ticker.unwrap_or(original_base_ticker.clone()),
-            rel: self.rel_orderbook_ticker.unwrap_or(original_rel_ticker.clone()),
+            base: self
+                .base_orderbook_ticker
+                .unwrap_or_else(|| original_base_ticker.clone()),
+            rel: self.rel_orderbook_ticker.unwrap_or_else(|| original_rel_ticker.clone()),
             created_at: now_ms(),
             updated_at: Some(now_ms()),
             max_base_vol: self.max_base_vol,
@@ -2485,6 +2511,10 @@ impl OrdermatchContext {
     }
 
     fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
+
+    fn orderbook_ticker_bypass(&self, ticker: &str) -> String {
+        self.orderbook_ticker(ticker).unwrap_or_else(|| ticker.to_owned())
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -2573,30 +2603,32 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
     });
 }
 
-fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: TakerMatch) {
+fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
     spawn(async move {
         // aka "taker_loop"
         let maker = bits256::from(taker_match.reserved.sender_pubkey.0);
-        let taker_coin = match lp_coinfind(&ctx, &taker_match.reserved.rel).await {
+        let taker_coin_ticker = taker_order.taker_coin_ticker();
+        let taker_coin = match lp_coinfind(&ctx, taker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_match.reserved.rel);
+                log::error!("Coin {} is not found/enabled", taker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_match.reserved.rel, e);
+                log::error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
                 return;
             },
         };
 
-        let maker_coin = match lp_coinfind(&ctx, &taker_match.reserved.base).await {
+        let maker_coin_ticker = taker_order.maker_coin_ticker();
+        let maker_coin = match lp_coinfind(&ctx, maker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_match.reserved.base);
+                log::error!("Coin {} is not found/enabled", maker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_match.reserved.base, e);
+                log::error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
                 return;
             },
         };
@@ -2608,13 +2640,13 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
         let uuid = taker_match.reserved.taker_order_uuid;
 
         let my_conf_settings =
-            choose_taker_confs_and_notas(&taker_request, &taker_match.reserved, &maker_coin, &taker_coin);
+            choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
         // detect atomic lock time version implicitly by conf_settings existence in maker reserved
         let atomic_locktime_v = match taker_match.reserved.conf_settings {
             Some(_) => {
                 let other_conf_settings = choose_maker_confs_and_notas(
                     taker_match.reserved.conf_settings,
-                    &taker_request,
+                    &taker_order.request,
                     &maker_coin,
                     &taker_coin,
                 );
@@ -2842,8 +2874,6 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     }
 
     let uuid = reserved_msg.taker_order_uuid;
-    let base = reserved_msg.base.clone();
-    let rel = reserved_msg.rel.clone();
     {
         let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
         let pending_for_order = pending_map
@@ -2864,10 +2894,12 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         Entry::Occupied(entry) => entry.into_mut(),
     };
 
-    let (base_coin, rel_coin) = match find_pair(&ctx, &base, &rel).await {
-        Ok(Some(c)) => c,
-        _ => return, // attempt to match with deactivated coin
-    };
+    // our base and rel coins should match maker's side tickers for a proper is_coin_protocol_supported check
+    let (base_coin, rel_coin) =
+        match find_pair(&ctx, &my_order.maker_coin_ticker(), &my_order.taker_coin_ticker()).await {
+            Ok(Some(c)) => c,
+            _ => return, // attempt to match with deactivated coin
+        };
     let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
     if let Some(mut reserved_messages) = pending_map.remove(&uuid) {
         reserved_messages.sort_unstable_by_key(|r| r.price());
@@ -2933,7 +2965,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
         return;
     }
     // alice
-    lp_connected_alice(ctx.clone(), my_order_entry.get().request.clone(), order_match.clone());
+    lp_connected_alice(ctx.clone(), my_order_entry.get().clone(), order_match.clone());
     // remove the matched order immediately
     delete_my_taker_order(&ctx, my_order_entry.get(), TakerOrderCancellationReason::Fulfilled);
     my_order_entry.remove();
