@@ -862,8 +862,8 @@ pub enum DelegationError {
     AddressError(String),
     #[display(fmt = "Already delegating to: {}", _0)]
     AlreadyDelegating(String),
-    #[display(fmt = "Delegation for QTUM is only supported in Legacy")]
-    NonLegacyStakingNotSupported,
+    #[display(fmt = "Delegation is not supported, reason: {}", reason)]
+    DelegationOpsNotSupported { reason: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
