@@ -1164,6 +1164,17 @@ pub async fn slurp_url(url: &str) -> SlurpRes {
 }
 
 /// Executes a GET request, returning the response status, headers and body.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpRes {
+    let request = try_s!(Request::builder()
+        .method("POST")
+        .uri(url)
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .body(body.into()));
+    wio::slurp_req(request).await
+}
+
+/// Executes a GET request, returning the response status, headers and body.
 /// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
 #[cfg(target_arch = "wasm32")]
 pub async fn slurp_url(url: &str) -> SlurpRes {
