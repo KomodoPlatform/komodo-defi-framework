@@ -266,6 +266,7 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
             miner_fee,
             gas_fee,
         };
+
         let fee_details = Qrc20FeeDetails {
             // QRC20 fees are paid in base platform currency (in particular Qtum)
             coin: self.ticker().to_string(),
@@ -276,21 +277,18 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
         };
         let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
 
-        let qtum_amount = self.my_spendable_balance().compat().await?;
-        let received_by_me = if to_address == self.as_ref().my_address.to_string() {
-            qtum_amount.clone()
-        } else {
-            0.into()
-        };
-        let my_balance_change = &received_by_me - &qtum_amount;
+        let spent_by_me = utxo_common::big_decimal_from_sat(data.spent_by_me as i64, utxo.decimals);
+        let qtum_amount = spent_by_me.clone();
+        let received_by_me = utxo_common::big_decimal_from_sat(data.received_by_me as i64, utxo.decimals);
+        let my_balance_change = &received_by_me - &spent_by_me;
 
         Ok(TransactionDetails {
             tx_hex: serialize(&generated_tx.signed).into(),
             tx_hash: generated_tx.signed.hash().reversed().to_vec().into(),
             from: vec![my_address],
             to: vec![to_address],
-            total_amount: qtum_amount.clone(),
-            spent_by_me: qtum_amount,
+            total_amount: qtum_amount,
+            spent_by_me,
             received_by_me,
             my_balance_change,
             block_height: 0,

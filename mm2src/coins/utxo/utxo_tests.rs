@@ -6,7 +6,7 @@ use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
@@ -1606,9 +1606,11 @@ fn test_qtum_add_delegation() {
         address: address.to_string(),
         fee: Some(10),
     };
-    let res = coin.add_delegation(request).wait();
+    let res = coin.add_delegation(request).wait().unwrap();
     // Eligible for delegation
-    assert_eq!(res.is_err(), false);
+    assert_eq!(res.my_balance_change.is_negative(), true);
+    assert_eq!(res.total_amount, res.spent_by_me);
+    assert!(res.spent_by_me > res.received_by_me);
 
     let request = QtumDelegationRequest {
         address: "fake_address".to_string(),
