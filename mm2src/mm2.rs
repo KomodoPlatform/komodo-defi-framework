@@ -50,10 +50,10 @@ pub mod database;
 #[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
 #[path = "lp_stats.rs"] pub mod lp_stats;
 #[path = "lp_swap.rs"] pub mod lp_swap;
-#[path = "rpc.rs"] pub mod rpc;
 #[allow(dead_code)]
-#[path = "notification/telegram.rs"]
-pub mod telegram;
+#[path = "notification/message_service.rs"]
+pub mod message_service;
+#[path = "rpc.rs"] pub mod rpc;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 #[path = "mm2_tests.rs"]

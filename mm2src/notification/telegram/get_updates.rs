@@ -1,4 +1,4 @@
-use crate::mm2::telegram::{TelegramError, TelegramResult};
+use crate::mm2::message_service::telegram::{TelegramError, TelegramResult};
 use common::mm_error::MmError;
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
-use crate::mm2::telegram::get_updates::GetUpdates;
-use crate::mm2::telegram::send_message::SendMessageResponse;
+use crate::mm2::message_service::telegram::get_updates::GetUpdates;
+use crate::mm2::message_service::telegram::send_message::SendMessageResponse;
+use crate::mm2::message_service::{MessageResult, MessageServiceTraits};
+use async_trait::async_trait;
 use common::mm_error::prelude::MapToMmResult;
 use common::mm_error::MmError;
 use common::{fetch_json, post_json};
@@ -12,8 +14,11 @@ pub mod send_message;
 
 #[derive(Debug, Display)]
 pub enum TelegramError {
+    #[display(fmt = "Telegram Chat Id not available: {}", _0)]
     ChatIdNotAvailable(String),
+    #[display(fmt = "Telegram transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Telegram invalid response: {}", _0)]
     InvalidResponse(String),
 }
 
@@ -23,16 +28,19 @@ impl From<serde_json::Error> for TelegramError {
 
 pub type TelegramResult<T> = Result<T, MmError<TelegramError>>;
 
+#[derive(Clone)]
 pub struct TgClient {
     url: String,
     api_key: String,
+    chat_id: Option<String>,
 }
 
 impl TgClient {
-    pub fn new(api_key: String, url: Option<String>) -> Self {
+    pub fn new(api_key: String, url: Option<String>, chat_id: Option<String>) -> Self {
         TgClient {
             url: url.unwrap_or_else(|| TELEGRAM_BOT_API_ENDPOINT.to_string()),
             api_key,
+            chat_id,
         }
     }
 
@@ -44,10 +52,9 @@ impl TgClient {
         Ok(result)
     }
 
-    // This is a telegram client, later add a NotificationOps and a generic `send` function which here would call send_message
-    pub async fn send_message(&self, message: String, disable_notification: bool) -> TelegramResult<bool> {
+    pub async fn send_message_impl(&self, message: String, disable_notification: bool) -> TelegramResult<bool> {
         let uri = TELEGRAM_BOT_API_ENDPOINT.to_owned() + self.api_key.as_str() + "/sendMessage";
-        let chat_id = self.get_updates().await?.get_chat_id()?;
+        let chat_id = self.chat_id.clone().unwrap_or(self.get_updates().await?.get_chat_id()?);
         let json = json!({ "chat_id": chat_id, "text": message, "disable_notification": disable_notification });
         let result = post_json::<SendMessageResponse>(uri.as_str(), json.to_string())
             .await
@@ -56,16 +63,26 @@ impl TgClient {
     }
 }
 
+#[async_trait]
+impl MessageServiceTraits for TgClient {
+    async fn send_message(&self, message: String, disable_notification: bool) -> MessageResult<bool> {
+        self.send_message_impl(message, disable_notification)
+            .await
+            .map_err(From::from)
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod telegram_tests {
-    use crate::mm2::telegram::TgClient;
+    use crate::mm2::message_service::telegram::TgClient;
+    use crate::mm2::message_service::MessageServiceTraits;
     use common::block_on;
     use std::env::var;
 
     #[test]
     fn test_telegram_chat_id() {
         let api_key = var("TELEGRAM_API_KEY").ok().unwrap();
-        let tg_client = TgClient::new(api_key, None);
+        let tg_client = TgClient::new(api_key, None, None);
         let res = block_on(tg_client.get_updates()).unwrap();
         let chat_id = res.get_chat_id().unwrap();
         assert_eq!(chat_id, "586216033");
@@ -74,7 +91,7 @@ mod telegram_tests {
     #[test]
     fn test_send_message() {
         let api_key = var("TELEGRAM_API_KEY").ok().unwrap();
-        let tg_client = TgClient::new(api_key, None);
+        let tg_client = TgClient::new(api_key, None, Some("586216033".to_string()));
         let resp = block_on(tg_client.send_message("Hello from rust".to_string(), true)).unwrap();
         assert_eq!(resp, true);
     }
