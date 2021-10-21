@@ -1,4 +1,5 @@
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy};
+use crate::mm2::message_service::telegram::TgClient;
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::TickerInfos,
                                  lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
@@ -92,6 +93,8 @@ impl From<std::string::String> for OrderProcessingError {
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
     price_url: Option<String>,
+    telegram_api_key: Option<String>,
+    telegram_chat_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -100,6 +103,8 @@ impl StartSimpleMakerBotRequest {
         return StartSimpleMakerBotRequest {
             cfg: Default::default(),
             price_url: None,
+            telegram_api_key: None,
+            telegram_chat_id: None,
         };
     }
 }
@@ -217,8 +222,13 @@ impl TradingPair {
 pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
+    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
-    trading_bot_cfg.clear()
+    trading_bot_cfg.clear();
+    let _ = message_service
+        .send_message("trading bot successfully stopped".to_string(), false)
+        .await;
+    message_service.clear_services()
 }
 
 fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
@@ -657,6 +667,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
     let mut price_url = simple_market_maker_bot_ctx.price_url.lock().await;
+    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     match *state {
         TradingBotState::Running => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
         TradingBotState::Stopping => MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
@@ -666,7 +677,14 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
             *trading_bot_cfg = req.cfg;
             *price_url = req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string());
-            info!("simple_market_maker_bot successfully started");
+            let msg = "simple_market_maker_bot successfully started";
+            if let Some(telegram_api_key) = req.telegram_api_key {
+                let tg_client = TgClient::new(telegram_api_key, None, req.telegram_chat_id);
+                message_service.attach_service(Box::new(tg_client));
+                // even if we cannot deliver a message we want to return this rpc
+                let _ = message_service.send_message(msg.to_string(), false).await;
+            }
+            info!("{}", msg);
             spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
                 result: "Success".to_string(),
@@ -678,12 +696,16 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
 pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    let message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     match *state {
         TradingBotState::Stopped => MmError::err(StopSimpleMakerBotError::AlreadyStopped),
         TradingBotState::Stopping => MmError::err(StopSimpleMakerBotError::AlreadyStopping),
         TradingBotState::Running => {
             *state = TradingBotState::Stopping;
-            info!("simple_market_maker_bot will stop within 30 seconds");
+            let msg = "simple_market_maker_bot will stop within 30 seconds";
+            // even if we cannot deliver a message we want to return this rpc
+            let _ = message_service.send_message(msg.to_string(), false).await;
+            info!("{}", msg);
             Ok(StopSimpleMakerBotRes {
                 result: "Success".to_string(),
             })

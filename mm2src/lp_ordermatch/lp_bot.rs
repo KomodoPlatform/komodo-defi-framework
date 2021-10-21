@@ -14,6 +14,7 @@ use common::mm_error::MmError;
 #[cfg(test)] use mocktopus::macros::*;
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
+use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
@@ -96,6 +97,7 @@ pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
     trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
     price_url: AsyncMutex<String>,
+    message_service: AsyncMutex<MessageService>,
 }
 
 #[derive(Default, Clone, Debug)]

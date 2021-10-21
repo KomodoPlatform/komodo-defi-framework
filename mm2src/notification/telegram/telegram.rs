@@ -15,7 +15,8 @@ pub struct SendMessageResponse {
     pub ok: bool,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum TelegramError {
     #[display(fmt = "Telegram Chat Id not available: {}", _0)]
     ChatIdNotAvailable(String),

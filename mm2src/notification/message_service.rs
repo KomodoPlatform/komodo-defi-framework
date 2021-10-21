@@ -1,6 +1,4 @@
-#[cfg(test)]
-#[path = "telegram/telegram.rs"]
-pub mod telegram;
+#[path = "telegram/telegram.rs"] pub mod telegram;
 
 use crate::mm2::message_service::telegram::TelegramError;
 use async_trait::async_trait;
@@ -9,7 +7,8 @@ use derive_more::Display;
 
 pub type MessageResult<T> = Result<T, MmError<MessageError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum MessageError {
     #[display(fmt = "{}", _0)]
     TelegramError(TelegramError),
@@ -26,25 +25,29 @@ pub trait MessageServiceTraits {
 
 #[derive(Default)]
 pub struct MessageService {
-    services: Vec<Box<dyn MessageServiceTraits>>,
+    services: Vec<Box<dyn MessageServiceTraits + Send + Sync>>,
 }
 
 impl MessageService {
-    async fn send_message(&self, message: String, disable_notification: bool) -> MessageResult<bool> {
+    pub async fn send_message(&self, message: String, disable_notification: bool) -> MessageResult<bool> {
         for service in self.services.iter() {
             service.send_message(message.clone(), disable_notification).await?;
         }
         Ok(true)
     }
 
-    fn attach_service(&mut self, service: Box<dyn MessageServiceTraits>) -> &MessageService {
+    pub fn attach_service(&mut self, service: Box<dyn MessageServiceTraits + Send + Sync>) -> &MessageService {
         self.services.push(service);
         self
     }
 
-    fn nb_services(&self) -> usize { self.services.len() }
+    pub fn clear_services(&mut self) { self.services.clear() }
 
-    fn new() -> Self { Default::default() }
+    #[test]
+    pub fn nb_services(&self) -> usize { self.services.len() }
+
+    #[test]
+    pub fn new() -> Self { Default::default() }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
