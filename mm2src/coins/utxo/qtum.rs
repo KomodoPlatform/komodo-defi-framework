@@ -1,9 +1,7 @@
 use super::*;
-use crate::qrc20::ContractCallOutput;
-use crate::utxo::qtum::qtum_delegation::{QtumStakingAbiError, QtumStakingAbiResult};
-use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, DelegationResult, NegotiateSwapContractAddrErr,
-            StakingInfosError, StakingInfosFut, StakingInfosResult, SwapOps, TradePreimageValue, TransactionType,
-            ValidateAddressResult, WithdrawFut};
+use crate::utxo::qtum::qtum_delegation::QtumStakingAbiError;
+use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps,
+            TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use ethereum_types::H160;
@@ -31,33 +29,6 @@ pub trait QtumDelegationOps {
     fn get_delegation_infos(&self) -> StakingInfosFut;
     fn remove_delegation(&self) -> DelegationFut;
     fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<QtumStakingAbiError>>;
-}
-
-trait QtumPrivateDelegationOps {
-    fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> QtumStakingAbiResult<ContractCallOutput>;
-    fn add_delegation_output(
-        &self,
-        to_addr: H160,
-        addr_hash: AddressHash,
-        fee: u64,
-        gas_limit: u64,
-        gas_price: u64,
-    ) -> QtumStakingAbiResult<ContractCallOutput>;
-}
-
-#[async_trait]
-trait QtumAsyncPrivateDelegationOps {
-    async fn remove_delegation_impl(&self) -> DelegationResult;
-    async fn am_i_currently_staking(&self) -> Result<Option<String>, MmError<StakingInfosError>>;
-    async fn get_delegation_infos_impl(&self) -> StakingInfosResult;
-    async fn add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult;
-    async fn generate_delegation_transaction(
-        &self,
-        contract_outputs: Vec<ContractCallOutput>,
-        to_address: String,
-        gas_limit: u64,
-        transaction_type: TransactionType,
-    ) -> DelegationResult;
 }
 
 #[async_trait]

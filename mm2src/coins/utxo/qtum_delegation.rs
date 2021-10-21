@@ -2,15 +2,14 @@ use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
                    Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
-use crate::utxo::qtum::{contract_addr_from_utxo_addr, QtumAsyncPrivateDelegationOps, QtumCoin, QtumDelegationOps,
-                        QtumDelegationRequest, QtumPrivateDelegationOps, QtumStakingInfosDetails};
+use crate::utxo::qtum::{contract_addr_from_utxo_addr, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
+                        QtumStakingInfosDetails};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::UTXO_LOCK;
 use crate::utxo::{qtum, sign_tx, utxo_common, Address, UtxoCommonOps};
 use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
-use async_trait::async_trait;
 use bigdecimal::Zero;
 use bitcrypto::dhash256;
 use common::mm_error::prelude::{MapMmError, MapToMmResult};
@@ -69,8 +68,6 @@ impl From<ethabi::Error> for QtumStakingAbiError {
     fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::AbiError(e.to_string()) }
 }
 
-// Qtum Delegate Transaction - lock UTXO mutex before calling this function
-
 impl QtumDelegationOps for QtumCoin {
     fn add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut {
         let coin = self.clone();
@@ -104,8 +101,7 @@ impl QtumDelegationOps for QtumCoin {
     }
 }
 
-#[async_trait]
-impl QtumAsyncPrivateDelegationOps for QtumCoin {
+impl QtumCoin {
     async fn remove_delegation_impl(&self) -> DelegationResult {
         if self.as_ref().my_address.addr_format.is_segwit() {
             return MmError::err(DelegationError::DelegationOpsNotSupported {
@@ -311,9 +307,7 @@ impl QtumAsyncPrivateDelegationOps for QtumCoin {
             transaction_type,
         })
     }
-}
 
-impl QtumPrivateDelegationOps for QtumCoin {
     fn remove_delegation_output(&self, gas_limit: u64, gas_price: u64) -> QtumStakingAbiResult<ContractCallOutput> {
         let function: &ethabi::Function = QTUM_DELEGATE_CONTRACT.function("removeDelegation")?;
         let params = function.encode_input(&[])?;
