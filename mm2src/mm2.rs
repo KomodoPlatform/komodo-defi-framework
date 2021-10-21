@@ -50,7 +50,7 @@ pub mod database;
 #[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
 #[path = "lp_stats.rs"] pub mod lp_stats;
 #[path = "lp_swap.rs"] pub mod lp_swap;
-#[allow(dead_code)]
+#[cfg(test)]
 #[path = "notification/message_service.rs"]
 pub mod message_service;
 #[path = "rpc.rs"] pub mod rpc;

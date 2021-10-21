@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#[cfg(test)]
 #[path = "telegram/telegram.rs"]
 pub mod telegram;
 
@@ -37,7 +37,6 @@ impl MessageService {
         Ok(true)
     }
 
-    //  A Builder will be more appropriate?
     fn attach_service(&mut self, service: Box<dyn MessageServiceTraits>) -> &MessageService {
         self.services.push(service);
         self
