@@ -43,10 +43,10 @@ impl MessageService {
 
     pub fn clear_services(&mut self) { self.services.clear() }
 
-    #[test]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn nb_services(&self) -> usize { self.services.len() }
 
-    #[test]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn new() -> Self { Default::default() }
 }
 

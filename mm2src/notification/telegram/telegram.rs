@@ -60,7 +60,7 @@ impl TgClient {
 #[async_trait]
 impl MessageServiceTraits for TgClient {
     async fn send_message(&self, message: String, disable_notification: bool) -> MessageResult<bool> {
-        let uri = TELEGRAM_BOT_API_ENDPOINT.to_owned() + self.api_key.as_str() + "/sendMessage";
+        let uri = self.url.to_owned() + self.api_key.as_str() + "/sendMessage";
         let chat_id = self.chat_id.clone().unwrap_or(self.get_updates().await?.get_chat_id()?);
         let json = json!({ "chat_id": chat_id, "text": message, "disable_notification": disable_notification });
         let result = post_json::<SendMessageResponse>(uri.as_str(), json.to_string())
