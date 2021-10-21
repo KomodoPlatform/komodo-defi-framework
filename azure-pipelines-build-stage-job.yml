@@ -7,6 +7,7 @@ parameters:
   bob_userpass: ''
   alice_passphrase: ''
   alice_userpass: ''
+  telegram_api_key: ''
 
 jobs:
   - job: ${{ parameters.name }}
@@ -64,6 +65,7 @@ jobs:
           BOB_USERPASS: $(${{ parameters.bob_userpass }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
+          TELEGRAM_API_KEY: $(${{ parameters.telegram_api_key }})
           RUST_LOG: debug
         condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
