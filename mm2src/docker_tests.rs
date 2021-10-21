@@ -3835,6 +3835,85 @@ mod docker_tests {
         );
     }
 
+    fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
+        log!({"Get {}/{} orderbook", base, rel});
+        let rc = block_on(mm.rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "base": base,
+            "rel": rel,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+        log!("orderbook "[orderbook]);
+        assert_eq!(
+            orderbook.bids.len(),
+            expected,
+            "{}/{} orderbook must have exactly {} bid(s)",
+            base,
+            rel,
+            expected
+        );
+    }
+
+    fn check_orderbook_depth(mm: &MarketMakerIt, pairs: &[(&str, &str)], expected: &[(usize, usize)]) {
+        log!({"Get {:?} orderbook depth", pairs});
+        let rc = block_on(mm.rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "orderbook_depth",
+            "pairs": pairs,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
+        let orderbook_depth: OrderbookDepthResponse = json::from_str(&rc.1).unwrap();
+        log!("orderbook depth "[orderbook_depth]);
+        for (pair, expected_depth) in pairs.iter().zip(expected) {
+            let actual_depth = orderbook_depth
+                .result
+                .iter()
+                .find(|pair_with_depth| pair.0 == pair_with_depth.pair.0 && pair.1 == pair_with_depth.pair.1)
+                .unwrap_or_else(|| panic!("Orderbook depth result doesn't contain pair {:?}", pair));
+
+            assert_eq!(
+                actual_depth.depth.asks, expected_depth.0,
+                "expected {} asks for pair {:?}",
+                expected_depth.0, actual_depth.pair,
+            );
+            assert_eq!(
+                actual_depth.depth.bids, expected_depth.1,
+                "expected {} bids for pair {:?}",
+                expected_depth.1, actual_depth.pair,
+            );
+        }
+    }
+
+    fn check_best_orders(
+        mm: &MarketMakerIt,
+        action: &str,
+        for_coin: &str,
+        ticker_in_response: &str,
+        expected_num_orders: usize,
+    ) {
+        log!({"Get best orders for {}", for_coin});
+        let rc = block_on(mm.rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "best_orders",
+            "coin": for_coin,
+            "action": action,
+            "volume": 1,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+        let best_orders: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+        let orders = best_orders
+            .result
+            .get(ticker_in_response)
+            .unwrap_or_else(|| panic!("No orders for ticker {}", ticker_in_response));
+
+        assert_eq!(orders.len(), expected_num_orders);
+    }
+
     #[test]
     fn test_ordermatch_custom_orderbook_ticker_maker() {
         let (_ctx, _, bob_priv_key) = generate_coin_with_random_privkey("MYCOIN", 1000.into());
@@ -3892,11 +3971,51 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
+        let sell_result: SetPriceResult = json::from_str(&rc.1).unwrap();
+        assert_eq!(sell_result.base, "MYCOIN");
+        assert_eq!(sell_result.rel, "MYCOIN1");
+        assert_eq!(sell_result.original_base_ticker, Some("MYCOIN-Custom".to_owned()));
+        assert_eq!(sell_result.original_rel_ticker, Some("MYCOIN1-Custom".to_owned()));
+
+        // check bob orders
         check_asks_num(&mm_bob, "MYCOIN-Custom", "MYCOIN1-Custom", 1);
         check_asks_num(&mm_bob, "MYCOIN", "MYCOIN1", 1);
+        check_bids_num(&mm_bob, "MYCOIN1-Custom", "MYCOIN-Custom", 1);
+        check_bids_num(&mm_bob, "MYCOIN1", "MYCOIN", 1);
+
+        // check multiple RPCs on alice side
+        check_best_orders(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+        check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+        check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+        check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+        check_orderbook_depth(
+            &mm_alice,
+            &[
+                ("MYCOIN", "MYCOIN1"),
+                ("MYCOIN", "MYCOIN1-Custom"),
+                ("MYCOIN-Custom", "MYCOIN1"),
+                ("MYCOIN-Custom", "MYCOIN1-Custom"),
+            ],
+            &[(1, 0); 4],
+        );
 
         check_asks_num(&mm_alice, "MYCOIN-Custom", "MYCOIN1-Custom", 1);
         check_asks_num(&mm_alice, "MYCOIN", "MYCOIN1", 1);
+        check_bids_num(&mm_alice, "MYCOIN1-Custom", "MYCOIN-Custom", 1);
+        check_bids_num(&mm_alice, "MYCOIN1", "MYCOIN", 1);
+
+        // check orderbook depth again after subscription to the topic
+        check_orderbook_depth(
+            &mm_alice,
+            &[
+                ("MYCOIN", "MYCOIN1"),
+                ("MYCOIN", "MYCOIN1-Custom"),
+                ("MYCOIN-Custom", "MYCOIN1"),
+                ("MYCOIN-Custom", "MYCOIN1-Custom"),
+            ],
+            &[(1, 0); 4],
+        );
 
         let rc = block_on(mm_alice.rpc(json! ({
             "userpass": mm_alice.userpass,
@@ -3978,11 +4097,44 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
+        // check orderbooks on bob side
         check_asks_num(&mm_bob, "MYCOIN-Custom", "MYCOIN1-Custom", 1);
         check_asks_num(&mm_bob, "MYCOIN", "MYCOIN1", 1);
+        check_bids_num(&mm_bob, "MYCOIN1-Custom", "MYCOIN-Custom", 1);
+        check_bids_num(&mm_bob, "MYCOIN1", "MYCOIN", 1);
+
+        // check multiple RPCs on alice side
+        check_best_orders(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+        check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+        check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+        check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+        check_orderbook_depth(
+            &mm_alice,
+            &[
+                ("MYCOIN", "MYCOIN1"),
+                ("MYCOIN", "MYCOIN1-Custom"),
+                ("MYCOIN-Custom", "MYCOIN1"),
+                ("MYCOIN-Custom", "MYCOIN1-Custom"),
+            ],
+            &[(1, 0); 4],
+        );
 
         check_asks_num(&mm_alice, "MYCOIN-Custom", "MYCOIN1-Custom", 1);
         check_asks_num(&mm_alice, "MYCOIN", "MYCOIN1", 1);
+        check_bids_num(&mm_alice, "MYCOIN1-Custom", "MYCOIN-Custom", 1);
+        check_bids_num(&mm_alice, "MYCOIN1", "MYCOIN", 1);
+
+        check_orderbook_depth(
+            &mm_alice,
+            &[
+                ("MYCOIN", "MYCOIN1"),
+                ("MYCOIN", "MYCOIN1-Custom"),
+                ("MYCOIN-Custom", "MYCOIN1"),
+                ("MYCOIN-Custom", "MYCOIN1-Custom"),
+            ],
+            &[(1, 0); 4],
+        );
 
         let rc = block_on(mm_alice.rpc(json! ({
             "userpass": mm_alice.userpass,
@@ -3994,6 +4146,11 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let buy_result: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+        assert_eq!(buy_result.result.base, "MYCOIN");
+        assert_eq!(buy_result.result.rel, "MYCOIN1");
+        assert_eq!(buy_result.result.original_base_ticker, Some("MYCOIN-Custom".to_owned()));
+        assert_eq!(buy_result.result.original_rel_ticker, Some("MYCOIN1-Custom".to_owned()));
 
         block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
         block_on(mm_alice.wait_for_log(22., |log| {

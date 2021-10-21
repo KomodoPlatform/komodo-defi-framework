@@ -113,11 +113,12 @@ pub async fn process_best_orders_p2p_request(
 
 pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: BestOrdersRequest = try_s!(json::from_value(req));
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     if is_wallet_only_ticker(&ctx, &req.coin) {
         return ERR!("Coin {} is wallet only", &req.coin);
     }
     let p2p_request = OrdermatchRequest::BestOrders {
-        coin: req.coin,
+        coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
         action: req.action,
         volume: req.volume.into(),
     };

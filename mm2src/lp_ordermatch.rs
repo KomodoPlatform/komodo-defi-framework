@@ -2515,6 +2515,13 @@ impl OrdermatchContext {
     fn orderbook_ticker_bypass(&self, ticker: &str) -> String {
         self.orderbook_ticker(ticker).unwrap_or_else(|| ticker.to_owned())
     }
+
+    fn orderbook_pair_bypass(&self, pair: &(String, String)) -> (String, String) {
+        (
+            self.orderbook_ticker(&pair.0).unwrap_or_else(|| pair.0.clone()),
+            self.orderbook_ticker(&pair.1).unwrap_or_else(|| pair.1.clone()),
+        )
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3764,6 +3771,8 @@ struct MakerOrderForRpc<'a> {
     conf_settings: &'a Option<OrderConfirmationsSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     changes_history: &'a Option<Vec<HistoricalOrder>>,
+    original_base_ticker: &'a Option<String>,
+    original_rel_ticker: &'a Option<String>,
 }
 
 impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
@@ -3788,6 +3797,8 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
             uuid: order.uuid,
             conf_settings: &order.conf_settings,
             changes_history: &order.changes_history,
+            original_base_ticker: &order.original_base_ticker,
+            original_rel_ticker: &order.original_rel_ticker,
         }
     }
 }
@@ -4406,6 +4417,8 @@ struct TakerOrderForRpc<'a> {
     matches: HashMap<Uuid, TakerMatchForRpc<'a>>,
     order_type: &'a OrderType,
     cancellable: bool,
+    original_base_ticker: &'a Option<String>,
+    original_rel_ticker: &'a Option<String>,
 }
 
 impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
@@ -4420,6 +4433,8 @@ impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
                 .collect(),
             cancellable: order.is_cancellable(),
             order_type: &order.order_type,
+            original_base_ticker: &order.original_base_ticker,
+            original_rel_ticker: &order.original_rel_ticker,
         }
     }
 }
