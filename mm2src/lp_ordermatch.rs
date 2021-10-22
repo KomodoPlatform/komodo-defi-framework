@@ -1425,19 +1425,9 @@ impl TakerOrder {
         }
     }
 
-    fn base_orderbook_ticker(&self) -> &str {
-        self.base_orderbook_ticker
-            .as_ref()
-            .map(|t| t.as_str())
-            .unwrap_or(&self.request.base)
-    }
+    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base) }
 
-    fn rel_orderbook_ticker(&self) -> &str {
-        self.rel_orderbook_ticker
-            .as_ref()
-            .map(|t| t.as_str())
-            .unwrap_or(&self.request.rel)
-    }
+    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
 
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
@@ -1847,19 +1837,9 @@ impl MakerOrder {
         .await
     }
 
-    fn base_orderbook_ticker(&self) -> &str {
-        self.base_orderbook_ticker
-            .as_ref()
-            .map(|t| t.as_str())
-            .unwrap_or(&self.base)
-    }
+    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.base) }
 
-    fn rel_orderbook_ticker(&self) -> &str {
-        self.rel_orderbook_ticker
-            .as_ref()
-            .map(|t| t.as_str())
-            .unwrap_or(&self.rel)
-    }
+    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
 
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
