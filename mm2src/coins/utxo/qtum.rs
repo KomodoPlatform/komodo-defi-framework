@@ -26,8 +26,11 @@ pub enum QtumAddressFormat {
 
 pub trait QtumDelegationOps {
     fn add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut;
+
     fn get_delegation_infos(&self) -> StakingInfosFut;
+
     fn remove_delegation(&self) -> DelegationFut;
+
     fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<QtumStakingAbiError>>;
 }
 

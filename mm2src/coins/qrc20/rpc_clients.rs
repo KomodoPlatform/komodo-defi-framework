@@ -185,7 +185,7 @@ impl ViewContractCallType {
 
 /// The structure is the same as Qtum Core RPC gettransactionreceipt returned data.
 /// https://docs.qtum.site/en/Qtum-RPC-API/#gettransactionreceipt
-#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TxReceipt {
     /// Hash of the block this transaction was included within.
     #[serde(rename = "blockHash")]
@@ -225,7 +225,7 @@ pub struct TxReceipt {
     pub excepted_message: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LogEntry {
     /// Contract address.
     pub address: String,
