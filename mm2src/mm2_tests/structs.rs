@@ -95,8 +95,8 @@ pub struct BuyOrSellRpcRes {
     pub match_by: MatchBy,
     pub conf_settings: OrderConfirmationsSettings,
     pub order_type: OrderType,
-    pub original_base_ticker: Option<String>,
-    pub original_rel_ticker: Option<String>,
+    pub base_orderbook_ticker: Option<String>,
+    pub rel_orderbook_ticker: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -190,8 +190,8 @@ pub struct MakerOrderRpcResult {
     changes_history: Option<Vec<HistoricalOrder>>,
     pub cancellable: bool,
     pub available_amount: BigDecimal,
-    pub original_base_ticker: Option<String>,
-    pub original_rel_ticker: Option<String>,
+    pub base_orderbook_ticker: Option<String>,
+    pub rel_orderbook_ticker: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -211,8 +211,8 @@ pub struct SetPriceResult {
     pub started_swaps: Vec<Uuid>,
     pub uuid: Uuid,
     pub conf_settings: Option<OrderConfirmationsSettings>,
-    pub original_base_ticker: Option<String>,
-    pub original_rel_ticker: Option<String>,
+    pub base_orderbook_ticker: Option<String>,
+    pub rel_orderbook_ticker: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -238,8 +238,8 @@ pub struct TakerOrderRpcResult {
     matches: HashMap<Uuid, TakerMatch>,
     order_type: OrderType,
     pub cancellable: bool,
-    pub original_base_ticker: Option<String>,
-    pub original_rel_ticker: Option<String>,
+    pub base_orderbook_ticker: Option<String>,
+    pub rel_orderbook_ticker: Option<String>,
 }
 
 #[derive(Deserialize)]

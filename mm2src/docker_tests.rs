@@ -3971,11 +3971,11 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-        let sell_result: SetPriceResult = json::from_str(&rc.1).unwrap();
-        assert_eq!(sell_result.base, "MYCOIN");
-        assert_eq!(sell_result.rel, "MYCOIN1");
-        assert_eq!(sell_result.original_base_ticker, Some("MYCOIN-Custom".to_owned()));
-        assert_eq!(sell_result.original_rel_ticker, Some("MYCOIN1-Custom".to_owned()));
+        let sell_result: SetPriceResponse = json::from_str(&rc.1).unwrap();
+        assert_eq!(sell_result.result.base, "MYCOIN-Custom");
+        assert_eq!(sell_result.result.rel, "MYCOIN1-Custom");
+        assert_eq!(sell_result.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
+        assert_eq!(sell_result.result.rel_orderbook_ticker, Some("MYCOIN1".to_owned()));
 
         // check bob orders
         check_asks_num(&mm_bob, "MYCOIN-Custom", "MYCOIN1-Custom", 1);
@@ -4147,10 +4147,10 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!buy: {}", rc.1);
         let buy_result: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
-        assert_eq!(buy_result.result.base, "MYCOIN");
-        assert_eq!(buy_result.result.rel, "MYCOIN1");
-        assert_eq!(buy_result.result.original_base_ticker, Some("MYCOIN-Custom".to_owned()));
-        assert_eq!(buy_result.result.original_rel_ticker, Some("MYCOIN1-Custom".to_owned()));
+        assert_eq!(buy_result.result.base, "MYCOIN-Custom");
+        assert_eq!(buy_result.result.rel, "MYCOIN1-Custom");
+        assert_eq!(buy_result.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
+        assert_eq!(buy_result.result.rel_orderbook_ticker, Some("MYCOIN1".to_owned()));
 
         block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
         block_on(mm_alice.wait_for_log(22., |log| {
