@@ -15,7 +15,7 @@ use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1,
                 VerifyOnly};
 use sha2::{Digest, Sha256};
 
-pub use atomicdex_behaviour::{spawn_gossipsub, AdexBehaviourError, NodeType};
+pub use atomicdex_behaviour::{spawn_gossipsub, AdexBehaviourError, NodeType, WssCerts};
 pub use atomicdex_gossipsub::{GossipsubEvent, GossipsubMessage, MessageId};
 pub use libp2p::{Multiaddr, PeerId};
 pub use peers_exchange::PeerAddresses;
@@ -42,7 +42,7 @@ impl NetworkInfo {
 #[derive(Clone, Copy)]
 pub struct NetworkPorts {
     pub tcp: u16,
-    pub ws: u16,
+    pub wss: u16,
 }
 
 pub fn encode_message<T: Serialize>(message: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {

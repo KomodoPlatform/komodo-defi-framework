@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn test_validate_get_known_peers_response() {
         let network_info = NetworkInfo::Distributed {
-            network_ports: NetworkPorts { tcp: 3000, ws: 3010 },
+            network_ports: NetworkPorts { tcp: 3000, wss: 3010 },
         };
         let behaviour = PeersExchange::new(network_info);
         let response = HashMap::default();

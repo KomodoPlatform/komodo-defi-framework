@@ -14,6 +14,7 @@ derive_more = "0.99"
 libp2p-floodsub = { path = "../floodsub" }
 env_logger = "0.7.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
+futures-rustls = { version = "0.21.1" }
 hex = "0.4.2"
 lazy_static = "1.4"
 secp256k1 = { version = "0.20", features = ["rand"] }
