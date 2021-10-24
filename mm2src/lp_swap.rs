@@ -865,6 +865,16 @@ pub struct MyRecentSwapsResponse {
     pub swaps: Vec<SavedSwap>,
 }
 
+impl MyRecentSwapsResponse {
+    pub fn swaps_as_map(&self) -> HashMap<Uuid, SavedSwap> {
+        let mut out: HashMap<Uuid, SavedSwap> = HashMap::new();
+        for swap in self.swaps.iter() {
+            out.insert(*swap.uuid(), swap.clone());
+        }
+        out
+    }
+}
+
 #[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MyRecentSwapsErr {

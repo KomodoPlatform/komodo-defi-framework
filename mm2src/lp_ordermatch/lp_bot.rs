@@ -12,8 +12,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::mm_error::MmError;
 #[cfg(test)] use mocktopus::macros::*;
+use uuid::Uuid;
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
+use crate::mm2::lp_swap::SavedSwap;
 use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
@@ -98,6 +100,7 @@ pub struct TradingBotContext {
     trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
     price_url: AsyncMutex<String>,
     message_service: AsyncMutex<MessageService>,
+    precedent_swaps_registry: AsyncMutex<HashMap<Uuid, SavedSwap>>,
 }
 
 #[derive(Default, Clone, Debug)]

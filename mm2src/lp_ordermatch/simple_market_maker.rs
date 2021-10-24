@@ -162,6 +162,19 @@ pub enum StartSimpleMakerBotError {
     InternalError(String),
 }
 
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum SwapUpdateNotificationError {
+    #[display(fmt = "{}", _0)]
+    MyRecentSwapsError(MyRecentSwapsErr),
+    #[display(fmt = "Swap info not available")]
+    SwapInfoNotAvailable,
+}
+
+impl From<MyRecentSwapsErr> for SwapUpdateNotificationError {
+    fn from(e: MyRecentSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
+}
+
 #[derive(Debug)]
 pub enum PriceServiceRequestError {
     HttpProcessError(String),
@@ -223,12 +236,14 @@ pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
     let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
+    let mut precedent_swaps_registry = simple_market_maker_bot_ctx.precedent_swaps_registry.lock().await;
     cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
     trading_bot_cfg.clear();
     let _ = message_service
         .send_message("trading bot successfully stopped".to_string(), false)
         .await;
-    message_service.clear_services()
+    message_service.clear_services();
+    precedent_swaps_registry.clear()
 }
 
 fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
@@ -426,7 +441,7 @@ async fn prepare_order(
     key_trade_pair: &str,
     ctx: &MmArc,
 ) -> OrderPreparationResult {
-    checks_order_prerequisites(&rates, &cfg, key_trade_pair).await?;
+    checks_order_prerequisites(&rates, cfg, key_trade_pair).await?;
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -440,7 +455,7 @@ async fn prepare_order(
     let mut calculated_price = rates.price * cfg.spread.clone();
     info!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
-        calculated_price = vwap_calculator(calculated_price.clone(), ctx, &cfg).await?;
+        calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
 
     let volume = match &cfg.balance_percent {
@@ -625,6 +640,90 @@ async fn process_bot_logic(ctx: &MmArc) {
     let _results_order_creations = all_created_orders_tasks.await;
 }
 
+async fn process_swap_notification_logic(ctx: &MmArc) -> Result<(), MmError<SwapUpdateNotificationError>> {
+    let my_recent_swaps_req = async move || MyRecentSwapsReq {
+        paging_options: PagingOptions {
+            limit: 10,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        },
+        filter: MySwapsFilter {
+            my_coin: None,
+            other_coin: None,
+            from_timestamp: None,
+            to_timestamp: None,
+        },
+    };
+    let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
+    let mut precedent_swaps_registry = simple_market_maker_bot_ctx.precedent_swaps_registry.lock().await;
+    let message_service = simple_market_maker_bot_ctx.message_service.lock().await;
+    let swaps_registry = my_recent_swaps(ctx.clone(), my_recent_swaps_req().await)
+        .await?
+        .swaps_as_map();
+    if precedent_swaps_registry.is_empty() {
+        *precedent_swaps_registry = swaps_registry.clone()
+    }
+    for (uuid, swap) in swaps_registry.iter() {
+        if let Some(previous_swap) = precedent_swaps_registry.get(uuid) {
+            if previous_swap.is_finished() {
+                continue;
+            }
+
+            // If there is a previous event then we compare it the previous call
+            if let Some(previous_last_event) = previous_swap.last_maker_event() {
+                if let Some(last_event) = swap.last_maker_event() {
+                    if previous_last_event != last_event {
+                        let swap_info = swap.get_my_info().unwrap();
+                        let msg = format!(
+                            "[{}: {} ({}) <-> {} ({})] status changed: {}",
+                            swap.uuid(),
+                            swap_info.my_coin,
+                            swap_info.my_amount,
+                            swap_info.other_coin,
+                            swap_info.other_amount,
+                            last_event.status_str()
+                        );
+                        let _ = message_service.send_message(msg.to_string(), false).await;
+                    }
+                }
+            }
+        } else {
+            // New swap
+            let swap_info = swap.get_my_info().unwrap();
+            let msg = format!(
+                "[{}: {} ({}) <-> {} ({})] swap started",
+                swap.uuid(),
+                swap_info.my_coin,
+                swap_info.my_amount,
+                swap_info.other_coin,
+                swap_info.other_amount
+            );
+            let _ = message_service.send_message(msg.to_string(), false).await;
+        }
+    }
+    *precedent_swaps_registry = swaps_registry;
+    Ok(())
+}
+
+pub async fn lp_swap_notifier_loop(ctx: MmArc) {
+    loop {
+        if ctx.is_stopping() {
+            break;
+        }
+        let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
+        let states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+        if *states == TradingBotState::Stopping {
+            break;
+        }
+        drop(states);
+        match process_swap_notification_logic(&ctx).await {
+            Ok(_) => {},
+            Err(err) => warn!("{}", err),
+        };
+        Timer::sleep(5.0).await;
+    }
+}
+
 pub async fn lp_bot_loop(ctx: MmArc) {
     info!("lp_bot_loop successfully started");
     loop {
@@ -683,6 +782,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
                 message_service.attach_service(Box::new(tg_client));
                 // even if we cannot deliver a message we want to return this rpc
                 let _ = message_service.send_message(msg.to_string(), false).await;
+                spawn(lp_swap_notifier_loop(ctx.clone()))
             }
             info!("{}", msg);
             spawn(lp_bot_loop(ctx.clone()));

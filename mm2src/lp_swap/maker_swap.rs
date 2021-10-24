@@ -1149,7 +1149,7 @@ pub enum MakerSwapEvent {
 }
 
 impl MakerSwapEvent {
-    fn status_str(&self) -> String {
+    pub fn status_str(&self) -> String {
         match self {
             MakerSwapEvent::Started(_) => "Started...".to_owned(),
             MakerSwapEvent::StartFailed(_) => "Start failed...".to_owned(),
@@ -1211,7 +1211,7 @@ impl MakerSwapEvent {
     fn is_error(&self) -> bool { !self.is_success() }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct MakerSavedEvent {
     timestamp: u64,
     event: MakerSwapEvent,
@@ -1249,7 +1249,7 @@ impl MakerSavedEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,
@@ -1335,6 +1335,8 @@ impl MakerSavedSwap {
             None => ERR!("Can't get maker coin, events are empty"),
         }
     }
+
+    pub fn last_maker_event(&self) -> Option<MakerSwapEvent> { self.events.last().map(|event| event.clone().event) }
 
     pub fn is_finished(&self) -> bool {
         match self.events.last() {

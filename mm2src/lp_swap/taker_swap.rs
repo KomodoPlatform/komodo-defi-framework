@@ -91,7 +91,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TakerSavedEvent {
     timestamp: u64,
     event: TakerSwapEvent,
@@ -128,7 +128,7 @@ impl TakerSavedEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,
