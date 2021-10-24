@@ -900,7 +900,10 @@ pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwaps
     for uuid in db_result.uuids.iter() {
         let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
             Ok(Some(swap)) => swap,
-            Ok(None) => return Err(MmError::new(MyRecentSwapsErr::UUIDNotPresentInDb(*uuid))),
+            Ok(None) => {
+                error!("No such swap with the uuid '{}'", uuid);
+                continue;
+            },
             Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
         };
         swaps.push(swap);
