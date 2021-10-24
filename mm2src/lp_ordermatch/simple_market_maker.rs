@@ -61,14 +61,14 @@ pub enum OrderProcessingError {
     OrderCreationError(String),
     #[display(fmt = "{}", _0)]
     OrderUpdateError(String),
-    #[display(fmt = "Error when querying swap history")]
-    MyRecentSwapsError,
+    #[display(fmt = "Error when querying swap history: {}", _0)]
+    MyRecentSwapsError(String),
     #[display(fmt = "Legacy error - skipping")]
     LegacyError(String),
 }
 
 impl From<MyRecentSwapsErr> for OrderProcessingError {
-    fn from(_: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError }
+    fn from(e: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError(format!("{}", e)) }
 }
 
 impl From<GetNonZeroBalance> for OrderProcessingError {
@@ -569,7 +569,7 @@ async fn execute_create_single_order(
     match create_single_order(rates, cfg, key_trade_pair.clone(), ctx.clone()).await {
         Ok(resp) => resp,
         Err(err) => {
-            error!("{} order cannot be created for: {}", err, key_trade_pair);
+            error!("{} - order cannot be created for: {}", err, key_trade_pair);
             false
         },
     }
