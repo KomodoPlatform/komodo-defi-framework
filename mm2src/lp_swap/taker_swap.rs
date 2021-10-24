@@ -128,7 +128,7 @@ impl TakerSavedEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,
