@@ -52,8 +52,7 @@ impl MessageService {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod message_service_tests {
-    use crate::mm2::message_service::telegram::TgClient;
-    use crate::mm2::message_service::MessageService;
+    use crate::{mm2::message_service::telegram::TgClient, mm2::message_service::MessageService};
     use common::block_on;
     use std::env::var;
 
