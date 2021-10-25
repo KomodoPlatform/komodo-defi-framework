@@ -101,6 +101,7 @@ pub struct TradingBotContext {
     price_url: AsyncMutex<String>,
     message_service: AsyncMutex<MessageService>,
     precedent_swaps_registry: AsyncMutex<HashMap<Uuid, SavedSwap>>,
+    bot_refresh_rate: AsyncMutex<f64>,
 }
 
 #[derive(Default, Clone, Debug)]

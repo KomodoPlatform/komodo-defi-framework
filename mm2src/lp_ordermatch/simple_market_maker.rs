@@ -28,6 +28,8 @@ use uuid::Uuid;
 
 // !< constants
 pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v1/tickers";
+pub const BOT_DEFAULT_REFRESH_RATE: f64 = 30.0;
+pub const PRECISION_FOR_NOTIFICATION: u64 = 8;
 
 // !< Type definitions
 pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<StartSimpleMakerBotError>>;
@@ -95,6 +97,7 @@ pub struct StartSimpleMakerBotRequest {
     price_url: Option<String>,
     telegram_api_key: Option<String>,
     telegram_chat_id: Option<String>,
+    bot_refresh_rate: Option<f64>,
 }
 
 #[cfg(test)]
@@ -105,6 +108,7 @@ impl StartSimpleMakerBotRequest {
             price_url: None,
             telegram_api_key: None,
             telegram_chat_id: None,
+            bot_refresh_rate: None,
         };
     }
 }
@@ -237,13 +241,15 @@ pub async fn tear_down_bot(ctx: MmArc) {
     let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
     let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     let mut precedent_swaps_registry = simple_market_maker_bot_ctx.precedent_swaps_registry.lock().await;
+    let mut refresh_rate = simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
     cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
     trading_bot_cfg.clear();
     let _ = message_service
         .send_message("trading bot successfully stopped".to_string(), false)
         .await;
     message_service.clear_services();
-    precedent_swaps_registry.clear()
+    precedent_swaps_registry.clear();
+    *refresh_rate = BOT_DEFAULT_REFRESH_RATE;
 }
 
 fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
@@ -600,6 +606,9 @@ async fn process_bot_logic(ctx: &MmArc) {
         let key_trade_pair = TradingPair::new(value.base.clone(), value.rel.clone());
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
+                if !coin_cfg.enable {
+                    continue;
+                }
                 let cloned_infos = (
                     ctx.clone(),
                     rates_registry
@@ -624,6 +633,9 @@ async fn process_bot_logic(ctx: &MmArc) {
         match memoization_pair_registry.get(&trading_pair) {
             Some(_) => continue,
             None => {
+                if !cur_cfg.enable {
+                    continue;
+                }
                 let rates_infos = rates_registry
                     .get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone())
                     .unwrap_or_default();
@@ -678,9 +690,9 @@ async fn process_swap_notification_logic(ctx: &MmArc) -> Result<(), MmError<Swap
                             "[{}: {} ({}) <-> {} ({})] status changed: {}",
                             swap.uuid(),
                             swap_info.my_coin,
-                            swap_info.my_amount,
+                            swap_info.my_amount.with_prec(PRECISION_FOR_NOTIFICATION),
                             swap_info.other_coin,
-                            swap_info.other_amount,
+                            swap_info.other_amount.with_prec(PRECISION_FOR_NOTIFICATION),
                             last_event.status_str()
                         );
                         let _ = message_service.send_message(msg.to_string(), false).await;
@@ -694,9 +706,9 @@ async fn process_swap_notification_logic(ctx: &MmArc) -> Result<(), MmError<Swap
                 "[{}: {} ({}) <-> {} ({})] swap started",
                 swap.uuid(),
                 swap_info.my_coin,
-                swap_info.my_amount,
+                swap_info.my_amount.with_prec(PRECISION_FOR_NOTIFICATION),
                 swap_info.other_coin,
-                swap_info.other_amount
+                swap_info.other_amount.with_prec(PRECISION_FOR_NOTIFICATION)
             );
             let _ = message_service.send_message(msg.to_string(), false).await;
         }
@@ -740,7 +752,8 @@ pub async fn lp_bot_loop(ctx: MmArc) {
         }
         drop(states);
         process_bot_logic(&ctx).await;
-        Timer::sleep(30.0).await;
+        let refresh_rate = *simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
+        Timer::sleep(refresh_rate).await;
     }
     info!("lp_bot_loop successfully stopped");
 }
@@ -766,6 +779,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
     let mut price_url = simple_market_maker_bot_ctx.price_url.lock().await;
+    let mut refresh_rate = simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
     let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     match *state {
         TradingBotState::Running => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
@@ -776,6 +790,10 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
             *trading_bot_cfg = req.cfg;
             *price_url = req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string());
+            *refresh_rate = req.bot_refresh_rate.unwrap_or(BOT_DEFAULT_REFRESH_RATE);
+            if *refresh_rate < BOT_DEFAULT_REFRESH_RATE {
+                *refresh_rate = BOT_DEFAULT_REFRESH_RATE;
+            }
             let msg = "simple_market_maker_bot successfully started";
             if let Some(telegram_api_key) = req.telegram_api_key {
                 let tg_client = TgClient::new(telegram_api_key, None, req.telegram_chat_id);
@@ -802,10 +820,11 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
         TradingBotState::Stopping => MmError::err(StopSimpleMakerBotError::AlreadyStopping),
         TradingBotState::Running => {
             *state = TradingBotState::Stopping;
-            let msg = "simple_market_maker_bot will stop within 30 seconds";
+            let refresh_rate = *simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
+            let msg = format!("simple_market_maker_bot will stop within {} seconds", refresh_rate);
             // even if we cannot deliver a message we want to return this rpc
-            let _ = message_service.send_message(msg.to_string(), false).await;
             info!("{}", msg);
+            let _ = message_service.send_message(msg, false).await;
             Ok(StopSimpleMakerBotRes {
                 result: "Success".to_string(),
             })
