@@ -20,7 +20,6 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use serde_json::Value as Json;
-use std::time::SystemTimeError;
 use std::{collections::{HashMap, HashSet},
           num::NonZeroUsize,
           str::Utf8Error};
@@ -80,10 +79,6 @@ impl From<GetNonZeroBalance> for OrderProcessingError {
             GetNonZeroBalance::BalanceIsZero => OrderProcessingError::BalanceIsZero,
         }
     }
-}
-
-impl From<SystemTimeError> for OrderProcessingError {
-    fn from(e: SystemTimeError) -> Self { OrderProcessingError::PriceElapsedValidityUntreatable(e.to_string()) }
 }
 
 impl From<std::string::String> for OrderProcessingError {
@@ -427,7 +422,7 @@ async fn checks_order_prerequisites(
     }
 
     // Elapsed validity is the field defined in the cfg or 5 min by default (300 sec)
-    let elapsed = rates.retrieve_elapsed_times()?;
+    let elapsed = rates.retrieve_elapsed_times();
     let elapsed_validity = cfg.price_elapsed_validity.unwrap_or(300.0);
 
     if elapsed > elapsed_validity {
