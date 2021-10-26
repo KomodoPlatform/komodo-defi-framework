@@ -149,7 +149,7 @@ mod event_dispatcher_tests {
         let listener = ListenerSwapStatusChanged::default();
         let res = ListenerSwapStatusChangedArc(Arc::new(listener));
         dispatcher.add_listener("listener_swap_status_changed", res.clone());
-        assert_eq!(dispatcher.len(), 1);
+        assert_eq!(dispatcher.nb_listeners(), 1);
         dispatcher.dispatch(AppEvents::EventSwapStatusChanged {
             uuid: Default::default(),
             status: "Started".to_string(),

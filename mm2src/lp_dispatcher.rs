@@ -37,7 +37,6 @@ pub struct DispatcherContext {
     pub dispatcher: AsyncMutex<Dispatcher<LpEvents>>,
 }
 
-#[cfg_attr(test, mockable)]
 impl DispatcherContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     pub fn from_ctx(ctx: &MmArc) -> Result<Arc<DispatcherContext>, String> {
