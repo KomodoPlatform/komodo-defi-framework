@@ -9,6 +9,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 
+use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::MM_VERSION;
@@ -1212,7 +1213,7 @@ impl MakerSwapEvent {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct MakerSavedEvent {
+pub struct MakerSavedEvent {
     timestamp: u64,
     event: MakerSwapEvent,
 }
@@ -1249,7 +1250,7 @@ impl MakerSavedEvent {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,
@@ -1335,8 +1336,6 @@ impl MakerSavedSwap {
             None => ERR!("Can't get maker coin, events are empty"),
         }
     }
-
-    pub fn last_maker_event(&self) -> Option<MakerSwapEvent> { self.events.last().map(|event| event.clone().event) }
 
     pub fn is_finished(&self) -> bool {
         match self.events.last() {
@@ -1536,6 +1535,19 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         event: event.clone(),
                     };
 
+                    let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
+                    let dispatcher = dispatcher_ctx.dispatcher.lock().await;
+                    dispatcher
+                        .dispatch_async(LpEvents::MakerSwapStatusChanged {
+                            uuid,
+                            taker_coin: running_swap.taker_coin().to_string(),
+                            maker_coin: running_swap.maker_coin().to_string(),
+                            taker_amount: running_swap.taker_amount.clone(),
+                            maker_amount: running_swap.maker_amount.clone(),
+                            event_status: to_save.event.status_str().to_string(),
+                        })
+                        .await;
+                    drop(dispatcher);
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");

@@ -1,4 +1,4 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
+use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap};
 use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap};
 use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
@@ -37,13 +37,6 @@ impl SavedSwap {
         match self {
             SavedSwap::Maker(swap) => swap.is_success().unwrap_or(false),
             SavedSwap::Taker(swap) => swap.is_success().unwrap_or(false),
-        }
-    }
-
-    pub fn last_maker_event(&self) -> Option<MakerSwapEvent> {
-        match self {
-            SavedSwap::Maker(swap) => swap.last_maker_event(),
-            SavedSwap::Taker(_) => None,
         }
     }
 

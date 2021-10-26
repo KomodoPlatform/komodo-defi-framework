@@ -3,17 +3,20 @@
 //  marketmaker
 //
 
+use async_trait::async_trait;
+use common::event_dispatcher::{EventListener, Events};
+use common::log::info;
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
+#[cfg(test)] use mocktopus::macros::*;
+use std::ops::Deref;
 use std::{collections::HashMap, sync::Arc};
 
-#[cfg(test)] use mocktopus::macros::*;
-use uuid::Uuid;
-
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
-use crate::mm2::lp_swap::SavedSwap;
+use crate::mm2::lp_dispatcher::LpEvents;
+use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::PRECISION_FOR_NOTIFICATION;
 use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
@@ -98,8 +101,68 @@ pub struct TradingBotContext {
     trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
     price_url: AsyncMutex<String>,
     message_service: AsyncMutex<MessageService>,
-    precedent_swaps_registry: AsyncMutex<HashMap<Uuid, SavedSwap>>,
     bot_refresh_rate: AsyncMutex<f64>,
+}
+
+#[async_trait]
+impl EventListener for TradingBotContext {
+    type Event = LpEvents;
+
+    fn process_event(&self, _event: Self::Event) { unimplemented!() }
+
+    async fn process_event_async(&self, event: Self::Event) {
+        if let LpEvents::MakerSwapStatusChanged {
+            uuid,
+            taker_coin,
+            maker_coin,
+            taker_amount,
+            maker_amount,
+            event_status,
+        } = event
+        {
+            let msg = format!(
+                "[{}: {} ({}) <-> {} ({})] status changed: {}",
+                uuid,
+                taker_coin,
+                taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                maker_coin,
+                maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                event_status
+            );
+            info!("event received: {}", msg);
+            let message_service = self.message_service.lock().await;
+            let _ = message_service.send_message(msg.to_string(), false).await;
+        }
+    }
+
+    fn get_desired_events(&self) -> Events<Self::Event> {
+        vec![LpEvents::MakerSwapStatusChanged {
+            uuid: Default::default(),
+            taker_coin: "".to_string(),
+            maker_coin: "".to_string(),
+            taker_amount: Default::default(),
+            maker_amount: Default::default(),
+            event_status: "".to_string(),
+        }]
+    }
+}
+
+#[derive(Clone)]
+pub struct ArcTradingBotContext(Arc<TradingBotContext>);
+
+impl Deref for ArcTradingBotContext {
+    type Target = TradingBotContext;
+    fn deref(&self) -> &TradingBotContext { &*self.0 }
+}
+
+#[async_trait]
+impl EventListener for ArcTradingBotContext {
+    type Event = LpEvents;
+    fn process_event(&self, ev: Self::Event) { self.0.process_event(ev); }
+
+    async fn process_event_async(&self, event: Self::Event) { self.0.process_event_async(event).await }
+
+    fn get_desired_events(&self) -> Events<Self::Event> { self.0.get_desired_events() }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -176,9 +239,10 @@ impl TickerInfosRegistry {
 #[cfg_attr(test, mockable)]
 impl TradingBotContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    fn from_ctx(ctx: &MmArc) -> Result<Arc<TradingBotContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.simple_market_maker_bot_ctx, move || {
+    fn from_ctx(ctx: &MmArc) -> Result<ArcTradingBotContext, String> {
+        let arc_bot_context = try_s!(from_ctx(&ctx.simple_market_maker_bot_ctx, move || {
             Ok(TradingBotContext::default())
-        })))
+        }));
+        Ok(ArcTradingBotContext(arc_bot_context))
     }
 }

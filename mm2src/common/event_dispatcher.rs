@@ -1,22 +1,26 @@
-use std::collections::HashMap;
+use async_trait::async_trait;
+use std::collections::{HashMap, HashSet};
 
 pub type Events<T> = Vec<T>;
-pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType>>>;
+pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType> + Send + Sync>>;
 pub type DispatchTable = HashMap<usize, Vec<usize>>;
 
 pub trait EventUniqueIdTraits {
     fn get_event_unique_id(&self) -> usize;
 }
 
+#[async_trait]
 pub trait EventListener {
     type Event;
     fn process_event(&self, event: Self::Event);
+    async fn process_event_async(&self, event: Self::Event);
     fn get_desired_events(&self) -> Events<Self::Event>;
 }
 
 #[derive(Default)]
 pub struct Dispatcher<EventType> {
     listeners: Listeners<EventType>,
+    listeners_id: HashSet<String>,
     dispatch_table: DispatchTable,
 }
 
@@ -24,7 +28,15 @@ impl<EventType> Dispatcher<EventType>
 where
     EventType: Clone + EventUniqueIdTraits,
 {
-    pub fn add_listener(&mut self, listen: impl EventListener<Event = EventType> + 'static + Send + Sync) {
+    pub fn add_listener(
+        &mut self,
+        listener_id: &str,
+        listen: impl EventListener<Event = EventType> + 'static + Send + Sync,
+    ) {
+        if self.listeners_id.contains(listener_id) {
+            return;
+        }
+        self.listeners_id.insert(listener_id.to_string());
         let id = self.listeners.len();
         let events = listen.get_desired_events();
         self.listeners.push(Box::new(listen));
@@ -43,11 +55,24 @@ where
             }
         }
     }
+
+    pub async fn dispatch_async(&self, ev: EventType) {
+        if let Some(ref interested) = self.dispatch_table.get(&ev.get_event_unique_id()) {
+            for id in interested.iter().copied() {
+                self.listeners[id].process_event_async(ev.clone()).await;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn nb_listeners(&self) -> usize { self.listeners.len() }
 }
 
 #[cfg(test)]
 mod event_dispatcher_tests {
+    use crate::block_on;
     use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueIdTraits, Events};
+    use async_trait::async_trait;
     use std::ops::Deref;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -86,6 +111,7 @@ mod event_dispatcher_tests {
         fn deref(&self) -> &ListenerSwapStatusChanged { &*self.0 }
     }
 
+    #[async_trait]
     impl EventListener for ListenerSwapStatusChanged {
         type Event = AppEvents;
         fn process_event(&self, ev: AppEvents) {
@@ -97,6 +123,8 @@ mod event_dispatcher_tests {
             }
         }
 
+        async fn process_event_async(&self, event: Self::Event) { self.process_event(event) }
+
         fn get_desired_events(&self) -> Events<AppEvents> {
             vec![AppEvents::EventSwapStatusChanged {
                 uuid: Default::default(),
@@ -105,10 +133,14 @@ mod event_dispatcher_tests {
         }
     }
 
-    impl<El: EventListener<Event = AppEvents>, Ptr: Deref<Target = El>> EventListener for Ptr {
+    #[async_trait]
+    impl EventListener for ListenerSwapStatusChangedArc {
         type Event = AppEvents;
-        fn process_event(&self, ev: Self::Event) { self.deref().process_event(ev); }
-        fn get_desired_events(&self) -> Events<Self::Event> { self.deref().get_desired_events() }
+        fn process_event(&self, ev: Self::Event) { self.0.process_event(ev); }
+
+        async fn process_event_async(&self, event: Self::Event) { self.0.process_event_async(event).await }
+
+        fn get_desired_events(&self) -> Events<Self::Event> { self.0.get_desired_events() }
     }
 
     #[test]
@@ -116,10 +148,19 @@ mod event_dispatcher_tests {
         let mut dispatcher: Dispatcher<AppEvents> = Default::default();
         let listener = ListenerSwapStatusChanged::default();
         let res = ListenerSwapStatusChangedArc(Arc::new(listener));
-        dispatcher.add_listener(res);
+        dispatcher.add_listener("listener_swap_status_changed", res.clone());
+        assert_eq!(dispatcher.len(), 1);
         dispatcher.dispatch(AppEvents::EventSwapStatusChanged {
             uuid: Default::default(),
             status: "Started".to_string(),
         });
+
+        block_on(dispatcher.dispatch_async(AppEvents::EventSwapStatusChanged {
+            uuid: Default::default(),
+            status: "Started".to_string(),
+        }));
+
+        dispatcher.add_listener("listener_swap_status_changed", res);
+        assert_eq!(dispatcher.nb_listeners(), 1);
     }
 }
