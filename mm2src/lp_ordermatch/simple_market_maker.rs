@@ -713,7 +713,6 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
                 message_service.attach_service(Box::new(tg_client));
                 // even if we cannot deliver a message we want to return this rpc
                 let _ = message_service.send_message(msg.to_string(), false).await;
-                //spawn(lp_swap_notifier_loop(ctx.clone()))
             }
             info!("{}", msg);
             spawn(lp_bot_loop(ctx.clone()));

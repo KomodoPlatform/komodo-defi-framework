@@ -25,7 +25,7 @@ pub enum SavedSwapError {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SavedSwap {
     Maker(MakerSavedSwap),

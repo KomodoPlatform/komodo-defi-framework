@@ -1250,7 +1250,7 @@ impl MakerSavedEvent {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,

@@ -12,7 +12,6 @@ pub trait EventUniqueIdTraits {
 #[async_trait]
 pub trait EventListener {
     type Event;
-    fn process_event(&self, event: Self::Event);
     async fn process_event_async(&self, event: Self::Event);
     fn get_desired_events(&self) -> Events<Self::Event>;
 }
@@ -48,14 +47,6 @@ where
         }
     }
 
-    pub fn dispatch(&self, ev: EventType) {
-        if let Some(ref interested) = self.dispatch_table.get(&ev.get_event_unique_id()) {
-            for id in interested.iter().copied() {
-                self.listeners[id].process_event(ev.clone());
-            }
-        }
-    }
-
     pub async fn dispatch_async(&self, ev: EventType) {
         if let Some(ref interested) = self.dispatch_table.get(&ev.get_event_unique_id()) {
             for id in interested.iter().copied() {
@@ -78,7 +69,7 @@ mod event_dispatcher_tests {
     use uuid::Uuid;
 
     #[derive(Clone)]
-    pub enum AppEvents {
+    enum AppEvents {
         EventSwapStatusChanged { uuid: Uuid, status: String },
     }
 
@@ -101,10 +92,10 @@ mod event_dispatcher_tests {
     }
 
     #[derive(Default)]
-    pub struct ListenerSwapStatusChanged;
+    struct ListenerSwapStatusChanged;
 
     #[derive(Clone)]
-    pub struct ListenerSwapStatusChangedArc(Arc<ListenerSwapStatusChanged>);
+    struct ListenerSwapStatusChangedArc(Arc<ListenerSwapStatusChanged>);
 
     impl Deref for ListenerSwapStatusChangedArc {
         type Target = ListenerSwapStatusChanged;
@@ -112,18 +103,17 @@ mod event_dispatcher_tests {
     }
 
     #[async_trait]
-    impl EventListener for ListenerSwapStatusChanged {
+    impl EventListener for ListenerSwapStatusChangedArc {
         type Event = AppEvents;
-        fn process_event(&self, ev: AppEvents) {
-            match ev {
+
+        async fn process_event_async(&self, event: Self::Event) {
+            match event {
                 AppEvents::EventSwapStatusChanged { uuid, status } => {
                     assert_eq!(uuid.to_string(), "00000000-0000-0000-0000-000000000000");
                     assert_eq!(status, "Started");
                 },
             }
         }
-
-        async fn process_event_async(&self, event: Self::Event) { self.process_event(event) }
 
         fn get_desired_events(&self) -> Events<AppEvents> {
             vec![AppEvents::EventSwapStatusChanged {
@@ -133,16 +123,6 @@ mod event_dispatcher_tests {
         }
     }
 
-    #[async_trait]
-    impl EventListener for ListenerSwapStatusChangedArc {
-        type Event = AppEvents;
-        fn process_event(&self, ev: Self::Event) { self.0.process_event(ev); }
-
-        async fn process_event_async(&self, event: Self::Event) { self.0.process_event_async(event).await }
-
-        fn get_desired_events(&self) -> Events<Self::Event> { self.0.get_desired_events() }
-    }
-
     #[test]
     fn test_dispatcher() {
         let mut dispatcher: Dispatcher<AppEvents> = Default::default();
@@ -150,10 +130,6 @@ mod event_dispatcher_tests {
         let res = ListenerSwapStatusChangedArc(Arc::new(listener));
         dispatcher.add_listener("listener_swap_status_changed", res.clone());
         assert_eq!(dispatcher.nb_listeners(), 1);
-        dispatcher.dispatch(AppEvents::EventSwapStatusChanged {
-            uuid: Default::default(),
-            status: "Started".to_string(),
-        });
 
         block_on(dispatcher.dispatch_async(AppEvents::EventSwapStatusChanged {
             uuid: Default::default(),

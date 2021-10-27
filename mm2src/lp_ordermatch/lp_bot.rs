@@ -104,11 +104,17 @@ pub struct TradingBotContext {
     bot_refresh_rate: AsyncMutex<f64>,
 }
 
-#[async_trait]
-impl EventListener for TradingBotContext {
-    type Event = LpEvents;
+#[derive(Clone)]
+pub struct ArcTradingBotContext(Arc<TradingBotContext>);
 
-    fn process_event(&self, _event: Self::Event) { unimplemented!() }
+impl Deref for ArcTradingBotContext {
+    type Target = TradingBotContext;
+    fn deref(&self) -> &TradingBotContext { &*self.0 }
+}
+
+#[async_trait]
+impl EventListener for ArcTradingBotContext {
+    type Event = LpEvents;
 
     async fn process_event_async(&self, event: Self::Event) {
         if let LpEvents::MakerSwapStatusChanged {
@@ -145,24 +151,6 @@ impl EventListener for TradingBotContext {
             event_status: "".to_string(),
         }]
     }
-}
-
-#[derive(Clone)]
-pub struct ArcTradingBotContext(Arc<TradingBotContext>);
-
-impl Deref for ArcTradingBotContext {
-    type Target = TradingBotContext;
-    fn deref(&self) -> &TradingBotContext { &*self.0 }
-}
-
-#[async_trait]
-impl EventListener for ArcTradingBotContext {
-    type Event = LpEvents;
-    fn process_event(&self, ev: Self::Event) { self.0.process_event(ev); }
-
-    async fn process_event_async(&self, event: Self::Event) { self.0.process_event_async(event).await }
-
-    fn get_desired_events(&self) -> Events<Self::Event> { self.0.get_desired_events() }
 }
 
 #[derive(Default, Clone, Debug)]
