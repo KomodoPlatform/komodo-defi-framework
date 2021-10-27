@@ -97,6 +97,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     let request_orderbook = true;
     let base_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.base);
     let rel_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.rel);
+    if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
+        return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
+    }
+
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock().await;
     let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());

@@ -1387,9 +1387,9 @@ impl TakerOrder {
 
         match self.request.action {
             TakerAction::Buy => {
-                let match_ticker = (self.request.base == reserved.base && self.request.rel == reserved.rel)
-                    || (self.base_orderbook_ticker.as_ref() == Some(&reserved.base)
-                        && self.rel_orderbook_ticker.as_ref() == Some(&reserved.rel));
+                let match_ticker = (self.request.base == reserved.base
+                    || self.base_orderbook_ticker.as_ref() == Some(&reserved.base))
+                    && (self.request.rel == reserved.rel || self.rel_orderbook_ticker.as_ref() == Some(&reserved.rel));
                 if match_ticker && my_base_amount == other_base_amount && other_rel_amount <= my_rel_amount {
                     MatchReservedResult::Matched
                 } else {
@@ -1397,9 +1397,10 @@ impl TakerOrder {
                 }
             },
             TakerAction::Sell => {
-                let match_ticker = (self.request.base == reserved.rel && self.request.rel == reserved.base)
-                    || (self.base_orderbook_ticker.as_ref() == Some(&reserved.rel)
-                        && self.rel_orderbook_ticker.as_ref() == Some(&reserved.base));
+                let match_ticker = (self.request.base == reserved.rel
+                    || self.base_orderbook_ticker.as_ref() == Some(&reserved.rel))
+                    && (self.request.rel == reserved.base
+                        || self.rel_orderbook_ticker.as_ref() == Some(&reserved.base));
                 if match_ticker && my_base_amount == other_rel_amount && my_rel_amount <= other_base_amount {
                     MatchReservedResult::Matched
                 } else {
@@ -1762,9 +1763,9 @@ impl MakerOrder {
 
         match taker.action {
             TakerAction::Buy => {
-                let ticker_match = (self.base == taker.base && self.rel == taker.rel)
-                    || (self.base_orderbook_ticker.as_ref() == Some(&taker.base)
-                        && self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
+                let ticker_match = (self.base == taker.base
+                    || self.base_orderbook_ticker.as_ref() == Some(&taker.base))
+                    && (self.rel == taker.rel || self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
                 let taker_price = taker_rel_amount / taker_base_amount;
                 if ticker_match
                     && taker_base_amount <= &self.available_amount()
@@ -1777,9 +1778,8 @@ impl MakerOrder {
                 }
             },
             TakerAction::Sell => {
-                let ticker_match = (self.base == taker.rel && self.rel == taker.base)
-                    || (self.base_orderbook_ticker.as_ref() == Some(&taker.rel)
-                        && self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
+                let ticker_match = (self.base == taker.rel || self.base_orderbook_ticker.as_ref() == Some(&taker.rel))
+                    && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
 
                 // Calculate the resulting base amount using the Maker's price instead of the Taker's.

@@ -8324,6 +8324,55 @@ fn test_get_public_key() {
     )
 }
 
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_orderbook_with_same_orderbook_ticker() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+        {"coin":"RICK-Utxo","asset":"RICK","orderbook_ticker":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+        // just a random contract address
+        {"coin":"RICK-ERC20","orderbook_ticker":"RICK","decimals": 18,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9"}}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "RICK-Utxo",
+    })))
+    .unwrap();
+    assert!(
+        rc.0.is_server_error(),
+        "orderbook succeed but should have failed {}",
+        rc.1
+    );
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "RICK-ERC20",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!orderbook {}", rc.1);
+}
+
 // HOWTO
 // 1. Install Firefox.
 // 2. Install wasm-bindgen-cli: cargo install wasm-bindgen-cli
