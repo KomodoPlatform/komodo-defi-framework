@@ -40,6 +40,9 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
         check_last_bidirectional_trade_thresh_hold: Some(true),
         max: Some(true),
         balance_percent: None,
+        min_base_price: None,
+        min_rel_price: None,
+        min_pair_price: None,
     }
 }
 

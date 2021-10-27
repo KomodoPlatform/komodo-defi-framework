@@ -27,7 +27,7 @@ use std::{collections::{HashMap, HashSet},
 use uuid::Uuid;
 
 // !< constants
-pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v1/tickers";
+pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v2/tickers";
 pub const BOT_DEFAULT_REFRESH_RATE: f64 = 30.0;
 pub const PRECISION_FOR_NOTIFICATION: u64 = 8;
 
