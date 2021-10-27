@@ -22,6 +22,17 @@ pub async fn slurp_url(url: &str) -> SlurpResult {
         .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
 }
 
+/// Executes a POST request, returning the response status, headers and body.
+/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
+    FetchRequest::post(url)
+        .header("Content-Type", "application/json")
+        .body_utf8(body)
+        .request_str()
+        .await
+        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+}
+
 pub struct FetchRequest {
     uri: String,
     method: FetchMethod,

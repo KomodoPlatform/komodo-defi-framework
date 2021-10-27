@@ -7,9 +7,10 @@ use http::{HeaderMap, StatusCode};
 #[cfg(target_arch = "wasm32")] pub mod wasm_ws;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native_http::{slurp_req, slurp_url};
+pub use native_http::{slurp_post_json, slurp_req, slurp_url};
 
-#[cfg(target_arch = "wasm32")] pub use wasm_http::slurp_url;
+#[cfg(target_arch = "wasm32")]
+pub use wasm_http::{slurp_post_json, slurp_url};
 
 pub type SlurpResult = Result<(StatusCode, HeaderMap, Vec<u8>), MmError<SlurpError>>;
 
@@ -25,4 +26,28 @@ pub enum SlurpError {
     Transport { uri: String, error: String },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+}
+
+/// Send POST JSON HTTPS request and parse response
+pub async fn post_json<T>(url: &str, json: String) -> Result<T, MmError<SlurpError>>
+where
+    T: serde::de::DeserializeOwned + Send + 'static,
+{
+    let result = slurp_post_json(url, json).await?;
+    serde_json::from_slice(&result.2).map_to_mm(|e| SlurpError::ErrorDeserializing {
+        uri: url.to_owned(),
+        error: e.to_string(),
+    })
+}
+
+/// Fetch URL by HTTPS and parse JSON response
+pub async fn fetch_json<T>(url: &str) -> Result<T, MmError<SlurpError>>
+where
+    T: serde::de::DeserializeOwned + Send + 'static,
+{
+    let result = slurp_url(url).await?;
+    serde_json::from_slice(&result.2).map_to_mm(|e| SlurpError::ErrorDeserializing {
+        uri: url.to_owned(),
+        error: e.to_string(),
+    })
 }

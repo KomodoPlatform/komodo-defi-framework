@@ -2,7 +2,7 @@ use crate::mm_error::prelude::*;
 use crate::transport::{SlurpError, SlurpResult};
 use crate::wio::{drive03, HYPER};
 use futures::channel::oneshot::Canceled;
-use http::Request;
+use http::{header, HeaderValue, Request};
 use hyper::Body;
 
 impl From<Canceled> for SlurpError {
@@ -22,6 +22,11 @@ impl SlurpError {
             SlurpError::Transport { uri, error }
         }
     }
+}
+
+/// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
+impl From<http::Error> for SlurpError {
+    fn from(e: http::Error) -> Self { SlurpError::InvalidRequest(e.to_string()) }
 }
 
 /// Executes a Hyper request, returning the response status, headers and body.
@@ -45,11 +50,18 @@ pub async fn slurp_req(request: Request<Vec<u8>>) -> SlurpResult {
 
 /// Executes a GET request, returning the response status, headers and body.
 pub async fn slurp_url(url: &str) -> SlurpResult {
-    let req = Request::builder()
-        .uri(url)
-        .body(Vec::new())
-        .map_to_mm(|e| SlurpError::InvalidRequest(e.to_string()))?;
+    let req = Request::builder().uri(url).body(Vec::new())?;
     slurp_req(req).await
+}
+
+/// Executes a POST request, returning the response status, headers and body.
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
+    let request = Request::builder()
+        .method("POST")
+        .uri(url)
+        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .body(body.into())?;
+    slurp_req(request).await
 }
 
 #[cfg(test)]
