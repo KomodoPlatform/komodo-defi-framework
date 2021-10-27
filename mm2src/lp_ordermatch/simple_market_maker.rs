@@ -14,7 +14,8 @@ use common::{executor::{spawn, Timer},
              mm_ctx::MmArc,
              mm_error::MmError,
              mm_number::MmNumber,
-             slurp_url, HttpStatusCode, PagingOptions};
+             transport::{slurp_url, SlurpError},
+             HttpStatusCode, PagingOptions};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
@@ -161,6 +162,7 @@ pub enum StartSimpleMakerBotError {
 pub enum PriceServiceRequestError {
     HttpProcessError(String),
     ParsingAnswerError(String),
+    Internal(String),
 }
 
 impl From<serde_json::Error> for PriceServiceRequestError {
@@ -173,6 +175,19 @@ impl From<std::string::String> for PriceServiceRequestError {
 
 impl From<std::str::Utf8Error> for PriceServiceRequestError {
     fn from(error: Utf8Error) -> Self { PriceServiceRequestError::HttpProcessError(error.to_string()) }
+}
+
+impl From<SlurpError> for PriceServiceRequestError {
+    fn from(e: SlurpError) -> Self {
+        let error = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => PriceServiceRequestError::ParsingAnswerError(error),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => {
+                PriceServiceRequestError::HttpProcessError(error)
+            },
+            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => PriceServiceRequestError::Internal(error),
+        }
+    }
 }
 
 impl HttpStatusCode for StartSimpleMakerBotError {

@@ -24,7 +24,8 @@ cfg_native! {
     use crate::block_on;
     use crate::log::dashboard_path;
     use crate::fs::slurp;
-    use crate::wio::{slurp_req, POOL};
+    use crate::transport::slurp_req;
+    use crate::wio::POOL;
     use chrono::{Local, TimeZone};
     use bytes::Bytes;
     use futures::channel::oneshot;

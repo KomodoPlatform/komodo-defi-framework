@@ -107,7 +107,7 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
-    use common::wio::slurp_reqʹ;
+    use common::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
@@ -123,12 +123,12 @@ async fn send_request(
         req.headers_mut()
             .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let timeout = Timer::sleep(60.);
-        let req = Box::pin(slurp_reqʹ(req));
+        let req = Box::pin(slurp_req(req));
         let rc = select(req, timeout).await;
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
-                errors.push(ERRL!("timeout"));
+                errors.push(ERRL!("Error requesting '{}': timeout", uri));
                 continue;
             },
         };
@@ -136,7 +136,7 @@ async fn send_request(
         let (status, _headers, body) = match res {
             Ok(r) => r,
             Err(err) => {
-                errors.push(err);
+                errors.push(err.to_string());
                 continue;
             },
         };
@@ -144,7 +144,12 @@ async fn send_request(
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
-            errors.push(ERRL!("!200: {}, {}", status, binprint(&body, b'.')));
+            errors.push(ERRL!(
+                "Server '{}' response !200: {}, {}",
+                uri,
+                status,
+                binprint(&body, b'.')
+            ));
             continue;
         }
 
@@ -189,7 +194,7 @@ async fn send_request_once(
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
-    use common::wasm_http::FetchRequest;
+    use common::transport::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errkind:ident) => {
