@@ -478,8 +478,6 @@ impl WithdrawRequest {
     }
 }
 
-/// Please note that no type should have the same structure as another type,
-/// because this enum has the `untagged` deserialization.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum StakingInfosDetails {

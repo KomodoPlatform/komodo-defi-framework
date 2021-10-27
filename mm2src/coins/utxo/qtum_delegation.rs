@@ -143,7 +143,10 @@ impl QtumCoin {
             .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
         let am_i_staking = add_delegation_history.len() > remove_delegation_history.len();
         if am_i_staking {
-            let last_tx_add = &add_delegation_history[add_delegation_history.len() - 1];
+            let last_tx_add = match add_delegation_history.last() {
+                Some(last_tx_add) => last_tx_add,
+                None => return Ok(None),
+            };
             let res = &client
                 .blockchain_transaction_get_receipt(&last_tx_add.tx_hash)
                 .compat()
@@ -156,17 +159,26 @@ impl QtumCoin {
             // topic[0] -> a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5
             // topic[1] -> 000000000000000000000000d4ea77298fdac12c657a18b222adc8b307e18127 -> staker_address
             // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
-            let raw = res[0].log[0].topics[1].trim_start_matches('0');
-            let hash = AddressHash::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
-            let address = Address {
-                prefix: utxo.my_address.prefix,
-                t_addr_prefix: utxo.my_address.t_addr_prefix,
-                hash,
-                checksum_type: utxo.my_address.checksum_type,
-                hrp: utxo.my_address.hrp.clone(),
-                addr_format: utxo.my_address.addr_format.clone(),
+            // a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5
+
+            return if let Some(receipt) = res
+                .into_iter()
+                .find(|receipt| receipt.log.iter().any(|e| e.topics[0] == QTUM_ADD_DELEGATION_TOPIC))
+            {
+                let raw = receipt.log[0].topics[1].trim_start_matches('0');
+                let hash = AddressHash::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
+                let address = Address {
+                    prefix: utxo.my_address.prefix,
+                    t_addr_prefix: utxo.my_address.t_addr_prefix,
+                    hash,
+                    checksum_type: utxo.my_address.checksum_type,
+                    hrp: utxo.my_address.hrp.clone(),
+                    addr_format: utxo.my_address.addr_format.clone(),
+                };
+                Ok(Some(address.to_string()))
+            } else {
+                Ok(None)
             };
-            return Ok(Some(address.to_string()));
         }
         Ok(None)
     }
