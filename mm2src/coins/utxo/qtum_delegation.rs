@@ -152,14 +152,14 @@ impl QtumCoin {
                 .compat()
                 .await
                 .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
-            // there is only one receipt and 3 topics,
+            // there is only 3 topics for an add_delegation
+            // the first entry is the operation (add_delegation / remove_delegation),
             // the second entry is always the staker as hexadecimal 32 byte padded
             // by trimming the start we retrieve the standard hex hash format
             // https://testnet.qtum.info/tx/c62d707b67267a13a53b5910ffbf393c47f00734cff1c73aae6e05d24258372f
-            // topic[0] -> a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5
+            // topic[0] -> a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5 -> add_delegation_topic
             // topic[1] -> 000000000000000000000000d4ea77298fdac12c657a18b222adc8b307e18127 -> staker_address
             // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
-            // a23803f3b2b56e71f2921c22b23c32ef596a439dbe03f7250e6b58a30eb910b5
 
             return if let Some(receipt) = res
                 .into_iter()
