@@ -55,6 +55,9 @@ pub struct SimpleCoinMarketMakerCfg {
     pub check_last_bidirectional_trade_thresh_hold: Option<bool>,
     pub max: Option<bool>,
     pub balance_percent: Option<MmNumber>,
+    pub min_base_price: Option<MmNumber>,
+    pub min_rel_price: Option<MmNumber>,
+    pub min_pair_price: Option<MmNumber>,
 }
 
 #[derive(Default)]
@@ -157,6 +160,8 @@ impl EventListener for ArcTradingBotContext {
 pub struct RateInfos {
     base: String,
     rel: String,
+    base_price: MmNumber,
+    rel_price: MmNumber,
     price: MmNumber,
     last_updated_timestamp: Option<u64>,
     base_provider: Provider,
@@ -216,6 +221,8 @@ impl TickerInfosRegistry {
                     } else {
                         Some(rel_price_infos.last_updated_timestamp)
                     };
+                rate_infos.base_price = base_price_infos.last_price.clone();
+                rate_infos.rel_price = rel_price_infos.last_price.clone();
                 rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
                 Some(rate_infos)
             },

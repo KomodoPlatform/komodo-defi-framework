@@ -51,6 +51,22 @@ pub enum OrderProcessingError {
     PriceElapsedValidityExpired,
     #[display(fmt = "Unable to parse/treat elapsed time {} - skipping", _0)]
     PriceElapsedValidityUntreatable(String),
+    #[display(fmt = "Price of base coin {} is below min_base_price {}", base_price, min_base_price)]
+    PriceBelowMinBasePrice { base_price: String, min_base_price: String },
+    #[display(fmt = "Price of rel coin {} is below min_rel_price {}", rel_price, min_rel_price)]
+    PriceBelowMinRelPrice { rel_price: String, min_rel_price: String },
+    #[display(
+        fmt = "Price of pair {} ({}) is below min_pair_price {}",
+        pair,
+        pair_price,
+        min_pair_price
+    )]
+    PriceBelowPairPrice {
+        pair: String,
+        pair_price: String,
+        min_pair_price: String,
+    },
+
     #[display(fmt = "Asset not enabled - skipping")]
     AssetNotEnabled,
     #[display(fmt = "Internal coin find error - skipping")]
@@ -410,6 +426,34 @@ async fn checks_order_prerequisites(
     if rates.price.is_zero() {
         warn!("price from provider is zero - skipping for {}", key_trade_pair);
         return MmError::err(OrderProcessingError::PriceIsZero);
+    }
+
+    if let Some(min_base_price) = &cfg.min_base_price {
+        if &rates.base_price < min_base_price {
+            return MmError::err(OrderProcessingError::PriceBelowMinBasePrice {
+                base_price: rates.base_price.to_string(),
+                min_base_price: min_base_price.to_string(),
+            });
+        }
+    }
+
+    if let Some(rel_min_price) = &cfg.min_rel_price {
+        if &rates.rel_price < rel_min_price {
+            return MmError::err(OrderProcessingError::PriceBelowMinRelPrice {
+                rel_price: rates.rel_price.to_string(),
+                min_rel_price: rel_min_price.to_string(),
+            });
+        }
+    }
+
+    if let Some(min_pair_price) = &cfg.min_pair_price {
+        if &rates.price < min_pair_price {
+            return MmError::err(OrderProcessingError::PriceBelowPairPrice {
+                pair: key_trade_pair.to_string(),
+                pair_price: rates.price.to_string(),
+                min_pair_price: min_pair_price.to_string(),
+            });
+        }
     }
 
     if rates.last_updated_timestamp.is_none() {
