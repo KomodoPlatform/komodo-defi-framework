@@ -2,8 +2,8 @@ use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
 use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
                    Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
-use crate::utxo::qtum::{contract_addr_from_utxo_addr, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
-                        QtumStakingInfosDetails};
+use crate::utxo::qtum::{contract_addr_from_utxo_addr, QtumBasedCoin, QtumCoin, QtumDelegationOps,
+                        QtumDelegationRequest, QtumStakingInfosDetails};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::UTXO_LOCK;
@@ -161,20 +161,18 @@ impl QtumCoin {
             // topic[1] -> 000000000000000000000000d4ea77298fdac12c657a18b222adc8b307e18127 -> staker_address
             // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
 
-            return if let Some(receipt) = res
+            return if let Some(raw) = res
                 .into_iter()
                 .find(|receipt| receipt.log.iter().any(|e| e.topics[0] == QTUM_ADD_DELEGATION_TOPIC))
-            {
-                let raw = receipt.log[0].topics[1].trim_start_matches('0');
-                let hash = AddressHash::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
-                let address = Address {
-                    prefix: utxo.my_address.prefix,
-                    t_addr_prefix: utxo.my_address.t_addr_prefix,
-                    hash,
-                    checksum_type: utxo.my_address.checksum_type,
-                    hrp: utxo.my_address.hrp.clone(),
-                    addr_format: utxo.my_address.addr_format.clone(),
-                };
+                .and_then(|receipt| {
+                    receipt
+                        .log
+                        .get(0)
+                        .and_then(|log_entry| log_entry.topics.get(1))
+                        .map(|padded_staker_address_hex| padded_staker_address_hex.trim_start_matches('0'))
+                }) {
+                let hash = H160::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
+                let address = self.utxo_address_from_contract_addr(hash);
                 Ok(Some(address.to_string()))
             } else {
                 Ok(None)
