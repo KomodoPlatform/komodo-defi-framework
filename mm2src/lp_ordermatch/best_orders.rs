@@ -168,7 +168,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
         }
     }
 
-    let res = json!({ "result": response });
+    let res = json!({ "result": response, "original_tickers": &ordermatch_ctx.original_tickers });
     Response::builder()
         .body(json::to_vec(&res).expect("Serialization failed"))
         .map_err(|e| ERRL!("{}", e))

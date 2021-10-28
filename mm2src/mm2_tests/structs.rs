@@ -333,6 +333,7 @@ pub struct OrderbookEntryAggregate {
 #[serde(deny_unknown_fields)]
 pub struct BestOrdersResponse {
     pub result: HashMap<String, Vec<OrderbookEntry>>,
+    pub original_tickers: HashMap<String, HashSet<String>>,
 }
 
 #[derive(Debug, Deserialize)]

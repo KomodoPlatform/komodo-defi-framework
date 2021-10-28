@@ -2454,6 +2454,8 @@ struct OrdermatchContext {
     /// It is used to share the same orderbooks for concurrently activated coins with different protocols
     /// E.g. BTC and BTC-Segwit
     pub orderbook_tickers: HashMap<String, String>,
+    /// The map from orderbook ticker to original tickers having it in the config
+    pub original_tickers: HashMap<String, HashSet<String>>,
     /// Pending MakerReserved messages for a specific TakerOrder UUID
     /// Used to select a trade with the best price upon matching
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
@@ -2469,14 +2471,20 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
 
     let coins: Vec<CoinConf> = try_s!(json::from_value(ctx.conf["coins"].clone()));
     let mut orderbook_tickers = HashMap::new();
+    let mut original_tickers = HashMap::new();
     for coin in coins {
         if let Some(orderbook_ticker) = coin.orderbook_ticker {
-            orderbook_tickers.insert(coin.coin, orderbook_ticker);
+            orderbook_tickers.insert(coin.coin.clone(), orderbook_ticker.clone());
+            original_tickers
+                .entry(orderbook_ticker)
+                .or_insert_with(HashSet::new)
+                .insert(coin.coin);
         }
     }
 
     let ordermatch_context = OrdermatchContext {
         orderbook_tickers,
+        original_tickers,
         ..Default::default()
     };
 
