@@ -163,7 +163,12 @@ impl QtumCoin {
 
             return if let Some(raw) = res
                 .into_iter()
-                .find(|receipt| receipt.log.iter().any(|e| e.topics[0] == QTUM_ADD_DELEGATION_TOPIC))
+                .find(|receipt| {
+                    receipt
+                        .log
+                        .iter()
+                        .any(|e| !e.topics.is_empty() && e.topics[0] == QTUM_ADD_DELEGATION_TOPIC)
+                })
                 .and_then(|receipt| {
                     receipt
                         .log
