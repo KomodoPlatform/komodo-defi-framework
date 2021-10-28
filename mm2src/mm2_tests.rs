@@ -5431,9 +5431,8 @@ fn test_tx_history_segwit() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({ "log path: {}", mm.log_path.display() });
 
-    // enable tBTC-Segwit to see that to/from segwit addresses are displayed correctly in tx_history
+    // enable tBTC to see that to/from segwit addresses are displayed correctly in tx_history
     // and that tx_history is retrieved for the segwit address instead of legacy
-    // Enabling separately to avoid too many concurrent requests to Electrums during history fetch
     let electrum = block_on(mm.rpc(json!({
         "userpass": mm.userpass,
         "method": "electrum",
