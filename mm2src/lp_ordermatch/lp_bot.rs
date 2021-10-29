@@ -16,7 +16,7 @@ use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
 use crate::mm2::lp_dispatcher::LpEvents;
-use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::PRECISION_FOR_NOTIFICATION;
+use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{BOT_DEFAULT_REFRESH_RATE, PRECISION_FOR_NOTIFICATION};
 use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
@@ -25,11 +25,29 @@ pub use simple_market_maker_bot::{process_price_request, start_simple_market_mak
 #[path = "simple_market_maker_tests.rs"]
 pub mod simple_market_maker_tests;
 
-#[derive(PartialEq)]
 enum TradingBotState {
-    Running,
+    Running {
+        trading_bot_cfg: SimpleMakerBotRegistry,
+        bot_refresh_rate: f64,
+        message_service: MessageService,
+        price_url: String,
+    },
     Stopping,
     Stopped,
+}
+
+impl TradingBotState {
+    pub fn get_unique_id(&self) -> usize {
+        match self {
+            TradingBotState::Running { .. } => 0,
+            TradingBotState::Stopping => 1,
+            TradingBotState::Stopped => 2,
+        }
+    }
+}
+
+impl PartialEq for TradingBotState {
+    fn eq(&self, other: &Self) -> bool { self.get_unique_id() == other.get_unique_id() }
 }
 
 impl Default for TradingBotState {
@@ -101,10 +119,16 @@ impl Default for Provider {
 #[derive(Default)]
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
-    trading_bot_cfg: AsyncMutex<SimpleMakerBotRegistry>,
-    price_url: AsyncMutex<String>,
-    message_service: AsyncMutex<MessageService>,
-    bot_refresh_rate: AsyncMutex<f64>,
+}
+
+impl TradingBotContext {
+    async fn get_refresh_rate(&self) -> f64 {
+        let state = self.trading_bot_states.lock().await;
+        if let TradingBotState::Running { bot_refresh_rate, .. } = &*state {
+            return bot_refresh_rate.clone();
+        }
+        BOT_DEFAULT_REFRESH_RATE
+    }
 }
 
 #[derive(Clone)]
@@ -139,8 +163,10 @@ impl EventListener for ArcTradingBotContext {
                 event_status
             );
             info!("event received: {}", msg);
-            let message_service = self.message_service.lock().await;
-            let _ = message_service.send_message(msg.to_string(), false).await;
+            let state = self.trading_bot_states.lock().await;
+            if let TradingBotState::Running { message_service, .. } = &*state {
+                let _ = message_service.send_message(msg.to_string(), false).await;
+            }
         }
     }
 

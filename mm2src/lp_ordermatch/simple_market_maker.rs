@@ -250,16 +250,22 @@ impl TradingPair {
 
 pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
-    let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
-    let mut refresh_rate = simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
-    cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
-    trading_bot_cfg.clear();
-    let _ = message_service
-        .send_message("trading bot successfully stopped".to_string(), false)
-        .await;
-    message_service.clear_services();
-    *refresh_rate = BOT_DEFAULT_REFRESH_RATE;
+    let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    if let TradingBotState::Running {
+        ref mut trading_bot_cfg,
+        ref mut bot_refresh_rate,
+        ref mut message_service,
+        ..
+    } = *state
+    {
+        cancel_pending_orders(&ctx, &trading_bot_cfg.clone()).await;
+        trading_bot_cfg.clear();
+        let _ = message_service
+            .send_message("trading bot successfully stopped".to_string(), false)
+            .await;
+        message_service.clear_services();
+        *bot_refresh_rate = BOT_DEFAULT_REFRESH_RATE;
+    }
 }
 
 fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
@@ -621,8 +627,20 @@ async fn execute_create_single_order(
 
 async fn process_bot_logic(ctx: &MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
-    let cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await.clone();
-    let price_url = simple_market_maker_bot_ctx.price_url.lock().await.clone();
+    let state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+    let (cfg, price_url) = if let TradingBotState::Running {
+        trading_bot_cfg,
+        price_url,
+        ..
+    } = &*state
+    {
+        let res = (trading_bot_cfg.clone(), price_url.clone());
+        drop(state);
+        res
+    } else {
+        drop(state);
+        return;
+    };
     let rates_registry = match fetch_price_tickers(price_url.as_str()).await {
         Ok(model) => {
             info!("price successfully fetched");
@@ -701,12 +719,13 @@ pub async fn lp_bot_loop(ctx: MmArc) {
         let mut states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
         if *states == TradingBotState::Stopping {
             *states = TradingBotState::Stopped;
+            drop(states);
             tear_down_bot(ctx).await;
             break;
         }
         drop(states);
         process_bot_logic(&ctx).await;
-        let refresh_rate = *simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
+        let refresh_rate = simple_market_maker_bot_ctx.get_refresh_rate().await;
         Timer::sleep(refresh_rate).await;
     }
     info!("lp_bot_loop successfully stopped");
@@ -732,32 +751,37 @@ async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry, MmE
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-    let mut price_url = simple_market_maker_bot_ctx.price_url.lock().await;
-    let mut refresh_rate = simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
-    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
     match *state {
-        TradingBotState::Running => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
+        TradingBotState::Running { .. } => MmError::err(StartSimpleMakerBotError::AlreadyStarted),
         TradingBotState::Stopping => MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
         TradingBotState::Stopped => {
             let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
             let mut dispatcher = dispatcher_ctx.dispatcher.lock().await;
             dispatcher.add_listener("lp_bot_listener", simple_market_maker_bot_ctx.clone());
-            *state = TradingBotState::Running;
-            drop(state);
-            let mut trading_bot_cfg = simple_market_maker_bot_ctx.trading_bot_cfg.lock().await;
-            *trading_bot_cfg = req.cfg;
-            *price_url = req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string());
-            *refresh_rate = req.bot_refresh_rate.unwrap_or(BOT_DEFAULT_REFRESH_RATE);
-            if *refresh_rate < BOT_DEFAULT_REFRESH_RATE {
-                *refresh_rate = BOT_DEFAULT_REFRESH_RATE;
+            let mut refresh_rate = req.bot_refresh_rate.unwrap_or(BOT_DEFAULT_REFRESH_RATE);
+            if refresh_rate < BOT_DEFAULT_REFRESH_RATE {
+                refresh_rate = BOT_DEFAULT_REFRESH_RATE;
             }
+            *state = TradingBotState::Running {
+                trading_bot_cfg: req.cfg,
+                bot_refresh_rate: refresh_rate,
+                message_service: Default::default(),
+                price_url: req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string()),
+            };
             let msg = "simple_market_maker_bot successfully started";
             if let Some(telegram_api_key) = req.telegram_api_key {
                 let tg_client = TgClient::new(telegram_api_key, None, req.telegram_chat_id);
-                message_service.attach_service(Box::new(tg_client));
-                // even if we cannot deliver a message we want to return this rpc
-                let _ = message_service.send_message(msg.to_string(), false).await;
+                if let TradingBotState::Running {
+                    ref mut message_service,
+                    ..
+                } = *state
+                {
+                    message_service.attach_service(Box::new(tg_client));
+                    // even if we cannot deliver a message we want to return this rpc
+                    let _ = message_service.send_message(msg.to_string(), false).await;
+                }
             }
+            drop(state);
             info!("{}", msg);
             spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
@@ -770,17 +794,19 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
 pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleMakerBotResult {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-    let message_service = simple_market_maker_bot_ctx.message_service.lock().await;
-    match *state {
+    match &*state {
         TradingBotState::Stopped => MmError::err(StopSimpleMakerBotError::AlreadyStopped),
         TradingBotState::Stopping => MmError::err(StopSimpleMakerBotError::AlreadyStopping),
-        TradingBotState::Running => {
-            *state = TradingBotState::Stopping;
-            let refresh_rate = *simple_market_maker_bot_ctx.bot_refresh_rate.lock().await;
-            let msg = format!("simple_market_maker_bot will stop within {} seconds", refresh_rate);
+        TradingBotState::Running {
+            message_service,
+            bot_refresh_rate,
+            ..
+        } => {
+            let msg = format!("simple_market_maker_bot will stop within {} seconds", bot_refresh_rate);
             // even if we cannot deliver a message we want to return this rpc
             info!("{}", msg);
             let _ = message_service.send_message(msg, false).await;
+            *state = TradingBotState::Stopping;
             Ok(StopSimpleMakerBotRes {
                 result: "Success".to_string(),
             })
