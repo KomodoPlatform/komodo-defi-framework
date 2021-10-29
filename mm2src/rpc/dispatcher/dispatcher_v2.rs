@@ -1,6 +1,7 @@
 use super::lp_protocol::{MmRpcBuilder, MmRpcRequest};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
-use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection},
+use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
+                            stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::trade_preimage_rpc,
             mm2::rpc::get_public_key::get_public_key};
 use coins::withdraw;
@@ -89,6 +90,8 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
+        "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
+        "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         _ => MmError::err(DispatcherError::NoSuchMethod { method: request.method }),

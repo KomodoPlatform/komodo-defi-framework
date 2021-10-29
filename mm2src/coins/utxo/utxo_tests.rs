@@ -2780,6 +2780,20 @@ fn btc_mtp() {
 }
 
 #[test]
+fn rvn_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10051",
+        "electrum2.cipig.net:10051",
+        "electrum3.cipig.net:10051",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1633946264);
+}
+
+#[test]
 fn qtum_mtp() {
     let electrum = electrum_client_for_test(&[
         "electrum1.cipig.net:10050",
