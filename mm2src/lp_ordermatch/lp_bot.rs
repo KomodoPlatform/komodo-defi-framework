@@ -125,7 +125,7 @@ impl TradingBotContext {
     async fn get_refresh_rate(&self) -> f64 {
         let state = self.trading_bot_states.lock().await;
         if let TradingBotState::Running { bot_refresh_rate, .. } = &*state {
-            return bot_refresh_rate.clone();
+            return *bot_refresh_rate;
         }
         BOT_DEFAULT_REFRESH_RATE
     }
