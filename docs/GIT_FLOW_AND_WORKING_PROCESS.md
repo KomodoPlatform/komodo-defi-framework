@@ -28,3 +28,4 @@ Cons:
 
 # By this signature, I confirm that I read and understood this document  
 [@artemii235](https://github.com/artemii235)
+[@sergeyboyko0791](https://github.com/sergeyboyko0791)
