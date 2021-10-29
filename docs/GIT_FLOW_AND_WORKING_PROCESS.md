@@ -27,4 +27,4 @@ Cons:
 7. Review the docs PR. Smk will request it from the feature implementor.
 
 # By this signature, I confirm that I read and understood this document  
-@artemii235
+[@artemii235](https://github.com/artemii235)
