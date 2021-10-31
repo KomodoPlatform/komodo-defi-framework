@@ -162,7 +162,7 @@ impl QtumCoin {
             // topic[2] -> 0000000000000000000000006d9d2b554d768232320587df75c4338ecc8bf37d
 
             return if let Some(raw) = res
-                .into_iter()
+                .iter()
                 .find(|receipt| {
                     receipt
                         .log
