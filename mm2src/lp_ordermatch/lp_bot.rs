@@ -4,19 +4,21 @@
 //
 
 use async_trait::async_trait;
-use common::event_dispatcher::{EventListener, Events};
+use common::event_dispatcher::EventListener;
 use common::log::info;
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 #[cfg(test)] use mocktopus::macros::*;
+use std::any::TypeId;
 use std::ops::Deref;
 use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
 use crate::mm2::lp_dispatcher::LpEvents;
 use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{BOT_DEFAULT_REFRESH_RATE, PRECISION_FOR_NOTIFICATION};
+use crate::mm2::lp_swap::MakerSwapStatusChanged;
 use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
@@ -144,23 +146,15 @@ impl EventListener for ArcTradingBotContext {
     type Event = LpEvents;
 
     async fn process_event_async(&self, event: Self::Event) {
-        if let LpEvents::MakerSwapStatusChanged {
-            uuid,
-            taker_coin,
-            maker_coin,
-            taker_amount,
-            maker_amount,
-            event_status,
-        } = event
-        {
+        if let LpEvents::MakerSwapStatusChanged(swap_infos) = event {
             let msg = format!(
                 "[{}: {} ({}) <-> {} ({})] status changed: {}",
-                uuid,
-                taker_coin,
-                taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                maker_coin,
-                maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                event_status
+                swap_infos.uuid,
+                swap_infos.taker_coin,
+                swap_infos.taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                swap_infos.maker_coin,
+                swap_infos.maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                swap_infos.event_status
             );
             info!("event received: {}", msg);
             let state = self.trading_bot_states.lock().await;
@@ -170,16 +164,7 @@ impl EventListener for ArcTradingBotContext {
         }
     }
 
-    fn get_desired_events(&self) -> Events<Self::Event> {
-        vec![LpEvents::MakerSwapStatusChanged {
-            uuid: Default::default(),
-            taker_coin: "".to_string(),
-            maker_coin: "".to_string(),
-            taker_amount: Default::default(),
-            maker_amount: Default::default(),
-            event_status: "".to_string(),
-        }]
-    }
+    fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<MakerSwapStatusChanged>()] }
 }
 
 #[derive(Default, Clone, Debug)]

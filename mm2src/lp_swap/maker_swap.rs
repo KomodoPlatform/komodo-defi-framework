@@ -1250,6 +1250,29 @@ impl MakerSavedEvent {
     }
 }
 
+#[derive(Clone)]
+pub struct MakerSwapStatusChanged {
+    pub uuid: Uuid,
+    pub taker_coin: String,
+    pub maker_coin: String,
+    pub taker_amount: BigDecimal,
+    pub maker_amount: BigDecimal,
+    pub event_status: String,
+}
+
+impl MakerSwapStatusChanged {
+    fn from_maker_swap(maker_swap: &MakerSwap, saved_swap: &MakerSavedEvent) -> Self {
+        MakerSwapStatusChanged {
+            uuid: maker_swap.uuid,
+            taker_coin: maker_swap.taker_coin.ticker().to_string(),
+            maker_coin: maker_swap.maker_coin.ticker().to_string(),
+            taker_amount: maker_swap.taker_amount.clone(),
+            maker_amount: maker_swap.maker_amount.clone(),
+            event_status: saved_swap.event.status_str(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
@@ -1537,15 +1560,9 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 
                     let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
                     let dispatcher = dispatcher_ctx.dispatcher.lock().await;
+                    let event_to_send = MakerSwapStatusChanged::from_maker_swap(&running_swap, &to_save);
                     dispatcher
-                        .dispatch_async(LpEvents::MakerSwapStatusChanged {
-                            uuid,
-                            taker_coin: running_swap.taker_coin().to_string(),
-                            maker_coin: running_swap.maker_coin().to_string(),
-                            taker_amount: running_swap.taker_amount.clone(),
-                            maker_amount: running_swap.maker_amount.clone(),
-                            event_status: to_save.event.status_str().to_string(),
-                        })
+                        .dispatch_async(LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)

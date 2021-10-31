@@ -1,19 +1,16 @@
 use async_trait::async_trait;
+use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 
 pub type Events<T> = Vec<T>;
 pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType> + Send + Sync>>;
-pub type DispatchTable = HashMap<usize, Vec<usize>>;
-
-pub trait EventUniqueIdTraits {
-    fn get_event_unique_id(&self) -> usize;
-}
+pub type DispatchTable = HashMap<TypeId, Vec<usize>>;
 
 #[async_trait]
 pub trait EventListener {
     type Event;
     async fn process_event_async(&self, event: Self::Event);
-    fn get_desired_events(&self) -> Events<Self::Event>;
+    fn get_desired_events(&self) -> Vec<TypeId>;
 }
 
 #[derive(Default)]
@@ -23,9 +20,9 @@ pub struct Dispatcher<EventType> {
     dispatch_table: DispatchTable,
 }
 
-impl<EventType> Dispatcher<EventType>
+impl<EventType: 'static> Dispatcher<EventType>
 where
-    EventType: Clone + EventUniqueIdTraits,
+    EventType: Clone,
 {
     pub fn add_listener(
         &mut self,
@@ -40,15 +37,13 @@ where
         let events = listen.get_desired_events();
         self.listeners.push(Box::new(listen));
         for ev in events {
-            self.dispatch_table
-                .entry(ev.get_event_unique_id())
-                .or_default()
-                .push(id);
+            self.dispatch_table.entry(ev).or_default().push(id);
         }
     }
 
     pub async fn dispatch_async(&self, ev: EventType) {
-        if let Some(ref interested) = self.dispatch_table.get(&ev.get_event_unique_id()) {
+        let type_id = TypeId::of::<EventType>();
+        if let Some(interested) = self.dispatch_table.get(&type_id) {
             for id in interested.iter().copied() {
                 self.listeners[id].process_event_async(ev.clone()).await;
             }
@@ -62,33 +57,27 @@ where
 #[cfg(test)]
 mod event_dispatcher_tests {
     use crate::block_on;
-    use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueIdTraits, Events};
+    use crate::event_dispatcher::{Dispatcher, EventListener};
     use async_trait::async_trait;
+    use std::any::TypeId;
     use std::ops::Deref;
     use std::sync::Arc;
     use uuid::Uuid;
 
+    #[derive(Clone, Default)]
+    struct EventSwapStatusChanged {
+        uuid: Uuid,
+        status: String,
+    }
+
     #[derive(Clone)]
     enum AppEvents {
-        EventSwapStatusChanged { uuid: Uuid, status: String },
+        EventSwapStatusChanged(EventSwapStatusChanged),
     }
 
     impl Default for AppEvents {
         // Just to satisfy the dispatcher
-        fn default() -> Self {
-            AppEvents::EventSwapStatusChanged {
-                uuid: Default::default(),
-                status: "".to_string(),
-            }
-        }
-    }
-
-    impl EventUniqueIdTraits for AppEvents {
-        fn get_event_unique_id(&self) -> usize {
-            match self {
-                AppEvents::EventSwapStatusChanged { .. } => 0,
-            }
-        }
+        fn default() -> Self { AppEvents::EventSwapStatusChanged(Default::default()) }
     }
 
     #[derive(Default)]
@@ -108,19 +97,14 @@ mod event_dispatcher_tests {
 
         async fn process_event_async(&self, event: Self::Event) {
             match event {
-                AppEvents::EventSwapStatusChanged { uuid, status } => {
-                    assert_eq!(uuid.to_string(), "00000000-0000-0000-0000-000000000000");
-                    assert_eq!(status, "Started");
+                AppEvents::EventSwapStatusChanged(swap) => {
+                    assert_eq!(swap.uuid.to_string(), "00000000-0000-0000-0000-000000000000");
+                    assert_eq!(swap.status, "Started");
                 },
             }
         }
 
-        fn get_desired_events(&self) -> Events<AppEvents> {
-            vec![AppEvents::EventSwapStatusChanged {
-                uuid: Default::default(),
-                status: "".to_string(),
-            }]
-        }
+        fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<EventSwapStatusChanged>()] }
     }
 
     #[test]
@@ -131,11 +115,11 @@ mod event_dispatcher_tests {
         dispatcher.add_listener("listener_swap_status_changed", res.clone());
         assert_eq!(dispatcher.nb_listeners(), 1);
 
-        block_on(dispatcher.dispatch_async(AppEvents::EventSwapStatusChanged {
+        let event = AppEvents::EventSwapStatusChanged(EventSwapStatusChanged {
             uuid: Default::default(),
             status: "Started".to_string(),
-        }));
-
+        });
+        block_on(dispatcher.dispatch_async(event));
         dispatcher.add_listener("listener_swap_status_changed", res);
         assert_eq!(dispatcher.nb_listeners(), 1);
     }
