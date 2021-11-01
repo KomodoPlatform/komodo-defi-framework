@@ -94,6 +94,7 @@ pub mod duplex_mutex;
 pub mod for_tests;
 pub mod grpc_web;
 pub mod iguana_utils;
+#[cfg(not(target_arch = "wasm32"))] pub mod ip_addr;
 pub mod mm_ctx;
 #[path = "mm_error/mm_error.rs"] pub mod mm_error;
 pub mod mm_number;
@@ -101,20 +102,25 @@ pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
+#[path = "transport/transport.rs"] pub mod transport;
 
-#[cfg(target_arch = "wasm32")] pub mod executor;
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "executor/native_executor.rs"]
+pub mod executor;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "wio.rs"]
+pub mod wio;
+
+#[cfg(target_arch = "wasm32")]
+#[path = "executor/wasm_executor.rs"]
+pub mod executor;
+
 #[cfg(target_arch = "wasm32")]
 #[path = "indexed_db/indexed_db.rs"]
 pub mod indexed_db;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "transport/wasm_http.rs"]
-pub mod wasm_http;
-
 #[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
-#[cfg(target_arch = "wasm32")]
-#[path = "transport/wasm_ws.rs"]
-pub mod wasm_ws;
 
 use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
@@ -125,7 +131,7 @@ use futures01::{future, task::Task, Future};
 use gstuff::binprint;
 use hex::FromHex;
 use http::header::{HeaderValue, CONTENT_TYPE};
-use http::{HeaderMap, Response, StatusCode};
+use http::{Response, StatusCode};
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -162,7 +168,6 @@ cfg_native! {
 
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
-    use http::Request;
     use libc::{free, malloc};
     use std::env;
     use std::path::PathBuf;
@@ -603,8 +608,6 @@ pub fn is_a_test_drill() -> bool {
     true
 }
 
-pub type SlurpRes = Result<(StatusCode, HeaderMap, Vec<u8>), String>;
-
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
@@ -635,216 +638,6 @@ struct HostedHttpResponse {
 // we're splitting the code in place with conditional compilation.
 // wio stands for "web I/O" or "wasm I/O",
 // it contains the parts which aren't directly available with WASM.
-
-#[cfg(not(target_arch = "wasm32"))]
-pub mod wio {
-    use crate::SlurpRes;
-    use futures::compat::Future01CompatExt;
-    use futures::executor::ThreadPool;
-    use futures01::sync::oneshot::{self, Receiver};
-    use futures01::{Async, Future, Poll};
-    use futures_cpupool::CpuPool;
-    use gstuff::{duration_to_float, now_float};
-    use http::{HeaderMap, Request, StatusCode};
-    use hyper::client::HttpConnector;
-    use hyper::{Body, Client};
-    use hyper_rustls::HttpsConnector;
-    use std::fmt;
-    use std::sync::Mutex;
-    use std::thread::JoinHandle;
-    use std::time::Duration;
-    use tokio::runtime::Runtime;
-
-    fn start_core_thread() -> Mm2Runtime { Mm2Runtime(Runtime::new().unwrap()) }
-
-    pub struct Mm2Runtime(pub Runtime);
-
-    lazy_static! {
-        /// Shared asynchronous reactor.
-        pub static ref CORE: Mm2Runtime = start_core_thread();
-        /// Shared CPU pool to run intensive/sleeping requests on a separate thread.
-        ///
-        /// Deprecated, prefer the futures 0.3 `POOL` instead.
-        pub static ref CPUPOOL: CpuPool = CpuPool::new(8);
-        /// Shared CPU pool to run intensive/sleeping requests on s separate thread.
-        pub static ref POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder()
-            .pool_size(8)
-            .name_prefix("POOL")
-            .create().expect("!ThreadPool"));
-    }
-
-    impl<Fut: std::future::Future<Output = ()> + Send + 'static> hyper::rt::Executor<Fut> for &Mm2Runtime {
-        fn execute(&self, fut: Fut) { self.0.spawn(fut); }
-    }
-
-    /// With a shared reactor drives the future `f` to completion.
-    ///
-    /// NB: This function is only useful if you need to get the results of the execution.
-    /// If the results are not necessary then a future can be scheduled directly on the reactor:
-    ///
-    ///     CORE.spawn (|_| f);
-    pub fn drive<F, R, E>(f: F) -> Receiver<Result<R, E>>
-    where
-        F: Future<Item = R, Error = E> + Send + 'static,
-        R: Send + 'static,
-        E: Send + 'static,
-    {
-        let (sx, rx) = oneshot::channel();
-        CORE.0.spawn(
-            f.then(move |fr: Result<R, E>| -> Result<(), ()> {
-                let _ = sx.send(fr);
-                Ok(())
-            })
-            .compat(),
-        );
-        rx
-    }
-
-    pub fn drive03<F, O>(f: F) -> futures::channel::oneshot::Receiver<O>
-    where
-        F: std::future::Future<Output = O> + Send + 'static,
-        O: Send + 'static,
-    {
-        let (sx, rx) = futures::channel::oneshot::channel();
-        CORE.0.spawn(async move {
-            let res = f.await;
-            if sx.send(res).is_err() {
-                log!("drive03 receiver is dropped");
-            };
-        });
-        rx
-    }
-
-    /// With a shared reactor drives the future `f` to completion.
-    ///
-    /// Similar to `fn drive`, but returns a stringified error,
-    /// allowing us to collapse the `Receiver` and return the `R` directly.
-    pub fn drive_s<F, R, E>(f: F) -> impl Future<Item = R, Error = String>
-    where
-        F: Future<Item = R, Error = E> + Send + 'static,
-        R: Send + 'static,
-        E: fmt::Display + Send + 'static,
-    {
-        drive(f).then(move |r| -> Result<R, String> {
-            let r = try_s!(r); // Peel the `Receiver`.
-            let r = try_s!(r); // `E` to `String`.
-            Ok(r)
-        })
-    }
-
-    /// Finishes with the "timeout" error if the underlying future isn't ready withing the given timeframe.
-    ///
-    /// NB: Tokio timers (in `tokio::timer`) only seem to work under the Tokio runtime,
-    /// which is unfortunate as we want the different futures executed on the different reactors
-    /// depending on how much they're I/O-bound, CPU-bound or blocking.
-    /// Unlike the Tokio timers this `Timeout` implementation works with any reactor.
-    /// Another option to consider is https://github.com/alexcrichton/futures-timer.
-    /// P.S. The older `0.1` version of the `tokio::timer` might work NP, it works in other parts of our code.
-    ///      The new version, on the other hand, requires the Tokio runtime (https://tokio.rs/blog/2018-03-timers/).
-    /// P.S. We could try using the `futures-timer` crate instead, but note that it is currently under-maintained,
-    ///      https://github.com/rustasync/futures-timer/issues/9#issuecomment-400802515.
-    pub struct Timeout<R> {
-        fut: Box<dyn Future<Item = R, Error = String>>,
-        started: f64,
-        timeout: f64,
-        monitor: Option<JoinHandle<()>>,
-    }
-    impl<R> Future for Timeout<R> {
-        type Item = R;
-        type Error = String;
-        fn poll(&mut self) -> Poll<R, String> {
-            match self.fut.poll() {
-                Err(err) => Err(err),
-                Ok(Async::Ready(r)) => Ok(Async::Ready(r)),
-                Ok(Async::NotReady) => {
-                    let now = now_float();
-                    if now >= self.started + self.timeout {
-                        Err(format!("timeout ({:.1} > {:.1})", now - self.started, self.timeout))
-                    } else {
-                        // Start waking up this future until it has a chance to timeout.
-                        // For now it's just a basic separate thread. Will probably optimize later.
-                        if self.monitor.is_none() {
-                            let task = futures01::task::current();
-                            let deadline = self.started + self.timeout;
-                            self.monitor = Some(
-                                std::thread::Builder::new()
-                                    .name("timeout monitor".into())
-                                    .spawn(move || loop {
-                                        std::thread::sleep(Duration::from_secs(1));
-                                        task.notify();
-                                        if now_float() > deadline + 2. {
-                                            break;
-                                        }
-                                    })
-                                    .unwrap(),
-                            );
-                        }
-                        Ok(Async::NotReady)
-                    }
-                },
-            }
-        }
-    }
-    impl<R> Timeout<R> {
-        pub fn new(fut: Box<dyn Future<Item = R, Error = String>>, timeout: Duration) -> Timeout<R> {
-            Timeout {
-                fut,
-                started: now_float(),
-                timeout: duration_to_float(timeout),
-                monitor: None,
-            }
-        }
-    }
-
-    unsafe impl<R> Send for Timeout<R> {}
-
-    /// Initialize the crate.
-    pub fn init() {
-        // Pre-allocate the stack trace buffer in order to avoid allocating it from a signal handler.
-        super::black_box(&*super::trace_buf());
-        super::black_box(&*super::trace_name_buf());
-    }
-
-    lazy_static! {
-        /// NB: With a shared client there is a possibility that keep-alive connections will be reused.
-        pub static ref HYPER: Client<HttpsConnector<HttpConnector>> = {
-            // Please note there was a problem on iOS if [`HttpsConnector::with_native_roots`] is used instead.
-            let https = HttpsConnector::with_webpki_roots();
-            Client::builder()
-                .executor(&*CORE)
-                // Hyper had a lot of Keep-Alive bugs over the years and I suspect
-                // that with the shared client we might be getting errno 10054
-                // due to a closed Keep-Alive connection mismanagement.
-                // (To solve this problem Hyper should proactively close the Keep-Alive
-                // connections after a configurable amount of time has passed since
-                // their creation, thus saving us from trying to use the connections
-                // closed on the other side. I wonder if we can implement this strategy
-                // ourselves with a custom connector or something).
-                // Performance of Keep-Alive in the Hyper client is questionable as well,
-                // should measure it on a case-by-case basis when we need it.
-                .pool_max_idle_per_host(0)
-                .build(https)
-        };
-    }
-
-    /// Executes a Hyper request, returning the response status, headers and body.
-    pub async fn slurp_req(request: Request<Vec<u8>>) -> SlurpRes {
-        let (head, body) = request.into_parts();
-        let request = Request::from_parts(head, Body::from(body));
-
-        let request_f = HYPER.request(request);
-        let response = try_s!(try_s!(drive03(request_f).await));
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body = response.into_body();
-        let output = try_s!(hyper::body::to_bytes(body).await);
-        Ok((status, headers, output.to_vec()))
-    }
-
-    pub async fn slurp_reqʹ(request: Request<Vec<u8>>) -> Result<(StatusCode, HeaderMap, Vec<u8>), String> {
-        slurp_req(request).await
-    }
-}
 
 pub mod lazy {
     #[cfg(test)] use super::block_on;
@@ -1014,137 +807,6 @@ pub mod lazy {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub mod executor {
-    use futures::task::Context;
-    use futures::task::Poll as Poll03;
-    use futures::Future as Future03;
-    use gstuff::now_float;
-    use std::pin::Pin;
-    use std::thread;
-    use std::time::Duration;
-
-    pub fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
-
-    pub fn spawn_boxed(future: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>) { spawn(future); }
-
-    /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
-    pub fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
-        use crossbeam::channel;
-        use gstuff::Constructible;
-        use std::collections::BTreeMap;
-        use std::sync::Once;
-
-        type SheduleChannelItem = (f64, Pin<Box<dyn Future03<Output = ()> + Send + 'static>>);
-        static START: Once = Once::new();
-        static SCHEDULE: Constructible<channel::Sender<SheduleChannelItem>> = Constructible::new();
-        START.call_once(|| {
-            thread::Builder::new()
-                .name("spawn_after".into())
-                .spawn(move || {
-                    let (tx, rx) = channel::bounded(0);
-                    SCHEDULE.pin(tx).expect("spawn_after] Can't pin the channel");
-                    type Task = Pin<Box<dyn Future03<Output = ()> + Send + 'static>>;
-                    let mut tasks: BTreeMap<Duration, Vec<Task>> = BTreeMap::new();
-                    let mut ready = Vec::with_capacity(4);
-                    loop {
-                        let now = Duration::from_secs_f64(now_float());
-                        let mut next_stop = Duration::from_secs_f64(0.1);
-                        for (utc, _) in tasks.iter() {
-                            if *utc <= now {
-                                ready.push(*utc)
-                            } else {
-                                next_stop = *utc - now;
-                                break;
-                            }
-                        }
-                        for utc in ready.drain(..) {
-                            let v = match tasks.remove(&utc) {
-                                Some(v) => v,
-                                None => continue,
-                            };
-                            //log! ("spawn_after] spawning " (v.len()) " tasks at " [utc]);
-                            for f in v {
-                                spawn(f)
-                            }
-                        }
-                        let (utc, f) = match rx.recv_timeout(next_stop) {
-                            Ok(t) => t,
-                            Err(channel::RecvTimeoutError::Disconnected) => break,
-                            Err(channel::RecvTimeoutError::Timeout) => continue,
-                        };
-                        tasks
-                            .entry(Duration::from_secs_f64(utc))
-                            .or_insert_with(Vec::new)
-                            .push(f)
-                    }
-                })
-                .expect("Can't spawn a spawn_after thread");
-        });
-        loop {
-            match SCHEDULE.as_option() {
-                None => {
-                    thread::yield_now();
-                    continue;
-                },
-                Some(tx) => {
-                    tx.send((utc, Box::pin(future))).expect("Can't reach spawn_after");
-                    break;
-                },
-            }
-        }
-    }
-
-    /// A future that completes at a given time.  
-    pub struct Timer {
-        till_utc: f64,
-    }
-
-    impl Timer {
-        pub fn till(till_utc: f64) -> Timer { Timer { till_utc } }
-        pub fn sleep(seconds: f64) -> Timer {
-            Timer {
-                till_utc: now_float() + seconds,
-            }
-        }
-        pub fn sleep_ms(ms: u32) -> Timer {
-            let seconds = gstuff::duration_to_float(Duration::from_millis(ms as u64));
-            Timer {
-                till_utc: now_float() + seconds,
-            }
-        }
-        pub fn till_utc(&self) -> f64 { self.till_utc }
-    }
-
-    impl Future03 for Timer {
-        type Output = ();
-        fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
-            let delta = self.till_utc - now_float();
-            if delta <= 0. {
-                return Poll03::Ready(());
-            }
-            // NB: We should get a new `Waker` on every `poll` in case the future migrates between executors.
-            // cf. https://rust-lang.github.io/async-book/02_execution/03_wakeups.html
-            let waker = cx.waker().clone();
-            spawn_after(self.till_utc, async move { waker.wake() });
-            Poll03::Pending
-        }
-    }
-
-    #[test]
-    fn test_timer() {
-        let started = now_float();
-        let ti = Timer::sleep(0.2);
-        let delta = now_float() - started;
-        assert!(delta < 0.04, "{}", delta);
-        super::block_on(ti);
-        let delta = now_float() - started;
-        println!("time delta is {}", delta);
-        assert!(delta > 0.2);
-        assert!(delta < 0.4)
-    }
-}
-
 /// Returns a JSON error HyRes on a failure.
 #[macro_export]
 macro_rules! try_h {
@@ -1154,55 +816,6 @@ macro_rules! try_h {
             Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
         }
     };
-}
-
-/// Executes a GET request, returning the response status, headers and body.
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn slurp_url(url: &str) -> SlurpRes {
-    wio::slurp_req(try_s!(Request::builder().uri(url).body(Vec::new()))).await
-}
-
-/// Executes a GET request, returning the response status, headers and body.
-/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
-#[cfg(target_arch = "wasm32")]
-pub async fn slurp_url(url: &str) -> SlurpRes {
-    wasm_http::FetchRequest::get(url)
-        .request_str()
-        .await
-        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
-}
-
-#[test]
-fn test_slurp_req() {
-    let (status, headers, body) = block_on(slurp_url("https://httpbin.org/get")).unwrap();
-    assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
-}
-
-/// Fetch URL by HTTPS and parse JSON response
-pub async fn fetch_json<T>(url: &str) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned + Send + 'static,
-{
-    let result = try_s!(slurp_url(url).await);
-    let result = try_s!(serde_json::from_slice(&result.2));
-    Ok(result)
-}
-
-/// Send POST JSON HTTPS request and parse response
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn post_json<T>(url: &str, json: String) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned + Send + 'static,
-{
-    let request = try_s!(Request::builder()
-        .method("POST")
-        .uri(url)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(json.into()));
-
-    let result = try_s!(wio::slurp_req(request).await);
-    let result = try_s!(serde_json::from_slice(&result.2));
-    Ok(result)
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.

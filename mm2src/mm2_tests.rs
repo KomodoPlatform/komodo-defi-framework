@@ -4,8 +4,8 @@ use common::block_on;
 use common::executor::Timer;
 use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                         enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
-                        mm_spat, LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
-                        TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                        mm_spat, wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump,
+                        MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
@@ -623,6 +623,9 @@ fn test_p2wpkh_my_balance() {
             "required_confirmations": 0,
             "protocol": {
                 "type": "UTXO"
+            },
+            "address_format": {
+                "format":"segwit"
             }
         }
     ]);
@@ -1750,6 +1753,9 @@ fn test_withdraw_segwit() {
             "required_confirmations": 0,
             "protocol": {
                 "type": "UTXO"
+            },
+            "address_format": {
+                "format":"segwit"
             }
         }
     ]);
@@ -4695,6 +4701,223 @@ fn test_convert_eth_address() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_add_delegation_qtum() {
+    let coins = json!([{
+      "coin": "tQTUM",
+      "name": "qtumtest",
+      "fname": "Qtum test",
+      "rpcport": 13889,
+      "pubtype": 120,
+      "p2shtype": 110,
+      "wiftype": 239,
+      "segwit": true,
+      "txfee": 400000,
+      "mm2": 1,
+      "required_confirmations": 1,
+      "mature_confirmations": 2000,
+      "avg_blocktime": 0.53,
+      "protocol": {
+        "type": "QTUM"
+      }
+    }]);
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var("BOB_TRADE_IP").ok(),
+            "rpcip": env::var("BOB_TRADE_IP").ok(),
+            "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
+            "passphrase": "asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
+        "electrum1.cipig.net:10071",
+        "electrum2.cipig.net:10071",
+        "electrum3.cipig.net:10071",
+    ]));
+    println!("{}", json.balance);
+
+    let rc = block_on(mm.rpc(json!({
+        "userpass": "pass",
+        "mmrpc": "2.0",
+        "method": "add_delegation",
+        "params": {
+            "coin": "tQTUM",
+            "staking_details": {
+                "type": "Qtum",
+                "address": "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE"
+            }
+        },
+        "id": 0
+    })))
+    .unwrap();
+    assert_eq!(
+        rc.0,
+        StatusCode::OK,
+        "RPC «add_delegation» failed with status «{}»",
+        rc.0
+    );
+    let rc = block_on(mm.rpc(json!({
+        "userpass": "pass",
+        "mmrpc": "2.0",
+        "method": "add_delegation",
+        "params": {
+            "coin": "tQTUM",
+            "staking_details": {
+                "type": "Qtum",
+                "address": "fake_address"
+            }
+        },
+        "id": 0
+    })))
+    .unwrap();
+    assert!(
+        rc.0.is_client_error(),
+        "!add_delegation success but should be error: {}",
+        rc.1
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_remove_delegation_qtum() {
+    let coins = json!([{
+      "coin": "tQTUM",
+      "name": "qtumtest",
+      "fname": "Qtum test",
+      "rpcport": 13889,
+      "pubtype": 120,
+      "p2shtype": 110,
+      "wiftype": 239,
+      "segwit": true,
+      "txfee": 400000,
+      "mm2": 1,
+      "required_confirmations": 1,
+      "mature_confirmations": 2000,
+      "avg_blocktime": 0.53,
+      "protocol": {
+        "type": "QTUM"
+      }
+    }]);
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var("BOB_TRADE_IP").ok(),
+            "rpcip": env::var("BOB_TRADE_IP").ok(),
+            "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
+            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
+        "electrum1.cipig.net:10071",
+        "electrum2.cipig.net:10071",
+        "electrum3.cipig.net:10071",
+    ]));
+    println!("{}", json.balance);
+
+    let rc = block_on(mm.rpc(json!({
+        "userpass": "pass",
+        "mmrpc": "2.0",
+        "method": "remove_delegation",
+        "params": {"coin": "tQTUM"},
+        "id": 0
+    })))
+    .unwrap();
+    assert_eq!(
+        rc.0,
+        StatusCode::OK,
+        "RPC «remove_delegation» failed with status «{}»",
+        rc.0
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_staking_infos_qtum() {
+    let coins = json!([{
+      "coin": "tQTUM",
+      "name": "qtumtest",
+      "fname": "Qtum test",
+      "rpcport": 13889,
+      "pubtype": 120,
+      "p2shtype": 110,
+      "wiftype": 239,
+      "segwit": true,
+      "txfee": 400000,
+      "mm2": 1,
+      "required_confirmations": 1,
+      "mature_confirmations": 2000,
+      "avg_blocktime": 0.53,
+      "protocol": {
+        "type": "QTUM"
+      }
+    }]);
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var("BOB_TRADE_IP").ok(),
+            "rpcip": env::var("BOB_TRADE_IP").ok(),
+            "canbind": env::var("BOB_TRADE_PORT").ok().map(|s| s.parse::<i64>().unwrap()),
+            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+        .unwrap();
+
+    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
+        "electrum1.cipig.net:10071",
+        "electrum2.cipig.net:10071",
+        "electrum3.cipig.net:10071",
+    ]));
+    println!("{}", json.balance);
+
+    let rc = block_on(mm.rpc(json!({
+        "userpass": "pass",
+        "mmrpc": "2.0",
+        "method": "get_staking_infos",
+        "params": {"coin": "tQTUM"},
+        "id": 0
+    })))
+    .unwrap();
+    assert_eq!(
+        rc.0,
+        StatusCode::OK,
+        "RPC «get_staking_infos» failed with status «{}»",
+        rc.0
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
@@ -4725,7 +4948,11 @@ fn test_convert_qrc20_address() {
     let _electrum = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
 
@@ -4832,101 +5059,6 @@ fn test_convert_qrc20_address() {
         "!convertaddress success but should be error: {}",
         rc.1
     );
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_switch_legacy_to_segwit_address() {
-    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
-
-    let coins = json! ([
-        {
-            "coin": "tBTC",
-            "name": "tbitcoin",
-            "fname": "tBitcoin",
-            "rpcport": 18332,
-            "pubtype": 111,
-            "p2shtype": 196,
-            "wiftype": 239,
-            "segwit": true,
-            "bech32_hrp": "tb",
-            "txfee": 0,
-            "estimate_fee_mode": "ECONOMICAL",
-            "mm2": 1,
-            "required_confirmations": 0,
-            "protocol": {
-                "type": "UTXO"
-            }
-        }
-    ]);
-
-    let mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "passphrase": seed.to_string(),
-            "coins": coins,
-            "i_am_seed": true,
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        local_start!("bob"),
-    )
-    .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
-
-    //Enable tBTC in Legacy Mode
-    let electrum = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "electrum",
-        "coin": "tBTC",
-        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-    let json: Json = json::from_str(&electrum.1).unwrap();
-    let my_address = json["address"].as_str().unwrap();
-    assert_eq!(my_address, "msZK9EuTh7ouM4kJ6jkRuCrDSABq9nER97");
-
-    //Disable tBTC to enable in Segwit Mode
-    let rc = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "disable_coin",
-        "coin": "tBTC",
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
-
-    //Enable tBTC in Segwit Mode
-    let electrum = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "electrum",
-        "coin": "tBTC",
-        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
-        "mm2": 1,
-        "address_format": {
-            "format": "segwit",
-        },
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-    let json: Json = json::from_str(&electrum.1).unwrap();
-    let my_address = json["address"].as_str().unwrap();
-    assert_eq!(my_address, "tb1qssfmay8nnghx7ynlznejnjxn6m4pemz9v7fsxy");
 }
 
 #[test]
@@ -5108,6 +5240,9 @@ fn test_validateaddress_segwit() {
             "required_confirmations": 0,
             "protocol": {
                 "type": "UTXO"
+            },
+            "address_format": {
+                "format":"segwit"
             }
         }
     ]);
@@ -5242,7 +5377,11 @@ fn qrc20_activate_electrum() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
@@ -5286,7 +5425,11 @@ fn test_qrc20_withdraw() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     assert_eq!(
@@ -5362,7 +5505,11 @@ fn test_qrc20_withdraw_error() {
     let electrum_json = block_on(enable_qrc20(
         &mm,
         "QRC20",
-        &["95.217.83.126:10001"],
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
         "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     ));
     let balance = electrum_json["balance"].as_str().unwrap();
@@ -5540,10 +5687,10 @@ async fn test_qrc20_tx_history() { test_qrc20_history_impl().await }
 fn test_tx_history_segwit() {
     let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
     let coins = json!([
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}},
     ]);
 
-    let mut mm = MarketMakerIt::start(
+    let mm = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -5562,129 +5709,7 @@ fn test_tx_history_segwit() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({ "log path: {}", mm.log_path.display() });
 
-    // enable tBTC in legacy first to see that to/from segwit addresses are displayed correctly in tx_history
-    let electrum = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "electrum",
-        "coin": "tBTC",
-        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
-        "mm2": 1,
-        "tx_history": true,
-    })))
-    .unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with status «{}», response «{}»",
-        electrum.0,
-        electrum.1
-    );
-    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
-    assert_eq!(
-        electrum_json["address"].as_str(),
-        Some("mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb")
-    );
-
-    // Wait till tx_history will not be loaded
-    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
-
-    // let the MarketMaker save the history to the file
-    block_on(Timer::sleep(1.));
-
-    let tx_history = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "my_tx_history",
-        "coin": "tBTC",
-        "limit": 100,
-    })))
-    .unwrap();
-    assert_eq!(
-        tx_history.0,
-        StatusCode::OK,
-        "RPC «my_tx_history» failed with status «{}», response «{}»",
-        tx_history.0,
-        tx_history.1
-    );
-    log!([tx_history.1]);
-    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
-    let tx_history_result = &tx_history_json["result"];
-
-    let expected = vec![
-        // https://live.blockcypher.com/btc-testnet/tx/9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b/
-        "9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b",
-        // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
-        "ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7",
-        // https://live.blockcypher.com/btc-testnet/tx/7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44/
-        "7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44",
-        // https://live.blockcypher.com/btc-testnet/tx/17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953/
-        "17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953",
-        // https://live.blockcypher.com/btc-testnet/tx/45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba/
-        "45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba",
-        // https://live.blockcypher.com/btc-testnet/tx/2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298/
-        "2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298",
-        // https://live.blockcypher.com/btc-testnet/tx/4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857/
-        "4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857",
-        // https://live.blockcypher.com/btc-testnet/tx/0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb/
-        "0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb",
-        // https://live.blockcypher.com/btc-testnet/tx/1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265/
-        "1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265",
-        // https://live.blockcypher.com/btc-testnet/tx/245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e/
-        "245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e",
-        // https://live.blockcypher.com/btc-testnet/tx/8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c/
-        "8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c",
-        // https://live.blockcypher.com/btc-testnet/tx/15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96/
-        "15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96",
-        // https://live.blockcypher.com/btc-testnet/tx/ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9/
-        "ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9",
-        // https://live.blockcypher.com/btc-testnet/tx/322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37/
-        "322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37",
-        // https://live.blockcypher.com/btc-testnet/tx/db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69/
-        "db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69",
-        // https://live.blockcypher.com/btc-testnet/tx/4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a/
-        "4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a",
-        // https://live.blockcypher.com/btc-testnet/tx/a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1/
-        "a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1",
-        // https://live.blockcypher.com/btc-testnet/tx/2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35/
-        "2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35",
-        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
-        "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60",
-        // https://live.blockcypher.com/btc-testnet/tx/303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f/
-        "303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f",
-        // https://live.blockcypher.com/btc-testnet/tx/adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0/
-        "adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0",
-        // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
-        "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
-    ];
-
-    assert_eq!(tx_history_result["total"].as_u64().unwrap(), expected.len() as u64);
-    for tx in tx_history_result["transactions"].as_array().unwrap() {
-        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
-        if tx["tx_hash"].as_str().unwrap() == "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60" {
-            // assert that segwit from address displays correctly
-            assert_eq!(
-                tx["from"][0].as_str().unwrap(),
-                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
-            );
-            // assert that legacy to address displays correctly
-            assert_eq!(tx["to"][0].as_str().unwrap(), "mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb");
-            // assert that segwit to address displays correctly
-            assert_eq!(
-                tx["to"][1].as_str().unwrap(),
-                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
-            );
-        }
-    }
-
-    //Disable tBTC to enable it in Segwit Mode
-    let rc = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "disable_coin",
-        "coin": "tBTC",
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
-
-    // enable tBTC in Segwit to see that to/from segwit addresses are displayed correctly in tx_history
+    // enable tBTC to see that to/from segwit addresses are displayed correctly in tx_history
     // and that tx_history is retrieved for the segwit address instead of legacy
     let electrum = block_on(mm.rpc(json!({
         "userpass": mm.userpass,
@@ -5697,7 +5722,7 @@ fn test_tx_history_segwit() {
             "format": "segwit",
         },
     })))
-    .unwrap();
+        .unwrap();
     assert_eq!(
         electrum.0,
         StatusCode::OK,
@@ -5711,11 +5736,7 @@ fn test_tx_history_segwit() {
         Some("tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5")
     );
 
-    // Wait till tx_history will not be loaded
-    block_on(mm.wait_for_log(22., |log| log.contains("history has been loaded successfully"))).unwrap();
-
-    // let the MarketMaker save the history to the file
-    block_on(Timer::sleep(10.));
+    block_on(wait_till_history_has_records(&mm, "tBTC", 13));
 
     let tx_history = block_on(mm.rpc(json!({
         "userpass": mm.userpass,
@@ -5782,6 +5803,143 @@ fn test_tx_history_segwit() {
             assert_eq!(
                 tx["to"][1].as_str().unwrap(),
                 "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_tx_history_tbtc_non_segwit() {
+    let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
+    let coins = json!([
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": passphrase,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+            "metrics_interval": 30.,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    // enable tBTC in legacy first to see that to/from segwit addresses are displayed correctly in tx_history
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+        "tx_history": true,
+    })))
+    .unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with status «{}», response «{}»",
+        electrum.0,
+        electrum.1
+    );
+    let electrum_json: Json = json::from_str(&electrum.1).unwrap();
+    assert_eq!(
+        electrum_json["address"].as_str(),
+        Some("mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb")
+    );
+
+    let expected = vec![
+        // https://live.blockcypher.com/btc-testnet/tx/9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b/
+        "9c1ca9de9f3a47d71c8113209123410f44048c67951bf49cdfb1a84c2cc6a55b",
+        // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
+        "ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7",
+        // https://live.blockcypher.com/btc-testnet/tx/7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44/
+        "7276c67f996fb0b5ef653bb4c3601541407cc785238dcc50c308eb29291a0f44",
+        // https://live.blockcypher.com/btc-testnet/tx/17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953/
+        "17829d32cd096092b239db5d488e587c1bccbbc9075f1adbf2887a49ee0f5953",
+        // https://live.blockcypher.com/btc-testnet/tx/45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba/
+        "45dc84d7ac675a2d9c98542b0147ea27d409e0555dcb50781de8dd633b5365ba",
+        // https://live.blockcypher.com/btc-testnet/tx/2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298/
+        "2c53d71c0262d939bde0da5cad5231cef1194587f58550e20bb1630d6a8c2298",
+        // https://live.blockcypher.com/btc-testnet/tx/4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857/
+        "4493f6a5238c02cf3075e1434bf89a07ef2f3309f75b54ddc9597907c8137857",
+        // https://live.blockcypher.com/btc-testnet/tx/0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb/
+        "0cfbc82975d9b6ddb467e51acfeff4a488d96550cea2bdffa4559ba1d72f9cfb",
+        // https://live.blockcypher.com/btc-testnet/tx/1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265/
+        "1931ab544817b417a2a655cd779520feb3a3dac525e2c1fbf0296282ad1ed265",
+        // https://live.blockcypher.com/btc-testnet/tx/245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e/
+        "245f0a072bed336be95cb2b5a7fb080cc4b57b95e1db7c3c4152d58705e3a72e",
+        // https://live.blockcypher.com/btc-testnet/tx/8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c/
+        "8f401f6ea5607a7772e77ff18d97d769433a1baddffa0a84234e0555599d5b5c",
+        // https://live.blockcypher.com/btc-testnet/tx/15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96/
+        "15e3b61a5025cac9bfcbd9d6cc9fefc01671e5e7442d1b73de6c6024c2be2c96",
+        // https://live.blockcypher.com/btc-testnet/tx/ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9/
+        "ec2a6c46283860f9d2dc76ac4c9d6f216ed3a897a9bdac5caa7d6fcd24d43ca9",
+        // https://live.blockcypher.com/btc-testnet/tx/322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37/
+        "322d46e09d3668dc5b04baa83bf31fc88530a205f70f5500a8d4f7ab73e45d37",
+        // https://live.blockcypher.com/btc-testnet/tx/db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69/
+        "db2c760eb14328e5b237b982685f9366ccaa54e6d6a7b19f733d9ccf50e5cb69",
+        // https://live.blockcypher.com/btc-testnet/tx/4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a/
+        "4fad7ebdbc7c6f3a59638af1a559fbde93d7235e2f382d84581640ea32887f6a",
+        // https://live.blockcypher.com/btc-testnet/tx/a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1/
+        "a9b15d2e9ec3dc6341c69e412b7daf5f971227eb23a77f29e808b327679a07c1",
+        // https://live.blockcypher.com/btc-testnet/tx/2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35/
+        "2f731488360d85fdab70c9d819647661726c2b9c833abda907cf72fdfc846e35",
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60",
+        // https://live.blockcypher.com/btc-testnet/tx/303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f/
+        "303d1797bd67895dab9289e6729886518d6e1ef34f15e49fbaaa3204db832b7f",
+        // https://live.blockcypher.com/btc-testnet/tx/adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0/
+        "adaaf2d775dbee268d3ce2a02c389525c7d4b1034313bd00d207691e7dde42e0",
+        // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
+        "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
+    ];
+
+    block_on(wait_till_history_has_records(&mm, "tBTC", expected.len()));
+
+    let tx_history = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "coin": "tBTC",
+        "limit": 100,
+    })))
+    .unwrap();
+    assert_eq!(
+        tx_history.0,
+        StatusCode::OK,
+        "RPC «my_tx_history» failed with status «{}», response «{}»",
+        tx_history.0,
+        tx_history.1
+    );
+    log!([tx_history.1]);
+    let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+    let tx_history_result = &tx_history_json["result"];
+
+    assert_eq!(tx_history_result["total"].as_u64().unwrap(), expected.len() as u64);
+    for tx in tx_history_result["transactions"].as_array().unwrap() {
+        // https://live.blockcypher.com/btc-testnet/tx/6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60/
+        if tx["tx_hash"].as_str().unwrap() == "6d4d0a844dcbd3f839f071b101dc69d01ee902ad18d2f44531bdeffb0e381c60" {
+            // assert that segwit from address displays correctly
+            assert_eq!(
+                tx["from"][0].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
+            );
+            // assert that legacy to address displays correctly
+            assert_eq!(tx["to"][0].as_str().unwrap(), "mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb");
+            // assert that segwit to address displays correctly
+            assert_eq!(
+                tx["to"][1].as_str().unwrap(),
+                "tb1qqk4t2dppvmu9jja0z7nan0h464n5gve8v3dtus"
             );
         }
     }
@@ -7646,7 +7804,7 @@ fn test_best_orders_segwit() {
 
     let bob_coins_config = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
     ]);
 
     let alice_coins_config = json!([
@@ -7831,7 +7989,7 @@ fn test_orderbook_segwit() {
 
     let bob_coins_config = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
     ]);
 
     let alice_coins_config = json!([
@@ -7967,12 +8125,12 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
 
     let bob_coins_config = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
     ]);
 
     let alice_coins_config = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
     ]);
 
     let mut mm_bob = MarketMakerIt::start(
@@ -8330,6 +8488,95 @@ fn test_mm2_db_migration() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_enable_lightning() {
+    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
+
+    let coins = json! ([
+        {
+            "coin": "tBTC",
+            "name": "tbitcoin",
+            "fname": "tBitcoin",
+            "rpcport": 18332,
+            "pubtype": 111,
+            "p2shtype": 196,
+            "wiftype": 239,
+            "segwit": true,
+            "bech32_hrp": "tb",
+            "lightning": true,
+            "network": "testnet",
+            "txfee": 0,
+            "estimate_fee_mode": "ECONOMICAL",
+            "mm2": 1,
+            "required_confirmations": 0,
+            "protocol": {
+                "type": "UTXO"
+            },
+            "address_format": {
+                "format": "segwit",
+            }
+        }
+    ]);
+
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    let electrum = block_on(mm.rpc(json!({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "tBTC",
+        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
+        "mm2": 1,
+    }))).unwrap();
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+
+    let enable_lightning = block_on(mm.rpc(json!({
+        "mmrpc": "2.0",
+        "method": "enable_lightning",
+        "userpass": mm.userpass,
+        "params": {
+            "coin": "tBTC",
+            "name": "test_node",
+        },
+    })))
+    .unwrap();
+    assert_eq!(
+        enable_lightning.0,
+        StatusCode::OK,
+        "RPC «enable_lightning» failed with {} {}",
+        enable_lightning.0,
+        enable_lightning.1
+    );
+
+    block_on(mm.wait_for_log(60., |log| log.contains("Calling ChannelManager's timer_tick_occurred"))).unwrap();
+
+    block_on(mm.wait_for_log(60., |log| log.contains("Calling PeerManager's timer_tick_occurred"))).unwrap();
+
+    block_on(mm.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_public_key() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
@@ -8368,4 +8615,153 @@ fn test_get_public_key() {
         v.result.public_key,
         "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"
     )
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_orderbook_with_same_orderbook_ticker() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+        {"coin":"RICK-Utxo","asset":"RICK","orderbook_ticker":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+        // just a random contract address
+        {"coin":"RICK-ERC20","orderbook_ticker":"RICK","decimals": 18,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9"}}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "RICK-Utxo",
+    })))
+    .unwrap();
+    assert!(
+        rc.0.is_server_error(),
+        "orderbook succeed but should have failed {}",
+        rc.1
+    );
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "RICK-ERC20",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!orderbook {}", rc.1);
+}
+
+// HOWTO
+// 1. Install Firefox.
+// 2. Install wasm-bindgen-cli: cargo install wasm-bindgen-cli
+// 3. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
+// 4. Run WASM_BINDGEN_TEST_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN cargo test --target wasm32-unknown-unknown
+#[cfg(target_arch = "wasm32")]
+mod wasm_bindgen_tests {
+    use super::*;
+    use futures01::Future;
+    use js_sys::Promise;
+    use lazy_static::lazy_static;
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen_futures::JsFuture;
+    use wasm_bindgen_test::*;
+    use web_sys::console;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn test_swap() {
+        use crate::mm2::lp_swap::{run_maker_swap, run_taker_swap, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
+                                  SwapConfirmationsSettings, TakerSwap, PAYMENT_LOCKTIME};
+        use coins::lp_coininit;
+        use common::mm_ctx::MmCtxBuilder;
+        use common::new_uuid;
+        use common::now_ms;
+        use futures::future::join;
+        use futures::{Future, TryFutureExt};
+
+        let conf_settings = SwapConfirmationsSettings {
+            maker_coin_confs: 0,
+            maker_coin_nota: false,
+            taker_coin_confs: 0,
+            taker_coin_nota: false,
+        };
+        let uuid = new_uuid();
+        let key_pair_taker =
+            key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid")
+                .unwrap();
+        let key_pair_maker =
+            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap();
+        let conf = json!({
+            "coins":[
+               {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80,"mm2":1},
+               {"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+            ]
+        });
+        let ctx_taker = MmCtxBuilder::new()
+            .with_conf(conf.clone())
+            .with_secp256k1_key_pair(key_pair_taker)
+            .into_mm_arc();
+        let ctx_maker = MmCtxBuilder::new()
+            .with_conf(conf)
+            .with_secp256k1_key_pair(key_pair_maker)
+            .into_mm_arc();
+        let taker_persistent_pub = (**ctx_taker.secp256k1_key_pair().public()).into();
+        let maker_persistent_pub = (**ctx_maker.secp256k1_key_pair().public()).into();
+
+        let req = json!({
+            "urls":["http://195.201.0.6:8565"],
+            "swap_contract_address":"0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd"
+        });
+        let eth_taker = lp_coininit(&ctx_taker, "ETH", &req).await.unwrap();
+        let jst_taker = lp_coininit(&ctx_taker, "JST", &req).await.unwrap();
+        let eth_maker = lp_coininit(&ctx_maker, "ETH", &req).await.unwrap();
+        let jst_maker = lp_coininit(&ctx_maker, "JST", &req).await.unwrap();
+        let taker_swap = TakerSwap::new(
+            ctx_taker.clone(),
+            [0; 32].into(),
+            1.into(),
+            1.into(),
+            taker_persistent_pub,
+            uuid,
+            None,
+            conf_settings.clone(),
+            eth_taker,
+            jst_taker,
+            PAYMENT_LOCKTIME,
+        );
+
+        let maker_swap = MakerSwap::new(
+            ctx_maker.clone(),
+            [0; 32].into(),
+            1.into(),
+            1.into(),
+            maker_persistent_pub,
+            uuid,
+            None,
+            conf_settings,
+            eth_maker,
+            jst_maker,
+            PAYMENT_LOCKTIME,
+        );
+
+        let taker_swap_fut = run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx_taker);
+        let maker_swap_fut = run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx_maker);
+        join(taker_swap_fut, maker_swap_fut).await;
+    }
 }

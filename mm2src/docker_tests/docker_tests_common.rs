@@ -12,11 +12,12 @@ pub use std::thread;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, ChecksumType};
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
-use coins::qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin};
-use coins::utxo::qtum::{qtum_coin_from_conf_and_request, QtumBasedCoin, QtumCoin};
+use coins::qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin};
+use coins::utxo::qtum::{qtum_coin_from_conf_and_params, QtumBasedCoin, QtumCoin};
 use coins::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcClientOps};
-use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
-use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoAddressFormat, UtxoCoinFields};
+use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
+use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
+                  UtxoAddressFormat, UtxoCoinFields};
 use coins::MarketCoinOps;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use ethereum_types::H160 as H160Eth;
@@ -196,12 +197,14 @@ pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, Qrc20Co
         "method": "enable",
         "swap_contract_address": format!("{:#02x}", swap_contract_address),
     });
-    let coin = block_on(qrc20_coin_from_conf_and_request(
+    let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qrc20_coin_from_conf_and_params(
         &ctx,
         ticker,
         platform,
         &conf,
-        &req,
+        params,
         &priv_key,
         contract_address,
     ))
@@ -244,8 +247,9 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, UtxoStan
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
     let req = json!({"method":"enable"});
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, ticker, &conf, &req, priv_key,
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, ticker, &conf, params, priv_key,
     ))
     .unwrap();
     import_address(&coin);
@@ -348,11 +352,12 @@ pub fn generate_qtum_coin_with_random_privkey(
     let req = json!({"method": "enable"});
     let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
         &ctx,
         "QTUM",
         &conf,
-        &req,
+        params,
         priv_key.as_ref(),
     ))
     .unwrap();
@@ -392,11 +397,12 @@ pub fn generate_segwit_qtum_coin_with_random_privkey(
     let req = json!({"method": "enable"});
     let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(qtum_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
         &ctx,
         "QTUM",
         &conf,
-        &req,
+        params,
         priv_key.as_ref(),
     ))
     .unwrap();

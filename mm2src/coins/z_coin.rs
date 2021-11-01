@@ -2,9 +2,9 @@ use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcResult};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, UtxoArcBuilder};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoArc, UtxoCoinBuilder,
-                  UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak,
-                  VerboseTransactionFrom};
+                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoArc,
+                  UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps,
+                  UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
@@ -399,16 +399,16 @@ impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
-pub async fn z_coin_from_conf_and_request(
+pub async fn z_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    params: UtxoActivationParams,
     secp_priv_key: &[u8],
     db_dir_path: PathBuf,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
-    z_coin_from_conf_and_request_with_z_key(ctx, ticker, conf, req, secp_priv_key, db_dir_path, z_key).await
+    z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir_path, z_key).await
 }
 
 fn init_db(sql: &Connection) -> Result<(), SqliteError> {
@@ -570,16 +570,16 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
     }
 }
 
-async fn z_coin_from_conf_and_request_with_z_key(
+async fn z_coin_from_conf_and_params_with_z_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    params: UtxoActivationParams,
     secp_priv_key: &[u8],
     mut db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, req, secp_priv_key);
+    let builder = UtxoArcBuilder::new(ctx, ticker, conf, params, secp_priv_key);
     let utxo_arc = builder.build().await.map_to_mm(ZCoinBuildError::UtxoBuilderError)?;
     let db_name = format!("{}_CACHE.db", ticker);
 
@@ -1089,6 +1089,7 @@ impl MmCoin for ZCoin {
                 coin: coin.ticker().to_owned(),
                 internal_id: tx_hash.into(),
                 kmd_rewards: None,
+                transaction_type: Default::default(),
             })
         };
         Box::new(fut.boxed().compat())

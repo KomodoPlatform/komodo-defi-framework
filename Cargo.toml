@@ -69,7 +69,7 @@ futures = { version = "0.3.1", package = "futures", features = ["compat", "async
 gstuff = { version = "0.7", features = ["nightly"] }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
-hex = "0.3.2"
+hex = "0.4.2"
 hex-literal = "0.3.1"
 http = "0.2"
 itertools = "0.9"
@@ -121,6 +121,7 @@ web-sys = { version = "0.3.4", features = ["console"] }
 dirs = { version = "1" }
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
+futures-rustls = { version = "0.21.1" }
 
 [dev-dependencies]
 mocktopus = "0.7.0"

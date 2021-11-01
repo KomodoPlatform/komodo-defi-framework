@@ -60,7 +60,7 @@ pub struct UtxoArcBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    req: &'a Json,
+    activation_params: UtxoActivationParams,
     priv_key: &'a [u8],
 }
 
@@ -69,14 +69,14 @@ impl<'a> UtxoArcBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        req: &'a Json,
+        activation_params: UtxoActivationParams,
         priv_key: &'a [u8],
     ) -> UtxoArcBuilder<'a> {
         UtxoArcBuilder {
             ctx,
             ticker,
             conf,
-            req,
+            activation_params,
             priv_key,
         }
     }
@@ -95,30 +95,29 @@ impl UtxoCoinBuilder for UtxoArcBuilder<'_> {
 
     fn conf(&self) -> &Json { self.conf }
 
-    fn req(&self) -> &Json { self.req }
+    fn activation_params(&self) -> UtxoActivationParams { self.activation_params.clone() }
 
     fn ticker(&self) -> &str { self.ticker }
 
     fn priv_key(&self) -> &[u8] { self.priv_key }
 }
 
-pub async fn utxo_arc_from_conf_and_request<T>(
+pub async fn utxo_arc_from_conf_and_params<T>(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    activation_params: UtxoActivationParams,
     priv_key: &[u8],
     constructor: impl Fn(UtxoArc) -> T + Send + 'static,
 ) -> Result<T, String>
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, req, priv_key);
+    let builder = UtxoArcBuilder::new(ctx, ticker, conf, activation_params.clone(), priv_key);
     let utxo_arc = try_s!(builder.build().await);
     let coin = constructor(utxo_arc.clone());
 
-    let merge_params: Option<UtxoMergeParams> = try_s!(json::from_value(req["utxo_merge_params"].clone()));
-    if let Some(merge_params) = merge_params {
+    if let Some(merge_params) = activation_params.utxo_merge_params {
         let weak = utxo_arc.downgrade();
         let merge_loop = merge_utxo_loop(
             weak,
@@ -137,8 +136,8 @@ fn ten_f64() -> f64 { 10. }
 
 fn one_hundred() -> usize { 100 }
 
-#[derive(Debug, Deserialize)]
-struct UtxoMergeParams {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UtxoMergeParams {
     merge_at: usize,
     #[serde(default = "ten_f64")]
     check_every: f64,
@@ -192,10 +191,13 @@ where
     Ok(fee)
 }
 
-pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<Vec<Address>, String> {
+pub fn addresses_from_script<T: AsRef<UtxoCoinFields> + UtxoCommonOps>(
+    coin: &T,
+    script: &Script,
+) -> Result<Vec<Address>, String> {
     let destinations: Vec<ScriptAddress> = try_s!(script.extract_destinations());
 
-    let conf = &coin.conf;
+    let conf = &coin.as_ref().conf;
 
     let addresses = destinations
         .into_iter()
@@ -204,12 +206,12 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
                 ScriptType::P2PKH => (
                     conf.pub_addr_prefix,
                     conf.pub_t_addr_prefix,
-                    conf.default_address_format.clone(),
+                    coin.addr_format_for_standard_scripts(),
                 ),
                 ScriptType::P2SH => (
                     conf.p2sh_addr_prefix,
                     conf.p2sh_t_addr_prefix,
-                    conf.default_address_format.clone(),
+                    coin.addr_format_for_standard_scripts(),
                 ),
                 ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };
@@ -301,6 +303,7 @@ pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
     sum_outputs_value: u64,
     tx_fee: u64,
     min_relay_fee: Option<u64>,
+    dust: Option<u64>,
 }
 
 impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
@@ -317,7 +320,13 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             sum_outputs_value: 0,
             tx_fee: 0,
             min_relay_fee: None,
+            dust: None,
         }
+    }
+
+    pub fn with_dust(mut self, dust_amount: u64) -> Self {
+        self.dust = Some(dust_amount);
+        self
     }
 
     pub fn add_required_inputs(mut self, inputs: impl IntoIterator<Item = UnspentInfo>) -> Self {
@@ -436,14 +445,19 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         }
     }
 
-    fn dust(&self) -> u64 { self.coin.as_ref().dust_amount }
+    fn dust(&self) -> u64 {
+        match self.dust {
+            Some(dust) => dust,
+            None => self.coin.as_ref().dust_amount,
+        }
+    }
 
     /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
     /// Sends the change (inputs amount - outputs amount) to "my_address"
     /// Also returns additional transaction data
     pub async fn build(mut self) -> GenerateTxResult {
         let coin = self.coin;
-        let dust: u64 = coin.as_ref().dust_amount;
+        let dust: u64 = self.dust();
         let change_script_pubkey = output_script(&coin.as_ref().my_address, ScriptType::P2PKH).to_bytes();
 
         let actual_tx_fee = match self.fee {
@@ -1546,6 +1560,7 @@ where
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: data.kmd_rewards,
+        transaction_type: Default::default(),
     })
 }
 
@@ -2069,6 +2084,7 @@ where
         internal_id: tx.hash().reversed().to_vec().into(),
         timestamp: verbose_tx.time.into(),
         kmd_rewards,
+        transaction_type: Default::default(),
     })
 }
 
@@ -3034,6 +3050,13 @@ where
         coin.get_current_mtp().await? - 1
     };
     Ok(lock_time.max(htlc_locktime))
+}
+
+pub fn addr_format_for_standard_scripts(coin: &dyn AsRef<UtxoCoinFields>) -> UtxoAddressFormat {
+    match &coin.as_ref().conf.default_address_format {
+        UtxoAddressFormat::Segwit => UtxoAddressFormat::Standard,
+        format @ (UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. }) => format.clone(),
+    }
 }
 
 pub async fn broadcast_tx<T>(coin: &T, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>>

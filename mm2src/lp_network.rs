@@ -431,9 +431,9 @@ pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {
 }
 
 pub fn lp_network_ports(netid: u16) -> Result<NetworkPorts, MmError<NetIdError>> {
-    let (_, network_port, network_ws_port) = lp_ports(netid)?;
+    let (_, network_port, network_wss_port) = lp_ports(netid)?;
     Ok(NetworkPorts {
         tcp: network_port,
-        ws: network_ws_port,
+        wss: network_wss_port,
     })
 }

@@ -4,7 +4,7 @@
 use crate::utxo::{output_script, sat_from_big_decimal};
 use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use bigdecimal::BigDecimal;
-use chain::{BlockHeader, OutPoint, Transaction as UtxoTx};
+use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient, JsonRpcRemoteAddr,
@@ -242,6 +242,8 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     fn get_verbose_transaction(&self, txid: &H256Json) -> UtxoRpcFut<RpcTransaction>;
 
     fn get_block_count(&self) -> UtxoRpcFut<u64>;
+
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock>;
 
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
@@ -536,7 +538,7 @@ impl JsonRpcClient for NativeClientImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
-        use common::wio::slurp_req;
+        use common::transport::slurp_req;
 
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
@@ -625,6 +627,8 @@ impl UtxoRpcClientOps for NativeClient {
     fn get_block_count(&self) -> UtxoRpcFut<u64> {
         Box::new(self.0.get_block_count().map_to_mm_fut(UtxoRpcError::from))
     }
+
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> { unimplemented!() }
 
     fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(
@@ -936,11 +940,21 @@ pub struct ElectrumUnspent {
     pub value: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ElectrumNonce {
     Number(u64),
     Hash(H256Json),
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<BlockHeaderNonce> for ElectrumNonce {
+    fn into(self) -> BlockHeaderNonce {
+        match self {
+            ElectrumNonce::Number(n) => BlockHeaderNonce::U32(n as u32),
+            ElectrumNonce::Hash(h) => BlockHeaderNonce::H256(h.into()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -951,29 +965,74 @@ pub struct ElectrumBlockHeadersRes {
 }
 
 /// The block header compatible with Electrum 1.2
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV12 {
-    bits: u64,
-    block_height: u64,
-    merkle_root: H256Json,
-    nonce: ElectrumNonce,
-    prev_block_hash: H256Json,
-    timestamp: u64,
-    version: u64,
+    pub bits: u64,
+    pub block_height: u64,
+    pub merkle_root: H256Json,
+    pub nonce: ElectrumNonce,
+    pub prev_block_hash: H256Json,
+    pub timestamp: u64,
+    pub version: u64,
+}
+
+impl ElectrumBlockHeaderV12 {
+    pub fn hash(&self) -> H256Json {
+        let block_header = BlockHeader {
+            version: self.version as u32,
+            previous_header_hash: self.prev_block_hash.clone().into(),
+            merkle_root_hash: self.merkle_root.clone().into(),
+            hash_final_sapling_root: None,
+            time: self.timestamp as u32,
+            bits: BlockHeaderBits::U32(self.bits as u32),
+            nonce: self.nonce.clone().into(),
+            solution: None,
+            aux_pow: None,
+            mtp_pow: None,
+            is_verus: false,
+            hash_state_root: None,
+            hash_utxo_root: None,
+            prevout_stake: None,
+            vch_block_sig_dlgt: None,
+            n_height: None,
+            n_nonce_u64: None,
+            mix_hash: None,
+        };
+        BlockHeader::hash(&block_header).into()
+    }
 }
 
 /// The block header compatible with Electrum 1.4
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBlockHeaderV14 {
-    height: u64,
-    hex: BytesJson,
+    pub height: u64,
+    pub hex: BytesJson,
 }
 
-#[derive(Debug, Deserialize)]
+impl ElectrumBlockHeaderV14 {
+    pub fn hash(&self) -> H256Json { self.hex.clone().into_vec()[..].into() }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ElectrumBlockHeader {
     V12(ElectrumBlockHeaderV12),
     V14(ElectrumBlockHeaderV14),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BestBlock {
+    pub height: u64,
+    pub hash: H256Json,
+}
+
+impl From<ElectrumBlockHeader> for BestBlock {
+    fn from(block_header: ElectrumBlockHeader) -> Self {
+        BestBlock {
+            height: block_header.block_height(),
+            hash: block_header.block_hash(),
+        }
+    }
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -989,6 +1048,13 @@ impl ElectrumBlockHeader {
         match self {
             ElectrumBlockHeader::V12(h) => h.block_height,
             ElectrumBlockHeader::V14(h) => h.height,
+        }
+    }
+
+    fn block_hash(&self) -> H256Json {
+        match self {
+            ElectrumBlockHeader::V12(h) => h.hash(),
+            ElectrumBlockHeader::V14(h) => h.hash(),
         }
     }
 }
@@ -1019,7 +1085,7 @@ pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// Deserializable Electrum protocol representation for RPC
 pub enum ElectrumProtocol {
     /// TCP
@@ -1050,7 +1116,7 @@ pub struct ElectrumProtocolVersion {
     pub protocol_version: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// Electrum request RPC representation
 pub struct ElectrumRpcRequest {
     pub url: String,
@@ -1482,7 +1548,7 @@ impl ElectrumClient {
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-broadcast
-    fn blockchain_transaction_broadcast(&self, tx: BytesJson) -> RpcRes<H256Json> {
+    pub fn blockchain_transaction_broadcast(&self, tx: BytesJson) -> RpcRes<H256Json> {
         rpc_func!(self, "blockchain.transaction.broadcast", tx)
     }
 
@@ -1564,6 +1630,14 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(
             self.blockchain_headers_subscribe()
                 .map(|r| r.block_height())
+                .map_to_mm_fut(UtxoRpcError::from),
+        )
+    }
+
+    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> {
+        Box::new(
+            self.blockchain_headers_subscribe()
+                .map(BestBlock::from)
                 .map_to_mm_fut(UtxoRpcError::from),
         )
     }
@@ -1978,7 +2052,7 @@ async fn connect_loop(
         static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     }
 
-    use common::wasm_ws::ws_transport;
+    use common::transport::wasm_ws::ws_transport;
 
     let mut delay: u64 = 0;
     loop {

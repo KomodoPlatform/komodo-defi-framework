@@ -71,21 +71,19 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
-use utxo_common::big_decimal_from_sat;
+use utxo_common::{big_decimal_from_sat, UtxoMergeParams, UtxoTxBuilder};
 
 pub use chain::Transaction as UtxoTx;
 
 #[cfg(not(target_arch = "wasm32"))]
 use self::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
 use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
+                        UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, CoinsContext, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin, NumConversError,
             NumConversResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
             TransactionEnum, TransactionFut, WithdrawError, WithdrawFee, WithdrawRequest};
-use crate::utxo::rpc_clients::UtxoRpcFut;
-use crate::utxo::utxo_common::UtxoTxBuilder;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -430,6 +428,11 @@ pub struct UtxoCoinConf {
     pub mature_confirmations: u32,
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
     pub estimate_fee_blocks: u32,
+    /// Defines if the coin can be used in the lightning network
+    /// For now BTC is only supported by LDK but in the future any segwit coins can be supported in lightning network
+    pub lightning: bool,
+    /// bitcoin/testnet/signet/regtest Needed for lightning node to know which network to connect to
+    pub network: Option<String>,
 }
 
 #[derive(Debug)]
@@ -675,6 +678,8 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64;
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>>;
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat;
 }
 
 #[async_trait]
@@ -958,14 +963,70 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UtxoActivationParams {
+    mode: UtxoActivationMode,
+    utxo_merge_params: Option<UtxoMergeParams>,
+    #[serde(default)]
+    tx_history: bool,
+    required_confirmations: Option<u64>,
+    requires_notarization: Option<bool>,
+    address_format: Option<UtxoAddressFormat>,
+}
+
+#[derive(Debug, Display)]
+pub enum UtxoFromLegacyReqErr {
+    UnexpectedMethod,
+    InvalidElectrumServers(json::Error),
+    InvalidMergeParams(json::Error),
+    InvalidRequiredConfs(json::Error),
+    InvalidRequiresNota(json::Error),
+    InvalidAddressFormat(json::Error),
+}
+
+impl UtxoActivationParams {
+    pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<UtxoFromLegacyReqErr>> {
+        let mode = match req["method"].as_str() {
+            Some("enable") => UtxoActivationMode::Native,
+            Some("electrum") => {
+                let servers =
+                    json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
+                UtxoActivationMode::Electrum { servers }
+            },
+            _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
+        };
+        let utxo_merge_params =
+            json::from_value(req["utxo_merge_params"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidMergeParams)?;
+
+        let tx_history = req["tx_history"].as_bool().unwrap_or_default();
+        let required_confirmations = json::from_value(req["required_confirmations"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidRequiredConfs)?;
+        let requires_notarization = json::from_value(req["requires_notarization"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidRequiresNota)?;
+        let address_format =
+            json::from_value(req["address_format"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidAddressFormat)?;
+
+        Ok(UtxoActivationParams {
+            mode,
+            utxo_merge_params,
+            tx_history,
+            required_confirmations,
+            requires_notarization,
+            address_format,
+        })
+    }
+}
+
 pub struct UtxoConfBuilder<'a> {
     conf: &'a Json,
-    req: &'a Json,
     ticker: &'a str,
+    params: UtxoActivationParams,
 }
 
 impl<'a> UtxoConfBuilder<'a> {
-    pub fn new(conf: &'a Json, req: &'a Json, ticker: &'a str) -> Self { UtxoConfBuilder { conf, req, ticker } }
+    pub fn new(conf: &'a Json, params: UtxoActivationParams, ticker: &'a str) -> Self {
+        UtxoConfBuilder { conf, ticker, params }
+    }
 
     pub fn build(&self) -> Result<UtxoCoinConf, String> {
         let checksum_type = self.checksum_type();
@@ -1004,6 +1065,8 @@ impl<'a> UtxoConfBuilder<'a> {
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
+        let lightning = self.lightning();
+        let network = self.network();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -1033,6 +1096,8 @@ impl<'a> UtxoConfBuilder<'a> {
             estimate_fee_mode,
             mature_confirmations,
             estimate_fee_blocks,
+            lightning,
+            network,
         })
     }
 
@@ -1161,14 +1226,14 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn required_confirmations(&self) -> u64 {
         // param from request should override the config
-        self.req["required_confirmations"]
-            .as_u64()
+        self.params
+            .required_confirmations
             .unwrap_or_else(|| self.conf["required_confirmations"].as_u64().unwrap_or(1))
     }
 
     fn requires_notarization(&self) -> AtomicBool {
-        self.req["requires_notarization"]
-            .as_bool()
+        self.params
+            .requires_notarization
             .unwrap_or_else(|| self.conf["requires_notarization"].as_bool().unwrap_or(false))
             .into()
     }
@@ -1193,6 +1258,22 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
+
+    fn lightning(&self) -> bool {
+        if self.segwit() && self.bech32_hrp().is_some() {
+            self.conf["lightning"].as_bool().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    fn network(&self) -> Option<String> { json::from_value(self.conf["network"].clone()).unwrap_or(None) }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum UtxoActivationMode {
+    Native,
+    Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
 #[derive(Debug)]
@@ -1222,14 +1303,14 @@ pub trait UtxoCoinBuilder {
 
     fn conf(&self) -> &Json;
 
-    fn req(&self) -> &Json;
+    fn activation_params(&self) -> UtxoActivationParams;
 
     fn ticker(&self) -> &str;
 
     fn priv_key(&self) -> &[u8];
 
     async fn build_utxo_fields(&self) -> Result<UtxoCoinFields, String> {
-        let conf = try_s!(UtxoConfBuilder::new(self.conf(), self.req(), self.ticker()).build());
+        let conf = try_s!(UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build());
 
         let private = Private {
             prefix: conf.wif_prefix,
@@ -1274,12 +1355,26 @@ pub trait UtxoCoinBuilder {
     }
 
     fn address_format(&self) -> Result<UtxoAddressFormat, String> {
-        let mut format: Option<UtxoAddressFormat> = try_s!(json::from_value(self.req()["address_format"].clone()));
-        if format.is_none() {
-            format = try_s!(json::from_value(self.conf()["address_format"].clone()))
-        }
+        let format_from_req: Option<UtxoAddressFormat> = self.activation_params().address_format;
+        let format_from_conf = try_s!(json::from_value::<Option<UtxoAddressFormat>>(
+            self.conf()["address_format"].clone()
+        ))
+        .unwrap_or(UtxoAddressFormat::Standard);
 
-        let mut address_format = format.unwrap_or(UtxoAddressFormat::Standard);
+        let mut address_format = match format_from_req {
+            Some(from_req) => {
+                if from_req.is_segwit() != format_from_conf.is_segwit() {
+                    return ERR!(
+                        "Both conf {:?} and request {:?} must be either Segwit or Standard/CashAddress",
+                        format_from_conf,
+                        from_req
+                    );
+                } else {
+                    from_req
+                }
+            },
+            None => format_from_conf,
+        };
 
         if let UtxoAddressFormat::CashAddress {
             network: _,
@@ -1349,7 +1444,7 @@ pub trait UtxoCoinBuilder {
     }
 
     fn initial_history_state(&self) -> HistorySyncState {
-        if self.req()["tx_history"].as_bool().unwrap_or(false) {
+        if self.activation_params().tx_history {
             HistorySyncState::NotStarted
         } else {
             HistorySyncState::NotEnabled
@@ -1357,8 +1452,8 @@ pub trait UtxoCoinBuilder {
     }
 
     async fn rpc_client(&self) -> Result<UtxoRpcClientEnum, String> {
-        match self.req()["method"].as_str() {
-            Some("enable") => {
+        match self.activation_params().mode {
+            UtxoActivationMode::Native => {
                 #[cfg(target_arch = "wasm32")]
                 {
                     ERR!("Native UTXO mode is only supported in native mode")
@@ -1369,15 +1464,18 @@ pub trait UtxoCoinBuilder {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            Some("electrum") => {
-                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default()).await);
+            UtxoActivationMode::Electrum { servers } => {
+                let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default(), servers).await);
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
-            _ => ERR!("Expected enable or electrum request"),
         }
     }
 
-    async fn electrum_client(&self, args: ElectrumBuilderArgs) -> Result<ElectrumClient, String> {
+    async fn electrum_client(
+        &self,
+        args: ElectrumBuilderArgs,
+        mut servers: Vec<ElectrumRpcRequest>,
+    ) -> Result<ElectrumClient, String> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
@@ -1392,7 +1490,6 @@ pub trait UtxoCoinBuilder {
             event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
         }
 
-        let mut servers: Vec<ElectrumRpcRequest> = try_s!(json::from_value(self.req()["servers"].clone()));
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
         let client = ElectrumClientImpl::new(ticker, event_handlers);
@@ -2064,8 +2161,16 @@ pub fn address_by_conf_and_pubkey_str(
     pubkey: &str,
     addr_format: UtxoAddressFormat,
 ) -> Result<String, String> {
-    let null = Json::Null;
-    let conf_builder = UtxoConfBuilder::new(conf, &null, coin);
+    // using a reasonable default here
+    let params = UtxoActivationParams {
+        mode: UtxoActivationMode::Native,
+        utxo_merge_params: None,
+        tx_history: false,
+        required_confirmations: None,
+        requires_notarization: None,
+        address_format: None,
+    };
+    let conf_builder = UtxoConfBuilder::new(conf, params, coin);
     let utxo_conf = try_s!(conf_builder.build());
     let pubkey_bytes = try_s!(hex::decode(pubkey));
     let hash = dhash160(&pubkey_bytes);

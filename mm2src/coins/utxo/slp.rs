@@ -1480,6 +1480,7 @@ impl MmCoin for SlpToken {
                 fee_details: Some(fee_details.into()),
                 coin: coin.ticker().into(),
                 kmd_rewards: None,
+                transaction_type: Default::default(),
             };
             Ok(details)
         };

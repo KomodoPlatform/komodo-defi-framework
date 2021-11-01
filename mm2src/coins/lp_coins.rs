@@ -81,18 +81,23 @@ macro_rules! try_f {
 #[cfg(test)]
 pub mod coins_tests;
 
+pub mod enable_v2;
+
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 
 pub mod utxo;
-use utxo::qtum::{self, qtum_coin_from_conf_and_request, QtumCoin};
+use utxo::qtum::{self, qtum_coin_from_conf_and_params, QtumCoin};
 use utxo::slp::SlpToken;
 use utxo::utxo_common::big_decimal_from_sat_unsigned;
-use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
+use utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
 use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_from_conf_and_request, Qrc20Coin, Qrc20FeeDetails};
+use crate::utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
+use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
+
+pub mod lightning;
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -103,11 +108,14 @@ pub use test_coin::TestCoin;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
-use crate::utxo::bch::{bch_coin_from_conf_and_request, BchCoin};
+
+use crate::qrc20::Qrc20ActivationParams;
+use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
+use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use crate::utxo::UnsupportedAddr;
+use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-use z_coin::{z_coin_from_conf_and_request, ZCoin};
+use z_coin::{z_coin_from_conf_and_params, ZCoin};
 
 cfg_native! {
     use async_std::fs;
@@ -126,6 +134,10 @@ pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
+pub type StakingInfosResult = Result<StakingInfos, MmError<StakingInfosError>>;
+pub type StakingInfosFut = Box<dyn Future<Item = StakingInfos, Error = MmError<StakingInfosError>> + Send>;
+pub type DelegationResult = Result<TransactionDetails, MmError<DelegationError>>;
+pub type DelegationFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<DelegationError>> + Send>;
 pub type WithdrawResult = Result<TransactionDetails, MmError<WithdrawError>>;
 pub type WithdrawFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<WithdrawError>> + Send>;
 pub type TradePreimageResult<T> = Result<T, MmError<TradePreimageError>>;
@@ -430,6 +442,30 @@ pub struct WithdrawRequest {
     fee: Option<WithdrawFee>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum StakingDetails {
+    Qtum(QtumDelegationRequest),
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+pub struct AddDelegateRequest {
+    pub coin: String,
+    pub staking_details: StakingDetails,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+pub struct RemoveDelegateRequest {
+    pub coin: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetStakingInfosRequest {
+    pub coin: String,
+}
+
 impl WithdrawRequest {
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
@@ -440,6 +476,21 @@ impl WithdrawRequest {
             fee: None,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum StakingInfosDetails {
+    Qtum(QtumStakingInfosDetails),
+}
+
+impl From<QtumStakingInfosDetails> for StakingInfosDetails {
+    fn from(qtum_staking_infos: QtumStakingInfosDetails) -> Self { StakingInfosDetails::Qtum(qtum_staking_infos) }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StakingInfos {
+    pub staking_infos_details: StakingInfosDetails,
 }
 
 /// Please note that no type should have the same structure as another type,
@@ -502,6 +553,17 @@ impl KmdRewardsDetails {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum TransactionType {
+    StakingDelegation,
+    RemoveDelegation,
+    StandardTransfer,
+}
+
+impl Default for TransactionType {
+    fn default() -> Self { TransactionType::StandardTransfer }
+}
+
 /// Transaction details
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionDetails {
@@ -536,6 +598,9 @@ pub struct TransactionDetails {
     /// Amount of accrued rewards.
     #[serde(skip_serializing_if = "Option::is_none")]
     kmd_rewards: Option<KmdRewardsDetails>,
+    /// Type of transactions, default is StandardTransfer
+    #[serde(default)]
+    transaction_type: TransactionType,
 }
 
 impl TransactionDetails {
@@ -723,6 +788,178 @@ impl From<BalanceError> for GetNonZeroBalance {
 
 impl From<NumConversError> for BalanceError {
     fn from(e: NumConversError) -> Self { BalanceError::Internal(e.to_string()) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum StakingInfosError {
+    #[display(fmt = "Staking infos not available for: {}", coin)]
+    CoinDoesntSupportStakingInfos { coin: String },
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl From<UtxoRpcError> for StakingInfosError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(rpc) | UtxoRpcError::ResponseParseError(rpc) => {
+                StakingInfosError::Transport(rpc.to_string())
+            },
+            UtxoRpcError::InvalidResponse(error) => StakingInfosError::Transport(error),
+            UtxoRpcError::Internal(error) => StakingInfosError::Internal(error),
+        }
+    }
+}
+
+impl HttpStatusCode for StakingInfosError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            StakingInfosError::NoSuchCoin { .. } | StakingInfosError::CoinDoesntSupportStakingInfos { .. } => {
+                StatusCode::BAD_REQUEST
+            },
+            StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for StakingInfosError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => StakingInfosError::NoSuchCoin { coin },
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum DelegationError {
+    #[display(
+        fmt = "Not enough {} to delegate: available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalance {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+    #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
+    AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
+    #[display(fmt = "Delegation not available for: {}", coin)]
+    CoinDoesntSupportDelegation { coin: String },
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "{}", _0)]
+    CannotInteractWithSmartContract(String),
+    #[display(fmt = "{}", _0)]
+    AddressError(String),
+    #[display(fmt = "Already delegating to: {}", _0)]
+    AlreadyDelegating(String),
+    #[display(fmt = "Delegation is not supported, reason: {}", reason)]
+    DelegationOpsNotSupported { reason: String },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl From<UtxoRpcError> for DelegationError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(transport) | UtxoRpcError::ResponseParseError(transport) => {
+                DelegationError::Transport(transport.to_string())
+            },
+            UtxoRpcError::InvalidResponse(resp) => DelegationError::Transport(resp),
+            UtxoRpcError::Internal(internal) => DelegationError::InternalError(internal),
+        }
+    }
+}
+
+impl From<StakingInfosError> for DelegationError {
+    fn from(e: StakingInfosError) -> Self {
+        match e {
+            StakingInfosError::CoinDoesntSupportStakingInfos { coin } => {
+                DelegationError::CoinDoesntSupportDelegation { coin }
+            },
+            StakingInfosError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
+            StakingInfosError::Transport(e) => DelegationError::Transport(e),
+            StakingInfosError::Internal(e) => DelegationError::InternalError(e),
+        }
+    }
+}
+
+impl From<CoinFindError> for DelegationError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
+        }
+    }
+}
+
+impl From<BalanceError> for DelegationError {
+    fn from(e: BalanceError) -> Self {
+        match e {
+            BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => DelegationError::Transport(error),
+            BalanceError::Internal(internal) => DelegationError::InternalError(internal),
+        }
+    }
+}
+
+impl HttpStatusCode for DelegationError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            DelegationError::Transport(_) | DelegationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+impl DelegationError {
+    pub fn from_generate_tx_error(gen_tx_err: GenerateTxError, coin: String, decimals: u8) -> DelegationError {
+        match gen_tx_err {
+            GenerateTxError::EmptyUtxoSet { required } => {
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available: BigDecimal::from(0),
+                    required,
+                }
+            },
+            GenerateTxError::EmptyOutputs => DelegationError::InternalError(gen_tx_err.to_string()),
+            GenerateTxError::OutputValueLessThanDust { value, dust } => {
+                let amount = big_decimal_from_sat_unsigned(value, decimals);
+                let threshold = big_decimal_from_sat_unsigned(dust, decimals);
+                DelegationError::AmountTooLow { amount, threshold }
+            },
+            GenerateTxError::DeductFeeFromOutputFailed {
+                output_value, required, ..
+            } => {
+                let available = big_decimal_from_sat_unsigned(output_value, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::NotEnoughUtxos { sum_utxos, required } => {
+                let available = big_decimal_from_sat_unsigned(sum_utxos, decimals);
+                let required = big_decimal_from_sat_unsigned(required, decimals);
+                DelegationError::NotSufficientBalance {
+                    coin,
+                    available,
+                    required,
+                }
+            },
+            GenerateTxError::Transport(e) => DelegationError::Transport(e),
+            GenerateTxError::Internal(e) => DelegationError::InternalError(e),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -1243,9 +1480,13 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
-            try_s!(utxo_standard_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into()
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(utxo_standard_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret).await).into()
         },
-        CoinProtocol::QTUM => try_s!(qtum_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret).await).into(),
+        CoinProtocol::QTUM => {
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(qtum_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret).await).into()
+        },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, protocol).await).into()
         },
@@ -1253,16 +1494,20 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             platform,
             contract_address,
         } => {
+            let params = try_s!(Qrc20ActivationParams::from_legacy_req(&req));
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
+
             try_s!(
-                qrc20_coin_from_conf_and_request(ctx, ticker, platform, &coins_en, req, secret, contract_address).await
+                qrc20_coin_from_conf_and_params(ctx, ticker, platform, &coins_en, params, secret, contract_address)
+                    .await
             )
             .into()
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
+            let params = try_s!(BchActivationParams::from_legacy_req(req));
 
-            let bch = try_s!(bch_coin_from_conf_and_request(ctx, ticker, &coins_en, req, prefix, secret).await);
+            let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, secret).await);
             bch.into()
         },
         CoinProtocol::SLPTOKEN {
@@ -1285,7 +1530,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
         CoinProtocol::ZHTLC => {
             let dbdir = ctx.dbdir();
-            try_s!(z_coin_from_conf_and_request(ctx, ticker, &coins_en, req, secret, dbdir).await).into()
+            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
+            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, params, secret, dbdir).await).into()
         },
     };
 
@@ -1429,6 +1675,46 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+        _ => {
+            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            })
+        },
+    }
+}
+
+pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum.get_delegation_infos().compat().await,
+        _ => {
+            return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
+                coin: coin.ticker().to_string(),
+            })
+        },
+    }
+}
+
+pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    // Need to find a way to do a proper dispatch
+    let coin_concrete = match coin {
+        MmCoinEnum::QtumCoin(qtum) => qtum,
+        _ => {
+            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            })
+        },
+    };
+    match req.staking_details {
+        StakingDetails::Qtum(qtum_staking) => coin_concrete.add_delegation(qtum_staking).compat().await,
+    }
 }
 
 pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {

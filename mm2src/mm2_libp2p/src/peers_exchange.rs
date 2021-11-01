@@ -132,7 +132,9 @@ impl PeersExchange {
 
     fn forget_peer_addresses(&mut self, peer: &PeerId) {
         for address in self.request_response.addresses_of_peer(peer) {
-            self.request_response.remove_address(peer, &address);
+            if !self.is_reserved_peer(&peer) {
+                self.request_response.remove_address(peer, &address);
+            }
         }
     }
 
@@ -316,10 +318,7 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
                         }
 
                         peers.into_iter().for_each(|(peer, addresses)| {
-                            // reserved peers and known peers should not intersect leading to unintentional removal of reserved peers addresses
-                            if !self.is_reserved_peer(&peer.0) {
-                                self.add_peer_addresses_to_known_peers(&peer.0, addresses);
-                            }
+                            self.add_peer_addresses_to_known_peers(&peer.0, addresses);
                         });
                     },
                 },
@@ -366,7 +365,7 @@ mod tests {
     #[test]
     fn test_validate_get_known_peers_response() {
         let network_info = NetworkInfo::Distributed {
-            network_ports: NetworkPorts { tcp: 3000, ws: 3010 },
+            network_ports: NetworkPorts { tcp: 3000, wss: 3010 },
         };
         let behaviour = PeersExchange::new(network_info);
         let response = HashMap::default();

@@ -113,7 +113,7 @@ fn memory_multiaddr(port: u64) -> Multiaddr { format!("/memory/{}", port).parse(
 
 #[cfg(target_arch = "wasm32")]
 fn ipv4_multiaddr(ipv4_addr: &str, ports: NetworkPorts) -> Multiaddr {
-    format!("/ip4/{}/tcp/{}/ws", ipv4_addr, ports.ws).parse().unwrap()
+    format!("/ip4/{}/tcp/{}/wss", ipv4_addr, ports.wss).parse().unwrap()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -123,7 +123,7 @@ fn ipv4_multiaddr(ipv4_addr: &str, ports: NetworkPorts) -> Multiaddr {
 
 #[cfg(target_arch = "wasm32")]
 fn dns_multiaddr(dns_addr: &str, ports: NetworkPorts) -> Multiaddr {
-    format!("/dns/{}/tcp/{}/ws", dns_addr, ports.ws).parse().unwrap()
+    format!("/dns/{}/tcp/{}/wss", dns_addr, ports.wss).parse().unwrap()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

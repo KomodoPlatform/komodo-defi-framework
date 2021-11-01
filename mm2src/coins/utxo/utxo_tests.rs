@@ -1,12 +1,12 @@
 use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_request, QtumCoin};
+use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
-use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_request, UtxoStandardCoin};
+use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{CoinBalance, SwapOps, TradePreimageValue, TxFeeDetails};
-use bigdecimal::BigDecimal;
+use crate::{CoinBalance, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
+use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
@@ -32,14 +32,16 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         "method": "electrum",
         "servers": servers,
     });
-    let builder = UtxoArcBuilder::new(&ctx, TEST_COIN_NAME, &Json::Null, &req, &[]);
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let builder = UtxoArcBuilder::new(&ctx, TEST_COIN_NAME, &Json::Null, params, &[]);
     let args = ElectrumBuilderArgs {
         spawn_ping: false,
         negotiate_version: true,
         collect_metrics: false,
     };
 
-    block_on(builder.electrum_client(args)).unwrap()
+    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    block_on(builder.electrum_client(args, servers)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -111,6 +113,8 @@ fn utxo_coin_fields_for_test(
             estimate_fee_mode: None,
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
+            lightning: false,
+            network: None,
         },
         decimals: 8,
         dust_amount: UTXO_DUST_AMOUNT,
@@ -888,63 +892,6 @@ fn list_since_block_btc_serde() {
 }
 
 #[test]
-#[ignore]
-fn get_tx_details_doge() {
-    let conf = json!(  {
-        "coin": "DOGE",
-        "name": "dogecoin",
-        "fname": "Dogecoin",
-        "rpcport": 22555,
-        "pubtype": 30,
-        "p2shtype": 22,
-        "wiftype": 158,
-        "txfee": 0,
-        "mm2": 1,
-        "required_confirmations": 2
-    });
-    let req = json!({
-         "method": "electrum",
-         "servers": [{"url":"electrum1.cipig.net:10060"},{"url":"electrum2.cipig.net:10060"},{"url":"electrum3.cipig.net:10060"}]
-    });
-
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    use common::executor::spawn;
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "DOGE", &conf, &req, &[1u8; 32],
-    ))
-    .unwrap();
-
-    let coin1 = coin.clone();
-    let coin2 = coin.clone();
-    let fut1 = async move {
-        let block = coin1.current_block().compat().await.unwrap();
-        log!((block));
-        let hash = hex::decode("99caab76bd025d189f10856dc649aad1a191b1cfd9b139ece457c5fedac58132").unwrap();
-        loop {
-            let mut input_transactions = HistoryUtxoTxMap::new();
-            let tx_details = coin1.tx_details_by_hash(&hash, &mut input_transactions).await.unwrap();
-            log!([tx_details]);
-            Timer::sleep(1.).await;
-        }
-    };
-    let fut2 = async move {
-        let block = coin2.current_block().compat().await.unwrap();
-        log!((block));
-        let hash = hex::decode("99caab76bd025d189f10856dc649aad1a191b1cfd9b139ece457c5fedac58132").unwrap();
-        loop {
-            let mut input_transactions = HistoryUtxoTxMap::new();
-            let tx_details = coin2.tx_details_by_hash(&hash, &mut input_transactions).await.unwrap();
-            log!([tx_details]);
-            Timer::sleep(1.).await;
-        }
-    };
-    spawn(fut1);
-    spawn(fut2);
-    loop {}
-}
-
-#[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/587
 fn get_tx_details_coinbase_transaction() {
     let client = electrum_client_for_test(&[
@@ -1328,9 +1275,10 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, "BCH", &conf, params, &[1u8; 32],
     ))
     .unwrap();
 
@@ -1374,9 +1322,10 @@ fn test_address_from_str_with_cashaddress_activated() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, "BCH", &conf, params, &[1u8; 32],
     ))
     .unwrap();
 
@@ -1408,9 +1357,10 @@ fn test_address_from_str_with_legacy_address_activated() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BCH", &conf, &req, &[1u8; 32],
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, "BCH", &conf, params, &[1u8; 32],
     ))
     .unwrap();
 
@@ -1452,8 +1402,9 @@ fn test_unavailable_electrum_proto_version() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let error = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "RICK", &conf, &req, &[1u8; 32],
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let error = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, "RICK", &conf, params, &[1u8; 32],
     ))
     .err()
     .unwrap();
@@ -1474,11 +1425,12 @@ fn test_spam_rick() {
 
     let key_pair = key_pair_from_seed("my_seed").unwrap();
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
         &ctx,
         "RICK",
         &conf,
-        &req,
+        params,
         &*key_pair.private().secret,
     ))
     .unwrap();
@@ -1525,8 +1477,10 @@ fn test_one_unavailable_electrum_proto_version() {
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = block_on(utxo_standard_coin_from_conf_and_request(
-        &ctx, "BTC", &conf, &req, &[1u8; 32],
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+        &ctx, "BTC", &conf, params, &[1u8; 32],
     ))
     .unwrap();
 
@@ -1586,7 +1540,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1595,13 +1549,160 @@ fn test_qtum_unspendable_balance_failed_once() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(68);
     let expected_unspendable = BigDecimal::from(0);
     assert_eq!(spendable, expected_spendable);
     assert_eq!(unspendable, expected_unspendable);
+}
+
+#[test]
+fn test_qtum_generate_pod() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let res = coin.generate_pod(address.hash).unwrap();
+    assert_eq!(expected_res, res.to_string());
+}
+
+#[test]
+fn test_qtum_add_delegation() {
+    let keypair = key_pair_from_seed("asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait().unwrap();
+    // Eligible for delegation
+    assert_eq!(res.my_balance_change.is_negative(), true);
+    assert_eq!(res.total_amount, res.spent_by_me);
+    assert!(res.spent_by_me > res.received_by_me);
+
+    let request = QtumDelegationRequest {
+        address: "fake_address".to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait();
+    // Wrong address
+    assert_eq!(res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_add_delegation_on_already_delegating() {
+    let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait();
+    // Already Delegating
+    assert_eq!(res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_get_delegation_infos() {
+    let keypair =
+        key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let staking_infos = coin.get_delegation_infos().wait().unwrap();
+    match staking_infos.staking_infos_details {
+        StakingInfosDetails::Qtum(staking_details) => {
+            assert_eq!(staking_details.am_i_staking, true);
+            assert_eq!(staking_details.staker.unwrap(), "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+            // Will return false for segwit.
+            assert_eq!(staking_details.is_staking_supported, true);
+        },
+    };
+}
+
+#[test]
+fn test_qtum_remove_delegation() {
+    let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let res = coin.remove_delegation().wait();
+    assert_eq!(res.is_err(), false);
 }
 
 #[test]
@@ -1633,7 +1734,7 @@ fn test_qtum_unspendable_balance_failed() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1642,7 +1743,9 @@ fn test_qtum_unspendable_balance_failed() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let error = coin.my_balance().wait().err().unwrap();
     log!("error: "[error]);
@@ -1679,7 +1782,7 @@ fn test_qtum_my_balance() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1688,7 +1791,9 @@ fn test_qtum_my_balance() {
         184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
         184, 102, 137, 37, 78, 214, 113, 78,
     ];
-    let coin = block_on(qtum_coin_from_conf_and_request(&ctx, "tQTUM", &conf, &req, &priv_key)).unwrap();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(66);
@@ -2345,7 +2450,7 @@ fn test_qtum_is_unspent_mature() {
 #[ignore]
 // TODO it fails at least when fee is 2055837 sat per kbyte, need to investigate
 fn test_get_sender_trade_fee_dynamic_tx_fee() {
-    let rpc_client = electrum_client_for_test(&["95.217.83.126:10001"]);
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:10071"]);
     let mut coin_fields = utxo_coin_fields_for_test(
         UtxoRpcClientEnum::Electrum(rpc_client),
         Some("bob passphrase max taker vol with dynamic trade fee"),
@@ -2568,7 +2673,9 @@ fn test_generate_tx_doge_fee() {
         "servers": [{"url": "electrum1.cipig.net:10060"},{"url": "electrum2.cipig.net:10060"},{"url": "electrum3.cipig.net:10060"}],
     });
     let ctx = MmCtxBuilder::default().into_mm_arc();
-    let doge: UtxoStandardCoin = block_on(UtxoArcBuilder::new(&ctx, "DOGE", &config, &request, &[1; 32]).build())
+    let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
+
+    let doge: UtxoStandardCoin = block_on(UtxoArcBuilder::new(&ctx, "DOGE", &config, params, &[1; 32]).build())
         .unwrap()
         .into();
 
@@ -2695,6 +2802,20 @@ fn btc_mtp() {
         .wait()
         .unwrap();
     assert_eq!(mtp, 1620019527);
+}
+
+#[test]
+fn rvn_mtp() {
+    let electrum = electrum_client_for_test(&[
+        "electrum1.cipig.net:10051",
+        "electrum2.cipig.net:10051",
+        "electrum3.cipig.net:10051",
+    ]);
+    let mtp = electrum
+        .get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::Standard)
+        .wait()
+        .unwrap();
+    assert_eq!(mtp, 1633946264);
 }
 
 #[test]
