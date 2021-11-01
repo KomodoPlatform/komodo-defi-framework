@@ -12,6 +12,7 @@ trigger:
       - refs/heads/*
   paths:
     exclude:
+      - docs/*
       - README.md
       - mm2src/README.md
       - etomic_build/*

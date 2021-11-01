@@ -1,8 +1,9 @@
 use crate::executor::spawn_local;
-use crate::log::warn;
+use crate::mm_error::prelude::*;
 use crate::stringify_js_error;
+use crate::transport::{SlurpError, SlurpResult};
 use futures::channel::oneshot;
-use http::StatusCode;
+use http::{HeaderMap, StatusCode};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -10,12 +11,26 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
 
 /// The result containing either a pair of (HTTP status code, body) or a stringified error.
-pub type FetchResult<T> = Result<(StatusCode, T), String>;
+pub type FetchResult<T> = Result<(StatusCode, T), MmError<SlurpError>>;
 
-macro_rules! js_err {
-    ($($arg:tt)*) => {
-        Err(JsValue::from_str(&ERRL!($($arg)*)))
-    };
+/// Executes a GET request, returning the response status, headers and body.
+/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
+pub async fn slurp_url(url: &str) -> SlurpResult {
+    FetchRequest::get(url)
+        .request_str()
+        .await
+        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+}
+
+/// Executes a POST request, returning the response status, headers and body.
+/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
+    FetchRequest::post(url)
+        .header("Content-Type", "application/json")
+        .body_utf8(body)
+        .request_str()
+        .await
+        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
 }
 
 pub struct FetchRequest {
@@ -69,25 +84,22 @@ impl FetchRequest {
         Self::spawn_fetch_str(self, tx);
         match rx.await {
             Ok(res) => res,
-            Err(_e) => ERR!("Spawned future has been canceled"),
+            Err(_e) => MmError::err(SlurpError::Internal("Spawned future has been canceled".to_owned())),
         }
     }
 
     fn spawn_fetch_str(request: Self, tx: oneshot::Sender<FetchResult<String>>) {
         let fut = async move {
-            let result = Self::fetch_str(request)
-                .await
-                .map_err(|e| ERRL!("{}", stringify_js_error(&e)));
-            if let Err(_res) = tx.send(result) {
-                warn!("spawn_fetch_str] the channel already closed");
-            }
+            let result = Self::fetch_str(request).await;
+            tx.send(result).ok();
         };
         spawn_local(fut);
     }
 
     /// The private non-Send method that is called in a spawned future.
-    async fn fetch_str(request: Self) -> Result<(StatusCode, String), JsValue> {
+    async fn fetch_str(request: Self) -> FetchResult<String> {
         let window = web_sys::window().expect("!window");
+        let uri = request.uri;
 
         let mut req_init = RequestInit::new();
         req_init.method(request.method.as_str());
@@ -97,41 +109,59 @@ impl FetchRequest {
             req_init.mode(mode);
         }
 
-        let js_request = Request::new_with_str_and_init(&request.uri, &req_init)?;
+        let js_request = Request::new_with_str_and_init(&uri, &req_init)
+            .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
         for (hkey, hval) in request.headers {
-            js_request.headers().set(&hkey, &hval)?;
+            js_request
+                .headers()
+                .set(&hkey, &hval)
+                .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
         }
 
         let request_promise = window.fetch_with_request(&js_request);
 
         let future = JsFuture::from(request_promise);
-        let resp_value = future.await?;
+        let resp_value = future.await.map_to_mm(|e| SlurpError::Transport {
+            uri: uri.clone(),
+            error: stringify_js_error(&e),
+        })?;
         let js_response: JsResponse = match resp_value.dyn_into() {
             Ok(res) => res,
-            Err(origin_val) => return js_err!("Error casting {:?} to 'JsResponse'", origin_val),
+            Err(origin_val) => {
+                let error = format!("Error casting {:?} to 'JsResponse'", origin_val);
+                return MmError::err(SlurpError::Internal(error));
+            },
         };
 
         let resp_txt_fut = match js_response.text() {
             Ok(txt) => txt,
             Err(e) => {
-                return js_err!(
-                    "Expected text, found {:?}: {}",
-                    js_response,
-                    crate::stringify_js_error(&e)
-                )
+                let error = format!("Expected text, found {:?}: {}", js_response, stringify_js_error(&e));
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
-        let resp_txt = JsFuture::from(resp_txt_fut).await?;
+        let resp_txt = JsFuture::from(resp_txt_fut)
+            .await
+            .map_to_mm(|e| SlurpError::Transport {
+                uri: uri.clone(),
+                error: stringify_js_error(&e),
+            })?;
 
         let resp_str = match resp_txt.as_string() {
             Some(string) => string,
-            None => return js_err!("Expected a UTF-8 string JSON, found {:?}", resp_txt),
+            None => {
+                let error = format!("Expected a UTF-8 string JSON, found {:?}", resp_txt);
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
+            },
         };
 
         let status_code = js_response.status();
         let status_code = match StatusCode::from_u16(status_code) {
             Ok(code) => code,
-            Err(e) => return js_err!("Unexpected HTTP status code, found {}: {}", status_code, e),
+            Err(e) => {
+                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
+            },
         };
         Ok((status_code, resp_str))
     }

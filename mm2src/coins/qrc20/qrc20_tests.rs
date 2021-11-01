@@ -26,7 +26,7 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
     });
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
         "swap_contract_address": "0xba8b71f3544b93e2f681f996da519a98ace0107a",
         "fallback_swap_contract": fallback_swap,
     });
@@ -505,6 +505,7 @@ fn test_transfer_details_by_hash() {
         .unwrap()
         .into(),
         kmd_rewards: None,
+        transaction_type: Default::default(),
     };
     assert_eq!(actual, expected);
 
@@ -528,6 +529,7 @@ fn test_transfer_details_by_hash() {
         .unwrap()
         .into(),
         kmd_rewards: None,
+        transaction_type: Default::default(),
     };
     assert_eq!(actual, expected);
 
@@ -551,6 +553,7 @@ fn test_transfer_details_by_hash() {
         .unwrap()
         .into(),
         kmd_rewards: None,
+        transaction_type: Default::default(),
     };
     assert_eq!(actual, expected);
 
@@ -574,6 +577,7 @@ fn test_transfer_details_by_hash() {
         .unwrap()
         .into(),
         kmd_rewards: None,
+        transaction_type: Default::default(),
     };
     assert_eq!(actual, expected);
 
@@ -597,6 +601,7 @@ fn test_transfer_details_by_hash() {
         .unwrap()
         .into(),
         kmd_rewards: None,
+        transaction_type: Default::default(),
     };
     assert_eq!(actual, expected);
     assert!(it.next().is_none());
@@ -792,7 +797,7 @@ fn test_coin_from_conf_without_decimals() {
     });
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
         "swap_contract_address": "0xba8b71f3544b93e2f681f996da519a98ace0107a",
     });
     // 0459c999c3edf05e73c83f3fbae9f0f020919f91 has 12 decimals instead of standard 8

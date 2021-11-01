@@ -24,7 +24,8 @@ use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
-use common::{now_ms, slurp_url, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::transport::{slurp_url, SlurpError};
+use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -109,14 +110,31 @@ pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
 
 #[derive(Debug, Display)]
 pub enum GasStationReqErr {
-    #[display(fmt = "Transport: {}", _0)]
-    Transport(String),
+    #[display(fmt = "Transport '{}' error: {}", uri, error)]
+    Transport {
+        uri: String,
+        error: String,
+    },
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    Internal(String),
 }
 
 impl From<serde_json::Error> for GasStationReqErr {
     fn from(e: serde_json::Error) -> Self { GasStationReqErr::InvalidResponse(e.to_string()) }
+}
+
+impl From<SlurpError> for GasStationReqErr {
+    fn from(e: SlurpError) -> Self {
+        let error = e.to_string();
+        match e {
+            SlurpError::ErrorDeserializing { .. } => GasStationReqErr::InvalidResponse(error),
+            SlurpError::Transport { uri, .. } | SlurpError::Timeout { uri, .. } => {
+                GasStationReqErr::Transport { uri, error }
+            },
+            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => GasStationReqErr::Internal(error),
+        }
+    }
 }
 
 #[derive(Debug, Display)]
@@ -132,8 +150,9 @@ pub enum Web3RpcError {
 impl From<GasStationReqErr> for Web3RpcError {
     fn from(err: GasStationReqErr) -> Self {
         match err {
-            GasStationReqErr::Transport(err) => Web3RpcError::Transport(err),
+            GasStationReqErr::Transport { .. } => Web3RpcError::Transport(err.to_string()),
             GasStationReqErr::InvalidResponse(err) => Web3RpcError::InvalidResponse(err),
+            GasStationReqErr::Internal(err) => Web3RpcError::Internal(err),
         }
     }
 }
@@ -292,10 +311,13 @@ pub enum EthAddressFormat {
 
 #[cfg_attr(test, mockable)]
 async fn make_gas_station_request(url: &str) -> GasStationResult {
-    let resp = slurp_url(url).await.map_to_mm(GasStationReqErr::Transport)?;
+    let resp = slurp_url(url).await?;
     if resp.0 != StatusCode::OK {
         let error = format!("Gas price request failed with status code {}", resp.0);
-        return MmError::err(GasStationReqErr::Transport(error));
+        return MmError::err(GasStationReqErr::Transport {
+            uri: url.to_owned(),
+            error,
+        });
     }
     let result: GasStationData = json::from_slice(&resp.2)?;
     Ok(result)
@@ -636,6 +658,7 @@ async fn withdraw_impl(ctx: MmArc, coin: EthCoin, req: WithdrawRequest) -> Withd
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
+        transaction_type: Default::default(),
     })
 }
 
@@ -1689,6 +1712,7 @@ impl EthCoin {
                     internal_id,
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
+                    transaction_type: Default::default(),
                 };
 
                 existing_history.push(details);
@@ -2063,6 +2087,7 @@ impl EthCoin {
                     internal_id: BytesJson(internal_id.to_vec()),
                     timestamp: block.timestamp.into(),
                     kmd_rewards: None,
+                    transaction_type: Default::default(),
                 };
 
                 existing_history.push(details);

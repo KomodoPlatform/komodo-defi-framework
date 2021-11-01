@@ -1,14 +1,17 @@
 use super::*;
-use crate::{eth, CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
-            ValidateAddressResult, WithdrawFut};
+use crate::utxo::qtum::qtum_delegation::QtumStakingAbiError;
+use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps,
+            TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
+use keys::AddressHash;
 use serialization::CoinVariant;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
 
+#[path = "qtum_delegation.rs"] mod qtum_delegation;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "format")]
 pub enum QtumAddressFormat {
@@ -19,6 +22,16 @@ pub enum QtumAddressFormat {
     /// Note starts with "0x" prefix.
     #[serde(rename = "contract")]
     Contract,
+}
+
+pub trait QtumDelegationOps {
+    fn add_delegation(&self, request: QtumDelegationRequest) -> DelegationFut;
+
+    fn get_delegation_infos(&self) -> StakingInfosFut;
+
+    fn remove_delegation(&self) -> DelegationFut;
+
+    fn generate_pod(&self, addr_hash: AddressHash) -> Result<keys::Signature, MmError<QtumStakingAbiError>>;
 }
 
 #[async_trait]
@@ -166,6 +179,20 @@ pub async fn qtum_coin_from_conf_and_params(
 
 impl QtumBasedCoin for QtumCoin {}
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct QtumDelegationRequest {
+    pub address: String,
+    pub fee: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QtumStakingInfosDetails {
+    pub amount: BigDecimal,
+    pub staker: Option<String>,
+    pub am_i_staking: bool,
+    pub is_staking_supported: bool,
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -198,7 +225,7 @@ impl UtxoCommonOps for QtumCoin {
     }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
-        utxo_common::addresses_from_script(&self.utxo_arc, script)
+        utxo_common::addresses_from_script(self, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
@@ -294,6 +321,10 @@ impl UtxoCommonOps for QtumCoin {
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>> {
         utxo_common::p2sh_tx_locktime(self, &self.utxo_arc.conf.ticker, htlc_locktime).await
+    }
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
+        utxo_common::addr_format_for_standard_scripts(self)
     }
 }
 

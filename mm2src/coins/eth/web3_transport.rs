@@ -1,4 +1,5 @@
 use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use common::log::warn;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
@@ -11,12 +12,14 @@ use web3::error::{Error, ErrorKind};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
 
+const REQUEST_TIMEOUT_S: f64 = 60.;
+
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
-fn single_response<T: Deref<Target = [u8]>>(response: T) -> Result<Json, Error> {
-    let response =
-        serde_json::from_slice(&*response).map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}", e))))?;
+fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
+    let response = serde_json::from_slice(&*response)
+        .map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}: {}", rpc_url, e))))?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
@@ -107,7 +110,7 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
-    use common::wio::slurp_reqʹ;
+    use common::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
@@ -122,13 +125,15 @@ async fn send_request(
         *req.uri_mut() = uri.clone();
         req.headers_mut()
             .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let timeout = Timer::sleep(60.);
-        let req = Box::pin(slurp_reqʹ(req));
+        let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
+        let req = Box::pin(slurp_req(req));
         let rc = select(req, timeout).await;
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
-                errors.push(ERRL!("timeout"));
+                let error = ERRL!("Error requesting '{}': {}s timeout expired", uri, REQUEST_TIMEOUT_S);
+                warn!("{}", error);
+                errors.push(error);
                 continue;
             },
         };
@@ -136,7 +141,7 @@ async fn send_request(
         let (status, _headers, body) = match res {
             Ok(r) => r,
             Err(err) => {
-                errors.push(err);
+                errors.push(err.to_string());
                 continue;
             },
         };
@@ -144,11 +149,16 @@ async fn send_request(
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
-            errors.push(ERRL!("!200: {}, {}", status, binprint(&body, b'.')));
+            errors.push(ERRL!(
+                "Server '{}' response !200: {}, {}",
+                uri,
+                status,
+                binprint(&body, b'.')
+            ));
             continue;
         }
 
-        return single_response(body);
+        return single_response(body, &uri.to_string());
     }
     Err(ErrorKind::Transport(fomat!(
         "request " [request] " failed: "
@@ -189,7 +199,7 @@ async fn send_request_once(
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
-    use common::wasm_http::FetchRequest;
+    use common::transport::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errkind:ident) => {

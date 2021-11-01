@@ -1,5 +1,5 @@
-use super::mm_ctx::MmArc;
-use super::slurp_url;
+use crate::mm_ctx::MmArc;
+use crate::transport::slurp_url;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::fs;

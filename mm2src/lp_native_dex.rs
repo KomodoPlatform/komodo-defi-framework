@@ -18,19 +18,20 @@
 //
 
 use coins::register_balance_update_handler;
-use mm2_libp2p::{spawn_gossipsub, NodeType, RelayAddress};
+use derive_more::Display;
+use mm2_libp2p::{spawn_gossipsub, NodeType, RelayAddress, WssCerts};
 use rand::random;
 use serde_json::{self as json};
 use std::fs;
-use std::io::{Read, Write};
-use std::path::Path;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, P2PContext};
-use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, lp_ordermatch_loop,
-                                orders_kick_start, BalanceUpdateOrdermatchHandler};
+use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+                                lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -40,9 +41,28 @@ use common::executor::{spawn, spawn_boxed, Timer};
 use common::ip_addr::myipaddr;
 use common::log::{error, info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
+use common::mm_error::prelude::*;
 use common::privkey::key_pair_from_seed;
 
 const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
+
+/// TODO Extend `P2PError` and use `P2PResult` as a result of the `init_p2p` function.
+pub type P2PResult<T> = Result<T, MmError<P2PError>>;
+
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#[derive(Debug, Display)]
+pub enum P2PError {
+    #[display(
+        fmt = "Invalid WSS key/cert at {:?}. The file must contain {}'",
+        path,
+        expected_format
+    )]
+    InvalidWssCert { path: PathBuf, expected_format: String },
+    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    ErrorDeserializingConfig { field: String, error: json::Error },
+    #[display(fmt = "Error reading WSS key/cert file {:?}: {}", path, error)]
+    ErrorReadingCertFile { path: PathBuf, error: io::Error },
+}
 
 #[cfg(target_arch = "wasm32")]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
@@ -250,6 +270,7 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
         try_s!(migrate_db(&ctx));
     }
 
+    try_s!(init_ordermatch_context(&ctx));
     try_s!(init_p2p(ctx.clone()).await);
 
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
@@ -396,7 +417,19 @@ async fn relay_node_type(ctx: &MmArc) -> Result<NodeType, String> {
     let netid = ctx.netid();
     let ip = try_s!(myipaddr(ctx.clone()).await);
     let network_ports = try_s!(lp_network_ports(netid));
-    Ok(NodeType::Relay { ip, network_ports })
+    let wss_certs = try_s!(wss_certs(ctx));
+    if wss_certs.is_none() {
+        const WARN_MSG: &str = r#"Please note TLS private key and certificate are not specified.
+To accept P2P WSS connections, please pass 'wss_certs' to the config.
+Example:    "wss_certs": { "server_priv_key": "/path/to/key.pem", "certificate": "/path/to/cert.pem" }"#;
+        warn!("{}", WARN_MSG);
+    }
+
+    Ok(NodeType::Relay {
+        ip,
+        network_ports,
+        wss_certs,
+    })
 }
 
 fn relay_in_memory_node_type(ctx: &MmArc) -> Result<NodeType, String> {
@@ -415,4 +448,66 @@ fn light_node_type(ctx: &MmArc) -> Result<NodeType, String> {
     let netid = ctx.netid();
     let network_ports = try_s!(lp_network_ports(netid));
     Ok(NodeType::Light { network_ports })
+}
+
+/// Returns non-empty vector of keys/certs or an error.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_cert_from_file<T, P>(path: PathBuf, parser: P, expected_format: String) -> P2PResult<Vec<T>>
+where
+    P: Fn(&mut dyn io::BufRead) -> Result<Vec<T>, ()>,
+{
+    let certfile = fs::File::open(path.as_path()).map_to_mm(|error| P2PError::ErrorReadingCertFile {
+        path: path.clone(),
+        error,
+    })?;
+    let mut reader = io::BufReader::new(certfile);
+    match parser(&mut reader) {
+        Ok(certs) if certs.is_empty() => MmError::err(P2PError::InvalidWssCert { path, expected_format }),
+        Ok(certs) => Ok(certs),
+        Err(_) => MmError::err(P2PError::InvalidWssCert { path, expected_format }),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn wss_certs(ctx: &MmArc) -> P2PResult<Option<WssCerts>> {
+    use futures_rustls::rustls;
+
+    #[derive(Deserialize)]
+    struct WssCertsInfo {
+        server_priv_key: PathBuf,
+        certificate: PathBuf,
+    }
+
+    if ctx.conf["wss_certs"].is_null() {
+        return Ok(None);
+    }
+    let certs: WssCertsInfo =
+        json::from_value(ctx.conf["wss_certs"].clone()).map_to_mm(|error| P2PError::ErrorDeserializingConfig {
+            field: "wss_certs".to_owned(),
+            error,
+        })?;
+
+    // First, try to extract the all PKCS8 private keys
+    let mut server_priv_keys = extract_cert_from_file(
+        certs.server_priv_key.clone(),
+        rustls::internal::pemfile::pkcs8_private_keys,
+        "Private key, DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format".to_owned(),
+    )
+    // or try to extract all PKCS1 private keys
+    .or_else(|_| {
+        extract_cert_from_file(
+            certs.server_priv_key.clone(),
+            rustls::internal::pemfile::rsa_private_keys,
+            "Private key, DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format".to_owned(),
+        )
+    })?;
+    // `extract_cert_from_file` returns either non-empty vector or an error.
+    let server_priv_key = server_priv_keys.remove(0);
+
+    let certs = extract_cert_from_file(
+        certs.certificate,
+        rustls::internal::pemfile::certs,
+        "Certificate, DER-encoded X.509 format".to_owned(),
+    )?;
+    Ok(Some(WssCerts { server_priv_key, certs }))
 }

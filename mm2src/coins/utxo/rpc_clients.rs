@@ -538,7 +538,7 @@ impl JsonRpcClient for NativeClientImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
-        use common::wio::slurp_req;
+        use common::transport::slurp_req;
 
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
@@ -2052,7 +2052,7 @@ async fn connect_loop(
         static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     }
 
-    use common::wasm_ws::ws_transport;
+    use common::transport::wasm_ws::ws_transport;
 
     let mut delay: u64 = 0;
     loop {

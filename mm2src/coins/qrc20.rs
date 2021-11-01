@@ -6,13 +6,14 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoCoinBuilder,
-                  UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoAddressFormat,
+                  UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
                   UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
-            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TransactionType, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -48,16 +49,16 @@ use std::sync::Arc;
 mod history;
 #[cfg(test)] mod qrc20_tests;
 pub mod rpc_clients;
-mod script_pubkey;
+pub mod script_pubkey;
 mod swap;
 
 /// Qtum amount is always 0 for the QRC20 UTXO outputs,
 /// because we should pay only a fee in Qtum to send the QRC20 transaction.
-const OUTPUT_QTUM_AMOUNT: u64 = 0;
-const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const OUTPUT_QTUM_AMOUNT: u64 = 0;
+pub const QRC20_GAS_LIMIT_DEFAULT: u64 = 100_000;
 const QRC20_PAYMENT_GAS_LIMIT: u64 = 200_000;
-const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
-const QRC20_DUST: u64 = 0;
+pub const QRC20_GAS_PRICE_DEFAULT: u64 = 40;
+pub const QRC20_DUST: u64 = 0;
 // Keccak-256 hash of `Transfer` event
 const QRC20_TRANSFER_TOPIC: &str = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const QRC20_PAYMENT_SENT_TOPIC: &str = "ccc9c05183599bd3135da606eaaf535daffe256e9de33c048014cffcccd4ad57";
@@ -331,10 +332,10 @@ impl MutContractCallType {
     fn short_signature(&self) -> [u8; 4] { self.as_function().short_signature() }
 }
 
-struct GenerateQrc20TxResult {
-    signed: UtxoTx,
-    miner_fee: u64,
-    gas_fee: u64,
+pub struct GenerateQrc20TxResult {
+    pub signed: UtxoTx,
+    pub miner_fee: u64,
+    pub gas_fee: u64,
 }
 
 #[derive(Debug, Display)]
@@ -347,6 +348,10 @@ pub enum Qrc20AbiError {
 
 impl From<ethabi::Error> for Qrc20AbiError {
     fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
+}
+
+impl From<Qrc20AbiError> for GenerateTxError {
+    fn from(e: Qrc20AbiError) -> Self { GenerateTxError::Internal(e.to_string()) }
 }
 
 impl From<Qrc20AbiError> for TradePreimageError {
@@ -514,7 +519,7 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, String> {
-        utxo_common::addresses_from_script(&self.utxo, script)
+        utxo_common::addresses_from_script(self, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo, satoshi) }
@@ -610,6 +615,10 @@ impl UtxoCommonOps for Qrc20Coin {
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>> {
         utxo_common::p2sh_tx_locktime(self, &self.utxo.conf.ticker, htlc_locktime).await
+    }
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
+        utxo_common::addr_format_for_standard_scripts(self)
     }
 }
 
@@ -1203,20 +1212,20 @@ pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
     sha256(&input).to_vec()
 }
 
-fn contract_addr_into_rpc_format(address: &H160) -> H160Json { H160Json::from(address.0) }
+pub fn contract_addr_into_rpc_format(address: &H160) -> H160Json { H160Json::from(address.0) }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Qrc20FeeDetails {
     /// Coin name
-    coin: String,
+    pub coin: String,
     /// Standard UTXO miner fee based on transaction size
-    miner_fee: BigDecimal,
+    pub miner_fee: BigDecimal,
     /// Gas limit in satoshi.
-    gas_limit: u64,
+    pub gas_limit: u64,
     /// Gas price in satoshi.
-    gas_price: u64,
+    pub gas_price: u64,
     /// Total used gas.
-    total_gas_fee: BigDecimal,
+    pub total_gas_fee: BigDecimal,
 }
 
 async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult {
@@ -1315,6 +1324,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         internal_id: vec![].into(),
         timestamp: now_ms() / 1000,
         kmd_rewards: None,
+        transaction_type: TransactionType::StandardTransfer,
     })
 }
 

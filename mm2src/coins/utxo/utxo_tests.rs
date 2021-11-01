@@ -1,12 +1,12 @@
 use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin};
+use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
 use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{CoinBalance, SwapOps, TradePreimageValue, TxFeeDetails};
-use bigdecimal::BigDecimal;
+use crate::{CoinBalance, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
+use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::mm_ctx::MmCtxBuilder;
 use common::privkey::key_pair_from_seed;
@@ -1540,7 +1540,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1558,6 +1558,151 @@ fn test_qtum_unspendable_balance_failed_once() {
     let expected_unspendable = BigDecimal::from(0);
     assert_eq!(spendable, expected_spendable);
     assert_eq!(unspendable, expected_unspendable);
+}
+
+#[test]
+fn test_qtum_generate_pod() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let res = coin.generate_pod(address.hash).unwrap();
+    assert_eq!(expected_res, res.to_string());
+}
+
+#[test]
+fn test_qtum_add_delegation() {
+    let keypair = key_pair_from_seed("asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait().unwrap();
+    // Eligible for delegation
+    assert_eq!(res.my_balance_change.is_negative(), true);
+    assert_eq!(res.total_amount, res.spent_by_me);
+    assert!(res.spent_by_me > res.received_by_me);
+
+    let request = QtumDelegationRequest {
+        address: "fake_address".to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait();
+    // Wrong address
+    assert_eq!(res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_add_delegation_on_already_delegating() {
+    let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
+    let request = QtumDelegationRequest {
+        address: address.to_string(),
+        fee: Some(10),
+    };
+    let res = coin.add_delegation(request).wait();
+    // Already Delegating
+    assert_eq!(res.is_err(), true);
+}
+
+#[test]
+fn test_qtum_get_delegation_infos() {
+    let keypair =
+        key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let staking_infos = coin.get_delegation_infos().wait().unwrap();
+    match staking_infos.staking_infos_details {
+        StakingInfosDetails::Qtum(staking_details) => {
+            assert_eq!(staking_details.am_i_staking, true);
+            assert_eq!(staking_details.staker.unwrap(), "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+            // Will return false for segwit.
+            assert_eq!(staking_details.is_staking_supported, true);
+        },
+    };
+}
+
+#[test]
+fn test_qtum_remove_delegation() {
+    let keypair = key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_from_conf_and_params(
+        &ctx,
+        "tQTUM",
+        &conf,
+        params,
+        keypair.private().secret.as_slice(),
+    ))
+    .unwrap();
+    let res = coin.remove_delegation().wait();
+    assert_eq!(res.is_err(), false);
 }
 
 #[test]
@@ -1589,7 +1734,7 @@ fn test_qtum_unspendable_balance_failed() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -1637,7 +1782,7 @@ fn test_qtum_my_balance() {
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"95.217.83.126:10001"}],
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -2305,7 +2450,7 @@ fn test_qtum_is_unspent_mature() {
 #[ignore]
 // TODO it fails at least when fee is 2055837 sat per kbyte, need to investigate
 fn test_get_sender_trade_fee_dynamic_tx_fee() {
-    let rpc_client = electrum_client_for_test(&["95.217.83.126:10001"]);
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:10071"]);
     let mut coin_fields = utxo_coin_fields_for_test(
         UtxoRpcClientEnum::Electrum(rpc_client),
         Some("bob passphrase max taker vol with dynamic trade fee"),

@@ -1,9 +1,8 @@
 use crate::mm2::message_service::telegram::get_updates::GetUpdates;
 use crate::mm2::message_service::{MessageResult, MessageServiceTraits};
 use async_trait::async_trait;
-use common::mm_error::prelude::MapToMmResult;
 use common::mm_error::MmError;
-use common::{fetch_json, post_json};
+use common::transport::{fetch_json, post_json, SlurpError};
 use derive_more::Display;
 
 pub const TELEGRAM_BOT_API_ENDPOINT: &str = "https://api.telegram.org/bot";
@@ -20,14 +19,12 @@ pub struct SendMessageResponse {
 pub enum TelegramError {
     #[display(fmt = "Telegram Chat Id not available: {}", _0)]
     ChatIdNotAvailable(String),
-    #[display(fmt = "Telegram transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Telegram invalid response: {}", _0)]
-    InvalidResponse(String),
+    #[display(fmt = "{}", _0)]
+    RequestError(SlurpError),
 }
 
-impl From<serde_json::Error> for TelegramError {
-    fn from(e: serde_json::Error) -> Self { TelegramError::InvalidResponse(e.to_string()) }
+impl From<SlurpError> for TelegramError {
+    fn from(err: SlurpError) -> Self { TelegramError::RequestError(err) }
 }
 
 pub type TelegramResult<T> = Result<T, MmError<TelegramError>>;
@@ -50,9 +47,7 @@ impl TgClient {
 
     pub async fn get_updates(&self) -> TelegramResult<GetUpdates> {
         let uri = self.url.to_owned() + &self.api_key + "/getUpdates";
-        let result = fetch_json::<GetUpdates>(uri.as_str())
-            .await
-            .map_to_mm(TelegramError::Transport)?;
+        let result = fetch_json::<GetUpdates>(uri.as_str()).await?;
         Ok(result)
     }
 }
@@ -68,7 +63,7 @@ impl MessageServiceTraits for TgClient {
         let json = json!({ "chat_id": chat_id, "text": message, "disable_notification": disable_notification });
         let result = post_json::<SendMessageResponse>(uri.as_str(), json.to_string())
             .await
-            .map_to_mm(TelegramError::Transport)?;
+            .map_err(|e| TelegramError::RequestError(e.into_inner()))?;
         Ok(result.ok)
     }
 }

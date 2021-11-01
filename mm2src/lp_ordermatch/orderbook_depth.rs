@@ -11,7 +11,7 @@ struct OrderbookDepthReq {
     pairs: Vec<(String, String)>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 struct PairDepth {
     asks: usize,
     bids: usize,
@@ -39,7 +39,7 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
         .collect();
 
     if !wallet_only_pairs.is_empty() {
-        return ERR!("Pairs {:?} has wallet only coins", wallet_only_pairs);
+        return ERR!("Pairs {:?} have wallet only coins", wallet_only_pairs);
     }
 
     let mut result = Vec::with_capacity(req.pairs.len());
@@ -48,22 +48,26 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
 
     // the Iter::filter uses &Self::Item, which is undesirable, we need owned pair
     #[allow(clippy::unnecessary_filter_map)]
-    let to_request_from_relay: Vec<_> = req
+    let mut to_request_from_relay: Vec<_> = req
         .pairs
         .into_iter()
-        .filter_map(|pair| {
-            let topic = orderbook_topic_from_base_rel(&pair.0, &pair.1);
+        .filter_map(|original_pair| {
+            let orderbook_pair = ordermatch_ctx.orderbook_pair_bypass(&original_pair);
+            let topic = orderbook_topic_from_base_rel(&orderbook_pair.0, &orderbook_pair.1);
             if orderbook.is_subscribed_to(&topic) {
-                let asks = orderbook.unordered.get(&pair).map_or(0, |orders| orders.len());
-                let reversed = (pair.1.clone(), pair.0.clone());
+                let asks = orderbook
+                    .unordered
+                    .get(&orderbook_pair)
+                    .map_or(0, |orders| orders.len());
+                let reversed = (orderbook_pair.1, orderbook_pair.0);
                 let bids = orderbook.unordered.get(&reversed).map_or(0, |orders| orders.len());
                 result.push(PairWithDepth {
-                    pair,
+                    pair: original_pair,
                     depth: PairDepth { asks, bids },
                 });
                 None
             } else {
-                Some(pair)
+                Some((orderbook_pair, original_pair))
             }
         })
         .collect();
@@ -72,7 +76,10 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     drop(orderbook);
     if !to_request_from_relay.is_empty() {
         let p2p_request = OrdermatchRequest::OrderbookDepth {
-            pairs: to_request_from_relay,
+            pairs: to_request_from_relay
+                .iter()
+                .map(|(orderbook_pair, _)| orderbook_pair.clone())
+                .collect(),
         };
         log::debug!("Sending request_any_relay({:?})", p2p_request);
         let p2p_response = try_s!(
@@ -81,6 +88,20 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
         log::debug!("Received response {:?}", p2p_response);
         if let Some((response, _)) = p2p_response {
             for (pair, depth) in response.depth {
+                to_request_from_relay = to_request_from_relay
+                    .into_iter()
+                    .filter_map(|(orderbook_pair, original_pair)| {
+                        if orderbook_pair == pair && original_pair != pair {
+                            result.push(PairWithDepth {
+                                pair: original_pair,
+                                depth,
+                            });
+                            None
+                        } else {
+                            Some((orderbook_pair, original_pair))
+                        }
+                    })
+                    .collect();
                 result.push(PairWithDepth { pair, depth });
             }
         }

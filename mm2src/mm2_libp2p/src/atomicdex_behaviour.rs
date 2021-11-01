@@ -12,6 +12,7 @@ use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
               future::{abortable, join_all, poll_fn, AbortHandle},
               Future, SinkExt, StreamExt};
+use futures_rustls::rustls;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::swarm::{IntoProtocolsHandler, NetworkBehaviour, ProtocolsHandler};
 use libp2p::{core::{ConnectedPoint, Multiaddr, Transport},
@@ -557,11 +558,24 @@ impl From<RelayAddressError> for AdexBehaviourError {
     fn from(e: RelayAddressError) -> Self { AdexBehaviourError::ParsingRelayAddress(e) }
 }
 
+pub struct WssCerts {
+    pub server_priv_key: rustls::PrivateKey,
+    pub certs: Vec<rustls::Certificate>,
+}
+
 pub enum NodeType {
-    Light { network_ports: NetworkPorts },
+    Light {
+        network_ports: NetworkPorts,
+    },
     LightInMemory,
-    Relay { ip: IpAddr, network_ports: NetworkPorts },
-    RelayInMemory { port: u64 },
+    Relay {
+        ip: IpAddr,
+        network_ports: NetworkPorts,
+        wss_certs: Option<WssCerts>,
+    },
+    RelayInMemory {
+        port: u64,
+    },
 }
 
 impl NodeType {
@@ -573,10 +587,15 @@ impl NodeType {
             NodeType::LightInMemory | NodeType::RelayInMemory { .. } => NetworkInfo::InMemory,
         }
     }
-}
 
-impl NodeType {
     pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. } | NodeType::RelayInMemory { .. }) }
+
+    pub fn wss_certs(&self) -> Option<&WssCerts> {
+        match self {
+            NodeType::Relay { wss_certs, .. } => wss_certs.as_ref(),
+            _ => None,
+        }
+    }
 }
 
 /// Creates and spawns new AdexBehaviour Swarm returning:
@@ -634,7 +653,7 @@ fn start_gossipsub(
     let network_info = node_type.to_network_info();
     let transport = match network_info {
         NetworkInfo::InMemory => build_memory_transport(noise_keys),
-        NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_keys),
+        NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_keys, node_type.wss_certs()),
     };
 
     let (cmd_tx, cmd_rx) = channel(CHANNEL_BUF_SIZE);
@@ -713,11 +732,17 @@ fn start_gossipsub(
         .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
 
     match node_type {
-        NodeType::Relay { ip, network_ports } => {
+        NodeType::Relay {
+            ip,
+            network_ports,
+            wss_certs,
+        } => {
             let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
-            let ws_addr: Multiaddr = format!("/ip4/{}/tcp/{}/ws", ip, network_ports.ws).parse().unwrap();
             libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
-            libp2p::Swarm::listen_on(&mut swarm, ws_addr).unwrap();
+            if wss_certs.is_some() {
+                let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
+                libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
+            }
         },
         NodeType::RelayInMemory { port } => {
             let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
@@ -785,6 +810,7 @@ fn start_gossipsub(
 #[cfg(target_arch = "wasm32")]
 fn build_dns_ws_transport(
     noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+    _wss_certs: Option<&WssCerts>,
 ) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
     let websocket = libp2p::wasm_ext::ffi::websocket_transport();
     let transport = libp2p::wasm_ext::ExtTransport::new(websocket);
@@ -794,11 +820,25 @@ fn build_dns_ws_transport(
 #[cfg(not(target_arch = "wasm32"))]
 fn build_dns_ws_transport(
     noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+    wss_certs: Option<&WssCerts>,
 ) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    use libp2p::websocket::tls as libp2p_tls;
+
     let tcp = libp2p::tcp::TokioTcpConfig::new().nodelay(true);
     let dns_tcp =
         libp2p::dns::TokioDnsConfig::custom(tcp, libp2p::dns::ResolverConfig::google(), Default::default()).unwrap();
-    let ws_dns_tcp = libp2p::websocket::WsConfig::new(dns_tcp.clone());
+    let mut ws_dns_tcp = libp2p::websocket::WsConfig::new(dns_tcp.clone());
+
+    if let Some(certs) = wss_certs {
+        let server_priv_key = libp2p_tls::PrivateKey::new(certs.server_priv_key.0.clone());
+        let certs = certs
+            .certs
+            .iter()
+            .map(|cert| libp2p_tls::Certificate::new(cert.0.clone()));
+        let wss_config = libp2p_tls::Config::new(server_priv_key, certs).unwrap();
+        ws_dns_tcp.set_tls_config(wss_config);
+    }
+
     let transport = dns_tcp.or_transport(ws_dns_tcp);
     upgrade_transport(transport, noise_keys)
 }

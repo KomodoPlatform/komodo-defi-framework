@@ -1089,6 +1089,7 @@ impl MmCoin for ZCoin {
                 coin: coin.ticker().to_owned(),
                 internal_id: tx_hash.into(),
                 kmd_rewards: None,
+                transaction_type: Default::default(),
             })
         };
         Box::new(fut.boxed().compat())
