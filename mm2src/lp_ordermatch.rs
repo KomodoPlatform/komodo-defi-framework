@@ -2527,9 +2527,14 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
     }
 
     let ordermatch_context = OrdermatchContext {
+        my_maker_orders: Default::default(),
+        my_taker_orders: Default::default(),
+        orderbook: Default::default(),
+        pending_maker_reserved: Default::default(),
         orderbook_tickers,
         original_tickers,
-        ..Default::default()
+        #[cfg(target_arch = "wasm32")]
+        ordermatch_db: ConstructibleDb::from_ctx(ctx),
     };
 
     from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context)).map(|_| ())
@@ -2554,6 +2559,8 @@ impl OrdermatchContext {
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
+                orderbook_tickers: Default::default(),
+                original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
