@@ -147,7 +147,7 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn post_grpc_web<Req, Res>(url: &str, _req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
+pub async fn post_grpc_web<Req, Res>(url: &str, req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
 where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,
@@ -158,10 +158,7 @@ where
         .header("content-type", "application/grpc-web")
         .header("accept", "application/grpc-web");
 
-    let response = request
-        .request_blob()
-        .await
-        .map_to_mm(|e| PostGrpcWebErr::Request(format!("{:?}", e)))?;
+    let response = request.request_blob().await?;
 
     let reply = decode_body(response.1.into())?;
 
