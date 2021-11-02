@@ -729,6 +729,8 @@ mod tests {
             conf_settings: None,
             changes_history: None,
             save_in_history: true,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
         }
     }
 
@@ -754,6 +756,8 @@ mod tests {
             min_volume: 0.into(),
             timeout: 30,
             save_in_history: true,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
         }
     }
 
