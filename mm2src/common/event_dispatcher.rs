@@ -2,15 +2,15 @@ use async_trait::async_trait;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 
-pub type Events<T> = Vec<T>;
-pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType> + Send + Sync>>;
+pub type Listeners<EventType> = Vec<Box<dyn EventListener<Event = EventType>>>;
 pub type DispatchTable = HashMap<TypeId, Vec<usize>>;
 
 #[async_trait]
-pub trait EventListener {
+pub trait EventListener: 'static + Send + Sync {
     type Event;
     async fn process_event_async(&self, event: Self::Event);
     fn get_desired_events(&self) -> Vec<TypeId>;
+    fn listener_id(&self) -> &'static str;
 }
 
 #[derive(Default)]
@@ -24,15 +24,11 @@ impl<EventType: 'static> Dispatcher<EventType>
 where
     EventType: Clone,
 {
-    pub fn add_listener(
-        &mut self,
-        listener_id: &str,
-        listen: impl EventListener<Event = EventType> + 'static + Send + Sync,
-    ) {
-        if self.listeners_id.contains(listener_id) {
+    pub fn add_listener(&mut self, listen: impl EventListener<Event = EventType>) {
+        if self.listeners_id.contains(listen.listener_id()) {
             return;
         }
-        self.listeners_id.insert(listener_id.to_string());
+        self.listeners_id.insert(listen.listener_id().to_string());
         let id = self.listeners.len();
         let events = listen.get_desired_events();
         self.listeners.push(Box::new(listen));
@@ -105,6 +101,8 @@ mod event_dispatcher_tests {
         }
 
         fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<EventSwapStatusChanged>()] }
+
+        fn listener_id(&self) -> &'static str { "listener_swap_status_changed" }
     }
 
     #[test]
@@ -112,7 +110,7 @@ mod event_dispatcher_tests {
         let mut dispatcher: Dispatcher<AppEvents> = Default::default();
         let listener = ListenerSwapStatusChanged::default();
         let res = ListenerSwapStatusChangedArc(Arc::new(listener));
-        dispatcher.add_listener("listener_swap_status_changed", res.clone());
+        dispatcher.add_listener(res.clone());
         assert_eq!(dispatcher.nb_listeners(), 1);
 
         let event = AppEvents::EventSwapStatusChanged(EventSwapStatusChanged {
@@ -120,7 +118,7 @@ mod event_dispatcher_tests {
             status: "Started".to_string(),
         });
         block_on(dispatcher.dispatch_async(event));
-        dispatcher.add_listener("listener_swap_status_changed", res);
+        dispatcher.add_listener(res);
         assert_eq!(dispatcher.nb_listeners(), 1);
     }
 }

@@ -39,17 +39,7 @@ enum TradingBotState {
 }
 
 impl TradingBotState {
-    pub fn get_unique_id(&self) -> usize {
-        match self {
-            TradingBotState::Running { .. } => 0,
-            TradingBotState::Stopping => 1,
-            TradingBotState::Stopped => 2,
-        }
-    }
-}
-
-impl PartialEq for TradingBotState {
-    fn eq(&self, other: &Self) -> bool { self.get_unique_id() == other.get_unique_id() }
+    fn is_stopping(&self) -> bool { matches!(self, TradingBotState::Stopping) }
 }
 
 impl Default for TradingBotState {
@@ -142,6 +132,7 @@ impl Deref for ArcTradingBotContext {
 }
 
 #[async_trait]
+#[allow(clippy::single_match)]
 impl EventListener for ArcTradingBotContext {
     type Event = LpEvents;
 
@@ -158,13 +149,18 @@ impl EventListener for ArcTradingBotContext {
             );
             info!("event received: {}", msg);
             let state = self.trading_bot_states.lock().await;
-            if let TradingBotState::Running { message_service, .. } = &*state {
-                let _ = message_service.send_message(msg.to_string(), false).await;
+            match &*state {
+                TradingBotState::Running { message_service, .. } => {
+                    let _ = message_service.send_message(msg.to_string(), false).await;
+                },
+                _ => {},
             }
         }
     }
 
     fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<MakerSwapStatusChanged>()] }
+
+    fn listener_id(&self) -> &'static str { "lp_bot_listener" }
 }
 
 #[derive(Default, Clone, Debug)]

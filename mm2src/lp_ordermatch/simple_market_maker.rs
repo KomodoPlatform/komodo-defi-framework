@@ -732,7 +732,7 @@ pub async fn lp_bot_loop(ctx: MmArc) {
         }
         let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
         let mut states = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
-        if *states == TradingBotState::Stopping {
+        if states.is_stopping() {
             *states = TradingBotState::Stopped;
             drop(states);
             tear_down_bot(ctx).await;
@@ -772,7 +772,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
         TradingBotState::Stopped => {
             let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
             let mut dispatcher = dispatcher_ctx.dispatcher.lock().await;
-            dispatcher.add_listener("lp_bot_listener", simple_market_maker_bot_ctx.clone());
+            dispatcher.add_listener(simple_market_maker_bot_ctx.clone());
             let mut refresh_rate = req.bot_refresh_rate.unwrap_or(BOT_DEFAULT_REFRESH_RATE);
             if refresh_rate < BOT_DEFAULT_REFRESH_RATE {
                 refresh_rate = BOT_DEFAULT_REFRESH_RATE;
