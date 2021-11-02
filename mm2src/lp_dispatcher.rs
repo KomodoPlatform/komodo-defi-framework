@@ -1,12 +1,28 @@
+use crate::mm2::lp_ordermatch::TradingBotEvent;
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
-use common::event_dispatcher::Dispatcher;
+use common::event_dispatcher::{Dispatcher, EventUniqueId};
 use common::mm_ctx::{from_ctx, MmArc};
 use futures::lock::Mutex as AsyncMutex;
+use std::any::TypeId;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub enum LpEvents {
     MakerSwapStatusChanged(MakerSwapStatusChanged),
+    TradingBotEvent(TradingBotEvent),
+}
+
+impl From<TradingBotEvent> for LpEvents {
+    fn from(evt: TradingBotEvent) -> Self { LpEvents::TradingBotEvent(evt) }
+}
+
+impl EventUniqueId for LpEvents {
+    fn event_id(&self) -> TypeId {
+        match self {
+            LpEvents::MakerSwapStatusChanged(_) => MakerSwapStatusChanged::event_id(),
+            LpEvents::TradingBotEvent(event) => event.event_id(),
+        }
+    }
 }
 
 #[derive(Default)]

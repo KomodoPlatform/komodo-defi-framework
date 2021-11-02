@@ -4,7 +4,7 @@
 //
 
 use async_trait::async_trait;
-use common::event_dispatcher::EventListener;
+use common::event_dispatcher::{EventListener, EventUniqueId};
 use common::log::info;
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
@@ -27,23 +27,84 @@ pub use simple_market_maker_bot::{process_price_request, start_simple_market_mak
 #[path = "simple_market_maker_tests.rs"]
 pub mod simple_market_maker_tests;
 
-enum TradingBotState {
-    Running {
-        trading_bot_cfg: SimpleMakerBotRegistry,
-        bot_refresh_rate: f64,
-        message_service: MessageService,
-        price_url: String,
-    },
-    Stopping,
-    Stopped,
+#[derive(Clone, Display)]
+#[display(fmt = "simple_market_maker_bot will stop within {} seconds", bot_refresh_rate)]
+pub struct TradingBotStopping {
+    bot_refresh_rate: f64,
 }
 
-impl TradingBotState {
-    fn is_stopping(&self) -> bool { matches!(self, TradingBotState::Stopping) }
+impl TradingBotStopping {
+    fn event_id() -> TypeId { TypeId::of::<TradingBotStopping>() }
+}
+
+#[derive(Clone, Display)]
+#[display(fmt = "simple_market_maker_bot successfully started with {} pairs", nb_pairs)]
+pub struct TradingBotStarted {
+    nb_pairs: usize,
+}
+
+impl TradingBotStarted {
+    fn event_id() -> TypeId { TypeId::of::<TradingBotStarted>() }
+}
+
+#[derive(Clone, Display)]
+pub enum TradingBotEvent {
+    Started(TradingBotStarted),
+    Stopping(TradingBotStopping),
+}
+
+impl EventUniqueId for TradingBotEvent {
+    fn event_id(&self) -> TypeId {
+        match self {
+            TradingBotEvent::Started(_) => TradingBotStarted::event_id(),
+            TradingBotEvent::Stopping(_) => TradingBotStopping::event_id(),
+        }
+    }
+}
+
+impl From<TradingBotStopping> for TradingBotEvent {
+    fn from(trading_bot_stopping: TradingBotStopping) -> Self { TradingBotEvent::Stopping(trading_bot_stopping) }
+}
+
+impl From<TradingBotStarted> for TradingBotEvent {
+    fn from(trading_bot_started: TradingBotStarted) -> Self { TradingBotEvent::Started(trading_bot_started) }
+}
+
+pub struct RunningState {
+    trading_bot_cfg: SimpleMakerBotRegistry,
+    bot_refresh_rate: f64,
+    price_url: String,
+}
+
+pub struct StoppingState {
+    trading_bot_cfg: SimpleMakerBotRegistry,
+}
+
+#[derive(Default)]
+pub struct StoppedState {
+    trading_bot_cfg: SimpleMakerBotRegistry,
+}
+
+enum TradingBotState {
+    Running(RunningState),
+    Stopping(StoppingState),
+    Stopped(StoppedState),
+}
+
+impl From<RunningState> for TradingBotState {
+    fn from(running_state: RunningState) -> Self { Self::Running(running_state) }
+}
+
+impl From<StoppingState> for TradingBotState {
+    fn from(stopping_state: StoppingState) -> Self { Self::Stopping(stopping_state) }
+}
+
+impl From<StoppedState> for TradingBotState {
+    fn from(stopped_state: StoppedState) -> Self { Self::Stopped(stopped_state) }
 }
 
 impl Default for TradingBotState {
-    fn default() -> Self { TradingBotState::Stopped }
+    fn default() -> Self { StoppedState::default().into() }
 }
 
 pub type SimpleMakerBotRegistry = HashMap<String, SimpleCoinMarketMakerCfg>;
@@ -111,13 +172,14 @@ impl Default for Provider {
 #[derive(Default)]
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
+    message_service: AsyncMutex<MessageService>,
 }
 
 impl TradingBotContext {
     async fn get_refresh_rate(&self) -> f64 {
         let state = self.trading_bot_states.lock().await;
-        if let TradingBotState::Running { bot_refresh_rate, .. } = &*state {
-            return *bot_refresh_rate;
+        if let TradingBotState::Running(running_state) = &*state {
+            return running_state.bot_refresh_rate;
         }
         BOT_DEFAULT_REFRESH_RATE
     }
@@ -131,36 +193,63 @@ impl Deref for ArcTradingBotContext {
     fn deref(&self) -> &TradingBotContext { &*self.0 }
 }
 
-#[async_trait]
 #[allow(clippy::single_match)]
-impl EventListener for ArcTradingBotContext {
-    type Event = LpEvents;
+impl TradingBotContext {
+    async fn bot_dispatch_msg(&self, msg_format: String) {
+        info!("{}", msg_format);
+        let message_service = self.message_service.lock().await;
+        let _ = message_service.send_message(msg_format, false).await;
+    }
 
-    async fn process_event_async(&self, event: Self::Event) {
-        match event {
-            LpEvents::MakerSwapStatusChanged(swap_infos) => {
-                let msg = format!(
-                    "[{}: {} ({}) <-> {} ({})] status changed: {}",
-                    swap_infos.uuid,
-                    swap_infos.taker_coin,
-                    swap_infos.taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                    swap_infos.maker_coin,
-                    swap_infos.maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                    swap_infos.event_status
-                );
-                info!("event received: {}", msg);
-                let state = self.trading_bot_states.lock().await;
-                match &*state {
-                    TradingBotState::Running { message_service, .. } => {
-                        let _ = message_service.send_message(msg.to_string(), false).await;
-                    },
-                    _ => {},
-                }
+    async fn on_trading_bot_event(&self, trading_bot_event: &TradingBotEvent) {
+        let msg_format = format!("{}", trading_bot_event);
+        match trading_bot_event {
+            TradingBotEvent::Started { .. } | TradingBotEvent::Stopping { .. } => {
+                self.bot_dispatch_msg(msg_format).await
             },
         }
     }
 
-    fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<MakerSwapStatusChanged>()] }
+    async fn on_maker_swap_status_changed(&self, swap_infos: &MakerSwapStatusChanged) {
+        let msg = format!(
+            "[{}: {} ({}) <-> {} ({})] status changed: {}",
+            swap_infos.uuid,
+            swap_infos.taker_coin,
+            swap_infos.taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+            swap_infos.maker_coin,
+            swap_infos.maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+            swap_infos.event_status
+        );
+        info!("event received: {}", msg);
+        let state = self.trading_bot_states.lock().await;
+        match &*state {
+            TradingBotState::Running(_) => {
+                let message_service = self.message_service.lock().await;
+                let _ = message_service.send_message(msg.to_string(), false).await;
+            },
+            _ => {},
+        }
+    }
+}
+
+#[async_trait]
+impl EventListener for ArcTradingBotContext {
+    type Event = LpEvents;
+
+    async fn process_event_async(&self, event: Self::Event) {
+        match &event {
+            LpEvents::MakerSwapStatusChanged(swap_infos) => self.on_maker_swap_status_changed(swap_infos).await,
+            LpEvents::TradingBotEvent(trading_bot_event) => self.on_trading_bot_event(trading_bot_event).await,
+        }
+    }
+
+    fn get_desired_events(&self) -> Vec<TypeId> {
+        vec![
+            MakerSwapStatusChanged::event_id(),
+            TradingBotStopping::event_id(),
+            TradingBotStarted::event_id(),
+        ]
+    }
 
     fn listener_id(&self) -> &'static str { "lp_bot_listener" }
 }

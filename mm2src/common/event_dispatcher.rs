@@ -13,6 +13,10 @@ pub trait EventListener: 'static + Send + Sync {
     fn listener_id(&self) -> &'static str;
 }
 
+pub trait EventUniqueId {
+    fn event_id(&self) -> TypeId;
+}
+
 pub struct Dispatcher<EventType> {
     listeners: Listeners<EventType>,
     listeners_id: HashSet<String>,
@@ -21,7 +25,7 @@ pub struct Dispatcher<EventType> {
 
 impl<EventType> Default for Dispatcher<EventType>
 where
-    EventType: Clone,
+    EventType: Clone + EventUniqueId,
 {
     fn default() -> Self {
         Dispatcher {
@@ -34,7 +38,7 @@ where
 
 impl<EventType: 'static> Dispatcher<EventType>
 where
-    EventType: Clone,
+    EventType: Clone + EventUniqueId,
 {
     pub fn add_listener(&mut self, listen: impl EventListener<Event = EventType>) {
         if self.listeners_id.contains(listen.listener_id()) {
@@ -50,8 +54,7 @@ where
     }
 
     pub async fn dispatch_async(&self, ev: EventType) {
-        let type_id = TypeId::of::<EventType>();
-        if let Some(interested) = self.dispatch_table.get(&type_id) {
+        if let Some(interested) = self.dispatch_table.get(&ev.event_id()) {
             for id in interested.iter().copied() {
                 self.listeners[id].process_event_async(ev.clone()).await;
             }
@@ -65,7 +68,7 @@ where
 #[cfg(test)]
 mod event_dispatcher_tests {
     use crate::block_on;
-    use crate::event_dispatcher::{Dispatcher, EventListener};
+    use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueId};
     use async_trait::async_trait;
     use std::any::TypeId;
     use std::ops::Deref;
@@ -78,9 +81,21 @@ mod event_dispatcher_tests {
         status: String,
     }
 
+    impl EventSwapStatusChanged {
+        fn event_id() -> TypeId { TypeId::of::<EventSwapStatusChanged>() }
+    }
+
     #[derive(Clone)]
     enum AppEvents {
         EventSwapStatusChanged(EventSwapStatusChanged),
+    }
+
+    impl EventUniqueId for AppEvents {
+        fn event_id(&self) -> TypeId {
+            match self {
+                AppEvents::EventSwapStatusChanged(_) => EventSwapStatusChanged::event_id(),
+            }
+        }
     }
 
     #[derive(Default)]
@@ -107,7 +122,7 @@ mod event_dispatcher_tests {
             }
         }
 
-        fn get_desired_events(&self) -> Vec<TypeId> { vec![TypeId::of::<EventSwapStatusChanged>()] }
+        fn get_desired_events(&self) -> Vec<TypeId> { vec![EventSwapStatusChanged::event_id()] }
 
         fn listener_id(&self) -> &'static str { "listener_swap_status_changed" }
     }

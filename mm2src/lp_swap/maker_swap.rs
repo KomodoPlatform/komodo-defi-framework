@@ -8,7 +8,6 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
             MySwapInfo, NegotiationDataMsg, NegotiationDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap,
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
-
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -25,6 +24,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -1258,6 +1258,10 @@ pub struct MakerSwapStatusChanged {
     pub taker_amount: BigDecimal,
     pub maker_amount: BigDecimal,
     pub event_status: String,
+}
+
+impl MakerSwapStatusChanged {
+    pub fn event_id() -> TypeId { TypeId::of::<MakerSwapStatusChanged>() }
 }
 
 impl MakerSwapStatusChanged {
