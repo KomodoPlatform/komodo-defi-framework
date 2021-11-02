@@ -1,6 +1,6 @@
 use crate::mm2::lp_dispatcher::DispatcherContext;
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
-                                        TradingBotStopping};
+                                        TradingBotStopped, TradingBotStopping};
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
 use crate::mm2::message_service::telegram::TgClient;
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
@@ -269,15 +269,15 @@ pub async fn tear_down_bot(ctx: MmArc) {
     let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
     let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
     if let TradingBotState::Stopped(ref mut stopped_state) = *state {
-        cancel_pending_orders(&ctx, &stopped_state.trading_bot_cfg.clone()).await;
+        let nb_orders = cancel_pending_orders(&ctx, &stopped_state.trading_bot_cfg.clone()).await;
+        let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
+        let dispatcher = dispatcher_ctx.dispatcher.lock().await;
+        let event: TradingBotEvent = TradingBotStopped { nb_orders }.into();
+        dispatcher.dispatch_async(event.into()).await;
         stopped_state.trading_bot_cfg.clear();
+        let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
+        message_service.clear_services();
     }
-    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
-    let _ = message_service
-        .send_message("trading bot successfully stopped".to_string(), false)
-        .await;
-    message_service.clear_services();
-    drop(message_service);
 }
 
 fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut MmNumber) -> MmNumber {
@@ -407,7 +407,8 @@ async fn vwap_calculator(
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
-async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, SimpleCoinMarketMakerCfg>) {
+async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, SimpleCoinMarketMakerCfg>) -> usize {
+    let mut nb_orders = 0;
     for (trading_pair, cfg) in cfg_registry.iter() {
         match cancel_all_orders(ctx.clone(), CancelBy::Pair {
             base: cfg.base.clone(),
@@ -415,13 +416,17 @@ async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, Simpl
         })
         .await
         {
-            Ok(resp) => info!(
-                "Successfully deleted orders: {:?} for pair: {}",
-                resp.cancelled, trading_pair
-            ),
+            Ok(resp) => {
+                info!(
+                    "Successfully deleted orders: {:?} for pair: {}",
+                    resp.cancelled, trading_pair
+                );
+                nb_orders += resp.cancelled.len();
+            },
             Err(err) => error!("Couldn't cancel pending orders: {} for pair: {}", err, trading_pair),
         }
     }
+    nb_orders
 }
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
@@ -655,7 +660,8 @@ async fn process_bot_logic(ctx: &MmArc) {
         },
         Err(err) => {
             error!("error during fetching price: {:?}", err);
-            cancel_pending_orders(ctx, &cfg).await;
+            let nb_orders = cancel_pending_orders(ctx, &cfg).await;
+            info!("cancel {} orders", nb_orders);
             return;
         },
     };

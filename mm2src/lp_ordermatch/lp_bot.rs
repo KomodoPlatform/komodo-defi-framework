@@ -48,9 +48,23 @@ impl TradingBotStarted {
 }
 
 #[derive(Clone, Display)]
+#[display(
+    fmt = "simple_market_maker_bot successfully stopped - cancelled {} orders",
+    nb_orders
+)]
+pub struct TradingBotStopped {
+    nb_orders: usize,
+}
+
+impl TradingBotStopped {
+    fn event_id() -> TypeId { TypeId::of::<TradingBotStopped>() }
+}
+
+#[derive(Clone, Display)]
 pub enum TradingBotEvent {
     Started(TradingBotStarted),
     Stopping(TradingBotStopping),
+    Stopped(TradingBotStopped),
 }
 
 impl EventUniqueId for TradingBotEvent {
@@ -58,12 +72,17 @@ impl EventUniqueId for TradingBotEvent {
         match self {
             TradingBotEvent::Started(_) => TradingBotStarted::event_id(),
             TradingBotEvent::Stopping(_) => TradingBotStopping::event_id(),
+            TradingBotEvent::Stopped(_) => TradingBotStopped::event_id(),
         }
     }
 }
 
 impl From<TradingBotStopping> for TradingBotEvent {
     fn from(trading_bot_stopping: TradingBotStopping) -> Self { TradingBotEvent::Stopping(trading_bot_stopping) }
+}
+
+impl From<TradingBotStopped> for TradingBotEvent {
+    fn from(trading_bot_stopped: TradingBotStopped) -> Self { TradingBotEvent::Stopped(trading_bot_stopped) }
 }
 
 impl From<TradingBotStarted> for TradingBotEvent {
@@ -204,7 +223,7 @@ impl TradingBotContext {
     async fn on_trading_bot_event(&self, trading_bot_event: &TradingBotEvent) {
         let msg_format = format!("{}", trading_bot_event);
         match trading_bot_event {
-            TradingBotEvent::Started { .. } | TradingBotEvent::Stopping { .. } => {
+            TradingBotEvent::Started(_) | TradingBotEvent::Stopping(_) | TradingBotEvent::Stopped(_) => {
                 self.bot_dispatch_msg(msg_format).await
             },
         }
@@ -248,6 +267,7 @@ impl EventListener for ArcTradingBotContext {
             MakerSwapStatusChanged::event_id(),
             TradingBotStopping::event_id(),
             TradingBotStarted::event_id(),
+            TradingBotStopped::event_id(),
         ]
     }
 
