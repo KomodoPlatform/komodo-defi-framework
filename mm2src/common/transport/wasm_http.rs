@@ -202,7 +202,7 @@ impl FetchRequest {
             req_init.mode(mode);
         }
 
-        let js_request = Request::new_with_str_and_init(&request.uri, &req_init)
+        let js_request = Request::new_with_str_and_init(&uri, &req_init)
             .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
         for (hkey, hval) in request.headers {
             js_request
@@ -238,8 +238,20 @@ impl FetchRequest {
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
-        let resp_blob = JsFuture::from(resp_blob_fut).await?;
-        let array: Uint8Array = resp_blob.clone().dyn_into().unwrap();
+        let resp_blob = JsFuture::from(resp_blob_fut)
+            .await
+            .map_to_mm(|e| SlurpError::ErrorDeserializing {
+                uri: uri.clone(),
+                error: stringify_js_error(&e),
+            })?;
+
+        let array: Uint8Array = resp_blob
+            .clone()
+            .dyn_into()
+            .map_to_mm(|e| SlurpError::ErrorDeserializing {
+                uri: uri.clone(),
+                error: stringify_js_error(&e),
+            })?;
 
         let status_code = js_response.status();
         let status_code = match StatusCode::from_u16(status_code) {
