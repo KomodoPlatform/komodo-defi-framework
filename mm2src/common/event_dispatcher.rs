@@ -13,11 +13,23 @@ pub trait EventListener: 'static + Send + Sync {
     fn listener_id(&self) -> &'static str;
 }
 
-#[derive(Default)]
 pub struct Dispatcher<EventType> {
     listeners: Listeners<EventType>,
     listeners_id: HashSet<String>,
     dispatch_table: DispatchTable,
+}
+
+impl<EventType> Default for Dispatcher<EventType>
+where
+    EventType: Clone,
+{
+    fn default() -> Self {
+        Dispatcher {
+            listeners: vec![],
+            listeners_id: Default::default(),
+            dispatch_table: Default::default(),
+        }
+    }
 }
 
 impl<EventType: 'static> Dispatcher<EventType>
@@ -69,11 +81,6 @@ mod event_dispatcher_tests {
     #[derive(Clone)]
     enum AppEvents {
         EventSwapStatusChanged(EventSwapStatusChanged),
-    }
-
-    impl Default for AppEvents {
-        // Just to satisfy the dispatcher
-        fn default() -> Self { AppEvents::EventSwapStatusChanged(Default::default()) }
     }
 
     #[derive(Default)]

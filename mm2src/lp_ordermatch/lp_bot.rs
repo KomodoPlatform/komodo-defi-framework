@@ -137,24 +137,26 @@ impl EventListener for ArcTradingBotContext {
     type Event = LpEvents;
 
     async fn process_event_async(&self, event: Self::Event) {
-        if let LpEvents::MakerSwapStatusChanged(swap_infos) = event {
-            let msg = format!(
-                "[{}: {} ({}) <-> {} ({})] status changed: {}",
-                swap_infos.uuid,
-                swap_infos.taker_coin,
-                swap_infos.taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                swap_infos.maker_coin,
-                swap_infos.maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
-                swap_infos.event_status
-            );
-            info!("event received: {}", msg);
-            let state = self.trading_bot_states.lock().await;
-            match &*state {
-                TradingBotState::Running { message_service, .. } => {
-                    let _ = message_service.send_message(msg.to_string(), false).await;
-                },
-                _ => {},
-            }
+        match event {
+            LpEvents::MakerSwapStatusChanged(swap_infos) => {
+                let msg = format!(
+                    "[{}: {} ({}) <-> {} ({})] status changed: {}",
+                    swap_infos.uuid,
+                    swap_infos.taker_coin,
+                    swap_infos.taker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                    swap_infos.maker_coin,
+                    swap_infos.maker_amount.with_prec(PRECISION_FOR_NOTIFICATION),
+                    swap_infos.event_status
+                );
+                info!("event received: {}", msg);
+                let state = self.trading_bot_states.lock().await;
+                match &*state {
+                    TradingBotState::Running { message_service, .. } => {
+                        let _ = message_service.send_message(msg.to_string(), false).await;
+                    },
+                    _ => {},
+                }
+            },
         }
     }
 

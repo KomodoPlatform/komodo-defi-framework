@@ -7,12 +7,6 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub enum LpEvents {
     MakerSwapStatusChanged(MakerSwapStatusChanged),
-    Default,
-}
-
-impl Default for LpEvents {
-    // Just to satisfy the dispatcher
-    fn default() -> Self { LpEvents::Default }
 }
 
 #[derive(Default)]
