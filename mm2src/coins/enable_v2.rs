@@ -1,6 +1,6 @@
 use super::{coin_conf, lp_coinfind, CoinProtocol};
 use crate::qrc20::Qrc20ActivationParams;
-use crate::utxo::bch::BchActivationParams;
+use crate::utxo::bch::{activate_bch_with_tokens, BchActivationParams};
 use crate::utxo::UtxoActivationParams;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -74,10 +74,14 @@ pub async fn enable_v2(ctx: MmArc, req: EnableRpcRequest) -> Result<EnableResult
 
     let protocol: CoinProtocol =
         json::from_value(conf["protocol"].clone()).map_to_mm(EnableError::InvalidCoinProtocolConf)?;
+    let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
     let coin = match (req.protocol_params, protocol) {
-        (EnableProtocolParams::Bch(_), CoinProtocol::BCH { slp_prefix }) => {
-            // BCH
+        (EnableProtocolParams::Bch(params), CoinProtocol::BCH { slp_prefix }) => {
+            // TODO it's unclear now how to not overcomplicate the error in this case
+            let bch_activation_result = activate_bch_with_tokens(&ctx, &req.coin, &conf, params, &slp_prefix, priv_key)
+                .await
+                .unwrap();
         },
         (
             EnableProtocolParams::SlpToken,

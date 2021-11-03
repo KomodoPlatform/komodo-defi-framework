@@ -642,7 +642,7 @@ pub struct TradeFee {
     pub paid_from_trading_vol: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
 pub struct CoinBalance {
     pub spendable: BigDecimal,
     pub unspendable: BigDecimal,
