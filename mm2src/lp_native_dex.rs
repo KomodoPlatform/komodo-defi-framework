@@ -29,6 +29,7 @@ use std::str;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mm2::database::init_and_migrate_db;
+use crate::mm2::lp_message_service::init_message_service;
 use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, P2PContext};
 use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
                                 lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler};
@@ -271,6 +272,7 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
     }
 
     try_s!(init_ordermatch_context(&ctx));
+    try_s!(init_message_service(&ctx).await);
     try_s!(init_p2p(ctx.clone()).await);
 
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());

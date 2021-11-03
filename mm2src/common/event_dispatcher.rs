@@ -1,3 +1,4 @@
+use crate::mm_ctx::MmArc;
 use async_trait::async_trait;
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
@@ -8,7 +9,7 @@ pub type DispatchTable = HashMap<TypeId, Vec<usize>>;
 #[async_trait]
 pub trait EventListener: 'static + Send + Sync {
     type Event;
-    async fn process_event_async(&self, event: Self::Event);
+    async fn process_event_async(&self, ctx: MmArc, event: Self::Event);
     fn get_desired_events(&self) -> Vec<TypeId>;
     fn listener_id(&self) -> &'static str;
 }
@@ -53,10 +54,10 @@ where
         }
     }
 
-    pub async fn dispatch_async(&self, ev: EventType) {
+    pub async fn dispatch_async(&self, ctx: MmArc, ev: EventType) {
         if let Some(interested) = self.dispatch_table.get(&ev.event_id()) {
             for id in interested.iter().copied() {
-                self.listeners[id].process_event_async(ev.clone()).await;
+                self.listeners[id].process_event_async(ctx.clone(), ev.clone()).await;
             }
         }
     }
@@ -69,6 +70,7 @@ where
 mod event_dispatcher_tests {
     use crate::block_on;
     use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueId};
+    use crate::mm_ctx::{MmArc, MmCtxBuilder};
     use async_trait::async_trait;
     use std::any::TypeId;
     use std::ops::Deref;
@@ -113,7 +115,7 @@ mod event_dispatcher_tests {
     impl EventListener for ListenerSwapStatusChangedArc {
         type Event = AppEvents;
 
-        async fn process_event_async(&self, event: Self::Event) {
+        async fn process_event_async(&self, _ctx: MmArc, event: Self::Event) {
             match event {
                 AppEvents::EventSwapStatusChanged(swap) => {
                     assert_eq!(swap.uuid.to_string(), "00000000-0000-0000-0000-000000000000");
@@ -139,7 +141,7 @@ mod event_dispatcher_tests {
             uuid: Default::default(),
             status: "Started".to_string(),
         });
-        block_on(dispatcher.dispatch_async(event));
+        block_on(dispatcher.dispatch_async(MmCtxBuilder::new().into_mm_arc(), event));
         dispatcher.add_listener(res);
         assert_eq!(dispatcher.nb_listeners(), 1);
     }

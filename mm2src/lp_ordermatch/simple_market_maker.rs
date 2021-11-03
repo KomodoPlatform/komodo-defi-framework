@@ -2,7 +2,6 @@ use crate::mm2::lp_dispatcher::DispatcherContext;
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
                                         TradingBotStopped, TradingBotStopping};
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
-use crate::mm2::message_service::telegram::TgClient;
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::TickerInfos,
                                  lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
@@ -110,8 +109,6 @@ impl From<std::string::String> for OrderProcessingError {
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
     price_url: Option<String>,
-    telegram_api_key: Option<String>,
-    telegram_chat_id: Option<String>,
     bot_refresh_rate: Option<f64>,
 }
 
@@ -121,8 +118,6 @@ impl StartSimpleMakerBotRequest {
         return StartSimpleMakerBotRequest {
             cfg: Default::default(),
             price_url: None,
-            telegram_api_key: None,
-            telegram_chat_id: None,
             bot_refresh_rate: None,
         };
     }
@@ -273,10 +268,8 @@ pub async fn tear_down_bot(ctx: MmArc) {
         let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
         let dispatcher = dispatcher_ctx.dispatcher.lock().await;
         let event: TradingBotEvent = TradingBotStopped { nb_orders }.into();
-        dispatcher.dispatch_async(event.into()).await;
+        dispatcher.dispatch_async(ctx.clone(), event.into()).await;
         stopped_state.trading_bot_cfg.clear();
-        let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
-        message_service.clear_services();
     }
 }
 
@@ -785,17 +778,9 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
                 price_url: req.price_url.unwrap_or_else(|| KMD_PRICE_ENDPOINT.to_string()),
             }
             .into();
-            if let Some(telegram_api_key) = req.telegram_api_key {
-                let tg_client = TgClient::new(telegram_api_key, None, req.telegram_chat_id);
-                if let TradingBotState::Running(_) = *state {
-                    let mut message_service = simple_market_maker_bot_ctx.message_service.lock().await;
-                    message_service.attach_service(Box::new(tg_client));
-                    drop(message_service)
-                }
-            }
             drop(state);
             let event: TradingBotEvent = TradingBotStarted { nb_pairs }.into();
-            dispatcher.dispatch_async(event.into()).await;
+            dispatcher.dispatch_async(ctx.clone(), event.into()).await;
             spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
                 result: "Success".to_string(),
@@ -822,7 +807,7 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
             }
             .into();
             drop(state);
-            dispatcher.dispatch_async(event.into()).await;
+            dispatcher.dispatch_async(ctx.clone(), event.into()).await;
             Ok(StopSimpleMakerBotRes {
                 result: "Success".to_string(),
             })

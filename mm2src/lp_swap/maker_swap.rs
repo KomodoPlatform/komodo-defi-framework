@@ -1566,7 +1566,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     let dispatcher = dispatcher_ctx.dispatcher.lock().await;
                     let event_to_send = MakerSwapStatusChanged::from_maker_swap(&running_swap, &to_save);
                     dispatcher
-                        .dispatch_async(LpEvents::MakerSwapStatusChanged(event_to_send))
+                        .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)

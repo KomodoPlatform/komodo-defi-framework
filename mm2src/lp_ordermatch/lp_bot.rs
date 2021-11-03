@@ -17,9 +17,9 @@ use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
 use crate::mm2::lp_dispatcher::LpEvents;
+use crate::mm2::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
 use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{BOT_DEFAULT_REFRESH_RATE, PRECISION_FOR_NOTIFICATION};
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
-use crate::mm2::message_service::MessageService;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
@@ -191,7 +191,6 @@ impl Default for Provider {
 #[derive(Default)]
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
-    message_service: AsyncMutex<MessageService>,
 }
 
 impl TradingBotContext {
@@ -214,14 +213,15 @@ impl Deref for ArcTradingBotContext {
 
 #[allow(clippy::single_match)]
 impl TradingBotContext {
-    async fn on_trading_bot_event(&self, trading_bot_event: &TradingBotEvent) {
+    async fn on_trading_bot_event(&self, ctx: &MmArc, trading_bot_event: &TradingBotEvent) {
         let msg_format = format!("{}", trading_bot_event);
         info!("{}", msg_format);
-        let message_service = self.message_service.lock().await;
-        let _ = message_service.send_message(msg_format, false).await;
+        let message_service_ctx = MessageServiceContext::from_ctx(ctx).unwrap();
+        let message_service = message_service_ctx.message_service.lock().await;
+        let _ = message_service.send_message(msg_format, MAKER_BOT_ROOM_ID, false).await;
     }
 
-    async fn on_maker_swap_status_changed(&self, swap_infos: &MakerSwapStatusChanged) {
+    async fn on_maker_swap_status_changed(&self, ctx: &MmArc, swap_infos: &MakerSwapStatusChanged) {
         let msg = format!(
             "[{}: {} ({}) <-> {} ({})] status changed: {}",
             swap_infos.uuid,
@@ -235,8 +235,11 @@ impl TradingBotContext {
         let state = self.trading_bot_states.lock().await;
         match &*state {
             TradingBotState::Running(_) => {
-                let message_service = self.message_service.lock().await;
-                let _ = message_service.send_message(msg.to_string(), false).await;
+                let message_service_ctx = MessageServiceContext::from_ctx(ctx).unwrap();
+                let message_service = message_service_ctx.message_service.lock().await;
+                let _ = message_service
+                    .send_message(msg.to_string(), MAKER_BOT_ROOM_ID, false)
+                    .await;
             },
             _ => {},
         }
@@ -247,10 +250,10 @@ impl TradingBotContext {
 impl EventListener for ArcTradingBotContext {
     type Event = LpEvents;
 
-    async fn process_event_async(&self, event: Self::Event) {
+    async fn process_event_async(&self, ctx: MmArc, event: Self::Event) {
         match &event {
-            LpEvents::MakerSwapStatusChanged(swap_infos) => self.on_maker_swap_status_changed(swap_infos).await,
-            LpEvents::TradingBotEvent(trading_bot_event) => self.on_trading_bot_event(trading_bot_event).await,
+            LpEvents::MakerSwapStatusChanged(swap_infos) => self.on_maker_swap_status_changed(&ctx, swap_infos).await,
+            LpEvents::TradingBotEvent(trading_bot_event) => self.on_trading_bot_event(&ctx, trading_bot_event).await,
         }
     }
 
