@@ -214,19 +214,11 @@ impl Deref for ArcTradingBotContext {
 
 #[allow(clippy::single_match)]
 impl TradingBotContext {
-    async fn bot_dispatch_msg(&self, msg_format: String) {
+    async fn on_trading_bot_event(&self, trading_bot_event: &TradingBotEvent) {
+        let msg_format = format!("{}", trading_bot_event);
         info!("{}", msg_format);
         let message_service = self.message_service.lock().await;
         let _ = message_service.send_message(msg_format, false).await;
-    }
-
-    async fn on_trading_bot_event(&self, trading_bot_event: &TradingBotEvent) {
-        let msg_format = format!("{}", trading_bot_event);
-        match trading_bot_event {
-            TradingBotEvent::Started(_) | TradingBotEvent::Stopping(_) | TradingBotEvent::Stopped(_) => {
-                self.bot_dispatch_msg(msg_format).await
-            },
-        }
     }
 
     async fn on_maker_swap_status_changed(&self, swap_infos: &MakerSwapStatusChanged) {
