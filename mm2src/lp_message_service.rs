@@ -4,6 +4,7 @@ use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TelegramError, Tg
 use async_trait::async_trait;
 use common::mm_ctx::from_ctx;
 use common::mm_ctx::MmArc;
+use common::mm_error::prelude::MapToMmResult;
 use common::mm_error::MmError;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
@@ -87,11 +88,18 @@ pub struct Telegram {
     chat_registry: ChatIdRegistry,
 }
 
-pub async fn init_message_service(ctx: &MmArc) -> Result<(), String> {
-    if let Some(cfg) = ctx.conf.get("message_service_cfg") {
-        let message_service_ctx = try_s!(MessageServiceContext::from_ctx(ctx));
+#[derive(Display)]
+pub enum InitMessageServiceError {
+    #[display(fmt = "Deserialization Error: {}", _0)]
+    JsonError(String),
+}
+
+pub async fn init_message_service(ctx: &MmArc) -> Result<(), MmError<InitMessageServiceError>> {
+    let maybe_cfg: Option<MessageServiceCfg> = json::from_value(ctx.conf["message_service_cfg"].clone())
+        .map_to_mm(|e| InitMessageServiceError::JsonError(e.to_string()))?;
+    if let Some(message_service_cfg) = maybe_cfg {
+        let message_service_ctx = MessageServiceContext::from_ctx(ctx).unwrap();
         let mut message_service = message_service_ctx.message_service.lock().await;
-        let message_service_cfg: MessageServiceCfg = try_s!(json::from_value(cfg.clone()));
         if let Some(telegram) = message_service_cfg.telegram {
             let tg_client = TgClient::new(telegram.api_key, None, telegram.chat_registry);
             message_service.attach_service(Box::new(tg_client));
