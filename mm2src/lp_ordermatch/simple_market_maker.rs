@@ -83,6 +83,10 @@ pub enum OrderProcessingError {
     OrderUpdateError(String),
     #[display(fmt = "Error when querying swap history: {}", _0)]
     MyRecentSwapsError(String),
+    #[display(fmt = "You cant have min_vol_usd and min_vol at the same time in the configuration")]
+    MinVolConfigurationMismatch,
+    #[display(fmt = "Base balance is less than the min_vol_usd - skipping")]
+    MinVolUsdAboveBalanceUsd,
     #[display(fmt = "Legacy error - skipping")]
     LegacyError(String),
 }
@@ -523,16 +527,25 @@ async fn prepare_order(
         None => MmNumber::default(),
     };
 
-    let min_vol: Option<MmNumber> = match &cfg.min_volume_percentage {
-        Some(min_volume_percentage) => {
-            if cfg.max.unwrap_or(false) {
-                Some(min_volume_percentage * &base_balance)
-            } else {
-                Some(min_volume_percentage * &volume)
-            }
-        },
-        None => None,
+    if cfg.min_volume_percentage.is_some() && cfg.min_volume_usd.is_some() {
+        return MmError::err(OrderProcessingError::MinVolConfigurationMismatch);
+    }
+
+    let min_vol: Option<MmNumber> = if let Some(min_volume_percentage) = &cfg.min_volume_percentage {
+        if cfg.max.unwrap_or(false) {
+            Some(min_volume_percentage * &base_balance)
+        } else {
+            Some(min_volume_percentage * &volume)
+        }
+    } else if let Some(min_volume_usd) = &cfg.min_volume_usd {
+        if &base_balance * &rates.base_price < *min_volume_usd {
+            return MmError::err(OrderProcessingError::MinVolUsdAboveBalanceUsd);
+        }
+        Some(min_volume_usd / &rates.base_price)
+    } else {
+        None
     };
+
     Ok((min_vol, volume, calculated_price))
 }
 
