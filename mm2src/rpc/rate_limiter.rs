@@ -14,15 +14,8 @@ pub type RateInfosRegistry = HashMap<IpAddr, usize>;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum RateLimitError {
-    #[display(fmt = "Rate limit maximum attempt reached: {}", LIMIT_FAILED_REQUEST)]
-    Banned,
     #[display(fmt = "Rate Limit attempts left: {}", _0)]
     NbAttemptsLeft(usize),
-}
-
-pub enum RateLimitReason {
-    UserpassIsInvalid,
-    UserpassIsNotSet,
 }
 
 #[derive(Default)]
@@ -44,28 +37,19 @@ impl RateLimitContext {
     }
 }
 
-fn construct_dispatcher_error_from_reason(
-    reason: RateLimitReason,
-    rate_limit_error: RateLimitError,
-) -> MmError<DispatcherError> {
-    match reason {
-        RateLimitReason::UserpassIsInvalid => MmError::new(DispatcherError::UserpassIsInvalid(rate_limit_error)),
-        RateLimitReason::UserpassIsNotSet => MmError::new(DispatcherError::UserpassIsNotSet(rate_limit_error)),
-    }
-}
-
-pub async fn process_rate_limit(ctx: &MmArc, client: &SocketAddr, reason: RateLimitReason) -> MmError<DispatcherError> {
+pub async fn process_rate_limit(ctx: &MmArc, client: &SocketAddr) -> MmError<DispatcherError> {
     let rate_limit_ctx = RateLimitContext::from_ctx(ctx).unwrap();
     let mut rate_limit_registry = rate_limit_ctx.0.lock().await;
 
     return if let Some(limit) = rate_limit_registry.get_mut(&client.ip()) {
-        if *limit == LIMIT_FAILED_REQUEST {
-            return construct_dispatcher_error_from_reason(reason, RateLimitError::Banned);
-        }
         *limit += 1;
-        construct_dispatcher_error_from_reason(reason, RateLimitError::NbAttemptsLeft(LIMIT_FAILED_REQUEST - *limit))
+        MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
+            LIMIT_FAILED_REQUEST - *limit,
+        )))
     } else {
         rate_limit_registry.insert(client.ip(), 1);
-        construct_dispatcher_error_from_reason(reason, RateLimitError::NbAttemptsLeft(LIMIT_FAILED_REQUEST - 1))
+        MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
+            LIMIT_FAILED_REQUEST - 1,
+        )))
     };
 }

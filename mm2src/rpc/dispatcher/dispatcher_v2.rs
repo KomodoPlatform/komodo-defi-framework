@@ -1,6 +1,6 @@
 use super::lp_protocol::{MmRpcBuilder, MmRpcRequest};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
-use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext, RateLimitReason};
+use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::trade_preimage_rpc,
@@ -85,8 +85,8 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
     });
     match request.userpass {
         Some(ref userpass) if userpass == rpc_password => Ok(()),
-        Some(_) => Err(process_rate_limit(&ctx, &client, RateLimitReason::UserpassIsInvalid).await),
-        None => Err(process_rate_limit(&ctx, &client, RateLimitReason::UserpassIsNotSet).await),
+        Some(_) => Err(process_rate_limit(&ctx, &client).await),
+        None => MmError::err(DispatcherError::UserpassIsNotSet),
     }
 }
 

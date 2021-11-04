@@ -80,8 +80,8 @@ pub enum DispatcherError {
     InvalidRequest(String),
     #[display(fmt = "Selected method can be called from localhost only!")]
     LocalHostOnly,
-    #[display(fmt = "Userpass is not set! - {}", _0)]
-    UserpassIsNotSet(RateLimitError),
+    #[display(fmt = "Userpass is not set!")]
+    UserpassIsNotSet,
     #[display(fmt = "Userpass is invalid! - {}", _0)]
     UserpassIsInvalid(RateLimitError),
     #[display(fmt = "Error parsing mmrpc version: {}", _0)]
@@ -95,7 +95,7 @@ impl HttpStatusCode for DispatcherError {
             | DispatcherError::InvalidRequest(_)
             | DispatcherError::InvalidMmRpcVersion(_) => StatusCode::BAD_REQUEST,
             DispatcherError::LocalHostOnly
-            | DispatcherError::UserpassIsNotSet(_)
+            | DispatcherError::UserpassIsNotSet
             | DispatcherError::UserpassIsInvalid(_)
             | DispatcherError::Banned => StatusCode::FORBIDDEN,
         }

@@ -15,7 +15,7 @@ use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders, cancel_
 use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
                           import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps, my_swap_status,
                           recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
-use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext, RateLimitReason};
+use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
             send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
             validate_address};
@@ -31,17 +31,11 @@ pub enum DispatcherRes {
 async fn auth(json: &Json, ctx: &MmArc, client: &SocketAddr) -> Result<(), String> {
     if !PUBLIC_METHODS.contains(&json["method"].as_str()) {
         if !json["userpass"].is_string() {
-            return Err(format!(
-                "{}",
-                process_rate_limit(&ctx, &client, RateLimitReason::UserpassIsNotSet).await
-            ));
+            return Err("Userpass is not set!".to_string());
         }
 
         if json["userpass"] != ctx.conf["rpc_password"] {
-            return Err(format!(
-                "{}",
-                process_rate_limit(&ctx, &client, RateLimitReason::UserpassIsInvalid).await
-            ));
+            return Err(format!("{}", process_rate_limit(&ctx, &client).await));
         }
     }
     Ok(())
