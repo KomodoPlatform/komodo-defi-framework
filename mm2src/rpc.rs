@@ -17,6 +17,7 @@
 //  Copyright © 2014-2018 SuperNET. All rights reserved.
 //
 
+use crate::mm2::rpc::rate_limiter::RateLimitError;
 #[cfg(not(target_arch = "wasm32"))] use common::log::warn;
 use common::log::{error, info};
 use common::mm_ctx::MmArc;
@@ -42,6 +43,7 @@ mod dispatcher_legacy;
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 #[path = "rpc/lp_protocol.rs"] mod lp_protocol;
 use self::lp_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
+#[path = "rpc/rate_limiter.rs"] mod rate_limiter;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -70,16 +72,18 @@ pub type DispatcherResult<T> = Result<T, MmError<DispatcherError>>;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum DispatcherError {
+    #[display(fmt = "Your ip is banned.")]
+    Banned,
     #[display(fmt = "No such method: {:?}", method)]
     NoSuchMethod { method: String },
     #[display(fmt = "Error parsing request: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Selected method can be called from localhost only!")]
     LocalHostOnly,
-    #[display(fmt = "Userpass is not set!")]
-    UserpassIsNotSet,
-    #[display(fmt = "Userpass is invalid!")]
-    UserpassIsInvalid,
+    #[display(fmt = "Userpass is not set! - {}", _0)]
+    UserpassIsNotSet(RateLimitError),
+    #[display(fmt = "Userpass is invalid! - {}", _0)]
+    UserpassIsInvalid(RateLimitError),
     #[display(fmt = "Error parsing mmrpc version: {}", _0)]
     InvalidMmRpcVersion(String),
 }
@@ -90,9 +94,10 @@ impl HttpStatusCode for DispatcherError {
             DispatcherError::NoSuchMethod { .. }
             | DispatcherError::InvalidRequest(_)
             | DispatcherError::InvalidMmRpcVersion(_) => StatusCode::BAD_REQUEST,
-            DispatcherError::LocalHostOnly | DispatcherError::UserpassIsNotSet | DispatcherError::UserpassIsInvalid => {
-                StatusCode::FORBIDDEN
-            },
+            DispatcherError::LocalHostOnly
+            | DispatcherError::UserpassIsNotSet(_)
+            | DispatcherError::UserpassIsInvalid(_)
+            | DispatcherError::Banned => StatusCode::FORBIDDEN,
         }
     }
 }
