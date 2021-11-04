@@ -46,7 +46,7 @@ use futures01::Future;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
@@ -1169,6 +1169,32 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
+pub trait IntoMmCoins {
+    fn into_mm_coins(self) -> Vec<MmCoinEnum>;
+}
+
+pub trait CoinActivationParamsOps {
+    fn activate_with_tokens(&self) -> Vec<String>;
+}
+
+#[derive(Debug, Display)]
+pub enum TokenCreationError {}
+
+#[async_trait]
+pub trait CoinActivationOps: Into<MmCoinEnum> {
+    type ActivationParams: CoinActivationParamsOps;
+    type ActivationError: NotMmError;
+
+    async fn activate(
+        ctx: &MmArc,
+        ticker: &str,
+        conf: &Json,
+        params: Self::ActivationParams,
+    ) -> Result<Self, MmError<Self::ActivationError>>;
+
+    fn activate_token(&self, ticker: &str, conf: &Json) -> Result<MmCoinEnum, MmError<TokenCreationError>>;
+}
+
 #[derive(Clone, Debug)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
@@ -1238,7 +1264,7 @@ pub trait BalanceTradeFeeUpdatedHandler {
     async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal);
 }
 
-struct CoinsContext {
+pub struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,

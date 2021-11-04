@@ -2,8 +2,10 @@ use super::{coin_conf, lp_coinfind, CoinProtocol};
 use crate::qrc20::Qrc20ActivationParams;
 use crate::utxo::bch::{activate_bch_with_tokens, BchActivationParams};
 use crate::utxo::UtxoActivationParams;
+use crate::{CoinActivationOps, CoinActivationParamsOps, CoinsContext, TokenCreationError};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
+use common::NotSame;
 use derive_more::Display;
 use ethereum_types::Address;
 use serde_json::{self as json};
@@ -49,6 +51,9 @@ pub enum EnableError {
     CoinIsAlreadyActivated(String),
     /// With ticker
     CoinConfigNotFound(String),
+    /// With ticker
+    TokenConfigNotFound(String),
+    TokenCreationError(TokenCreationError),
     InvalidCoinProtocolConf(serde_json::Error),
     #[display(
         fmt = "Request {:?} is not compatible with protocol {:?}",
@@ -59,6 +64,10 @@ pub enum EnableError {
         request: EnableProtocolParams,
         protocol_from_conf: CoinProtocol,
     },
+}
+
+impl From<TokenCreationError> for EnableError {
+    fn from(err: TokenCreationError) -> Self { EnableError::TokenCreationError(err) }
 }
 
 #[allow(unused_variables)]
@@ -137,5 +146,52 @@ pub async fn enable_v2(ctx: MmArc, req: EnableRpcRequest) -> Result<EnableResult
             })
         },
     };
+    unimplemented!()
+}
+
+pub async fn enable_coin<T>(
+    ctx: &MmArc,
+    ticker: &str,
+    params: T::ActivationParams,
+) -> Result<EnableResult, MmError<EnableError>>
+where
+    T: CoinActivationOps,
+    EnableError: From<T::ActivationError>,
+    (T::ActivationError, EnableError): NotSame,
+{
+    if let Ok(Some(_)) = lp_coinfind(&ctx, ticker).await {
+        return MmError::err(EnableError::CoinIsAlreadyActivated(ticker.to_owned()));
+    }
+
+    let conf = coin_conf(&ctx, ticker);
+    if conf.is_null() {
+        return MmError::err(EnableError::CoinConfigNotFound(ticker.to_owned()));
+    }
+
+    let token_tickers = params.activate_with_tokens();
+    let platform_coin = T::activate(ctx, ticker, &conf, params).await?;
+    let tokens: Vec<_> = token_tickers
+        .into_iter()
+        .map(|token| {
+            let conf = coin_conf(&ctx, &token);
+            if conf.is_null() {
+                return MmError::err(EnableError::TokenConfigNotFound(token));
+            }
+            let token_as_coin = platform_coin.activate_token(&token, &conf)?;
+            Ok(token_as_coin)
+        })
+        .collect::<Result<_, _>>()?;
+    let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
+    let mut coins = coins_ctx.coins.lock().await;
+
+    if coins.contains_key(ticker) {
+        return MmError::err(EnableError::CoinIsAlreadyActivated(ticker.to_owned()));
+    }
+
+    coins.insert(ticker.to_owned(), platform_coin.into());
+    for token in tokens {
+        coins.insert(token.ticker().to_owned(), token);
+    }
+
     unimplemented!()
 }

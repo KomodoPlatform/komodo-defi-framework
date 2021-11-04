@@ -88,6 +88,7 @@ fn auth(request: &MmRpcRequest, ctx: &MmArc) -> DispatcherResult<()> {
 
 async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     match request.method.as_str() {
+        // "activate_bch_protocol_coin" => handle_mmrpc(ctx, request, activate_bch_protocol_coin).await,
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
         "enable_lightning" => handle_mmrpc(ctx, request, enable_lightning).await,
