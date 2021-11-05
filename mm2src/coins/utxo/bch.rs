@@ -2,8 +2,8 @@ use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpToken, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::{coin_conf, CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, CoinProtocol, NegotiateSwapContractAddrErr,
+            SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -755,6 +755,8 @@ impl MarketCoinOps for BchCoin {
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 

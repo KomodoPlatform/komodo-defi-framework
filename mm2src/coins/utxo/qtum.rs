@@ -1,7 +1,7 @@
 use super::*;
 use crate::utxo::qtum::qtum_delegation::QtumStakingAbiError;
-use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps,
-            TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::{eth, CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, DelegationFut, NegotiateSwapContractAddrErr,
+            StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use ethereum_types::H160;
@@ -550,6 +550,8 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)

@@ -11,10 +11,11 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, p2sh_spend, 
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinBalancesWithTokens, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TxFeeDetails, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -1002,6 +1003,8 @@ impl MarketCoinOps for SlpToken {
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.platform_coin.my_balance().map(|res| res.spendable))

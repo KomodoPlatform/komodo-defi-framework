@@ -350,6 +350,11 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 }
 
+pub struct CoinBalancesWithTokens {
+    platform_coin_balances: HashMap<String, CoinBalance>,
+    token_balances: HashMap<String, HashMap<String, CoinBalance>>,
+}
+
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
@@ -368,6 +373,8 @@ pub trait MarketCoinOps {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens>;
 
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
@@ -642,7 +649,7 @@ pub struct TradeFee {
     pub paid_from_trading_vol: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd, Serialize)]
 pub struct CoinBalance {
     pub spendable: BigDecimal,
     pub unspendable: BigDecimal,
@@ -1179,6 +1186,19 @@ pub trait CoinActivationParamsOps {
 
 #[derive(Debug, Display)]
 pub enum TokenCreationError {}
+
+pub trait TokenOf<T> {}
+
+#[async_trait]
+pub trait TokenActivationOps: Into<MmCoinEnum> {
+    type PlatformCoin;
+
+    async fn activate_token(
+        platform_coin: Self::PlatformCoin,
+        ticker: &str,
+        conf: &Json,
+    ) -> Result<Self, MmError<TokenCreationError>>;
+}
 
 #[async_trait]
 pub trait CoinActivationOps: Into<MmCoinEnum> {
