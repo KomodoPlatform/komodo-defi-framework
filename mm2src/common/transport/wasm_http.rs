@@ -245,13 +245,10 @@ impl FetchRequest {
                 error: stringify_js_error(&e),
             })?;
 
-        let array: Uint8Array = resp_blob
-            .clone()
-            .dyn_into()
-            .map_to_mm(|e| SlurpError::ErrorDeserializing {
-                uri: uri.clone(),
-                error: stringify_js_error(&e),
-            })?;
+        let array: Uint8Array = resp_blob.dyn_into().map_to_mm(|e| SlurpError::ErrorDeserializing {
+            uri: uri.clone(),
+            error: stringify_js_error(&e),
+        })?;
 
         let status_code = js_response.status();
         let status_code = match StatusCode::from_u16(status_code) {
@@ -310,19 +307,6 @@ mod tests {
         .request_str()
         .await
         .expect("!FetchRequest::request_str");
-
-        let expected = "02000000017059c44c764ce06c22b1144d05a19b72358e75708836fc9472490a6f68862b79010000004847304402204ecc54f493c5c75efdbad0771f76173b3314ee7836c469f97a4659e1eef9de4a02200dfe70294e0aa0c6795ae349ddc858212c3293b8affd8c44a6bf6699abaef9d701ffffffff0300000000000000000016c3e748040000002321037d86ede18754defcd4759cf7fda52bff47703701a7feb66e2045e8b6c6aac236ace8b9df05000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac00000000".to_string();
-
-        assert!(status.is_success(), "{:?} {:?}", status, body);
-        assert_eq!(body, expected);
-    }
-
-    #[wasm_bindgen_test]
-    async fn fetch_get_test_bchd() {
-        let (status, body) = FetchRequest::get("http://bchd-testnet.greyh.at:18335/pb.bchrpc/CheckSlpTransaction")
-            .request_str()
-            .await
-            .expect("!FetchRequest::request_str");
 
         let expected = "02000000017059c44c764ce06c22b1144d05a19b72358e75708836fc9472490a6f68862b79010000004847304402204ecc54f493c5c75efdbad0771f76173b3314ee7836c469f97a4659e1eef9de4a02200dfe70294e0aa0c6795ae349ddc858212c3293b8affd8c44a6bf6699abaef9d701ffffffff0300000000000000000016c3e748040000002321037d86ede18754defcd4759cf7fda52bff47703701a7feb66e2045e8b6c6aac236ace8b9df05000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac00000000".to_string();
 

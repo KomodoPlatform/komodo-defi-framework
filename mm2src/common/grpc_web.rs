@@ -155,8 +155,10 @@ where
     let body = encode_body(req)?;
     let request = FetchRequest::post(url)
         .body_bytes(body)
-        .header("content-type", "application/grpc-web")
-        .header("accept", "application/grpc-web");
+        .header("content-type", "application/grpc-web+proto")
+        .header("accept", "application/grpc-web+proto")
+        // https://github.com/grpc/grpc-web/issues/85#issue-217223001
+        .header("x-grpc-web", "1");
 
     let response = request.request_blob().await?;
 
