@@ -155,7 +155,7 @@ pub async fn process_single_request(
 
     let handler = match dispatcher(req, ctx.clone()) {
         DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(req) => return ERR!("No such method: {:?}", req["method"]),
+        DispatcherRes::NoMatch(_) => return ERR!("No such method."),
     };
     Ok(try_s!(handler.compat().await))
 }

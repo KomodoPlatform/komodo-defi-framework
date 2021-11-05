@@ -74,8 +74,8 @@ pub type DispatcherResult<T> = Result<T, MmError<DispatcherError>>;
 pub enum DispatcherError {
     #[display(fmt = "Your ip is banned.")]
     Banned,
-    #[display(fmt = "No such method: {:?}", method)]
-    NoSuchMethod { method: String },
+    #[display(fmt = "No such method")]
+    NoSuchMethod,
     #[display(fmt = "Error parsing request: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Selected method can be called from localhost only!")]
@@ -91,7 +91,7 @@ pub enum DispatcherError {
 impl HttpStatusCode for DispatcherError {
     fn status_code(&self) -> StatusCode {
         match self {
-            DispatcherError::NoSuchMethod { .. }
+            DispatcherError::NoSuchMethod
             | DispatcherError::InvalidRequest(_)
             | DispatcherError::InvalidMmRpcVersion(_) => StatusCode::BAD_REQUEST,
             DispatcherError::LocalHostOnly
@@ -239,6 +239,15 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     // Convert the native Hyper stream into a portable stream of `Bytes`.
     let (req, req_body) = req.into_parts();
     let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+    let req_str = String::from_utf8_lossy(req_bytes.as_ref());
+    let is_invalid_input = req_str.chars().any(|c| c == '<' || c == '>' || c == '&');
+    if is_invalid_input {
+        return Response::builder()
+            .status(500)
+            .header("Content-Type", "application/json")
+            .body(Body::from(err_to_rpc_json_string("Invalid input")))
+            .unwrap();
+    }
     let req_json: Json = try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);

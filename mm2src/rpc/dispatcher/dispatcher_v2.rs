@@ -100,6 +100,6 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
-        _ => MmError::err(DispatcherError::NoSuchMethod { method: request.method }),
+        _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
