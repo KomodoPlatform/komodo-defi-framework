@@ -181,6 +181,8 @@ pub enum Provider {
     Coingecko,
     #[serde(rename = "coinpaprika")]
     Coinpaprika,
+    #[serde(rename = "nomics")]
+    Nomics,
     #[serde(rename = "unknown")]
     Unknown,
 }
