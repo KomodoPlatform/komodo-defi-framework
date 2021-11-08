@@ -19,6 +19,7 @@
 
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
+#![feature(associated_type_bounds)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
