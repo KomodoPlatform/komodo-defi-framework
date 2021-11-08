@@ -94,9 +94,9 @@ impl FetchRequest {
         }
     }
 
-    pub async fn request_blob(self) -> FetchResult<Vec<u8>> {
+    pub async fn request_array(self) -> FetchResult<Vec<u8>> {
         let (tx, rx) = oneshot::channel();
-        Self::spawn_fetch_blob(self, tx);
+        Self::spawn_fetch_array(self, tx);
         match rx.await {
             Ok(res) => res,
             Err(_e) => MmError::err(SlurpError::Internal("Spawned future has been canceled".to_owned())),
@@ -111,16 +111,15 @@ impl FetchRequest {
         spawn_local(fut);
     }
 
-    fn spawn_fetch_blob(request: Self, tx: oneshot::Sender<FetchResult<Vec<u8>>>) {
+    fn spawn_fetch_array(request: Self, tx: oneshot::Sender<FetchResult<Vec<u8>>>) {
         let fut = async move {
-            let result = Self::fetch_blob(request).await;
+            let result = Self::fetch_array(request).await;
             tx.send(result).ok();
         };
         spawn_local(fut);
     }
 
-    /// The private non-Send method that is called in a spawned future.
-    async fn fetch_str(request: Self) -> FetchResult<String> {
+    async fn fetch(request: Self) -> FetchResult<JsResponse> {
         let window = web_sys::window().expect("!window");
         let uri = request.uri;
 
@@ -156,6 +155,23 @@ impl FetchRequest {
             },
         };
 
+        let status_code = js_response.status();
+        let status_code = match StatusCode::from_u16(status_code) {
+            Ok(code) => code,
+            Err(e) => {
+                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
+            },
+        };
+
+        Ok((status_code, js_response))
+    }
+
+    /// The private non-Send method that is called in a spawned future.
+    async fn fetch_str(request: Self) -> FetchResult<String> {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
+
         let resp_txt_fut = match js_response.text() {
             Ok(txt) => txt,
             Err(e) => {
@@ -178,56 +194,15 @@ impl FetchRequest {
             },
         };
 
-        let status_code = js_response.status();
-        let status_code = match StatusCode::from_u16(status_code) {
-            Ok(code) => code,
-            Err(e) => {
-                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
-                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
-            },
-        };
         Ok((status_code, resp_str))
     }
 
     /// The private non-Send method that is called in a spawned future.
-    async fn fetch_blob(request: Self) -> FetchResult<Vec<u8>> {
-        let window = web_sys::window().expect("!window");
-        let uri = request.uri;
+    async fn fetch_array(request: Self) -> FetchResult<Vec<u8>> {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
 
-        let mut req_init = RequestInit::new();
-        req_init.method(request.method.as_str());
-        req_init.body(request.body.map(RequestBody::into_js_value).as_ref());
-
-        if let Some(mode) = request.mode {
-            req_init.mode(mode);
-        }
-
-        let js_request = Request::new_with_str_and_init(&uri, &req_init)
-            .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
-        for (hkey, hval) in request.headers {
-            js_request
-                .headers()
-                .set(&hkey, &hval)
-                .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
-        }
-
-        let request_promise = window.fetch_with_request(&js_request);
-
-        let future = JsFuture::from(request_promise);
-        let resp_value = future.await.map_to_mm(|e| SlurpError::Transport {
-            uri: uri.clone(),
-            error: stringify_js_error(&e),
-        })?;
-
-        let js_response: JsResponse = match resp_value.dyn_into() {
-            Ok(res) => res,
-            Err(origin_val) => {
-                let err = SlurpError::Internal(format!("Error casting {:?} to 'JsResponse'", origin_val));
-                return MmError::err(err);
-            },
-        };
-
-        let resp_blob_fut = match js_response.blob() {
+        let resp_array_fut = match js_response.array_buffer() {
             Ok(blob) => blob,
             Err(e) => {
                 let error = format!(
@@ -238,26 +213,15 @@ impl FetchRequest {
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
-        let resp_blob = JsFuture::from(resp_blob_fut)
+        let resp_array = JsFuture::from(resp_array_fut)
             .await
             .map_to_mm(|e| SlurpError::ErrorDeserializing {
                 uri: uri.clone(),
                 error: stringify_js_error(&e),
             })?;
 
-        let array: Uint8Array = resp_blob.dyn_into().map_to_mm(|e| SlurpError::ErrorDeserializing {
-            uri: uri.clone(),
-            error: stringify_js_error(&e),
-        })?;
+        let array = Uint8Array::new(&resp_array);
 
-        let status_code = js_response.status();
-        let status_code = match StatusCode::from_u16(status_code) {
-            Ok(code) => code,
-            Err(e) => {
-                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
-                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
-            },
-        };
         Ok((status_code, array.to_vec()))
     }
 }

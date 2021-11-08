@@ -11,10 +11,7 @@ mod tests {
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_process_price_request() {
-        let resp = block_on(process_price_request(KMD_PRICE_ENDPOINT));
-        assert_ne!(resp.is_err(), true);
-    }
+    fn test_process_price_request() { let _resp = block_on(process_price_request(KMD_PRICE_ENDPOINT)).unwrap(); }
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]

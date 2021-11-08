@@ -160,7 +160,7 @@ where
         // https://github.com/grpc/grpc-web/issues/85#issue-217223001
         .header("x-grpc-web", "1");
 
-    let response = request.request_blob().await?;
+    let response = request.request_array().await?;
 
     let reply = decode_body(response.1.into())?;
 
