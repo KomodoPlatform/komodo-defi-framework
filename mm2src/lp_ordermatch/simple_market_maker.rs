@@ -43,14 +43,23 @@ pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber),
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OrderProcessingError {
-    #[display(fmt = "The provider is unknown - skipping")]
-    ProviderUnknown,
-    #[display(fmt = "The rates price is zero - skipping")]
-    PriceIsZero,
-    #[display(fmt = "The rates last updated timestamp is invalid - skipping")]
-    LastUpdatedTimestampInvalid,
-    #[display(fmt = "The price elapsed validity is invalid - skipping")]
-    PriceElapsedValidityExpired,
+    #[display(fmt = "Rates from provider are Unknown - skipping for {}", key_trade_pair)]
+    ProviderUnknown { key_trade_pair: String },
+    #[display(fmt = "Price from provider is zero - skipping for {}", key_trade_pair)]
+    PriceIsZero { key_trade_pair: String },
+    #[display(fmt = "Last updated price timestamp is invalid - skipping for {}", key_trade_pair)]
+    LastUpdatedTimestampInvalid { key_trade_pair: String },
+    #[display(
+        fmt = "Last updated price timestamp elapsed {} is more than the elapsed validity {} - skipping for {}",
+        elapsed,
+        elapsed_validity,
+        key_trade_pair
+    )]
+    PriceElapsedValidityExpired {
+        elapsed: f64,
+        elapsed_validity: f64,
+        key_trade_pair: String,
+    },
     #[display(fmt = "Unable to parse/treat elapsed time {} - skipping", _0)]
     PriceElapsedValidityUntreatable(String),
     #[display(fmt = "Price of base coin {} is below min_base_price {}", base_price, min_base_price)]
@@ -310,7 +319,7 @@ fn vwap_calculation(
         total_sum_price_volume += cur_sum_price_volume;
     }
     if total_sum_price_volume.is_zero() {
-        warn!("Unable to get average price from last trades - stick with calculated price");
+        debug!("Unable to get average price from last trades - stick with calculated price");
         return (calculated_price, nb_trades_treated);
     }
     (total_sum_price_volume / total_vol, nb_trades_treated)
@@ -343,13 +352,13 @@ async fn vwap_logic(
     // here divide cannot be 0 anymore because if both swaps history are empty we do not pass through this function.
     let vwap_price = total_vwap / MmNumber::from(to_divide);
     if vwap_price > calculated_price {
-        info!(
+        debug!(
             "[{}/{}]: price: {} is less than average trading price ({} swaps): - using vwap price: {}",
             cfg.base, cfg.rel, calculated_price, total_trades_treated, vwap_price
         );
         return vwap_price;
     }
-    info!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]",
+    debug!("price calculated by the CEX rates {} is above the vwap price ({} swaps) {} - skipping threshold readjustment for pair: [{}/{}]",
     calculated_price, total_trades_treated, vwap_price, cfg.base, cfg.rel);
     calculated_price
 }
@@ -364,7 +373,7 @@ pub async fn vwap(
     let is_equal_history_len = rel_swaps.swaps.len() == base_swaps.swaps.len();
     let have_precedent_swaps = !rel_swaps.swaps.is_empty() && !base_swaps.swaps.is_empty();
     if is_equal_history_len && !have_precedent_swaps {
-        info!(
+        debug!(
             "No last trade for trading pair: [{}/{}] - keeping calculated price: {}",
             cfg.base, cfg.rel, calculated_price
         );
@@ -439,13 +448,15 @@ async fn checks_order_prerequisites(
     key_trade_pair: &str,
 ) -> OrderProcessingResult {
     if rates.base_provider == Provider::Unknown || rates.rel_provider == Provider::Unknown {
-        warn!("rates from provider are Unknown - skipping for {}", key_trade_pair);
-        return MmError::err(OrderProcessingError::ProviderUnknown);
+        return MmError::err(OrderProcessingError::ProviderUnknown {
+            key_trade_pair: key_trade_pair.to_string(),
+        });
     }
 
     if rates.price.is_zero() {
-        warn!("price from provider is zero - skipping for {}", key_trade_pair);
-        return MmError::err(OrderProcessingError::PriceIsZero);
+        return MmError::err(OrderProcessingError::PriceIsZero {
+            key_trade_pair: key_trade_pair.to_string(),
+        });
     }
 
     if let Some(min_base_price) = &cfg.min_base_price {
@@ -477,11 +488,9 @@ async fn checks_order_prerequisites(
     }
 
     if rates.last_updated_timestamp.is_none() {
-        warn!(
-            "last updated price timestamp is invalid - skipping for {}",
-            key_trade_pair
-        );
-        return MmError::err(OrderProcessingError::LastUpdatedTimestampInvalid);
+        return MmError::err(OrderProcessingError::LastUpdatedTimestampInvalid {
+            key_trade_pair: key_trade_pair.to_string(),
+        });
     }
 
     // Elapsed validity is the field defined in the cfg or 5 min by default (300 sec)
@@ -489,13 +498,13 @@ async fn checks_order_prerequisites(
     let elapsed_validity = cfg.price_elapsed_validity.unwrap_or(300.0);
 
     if elapsed > elapsed_validity {
-        warn!(
-            "last updated price timestamp elapsed {} is more than the elapsed validity {} - skipping for {}",
-            elapsed, elapsed_validity, key_trade_pair,
-        );
-        return MmError::err(OrderProcessingError::PriceElapsedValidityExpired);
+        return MmError::err(OrderProcessingError::PriceElapsedValidityExpired {
+            elapsed,
+            elapsed_validity,
+            key_trade_pair: key_trade_pair.to_string(),
+        });
     }
-    info!("elapsed since last price update: {} secs", elapsed);
+    debug!("elapsed since last price update: {} secs", elapsed);
     Ok(true)
 }
 
@@ -514,10 +523,10 @@ async fn prepare_order(
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
 
-    info!("balance for {} is {}", cfg.base, base_balance);
+    debug!("balance for {} is {}", cfg.base, base_balance);
 
     let mut calculated_price = rates.price * cfg.spread.clone();
-    info!("calculated price is: {}", calculated_price);
+    debug!("calculated price is: {}", calculated_price);
     if cfg.check_last_bidirectional_trade_thresh_hold.unwrap_or(false) {
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
@@ -556,7 +565,6 @@ async fn update_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
-    info!("need to update order: {} of {} - cfg: {}", uuid, key_trade_pair, cfg);
     let (min_vol, _, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
@@ -585,10 +593,7 @@ async fn execute_update_order(
 ) -> bool {
     let (ctx, rates, key_trade_pair, cfg) = cloned_infos;
     match update_single_order(rates, cfg, uuid, key_trade_pair.as_combination(), &ctx).await {
-        Ok(resp) => {
-            info!("Order with uuid: {} successfully updated", order.uuid);
-            resp
-        },
+        Ok(resp) => resp,
         Err(err) => {
             error!(
                 "Order with uuid: {} for {} cannot be updated - {}",
@@ -608,7 +613,6 @@ async fn create_single_order(
     key_trade_pair: String,
     ctx: MmArc,
 ) -> OrderProcessingResult {
-    info!("need to create order for: {} - cfg: {}", key_trade_pair, cfg);
     let (min_vol, volume, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
     let req = SetPriceReq {
@@ -665,9 +669,8 @@ async fn process_bot_logic(ctx: &MmArc) {
             model
         },
         Err(err) => {
-            error!("error during fetching price: {:?}", err);
             let nb_orders = cancel_pending_orders(ctx, &cfg).await;
-            info!("cancel {} orders", nb_orders);
+            error!("error during fetching price: {:?} - cancel {} orders", err, nb_orders);
             return;
         },
     };
