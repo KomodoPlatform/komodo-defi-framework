@@ -839,6 +839,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "coins_activation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "coins",
+ "common",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
 name = "common"
 version = "0.1.0"
 dependencies = [

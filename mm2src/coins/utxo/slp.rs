@@ -252,6 +252,14 @@ pub fn slp_genesis_output(
     }
 }
 
+#[derive(Debug)]
+pub struct SlpProtocolConf {
+    pub platform_coin_ticker: String,
+    pub token_id: H256,
+    pub decimals: u8,
+    pub required_confirmations: Option<u64>,
+}
+
 impl SlpToken {
     pub fn new(
         decimals: u8,
@@ -727,6 +735,15 @@ impl SlpToken {
         Ok(satoshi)
     }
 
+    pub async fn my_coin_balance(&self) -> UtxoRpcResult<CoinBalance> {
+        let balance_sat = self.my_balance_sat().await?;
+        let spendable = big_decimal_from_sat_unsigned(balance_sat, self.decimals());
+        Ok(CoinBalance {
+            spendable,
+            unspendable: 0.into(),
+        })
+    }
+
     fn slp_prefix(&self) -> &CashAddrPrefix { self.platform_coin.slp_prefix() }
 }
 
@@ -993,14 +1010,7 @@ impl MarketCoinOps for SlpToken {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
-        let fut = async move {
-            let balance_sat = coin.my_balance_sat().await?;
-            let spendable = big_decimal_from_sat_unsigned(balance_sat, coin.decimals());
-            Ok(CoinBalance {
-                spendable,
-                unspendable: 0.into(),
-            })
-        };
+        let fut = async move { Ok(coin.my_coin_balance().await?) };
         Box::new(fut.boxed().compat())
     }
 

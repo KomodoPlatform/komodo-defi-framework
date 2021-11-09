@@ -1294,9 +1294,14 @@ pub struct CoinsContext {
     /// The database has to be initialized only once!
     tx_history_db: ConstructibleDb<TxHistoryDb>,
 }
+
+pub struct CoinIsAlreadyActivatedErr {
+    pub ticker: String,
+}
+
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
+    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
@@ -1305,6 +1310,18 @@ impl CoinsContext {
                 tx_history_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
+    }
+
+    pub async fn add_coin(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+        let mut coins = self.coins.lock().await;
+        if coins.contains_key(coin.ticker()) {
+            return MmError::err(CoinIsAlreadyActivatedErr {
+                ticker: coin.ticker().into(),
+            });
+        }
+
+        coins.insert(coin.ticker().into(), coin);
+        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -1638,7 +1655,7 @@ pub async fn find_pair(ctx: &MmArc, base: &str, rel: &str) -> Result<Option<(MmC
         .await
 }
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum CoinFindError {
     #[display(fmt = "No such coin: {}", coin)]
     NoSuchCoin { coin: String },

@@ -2,18 +2,14 @@ use super::{coin_conf, lp_coinfind, CoinProtocol};
 use crate::qrc20::Qrc20ActivationParams;
 use crate::utxo::bch::BchActivationParams;
 use crate::utxo::UtxoActivationParams;
-use crate::{lp_coinfind_or_err, BalanceError, CoinActivationOps, CoinActivationParamsOps, CoinBalance, CoinsContext,
-            MmCoinEnum, TokenCreationError};
-use async_trait::async_trait;
+use crate::{BalanceError, CoinActivationOps, CoinActivationParamsOps, CoinBalance, CoinsContext, TokenCreationError};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::NotSame;
 use derive_more::Display;
 use ethereum_types::Address;
 use futures::compat::Future01CompatExt;
-use serde_json::{self as json};
 use std::collections::HashMap;
-use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ZcoinActivationMode {
@@ -216,68 +212,4 @@ where
         token_balances: balances.token_balances,
         resulting_coin_config: (),
     })
-}
-
-pub trait TokenActivationParams {
-    fn platform_coin_ticker(&self) -> &str;
-}
-
-#[async_trait]
-pub trait TokenOf: Into<MmCoinEnum> {
-    type PlatformCoin: TryFrom<MmCoinEnum, Error: Sized + Into<EnableTokenError<Self::ActivationError>>>;
-    type ActivationParams;
-    type ProtocolInfo: TokenActivationParams + TryFrom<CoinProtocol>;
-    type ActivationResult;
-    type ActivationError: NotMmError + Sized + Into<EnableTokenError<Self::ActivationError>>;
-
-    async fn new(
-        platform_coin: Self::PlatformCoin,
-        activation_params: Self::ActivationParams,
-        protocol_conf: Self::ProtocolInfo,
-    ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>>;
-}
-
-pub enum EnableTokenError<T: NotMmError> {
-    TokenIsAlreadyActivated(String),
-    TokenConfigIsNotFound(String),
-    InvalidTokenProtocolConf(json::Error),
-    TokenCreationError(T),
-}
-
-pub async fn enable_token<T>(
-    ctx: &MmArc,
-    ticker: &str,
-    params: T::ActivationParams,
-) -> Result<T::ActivationResult, MmError<EnableTokenError<T::ActivationError>>>
-where
-    T: TokenOf,
-{
-    if let Ok(Some(_)) = lp_coinfind(&ctx, ticker).await {
-        return MmError::err(EnableTokenError::TokenIsAlreadyActivated(ticker.to_owned()));
-    }
-
-    let conf = coin_conf(&ctx, ticker);
-    if conf.is_null() {
-        return MmError::err(EnableTokenError::TokenConfigIsNotFound(ticker.to_owned()));
-    }
-
-    let coin_protocol: CoinProtocol =
-        json::from_value(conf["protocol"].clone()).map_to_mm(EnableTokenError::InvalidTokenProtocolConf)?;
-    let token_protocol = T::ProtocolInfo::try_from(coin_protocol)?;
-
-    let platform_coin = lp_coinfind_or_err(ctx, token_protocol.platform_coin_ticker()).await?;
-    let platform_coin = T::PlatformCoin::try_from(platform_coin)?;
-
-    let (token, activation_result) = T::new(platform_coin, params, token_protocol).await?;
-
-    let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
-    let mut coins = coins_ctx.coins.lock().await;
-
-    if coins.contains_key(ticker) {
-        return MmError::err(EnableTokenError::TokenIsAlreadyActivated(ticker.to_owned()));
-    }
-
-    coins.insert(ticker.to_owned(), token.into());
-
-    Ok(activation_result)
 }
