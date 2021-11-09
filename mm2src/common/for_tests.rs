@@ -890,6 +890,23 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
     json::from_str(&native.1).unwrap()
 }
 
+pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
+    let enable = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable_slp",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "activation_params": {}
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_slp' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
 pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
     let native = mm
         .rpc(json! ({

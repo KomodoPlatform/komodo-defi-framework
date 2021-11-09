@@ -599,12 +599,31 @@ pub mod trade_preimage_error {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct GetPublicKeyResponse {
-    pub mmrpc: String,
-    pub result: GetPublicKeyResult,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetPublicKeyResult {
     pub public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RpcV2Response<T> {
+    pub mmrpc: String,
+    pub id: Option<Json>,
+    pub result: T,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoinBalance {
+    pub spendable: BigDecimal,
+    pub unspendable: BigDecimal,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnableSlpResponse {
+    pub balances: HashMap<String, CoinBalance>,
+    pub token_id: H256Json,
+    pub platform_coin: String,
+    pub required_confirmations: u64,
 }
