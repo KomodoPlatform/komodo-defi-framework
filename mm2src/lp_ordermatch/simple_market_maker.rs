@@ -749,7 +749,10 @@ pub async fn lp_bot_loop(ctx: MmArc) {
             break;
         }
         drop(states);
+        let started = common::now_float();
         process_bot_logic(&ctx).await;
+        let elapsed = common::now_float() - started;
+        info!("bot logic processed in {} seconds", elapsed);
         let refresh_rate = simple_market_maker_bot_ctx.get_refresh_rate().await;
         Timer::sleep(refresh_rate).await;
     }
@@ -757,7 +760,7 @@ pub async fn lp_bot_loop(ctx: MmArc) {
 }
 
 pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    info!("Fetching price from: {}", price_url);
+    debug!("Fetching price from: {}", price_url);
     let (status, headers, body) = slurp_url(price_url).await?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
     if status_code != StatusCode::OK {
@@ -769,7 +772,7 @@ pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistr
 
 async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     let model = process_price_request(price_url).await?;
-    info!("price registry size: {}", model.0.len());
+    debug!("price registry size: {}", model.0.len());
     Ok(model)
 }
 
