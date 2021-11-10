@@ -678,6 +678,8 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64;
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>>;
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat;
 }
 
 #[async_trait]
@@ -1353,12 +1355,26 @@ pub trait UtxoCoinBuilder {
     }
 
     fn address_format(&self) -> Result<UtxoAddressFormat, String> {
-        let mut format: Option<UtxoAddressFormat> = self.activation_params().address_format;
-        if format.is_none() {
-            format = try_s!(json::from_value(self.conf()["address_format"].clone()))
-        }
+        let format_from_req: Option<UtxoAddressFormat> = self.activation_params().address_format;
+        let format_from_conf = try_s!(json::from_value::<Option<UtxoAddressFormat>>(
+            self.conf()["address_format"].clone()
+        ))
+        .unwrap_or(UtxoAddressFormat::Standard);
 
-        let mut address_format = format.unwrap_or(UtxoAddressFormat::Standard);
+        let mut address_format = match format_from_req {
+            Some(from_req) => {
+                if from_req.is_segwit() != format_from_conf.is_segwit() {
+                    return ERR!(
+                        "Both conf {:?} and request {:?} must be either Segwit or Standard/CashAddress",
+                        format_from_conf,
+                        from_req
+                    );
+                } else {
+                    from_req
+                }
+            },
+            None => format_from_conf,
+        };
 
         if let UtxoAddressFormat::CashAddress {
             network: _,

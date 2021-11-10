@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::executor::Timer;
 use crate::mm_ctx::MmArc;
 use crate::mm_metrics::{MetricType, MetricsJson};
-use crate::now_float;
+use crate::{now_float, now_ms};
 
 cfg_wasm32! {
     use crate::log::LogLevel;
@@ -1073,4 +1073,36 @@ pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
     let swaps_response: Json = json::from_str(&response.1).unwrap();
     let swaps: &Vec<Json> = swaps_response["result"]["swaps"].as_array().unwrap();
     assert_eq!(expected_len, swaps.len());
+}
+
+pub async fn wait_till_history_has_records(mm: &MarketMakerIt, coin: &str, expected_len: usize) {
+    // give 2 second max to fetch a single transaction
+    let to_wait = expected_len as u64 * 2;
+    let wait_until = now_ms() + to_wait * 1000;
+    loop {
+        let tx_history = mm
+            .rpc(json!({
+                "userpass": mm.userpass,
+                "method": "my_tx_history",
+                "coin": coin,
+                "limit": 100,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(
+            tx_history.0,
+            StatusCode::OK,
+            "RPC «my_tx_history» failed with status «{}», response «{}»",
+            tx_history.0,
+            tx_history.1
+        );
+        log!([tx_history.1]);
+        let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
+        if tx_history_json["result"]["transactions"].as_array().unwrap().len() >= expected_len {
+            break;
+        }
+
+        Timer::sleep(1.).await;
+        assert!(now_ms() <= wait_until, "wait_till_history_has_records timed out");
+    }
 }

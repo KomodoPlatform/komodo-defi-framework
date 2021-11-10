@@ -853,11 +853,11 @@ async fn maker_order_created_p2p_notify(
     base_protocol_info: Vec<u8>,
     rel_protocol_info: Vec<u8>,
 ) {
-    let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
+    let topic = order.orderbook_topic();
     let message = new_protocol::MakerOrderCreated {
         uuid: order.uuid.into(),
-        base: order.base.clone(),
-        rel: order.rel.clone(),
+        base: order.base_orderbook_ticker().to_owned(),
+        rel: order.rel_orderbook_ticker().to_owned(),
         price: order.price.to_ratio(),
         max_volume: order.available_amount().to_ratio(),
         min_volume: order.min_base_vol.to_ratio(),
@@ -888,9 +888,8 @@ async fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::Mak
     }
 }
 
-async fn maker_order_updated_p2p_notify(ctx: MmArc, base: &str, rel: &str, message: new_protocol::MakerOrderUpdated) {
+async fn maker_order_updated_p2p_notify(ctx: MmArc, topic: String, message: new_protocol::MakerOrderUpdated) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
-    let topic = orderbook_topic_from_base_rel(base, rel);
     let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
     let encoded_msg = encode_and_sign(&msg, &*key_pair.private().secret).unwrap();
     process_my_maker_order_updated(&ctx, &message).await;
@@ -905,11 +904,7 @@ async fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     });
     delete_my_order(&ctx, order.uuid).await;
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(
-        &ctx,
-        vec![orderbook_topic_from_base_rel(&order.base, &order.rel)],
-        message,
-    );
+    broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message);
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -962,10 +957,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
             if new_volume < order.available_amount() {
                 let mut update_msg = new_protocol::MakerOrderUpdated::new(order.uuid);
                 update_msg.with_new_max_volume(new_volume.to_ratio());
-                let base = order.base.to_owned();
-                let rel = order.rel.to_owned();
-
-                maker_order_updated_p2p_notify(ctx.clone(), &base, &rel, update_msg).await;
+                maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg).await;
             }
 
             // return the order to [`OrdermatchContext::my_maker_orders`]
@@ -1057,21 +1049,35 @@ impl TakerRequest {
             _ => true,
         }
     }
+
+    fn base_protocol_info_for_maker(&self) -> &Option<Vec<u8>> {
+        match &self.action {
+            TakerAction::Buy => &self.base_protocol_info,
+            TakerAction::Sell => &self.rel_protocol_info,
+        }
+    }
+
+    fn rel_protocol_info_for_maker(&self) -> &Option<Vec<u8>> {
+        match &self.action {
+            TakerAction::Buy => &self.rel_protocol_info,
+            TakerAction::Sell => &self.base_protocol_info,
+        }
+    }
 }
 
-impl From<TakerRequest> for new_protocol::OrdermatchMessage {
-    fn from(taker_request: TakerRequest) -> Self {
+impl From<TakerOrder> for new_protocol::OrdermatchMessage {
+    fn from(taker_order: TakerOrder) -> Self {
         new_protocol::OrdermatchMessage::TakerRequest(new_protocol::TakerRequest {
-            base_amount: taker_request.get_base_amount().to_ratio(),
-            rel_amount: taker_request.get_rel_amount().to_ratio(),
-            base: taker_request.base,
-            rel: taker_request.rel,
-            action: taker_request.action,
-            uuid: taker_request.uuid.into(),
-            match_by: taker_request.match_by.into(),
-            conf_settings: taker_request.conf_settings.unwrap(),
-            base_protocol_info: taker_request.base_protocol_info,
-            rel_protocol_info: taker_request.rel_protocol_info,
+            base_amount: taker_order.request.get_base_amount().to_ratio(),
+            rel_amount: taker_order.request.get_rel_amount().to_ratio(),
+            base: taker_order.base_orderbook_ticker().to_owned(),
+            rel: taker_order.rel_orderbook_ticker().to_owned(),
+            action: taker_order.request.action,
+            uuid: taker_order.request.uuid.into(),
+            match_by: taker_order.request.match_by.into(),
+            conf_settings: taker_order.request.conf_settings.unwrap(),
+            base_protocol_info: taker_order.request.base_protocol_info,
+            rel_protocol_info: taker_order.request.rel_protocol_info,
         })
     }
 }
@@ -1085,6 +1091,8 @@ impl TakerRequest {
 pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
+    base_orderbook_ticker: Option<String>,
+    rel_orderbook_ticker: Option<String>,
     base_amount: MmNumber,
     rel_amount: MmNumber,
     sender_pubkey: H256Json,
@@ -1162,6 +1170,8 @@ impl<'a> TakerOrderBuilder<'a> {
         TakerOrderBuilder {
             base_coin,
             rel_coin,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
             base_amount: MmNumber::from(0),
             rel_amount: MmNumber::from(0),
             sender_pubkey: H256Json::default(),
@@ -1225,6 +1235,16 @@ impl<'a> TakerOrderBuilder<'a> {
         self
     }
 
+    pub fn with_base_orderbook_ticker(mut self, ticker: Option<String>) -> Self {
+        self.base_orderbook_ticker = ticker;
+        self
+    }
+
+    pub fn with_rel_orderbook_ticker(mut self, ticker: Option<String>) -> Self {
+        self.rel_orderbook_ticker = ticker;
+        self
+    }
+
     /// Validate fields and build
     pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
@@ -1279,8 +1299,8 @@ impl<'a> TakerOrderBuilder<'a> {
         Ok(TakerOrder {
             created_at: now_ms(),
             request: TakerRequest {
-                base: self.base_coin.ticker().to_owned(),
-                rel: self.rel_coin.ticker().to_owned(),
+                base: self.base_coin.ticker().into(),
+                rel: self.rel_coin.ticker().into(),
                 base_amount: self.base_amount,
                 rel_amount: self.rel_amount,
                 action: self.action,
@@ -1297,6 +1317,8 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: self.order_type,
             timeout: self.timeout,
             save_in_history: self.save_in_history,
+            base_orderbook_ticker: self.base_orderbook_ticker,
+            rel_orderbook_ticker: self.rel_orderbook_ticker,
         })
     }
 
@@ -1324,6 +1346,8 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: Default::default(),
             timeout: self.timeout,
             save_in_history: false,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
         }
     }
 }
@@ -1361,6 +1385,10 @@ pub struct TakerOrder {
     timeout: u64,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    #[serde(default)]
+    base_orderbook_ticker: Option<String>,
+    #[serde(default)]
+    rel_orderbook_ticker: Option<String>,
 }
 
 /// Result of match_reserved function
@@ -1397,28 +1425,51 @@ impl TakerOrder {
 
         match self.request.action {
             TakerAction::Buy => {
-                if self.request.base == reserved.base
-                    && self.request.rel == reserved.rel
-                    && my_base_amount == other_base_amount
-                    && other_rel_amount <= my_rel_amount
-                {
+                let match_ticker = (self.request.base == reserved.base
+                    || self.base_orderbook_ticker.as_ref() == Some(&reserved.base))
+                    && (self.request.rel == reserved.rel || self.rel_orderbook_ticker.as_ref() == Some(&reserved.rel));
+                if match_ticker && my_base_amount == other_base_amount && other_rel_amount <= my_rel_amount {
                     MatchReservedResult::Matched
                 } else {
                     MatchReservedResult::NotMatched
                 }
             },
             TakerAction::Sell => {
-                if self.request.base == reserved.rel
-                    && self.request.rel == reserved.base
-                    && my_base_amount == other_rel_amount
-                    && my_rel_amount <= other_base_amount
-                {
+                let match_ticker = (self.request.base == reserved.rel
+                    || self.base_orderbook_ticker.as_ref() == Some(&reserved.rel))
+                    && (self.request.rel == reserved.base
+                        || self.rel_orderbook_ticker.as_ref() == Some(&reserved.base));
+                if match_ticker && my_base_amount == other_rel_amount && my_rel_amount <= other_base_amount {
                     MatchReservedResult::Matched
                 } else {
                     MatchReservedResult::NotMatched
                 }
             },
         }
+    }
+
+    /// Returns the ticker of the taker coin
+    fn taker_coin_ticker(&self) -> &str {
+        match &self.request.action {
+            TakerAction::Buy => &self.request.rel,
+            TakerAction::Sell => &self.request.base,
+        }
+    }
+
+    /// Returns the ticker of the maker coin
+    fn maker_coin_ticker(&self) -> &str {
+        match &self.request.action {
+            TakerAction::Buy => &self.request.base,
+            TakerAction::Sell => &self.request.rel,
+        }
+    }
+
+    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base) }
+
+    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
+
+    fn orderbook_topic(&self) -> String {
+        orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
 }
 
@@ -1443,6 +1494,10 @@ pub struct MakerOrder {
     changes_history: Option<Vec<HistoricalOrder>>,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    #[serde(default)]
+    base_orderbook_ticker: Option<String>,
+    #[serde(default)]
+    rel_orderbook_ticker: Option<String>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1451,6 +1506,8 @@ pub struct MakerOrderBuilder<'a> {
     price: MmNumber,
     base_coin: &'a MmCoinEnum,
     rel_coin: &'a MmCoinEnum,
+    base_orderbook_ticker: Option<String>,
+    rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
 }
@@ -1592,6 +1649,8 @@ impl<'a> MakerOrderBuilder<'a> {
         MakerOrderBuilder {
             base_coin,
             rel_coin,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
             max_base_vol: 0.into(),
             min_base_vol: None,
             price: 0.into(),
@@ -1622,6 +1681,16 @@ impl<'a> MakerOrderBuilder<'a> {
 
     pub fn with_save_in_history(mut self, save_in_history: bool) -> Self {
         self.save_in_history = save_in_history;
+        self
+    }
+
+    pub fn with_base_orderbook_ticker(mut self, base_orderbook_ticker: Option<String>) -> Self {
+        self.base_orderbook_ticker = base_orderbook_ticker;
+        self
+    }
+
+    pub fn with_rel_orderbook_ticker(mut self, rel_orderbook_ticker: Option<String>) -> Self {
+        self.rel_orderbook_ticker = rel_orderbook_ticker;
         self
     }
 
@@ -1670,6 +1739,8 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: self.conf_settings,
             changes_history: None,
             save_in_history: self.save_in_history,
+            base_orderbook_ticker: self.base_orderbook_ticker,
+            rel_orderbook_ticker: self.rel_orderbook_ticker,
         })
     }
 
@@ -1690,6 +1761,8 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: self.conf_settings,
             changes_history: None,
             save_in_history: false,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
         }
     }
 }
@@ -1730,9 +1803,11 @@ impl MakerOrder {
 
         match taker.action {
             TakerAction::Buy => {
+                let ticker_match = (self.base == taker.base
+                    || self.base_orderbook_ticker.as_ref() == Some(&taker.base))
+                    && (self.rel == taker.rel || self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
                 let taker_price = taker_rel_amount / taker_base_amount;
-                if self.base == taker.base
-                    && self.rel == taker.rel
+                if ticker_match
                     && taker_base_amount <= &self.available_amount()
                     && taker_base_amount >= &self.min_base_vol
                     && taker_price >= self.price
@@ -1743,14 +1818,15 @@ impl MakerOrder {
                 }
             },
             TakerAction::Sell => {
+                let ticker_match = (self.base == taker.rel || self.base_orderbook_ticker.as_ref() == Some(&taker.rel))
+                    && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
 
                 // Calculate the resulting base amount using the Maker's price instead of the Taker's.
                 let matched_base_amount = taker_base_amount / &self.price;
                 let matched_rel_amount = taker_base_amount.clone();
 
-                if self.base == taker.rel
-                    && self.rel == taker.base
+                if ticker_match
                     && matched_base_amount <= self.available_amount()
                     && matched_base_amount >= self.min_base_vol
                     && taker_price >= self.price
@@ -1801,6 +1877,14 @@ impl MakerOrder {
         .await
     }
 
+    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.base) }
+
+    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
+
+    fn orderbook_topic(&self) -> String {
+        orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
+    }
+
     fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 }
 
@@ -1822,6 +1906,8 @@ impl From<TakerOrder> for MakerOrder {
                 conf_settings: taker_order.request.conf_settings,
                 changes_history: None,
                 save_in_history: taker_order.save_in_history,
+                base_orderbook_ticker: taker_order.base_orderbook_ticker,
+                rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -1841,6 +1927,8 @@ impl From<TakerOrder> for MakerOrder {
                     conf_settings: taker_order.request.conf_settings.map(|s| s.reversed()),
                     changes_history: None,
                     save_in_history: taker_order.save_in_history,
+                    base_orderbook_ticker: taker_order.rel_orderbook_ticker,
+                    rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                 }
             },
         }
@@ -2404,11 +2492,52 @@ struct OrdermatchContext {
     pub my_maker_orders: AsyncMutex<HashMap<Uuid, MakerOrder>>,
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub orderbook: AsyncMutex<Orderbook>,
+    /// The map from coin original ticker to the orderbook ticker
+    /// It is used to share the same orderbooks for concurrently activated coins with different protocols
+    /// E.g. BTC and BTC-Segwit
+    pub orderbook_tickers: HashMap<String, String>,
+    /// The map from orderbook ticker to original tickers having it in the config
+    pub original_tickers: HashMap<String, HashSet<String>>,
     /// Pending MakerReserved messages for a specific TakerOrder UUID
     /// Used to select a trade with the best price upon matching
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
     #[cfg(target_arch = "wasm32")]
     ordermatch_db: ConstructibleDb<OrdermatchDb>,
+}
+
+pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
+    // Helper
+    #[derive(Deserialize)]
+    struct CoinConf {
+        coin: String,
+        orderbook_ticker: Option<String>,
+    }
+
+    let coins: Vec<CoinConf> = try_s!(json::from_value(ctx.conf["coins"].clone()));
+    let mut orderbook_tickers = HashMap::new();
+    let mut original_tickers = HashMap::new();
+    for coin in coins {
+        if let Some(orderbook_ticker) = coin.orderbook_ticker {
+            orderbook_tickers.insert(coin.coin.clone(), orderbook_ticker.clone());
+            original_tickers
+                .entry(orderbook_ticker)
+                .or_insert_with(HashSet::new)
+                .insert(coin.coin);
+        }
+    }
+
+    let ordermatch_context = OrdermatchContext {
+        my_maker_orders: Default::default(),
+        my_taker_orders: Default::default(),
+        orderbook: Default::default(),
+        pending_maker_reserved: Default::default(),
+        orderbook_tickers,
+        original_tickers,
+        #[cfg(target_arch = "wasm32")]
+        ordermatch_db: ConstructibleDb::from_ctx(ctx),
+    };
+
+    from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context)).map(|_| ())
 }
 
 #[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
@@ -2430,6 +2559,8 @@ impl OrdermatchContext {
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
+                orderbook_tickers: Default::default(),
+                original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
@@ -2442,6 +2573,19 @@ impl OrdermatchContext {
         Self::from_ctx(&ctx)
     }
 
+    fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
+
+    fn orderbook_ticker_bypass(&self, ticker: &str) -> String {
+        self.orderbook_ticker(ticker).unwrap_or_else(|| ticker.to_owned())
+    }
+
+    fn orderbook_pair_bypass(&self, pair: &(String, String)) -> (String, String) {
+        (
+            self.orderbook_ticker(&pair.0).unwrap_or_else(|| pair.0.clone()),
+            self.orderbook_ticker(&pair.1).unwrap_or_else(|| pair.1.clone()),
+        )
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub async fn ordermatch_db(&self) -> InitDbResult<OrdermatchDbLocked<'_>> {
         Ok(self.ordermatch_db.get_or_initialize().await?)
@@ -2452,26 +2596,26 @@ impl OrdermatchContext {
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
     spawn(async move {
         // aka "maker_loop"
-        let taker_coin = match lp_coinfind(&ctx, &maker_match.reserved.rel).await {
+        let taker_coin = match lp_coinfind(&ctx, &maker_order.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_match.reserved.rel);
+                log::error!("Coin {} is not found/enabled", maker_order.rel);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_match.reserved.rel, e);
+                log::error!("!lp_coinfind({}): {}", maker_order.rel, e);
                 return;
             },
         };
 
-        let maker_coin = match lp_coinfind(&ctx, &maker_match.reserved.base).await {
+        let maker_coin = match lp_coinfind(&ctx, &maker_order.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_match.reserved.base);
+                log::error!("Coin {} is not found/enabled", maker_order.base);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_match.reserved.base, e);
+                log::error!("!lp_coinfind({}): {}", maker_order.base, e);
                 return;
             },
         };
@@ -2530,30 +2674,32 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
     });
 }
 
-fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: TakerMatch) {
+fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
     spawn(async move {
         // aka "taker_loop"
         let maker = bits256::from(taker_match.reserved.sender_pubkey.0);
-        let taker_coin = match lp_coinfind(&ctx, &taker_match.reserved.rel).await {
+        let taker_coin_ticker = taker_order.taker_coin_ticker();
+        let taker_coin = match lp_coinfind(&ctx, taker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_match.reserved.rel);
+                log::error!("Coin {} is not found/enabled", taker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_match.reserved.rel, e);
+                log::error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
                 return;
             },
         };
 
-        let maker_coin = match lp_coinfind(&ctx, &taker_match.reserved.base).await {
+        let maker_coin_ticker = taker_order.maker_coin_ticker();
+        let maker_coin = match lp_coinfind(&ctx, maker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_match.reserved.base);
+                log::error!("Coin {} is not found/enabled", maker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_match.reserved.base, e);
+                log::error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
                 return;
             },
         };
@@ -2565,13 +2711,13 @@ fn lp_connected_alice(ctx: MmArc, taker_request: TakerRequest, taker_match: Take
         let uuid = taker_match.reserved.taker_order_uuid;
 
         let my_conf_settings =
-            choose_taker_confs_and_notas(&taker_request, &taker_match.reserved, &maker_coin, &taker_coin);
+            choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
         // detect atomic lock time version implicitly by conf_settings existence in maker reserved
         let atomic_locktime_v = match taker_match.reserved.conf_settings {
             Some(_) => {
                 let other_conf_settings = choose_maker_confs_and_notas(
                     taker_match.reserved.conf_settings,
-                    &taker_request,
+                    &taker_order.request,
                     &maker_coin,
                     &taker_coin,
                 );
@@ -2663,11 +2809,16 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             continue;
                         }
 
-                        let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
+                        let topic = order.orderbook_topic();
                         if !ordermatch_ctx.orderbook.lock().await.is_subscribed_to(&topic) {
                             let request_orderbook = false;
-                            if let Err(e) =
-                                subscribe_to_orderbook_topic(&ctx, &order.base, &order.rel, request_orderbook).await
+                            if let Err(e) = subscribe_to_orderbook_topic(
+                                &ctx,
+                                &order.base_orderbook_ticker(),
+                                &order.rel_orderbook_ticker(),
+                                request_orderbook,
+                            )
+                            .await
                             {
                                 log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
                             }
@@ -2822,6 +2973,7 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 }
 
 async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
+    log::debug!("Processing MakerReserved {:?}", reserved_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     {
         let my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
@@ -2837,8 +2989,6 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     }
 
     let uuid = reserved_msg.taker_order_uuid;
-    let base = reserved_msg.base.clone();
-    let rel = reserved_msg.rel.clone();
     {
         let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
         let pending_for_order = pending_map
@@ -2859,10 +3009,12 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         Entry::Occupied(entry) => entry.into_mut(),
     };
 
-    let (base_coin, rel_coin) = match find_pair(&ctx, &base, &rel).await {
-        Ok(Some(c)) => c,
-        _ => return, // attempt to match with deactivated coin
-    };
+    // our base and rel coins should match maker's side tickers for a proper is_coin_protocol_supported check
+    let (base_coin, rel_coin) =
+        match find_pair(&ctx, &my_order.maker_coin_ticker(), &my_order.taker_coin_ticker()).await {
+            Ok(Some(c)) => c,
+            _ => return, // attempt to match with deactivated coin
+        };
     let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
     if let Some(mut reserved_messages) = pending_map.remove(&uuid) {
         reserved_messages.sort_unstable_by_key(|r| r.price());
@@ -2880,7 +3032,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     taker_order_uuid: reserved_msg.taker_order_uuid,
                     maker_order_uuid: reserved_msg.maker_order_uuid,
                 };
-                let topic = orderbook_topic_from_base_rel(&my_order.request.base, &my_order.request.rel);
+                let topic = my_order.orderbook_topic();
                 broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into());
                 let taker_match = TakerMatch {
                     reserved: reserved_msg,
@@ -2902,6 +3054,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
 }
 
 async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: MakerConnected) {
+    log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let our_public_id = ctx.public_id().unwrap();
     if our_public_id.bytes == from_pubkey.0 {
@@ -2930,7 +3083,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
         return;
     }
     // alice
-    lp_connected_alice(ctx.clone(), my_order_entry.get().request.clone(), order_match.clone());
+    lp_connected_alice(ctx.clone(), my_order_entry.get().clone(), order_match.clone());
     // remove the matched order immediately
     let order = my_order_entry.remove();
     delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Fulfilled)
@@ -2960,22 +3113,22 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 
     for (uuid, order) in filtered {
         if let OrderMatchResult::Matched((base_amount, rel_amount)) = order.match_with_request(&taker_request) {
-            let (base_coin, rel_coin) = match find_pair(&ctx, &taker_request.base, &taker_request.rel).await {
+            let (base_coin, rel_coin) = match find_pair(&ctx, &order.base, &order.rel).await {
                 Ok(Some(c)) => c,
                 _ => return, // attempt to match with deactivated coin
             };
 
             if !order.matches.contains_key(&taker_request.uuid)
-                && base_coin.is_coin_protocol_supported(&taker_request.base_protocol_info)
-                && rel_coin.is_coin_protocol_supported(&taker_request.rel_protocol_info)
+                && base_coin.is_coin_protocol_supported(taker_request.base_protocol_info_for_maker())
+                && rel_coin.is_coin_protocol_supported(taker_request.rel_protocol_info_for_maker())
             {
                 let reserved = MakerReserved {
                     dest_pub_key: taker_request.sender_pubkey.clone(),
                     sender_pubkey: our_public_id,
-                    base: order.base.clone(),
+                    base: order.base_orderbook_ticker().to_owned(),
                     base_amount: base_amount.clone(),
                     rel_amount: rel_amount.clone(),
-                    rel: order.rel.clone(),
+                    rel: order.rel_orderbook_ticker().to_owned(),
                     taker_order_uuid: taker_request.uuid,
                     maker_order_uuid: *uuid,
                     conf_settings: order.conf_settings.or_else(|| {
@@ -2986,17 +3139,10 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                             rel_nota: rel_coin.requires_notarization(),
                         })
                     }),
-                    // In Sell case the pair is reversed so protocols should be reversed too
-                    base_protocol_info: match taker_request.action {
-                        TakerAction::Buy => Some(base_coin.coin_protocol_info()),
-                        TakerAction::Sell => Some(rel_coin.coin_protocol_info()),
-                    },
-                    rel_protocol_info: match taker_request.action {
-                        TakerAction::Buy => Some(rel_coin.coin_protocol_info()),
-                        TakerAction::Sell => Some(base_coin.coin_protocol_info()),
-                    },
+                    base_protocol_info: Some(base_coin.coin_protocol_info()),
+                    rel_protocol_info: Some(rel_coin.coin_protocol_info()),
                 };
-                let topic = orderbook_topic_from_base_rel(&order.base, &order.rel);
+                let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
                 broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into());
                 let maker_match = MakerMatch {
@@ -3018,6 +3164,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 }
 
 async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg: TakerConnect) {
+    log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let our_public_id = ctx.public_id().unwrap();
     if our_public_id.bytes == sender_pubkey.0 {
@@ -3053,18 +3200,18 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
             maker_order_uuid: connect_msg.maker_order_uuid,
             method: "connected".into(),
         };
-        let topic = orderbook_topic_from_base_rel(&my_order.base, &my_order.rel);
-        broadcast_ordermatch_message(&ctx, vec![topic], connected.clone().into());
         order_match.connect = Some(connect_msg);
-        order_match.connected = Some(connected);
+        order_match.connected = Some(connected.clone());
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match.clone(), my_order.clone());
+        let topic = my_order.orderbook_topic();
+        broadcast_ordermatch_message(&ctx, vec![topic.clone()], connected.into());
 
         // If volume is less order will be cancelled a bit later
         if my_order.available_amount() >= my_order.min_base_vol {
             let mut updated_msg = new_protocol::MakerOrderUpdated::new(my_order.uuid);
             updated_msg.with_new_max_volume(my_order.available_amount().into());
-            maker_order_updated_p2p_notify(ctx.clone(), &my_order.base, &my_order.rel, updated_msg).await;
+            maker_order_updated_p2p_notify(ctx.clone(), topic, updated_msg).await;
         }
         MyOrdersStorage::new(ctx)
             .update_active_maker_order(my_order)
@@ -3209,9 +3356,11 @@ construct_detailed!(DetailedMinVolume, min_volume);
 struct LpautobuyResult<'a> {
     #[serde(flatten)]
     request: TakerRequestForRpc<'a>,
-    order_type: OrderType,
+    order_type: &'a OrderType,
     #[serde(flatten)]
     min_volume: DetailedMinVolume,
+    base_orderbook_ticker: &'a Option<String>,
+    rel_orderbook_ticker: &'a Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -3246,8 +3395,6 @@ pub async fn lp_auto_buy(
         Some("sell") => TakerAction::Sell,
         _ => return ERR!("Auto buy must be called only from buy/sell RPC methods"),
     };
-    let request_orderbook = false;
-    try_s!(subscribe_to_orderbook_topic(ctx, &input.base, &input.rel, request_orderbook).await);
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let our_public_id = try_s!(ctx.public_id());
@@ -3267,21 +3414,32 @@ pub async fn lp_auto_buy(
         .with_order_type(input.order_type)
         .with_conf_settings(conf_settings)
         .with_sender_pubkey(H256Json::from(our_public_id.bytes))
-        .with_save_in_history(input.save_in_history);
+        .with_save_in_history(input.save_in_history)
+        .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
     let order = try_s!(order_builder.build());
-    broadcast_ordermatch_message(
-        ctx,
-        vec![orderbook_topic_from_base_rel(&input.base, &input.rel)],
-        order.request.clone().into(),
+
+    let request_orderbook = false;
+    try_s!(
+        subscribe_to_orderbook_topic(
+            ctx,
+            order.base_orderbook_ticker(),
+            &order.rel_orderbook_ticker(),
+            request_orderbook
+        )
+        .await
     );
+    broadcast_ordermatch_message(ctx, vec![order.orderbook_topic()], order.clone().into());
 
     let result = json!({ "result": LpautobuyResult {
         request: (&order.request).into(),
-        order_type: order.order_type,
+        order_type: &order.order_type,
         min_volume: order.min_volume.clone().into(),
+        base_orderbook_ticker: &order.base_orderbook_ticker,
+        rel_orderbook_ticker: &order.rel_orderbook_ticker,
     } });
 
     save_my_new_taker_order(ctx.clone(), &order).await;
@@ -3742,6 +3900,8 @@ struct MakerOrderForRpc<'a> {
     conf_settings: &'a Option<OrderConfirmationsSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     changes_history: &'a Option<Vec<HistoricalOrder>>,
+    base_orderbook_ticker: &'a Option<String>,
+    rel_orderbook_ticker: &'a Option<String>,
 }
 
 impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
@@ -3766,6 +3926,8 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
             uuid: order.uuid,
             conf_settings: &order.conf_settings,
             changes_history: &order.changes_history,
+            base_orderbook_ticker: &order.base_orderbook_ticker,
+            rel_orderbook_ticker: &order.rel_orderbook_ticker,
         }
     }
 }
@@ -3855,12 +4017,22 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_min_base_vol(req.min_volume)
         .with_price(req.price)
         .with_conf_settings(conf_settings)
-        .with_save_in_history(req.save_in_history);
+        .with_save_in_history(req.save_in_history)
+        .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
 
     let new_order = try_s!(builder.build());
 
     let request_orderbook = false;
-    try_s!(subscribe_to_orderbook_topic(ctx, &new_order.base, &new_order.rel, request_orderbook).await);
+    try_s!(
+        subscribe_to_orderbook_topic(
+            &ctx,
+            &new_order.base_orderbook_ticker(),
+            &new_order.rel_orderbook_ticker(),
+            request_orderbook
+        )
+        .await
+    );
     save_my_new_maker_order(ctx.clone(), &new_order).await;
     maker_order_created_p2p_notify(
         ctx.clone(),
@@ -4039,7 +4211,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
 
     let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
     match my_maker_orders.get_mut(&req.uuid) {
-        None => return ERR!("Order with UUID: {} has been deleted", req.uuid),
+        None => ERR!("Order with UUID: {} has been deleted", req.uuid),
         Some(order) => {
             if order.matches.len() != matches.len() || !order.matches.keys().all(|k| matches.contains_key(k)) {
                 return ERR!("Order {} is being matched now, can't update", req.uuid);
@@ -4049,7 +4221,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
             order.apply_updated(&update_msg);
             save_maker_order_on_update(ctx.clone(), order, new_change).await;
             update_msg.with_new_max_volume((new_volume - reserved_amount).into());
-            maker_order_updated_p2p_notify(ctx.clone(), order.base.as_str(), order.rel.as_str(), update_msg).await;
+            maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg).await;
             Ok(order.clone())
         },
     }
@@ -4450,6 +4622,8 @@ struct TakerOrderForRpc<'a> {
     matches: HashMap<Uuid, TakerMatchForRpc<'a>>,
     order_type: &'a OrderType,
     cancellable: bool,
+    base_orderbook_ticker: &'a Option<String>,
+    rel_orderbook_ticker: &'a Option<String>,
 }
 
 impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
@@ -4464,6 +4638,8 @@ impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
                 .collect(),
             cancellable: order.is_cancellable(),
             order_type: &order.order_type,
+            base_orderbook_ticker: &order.base_orderbook_ticker,
+            rel_orderbook_ticker: &order.rel_orderbook_ticker,
         }
     }
 }

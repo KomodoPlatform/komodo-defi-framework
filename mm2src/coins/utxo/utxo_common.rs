@@ -191,10 +191,13 @@ where
     Ok(fee)
 }
 
-pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<Vec<Address>, String> {
+pub fn addresses_from_script<T: AsRef<UtxoCoinFields> + UtxoCommonOps>(
+    coin: &T,
+    script: &Script,
+) -> Result<Vec<Address>, String> {
     let destinations: Vec<ScriptAddress> = try_s!(script.extract_destinations());
 
-    let conf = &coin.conf;
+    let conf = &coin.as_ref().conf;
 
     let addresses = destinations
         .into_iter()
@@ -203,12 +206,12 @@ pub fn addresses_from_script(coin: &UtxoCoinFields, script: &Script) -> Result<V
                 ScriptType::P2PKH => (
                     conf.pub_addr_prefix,
                     conf.pub_t_addr_prefix,
-                    conf.default_address_format.clone(),
+                    coin.addr_format_for_standard_scripts(),
                 ),
                 ScriptType::P2SH => (
                     conf.p2sh_addr_prefix,
                     conf.p2sh_t_addr_prefix,
-                    conf.default_address_format.clone(),
+                    coin.addr_format_for_standard_scripts(),
                 ),
                 ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };
@@ -3047,6 +3050,13 @@ where
         coin.get_current_mtp().await? - 1
     };
     Ok(lock_time.max(htlc_locktime))
+}
+
+pub fn addr_format_for_standard_scripts(coin: &dyn AsRef<UtxoCoinFields>) -> UtxoAddressFormat {
+    match &coin.as_ref().conf.default_address_format {
+        UtxoAddressFormat::Segwit => UtxoAddressFormat::Standard,
+        format @ (UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. }) => format.clone(),
+    }
 }
 
 pub async fn broadcast_tx<T>(coin: &T, tx: &UtxoTx) -> Result<H256Json, MmError<BroadcastTxErr>>

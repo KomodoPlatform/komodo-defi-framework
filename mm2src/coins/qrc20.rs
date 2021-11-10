@@ -6,8 +6,8 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError,
-                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoCoinBuilder,
-                  UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
+                  HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoAddressFormat,
+                  UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps,
                   UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, CoinBalancesWithTokens, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee,
@@ -519,7 +519,7 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, String> {
-        utxo_common::addresses_from_script(&self.utxo, script)
+        utxo_common::addresses_from_script(self, script)
     }
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo, satoshi) }
@@ -615,6 +615,10 @@ impl UtxoCommonOps for Qrc20Coin {
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>> {
         utxo_common::p2sh_tx_locktime(self, &self.utxo.conf.ticker, htlc_locktime).await
+    }
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
+        utxo_common::addr_format_for_standard_scripts(self)
     }
 }
 
