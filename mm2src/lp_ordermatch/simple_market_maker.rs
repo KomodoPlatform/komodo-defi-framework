@@ -38,7 +38,7 @@ pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<Star
 pub type StopSimpleMakerBotResult = Result<StopSimpleMakerBotRes, MmError<StopSimpleMakerBotError>>;
 pub type OrderProcessingResult = Result<bool, MmError<OrderProcessingError>>;
 pub type VwapProcessingResult = Result<MmNumber, MmError<OrderProcessingError>>;
-pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber), MmError<OrderProcessingError>>;
+pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber, bool), MmError<OrderProcessingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -92,6 +92,8 @@ pub enum OrderProcessingError {
     OrderUpdateError(String),
     #[display(fmt = "Error when querying swap history: {}", _0)]
     MyRecentSwapsError(String),
+    #[display(fmt = "You cant have max_volume_usd and balance_percentage at the same time in the configuration")]
+    MaxVolConfigurationMismatch,
     #[display(fmt = "You cant have min_vol_usd and min_vol at the same time in the configuration")]
     MinVolConfigurationMismatch,
     #[display(fmt = "Base balance is less than the min_vol_usd - skipping")]
@@ -531,9 +533,28 @@ async fn prepare_order(
         calculated_price = vwap_calculator(calculated_price.clone(), ctx, cfg).await?;
     }
 
-    let volume = match &cfg.balance_percent {
-        Some(balance_percent) => balance_percent * &base_balance,
-        None => MmNumber::default(),
+    let mut is_max = cfg.max.unwrap_or(false);
+
+    if cfg.balance_percent.is_some() && cfg.max_volume_usd.is_some() {
+        return MmError::err(OrderProcessingError::MaxVolConfigurationMismatch);
+    }
+
+    let volume = if let Some(balance_percent) = &cfg.balance_percent {
+        if *balance_percent > MmNumber::from(1) {
+            is_max = true;
+            MmNumber::default()
+        } else {
+            balance_percent * &base_balance
+        }
+    } else if let Some(max_volume_usd) = &cfg.max_volume_usd {
+        if &base_balance * &rates.base_price < *max_volume_usd {
+            is_max = true;
+            MmNumber::default()
+        } else {
+            max_volume_usd / &rates.base_price
+        }
+    } else {
+        MmNumber::default()
     };
 
     if cfg.min_volume_percentage.is_some() && cfg.min_volume_usd.is_some() {
@@ -541,7 +562,7 @@ async fn prepare_order(
     }
 
     let min_vol: Option<MmNumber> = if let Some(min_volume_percentage) = &cfg.min_volume_percentage {
-        if cfg.max.unwrap_or(false) {
+        if is_max {
             Some(min_volume_percentage * &base_balance)
         } else {
             Some(min_volume_percentage * &volume)
@@ -555,7 +576,7 @@ async fn prepare_order(
         None
     };
 
-    Ok((min_vol, volume, calculated_price))
+    Ok((min_vol, volume, calculated_price, is_max))
 }
 
 async fn update_single_order(
@@ -565,12 +586,12 @@ async fn update_single_order(
     key_trade_pair: String,
     ctx: &MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, _, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
+    let (min_vol, _, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
 
     let req = MakerOrderUpdateReq {
         uuid,
         new_price: Some(calculated_price),
-        max: cfg.max,
+        max: is_max.into(),
         volume_delta: None,
         min_volume: min_vol,
         base_confs: cfg.base_confs,
@@ -613,13 +634,13 @@ async fn create_single_order(
     key_trade_pair: String,
     ctx: MmArc,
 ) -> OrderProcessingResult {
-    let (min_vol, volume, calculated_price) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
+    let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
     let req = SetPriceReq {
         base: cfg.base.clone(),
         rel: cfg.rel.clone(),
         price: calculated_price,
-        max: cfg.max.unwrap_or(false),
+        max: is_max,
         volume,
         min_volume: min_vol,
         cancel_previous: true,

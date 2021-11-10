@@ -31,6 +31,7 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
         rel,
         min_volume_percentage: None,
         min_volume_usd: None,
+        max_volume_usd: None,
         spread,
         base_confs: None,
         base_nota: None,

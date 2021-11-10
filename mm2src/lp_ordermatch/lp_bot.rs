@@ -136,6 +136,7 @@ pub struct SimpleCoinMarketMakerCfg {
     #[serde(rename = "min_volume")]
     pub min_volume_percentage: Option<MmNumber>,
     pub min_volume_usd: Option<MmNumber>,
+    pub max_volume_usd: Option<MmNumber>,
     pub spread: MmNumber,
     pub base_confs: Option<u64>,
     pub base_nota: Option<bool>,
