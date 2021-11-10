@@ -253,6 +253,14 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
+    let is_invalid_output = body.iter().any(|b| *b == b'<' || *b == b'>' || *b == b'&');
+    if is_invalid_output {
+        return Response::builder()
+            .status(500)
+            .header("Content-Type", "application/json")
+            .body(Body::from(err_to_rpc_json_string("Invalid output")))
+            .unwrap();
+    }
     Response::from_parts(parts, Body::from(body))
 }
 
