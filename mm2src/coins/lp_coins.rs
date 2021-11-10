@@ -82,8 +82,6 @@ macro_rules! try_f {
 #[cfg(test)]
 pub mod coins_tests;
 
-pub mod enable_v2;
-
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 
@@ -351,6 +349,7 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 }
 
+#[allow(dead_code)]
 pub struct CoinBalancesWithTokens {
     platform_coin_balances: HashMap<String, CoinBalance>,
     token_balances: HashMap<String, HashMap<String, CoinBalance>>,
