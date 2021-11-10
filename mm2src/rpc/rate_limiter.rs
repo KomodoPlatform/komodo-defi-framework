@@ -31,7 +31,7 @@ impl RateLimitContext {
     pub async fn is_banned(&self, client_ip: IpAddr) -> bool {
         let rate_infos = self.0.lock().await;
         if let Some(limit) = rate_infos.get(&client_ip) {
-            return *limit == LIMIT_FAILED_REQUEST;
+            return *limit >= LIMIT_FAILED_REQUEST;
         }
         false
     }
@@ -41,15 +41,21 @@ pub async fn process_rate_limit(ctx: &MmArc, client: &SocketAddr) -> MmError<Dis
     let rate_limit_ctx = RateLimitContext::from_ctx(ctx).unwrap();
     let mut rate_limit_registry = rate_limit_ctx.0.lock().await;
 
-    return if let Some(limit) = rate_limit_registry.get_mut(&client.ip()) {
-        *limit += 1;
-        MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
-            LIMIT_FAILED_REQUEST - *limit,
-        )))
-    } else {
-        rate_limit_registry.insert(client.ip(), 1);
-        MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
-            LIMIT_FAILED_REQUEST - 1,
-        )))
-    };
+    match rate_limit_registry.get_mut(&client.ip()) {
+        Some(limit) => {
+            if *limit == LIMIT_FAILED_REQUEST {
+                return MmError::new(DispatcherError::Banned);
+            }
+            *limit += 1;
+            MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
+                LIMIT_FAILED_REQUEST - *limit,
+            )))
+        },
+        None => {
+            rate_limit_registry.insert(client.ip(), 1);
+            MmError::new(DispatcherError::UserpassIsInvalid(RateLimitError::NbAttemptsLeft(
+                LIMIT_FAILED_REQUEST - 1,
+            )))
+        },
+    }
 }

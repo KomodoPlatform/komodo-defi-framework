@@ -35,7 +35,7 @@ async fn auth(json: &Json, ctx: &MmArc, client: &SocketAddr) -> Result<(), Strin
         }
 
         if json["userpass"] != ctx.conf["rpc_password"] {
-            return Err(format!("{}", process_rate_limit(&ctx, &client).await));
+            return Err(format!("{}", process_rate_limit(ctx, client).await));
         }
     }
     Ok(())

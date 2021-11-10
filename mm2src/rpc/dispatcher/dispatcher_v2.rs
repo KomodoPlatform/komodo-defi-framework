@@ -85,7 +85,7 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
     });
     match request.userpass {
         Some(ref userpass) if userpass == rpc_password => Ok(()),
-        Some(_) => Err(process_rate_limit(&ctx, &client).await),
+        Some(_) => Err(process_rate_limit(ctx, client).await),
         None => MmError::err(DispatcherError::UserpassIsNotSet),
     }
 }
