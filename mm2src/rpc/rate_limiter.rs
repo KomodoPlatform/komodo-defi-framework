@@ -43,7 +43,7 @@ pub async fn process_rate_limit(ctx: &MmArc, client: &SocketAddr) -> MmError<Dis
 
     match rate_limit_registry.get_mut(&client.ip()) {
         Some(limit) => {
-            if *limit == LIMIT_FAILED_REQUEST {
+            if *limit >= LIMIT_FAILED_REQUEST {
                 return MmError::new(DispatcherError::Banned);
             }
             *limit += 1;
