@@ -2,9 +2,9 @@ use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcResult};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, UtxoArcBuilder};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoArc,
-                  UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps,
-                  UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
+                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams,
+                  UtxoAddressFormat, UtxoArc, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails,
+                  UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
 use crate::{BalanceFut, CoinBalance, CoinBalancesWithTokens, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
