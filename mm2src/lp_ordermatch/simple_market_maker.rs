@@ -1,6 +1,6 @@
 use crate::mm2::lp_dispatcher::DispatcherContext;
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
-                                        TradingBotStopped, TradingBotStopping};
+                                        TradingBotStopped, TradingBotStopping, VolumeSettings};
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::TickerInfos,
@@ -92,10 +92,6 @@ pub enum OrderProcessingError {
     OrderUpdateError(String),
     #[display(fmt = "Error when querying swap history: {}", _0)]
     MyRecentSwapsError(String),
-    #[display(fmt = "You cant have max_volume_usd and balance_percentage at the same time in the configuration")]
-    MaxVolConfigurationMismatch,
-    #[display(fmt = "You cant have min_vol_usd and min_vol at the same time in the configuration")]
-    MinVolConfigurationMismatch,
     #[display(fmt = "Base balance is less than the min_vol_usd - skipping")]
     MinVolUsdAboveBalanceUsd,
     #[display(fmt = "Legacy error - skipping")]
@@ -535,43 +531,45 @@ async fn prepare_order(
 
     let mut is_max = cfg.max.unwrap_or(false);
 
-    if cfg.balance_percent.is_some() && cfg.max_volume_usd.is_some() {
-        return MmError::err(OrderProcessingError::MaxVolConfigurationMismatch);
-    }
-
-    let volume = if let Some(balance_percent) = &cfg.balance_percent {
-        if *balance_percent > MmNumber::from(1) {
-            is_max = true;
-            MmNumber::default()
-        } else {
-            balance_percent * &base_balance
-        }
-    } else if let Some(max_volume_usd) = &cfg.max_volume_usd {
-        if &base_balance * &rates.base_price < *max_volume_usd {
-            is_max = true;
-            MmNumber::default()
-        } else {
-            max_volume_usd / &rates.base_price
+    let volume = if let Some(max_volume) = &cfg.max_volume {
+        match max_volume {
+            VolumeSettings::Percentage(balance_percent) => {
+                if *balance_percent >= MmNumber::from(1) {
+                    is_max = true;
+                    MmNumber::default()
+                } else {
+                    balance_percent * &base_balance
+                }
+            },
+            VolumeSettings::Usd(max_volume_usd) => {
+                if &base_balance * &rates.base_price < *max_volume_usd {
+                    is_max = true;
+                    MmNumber::default()
+                } else {
+                    max_volume_usd / &rates.base_price
+                }
+            },
         }
     } else {
         MmNumber::default()
     };
 
-    if cfg.min_volume_percentage.is_some() && cfg.min_volume_usd.is_some() {
-        return MmError::err(OrderProcessingError::MinVolConfigurationMismatch);
-    }
-
-    let min_vol: Option<MmNumber> = if let Some(min_volume_percentage) = &cfg.min_volume_percentage {
-        if is_max {
-            Some(min_volume_percentage * &base_balance)
-        } else {
-            Some(min_volume_percentage * &volume)
+    let min_vol = if let Some(min_volume) = &cfg.min_volume {
+        match min_volume {
+            VolumeSettings::Percentage(min_volume_percentage) => {
+                if is_max {
+                    Some(min_volume_percentage * &base_balance)
+                } else {
+                    Some(min_volume_percentage * &volume)
+                }
+            },
+            VolumeSettings::Usd(min_volume_usd) => {
+                if &base_balance * &rates.base_price < *min_volume_usd {
+                    return MmError::err(OrderProcessingError::MinVolUsdAboveBalanceUsd);
+                }
+                Some(min_volume_usd / &rates.base_price)
+            },
         }
-    } else if let Some(min_volume_usd) = &cfg.min_volume_usd {
-        if &base_balance * &rates.base_price < *min_volume_usd {
-            return MmError::err(OrderProcessingError::MinVolUsdAboveBalanceUsd);
-        }
-        Some(min_volume_usd / &rates.base_price)
     } else {
         None
     };

@@ -128,15 +128,21 @@ impl Default for TradingBotState {
 
 pub type SimpleMakerBotRegistry = HashMap<String, SimpleCoinMarketMakerCfg>;
 
-#[derive(Debug, Serialize, Deserialize, Display, Clone)]
-#[display(fmt = "{} {} {} {}", base, rel, enable, spread)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum VolumeSettings {
+    #[serde(rename = "percentage")]
+    Percentage(MmNumber),
+    #[serde(rename = "usd")]
+    Usd(MmNumber),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SimpleCoinMarketMakerCfg {
     pub base: String,
     pub rel: String,
-    #[serde(rename = "min_volume")]
-    pub min_volume_percentage: Option<MmNumber>,
-    pub min_volume_usd: Option<MmNumber>,
-    pub max_volume_usd: Option<MmNumber>,
+    pub min_volume: Option<VolumeSettings>,
+    pub max_volume: Option<VolumeSettings>,
+    pub max: Option<bool>,
     pub spread: MmNumber,
     pub base_confs: Option<u64>,
     pub base_nota: Option<bool>,
@@ -145,8 +151,6 @@ pub struct SimpleCoinMarketMakerCfg {
     pub enable: bool,
     pub price_elapsed_validity: Option<f64>,
     pub check_last_bidirectional_trade_thresh_hold: Option<bool>,
-    pub max: Option<bool>,
-    pub balance_percent: Option<MmNumber>,
     pub min_base_price: Option<MmNumber>,
     pub min_rel_price: Option<MmNumber>,
     pub min_pair_price: Option<MmNumber>,
