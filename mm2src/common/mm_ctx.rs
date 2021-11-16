@@ -77,6 +77,7 @@ pub struct MmCtx {
     pub stop_listeners: Mutex<Vec<StopListenerCallback>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub simple_market_maker_bot_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub p2p_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub peer_id: Constructible<String>,
@@ -118,6 +119,7 @@ impl MmCtx {
             ffi_handle: Constructible::default(),
             stop_listeners: Mutex::new(Vec::new()),
             ordermatch_ctx: Mutex::new(None),
+            rate_limit_ctx: Mutex::new(None),
             simple_market_maker_bot_ctx: Mutex::new(None),
             p2p_ctx: Mutex::new(None),
             peer_id: Constructible::default(),
