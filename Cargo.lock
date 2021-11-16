@@ -839,6 +839,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "coins_activation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "coins",
+ "common",
+ "derive_more",
+ "rpc",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
 name = "common"
 version = "0.1.0"
 dependencies = [
@@ -3109,6 +3125,7 @@ dependencies = [
  "chain",
  "chrono",
  "coins",
+ "coins_activation",
  "common",
  "crc",
  "crc32fast",

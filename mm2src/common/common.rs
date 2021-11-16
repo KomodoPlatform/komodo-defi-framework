@@ -132,7 +132,7 @@ use futures01::{future, task::Task, Future};
 use gstuff::binprint;
 use hex::FromHex;
 use http::header::{HeaderValue, CONTENT_TYPE};
-use http::{Response, StatusCode};
+use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -155,6 +155,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+pub use http::StatusCode;
 pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;

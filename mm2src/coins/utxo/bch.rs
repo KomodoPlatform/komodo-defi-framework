@@ -1,9 +1,9 @@
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
-use crate::utxo::slp::{parse_slp_script, SlpTransaction, SlpUnspent};
+use crate::utxo::slp::{parse_slp_script, SlpToken, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{CanRefundHtlc, CoinBalance, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
-            ValidateAddressResult, WithdrawFut};
+use crate::{coin_conf, CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, CoinProtocol, NegotiateSwapContractAddrErr,
+            SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -87,6 +87,37 @@ impl BchUnspents {
     fn add_slp_baton(&mut self, utxo: UnspentInfo) { self.slp_batons.push(utxo) }
 
     fn add_undetermined(&mut self, utxo: UnspentInfo) { self.undetermined.push(utxo) }
+
+    fn platform_balance(&self, decimals: u8) -> CoinBalance {
+        let spendable_sat = total_unspent_value(&self.standard);
+
+        let unspendable_slp = self.slp.iter().fold(0, |cur, (_, slp_unspents)| {
+            let bch_value = total_unspent_value(slp_unspents.iter().map(|slp| &slp.bch_unspent));
+            cur + bch_value
+        });
+
+        let unspendable_slp_batons = total_unspent_value(&self.slp_batons);
+        let unspendable_undetermined = total_unspent_value(&self.undetermined);
+
+        let total_unspendable = unspendable_slp + unspendable_slp_batons + unspendable_undetermined;
+        CoinBalance {
+            spendable: big_decimal_from_sat_unsigned(spendable_sat, decimals),
+            unspendable: big_decimal_from_sat_unsigned(total_unspendable, decimals),
+        }
+    }
+
+    fn slp_token_balance(&self, token_id: &H256, decimals: u8) -> CoinBalance {
+        self.slp
+            .get(token_id)
+            .map(|unspents| {
+                let total_sat = unspents.iter().fold(0, |cur, unspent| cur + unspent.slp_amount);
+                CoinBalance {
+                    spendable: big_decimal_from_sat_unsigned(total_sat, decimals),
+                    unspendable: 0.into(),
+                }
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl From<UtxoRpcError> for IsSlpUtxoError {
@@ -279,6 +310,111 @@ pub async fn bch_coin_from_conf_and_params(
         utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, params.utxo_params, priv_key, constructor).await
     );
     Ok(coin)
+}
+
+#[derive(Debug)]
+pub enum BchActivationError {
+    CoinInitError(String),
+    TokenConfIsNotFound {
+        token: String,
+    },
+    TokenCoinProtocolParseError {
+        token: String,
+        error: json::Error,
+    },
+    TokenCoinProtocolIsNotSlp {
+        token: String,
+        protocol: CoinProtocol,
+    },
+    TokenPlatformCoinIsInvalidInConf {
+        token: String,
+        expected_platform: String,
+        actual_platform: String,
+    },
+    RpcError(UtxoRpcError),
+    SlpPrefixParseError(String),
+}
+
+impl From<UtxoRpcError> for BchActivationError {
+    fn from(e: UtxoRpcError) -> Self { BchActivationError::RpcError(e) }
+}
+
+pub struct BchActivationResult {
+    pub current_block: u64,
+    pub platform_coin: BchCoin,
+    pub platform_coin_balance: CoinBalance,
+    pub slp_tokens: Vec<SlpToken>,
+    pub slp_tokens_balances: HashMap<String, CoinBalance>,
+}
+
+pub async fn activate_bch_with_tokens(
+    ctx: &MmArc,
+    ticker: &str,
+    bch_conf: &Json,
+    params: BchActivationParams,
+    slp_addr_prefix: &str,
+    priv_key: &[u8],
+) -> Result<BchActivationResult, MmError<BchActivationError>> {
+    let slp_addr_prefix = slp_addr_prefix
+        .parse()
+        .map_to_mm(BchActivationError::SlpPrefixParseError)?;
+    let tokens = params.with_tokens.clone();
+    let platform_coin = bch_coin_from_conf_and_params(ctx, ticker, bch_conf, params, slp_addr_prefix, priv_key)
+        .await
+        .map_to_mm(BchActivationError::CoinInitError)?;
+
+    let current_block = platform_coin.as_ref().rpc_client.get_block_count().compat().await?;
+    let bch_unspents = platform_coin
+        .bch_unspents_for_display(&platform_coin.as_ref().my_address)
+        .await?;
+
+    let mut slp_tokens = Vec::with_capacity(tokens.len());
+    let mut slp_tokens_balances = HashMap::with_capacity(tokens.len());
+
+    for token in tokens {
+        let token_conf = coin_conf(ctx, &token);
+        if token_conf.is_null() {
+            return MmError::err(BchActivationError::TokenConfIsNotFound { token });
+        }
+        let token_protocol: CoinProtocol = json::from_value(token_conf["protocol"].clone()).map_to_mm(|error| {
+            BchActivationError::TokenCoinProtocolParseError {
+                token: token.clone(),
+                error,
+            }
+        })?;
+        match token_protocol {
+            CoinProtocol::SLPTOKEN {
+                platform,
+                token_id,
+                decimals,
+                required_confirmations,
+            } => {
+                if platform != ticker {
+                    return MmError::err(BchActivationError::TokenPlatformCoinIsInvalidInConf {
+                        token,
+                        expected_platform: ticker.to_owned(),
+                        actual_platform: platform,
+                    });
+                } else {
+                    let confs = required_confirmations.unwrap_or_else(|| platform_coin.required_confirmations());
+                    let token_id = token_id.into();
+                    slp_tokens_balances.insert(token.clone(), bch_unspents.slp_token_balance(&token_id, decimals));
+                    let token = SlpToken::new(decimals, token, token_id, platform_coin.clone(), confs);
+                    slp_tokens.push(token);
+                }
+            },
+            protocol => return MmError::err(BchActivationError::TokenCoinProtocolIsNotSlp { token, protocol }),
+        }
+    }
+
+    let platform_coin_balance = bch_unspents.platform_balance(platform_coin.as_ref().decimals);
+    Ok(BchActivationResult {
+        current_block,
+        platform_coin,
+        platform_coin_balance,
+        slp_tokens,
+        slp_tokens_balances,
+    })
 }
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
@@ -619,24 +755,12 @@ impl MarketCoinOps for BchCoin {
         let coin = self.clone();
         let fut = async move {
             let bch_unspents = coin.bch_unspents_for_display(&coin.as_ref().my_address).await?;
-            let spendable_sat = total_unspent_value(&bch_unspents.standard);
-
-            let unspendable_slp = bch_unspents.slp.iter().fold(0, |cur, (_, slp_unspents)| {
-                let bch_value = total_unspent_value(slp_unspents.iter().map(|slp| &slp.bch_unspent));
-                cur + bch_value
-            });
-
-            let unspendable_slp_batons = total_unspent_value(&bch_unspents.slp_batons);
-            let unspendable_undetermined = total_unspent_value(&bch_unspents.undetermined);
-
-            let total_unspendable = unspendable_slp + unspendable_slp_batons + unspendable_undetermined;
-            Ok(CoinBalance {
-                spendable: big_decimal_from_sat_unsigned(spendable_sat, coin.as_ref().decimals),
-                unspendable: big_decimal_from_sat_unsigned(total_unspendable, coin.as_ref().decimals),
-            })
+            Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 

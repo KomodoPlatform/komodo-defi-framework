@@ -147,11 +147,22 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn post_grpc_web<Req, Res>(url: &str, _req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
+pub async fn post_grpc_web<Req, Res>(url: &str, req: &Req) -> Result<Res, MmError<PostGrpcWebErr>>
 where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,
 {
-    let _request = FetchRequest::post(url);
-    unimplemented!()
+    let body = encode_body(req)?;
+    let request = FetchRequest::post(url)
+        .body_bytes(body)
+        .header("content-type", "application/grpc-web+proto")
+        .header("accept", "application/grpc-web+proto")
+        // https://github.com/grpc/grpc-web/issues/85#issue-217223001
+        .header("x-grpc-web", "1");
+
+    let response = request.request_array().await?;
+
+    let reply = decode_body(response.1.into())?;
+
+    Ok(reply)
 }

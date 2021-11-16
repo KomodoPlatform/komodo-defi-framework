@@ -19,6 +19,7 @@
 
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
+#![feature(associated_type_bounds)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
@@ -46,7 +47,7 @@ use futures01::Future;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
@@ -80,8 +81,6 @@ macro_rules! try_f {
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
-
-pub mod enable_v2;
 
 pub mod eth;
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
@@ -350,6 +349,12 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 }
 
+#[allow(dead_code)]
+pub struct CoinBalancesWithTokens {
+    platform_coin_balances: HashMap<String, CoinBalance>,
+    token_balances: HashMap<String, HashMap<String, CoinBalance>>,
+}
+
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
@@ -368,6 +373,8 @@ pub trait MarketCoinOps {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens>;
 
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
@@ -642,7 +649,7 @@ pub struct TradeFee {
     pub paid_from_trading_vol: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd, Serialize)]
 pub struct CoinBalance {
     pub spendable: BigDecimal,
     pub unspendable: BigDecimal,
@@ -1169,6 +1176,45 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
+pub trait IntoMmCoins {
+    fn into_mm_coins(self) -> Vec<MmCoinEnum>;
+}
+
+pub trait CoinActivationParamsOps {
+    fn activate_with_tokens(&self) -> Vec<String>;
+}
+
+#[derive(Debug, Display)]
+pub enum TokenCreationError {}
+
+pub trait TokenOf<T> {}
+
+#[async_trait]
+pub trait TokenActivationOps: Into<MmCoinEnum> {
+    type PlatformCoin;
+
+    async fn activate_token(
+        platform_coin: Self::PlatformCoin,
+        ticker: &str,
+        conf: &Json,
+    ) -> Result<Self, MmError<TokenCreationError>>;
+}
+
+#[async_trait]
+pub trait CoinActivationOps: Into<MmCoinEnum> {
+    type ActivationParams: CoinActivationParamsOps;
+    type ActivationError: NotMmError;
+
+    async fn activate(
+        ctx: &MmArc,
+        ticker: &str,
+        conf: &Json,
+        params: Self::ActivationParams,
+    ) -> Result<Self, MmError<Self::ActivationError>>;
+
+    fn activate_token(&self, ticker: &str, conf: &Json) -> Result<MmCoinEnum, MmError<TokenCreationError>>;
+}
+
 #[derive(Clone, Debug)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
@@ -1238,7 +1284,7 @@ pub trait BalanceTradeFeeUpdatedHandler {
     async fn balance_updated(&self, coin: &MmCoinEnum, new_balance: &BigDecimal);
 }
 
-struct CoinsContext {
+pub struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
@@ -1247,9 +1293,14 @@ struct CoinsContext {
     /// The database has to be initialized only once!
     tx_history_db: ConstructibleDb<TxHistoryDb>,
 }
+
+pub struct CoinIsAlreadyActivatedErr {
+    pub ticker: String,
+}
+
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
+    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
@@ -1258,6 +1309,18 @@ impl CoinsContext {
                 tx_history_db: ConstructibleDb::from_ctx(ctx),
             })
         })))
+    }
+
+    pub async fn add_coin(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+        let mut coins = self.coins.lock().await;
+        if coins.contains_key(coin.ticker()) {
+            return MmError::err(CoinIsAlreadyActivatedErr {
+                ticker: coin.ticker().into(),
+            });
+        }
+
+        coins.insert(coin.ticker().into(), coin);
+        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -1591,7 +1654,7 @@ pub async fn find_pair(ctx: &MmArc, base: &str, rel: &str) -> Result<Option<(MmC
         .await
 }
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum CoinFindError {
     #[display(fmt = "No such coin: {}", coin)]
     NoSuchCoin { coin: String },

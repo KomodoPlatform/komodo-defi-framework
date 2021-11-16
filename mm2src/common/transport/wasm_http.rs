@@ -4,6 +4,7 @@ use crate::stringify_js_error;
 use crate::transport::{SlurpError, SlurpResult};
 use futures::channel::oneshot;
 use http::{HeaderMap, StatusCode};
+use js_sys::Uint8Array;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -67,6 +68,11 @@ impl FetchRequest {
         self
     }
 
+    pub fn body_bytes(mut self, body: Vec<u8>) -> FetchRequest {
+        self.body = Some(RequestBody::Bytes(body));
+        self
+    }
+
     /// Set the mode to [`RequestMode::Cors`].
     /// The request is no-cors by default.
     pub fn cors(mut self) -> FetchRequest {
@@ -88,6 +94,15 @@ impl FetchRequest {
         }
     }
 
+    pub async fn request_array(self) -> FetchResult<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+        Self::spawn_fetch_array(self, tx);
+        match rx.await {
+            Ok(res) => res,
+            Err(_e) => MmError::err(SlurpError::Internal("Spawned future has been canceled".to_owned())),
+        }
+    }
+
     fn spawn_fetch_str(request: Self, tx: oneshot::Sender<FetchResult<String>>) {
         let fut = async move {
             let result = Self::fetch_str(request).await;
@@ -96,8 +111,15 @@ impl FetchRequest {
         spawn_local(fut);
     }
 
-    /// The private non-Send method that is called in a spawned future.
-    async fn fetch_str(request: Self) -> FetchResult<String> {
+    fn spawn_fetch_array(request: Self, tx: oneshot::Sender<FetchResult<Vec<u8>>>) {
+        let fut = async move {
+            let result = Self::fetch_array(request).await;
+            tx.send(result).ok();
+        };
+        spawn_local(fut);
+    }
+
+    async fn fetch(request: Self) -> FetchResult<JsResponse> {
         let window = web_sys::window().expect("!window");
         let uri = request.uri;
 
@@ -133,6 +155,23 @@ impl FetchRequest {
             },
         };
 
+        let status_code = js_response.status();
+        let status_code = match StatusCode::from_u16(status_code) {
+            Ok(code) => code,
+            Err(e) => {
+                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
+            },
+        };
+
+        Ok((status_code, js_response))
+    }
+
+    /// The private non-Send method that is called in a spawned future.
+    async fn fetch_str(request: Self) -> FetchResult<String> {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
+
         let resp_txt_fut = match js_response.text() {
             Ok(txt) => txt,
             Err(e) => {
@@ -155,15 +194,35 @@ impl FetchRequest {
             },
         };
 
-        let status_code = js_response.status();
-        let status_code = match StatusCode::from_u16(status_code) {
-            Ok(code) => code,
+        Ok((status_code, resp_str))
+    }
+
+    /// The private non-Send method that is called in a spawned future.
+    async fn fetch_array(request: Self) -> FetchResult<Vec<u8>> {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
+
+        let resp_array_fut = match js_response.array_buffer() {
+            Ok(blob) => blob,
             Err(e) => {
-                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
+                let error = format!(
+                    "Expected blob, found {:?}: {}",
+                    js_response,
+                    crate::stringify_js_error(&e)
+                );
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
-        Ok((status_code, resp_str))
+        let resp_array = JsFuture::from(resp_array_fut)
+            .await
+            .map_to_mm(|e| SlurpError::ErrorDeserializing {
+                uri: uri.clone(),
+                error: stringify_js_error(&e),
+            })?;
+
+        let array = Uint8Array::new(&resp_array);
+
+        Ok((status_code, array.to_vec()))
     }
 }
 
@@ -183,12 +242,17 @@ impl FetchMethod {
 
 enum RequestBody {
     Utf8(String),
+    Bytes(Vec<u8>),
 }
 
 impl RequestBody {
     fn into_js_value(self) -> JsValue {
         match self {
             RequestBody::Utf8(string) => JsValue::from_str(&string),
+            RequestBody::Bytes(bytes) => {
+                let js_array = Uint8Array::from(bytes.as_slice());
+                js_array.into()
+            },
         }
     }
 }

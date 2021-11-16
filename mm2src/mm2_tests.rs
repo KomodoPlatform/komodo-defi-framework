@@ -977,7 +977,7 @@ fn test_mmrpc_v2() {
     );
     let withdraw_error: RpcErrorResponse<Json> = json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse'");
     assert_eq!(withdraw_error.error_type, "UserpassIsInvalid");
-    assert!(withdraw_error.error_data.is_none());
+    assert!(withdraw_error.error_data.is_some());
 
     // invalid `mmrpc` version
     let withdraw = block_on(mm.rpc(json! ({
@@ -8610,7 +8610,7 @@ fn test_get_public_key() {
 
     // Must be 200
     assert_eq!(resp.0, 200);
-    let v: GetPublicKeyResponse = serde_json::from_str(&*resp.1).unwrap();
+    let v: RpcV2Response<GetPublicKeyResult> = serde_json::from_str(&*resp.1).unwrap();
     assert_eq!(
         v.result.public_key,
         "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"

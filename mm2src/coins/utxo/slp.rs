@@ -11,10 +11,11 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, p2sh_spend, 
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, sign_tx, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinBalancesWithTokens, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TxFeeDetails, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -249,6 +250,14 @@ pub fn slp_genesis_output(
         value: 0,
         script_pubkey: script_builder.into_bytes(),
     }
+}
+
+#[derive(Debug)]
+pub struct SlpProtocolConf {
+    pub platform_coin_ticker: String,
+    pub token_id: H256,
+    pub decimals: u8,
+    pub required_confirmations: Option<u64>,
 }
 
 impl SlpToken {
@@ -726,6 +735,15 @@ impl SlpToken {
         Ok(satoshi)
     }
 
+    pub async fn my_coin_balance(&self) -> UtxoRpcResult<CoinBalance> {
+        let balance_sat = self.my_balance_sat().await?;
+        let spendable = big_decimal_from_sat_unsigned(balance_sat, self.decimals());
+        Ok(CoinBalance {
+            spendable,
+            unspendable: 0.into(),
+        })
+    }
+
     fn slp_prefix(&self) -> &CashAddrPrefix { self.platform_coin.slp_prefix() }
 }
 
@@ -992,16 +1010,11 @@ impl MarketCoinOps for SlpToken {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
-        let fut = async move {
-            let balance_sat = coin.my_balance_sat().await?;
-            let spendable = big_decimal_from_sat_unsigned(balance_sat, coin.decimals());
-            Ok(CoinBalance {
-                spendable,
-                unspendable: 0.into(),
-            })
-        };
+        let fut = async move { Ok(coin.my_coin_balance().await?) };
         Box::new(fut.boxed().compat())
     }
+
+    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.platform_coin.my_balance().map(|res| res.spendable))
