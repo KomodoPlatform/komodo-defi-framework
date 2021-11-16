@@ -531,47 +531,41 @@ async fn prepare_order(
 
     let mut is_max = cfg.max.unwrap_or(false);
 
-    let volume = if let Some(max_volume) = &cfg.max_volume {
-        match max_volume {
-            VolumeSettings::Percentage(balance_percent) => {
-                if *balance_percent >= MmNumber::from(1) {
-                    is_max = true;
-                    MmNumber::default()
-                } else {
-                    balance_percent * &base_balance
-                }
-            },
-            VolumeSettings::Usd(max_volume_usd) => {
-                if &base_balance * &rates.base_price < *max_volume_usd {
-                    is_max = true;
-                    MmNumber::default()
-                } else {
-                    max_volume_usd / &rates.base_price
-                }
-            },
-        }
-    } else {
-        MmNumber::default()
+    let volume = match &cfg.max_volume {
+        Some(VolumeSettings::Percentage(balance_percent)) => {
+            if *balance_percent >= MmNumber::from(1) {
+                is_max = true;
+                MmNumber::default()
+            } else {
+                balance_percent * &base_balance
+            }
+        },
+        Some(VolumeSettings::Usd(max_volume_usd)) => {
+            if &base_balance * &rates.base_price < *max_volume_usd {
+                is_max = true;
+                MmNumber::default()
+            } else {
+                max_volume_usd / &rates.base_price
+            }
+        },
+        _ => MmNumber::default(),
     };
 
-    let min_vol = if let Some(min_volume) = &cfg.min_volume {
-        match min_volume {
-            VolumeSettings::Percentage(min_volume_percentage) => {
-                if is_max {
-                    Some(min_volume_percentage * &base_balance)
-                } else {
-                    Some(min_volume_percentage * &volume)
-                }
-            },
-            VolumeSettings::Usd(min_volume_usd) => {
-                if &base_balance * &rates.base_price < *min_volume_usd {
-                    return MmError::err(OrderProcessingError::MinVolUsdAboveBalanceUsd);
-                }
-                Some(min_volume_usd / &rates.base_price)
-            },
-        }
-    } else {
-        None
+    let min_vol = match &cfg.min_volume {
+        Some(VolumeSettings::Percentage(min_volume_percentage)) => {
+            if is_max {
+                Some(min_volume_percentage * &base_balance)
+            } else {
+                Some(min_volume_percentage * &volume)
+            }
+        },
+        Some(VolumeSettings::Usd(min_volume_usd)) => {
+            if &base_balance * &rates.base_price < *min_volume_usd {
+                return MmError::err(OrderProcessingError::MinVolUsdAboveBalanceUsd);
+            }
+            Some(min_volume_usd / &rates.base_price)
+        },
+        None => None,
     };
 
     Ok((min_vol, volume, calculated_price, is_max))
