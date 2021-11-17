@@ -1,4 +1,5 @@
 mod platform_coin_with_tokens;
+mod prelude;
 mod standalone_coin;
 mod token;
 

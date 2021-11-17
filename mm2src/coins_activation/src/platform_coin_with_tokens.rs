@@ -1,63 +1,141 @@
+use crate::prelude::*;
+use crate::token::SlpActivationParams;
 use async_trait::async_trait;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::slp::SlpToken;
-use coins::{coin_conf, lp_coinfind, CoinProtocol, MmCoinEnum};
+use coins::{lp_coinfind, CoinProtocol, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::NotSame;
 use derive_more::Display;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
-use serde_json::{self as json};
+use serde_json::Value as Json;
 
-pub trait PlatformWithTokensActivationParams<T> {
-    fn get_tokens_for_initializer(&self, initializer: &dyn TokenAsMmCoinInitializer<PlatformCoin = T>) -> Vec<String>;
-}
-
-pub trait TryPlatformProtoFromCoinProto {
-    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
-    where
-        Self: Sized;
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct TokenActivationParams<T> {
+    ticker: String,
+    activation_params: T,
 }
 
 pub trait TokenOf: Into<MmCoinEnum> {
-    type PlatformCoin;
+    type PlatformCoin: PlatformWithTokensActivationOps;
 }
 
 #[async_trait]
 pub trait TokenInitializer {
     type Token: TokenOf;
+    type TokenActivationParams: Send;
 
-    async fn init_tokens(self) -> Result<Vec<Self::Token>, MmError<()>>;
+    fn tokens_params_from_platform_params(
+        platform_params: &<<Self::Token as TokenOf>::PlatformCoin as PlatformWithTokensActivationOps>::ActivationParams,
+    ) -> Vec<TokenActivationParams<Self::TokenActivationParams>>;
+
+    async fn init_tokens(
+        self,
+        params: Vec<TokenActivationParams<Self::TokenActivationParams>>,
+    ) -> Result<Vec<Self::Token>, MmError<()>>;
 }
 
+#[async_trait]
 pub trait TokenAsMmCoinInitializer {
     type PlatformCoin;
+    type ActivationParams;
 
-    fn init_tokens(self) -> Vec<MmCoinEnum>;
+    async fn init_tokens_as_mm_coins(
+        self,
+        params: &Self::ActivationParams,
+    ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>>;
+}
+
+pub trait PlatformCoinWithTokensActivationOps {}
+
+pub enum InitTokensAsMmCoinsError {
+    TokenConfigIsNotFound(String),
+    TokenProtocolParseError(String),
+    UnexpectedTokenProtocol(CoinProtocol),
+}
+
+#[async_trait]
+impl<T: TokenInitializer + Send> TokenAsMmCoinInitializer for T {
+    type PlatformCoin = <T::Token as TokenOf>::PlatformCoin;
+    type ActivationParams = <Self::PlatformCoin as PlatformWithTokensActivationOps>::ActivationParams;
+
+    async fn init_tokens_as_mm_coins(
+        self,
+        params: &Self::ActivationParams,
+    ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>> {
+        let token_params = T::tokens_params_from_platform_params(params);
+
+        let tokens = self.init_tokens(token_params).await.unwrap();
+        Ok(tokens.into_iter().map(Into::into).collect())
+    }
 }
 
 #[async_trait]
 pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
-    type ActivationParams: PlatformWithTokensActivationParams<Self>;
-    type PlatformProtocolInfo: TryPlatformProtoFromCoinProto;
+    type ActivationParams: Send + Sync;
+    type PlatformProtocolInfo: TryFromCoinProtocol;
     type ActivationResult;
     type ActivationError: NotMmError;
 
     /// Initializes the platform coin itself
     async fn init_platform_coin(
         ticker: String,
+        coin_conf: Json,
         activation_params: Self::ActivationParams,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
-    fn token_initializers() -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self>>>;
+    fn token_initializers(
+    ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationParams = Self::ActivationParams>>>;
 }
 
-struct SlpTokenInitializer {
-    #[allow(dead_code)]
-    platform_coin: BchCoin,
+pub struct BchWithTokensActivationParams {
+    slp_tokens_params: Vec<TokenActivationParams<SlpActivationParams>>,
 }
+
+pub struct BchProtocolInfo {
+    #[allow(dead_code)]
+    slp_prefix: String,
+}
+
+impl TryFromCoinProtocol for BchProtocolInfo {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
+    where
+        Self: Sized,
+    {
+        match proto {
+            CoinProtocol::BCH { slp_prefix } => Ok(BchProtocolInfo { slp_prefix }),
+            protocol => MmError::err(protocol),
+        }
+    }
+}
+
+#[async_trait]
+impl PlatformWithTokensActivationOps for BchCoin {
+    type ActivationParams = BchWithTokensActivationParams;
+    type PlatformProtocolInfo = BchProtocolInfo;
+    type ActivationResult = ();
+    type ActivationError = ();
+
+    async fn init_platform_coin(
+        _ticker: String,
+        _platform_conf: Json,
+        _activation_params: Self::ActivationParams,
+        _protocol_conf: Self::PlatformProtocolInfo,
+    ) -> Result<Self, MmError<Self::ActivationError>> {
+        unimplemented!()
+    }
+
+    fn token_initializers(
+    ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationParams = Self::ActivationParams>>> {
+        vec![Box::new(SlpTokenInitializer {})]
+    }
+}
+
+pub struct SlpTokenInitializer {}
 
 impl TokenOf for SlpToken {
     type PlatformCoin = BchCoin;
@@ -66,8 +144,20 @@ impl TokenOf for SlpToken {
 #[async_trait]
 impl TokenInitializer for SlpTokenInitializer {
     type Token = SlpToken;
+    type TokenActivationParams = SlpActivationParams;
 
-    async fn init_tokens(self) -> Result<Vec<SlpToken>, MmError<()>> { unimplemented!() }
+    fn tokens_params_from_platform_params(
+        platform_params: &BchWithTokensActivationParams,
+    ) -> Vec<TokenActivationParams<Self::TokenActivationParams>> {
+        platform_params.slp_tokens_params.clone()
+    }
+
+    async fn init_tokens(
+        self,
+        _activation_params: Vec<TokenActivationParams<SlpActivationParams>>,
+    ) -> Result<Vec<SlpToken>, MmError<()>> {
+        unimplemented!()
+    }
 }
 
 pub struct EnablePlatformCoinWithTokensReq<T> {
@@ -81,11 +171,27 @@ pub struct EnablePlatformCoinWithTokensReq<T> {
 pub enum EnablePlatformCoinWithTokensError {
     PlatformIsAlreadyActivated(String),
     PlatformConfigIsNotFound(String),
-    InvalidPlatformProtocolConf(String),
-    #[display(fmt = "Invalid coin protocol {:?}", _0)]
-    InvalidPlatformProtocol(CoinProtocol),
+    CoinProtocolParseError(String),
+    #[display(fmt = "Unexpected platform protocol {:?}", _0)]
+    UnexpectedPlatformProtocol(CoinProtocol),
     Transport(String),
     Internal(String),
+}
+
+impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
+    fn from(err: CoinConfWithProtocolError) -> Self {
+        match err {
+            CoinConfWithProtocolError::ConfigIsNotFound(ticker) => {
+                EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(ticker)
+            },
+            CoinConfWithProtocolError::UnexpectedProtocol(proto) => {
+                EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol(proto)
+            },
+            CoinConfWithProtocolError::CoinProtocolParseError(e) => {
+                EnablePlatformCoinWithTokensError::CoinProtocolParseError(e.to_string())
+            },
+        }
+    }
 }
 
 pub async fn enable_platform_coin_with_tokens<Platform>(
@@ -103,18 +209,10 @@ where
         ));
     }
 
-    let conf = coin_conf(&ctx, &req.ticker);
-    if conf.is_null() {
-        return MmError::err(EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(req.ticker));
-    }
+    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
-    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone())
-        .map_to_mm(|e| EnablePlatformCoinWithTokensError::InvalidPlatformProtocolConf(e.to_string()))?;
-
-    let platform_protocol = Platform::PlatformProtocolInfo::try_from_coin_protocol(coin_protocol)
-        .mm_err(EnablePlatformCoinWithTokensError::InvalidPlatformProtocol)?;
-
-    let _platform_coin = Platform::init_platform_coin(req.ticker, req.activation_params, platform_protocol).await?;
+    let _platform_coin =
+        Platform::init_platform_coin(req.ticker, platform_conf, req.activation_params, platform_protocol).await?;
     for _initializer in Platform::token_initializers() {}
     unimplemented!()
 }

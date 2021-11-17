@@ -1,11 +1,12 @@
 /// Contains token activation traits and their implementations for various coins
 ///
+use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
-use coins::{coin_conf, lp_coinfind, lp_coinfind_or_err, CoinBalance, CoinProtocol, CoinsContext, MarketCoinOps,
-            MmCoin, MmCoinEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalance, CoinProtocol, CoinsContext, MarketCoinOps, MmCoin,
+            MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{HttpStatusCode, NotSame, StatusCode};
@@ -13,17 +14,10 @@ use derive_more::Display;
 use rpc::v1::types::H256 as H256Json;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
-use serde_json::{self as json};
 use std::collections::HashMap;
 
 pub trait TryPlatformCoinFromMmCoinEnum {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-pub trait TryTokenProtoFromCoinProto {
-    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized;
 }
@@ -36,7 +30,7 @@ pub trait TokenProtocolParams {
 pub trait TokenActivationOps: Into<MmCoinEnum> {
     type PlatformCoin: TryPlatformCoinFromMmCoinEnum;
     type ActivationParams;
-    type ProtocolInfo: TokenProtocolParams + TryTokenProtoFromCoinProto;
+    type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol;
     type ActivationResult;
     type ActivationError: NotMmError;
 
@@ -53,9 +47,9 @@ pub trait TokenActivationOps: Into<MmCoinEnum> {
 pub enum EnableTokenError {
     TokenIsAlreadyActivated(String),
     TokenConfigIsNotFound(String),
-    InvalidTokenProtocolConf(String),
-    #[display(fmt = "Invalid coin protocol {:?}", _0)]
-    InvalidCoinProtocol(CoinProtocol),
+    TokenProtocolParseError(String),
+    #[display(fmt = "Unexpected token protocol {:?}", _0)]
+    UnexpectedTokenProtocol(CoinProtocol),
     PlatformCoinIsNotActivated(String),
     #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
     UnsupportedPlatformCoin {
@@ -64,6 +58,18 @@ pub enum EnableTokenError {
     },
     Transport(String),
     Internal(String),
+}
+
+impl From<CoinConfWithProtocolError> for EnableTokenError {
+    fn from(err: CoinConfWithProtocolError) -> Self {
+        match err {
+            CoinConfWithProtocolError::ConfigIsNotFound(ticker) => EnableTokenError::TokenConfigIsNotFound(ticker),
+            CoinConfWithProtocolError::CoinProtocolParseError(e) => {
+                EnableTokenError::TokenProtocolParseError(e.to_string())
+            },
+            CoinConfWithProtocolError::UnexpectedProtocol(proto) => EnableTokenError::UnexpectedTokenProtocol(proto),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,15 +91,7 @@ where
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));
     }
 
-    let conf = coin_conf(&ctx, &req.ticker);
-    if conf.is_null() {
-        return MmError::err(EnableTokenError::TokenConfigIsNotFound(req.ticker));
-    }
-
-    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone())
-        .map_to_mm(|e| EnableTokenError::InvalidTokenProtocolConf(e.to_string()))?;
-    let token_protocol =
-        Token::ProtocolInfo::try_from_coin_protocol(coin_protocol).mm_err(EnableTokenError::InvalidCoinProtocol)?;
+    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -130,12 +128,12 @@ impl TryPlatformCoinFromMmCoinEnum for BchCoin {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct SlpActivationParams {
     required_confirmations: Option<u64>,
 }
 
-impl TryTokenProtoFromCoinProto for SlpProtocolConf {
+impl TryFromCoinProtocol for SlpProtocolConf {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
@@ -188,8 +186,8 @@ impl HttpStatusCode for EnableTokenError {
             EnableTokenError::TokenIsAlreadyActivated(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
             | EnableTokenError::TokenConfigIsNotFound(_)
-            | EnableTokenError::InvalidTokenProtocolConf(_) => StatusCode::BAD_REQUEST,
-            EnableTokenError::InvalidCoinProtocol(_)
+            | EnableTokenError::UnexpectedTokenProtocol(_) => StatusCode::BAD_REQUEST,
+            EnableTokenError::TokenProtocolParseError(_)
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::Transport(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
