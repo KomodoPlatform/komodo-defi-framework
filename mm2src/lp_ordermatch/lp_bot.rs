@@ -190,7 +190,7 @@ pub enum Provider {
     Forex,
     #[serde(rename = "nomics")]
     Nomics,
-    #[serde(rename = "unknown")]
+    #[serde(rename = "unknown", other)]
     Unknown,
 }
 
