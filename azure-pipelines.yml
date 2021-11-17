@@ -31,6 +31,7 @@ stages:
           bob_userpass: 'BOB_USERPASS_LINUX'
           alice_passphrase: 'ALICE_PASSPHRASE_LINUX'
           alice_userpass: 'ALICE_USERPASS_LINUX'
+          telegram_api_key: 'TELEGRAM_API_KEY'
 
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:
@@ -40,6 +41,7 @@ stages:
           bob_userpass: 'BOB_USERPASS_MAC'
           alice_passphrase: 'ALICE_PASSPHRASE_MAC'
           alice_userpass: 'ALICE_USERPASS_MAC'
+          telegram_api_key: 'TELEGRAM_API_KEY'
 
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:
@@ -49,6 +51,7 @@ stages:
           bob_userpass: 'BOB_USERPASS_WIN'
           alice_passphrase: 'ALICE_PASSPHRASE_WIN'
           alice_userpass: 'ALICE_USERPASS_WIN'
+          telegram_api_key: 'TELEGRAM_API_KEY'
 
   - stage: Release
     displayName: Release

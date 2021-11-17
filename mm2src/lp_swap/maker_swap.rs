@@ -8,7 +8,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
             MySwapInfo, NegotiationDataMsg, NegotiationDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap,
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
-
+use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::MM_VERSION;
@@ -24,6 +24,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -1149,7 +1150,7 @@ pub enum MakerSwapEvent {
 }
 
 impl MakerSwapEvent {
-    fn status_str(&self) -> String {
+    pub fn status_str(&self) -> String {
         match self {
             MakerSwapEvent::Started(_) => "Started...".to_owned(),
             MakerSwapEvent::StartFailed(_) => "Start failed...".to_owned(),
@@ -1211,8 +1212,8 @@ impl MakerSwapEvent {
     fn is_error(&self) -> bool { !self.is_success() }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-struct MakerSavedEvent {
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct MakerSavedEvent {
     timestamp: u64,
     event: MakerSwapEvent,
 }
@@ -1249,7 +1250,34 @@ impl MakerSavedEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone)]
+pub struct MakerSwapStatusChanged {
+    pub uuid: Uuid,
+    pub taker_coin: String,
+    pub maker_coin: String,
+    pub taker_amount: BigDecimal,
+    pub maker_amount: BigDecimal,
+    pub event_status: String,
+}
+
+impl MakerSwapStatusChanged {
+    pub fn event_id() -> TypeId { TypeId::of::<MakerSwapStatusChanged>() }
+}
+
+impl MakerSwapStatusChanged {
+    fn from_maker_swap(maker_swap: &MakerSwap, saved_swap: &MakerSavedEvent) -> Self {
+        MakerSwapStatusChanged {
+            uuid: maker_swap.uuid,
+            taker_coin: maker_swap.taker_coin.ticker().to_string(),
+            maker_coin: maker_swap.maker_coin.ticker().to_string(),
+            taker_amount: maker_swap.taker_amount.clone(),
+            maker_amount: maker_swap.maker_amount.clone(),
+            event_status: saved_swap.event.status_str(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
     my_order_uuid: Option<Uuid>,
@@ -1534,6 +1562,13 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         event: event.clone(),
                     };
 
+                    let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
+                    let dispatcher = dispatcher_ctx.dispatcher.lock().await;
+                    let event_to_send = MakerSwapStatusChanged::from_maker_swap(&running_swap, &to_save);
+                    dispatcher
+                        .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
+                        .await;
+                    drop(dispatcher);
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");

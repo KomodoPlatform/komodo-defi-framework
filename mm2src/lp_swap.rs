@@ -100,7 +100,8 @@ use common::mm_error::MmError;
 use derive_more::Display;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
-                     MakerSavedSwap, MakerSwap, MakerTradePreimage, RunMakerSwapInput};
+                     MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
+                     RunMakerSwapInput};
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
@@ -890,7 +891,10 @@ pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwaps
     for uuid in db_result.uuids.iter() {
         let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
             Ok(Some(swap)) => swap,
-            Ok(None) => return Err(MmError::new(MyRecentSwapsErr::UUIDNotPresentInDb(*uuid))),
+            Ok(None) => {
+                error!("No such swap with the uuid '{}'", uuid);
+                continue;
+            },
             Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
         };
         swaps.push(swap);

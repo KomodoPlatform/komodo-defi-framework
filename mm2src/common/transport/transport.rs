@@ -14,7 +14,7 @@ pub use wasm_http::{slurp_post_json, slurp_url};
 
 pub type SlurpResult = Result<(StatusCode, HeaderMap, Vec<u8>), MmError<SlurpError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Deserialize, Display, Serialize)]
 pub enum SlurpError {
     #[display(fmt = "Error deserializing '{}' response: {}", uri, error)]
     ErrorDeserializing { uri: String, error: String },

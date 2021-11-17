@@ -29,7 +29,8 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
     SimpleCoinMarketMakerCfg {
         base,
         rel,
-        min_volume_percentage: None,
+        min_volume: None,
+        max_volume: None,
         spread,
         base_confs: None,
         base_nota: None,
@@ -39,7 +40,9 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
         price_elapsed_validity: None,
         check_last_bidirectional_trade_thresh_hold: Some(true),
         max: Some(true),
-        balance_percent: None,
+        min_base_price: None,
+        min_rel_price: None,
+        min_pair_price: None,
     }
 }
 

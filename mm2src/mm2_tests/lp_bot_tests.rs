@@ -68,7 +68,7 @@ mod tests {
                         "base": "KMD-BEP20",
                         "rel": "BUSD-BEP20",
                         "max": true,
-                        "min_volume": "0.25",
+                        "min_volume": {"percentage": "0.25"},
                         "spread": "1.025",
                         "base_confs": 3,
                         "base_nota": false,

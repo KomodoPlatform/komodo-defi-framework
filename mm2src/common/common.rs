@@ -91,6 +91,7 @@ pub mod big_int_str;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod duplex_mutex;
+pub mod event_dispatcher;
 pub mod for_tests;
 pub mod grpc_web;
 pub mod iguana_utils;

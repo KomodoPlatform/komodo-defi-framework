@@ -46,6 +46,8 @@ use coins::update_coins_config;
 #[path = "database.rs"]
 pub mod database;
 
+#[path = "lp_dispatcher.rs"] pub mod lp_dispatcher;
+#[path = "lp_message_service.rs"] pub mod lp_message_service;
 #[path = "lp_network.rs"] pub mod lp_network;
 #[path = "lp_ordermatch.rs"] pub mod lp_ordermatch;
 #[path = "lp_stats.rs"] pub mod lp_stats;

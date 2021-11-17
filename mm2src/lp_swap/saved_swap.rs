@@ -164,7 +164,7 @@ mod native_impl {
         }
 
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
-            let path = my_swaps_dir(&ctx);
+            let path = my_swaps_dir(ctx);
             Ok(read_dir_json(&path).await?)
         }
 
