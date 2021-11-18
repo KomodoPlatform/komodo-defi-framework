@@ -2,8 +2,7 @@ use super::*;
 use common::crash_reports::init_crash_reports;
 use common::log::{register_callback, FfiCallback};
 use common::mm_ctx::MmArc;
-use common::now_float;
-use futures01::Future;
+use common::{block_on, now_float};
 use gstuff::any_to_str;
 use libc::c_char;
 use num_traits::FromPrimitive;
@@ -115,7 +114,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         };
         let conf = json::to_string(&ctx.conf).unwrap();
         let hy_res = mm2::rpc::lp_commands::stop(ctx);
-        let r = match hy_res.wait() {
+        let r = match block_on(hy_res) {
             Ok(r) => r,
             Err(err) => {
                 log!("mm2_test] !stop: "(err));

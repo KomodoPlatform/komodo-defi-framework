@@ -16,9 +16,10 @@ use std::ops::Deref;
 use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
-use crate::mm2::lp_dispatcher::LpEvents;
+use crate::mm2::lp_dispatcher::{LpEvents, StopCtxEvent};
 use crate::mm2::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
-use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{BOT_DEFAULT_REFRESH_RATE, PRECISION_FOR_NOTIFICATION};
+use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
+                                                                 PRECISION_FOR_NOTIFICATION};
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
 pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
@@ -254,6 +255,23 @@ impl TradingBotContext {
             _ => {},
         }
     }
+
+    async fn on_ctx_stop(&self, ctx: &MmArc) {
+        info!("on_ctx_stop event received");
+        let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
+        let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
+        match &*state {
+            TradingBotState::Running(running_state) => {
+                *state = StoppedState {
+                    trading_bot_cfg: running_state.trading_bot_cfg.clone(),
+                }
+                .into();
+                drop(state);
+                tear_down_bot(ctx.clone()).await
+            },
+            _ => {},
+        }
+    }
 }
 
 #[async_trait]
@@ -263,6 +281,7 @@ impl EventListener for ArcTradingBotContext {
     async fn process_event_async(&self, ctx: MmArc, event: Self::Event) {
         match &event {
             LpEvents::MakerSwapStatusChanged(swap_infos) => self.on_maker_swap_status_changed(&ctx, swap_infos).await,
+            LpEvents::StopCtxEvent(_) => self.on_ctx_stop(&ctx).await,
             LpEvents::TradingBotEvent(trading_bot_event) => self.on_trading_bot_event(&ctx, trading_bot_event).await,
         }
     }
@@ -270,6 +289,7 @@ impl EventListener for ArcTradingBotContext {
     fn get_desired_events(&self) -> Vec<TypeId> {
         vec![
             MakerSwapStatusChanged::event_id(),
+            StopCtxEvent::event_id(),
             TradingBotStopping::event_id(),
             TradingBotStarted::event_id(),
             TradingBotStopped::event_id(),

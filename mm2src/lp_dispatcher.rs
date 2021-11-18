@@ -1,14 +1,22 @@
 use crate::mm2::lp_ordermatch::TradingBotEvent;
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
+use async_std::sync::RwLock;
 use common::event_dispatcher::{Dispatcher, EventUniqueId};
 use common::mm_ctx::{from_ctx, MmArc};
-use futures::lock::Mutex as AsyncMutex;
 use std::any::TypeId;
 use std::sync::Arc;
 
 #[derive(Clone)]
+pub struct StopCtxEvent;
+
+impl StopCtxEvent {
+    pub fn event_id() -> TypeId { TypeId::of::<StopCtxEvent>() }
+}
+
+#[derive(Clone)]
 pub enum LpEvents {
     MakerSwapStatusChanged(MakerSwapStatusChanged),
+    StopCtxEvent(StopCtxEvent),
     TradingBotEvent(TradingBotEvent),
 }
 
@@ -16,10 +24,15 @@ impl From<TradingBotEvent> for LpEvents {
     fn from(evt: TradingBotEvent) -> Self { LpEvents::TradingBotEvent(evt) }
 }
 
+impl From<StopCtxEvent> for LpEvents {
+    fn from(evt: StopCtxEvent) -> Self { LpEvents::StopCtxEvent(evt) }
+}
+
 impl EventUniqueId for LpEvents {
     fn event_id(&self) -> TypeId {
         match self {
             LpEvents::MakerSwapStatusChanged(_) => MakerSwapStatusChanged::event_id(),
+            LpEvents::StopCtxEvent(_) => StopCtxEvent::event_id(),
             LpEvents::TradingBotEvent(event) => event.event_id(),
         }
     }
@@ -27,7 +40,7 @@ impl EventUniqueId for LpEvents {
 
 #[derive(Default)]
 pub struct DispatcherContext {
-    pub dispatcher: AsyncMutex<Dispatcher<LpEvents>>,
+    pub dispatcher: RwLock<Dispatcher<LpEvents>>,
 }
 
 impl DispatcherContext {

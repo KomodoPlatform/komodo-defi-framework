@@ -108,7 +108,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "set_requires_notarization" => hyres(set_requires_notarization(ctx, req)),
         "setprice" => hyres(set_price(ctx, req)),
         "stats_swap_status" => hyres(stats_swap_status(ctx, req)),
-        "stop" => stop(ctx),
+        "stop" => hyres(stop(ctx)),
         "trade_preimage" => hyres(into_legacy::trade_preimage(ctx, req)),
         "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
         "update_maker_order" => hyres(update_maker_order_rpc(ctx, req)),

@@ -277,9 +277,13 @@ pub async fn tear_down_bot(ctx: MmArc) {
     if let TradingBotState::Stopped(ref mut stopped_state) = *state {
         let nb_orders = cancel_pending_orders(&ctx, &stopped_state.trading_bot_cfg.clone()).await;
         let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
-        let dispatcher = dispatcher_ctx.dispatcher.lock().await;
         let event: TradingBotEvent = TradingBotStopped { nb_orders }.into();
-        dispatcher.dispatch_async(ctx.clone(), event.into()).await;
+        dispatcher_ctx
+            .dispatcher
+            .read()
+            .await
+            .dispatch_async(ctx.clone(), event.into())
+            .await;
         stopped_state.trading_bot_cfg.clear();
     }
 }
@@ -797,7 +801,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
         TradingBotState::Stopping(_) => MmError::err(StartSimpleMakerBotError::CannotStartFromStopping),
         TradingBotState::Stopped(_) => {
             let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
-            let mut dispatcher = dispatcher_ctx.dispatcher.lock().await;
+            let mut dispatcher = dispatcher_ctx.dispatcher.write().await;
             dispatcher.add_listener(simple_market_maker_bot_ctx.clone());
             let mut refresh_rate = req.bot_refresh_rate.unwrap_or(BOT_DEFAULT_REFRESH_RATE);
             if refresh_rate < BOT_DEFAULT_REFRESH_RATE {
@@ -829,7 +833,7 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
         TradingBotState::Stopping(_) => MmError::err(StopSimpleMakerBotError::AlreadyStopping),
         TradingBotState::Running(running_state) => {
             let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
-            let dispatcher = dispatcher_ctx.dispatcher.lock().await;
+            let dispatcher = dispatcher_ctx.dispatcher.read().await;
             let event: TradingBotEvent = TradingBotStopping {
                 bot_refresh_rate: running_state.bot_refresh_rate,
             }
