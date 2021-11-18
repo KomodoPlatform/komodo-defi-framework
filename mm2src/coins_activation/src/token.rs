@@ -45,11 +45,21 @@ pub trait TokenActivationOps: Into<MmCoinEnum> {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableTokenError {
+    #[display(fmt = "Token {} is already activated", _0)]
     TokenIsAlreadyActivated(String),
+    #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
-    TokenProtocolParseError(String),
-    #[display(fmt = "Unexpected token protocol {:?}", _0)]
-    UnexpectedTokenProtocol(CoinProtocol),
+    #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
+    TokenProtocolParseError {
+        ticker: String,
+        error: String,
+    },
+    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    UnexpectedTokenProtocol {
+        ticker: String,
+        protocol: CoinProtocol,
+    },
+    #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),
     #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
     UnsupportedPlatformCoin {
@@ -64,10 +74,15 @@ impl From<CoinConfWithProtocolError> for EnableTokenError {
     fn from(err: CoinConfWithProtocolError) -> Self {
         match err {
             CoinConfWithProtocolError::ConfigIsNotFound(ticker) => EnableTokenError::TokenConfigIsNotFound(ticker),
-            CoinConfWithProtocolError::CoinProtocolParseError(e) => {
-                EnableTokenError::TokenProtocolParseError(e.to_string())
+            CoinConfWithProtocolError::CoinProtocolParseError { ticker, err } => {
+                EnableTokenError::TokenProtocolParseError {
+                    ticker,
+                    error: err.to_string(),
+                }
             },
-            CoinConfWithProtocolError::UnexpectedProtocol(proto) => EnableTokenError::UnexpectedTokenProtocol(proto),
+            CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
+                EnableTokenError::UnexpectedTokenProtocol { ticker, protocol }
+            },
         }
     }
 }
@@ -129,8 +144,8 @@ impl TryPlatformCoinFromMmCoinEnum for BchCoin {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct SlpActivationParams {
-    required_confirmations: Option<u64>,
+pub struct SlpActivationRequest {
+    pub required_confirmations: Option<u64>,
 }
 
 impl TryFromCoinProtocol for SlpProtocolConf {
@@ -185,9 +200,9 @@ impl HttpStatusCode for EnableTokenError {
         match self {
             EnableTokenError::TokenIsAlreadyActivated(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
-            | EnableTokenError::TokenConfigIsNotFound(_)
-            | EnableTokenError::UnexpectedTokenProtocol(_) => StatusCode::BAD_REQUEST,
-            EnableTokenError::TokenProtocolParseError(_)
+            | EnableTokenError::TokenConfigIsNotFound { .. }
+            | EnableTokenError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::Transport(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -212,7 +227,7 @@ pub enum SlpInitError {
 #[async_trait]
 impl TokenActivationOps for SlpToken {
     type PlatformCoin = BchCoin;
-    type ActivationParams = SlpActivationParams;
+    type ActivationParams = SlpActivationRequest;
     type ProtocolInfo = SlpProtocolConf;
     type ActivationResult = SlpInitResult;
     type ActivationError = SlpInitError;

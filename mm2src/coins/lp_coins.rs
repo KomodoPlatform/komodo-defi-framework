@@ -109,7 +109,7 @@ pub use test_coin::TestCoin;
 pub mod z_coin;
 
 use crate::qrc20::Qrc20ActivationParams;
-use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
+use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
@@ -1294,7 +1294,13 @@ pub struct CoinsContext {
     tx_history_db: ConstructibleDb<TxHistoryDb>,
 }
 
+#[derive(Debug)]
 pub struct CoinIsAlreadyActivatedErr {
+    pub ticker: String,
+}
+
+#[derive(Debug)]
+pub struct PlatformIsAlreadyActivatedErr {
     pub ticker: String,
 }
 
@@ -1320,6 +1326,27 @@ impl CoinsContext {
         }
 
         coins.insert(coin.ticker().into(), coin);
+        Ok(())
+    }
+
+    pub async fn add_platform_with_tokens(
+        &self,
+        platform: MmCoinEnum,
+        tokens: Vec<MmCoinEnum>,
+    ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
+        let mut coins = self.coins.lock().await;
+        if coins.contains_key(platform.ticker()) {
+            return MmError::err(PlatformIsAlreadyActivatedErr {
+                ticker: platform.ticker().into(),
+            });
+        }
+
+        coins.insert(platform.ticker().into(), platform);
+
+        // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
+        for token in tokens {
+            coins.insert(token.ticker().into(), token);
+        }
         Ok(())
     }
 
@@ -1568,7 +1595,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
-            let params = try_s!(BchActivationParams::from_legacy_req(req));
+            let params = try_s!(BchActivationRequest::from_legacy_req(req));
 
             let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, secret).await);
             bch.into()

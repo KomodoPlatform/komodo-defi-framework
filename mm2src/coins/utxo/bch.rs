@@ -1,20 +1,20 @@
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
-use crate::utxo::slp::{parse_slp_script, SlpToken, SlpTransaction, SlpUnspent};
+use crate::utxo::slp::{parse_slp_script, SlpTokenInfo, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, CoinProtocol, NegotiateSwapContractAddrErr,
-            SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::{CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
+            TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
-use keys::NetworkPrefix as CashAddrPrefix;
+pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct BchActivationParams {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BchActivationRequest {
     #[serde(default)]
     allow_slp_unsafe_conf: bool,
     bchd_urls: Vec<String>,
@@ -33,13 +33,13 @@ impl From<UtxoFromLegacyReqErr> for BchFromLegacyReqErr {
     fn from(err: UtxoFromLegacyReqErr) -> Self { BchFromLegacyReqErr::InvalidUtxoParams(err) }
 }
 
-impl BchActivationParams {
+impl BchActivationRequest {
     pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<BchFromLegacyReqErr>> {
         let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(BchFromLegacyReqErr::InvalidBchdUrls)?;
         let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
         let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
 
-        Ok(BchActivationParams {
+        Ok(BchActivationRequest {
             allow_slp_unsafe_conf,
             bchd_urls,
             with_tokens: Vec::new(),
@@ -53,6 +53,7 @@ pub struct BchCoin {
     utxo_arc: UtxoArc,
     slp_addr_prefix: CashAddrPrefix,
     bchd_urls: Vec<String>,
+    slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
 }
 
 pub enum IsSlpUtxoError {
@@ -104,19 +105,6 @@ impl BchUnspents {
             spendable: big_decimal_from_sat_unsigned(spendable_sat, decimals),
             unspendable: big_decimal_from_sat_unsigned(total_unspendable, decimals),
         }
-    }
-
-    fn slp_token_balance(&self, token_id: &H256, decimals: u8) -> CoinBalance {
-        self.slp
-            .get(token_id)
-            .map(|unspents| {
-                let total_sat = unspents.iter().fold(0, |cur, unspent| cur + unspent.slp_amount);
-                CoinBalance {
-                    spendable: big_decimal_from_sat_unsigned(total_sat, decimals),
-                    unspendable: 0.into(),
-                }
-            })
-            .unwrap_or_default()
     }
 }
 
@@ -280,6 +268,10 @@ impl BchCoin {
         slp_unspents.sort_by(|a, b| a.slp_amount.cmp(&b.slp_amount));
         Ok((slp_unspents, standard_utxos))
     }
+
+    pub fn add_slp_token_info(&self, ticker: String, info: SlpTokenInfo) {
+        self.slp_tokens_infos.lock().unwrap().insert(ticker, info);
+    }
 }
 
 impl AsRef<UtxoCoinFields> for BchCoin {
@@ -290,7 +282,7 @@ pub async fn bch_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    params: BchActivationParams,
+    params: BchActivationRequest,
     slp_addr_prefix: CashAddrPrefix,
     priv_key: &[u8],
 ) -> Result<BchCoin, String> {
@@ -299,11 +291,13 @@ pub async fn bch_coin_from_conf_and_params(
     }
 
     let bchd_urls = params.bchd_urls;
+    let slp_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
     let constructor = {
         move |utxo_arc| BchCoin {
             utxo_arc,
             slp_addr_prefix: slp_addr_prefix.clone(),
             bchd_urls: bchd_urls.clone(),
+            slp_tokens_infos: Arc::clone(&slp_tokens_infos),
         }
     };
     let coin: BchCoin = try_s!(
@@ -337,84 +331,6 @@ pub enum BchActivationError {
 
 impl From<UtxoRpcError> for BchActivationError {
     fn from(e: UtxoRpcError) -> Self { BchActivationError::RpcError(e) }
-}
-
-pub struct BchActivationResult {
-    pub current_block: u64,
-    pub platform_coin: BchCoin,
-    pub platform_coin_balance: CoinBalance,
-    pub slp_tokens: Vec<SlpToken>,
-    pub slp_tokens_balances: HashMap<String, CoinBalance>,
-}
-
-pub async fn activate_bch_with_tokens(
-    ctx: &MmArc,
-    ticker: &str,
-    bch_conf: &Json,
-    params: BchActivationParams,
-    slp_addr_prefix: &str,
-    priv_key: &[u8],
-) -> Result<BchActivationResult, MmError<BchActivationError>> {
-    let slp_addr_prefix = slp_addr_prefix
-        .parse()
-        .map_to_mm(BchActivationError::SlpPrefixParseError)?;
-    let tokens = params.with_tokens.clone();
-    let platform_coin = bch_coin_from_conf_and_params(ctx, ticker, bch_conf, params, slp_addr_prefix, priv_key)
-        .await
-        .map_to_mm(BchActivationError::CoinInitError)?;
-
-    let current_block = platform_coin.as_ref().rpc_client.get_block_count().compat().await?;
-    let bch_unspents = platform_coin
-        .bch_unspents_for_display(&platform_coin.as_ref().my_address)
-        .await?;
-
-    let mut slp_tokens = Vec::with_capacity(tokens.len());
-    let mut slp_tokens_balances = HashMap::with_capacity(tokens.len());
-
-    for token in tokens {
-        let token_conf = coin_conf(ctx, &token);
-        if token_conf.is_null() {
-            return MmError::err(BchActivationError::TokenConfIsNotFound { token });
-        }
-        let token_protocol: CoinProtocol = json::from_value(token_conf["protocol"].clone()).map_to_mm(|error| {
-            BchActivationError::TokenCoinProtocolParseError {
-                token: token.clone(),
-                error,
-            }
-        })?;
-        match token_protocol {
-            CoinProtocol::SLPTOKEN {
-                platform,
-                token_id,
-                decimals,
-                required_confirmations,
-            } => {
-                if platform != ticker {
-                    return MmError::err(BchActivationError::TokenPlatformCoinIsInvalidInConf {
-                        token,
-                        expected_platform: ticker.to_owned(),
-                        actual_platform: platform,
-                    });
-                } else {
-                    let confs = required_confirmations.unwrap_or_else(|| platform_coin.required_confirmations());
-                    let token_id = token_id.into();
-                    slp_tokens_balances.insert(token.clone(), bch_unspents.slp_token_balance(&token_id, decimals));
-                    let token = SlpToken::new(decimals, token, token_id, platform_coin.clone(), confs);
-                    slp_tokens.push(token);
-                }
-            },
-            protocol => return MmError::err(BchActivationError::TokenCoinProtocolIsNotSlp { token, protocol }),
-        }
-    }
-
-    let platform_coin_balance = bch_unspents.platform_balance(platform_coin.as_ref().decimals);
-    Ok(BchActivationResult {
-        current_block,
-        platform_coin,
-        platform_coin_balance,
-        slp_tokens,
-        slp_tokens_balances,
-    })
 }
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
@@ -929,7 +845,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
         "allow_slp_unsafe_conf": false,
     });
 
-    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    let params = BchActivationRequest::from_legacy_req(&req).unwrap();
     block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
@@ -961,7 +877,7 @@ pub fn bch_coin_for_test() -> BchCoin {
         "allow_slp_unsafe_conf": true,
     });
 
-    let params = BchActivationParams::from_legacy_req(&req).unwrap();
+    let params = BchActivationRequest::from_legacy_req(&req).unwrap();
     block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",

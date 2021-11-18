@@ -12,8 +12,8 @@ pub trait TryFromCoinProtocol {
 #[derive(Debug)]
 pub enum CoinConfWithProtocolError {
     ConfigIsNotFound(String),
-    CoinProtocolParseError(json::Error),
-    UnexpectedProtocol(CoinProtocol),
+    CoinProtocolParseError { ticker: String, err: json::Error },
+    UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
 }
 
 pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
@@ -25,10 +25,17 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()));
     }
 
-    let coin_protocol: CoinProtocol =
-        json::from_value(conf["protocol"].clone()).map_to_mm(CoinConfWithProtocolError::CoinProtocolParseError)?;
+    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
+        CoinConfWithProtocolError::CoinProtocolParseError {
+            ticker: coin.into(),
+            err,
+        }
+    })?;
 
     let coin_protocol =
-        T::try_from_coin_protocol(coin_protocol).mm_err(CoinConfWithProtocolError::UnexpectedProtocol)?;
+        T::try_from_coin_protocol(coin_protocol).mm_err(|protocol| CoinConfWithProtocolError::UnexpectedProtocol {
+            ticker: coin.into(),
+            protocol,
+        })?;
     Ok((conf, coin_protocol))
 }

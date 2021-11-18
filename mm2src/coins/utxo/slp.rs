@@ -63,6 +63,14 @@ pub struct SlpTokenConf {
     required_confirmations: AtomicU64,
 }
 
+/// Minimalistic info that is used to be stored outside of the token's context
+/// E.g. in the platform BCHCoin
+#[derive(Debug)]
+pub struct SlpTokenInfo {
+    pub token_id: H256,
+    pub decimals: u8,
+}
+
 #[derive(Clone, Debug)]
 pub struct SlpToken {
     conf: Arc<SlpTokenConf>,
@@ -745,6 +753,13 @@ impl SlpToken {
     }
 
     fn slp_prefix(&self) -> &CashAddrPrefix { self.platform_coin.slp_prefix() }
+
+    pub fn get_info(&self) -> SlpTokenInfo {
+        SlpTokenInfo {
+            token_id: self.conf.token_id,
+            decimals: self.conf.decimals,
+        }
+    }
 }
 
 /// https://slp.dev/specs/slp-token-type-1/#transaction-detail
