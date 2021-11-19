@@ -1,23 +1,19 @@
 use crate::prelude::*;
-use crate::token::SlpActivationRequest;
 use async_trait::async_trait;
-use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin, CashAddrPrefix};
-use coins::utxo::slp::{SlpProtocolConf, SlpToken};
-use coins::{lp_coinfind, CoinBalance, CoinProtocol, CoinsContext, MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::NotSame;
+use common::{HttpStatusCode, NotSame, StatusCode};
 use derive_more::Display;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
 use std::convert::Infallible;
-use std::str::FromStr;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
+    #[serde(flatten)]
     request: Req,
 }
 
@@ -26,9 +22,9 @@ pub trait TokenOf: Into<MmCoinEnum> {
 }
 
 pub struct TokenActivationParams<Req, Protocol> {
-    ticker: String,
-    activation_request: Req,
-    protocol: Protocol,
+    pub(crate) ticker: String,
+    pub(crate) activation_request: Req,
+    pub(crate) protocol: Protocol,
 }
 
 #[async_trait]
@@ -51,7 +47,7 @@ pub trait TokenInitializer {
 }
 
 #[async_trait]
-pub trait TokenAsMmCoinInitializer {
+pub trait TokenAsMmCoinInitializer: Send + Sync {
     type PlatformCoin;
     type ActivationRequest;
 
@@ -61,8 +57,6 @@ pub trait TokenAsMmCoinInitializer {
         request: &Self::ActivationRequest,
     ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>>;
 }
-
-pub trait PlatformCoinWithTokensActivationOps {}
 
 pub enum InitTokensAsMmCoinsError {
     TokenConfigIsNotFound(String),
@@ -155,174 +149,11 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct BchWithTokensActivationRequest {
-    #[serde(flatten)]
-    platform_request: BchActivationRequest,
-    slp_tokens_requests: Vec<TokenActivationRequest<SlpActivationRequest>>,
-}
-
-pub struct BchProtocolInfo {
-    slp_prefix: String,
-}
-
-impl TryFromCoinProtocol for BchProtocolInfo {
-    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
-    where
-        Self: Sized,
-    {
-        match proto {
-            CoinProtocol::BCH { slp_prefix } => Ok(BchProtocolInfo { slp_prefix }),
-            protocol => MmError::err(protocol),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum DerivationMethod {
-    /// Legacy iguana's privkey derivation, used by default
-    Iguana,
-    /// HD wallet derivation path, String is temporary here
-    HDWallet(String),
-}
-
-#[derive(Debug)]
-pub struct CoinAddressInfo<Balance> {
-    derivation_method: DerivationMethod,
-    pubkey: String,
-    balances: Balance,
-}
-
-pub type TokenBalances = HashMap<String, CoinBalance>;
-
-#[derive(Debug)]
-pub struct BchWithTokensActivationResult {
-    current_block: u64,
-    bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-}
-
-#[derive(Debug)]
-pub enum BchWithTokensActivationError {
-    PlatformCoinCreationError {
-        ticker: String,
-        error: String,
-    },
-    InvalidSlpPrefix {
-        ticker: String,
-        prefix: String,
-        error: String,
-    },
-}
-
-#[async_trait]
-impl PlatformWithTokensActivationOps for BchCoin {
-    type ActivationRequest = BchWithTokensActivationRequest;
-    type PlatformProtocolInfo = BchProtocolInfo;
-    type ActivationResult = BchWithTokensActivationResult;
-    type ActivationError = BchWithTokensActivationError;
-
-    async fn init_platform_coin(
-        ctx: MmArc,
-        ticker: String,
-        platform_conf: Json,
-        activation_request: Self::ActivationRequest,
-        protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
-    ) -> Result<Self, MmError<Self::ActivationError>> {
-        let slp_prefix = CashAddrPrefix::from_str(&protocol_conf.slp_prefix).map_to_mm(|error| {
-            BchWithTokensActivationError::InvalidSlpPrefix {
-                ticker: ticker.clone(),
-                prefix: protocol_conf.slp_prefix,
-                error,
-            }
-        })?;
-
-        let platform_coin = bch_coin_from_conf_and_params(
-            &ctx,
-            &ticker,
-            &platform_conf,
-            activation_request.platform_request,
-            slp_prefix,
-            priv_key,
-        )
-        .await
-        .map_to_mm(|error| BchWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
-        Ok(platform_coin)
-    }
-
-    fn token_initializers(
-        &self,
-    ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        vec![Box::new(SlpTokenInitializer {
-            platform_coin: self.clone(),
-        })]
-    }
-
-    async fn get_activation_result(&self) -> Result<BchWithTokensActivationResult, MmError<Self::ActivationError>> {
-        todo!()
-    }
-}
-
-pub struct SlpTokenInitializer {
-    platform_coin: BchCoin,
-}
-
-impl TokenOf for SlpToken {
-    type PlatformCoin = BchCoin;
-}
-
-#[async_trait]
-impl TokenInitializer for SlpTokenInitializer {
-    type Token = SlpToken;
-    type TokenActivationRequest = SlpActivationRequest;
-    type TokenProtocol = SlpProtocolConf;
-    type InitTokensError = std::convert::Infallible;
-
-    fn tokens_requests_from_platform_request(
-        platform_params: &BchWithTokensActivationRequest,
-    ) -> Vec<TokenActivationRequest<Self::TokenActivationRequest>> {
-        platform_params.slp_tokens_requests.clone()
-    }
-
-    async fn init_tokens(
-        &self,
-        activation_params: Vec<TokenActivationParams<SlpActivationRequest, SlpProtocolConf>>,
-    ) -> Result<Vec<SlpToken>, MmError<std::convert::Infallible>> {
-        let tokens = activation_params
-            .into_iter()
-            .map(|params| {
-                // confirmation settings from RPC request have the highest priority
-                let required_confirmations = params.activation_request.required_confirmations.unwrap_or_else(|| {
-                    params
-                        .protocol
-                        .required_confirmations
-                        .unwrap_or_else(|| self.platform_coin.required_confirmations())
-                });
-
-                SlpToken::new(
-                    params.protocol.decimals,
-                    params.ticker,
-                    params.protocol.token_id,
-                    self.platform_coin.clone(),
-                    required_confirmations,
-                )
-            })
-            .collect();
-
-        Ok(tokens)
-    }
-
-    fn platform_coin(&self) -> &BchCoin { &self.platform_coin }
-}
-
+#[derive(Debug, Deserialize)]
 pub struct EnablePlatformCoinWithTokensReq<T: Clone> {
     ticker: String,
+    #[serde(flatten)]
     request: T,
-}
-
-impl RegisterTokenInfo<SlpToken> for BchCoin {
-    fn register_token_info(&self, token: &SlpToken) { self.add_slp_token_info(token.ticker().into(), token.get_info()) }
 }
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
@@ -352,6 +183,11 @@ pub enum EnablePlatformCoinWithTokensError {
     UnexpectedTokenProtocol {
         ticker: String,
         protocol: CoinProtocol,
+    },
+    #[display(fmt = "Error {} on platform coin {} creation", error, ticker)]
+    PlatformCoinCreationError {
+        ticker: String,
+        error: String,
     },
     Transport(String),
     Internal(String),
@@ -392,6 +228,23 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
     }
 }
 
+impl HttpStatusCode for EnablePlatformCoinWithTokensError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
+            | EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
+            | EnablePlatformCoinWithTokensError::TokenProtocolParseError { .. }
+            | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
+            | EnablePlatformCoinWithTokensError::Transport(_)
+            | EnablePlatformCoinWithTokensError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
+            | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
+            | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
+            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
 pub async fn enable_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
     req: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
@@ -423,7 +276,7 @@ where
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
         let tokens = initializer.init_tokens_as_mm_coins(ctx.clone(), &req.request).await?;
-        mm_tokens.extend(tokens)
+        mm_tokens.extend(tokens);
     }
 
     let activation_result = platform_coin.get_activation_result().await?;

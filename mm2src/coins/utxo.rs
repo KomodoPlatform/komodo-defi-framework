@@ -1271,6 +1271,7 @@ impl<'a> UtxoConfBuilder<'a> {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "mode", content = "mode_data")]
 pub enum UtxoActivationMode {
     Native,
     Electrum { servers: Vec<ElectrumRpcRequest> },

@@ -349,12 +349,6 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 }
 
-#[allow(dead_code)]
-pub struct CoinBalancesWithTokens {
-    platform_coin_balances: HashMap<String, CoinBalance>,
-    token_balances: HashMap<String, HashMap<String, CoinBalance>>,
-}
-
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
@@ -373,8 +367,6 @@ pub trait MarketCoinOps {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
-
-    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens>;
 
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
@@ -1174,45 +1166,6 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     /// Check if serialized coin protocol info is supported by current version.
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
-}
-
-pub trait IntoMmCoins {
-    fn into_mm_coins(self) -> Vec<MmCoinEnum>;
-}
-
-pub trait CoinActivationParamsOps {
-    fn activate_with_tokens(&self) -> Vec<String>;
-}
-
-#[derive(Debug, Display)]
-pub enum TokenCreationError {}
-
-pub trait TokenOf<T> {}
-
-#[async_trait]
-pub trait TokenActivationOps: Into<MmCoinEnum> {
-    type PlatformCoin;
-
-    async fn activate_token(
-        platform_coin: Self::PlatformCoin,
-        ticker: &str,
-        conf: &Json,
-    ) -> Result<Self, MmError<TokenCreationError>>;
-}
-
-#[async_trait]
-pub trait CoinActivationOps: Into<MmCoinEnum> {
-    type ActivationParams: CoinActivationParamsOps;
-    type ActivationError: NotMmError;
-
-    async fn activate(
-        ctx: &MmArc,
-        ticker: &str,
-        conf: &Json,
-        params: Self::ActivationParams,
-    ) -> Result<Self, MmError<Self::ActivationError>>;
-
-    fn activate_token(&self, ticker: &str, conf: &Json) -> Result<MmCoinEnum, MmError<TokenCreationError>>;
 }
 
 #[derive(Clone, Debug)]

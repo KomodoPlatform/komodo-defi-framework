@@ -2,23 +2,24 @@ use super::*;
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpTokenInfo, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{CanRefundHtlc, CoinBalance, CoinBalancesWithTokens, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::{CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue,
+            ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
+use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
+use std::sync::MutexGuard;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BchActivationRequest {
     #[serde(default)]
     allow_slp_unsafe_conf: bool,
     bchd_urls: Vec<String>,
-    with_tokens: Vec<String>,
     #[serde(flatten)]
     utxo_params: UtxoActivationParams,
 }
@@ -42,7 +43,6 @@ impl BchActivationRequest {
         Ok(BchActivationRequest {
             allow_slp_unsafe_conf,
             bchd_urls,
-            with_tokens: Vec::new(),
             utxo_params,
         })
     }
@@ -89,7 +89,7 @@ impl BchUnspents {
 
     fn add_undetermined(&mut self, utxo: UnspentInfo) { self.undetermined.push(utxo) }
 
-    fn platform_balance(&self, decimals: u8) -> CoinBalance {
+    pub fn platform_balance(&self, decimals: u8) -> CoinBalance {
         let spendable_sat = total_unspent_value(&self.standard);
 
         let unspendable_slp = self.slp.iter().fold(0, |cur, (_, slp_unspents)| {
@@ -105,6 +105,19 @@ impl BchUnspents {
             spendable: big_decimal_from_sat_unsigned(spendable_sat, decimals),
             unspendable: big_decimal_from_sat_unsigned(total_unspendable, decimals),
         }
+    }
+
+    pub fn slp_token_balance(&self, token_id: &H256, decimals: u8) -> CoinBalance {
+        self.slp
+            .get(token_id)
+            .map(|unspents| {
+                let total_sat = unspents.iter().fold(0, |cur, unspent| cur + unspent.slp_amount);
+                CoinBalance {
+                    spendable: big_decimal_from_sat_unsigned(total_sat, decimals),
+                    unspendable: 0.into(),
+                }
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -271,6 +284,19 @@ impl BchCoin {
 
     pub fn add_slp_token_info(&self, ticker: String, info: SlpTokenInfo) {
         self.slp_tokens_infos.lock().unwrap().insert(ticker, info);
+    }
+
+    pub fn get_slp_tokens_infos(&self) -> MutexGuard<'_, HashMap<String, SlpTokenInfo>> {
+        self.slp_tokens_infos.lock().unwrap()
+    }
+
+    pub fn get_my_slp_address(&self) -> Result<CashAddress, String> {
+        let slp_address = self.as_ref().my_address.to_cashaddress(
+            &self.slp_prefix().to_string(),
+            self.as_ref().conf.pub_addr_prefix,
+            self.as_ref().conf.p2sh_addr_prefix,
+        )?;
+        Ok(slp_address)
     }
 }
 
@@ -675,8 +701,6 @@ impl MarketCoinOps for BchCoin {
         };
         Box::new(fut.boxed().compat())
     }
-
-    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 

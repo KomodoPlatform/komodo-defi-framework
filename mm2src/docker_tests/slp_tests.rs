@@ -1,6 +1,6 @@
 use crate::docker_tests::docker_tests_common::*;
 use bigdecimal::BigDecimal;
-use common::for_tests::enable_slp;
+use common::for_tests::{enable_bch_with_tokens, enable_slp};
 use serde_json::{self as json};
 use std::time::Duration;
 
@@ -79,6 +79,42 @@ fn test_bch_and_slp_balance_enable_slp_v2() {
 
     assert_eq!(expected_spendable, slp_balance.balance);
     assert_eq!(expected_unspendable, slp_balance.unspendable_balance);
+}
+
+#[test]
+fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
+    let mm = slp_supplied_node();
+
+    let enable_bch_with_tokens = block_on(enable_bch_with_tokens(&mm, "FORSLP", &["ADEXSLP"]));
+    let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
+        json::from_value(enable_bch_with_tokens).unwrap();
+
+    let expected_bch_spendable = BigDecimal::from(1000);
+    let expected_bch_unspendable: BigDecimal = "0.00001".parse().unwrap();
+
+    let (_, bch_balance) = enable_bch_with_tokens
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+
+    assert_eq!(expected_bch_spendable, bch_balance.balances.spendable);
+    assert_eq!(expected_bch_unspendable, bch_balance.balances.unspendable);
+
+    let (_, slp_balances) = enable_bch_with_tokens
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+
+    let expected_slp_spendable = BigDecimal::from(1000);
+    let expected_slp_unspendable: BigDecimal = 0.into();
+
+    let actual_slp = slp_balances.balances.get("ADEXSLP").unwrap();
+    assert_eq!(expected_slp_spendable, actual_slp.spendable);
+    assert_eq!(expected_slp_unspendable, actual_slp.unspendable);
 }
 
 #[test]

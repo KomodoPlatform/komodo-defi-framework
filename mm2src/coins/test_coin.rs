@@ -1,6 +1,6 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CoinBalancesWithTokens, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            TradePreimageFut, TradePreimageValue, ValidateAddressResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, TradePreimageFut,
+            TradePreimageValue, ValidateAddressResult, WithdrawFut, WithdrawRequest};
 use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
 use common::mm_error::MmError;
@@ -33,8 +33,6 @@ impl MarketCoinOps for TestCoin {
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { unimplemented!() }
-
-    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 

@@ -65,12 +65,13 @@ mod telegram_tests {
 
     #[test]
     fn test_send_message() {
-        let api_key = var("TELEGRAM_API_KEY").ok().unwrap();
-        let chat_registry: ChatIdRegistry = vec![("RustTestChatId".to_string(), "586216033".to_string())]
-            .into_iter()
-            .collect();
-        let tg_client = TgClient::new(api_key, None, chat_registry);
-        let resp = block_on(tg_client.send_message("Hello from rust".to_string(), "RustTestChatId", true)).unwrap();
-        assert_eq!(resp, true);
+        if let Ok(api_key) = var("TELEGRAM_API_KEY") {
+            let chat_registry: ChatIdRegistry = vec![("RustTestChatId".to_string(), "586216033".to_string())]
+                .into_iter()
+                .collect();
+            let tg_client = TgClient::new(api_key, None, chat_registry);
+            let resp = block_on(tg_client.send_message("Hello from rust".to_string(), "RustTestChatId", true)).unwrap();
+            assert!(resp);
+        }
     }
 }

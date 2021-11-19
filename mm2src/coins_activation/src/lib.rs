@@ -1,5 +1,7 @@
+mod bch_with_tokens_activation;
 mod platform_coin_with_tokens;
 mod prelude;
+mod slp_token_activation;
 mod standalone_coin;
 mod token;
 
