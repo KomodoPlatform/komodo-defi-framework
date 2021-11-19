@@ -43,6 +43,7 @@ use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error, Reader};
 use serialization_derive::Deserializable;
 use std::convert::TryInto;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
@@ -1074,6 +1075,18 @@ impl MarketCoinOps for SlpToken {
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }
 
     fn min_trading_vol(&self) -> MmNumber { big_decimal_from_sat_unsigned(1, self.decimals()).into() }
+
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String> {
+        let tx = match self
+            .rpc()
+            .get_verbose_transaction(&H256Json::from_str(tx_hash.as_str()).unwrap())
+            .wait()
+        {
+            Ok(v) => v,
+            Err(e) => return Err(format!("SLP Error: {}", e)),
+        };
+        Ok(std::str::from_utf8(&tx.hex).unwrap().to_string())
+    }
 }
 
 impl SwapOps for SlpToken {

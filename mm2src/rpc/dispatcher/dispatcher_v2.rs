@@ -5,7 +5,8 @@ use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::trade_preimage_rpc,
-            mm2::rpc::get_public_key::get_public_key};
+            mm2::rpc::get_public_key::get_public_key,
+            mm2::rpc::get_raw_tx::get_raw_tx};
 use coins::lightning::enable_lightning;
 use coins::utxo::slp::SlpToken;
 use coins::{add_delegation, get_staking_infos, remove_delegation, withdraw};
@@ -112,6 +113,7 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
+        "get_raw_tx" => handle_mmrpc(ctx, request, get_raw_tx).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

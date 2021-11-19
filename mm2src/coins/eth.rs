@@ -29,7 +29,7 @@ use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
-use ethereum_types::{Address, H160, U256};
+use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, KeyPair, Public};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
@@ -1288,6 +1288,25 @@ impl MarketCoinOps for EthCoin {
     fn min_trading_vol(&self) -> MmNumber {
         let pow = self.decimals / 3;
         MmNumber::from(1) / MmNumber::from(10u64.pow(pow as u32))
+    }
+
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String> {
+        let tx_query: Result<Option<web3::types::Transaction>, web3::Error> = self
+            .web3
+            .eth()
+            .transaction(TransactionId::Hash(H256::from_str(tx_hash.as_str()).unwrap()))
+            .wait();
+
+        let tx: Option<web3::types::Transaction> = match tx_query {
+            Ok(v) => v,
+            Err(_) => return Err("ETH Query Error".to_string()),
+        };
+
+        let tx = match tx {
+            Some(v) => v,
+            None => return Err("No such tx".to_string()),
+        };
+        Ok(std::str::from_utf8(&tx.input.0).unwrap().to_string())
     }
 }
 

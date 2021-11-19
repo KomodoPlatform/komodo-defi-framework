@@ -414,6 +414,9 @@ pub trait MarketCoinOps {
 
     /// Get the minimum amount to trade.
     fn min_trading_vol(&self) -> MmNumber;
+
+    /// Get the raw transaction
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String>;
 }
 
 #[derive(Debug, Deserialize)]

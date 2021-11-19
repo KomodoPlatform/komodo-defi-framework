@@ -8619,6 +8619,104 @@ fn test_get_public_key() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_get_raw_tx() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+    // Enable RICK.
+    let _json = block_on(enable_electrum(&mm, "RICK", false, &[
+        "electrum1.cipig.net:10017",
+        "electrum2.cipig.net:10017",
+        "electrum3.cipig.net:10017",
+    ]));
+    fn get_raw_tx_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
+        block_on(mm.rpc(json!({
+                 "userpass": "password",
+                 "mmrpc": "2.0",
+                 "method": "get_raw_tx",
+                 "params": {
+                     "coin": "RICK",
+                     "tx_hash": "989360b0225b4e05fa13643e2e306c8eb5c52fa611615dfd30195089010b1c7b",
+                 },
+                 "id": 0})))
+        .unwrap()
+    }
+    let resp = get_raw_tx_bot_rpc(&mm);
+
+    // Must be 200
+    assert_eq!(resp.0, 200);
+    let v: RpcV2Response<GetRawTxResult> = serde_json::from_str(&*resp.1).unwrap();
+    assert_eq!(
+        v.result.tx_hex,
+        "0400008085202f89025655b6fec358091a4a6b34107e69b10bd7660056d8f2a1e5f8eef0db6aec960100000000494830450221008c89db5e2d93d7674fe152e37344dfd24a0b1d4d382a7e0bcfc5d8190a141d72022050ce4ef929429e7e1a6c4ebd3f72a1a2aa25da1e0df65553a2c657658077ed1d01feffffff79cc137b70c39c9c7c2b9230c818ec684ffe731bf1ae821f91ba9d3e526f55f00000000049483045022100868c71f4a8e1452a3bc8b1d053a846959ab7df63fb0d147e9173f69818bbb1f3022060c7e045a34cf6af61bc3a74dc2db7b8bfa4949bc5919acceed40fc07d8706d201feffffff0240043a0000000000232102afdbba3e3c90db5f0f4064118f79cf308f926c68afd64ea7afc930975663e4c4ac201efc01000000001976a914347f2aedf63bac168c2cc4f075a2850435e20ac188ac96d3c96036dd0e000000000000000000000000"
+    )
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_raw_tx_eth() {
+    let coins = json!([
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": "bob passphrase",
+            "rpc_password": "password",
+            "coins": coins,
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({"Log path: {}", mm.log_path.display()});
+    // Enable ETH.
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    fn get_raw_tx_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
+        block_on(mm.rpc(json!({
+                 "userpass": "password",
+                 "mmrpc": "2.0",
+                 "method": "get_raw_tx",
+                 "params": {
+                     "coin": "ETHR",
+                     "tx_hash": "0xbdef3970c00752b0dc811cd93faadfd75a7a52e6b8e0b608c5519edcad801359",
+                 },
+                 "id": 0})))
+        .unwrap()
+    }
+    let resp = get_raw_tx_bot_rpc(&mm);
+
+    // Must be 200
+    assert_eq!(resp.0, 200);
+    let v: RpcV2Response<GetRawTxResult> = serde_json::from_str(&*resp.1).unwrap();
+    assert_eq!(
+        v.result.tx_hex,
+        "f8a975843b9aca0083024f8394fab46e002bbf0b4509813474841e0716e673013680b84440c10f190000000000000000000000003ef8b4a81ab3444864377dde648268f00e3cd0700000000000000000000000000000000000000000000000004563918244f4000029a0ee799246e00354e173c2236aac52dca3d9e75ac98d2ac48ce67fdab42712c82ca06c42b9db9ebf22fa2aeb85927ba8275ea057f5bffdc2d4bd923606415a18b58a"
+    )
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_orderbook_with_same_orderbook_ticker() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"protocol":{"type":"UTXO"}},

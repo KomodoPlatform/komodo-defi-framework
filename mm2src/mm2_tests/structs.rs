@@ -613,6 +613,12 @@ pub struct GetPublicKeyResult {
     pub public_key: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct GetRawTxResult {
+    pub tx_hex: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {

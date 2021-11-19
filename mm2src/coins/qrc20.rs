@@ -1033,6 +1033,21 @@ impl MarketCoinOps for Qrc20Coin {
         let pow = self.utxo.decimals / 3;
         MmNumber::from(1) / MmNumber::from(10u64.pow(pow as u32))
     }
+
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String> {
+        let tx = match self
+            .get_verbose_transaction_from_cache_or_rpc(H256Json::from_str(tx_hash.as_str()).unwrap())
+            .wait()
+        {
+            Ok(v) => v,
+            Err(e) => return Err(format!("QRC20 Query Error: {}", e)),
+        };
+        let tx = match tx {
+            VerboseTransactionFrom::Cache(v) => v,
+            VerboseTransactionFrom::Rpc(v) => v,
+        };
+        Ok(std::str::from_utf8(&tx.hex).unwrap().to_string())
+    }
 }
 
 impl MmCoin for Qrc20Coin {

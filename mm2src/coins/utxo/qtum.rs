@@ -608,6 +608,21 @@ impl MarketCoinOps for QtumCoin {
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
+
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String> {
+        let tx = match self
+            .get_verbose_transaction_from_cache_or_rpc(H256Json::from_str(tx_hash.as_str()).unwrap())
+            .wait()
+        {
+            Ok(v) => v,
+            Err(e) => return Err(format!("Qtum Error: {}", e)),
+        };
+        let tx = match tx {
+            VerboseTransactionFrom::Cache(v) => v,
+            VerboseTransactionFrom::Rpc(v) => v,
+        };
+        Ok(std::str::from_utf8(&tx.hex).unwrap().to_string())
+    }
 }
 
 impl MmCoin for QtumCoin {

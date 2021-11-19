@@ -71,6 +71,8 @@ impl MarketCoinOps for TestCoin {
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
+
+    fn get_raw_tx(&self, tx_hash: String) -> Result<String, String> { unimplemented!() }
 }
 
 #[mockable]
