@@ -231,13 +231,13 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
 impl HttpStatusCode for EnablePlatformCoinWithTokensError {
     fn status_code(&self) -> StatusCode {
         match self {
-            EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
-            | EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
+            EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::TokenProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
             | EnablePlatformCoinWithTokensError::Transport(_)
             | EnablePlatformCoinWithTokensError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
+            EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
+            | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,

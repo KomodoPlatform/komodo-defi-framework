@@ -323,7 +323,7 @@ pub async fn bch_coin_from_conf_and_params(
             utxo_arc,
             slp_addr_prefix: slp_addr_prefix.clone(),
             bchd_urls: bchd_urls.clone(),
-            slp_tokens_infos: Arc::clone(&slp_tokens_infos),
+            slp_tokens_infos: slp_tokens_infos.clone(),
         }
     };
     let coin: BchCoin = try_s!(

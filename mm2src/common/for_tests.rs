@@ -920,7 +920,7 @@ pub async fn enable_bch_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tok
                 "allow_slp_unsafe_conf": true,
                 "bchd_urls": [],
                 "mode": {
-                    "mode": "Native",
+                    "rpc": "Native",
                 },
                 "slp_tokens_requests": slp_requests,
             }

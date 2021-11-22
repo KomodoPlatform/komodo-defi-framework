@@ -965,7 +965,7 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoActivationParams {
-    mode: UtxoActivationMode,
+    mode: UtxoRpcMode,
     utxo_merge_params: Option<UtxoMergeParams>,
     #[serde(default)]
     tx_history: bool,
@@ -987,11 +987,11 @@ pub enum UtxoFromLegacyReqErr {
 impl UtxoActivationParams {
     pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<UtxoFromLegacyReqErr>> {
         let mode = match req["method"].as_str() {
-            Some("enable") => UtxoActivationMode::Native,
+            Some("enable") => UtxoRpcMode::Native,
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                UtxoActivationMode::Electrum { servers }
+                UtxoRpcMode::Electrum { servers }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1271,8 +1271,8 @@ impl<'a> UtxoConfBuilder<'a> {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "mode", content = "mode_data")]
-pub enum UtxoActivationMode {
+#[serde(tag = "rpc", content = "rpc_data")]
+pub enum UtxoRpcMode {
     Native,
     Electrum { servers: Vec<ElectrumRpcRequest> },
 }
@@ -1454,7 +1454,7 @@ pub trait UtxoCoinBuilder {
 
     async fn rpc_client(&self) -> Result<UtxoRpcClientEnum, String> {
         match self.activation_params().mode {
-            UtxoActivationMode::Native => {
+            UtxoRpcMode::Native => {
                 #[cfg(target_arch = "wasm32")]
                 {
                     ERR!("Native UTXO mode is only supported in native mode")
@@ -1465,7 +1465,7 @@ pub trait UtxoCoinBuilder {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            UtxoActivationMode::Electrum { servers } => {
+            UtxoRpcMode::Electrum { servers } => {
                 let electrum = try_s!(self.electrum_client(ElectrumBuilderArgs::default(), servers).await);
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
@@ -2177,7 +2177,7 @@ pub fn address_by_conf_and_pubkey_str(
 ) -> Result<String, String> {
     // using a reasonable default here
     let params = UtxoActivationParams {
-        mode: UtxoActivationMode::Native,
+        mode: UtxoRpcMode::Native,
         utxo_merge_params: None,
         tx_history: false,
         required_confirmations: None,
