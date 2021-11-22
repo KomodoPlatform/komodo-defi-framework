@@ -93,13 +93,19 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if is_wallet_only_conf(&rel_coin_conf) {
         return ERR!("Base Coin {} is wallet only", req.rel);
     }
-    let request_orderbook = true;
-    try_s!(subscribe_to_orderbook_topic(&ctx, &req.base, &req.rel, request_orderbook).await);
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+    let request_orderbook = true;
+    let base_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.base);
+    let rel_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.rel);
+    if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
+        return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
+    }
+
+    try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock().await;
     let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
 
-    let mut asks = match orderbook.unordered.get(&(req.base.clone(), req.rel.clone())) {
+    let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
             let mut orderbook_entries = Vec::new();
             for uuid in uuids {
@@ -125,7 +131,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     let (mut asks, total_asks_base_vol, total_asks_rel_vol) = build_aggregated_entries(asks);
     asks.reverse();
 
-    let mut bids = match orderbook.unordered.get(&(req.rel.clone(), req.base.clone())) {
+    let mut bids = match orderbook.unordered.get(&(rel_ticker, base_ticker)) {
         Some(uuids) => {
             let mut orderbook_entries = vec![];
             for uuid in uuids {

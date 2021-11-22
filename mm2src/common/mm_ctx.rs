@@ -75,6 +75,7 @@ pub struct MmCtx {
     pub stop_listeners: Mutex<Vec<StopListenerCallback>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub p2p_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub peer_id: Constructible<String>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
@@ -88,6 +89,8 @@ pub struct MmCtx {
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// The context belonging to the `lp_stats` mod: `StatsContext`
+    pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -108,6 +111,7 @@ impl MmCtx {
             ffi_handle: Constructible::default(),
             stop_listeners: Mutex::new(Vec::new()),
             ordermatch_ctx: Mutex::new(None),
+            rate_limit_ctx: Mutex::new(None),
             p2p_ctx: Mutex::new(None),
             peer_id: Constructible::default(),
             coins_ctx: Mutex::new(None),
@@ -115,6 +119,7 @@ impl MmCtx {
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
+            stats_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]

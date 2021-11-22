@@ -34,7 +34,7 @@ use chain::{OutPoint, TransactionInput, TransactionOutput, TxHashAlgo};
 use common::executor::{spawn, Timer};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
-use common::jsonrpc_client::JsonRpcError;
+use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
@@ -651,6 +651,8 @@ pub trait UtxoCommonOps {
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64;
 
     async fn p2sh_tx_locktime(&self, htlc_locktime: u32) -> Result<u32, MmError<UtxoRpcError>>;
+
+    fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat;
 }
 
 #[async_trait]
@@ -1242,12 +1244,26 @@ pub trait UtxoCoinBuilder {
     }
 
     fn address_format(&self) -> Result<UtxoAddressFormat, String> {
-        let mut format: Option<UtxoAddressFormat> = try_s!(json::from_value(self.req()["address_format"].clone()));
-        if format.is_none() {
-            format = try_s!(json::from_value(self.conf()["address_format"].clone()))
-        }
+        let format_from_req: Option<UtxoAddressFormat> = try_s!(json::from_value(self.req()["address_format"].clone()));
+        let format_from_conf = try_s!(json::from_value::<Option<UtxoAddressFormat>>(
+            self.conf()["address_format"].clone()
+        ))
+        .unwrap_or(UtxoAddressFormat::Standard);
 
-        let mut address_format = format.unwrap_or(UtxoAddressFormat::Standard);
+        let mut address_format = match format_from_req {
+            Some(from_req) => {
+                if from_req.is_segwit() != format_from_conf.is_segwit() {
+                    return ERR!(
+                        "Both conf {:?} and request {:?} must be either Segwit or Standard/CashAddress",
+                        format_from_conf,
+                        from_req
+                    );
+                } else {
+                    from_req
+                }
+            },
+            None => format_from_conf,
+        };
 
         if let UtxoAddressFormat::CashAddress {
             network: _,
@@ -1501,14 +1517,7 @@ fn spawn_electrum_ping_loop(weak_client: Weak<ElectrumClientImpl>, servers: Vec<
     });
 }
 
-/// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
-/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
-/// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_version_loop(
-    weak_client: Weak<ElectrumClientImpl>,
-    mut on_connect_rx: mpsc::UnboundedReceiver<String>,
-    client_name: String,
-) {
+fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client_name: String, electrum_addr: String) {
     // client.remove_server() is called too often
     async fn remove_server(client: ElectrumClient, electrum_addr: &str) {
         if let Err(e) = client.remove_server(electrum_addr).await {
@@ -1517,12 +1526,8 @@ fn spawn_electrum_version_loop(
     }
 
     spawn(async move {
-        while let Some(electrum_addr) = on_connect_rx.next().await {
-            let client = match weak_client.upgrade() {
-                Some(c) => ElectrumClient(c),
-                _ => break,
-            };
-
+        while let Some(c) = weak_client.upgrade() {
+            let client = ElectrumClient(c);
             let available_protocols = client.protocol_version();
             let version = match client
                 .server_version(&electrum_addr, &client_name, available_protocols)
@@ -1531,9 +1536,13 @@ fn spawn_electrum_version_loop(
             {
                 Ok(version) => version,
                 Err(e) => {
-                    log!("Electrum " (electrum_addr) " server.version error \"" [e] "\". Remove the connection");
+                    log!("Electrum " (electrum_addr) " server.version error \"" [e] "\".");
+                    if let JsonRpcErrorType::Transport(_) = e.error {
+                        Timer::sleep(60.0).await;
+                        continue;
+                    };
                     remove_server(client, &electrum_addr).await;
-                    continue;
+                    break;
                 },
             };
 
@@ -1543,21 +1552,41 @@ fn spawn_electrum_version_loop(
                 Err(e) => {
                     log!("Error on parse protocol_version "[e]);
                     remove_server(client, &electrum_addr).await;
-                    continue;
+                    break;
                 },
             };
 
             if !available_protocols.contains(&actual_version) {
                 log!("Received unsupported protocol version " [actual_version] " from " [electrum_addr] ". Remove the connection");
                 remove_server(client, &electrum_addr).await;
-                continue;
+                break;
             }
 
-            if let Err(e) = client.set_protocol_version(&electrum_addr, actual_version).await {
-                log!("Error on set protocol_version "[e]);
+            match client.set_protocol_version(&electrum_addr, actual_version).await {
+                Ok(()) => {
+                    log!("Use protocol version " [actual_version] " for Electrum " [electrum_addr]);
+                },
+                Err(e) => {
+                    log!("Error on set protocol_version "[e]);
+                },
             };
 
-            log!("Use protocol version " [actual_version] " for Electrum " [electrum_addr]);
+            break;
+        }
+    });
+}
+
+/// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
+/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
+/// Weak reference will allow to stop the thread if client is dropped.
+fn spawn_electrum_version_loop(
+    weak_client: Weak<ElectrumClientImpl>,
+    mut on_connect_rx: mpsc::UnboundedReceiver<String>,
+    client_name: String,
+) {
+    spawn(async move {
+        while let Some(electrum_addr) = on_connect_rx.next().await {
+            spawn_server_version_retry_loop(weak_client.clone(), client_name.clone(), electrum_addr);
         }
 
         log!("Electrum server.version loop stopped");
