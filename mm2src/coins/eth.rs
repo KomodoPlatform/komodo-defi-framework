@@ -450,19 +450,6 @@ impl EthCoinImpl {
         sha256(&input).to_vec()
     }
 
-    /// Get gas price
-    fn get_gas_price(&self) -> Web3RpcFut<U256> {
-        let fut = if let Some(url) = &self.gas_station_url {
-            Either01::A(
-                GasStationData::get_gas_price(url, self.gas_station_decimals)
-                    .map(|price| increase_by_percent_one_gwei(price, GAS_PRICE_PERCENT)),
-            )
-        } else {
-            Either01::B(self.web3.eth().gas_price().map_to_mm_fut(Web3RpcError::from))
-        };
-        Box::new(fut)
-    }
-
     fn estimate_gas(&self, req: CallRequest) -> Box<dyn Future<Item = U256, Error = web3::Error> + Send> {
         // always using None block number as old Geth version accept only single argument in this RPC
         Box::new(self.web3.eth().estimate_gas(req, None))
@@ -2770,7 +2757,10 @@ impl EthCoin {
         let fut = async move {
             // TODO refactor to error_log_passthrough once simple maker bot is merged
             let gas_station_price = match &coin.gas_station_url {
-                Some(url) => match GasStationData::get_gas_price(url).compat().await {
+                Some(url) => match GasStationData::get_gas_price(url, coin.gas_station_decimals)
+                    .compat()
+                    .await
+                {
                     Ok(from_station) => Some(increase_by_percent_one_gwei(from_station, GAS_PRICE_PERCENT)),
                     Err(e) => {
                         error!("Error {} on request to gas station url {}", e, url);
