@@ -3149,10 +3149,14 @@ pub struct GasStationData {
     // matic gas station average fees is named standard, using alias to support both format.
     #[serde(alias = "average", alias = "standard")]
     average: f64,
+    fast: f64,
 }
 
 impl GasStationData {
-    fn average_gwei(&self, decimals: u8) -> U256 { U256::from(self.average as u64) * U256::exp10(decimals as usize) }
+    fn average_gwei(&self, decimals: u8) -> U256 {
+        let average_fast_mean = (self.average + self.fast) / 2.0;
+        U256::from(average_fast_mean as u64) * U256::exp10(decimals as usize)
+    }
 
     fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
