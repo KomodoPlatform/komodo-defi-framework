@@ -3148,19 +3148,24 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 pub struct GasStationData {
     // matic gas station average fees is named standard, using alias to support both format.
     #[serde(alias = "average", alias = "standard")]
-    average: f64,
-    fast: f64,
+    average: MmNumber,
+    fast: MmNumber,
 }
 
 impl GasStationData {
-    fn average_gwei(&self, decimals: u8) -> U256 {
-        let average_fast_mean = (self.average + self.fast) / 2.0;
-        U256::from(average_fast_mean as u64) * U256::exp10(decimals as usize)
+    fn average_gwei(&self, decimals: u8) -> NumConversResult<U256> {
+        let average_fast_mean = (&self.average + &self.fast) / MmNumber::from(2);
+        wei_from_big_decimal(&average_fast_mean.into(), decimals)
     }
 
     fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
-        let fut = async move { Ok(make_gas_station_request(&uri).await?.average_gwei(decimals)) };
+        let fut = async move {
+            make_gas_station_request(&uri)
+                .await?
+                .average_gwei(decimals)
+                .mm_err(|e| Web3RpcError::Internal(e.0))
+        };
         Box::new(fut.boxed().compat())
     }
 }

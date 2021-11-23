@@ -514,8 +514,8 @@ fn test_search_for_swap_tx_spend_was_spent() {
 fn test_gas_station() {
     make_gas_station_request.mock_safe(|_| {
         let data = GasStationData {
-            average: 500.0,
-            fast: 1000.0,
+            average: 500.into(),
+            fast: 1000.into(),
         };
         MockResult::Return(Box::pin(async move { Ok(data) }))
     });
