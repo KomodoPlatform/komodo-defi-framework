@@ -125,27 +125,29 @@ mod message_service_tests {
 
     #[test]
     fn test_attach_service() {
-        let api_key = var("TELEGRAM_API_KEY").ok().unwrap();
-        let tg_client = TgClient::new(api_key, None, HashMap::new());
-        let nb_services = MessageService::new().attach_service(Box::new(tg_client)).nb_services();
-        assert_eq!(nb_services, 1);
+        if let Ok(api_key) = var("TELEGRAM_API_KEY") {
+            let tg_client = TgClient::new(api_key, None, HashMap::new());
+            let nb_services = MessageService::new().attach_service(Box::new(tg_client)).nb_services();
+            assert_eq!(nb_services, 1);
+        }
     }
 
     #[test]
     fn test_send_message_service() {
-        let api_key = var("TELEGRAM_API_KEY").ok().unwrap();
-        let chat_registry: ChatIdRegistry = vec![("RustTestChatId".to_string(), "586216033".to_string())]
-            .into_iter()
-            .collect();
-        let tg_client = TgClient::new(api_key, None, chat_registry);
-        let mut message_service = MessageService::new();
-        message_service.attach_service(Box::new(tg_client));
-        let res = block_on(message_service.send_message(
-            "Hey it's the message service, do you hear me?".to_string(),
-            "RustTestChatId",
-            true,
-        ));
-        assert_eq!(res.is_err(), false);
-        assert_eq!(res.unwrap(), true);
+        if let Ok(api_key) = var("TELEGRAM_API_KEY") {
+            let chat_registry: ChatIdRegistry = vec![("RustTestChatId".to_string(), "586216033".to_string())]
+                .into_iter()
+                .collect();
+            let tg_client = TgClient::new(api_key, None, chat_registry);
+            let mut message_service = MessageService::new();
+            message_service.attach_service(Box::new(tg_client));
+            let res = block_on(message_service.send_message(
+                "Hey it's the message service, do you hear me?".to_string(),
+                "RustTestChatId",
+                true,
+            ));
+            assert!(!res.is_err());
+            assert!(res.unwrap());
+        }
     }
 }

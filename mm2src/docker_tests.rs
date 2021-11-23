@@ -98,7 +98,7 @@ mod docker_tests {
     use bitcrypto::ChecksumType;
     use chain::{OutPoint, TransactionOutput};
     use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
-    use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
+    use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
     use coins::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum};
     use coins::utxo::slp::SlpToken;
     use coins::utxo::slp::{slp_genesis_output, SlpOutput};
@@ -295,7 +295,7 @@ mod docker_tests {
             let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
             let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
             let ctx = MmCtxBuilder::new().into_mm_arc();
-            let params = BchActivationParams::from_legacy_req(&req).unwrap();
+            let params = BchActivationRequest::from_legacy_req(&req).unwrap();
 
             let coin = block_on(bch_coin_from_conf_and_params(
                 &ctx,

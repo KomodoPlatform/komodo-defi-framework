@@ -907,6 +907,30 @@ pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&enable.1).unwrap()
 }
 
+pub async fn enable_bch_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens: &[&str]) -> Json {
+    let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
+    let enable = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable_bch_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": platform_coin,
+                "allow_slp_unsafe_conf": true,
+                "bchd_urls": [],
+                "mode": {
+                    "rpc": "Native",
+                },
+                "slp_tokens_requests": slp_requests,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_slp' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
 pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
     let native = mm
         .rpc(json! ({

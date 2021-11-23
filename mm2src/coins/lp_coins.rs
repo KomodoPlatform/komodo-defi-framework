@@ -109,7 +109,7 @@ pub use test_coin::TestCoin;
 pub mod z_coin;
 
 use crate::qrc20::Qrc20ActivationParams;
-use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationParams, BchCoin};
+use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
@@ -349,12 +349,6 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 }
 
-#[allow(dead_code)]
-pub struct CoinBalancesWithTokens {
-    platform_coin_balances: HashMap<String, CoinBalance>,
-    token_balances: HashMap<String, HashMap<String, CoinBalance>>,
-}
-
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
@@ -373,8 +367,6 @@ pub trait MarketCoinOps {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
-
-    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens>;
 
     fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
@@ -1176,45 +1168,6 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
-pub trait IntoMmCoins {
-    fn into_mm_coins(self) -> Vec<MmCoinEnum>;
-}
-
-pub trait CoinActivationParamsOps {
-    fn activate_with_tokens(&self) -> Vec<String>;
-}
-
-#[derive(Debug, Display)]
-pub enum TokenCreationError {}
-
-pub trait TokenOf<T> {}
-
-#[async_trait]
-pub trait TokenActivationOps: Into<MmCoinEnum> {
-    type PlatformCoin;
-
-    async fn activate_token(
-        platform_coin: Self::PlatformCoin,
-        ticker: &str,
-        conf: &Json,
-    ) -> Result<Self, MmError<TokenCreationError>>;
-}
-
-#[async_trait]
-pub trait CoinActivationOps: Into<MmCoinEnum> {
-    type ActivationParams: CoinActivationParamsOps;
-    type ActivationError: NotMmError;
-
-    async fn activate(
-        ctx: &MmArc,
-        ticker: &str,
-        conf: &Json,
-        params: Self::ActivationParams,
-    ) -> Result<Self, MmError<Self::ActivationError>>;
-
-    fn activate_token(&self, ticker: &str, conf: &Json) -> Result<MmCoinEnum, MmError<TokenCreationError>>;
-}
-
 #[derive(Clone, Debug)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
@@ -1294,7 +1247,13 @@ pub struct CoinsContext {
     tx_history_db: ConstructibleDb<TxHistoryDb>,
 }
 
+#[derive(Debug)]
 pub struct CoinIsAlreadyActivatedErr {
+    pub ticker: String,
+}
+
+#[derive(Debug)]
+pub struct PlatformIsAlreadyActivatedErr {
     pub ticker: String,
 }
 
@@ -1320,6 +1279,27 @@ impl CoinsContext {
         }
 
         coins.insert(coin.ticker().into(), coin);
+        Ok(())
+    }
+
+    pub async fn add_platform_with_tokens(
+        &self,
+        platform: MmCoinEnum,
+        tokens: Vec<MmCoinEnum>,
+    ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
+        let mut coins = self.coins.lock().await;
+        if coins.contains_key(platform.ticker()) {
+            return MmError::err(PlatformIsAlreadyActivatedErr {
+                ticker: platform.ticker().into(),
+            });
+        }
+
+        coins.insert(platform.ticker().into(), platform);
+
+        // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
+        for token in tokens {
+            coins.insert(token.ticker().into(), token);
+        }
         Ok(())
     }
 
@@ -1568,7 +1548,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::BCH { slp_prefix } => {
             let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
-            let params = try_s!(BchActivationParams::from_legacy_req(req));
+            let params = try_s!(BchActivationRequest::from_legacy_req(req));
 
             let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, secret).await);
             bch.into()

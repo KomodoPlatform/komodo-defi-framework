@@ -125,7 +125,7 @@ pub mod indexed_db;
 
 use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
-use futures::compat::Future01CompatExt;
+pub use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
 use futures::task::Waker;
 use futures01::{future, task::Task, Future};

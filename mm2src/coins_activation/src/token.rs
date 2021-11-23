@@ -1,29 +1,18 @@
 /// Contains token activation traits and their implementations for various coins
 ///
+use crate::prelude::*;
 use async_trait::async_trait;
-use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::utxo::slp::{SlpProtocolConf, SlpToken};
-use coins::{coin_conf, lp_coinfind, lp_coinfind_or_err, CoinBalance, CoinProtocol, CoinsContext, MarketCoinOps,
-            MmCoin, MmCoinEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{HttpStatusCode, NotSame, StatusCode};
 use derive_more::Display;
-use rpc::v1::types::H256 as H256Json;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
-use serde_json::{self as json};
-use std::collections::HashMap;
 
 pub trait TryPlatformCoinFromMmCoinEnum {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-pub trait TryTokenProtoFromCoinProto {
-    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized;
 }
@@ -36,7 +25,7 @@ pub trait TokenProtocolParams {
 pub trait TokenActivationOps: Into<MmCoinEnum> {
     type PlatformCoin: TryPlatformCoinFromMmCoinEnum;
     type ActivationParams;
-    type ProtocolInfo: TokenProtocolParams + TryTokenProtoFromCoinProto;
+    type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol;
     type ActivationResult;
     type ActivationError: NotMmError;
 
@@ -51,11 +40,21 @@ pub trait TokenActivationOps: Into<MmCoinEnum> {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableTokenError {
+    #[display(fmt = "Token {} is already activated", _0)]
     TokenIsAlreadyActivated(String),
+    #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
-    InvalidTokenProtocolConf(String),
-    #[display(fmt = "Invalid coin protocol {:?}", _0)]
-    InvalidCoinProtocol(CoinProtocol),
+    #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
+    TokenProtocolParseError {
+        ticker: String,
+        error: String,
+    },
+    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    UnexpectedTokenProtocol {
+        ticker: String,
+        protocol: CoinProtocol,
+    },
+    #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),
     #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
     UnsupportedPlatformCoin {
@@ -64,6 +63,23 @@ pub enum EnableTokenError {
     },
     Transport(String),
     Internal(String),
+}
+
+impl From<CoinConfWithProtocolError> for EnableTokenError {
+    fn from(err: CoinConfWithProtocolError) -> Self {
+        match err {
+            CoinConfWithProtocolError::ConfigIsNotFound(ticker) => EnableTokenError::TokenConfigIsNotFound(ticker),
+            CoinConfWithProtocolError::CoinProtocolParseError { ticker, err } => {
+                EnableTokenError::TokenProtocolParseError {
+                    ticker,
+                    error: err.to_string(),
+                }
+            },
+            CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
+                EnableTokenError::UnexpectedTokenProtocol { ticker, protocol }
+            },
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,15 +101,7 @@ where
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));
     }
 
-    let conf = coin_conf(&ctx, &req.ticker);
-    if conf.is_null() {
-        return MmError::err(EnableTokenError::TokenConfigIsNotFound(req.ticker));
-    }
-
-    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone())
-        .map_to_mm(|e| EnableTokenError::InvalidTokenProtocolConf(e.to_string()))?;
-    let token_protocol =
-        Token::ProtocolInfo::try_from_coin_protocol(coin_protocol).mm_err(EnableTokenError::InvalidCoinProtocol)?;
+    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -118,49 +126,6 @@ where
     Ok(activation_result)
 }
 
-impl TryPlatformCoinFromMmCoinEnum for BchCoin {
-    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match coin {
-            MmCoinEnum::Bch(coin) => Some(coin),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SlpActivationParams {
-    required_confirmations: Option<u64>,
-}
-
-impl TryTokenProtoFromCoinProto for SlpProtocolConf {
-    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
-    where
-        Self: Sized,
-    {
-        match proto {
-            CoinProtocol::SLPTOKEN {
-                platform,
-                token_id,
-                decimals,
-                required_confirmations,
-            } => Ok(SlpProtocolConf {
-                platform_coin_ticker: platform,
-                token_id: token_id.into(),
-                decimals,
-                required_confirmations,
-            }),
-            proto => MmError::err(proto),
-        }
-    }
-}
-
-impl TokenProtocolParams for SlpProtocolConf {
-    fn platform_coin_ticker(&self) -> &str { &self.platform_coin_ticker }
-}
-
 impl From<UtxoRpcError> for EnableTokenError {
     fn from(err: UtxoRpcError) -> Self {
         match err {
@@ -173,82 +138,17 @@ impl From<UtxoRpcError> for EnableTokenError {
     }
 }
 
-impl From<SlpInitError> for EnableTokenError {
-    fn from(err: SlpInitError) -> Self {
-        match err {
-            SlpInitError::GetBalanceError(rpc_err) => rpc_err.into(),
-            SlpInitError::MyAddressError(e) => EnableTokenError::Internal(e),
-        }
-    }
-}
-
 impl HttpStatusCode for EnableTokenError {
     fn status_code(&self) -> StatusCode {
         match self {
             EnableTokenError::TokenIsAlreadyActivated(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
-            | EnableTokenError::TokenConfigIsNotFound(_)
-            | EnableTokenError::InvalidTokenProtocolConf(_) => StatusCode::BAD_REQUEST,
-            EnableTokenError::InvalidCoinProtocol(_)
+            | EnableTokenError::TokenConfigIsNotFound { .. }
+            | EnableTokenError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::Transport(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct SlpInitResult {
-    balances: HashMap<String, CoinBalance>,
-    token_id: H256Json,
-    platform_coin: String,
-    required_confirmations: u64,
-}
-
-#[derive(Debug)]
-pub enum SlpInitError {
-    GetBalanceError(UtxoRpcError),
-    MyAddressError(String),
-}
-
-#[async_trait]
-impl TokenActivationOps for SlpToken {
-    type PlatformCoin = BchCoin;
-    type ActivationParams = SlpActivationParams;
-    type ProtocolInfo = SlpProtocolConf;
-    type ActivationResult = SlpInitResult;
-    type ActivationError = SlpInitError;
-
-    async fn init_token(
-        ticker: String,
-        platform_coin: Self::PlatformCoin,
-        activation_params: Self::ActivationParams,
-        protocol_conf: Self::ProtocolInfo,
-    ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        // confirmation settings from activation params have the highest priority
-        let required_confirmations = activation_params.required_confirmations.unwrap_or_else(|| {
-            protocol_conf
-                .required_confirmations
-                .unwrap_or_else(|| platform_coin.required_confirmations())
-        });
-
-        let token = Self::new(
-            protocol_conf.decimals,
-            ticker,
-            protocol_conf.token_id,
-            platform_coin,
-            required_confirmations,
-        );
-        let balance = token.my_coin_balance().await.mm_err(SlpInitError::GetBalanceError)?;
-        let my_address = token.my_address().map_to_mm(SlpInitError::MyAddressError)?;
-        let mut balances = HashMap::new();
-        balances.insert(my_address, balance);
-        let init_result = SlpInitResult {
-            balances,
-            token_id: (*token.token_id()).into(),
-            platform_coin: token.platform_ticker().into(),
-            required_confirmations: token.required_confirmations(),
-        };
-        Ok((token, init_result))
     }
 }

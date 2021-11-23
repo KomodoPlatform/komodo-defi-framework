@@ -64,7 +64,6 @@ pub use rlp;
 
 mod web3_transport;
 use self::web3_transport::Web3Transport;
-use crate::CoinBalancesWithTokens;
 use common::mm_number::MmNumber;
 
 #[cfg(test)] mod eth_tests;
@@ -1083,8 +1082,6 @@ impl MarketCoinOps for EthCoin {
             });
         Box::new(fut)
     }
-
-    fn get_balances_with_tokens(&self) -> BalanceFut<CoinBalancesWithTokens> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(

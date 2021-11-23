@@ -636,3 +636,29 @@ pub struct EnableSlpResponse {
     pub platform_coin: String,
     pub required_confirmations: u64,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "data")]
+pub enum DerivationMethod {
+    Iguana,
+    HDWallet(String),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoinAddressInfo<Balance> {
+    pub derivation_method: DerivationMethod,
+    pub pubkey: String,
+    pub balances: Balance,
+}
+
+pub type TokenBalances = HashMap<String, CoinBalance>;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnableBchWithTokensResponse {
+    pub current_block: u64,
+    pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+}
