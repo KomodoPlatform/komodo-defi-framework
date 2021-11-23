@@ -51,3 +51,8 @@ impl DispatcherContext {
         })))
     }
 }
+
+pub async fn dispatch_lp_event(ctx: MmArc, event: LpEvents) {
+    let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
+    dispatcher_ctx.dispatcher.read().await.dispatch_async(ctx, event).await;
+}

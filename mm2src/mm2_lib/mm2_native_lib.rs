@@ -1,5 +1,8 @@
 use super::*;
+use crate::mm2::lp_dispatcher::dispatch_lp_event;
+use crate::mm2::lp_dispatcher::StopCtxEvent;
 use common::crash_reports::init_crash_reports;
+use common::executor::spawn;
 use common::log::{register_callback, FfiCallback};
 use common::mm_ctx::MmArc;
 use common::{block_on, now_float};
@@ -232,6 +235,7 @@ pub extern "C" fn mm2_stop() -> i8 {
         },
     };
 
+    block_on(dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()));
     match ctx.stop() {
         Ok(()) => StopErr::Ok as i8,
         Err(e) => {

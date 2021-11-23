@@ -29,7 +29,7 @@ use http::Response;
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 
-use crate::mm2::lp_dispatcher::{DispatcherContext, StopCtxEvent};
+use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use crate::mm2::lp_swap::active_swaps_using_coin;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
@@ -192,14 +192,7 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
 }
 
 pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    let dispatcher_ctx = DispatcherContext::from_ctx(&ctx).unwrap();
-    let event: StopCtxEvent = StopCtxEvent {};
-    dispatcher_ctx
-        .dispatcher
-        .read()
-        .await
-        .dispatch_async(ctx.clone(), event.into())
-        .await;
+    dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
     spawn(async move {
