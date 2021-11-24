@@ -206,13 +206,14 @@ enum StopErr {
     Ok = 0,
     NotRunning = 1,
     ErrorStopping = 2,
+    StoppingAlready = 3,
 }
 
 /// Stop an MM2 instance or reset the static variables.
 #[no_mangle]
 pub extern "C" fn mm2_stop() -> i8 {
     // The log callback might be initialized already, so try to use the common logs.
-    use common::log::{error, warn};
+    use common::log::warn;
 
     if !LP_MAIN_RUNNING.load(Ordering::Relaxed) {
         return StopErr::NotRunning as i8;
@@ -235,12 +236,14 @@ pub extern "C" fn mm2_stop() -> i8 {
         },
     };
 
-    block_on(dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()));
-    match ctx.stop() {
-        Ok(()) => StopErr::Ok as i8,
-        Err(e) => {
-            error!("mm2_stop] {}", e);
-            StopErr::ErrorStopping as i8
-        },
+    if ctx.is_stopping() {
+        return StopErr::StoppingAlready as i8;
     }
+
+    spawn(async move {
+        block_on(dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()));
+        let _ = ctx.stop();
+    });
+
+    StopErr::Ok as i8
 }
