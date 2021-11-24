@@ -46,6 +46,7 @@ fn eth_coin_for_test(
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         my_address: key_pair.address(),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
@@ -220,6 +221,7 @@ fn send_and_refund_erc20_payment() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -282,6 +284,7 @@ fn send_and_refund_eth_payment() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -363,6 +366,7 @@ fn test_nonce_several_urls() {
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -399,6 +403,7 @@ fn test_wait_for_payment_spend_timeout() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -458,6 +463,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -519,19 +525,27 @@ fn test_gas_station() {
         };
         MockResult::Return(Box::pin(async move { Ok(data) }))
     });
-    let res_eth = GasStationData::get_gas_price("https://ethgasstation.info/api/ethgasAPI.json", 8)
-        .wait()
-        .unwrap();
+    let res_eth = GasStationData::get_gas_price(
+        "https://ethgasstation.info/api/ethgasAPI.json",
+        8,
+        GasStationPricePolicy::MeanAverageFast,
+    )
+    .wait()
+    .unwrap();
     let one_gwei = U256::from(10u64.pow(9));
 
     let expected_eth_wei = U256::from(75) * one_gwei;
     assert_eq!(expected_eth_wei, res_eth);
 
-    let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
-        .wait()
-        .unwrap();
+    let res_polygon = GasStationData::get_gas_price(
+        "https://gasstation-mainnet.matic.network/",
+        9,
+        GasStationPricePolicy::Average,
+    )
+    .wait()
+    .unwrap();
 
-    let expected_eth_polygon = U256::from(750) * one_gwei;
+    let expected_eth_polygon = U256::from(500) * one_gwei;
     assert_eq!(expected_eth_polygon, res_polygon);
 }
 
@@ -557,6 +571,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,

@@ -264,6 +264,7 @@ pub struct EthCoinImpl {
     decimals: u8,
     gas_station_url: Option<String>,
     gas_station_decimals: u8,
+    gas_station_policy: GasStationPricePolicy,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
@@ -2757,15 +2758,17 @@ impl EthCoin {
         let fut = async move {
             // TODO refactor to error_log_passthrough once simple maker bot is merged
             let gas_station_price = match &coin.gas_station_url {
-                Some(url) => match GasStationData::get_gas_price(url, coin.gas_station_decimals)
-                    .compat()
-                    .await
-                {
-                    Ok(from_station) => Some(increase_by_percent_one_gwei(from_station, GAS_PRICE_PERCENT)),
-                    Err(e) => {
-                        error!("Error {} on request to gas station url {}", e, url);
-                        None
-                    },
+                Some(url) => {
+                    match GasStationData::get_gas_price(url, coin.gas_station_decimals, coin.gas_station_policy)
+                        .compat()
+                        .await
+                    {
+                        Ok(from_station) => Some(increase_by_percent_one_gwei(from_station, GAS_PRICE_PERCENT)),
+                        Err(e) => {
+                            error!("Error {} on request to gas station url {}", e, url);
+                            None
+                        },
+                    }
                 },
                 None => None,
             };
@@ -3152,18 +3155,36 @@ pub struct GasStationData {
     fast: MmNumber,
 }
 
+/// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(tag = "policy", content = "additional_data")]
+enum GasStationPricePolicy {
+    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
+    /// gas price big spikes.
+    MeanAverageFast,
+    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
+    Average,
+}
+
+impl Default for GasStationPricePolicy {
+    fn default() -> Self { GasStationPricePolicy::MeanAverageFast }
+}
+
 impl GasStationData {
-    fn average_gwei(&self, decimals: u8) -> NumConversResult<U256> {
-        let average_fast_mean = (&self.average + &self.fast) / MmNumber::from(2);
-        wei_from_big_decimal(&average_fast_mean.into(), decimals)
+    fn average_gwei(&self, decimals: u8, gas_price_policy: GasStationPricePolicy) -> NumConversResult<U256> {
+        let gas_price = match gas_price_policy {
+            GasStationPricePolicy::MeanAverageFast => ((&self.average + &self.fast) / MmNumber::from(2)).into(),
+            GasStationPricePolicy::Average => self.average.to_decimal(),
+        };
+        wei_from_big_decimal(&gas_price, decimals)
     }
 
-    fn get_gas_price(uri: &str, decimals: u8) -> Web3RpcFut<U256> {
+    fn get_gas_price(uri: &str, decimals: u8, gas_price_policy: GasStationPricePolicy) -> Web3RpcFut<U256> {
         let uri = uri.to_owned();
         let fut = async move {
             make_gas_station_request(&uri)
                 .await?
-                .average_gwei(decimals)
+                .average_gwei(decimals, gas_price_policy)
                 .mm_err(|e| Web3RpcError::Internal(e.0))
         };
         Box::new(fut.boxed().compat())
@@ -3307,6 +3328,8 @@ pub async fn eth_coin_from_conf_and_request(
     };
 
     let gas_station_decimals: Option<u8> = try_s!(json::from_value(req["gas_station_decimals"].clone()));
+    let gas_station_policy: GasStationPricePolicy =
+        json::from_value(req["gas_station_policy"].clone()).unwrap_or_default();
 
     let coin = EthCoinImpl {
         key_pair,
@@ -3318,6 +3341,7 @@ pub async fn eth_coin_from_conf_and_request(
         ticker: ticker.into(),
         gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
         gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
+        gas_station_policy,
         web3,
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
