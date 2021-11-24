@@ -192,7 +192,7 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
 }
 
 pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()).await;
+    dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
     spawn(async move {

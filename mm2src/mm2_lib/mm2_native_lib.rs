@@ -241,7 +241,7 @@ pub extern "C" fn mm2_stop() -> i8 {
     }
 
     spawn(async move {
-        dispatch_lp_event(ctx.clone(), StopCtxEvent {}.into()).await;
+        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
         let _ = ctx.stop();
     });
 
