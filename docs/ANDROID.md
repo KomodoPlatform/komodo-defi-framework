@@ -8,7 +8,7 @@ We need a free access to the Docker (`docker run hello-world` should work).
 
 We need the Nightly revision of Rust, such as
 
-    rustup default nightly-2020-10-25
+    rustup default nightly-2021-05-17
 
 ### Install cross
 
