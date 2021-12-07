@@ -7,9 +7,52 @@ use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use web3::api::Namespace;
 use web3::error::{Error, ErrorKind};
-use web3::helpers::{build_request, to_result_from_output, to_string};
+use web3::helpers::{self, build_request, to_result_from_output, to_string, CallFuture};
+use web3::types::{BlockNumber, U256};
 use web3::{RequestId, Transport};
+
+/// eth_feeHistory support is missing even in the latest rust-web3
+/// It's the custom namespace implementing it
+#[derive(Debug, Clone)]
+pub struct EthFeeHistoryNamespace<T> {
+    transport: T,
+}
+
+impl<T: Transport> Namespace<T> for EthFeeHistoryNamespace<T> {
+    fn new(transport: T) -> Self
+    where
+        Self: Sized,
+    {
+        Self { transport }
+    }
+
+    fn transport(&self) -> &T { &self.transport }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FeeHistoryResult {
+    #[serde(rename = "oldestBlock")]
+    pub oldest_block: U256,
+    #[serde(rename = "baseFeePerGas")]
+    pub base_fee_per_gas: Vec<U256>,
+}
+
+impl<T: Transport> EthFeeHistoryNamespace<T> {
+    pub fn eth_fee_history(
+        &self,
+        count: U256,
+        block: BlockNumber,
+        reward_percentiles: &[f64],
+    ) -> CallFuture<FeeHistoryResult, T::Out> {
+        let count = helpers::serialize(&count);
+        let block = helpers::serialize(&block);
+        let reward_percentiles = helpers::serialize(&reward_percentiles);
+        let params = vec![count, block, reward_percentiles];
+        CallFuture::new(self.transport.execute("eth_feeHistory", params))
+    }
+}
 
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport

@@ -246,6 +246,7 @@ impl MarketMakerIt {
         local: Option<LocalStart>,
         envs: &[(&str, &str)],
     ) -> Result<MarketMakerIt, String> {
+        conf["allow_weak_password"] = true.into();
         let ip: IpAddr = if conf["myipaddr"].is_null() {
             // Generate an unique IP.
             let mut attempts = 0;

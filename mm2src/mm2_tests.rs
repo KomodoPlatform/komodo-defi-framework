@@ -958,7 +958,7 @@ fn test_mmrpc_v2() {
     );
     let withdraw_error: RpcErrorResponse<Json> = json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse'");
     assert_eq!(withdraw_error.error_type, "UserpassIsInvalid");
-    assert!(withdraw_error.error_data.is_none());
+    assert!(withdraw_error.error_data.is_some());
 
     // invalid `mmrpc` version
     let withdraw = block_on(mm.rpc(json! ({

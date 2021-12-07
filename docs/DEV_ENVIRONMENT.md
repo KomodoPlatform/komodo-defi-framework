@@ -18,7 +18,12 @@ do
     sudo ifconfig lo0 alias 127.0.0.$i up
 done
 ```
-Please note that you have to run it again after each reboot
-6. Try `cargo test --features native --all -- --test-threads=16`.
+Please note that you have to run it again after each reboot  
+6. Linux specific:
+```
+sudo groupadd docker
+sudo usermod -aG docker $USER
+```
+7. Try `cargo test --features native --all -- --test-threads=16`.
 
 PS If you notice that this guide is outdated, please submit a PR.
