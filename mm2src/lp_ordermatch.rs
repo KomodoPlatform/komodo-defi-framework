@@ -2848,13 +2848,18 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
     }
 }
 
-pub async fn clean_memory_loop(ctx: MmArc) {
+pub async fn clean_memory_loop(ctx_weak: MmWeak) {
     loop {
-        if ctx.is_stopping() {
-            break;
-        }
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
         {
+            let ctx = match MmArc::from_weak(&ctx_weak) {
+                Some(ctx) => ctx,
+                None => return,
+            };
+            if ctx.is_stopping() {
+                break;
+            }
+
+            let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
             let mut orderbook = ordermatch_ctx.orderbook.lock().await;
             orderbook.memory_db.purge();
         }

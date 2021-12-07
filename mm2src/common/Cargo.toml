@@ -9,6 +9,9 @@ name = "common"
 path = "common.rs"
 doctest = false
 
+[features]
+track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
+
 [dependencies]
 arrayref = "0.3"
 async-std = { version = "1.5", features = ["unstable"] }
@@ -52,6 +55,7 @@ serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 serde_repr = "0.1.6"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
+shared_ref_counter = { path = "shared_ref_counter" }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
 winapi = "0.3"
