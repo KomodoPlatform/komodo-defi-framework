@@ -359,6 +359,8 @@ struct NativeCtx {
 }
 
 impl MmArc {
+    pub fn new(ctx: MmCtx) -> MmArc { MmArc(SharedRc::new(ctx)) }
+
     pub fn stop(&self) -> Result<(), String> {
         try_s!(self.stop.pin(true));
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
@@ -581,6 +583,6 @@ impl MmCtxBuilder {
             ctx.db_namespace = self.db_namespace;
         }
 
-        MmArc(SharedRc::new(ctx))
+        MmArc::new(ctx)
     }
 }
