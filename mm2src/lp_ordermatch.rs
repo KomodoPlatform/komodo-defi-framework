@@ -2802,7 +2802,6 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
         {
             let my_maker_orders = ordermatch_ctx.my_maker_orders.lock().clone();
-            let mut to_cancel = vec![];
 
             for (uuid, order_mutex) in my_maker_orders.iter() {
                 let order = order_mutex.lock().await;
@@ -2810,7 +2809,18 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     if let Ok(Some((base, rel))) = find_pair(&ctx, &order.base, &order.rel).await {
                         if let Err(e) = order.check_balance(&ctx, &base, &rel).await {
                             log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
-                            to_cancel.push(*uuid);
+                            let removed_order_mutex = ordermatch_ctx.my_maker_orders.lock().remove(uuid);
+                            // This checks that the order hasn't been removed by another process
+                            if removed_order_mutex.is_some() {
+                                delete_my_maker_order(
+                                    ctx.clone(),
+                                    order.clone(),
+                                    MakerOrderCancellationReason::InsufficientBalance,
+                                )
+                                .compat()
+                                .await
+                                .ok();
+                            }
                             continue;
                         }
 
@@ -2836,21 +2846,6 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                         )
                         .await;
                     }
-                }
-            }
-
-            for uuid in to_cancel {
-                let maybe_order_mutex = ordermatch_ctx.my_maker_orders.lock().remove(&uuid);
-                if let Some(order_mutex) = maybe_order_mutex {
-                    let order = order_mutex.lock().await;
-                    delete_my_maker_order(
-                        ctx.clone(),
-                        order.clone(),
-                        MakerOrderCancellationReason::InsufficientBalance,
-                    )
-                    .compat()
-                    .await
-                    .ok();
                 }
             }
         }
