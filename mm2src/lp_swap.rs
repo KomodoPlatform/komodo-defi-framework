@@ -82,7 +82,7 @@ use uuid::Uuid;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
 #[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
-#[path = "lp_swap/recover_swap.rs"] mod recover_swap;
+#[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
@@ -102,7 +102,7 @@ pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swa
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
-pub use recover_swap::recreate_swap_data;
+pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
 use std::num::NonZeroUsize;
 use taker_swap::TakerSwapEvent;
