@@ -2007,8 +2007,9 @@ mod docker_tests {
         assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
         let available = MmNumber::from("7.7701").to_decimal();
         // `required = volume + fee_to_send_taker_payment + dex_fee + fee_to_send_dex_fee`,
-        // where `volume = 7.77`, `fee_to_send_taker_payment = fee_to_send_dex_fee = 0.00001`, `dex_fee = 0.0001`.
-        // Please note `dex_fee = 7.77 / 7770` < `min_dex_fee = 0.0001`, so `dex_fee = min_dex_fee = 0.0001`
+        // where `volume = 7.77`, `fee_to_send_taker_payment = fee_to_send_dex_fee = 0.00001`, `dex_fee = 0.01`.
+        // Please note `dex_fee = 7.77 / 777` with dex_fee = 0.01
+        // required = 7.77 + 0.01 (dex_fee) + (0.0001 * 2) = 7.78002
         let required = MmNumber::from("7.78002");
         expect_not_sufficient_balance(&rc.1, available, required.to_decimal(), Some(BigDecimal::from(0)));
     }
