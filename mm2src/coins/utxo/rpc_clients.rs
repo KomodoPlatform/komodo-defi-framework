@@ -1234,7 +1234,7 @@ async fn electrum_request_multi(
 ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
     let mut futures = vec![];
     let connections = client.connections.lock().await;
-    for connection in connections.iter() {
+    for (i, connection) in connections.iter().enumerate() {
         let connection_addr = connection.addr.clone();
         match &*connection.tx.lock().await {
             Some(tx) => {
@@ -1242,7 +1242,7 @@ async fn electrum_request_multi(
                     request.clone(),
                     tx.clone(),
                     connection.responses.clone(),
-                    ELECTRUM_TIMEOUT / connections.len() as u64,
+                    ELECTRUM_TIMEOUT / (connections.len() - i) as u64,
                 )
                 .map(|response| (JsonRpcRemoteAddr(connection_addr), response));
                 futures.push(fut)
@@ -1320,6 +1320,18 @@ impl ElectrumClientImpl {
             .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
         // shutdown_tx will be closed immediately on the connection drop
         connections.remove(pos);
+        Ok(())
+    }
+
+    /// Moves the Electrum server if it's the first to the end of the connections to be used last with multi requests.
+    pub async fn rotate_servers(&self, server_addr: &str) -> Result<(), String> {
+        let mut connections = self.connections.lock().await;
+        let first_conn = connections
+            .first()
+            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
+        if first_conn.addr == server_addr {
+            connections.rotate_left(1);
+        }
         Ok(())
     }
 

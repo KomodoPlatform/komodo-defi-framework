@@ -1516,6 +1516,12 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
         }
     }
 
+    async fn rotate_servers(client: ElectrumClient, electrum_addr: &str) {
+        if let Err(e) = client.rotate_servers(electrum_addr).await {
+            log!("Error on rotate servers "[e]);
+        }
+    }
+
     spawn(async move {
         while let Some(c) = weak_client.upgrade() {
             let client = ElectrumClient(c);
@@ -1529,6 +1535,8 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
                 Err(e) => {
                     log!("Electrum " (electrum_addr) " server.version error \"" [e] "\".");
                     if let JsonRpcErrorType::Transport(_) = e.error {
+                        // Move this server to the end of the connections list if it's the first since it's disconnected
+                        rotate_servers(client, &electrum_addr).await;
                         Timer::sleep(60.0).await;
                         continue;
                     };
@@ -1555,6 +1563,8 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
 
             match client.set_protocol_version(&electrum_addr, actual_version).await {
                 Ok(()) => {
+                    // Move this server to the end of the connections list if it's the first since it disconnects and reconnects (unstable)
+                    rotate_servers(client, &electrum_addr).await;
                     log!("Use protocol version " [actual_version] " for Electrum " [electrum_addr]);
                 },
                 Err(e) => {
