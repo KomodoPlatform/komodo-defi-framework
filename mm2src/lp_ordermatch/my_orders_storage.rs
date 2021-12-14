@@ -1,5 +1,5 @@
-use super::{HistoricalOrder, MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order,
-            RecentOrdersSelectResult, TakerOrder, TakerOrderCancellationReason};
+use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
+            TakerOrderCancellationReason};
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::mm_ctx::MmArc;
@@ -35,7 +35,7 @@ pub enum MyOrdersError {
     InternalError(String),
 }
 
-pub async fn save_my_new_maker_order(ctx: MmArc, order: &MakerOrder) {
+pub async fn save_my_new_maker_order(ctx: MmArc, order: &MakerOrder) -> MyOrdersResult<()> {
     let storage = MyOrdersStorage::new(ctx);
     storage
         .save_new_active_maker_order(order)
@@ -43,14 +43,12 @@ pub async fn save_my_new_maker_order(ctx: MmArc, order: &MakerOrder) {
         .error_log_with_msg("!save_new_active_maker_order");
 
     if order.save_in_history {
-        storage
-            .save_maker_order_in_filtering_history(order)
-            .await
-            .error_log_with_msg("!save_maker_order_in_filtering_history");
+        storage.save_maker_order_in_filtering_history(order).await?;
     }
+    Ok(())
 }
 
-pub async fn save_my_new_taker_order(ctx: MmArc, order: &TakerOrder) {
+pub async fn save_my_new_taker_order(ctx: MmArc, order: &TakerOrder) -> MyOrdersResult<()> {
     let storage = MyOrdersStorage::new(ctx);
     storage
         .save_new_active_taker_order(order)
@@ -58,31 +56,19 @@ pub async fn save_my_new_taker_order(ctx: MmArc, order: &TakerOrder) {
         .error_log_with_msg("!save_new_active_taker_order");
 
     if order.save_in_history {
-        storage
-            .save_taker_order_in_filtering_history(order)
-            .await
-            .error_log_with_msg("!save_taker_order_in_filtering_history");
+        storage.save_taker_order_in_filtering_history(order).await?;
     }
+    Ok(())
 }
 
-pub async fn save_maker_order_on_update(ctx: MmArc, order: &mut MakerOrder, new_change: HistoricalOrder) {
+pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) -> MyOrdersResult<()> {
     let storage = MyOrdersStorage::new(ctx);
-    if let Ok(old_order) = storage.load_active_maker_order(order.uuid).await {
-        order.changes_history = old_order.changes_history;
-        order.changes_history.get_or_insert(Vec::new()).push(new_change);
-    }
-    storage
-        .update_active_maker_order(order)
-        .await
-        .error_log_with_msg("!update_active_maker_order");
-    order.changes_history = None;
+    storage.update_active_maker_order(order).await?;
 
     if order.save_in_history {
-        storage
-            .update_maker_order_in_filtering_history(order)
-            .await
-            .error_log_with_msg("!update_maker_order_in_filtering_history");
+        storage.update_maker_order_in_filtering_history(order).await?;
     }
+    Ok(())
 }
 
 #[cfg_attr(test, mockable)]
@@ -785,7 +771,7 @@ mod tests {
         // Save the `maker1` order and remove it with the `InsufficientBalance` reason.
         // The order has to be saved in history table.
 
-        save_my_new_maker_order(ctx.clone(), &maker1).await;
+        save_my_new_maker_order(ctx.clone(), &maker1).await.unwrap();
         delete_my_maker_order(
             ctx.clone(),
             maker1.clone(),
@@ -826,7 +812,7 @@ mod tests {
         // Save the `taker1` order and remove it with the `TimedOut` reason.
         // The order has to be saved in history table.
 
-        save_my_new_taker_order(ctx.clone(), &taker1).await;
+        save_my_new_taker_order(ctx.clone(), &taker1).await.unwrap();
         delete_my_taker_order(ctx.clone(), taker1.clone(), TakerOrderCancellationReason::TimedOut)
             .compat()
             .await
@@ -850,7 +836,7 @@ mod tests {
         // Save the `taker2` order and remove it with the `ToMaker` reason.
         // The order hasn't to be saved in history as it's assumed to be active as a `MakerOrder`.
 
-        save_my_new_taker_order(ctx.clone(), &taker2).await;
+        save_my_new_taker_order(ctx.clone(), &taker2).await.unwrap();
         delete_my_taker_order(ctx.clone(), taker2.clone(), TakerOrderCancellationReason::ToMaker)
             .compat()
             .await
@@ -885,9 +871,9 @@ mod tests {
         // Save the `taker1` order and remove it with the `TimedOut` reason.
         // The order has to be saved in history table.
 
-        save_my_new_taker_order(ctx.clone(), &taker1).await;
-        save_my_new_maker_order(ctx.clone(), &maker1).await;
-        save_my_new_maker_order(ctx.clone(), &maker2).await;
+        save_my_new_taker_order(ctx.clone(), &taker1).await.unwrap();
+        save_my_new_maker_order(ctx.clone(), &maker1).await.unwrap();
+        save_my_new_maker_order(ctx.clone(), &maker2).await.unwrap();
 
         maker2.rel = "KMD".to_owned();
         storage

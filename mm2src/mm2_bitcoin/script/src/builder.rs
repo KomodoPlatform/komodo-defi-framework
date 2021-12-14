@@ -1,7 +1,7 @@
 //! Script builder
 
 use bytes::Bytes;
-use keys::{AddressHash, Public};
+use keys::{AddressHashEnum, Public};
 use {Num, Opcode, Script};
 
 /// Script builder
@@ -12,11 +12,11 @@ pub struct Builder {
 
 impl Builder {
     /// Builds p2pkh script pubkey
-    pub fn build_p2pkh(address: &AddressHash) -> Script {
+    pub fn build_p2pkh(address: &AddressHashEnum) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_DUP)
             .push_opcode(Opcode::OP_HASH160)
-            .push_bytes(&**address)
+            .push_bytes(&address.to_vec())
             .push_opcode(Opcode::OP_EQUALVERIFY)
             .push_opcode(Opcode::OP_CHECKSIG)
             .into_script()
@@ -31,19 +31,19 @@ impl Builder {
     }
 
     /// Builds p2sh script pubkey
-    pub fn build_p2sh(address: &AddressHash) -> Script {
+    pub fn build_p2sh(address: &AddressHashEnum) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_HASH160)
-            .push_bytes(&**address)
+            .push_bytes(&address.to_vec())
             .push_opcode(Opcode::OP_EQUAL)
             .into_script()
     }
 
-    /// Builds p2wpkh script pubkey
-    pub fn build_p2wpkh(address: &AddressHash) -> Script {
+    /// Builds p2wpkh or p2wsh script pubkey
+    pub fn build_witness_script(address: &AddressHashEnum) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_0)
-            .push_bytes(&**address)
+            .push_bytes(&address.to_vec())
             .into_script()
     }
 

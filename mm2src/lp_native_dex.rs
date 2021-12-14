@@ -288,7 +288,7 @@ pub async fn lp_init(ctx: MmArc) -> Result<(), String> {
 
     spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
-    spawn(clean_memory_loop(ctx.clone()));
+    spawn(clean_memory_loop(ctx.weak()));
 
     let ctx_id = try_s!(ctx.ffi_handle());
 

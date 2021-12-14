@@ -316,7 +316,7 @@ mod docker_tests {
             let slp_genesis_op_ret = slp_genesis_output("ADEXSLP", "ADEXSLP", None, None, 8, None, 1000000_00000000);
             let slp_genesis = TransactionOutput {
                 value: self.coin.as_ref().dust_amount,
-                script_pubkey: Builder::build_p2pkh(&self.coin.my_public_key().address_hash()).to_bytes(),
+                script_pubkey: Builder::build_p2pkh(&self.coin.my_public_key().address_hash().into()).to_bytes(),
             };
 
             let mut bch_outputs = vec![slp_genesis_op_ret, slp_genesis];
@@ -330,7 +330,7 @@ mod docker_tests {
                     prefix: self.coin.as_ref().conf.pub_addr_prefix,
                     t_addr_prefix: self.coin.as_ref().conf.pub_t_addr_prefix,
                     hrp: None,
-                    hash: address_hash.clone(),
+                    hash: address_hash.into(),
                     checksum_type: Default::default(),
                     addr_format: Default::default(),
                 };
@@ -340,7 +340,7 @@ mod docker_tests {
                     .wait()
                     .unwrap();
 
-                let script_pubkey = Builder::build_p2pkh(&address_hash);
+                let script_pubkey = Builder::build_p2pkh(&address_hash.into());
 
                 bch_outputs.push(TransactionOutput {
                     value: 1000_00000000,

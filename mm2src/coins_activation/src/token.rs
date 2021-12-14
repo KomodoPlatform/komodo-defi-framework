@@ -11,12 +11,6 @@ use derive_more::Display;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 
-pub trait TryPlatformCoinFromMmCoinEnum {
-    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
-    where
-        Self: Sized;
-}
-
 pub trait TokenProtocolParams {
     fn platform_coin_ticker(&self) -> &str;
 }

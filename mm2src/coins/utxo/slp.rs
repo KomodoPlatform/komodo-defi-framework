@@ -33,7 +33,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
 use keys::hash::H160;
-use keys::{Address, CashAddrType, CashAddress, NetworkPrefix as CashAddrPrefix, Public};
+use keys::{Address, AddressHashEnum, CashAddrType, CashAddress, NetworkPrefix as CashAddrPrefix, Public};
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::bytes::Bytes;
@@ -356,7 +356,7 @@ impl SlpToken {
         if change > 0 {
             let slp_change_out = TransactionOutput {
                 value: self.platform_dust(),
-                script_pubkey: ScriptBuilder::build_p2pkh(&self.platform_coin.my_public_key().address_hash())
+                script_pubkey: ScriptBuilder::build_p2pkh(&self.platform_coin.my_public_key().address_hash().into())
                     .to_bytes(),
             };
             outputs.push(slp_change_out);
@@ -392,7 +392,7 @@ impl SlpToken {
         amount: u64,
     ) -> Result<UtxoTx, String> {
         let payment_script = payment_script(time_lock, secret_hash, self.platform_coin.my_public_key(), other_pub);
-        let script_pubkey = ScriptBuilder::build_p2sh(&dhash160(&payment_script)).to_bytes();
+        let script_pubkey = ScriptBuilder::build_p2sh(&dhash160(&payment_script).into()).to_bytes();
         let slp_out = SlpOutput { amount, script_pubkey };
         let (preimage, recently_spent) = try_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
         generate_and_send_tx(
@@ -581,7 +581,7 @@ impl SlpToken {
         let mut outputs = Vec::with_capacity(3);
         outputs.push(op_return_out_mm);
 
-        let my_script_pubkey = ScriptBuilder::build_p2pkh(&self.platform_coin.my_public_key().address_hash());
+        let my_script_pubkey = ScriptBuilder::build_p2pkh(&self.platform_coin.my_public_key().address_hash().into());
         let slp_output = TransactionOutput {
             value: self.platform_dust(),
             script_pubkey: my_script_pubkey.to_bytes(),
@@ -1093,7 +1093,7 @@ impl SwapOps for SlpToken {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let coin = self.clone();
         let fee_pubkey = try_fus!(Public::from_slice(fee_addr));
-        let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash()).into();
+        let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
         let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals()));
 
         let fut = async move {
@@ -1430,7 +1430,9 @@ impl MmCoin for SlpToken {
 
             // TODO clarify with community whether we should support withdrawal to SLP P2SH addresses
             let script_pubkey = match address.address_type {
-                CashAddrType::P2PKH => ScriptBuilder::build_p2pkh(&address.hash.as_slice().into()).to_bytes(),
+                CashAddrType::P2PKH => {
+                    ScriptBuilder::build_p2pkh(&AddressHashEnum::AddressHash(address.hash.as_slice().into())).to_bytes()
+                },
                 CashAddrType::P2SH => {
                     return MmError::err(WithdrawError::InvalidAddress(
                         "Withdrawal to P2SH is not supported".into(),
@@ -1571,7 +1573,7 @@ impl MmCoin for SlpToken {
                 },
             };
             // can use dummy P2SH script_pubkey here
-            let script_pubkey = ScriptBuilder::build_p2sh(&H160::default()).into();
+            let script_pubkey = ScriptBuilder::build_p2sh(&H160::default().into()).into();
             let slp_out = SlpOutput {
                 amount: slp_amount,
                 script_pubkey,
@@ -1621,7 +1623,7 @@ impl MmCoin for SlpToken {
         let fut = async move {
             let slp_amount = sat_from_big_decimal(&dex_fee_amount, coin.decimals())?;
             // can use dummy P2PKH script_pubkey here
-            let script_pubkey = ScriptBuilder::build_p2pkh(&H160::default()).into();
+            let script_pubkey = ScriptBuilder::build_p2pkh(&H160::default().into()).into();
             let slp_out = SlpOutput {
                 amount: slp_amount,
                 script_pubkey,
@@ -1895,7 +1897,7 @@ mod slp_tests {
 
         let invalid_slp_send_out = TransactionOutput {
             value: 1000,
-            script_pubkey: ScriptBuilder::build_p2sh(&dhash160(&htlc_script)).into(),
+            script_pubkey: ScriptBuilder::build_p2sh(&dhash160(&htlc_script).into()).into(),
         };
 
         let err = block_on(generate_and_send_tx(

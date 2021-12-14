@@ -23,6 +23,7 @@ use futures01::future::select_ok;
 use futures01::sync::{mpsc, oneshot};
 use futures01::{Future, Sink, Stream};
 use http::Uri;
+use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
@@ -201,6 +202,23 @@ impl From<ElectrumUnspent> for UnspentInfo {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum BlockHashOrHeight {
+    Height(i64),
+    Hash(H256Json),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SpentOutputInfo {
+    // The transaction spending the output
+    pub spending_tx: UtxoTx,
+    // The input index that spends the output
+    pub input_index: usize,
+    // The block hash or height the includes the spending transaction
+    // For electrum clients the block height will be returned, for native clients the block hash will be returned
+    pub spent_in_block: BlockHashOrHeight,
+}
+
 pub type UtxoRpcResult<T> = Result<T, MmError<UtxoRpcError>>;
 pub type UtxoRpcFut<T> = Box<dyn Future<Item = T, Error = MmError<UtxoRpcError>> + Send + 'static>;
 
@@ -243,8 +261,6 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
 
     fn get_block_count(&self) -> UtxoRpcFut<u64>;
 
-    fn get_best_block(&self) -> UtxoRpcFut<BestBlock>;
-
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
     /// returns fee estimation per KByte in satoshis
@@ -260,10 +276,11 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
 
     fn find_output_spend(
         &self,
-        tx: &UtxoTx,
+        tx_hash: H256,
+        script_pubkey: &[u8],
         vout: usize,
-        from_block: u64,
-    ) -> Box<dyn Future<Item = Option<UtxoTx>, Error = String> + Send>;
+        from_block: BlockHashOrHeight,
+    ) -> Box<dyn Future<Item = Option<SpentOutputInfo>, Error = String> + Send>;
 
     /// Get median time past for `count` blocks in the past including `starting_block`
     fn get_median_time_past(
@@ -628,8 +645,6 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(self.0.get_block_count().map_to_mm_fut(UtxoRpcError::from))
     }
 
-    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> { unimplemented!() }
-
     fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(
             self.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
@@ -670,14 +685,17 @@ impl UtxoRpcClientOps for NativeClient {
 
     fn find_output_spend(
         &self,
-        tx: &UtxoTx,
+        tx_hash: H256,
+        _script_pubkey: &[u8],
         vout: usize,
-        from_block: u64,
-    ) -> Box<dyn Future<Item = Option<UtxoTx>, Error = String> + Send> {
+        from_block: BlockHashOrHeight,
+    ) -> Box<dyn Future<Item = Option<SpentOutputInfo>, Error = String> + Send> {
         let selfi = self.clone();
-        let tx = tx.clone();
         let fut = async move {
-            let from_block_hash = try_s!(selfi.get_block_hash(from_block).compat().await);
+            let from_block_hash = match from_block {
+                BlockHashOrHeight::Height(h) => try_s!(selfi.get_block_hash(h as u64).compat().await),
+                BlockHashOrHeight::Hash(h) => h,
+            };
             let list_since_block: ListSinceBlockRes = try_s!(selfi.list_since_block(from_block_hash).compat().await);
             for transaction in list_since_block
                 .transactions
@@ -688,9 +706,13 @@ impl UtxoRpcClientOps for NativeClient {
                 let maybe_spend_tx: UtxoTx =
                     try_s!(deserialize(maybe_spend_tx_bytes.as_slice()).map_err(|e| ERRL!("{:?}", e)));
 
-                for input in maybe_spend_tx.inputs.iter() {
-                    if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
-                        return Ok(Some(maybe_spend_tx));
+                for (index, input) in maybe_spend_tx.inputs.iter().enumerate() {
+                    if input.previous_output.hash == tx_hash && input.previous_output.index == vout as u32 {
+                        return Ok(Some(SpentOutputInfo {
+                            spending_tx: maybe_spend_tx,
+                            input_index: index,
+                            spent_in_block: BlockHashOrHeight::Hash(transaction.blockhash),
+                        }));
                     }
                 }
             }
@@ -820,7 +842,7 @@ impl NativeClientImpl {
     /// It is recommended to set n_blocks as low as possible.
     /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
-    fn estimate_fee(&self, n_blocks: u32) -> RpcRes<f64> { rpc_func!(self, "estimatefee", n_blocks) }
+    pub fn estimate_fee(&self, n_blocks: u32) -> RpcRes<f64> { rpc_func!(self, "estimatefee", n_blocks) }
 
     /// https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
     /// It is recommended to set n_blocks as low as possible.
@@ -913,6 +935,12 @@ impl NativeClientImpl {
     /// https://developer.bitcoin.org/reference/rpc/getaddressinfo.html
     pub fn get_address_info(&self, address: &str) -> RpcRes<GetAddressInfoRes> {
         rpc_func!(self, "getaddressinfo", address)
+    }
+
+    /// https://developer.bitcoin.org/reference/rpc/getblockheader.html
+    pub fn get_block_header_bytes(&self, block_hash: H256Json) -> RpcRes<BytesJson> {
+        let verbose = 0;
+        rpc_func!(self, "getblockheader", block_hash, verbose)
     }
 }
 
@@ -1020,6 +1048,14 @@ pub enum ElectrumBlockHeader {
     V14(ElectrumBlockHeaderV14),
 }
 
+/// The merkle branch of a confirmed transaction
+#[derive(Clone, Debug, Deserialize)]
+pub struct TxMerkleBranch {
+    pub merkle: Vec<H256Json>,
+    pub block_height: u64,
+    pub pos: usize,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct BestBlock {
     pub height: u64,
@@ -1044,7 +1080,7 @@ pub enum EstimateFeeMode {
 }
 
 impl ElectrumBlockHeader {
-    fn block_height(&self) -> u64 {
+    pub fn block_height(&self) -> u64 {
         match self {
             ElectrumBlockHeader::V12(h) => h.block_height,
             ElectrumBlockHeader::V14(h) => h.height,
@@ -1556,16 +1592,26 @@ impl ElectrumClient {
     /// It is recommended to set n_blocks as low as possible.
     /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
-    fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<f64> {
+    pub fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<f64> {
         match mode {
             Some(m) => rpc_func!(self, "blockchain.estimatefee", n_blocks, m),
             None => rpc_func!(self, "blockchain.estimatefee", n_blocks),
         }
     }
 
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-block-header
+    pub fn blockchain_block_header(&self, height: u64) -> RpcRes<BytesJson> {
+        rpc_func!(self, "blockchain.block.header", height)
+    }
+
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-block-headers
     pub fn blockchain_block_headers(&self, start_height: u64, count: NonZeroU64) -> RpcRes<ElectrumBlockHeadersRes> {
         rpc_func!(self, "blockchain.block.headers", start_height, count)
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get-merkle
+    pub fn blockchain_transaction_get_merkle(&self, txid: H256Json, height: u64) -> RpcRes<TxMerkleBranch> {
+        rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
     }
 }
 
@@ -1634,14 +1680,6 @@ impl UtxoRpcClientOps for ElectrumClient {
         )
     }
 
-    fn get_best_block(&self) -> UtxoRpcFut<BestBlock> {
-        Box::new(
-            self.blockchain_headers_subscribe()
-                .map(BestBlock::from)
-                .map_to_mm_fut(UtxoRpcError::from),
-        )
-    }
-
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
         let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
         let hash_str = hex::encode(hash);
@@ -1670,13 +1708,13 @@ impl UtxoRpcClientOps for ElectrumClient {
 
     fn find_output_spend(
         &self,
-        tx: &UtxoTx,
+        tx_hash: H256,
+        script_pubkey: &[u8],
         vout: usize,
-        _from_block: u64,
-    ) -> Box<dyn Future<Item = Option<UtxoTx>, Error = String> + Send> {
+        _from_block: BlockHashOrHeight,
+    ) -> Box<dyn Future<Item = Option<SpentOutputInfo>, Error = String> + Send> {
         let selfi = self.clone();
-        let script_hash = hex::encode(electrum_script_hash(&tx.outputs[vout].script_pubkey));
-        let tx = tx.clone();
+        let script_hash = hex::encode(electrum_script_hash(script_pubkey));
         let fut = async move {
             let history = try_s!(selfi.scripthash_get_history(&script_hash).compat().await);
 
@@ -1689,9 +1727,13 @@ impl UtxoRpcClientOps for ElectrumClient {
 
                 let maybe_spend_tx: UtxoTx = try_s!(deserialize(transaction.as_slice()).map_err(|e| ERRL!("{:?}", e)));
 
-                for input in maybe_spend_tx.inputs.iter() {
-                    if input.previous_output.hash == tx.hash() && input.previous_output.index == vout as u32 {
-                        return Ok(Some(maybe_spend_tx));
+                for (index, input) in maybe_spend_tx.inputs.iter().enumerate() {
+                    if input.previous_output.hash == tx_hash && input.previous_output.index == vout as u32 {
+                        return Ok(Some(SpentOutputInfo {
+                            spending_tx: maybe_spend_tx,
+                            input_index: index,
+                            spent_in_block: BlockHashOrHeight::Height(item.height),
+                        }));
                     }
                 }
             }

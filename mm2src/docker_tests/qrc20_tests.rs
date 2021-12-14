@@ -1222,8 +1222,8 @@ fn test_segwit_native_balance() {
 #[test]
 fn test_withdraw_and_send_from_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
-    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
-    let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
+    let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 0.7.into(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
@@ -1255,14 +1255,22 @@ fn test_withdraw_and_send_from_segwit() {
     // Send from Segwit Address to Legacy Address
     withdraw_and_send(&mm, "QTUM", "qVgbLqYPvKN5zH2eEJ6Jh8cjbUVx851yxV", 0.2);
 
+    // Send from Segwit Address to P2WSH Address
+    withdraw_and_send(
+        &mm,
+        "QTUM",
+        "qcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q2uwvdw",
+        0.2,
+    );
+
     block_on(mm.stop()).unwrap();
 }
 
 #[test]
 fn test_withdraw_and_send_legacy_to_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
-    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
-    let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
+    let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.7.into(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
@@ -1290,6 +1298,14 @@ fn test_withdraw_and_send_legacy_to_segwit() {
 
     // Send from Legacy Address to Segwit Address
     withdraw_and_send(&mm, "QTUM", "qcrt1q6pwxl4na4a363mgmrw8tjyppdcwuyfmat836dd", 0.2);
+
+    // Send from Legacy Address to P2WSH Address
+    withdraw_and_send(
+        &mm,
+        "QTUM",
+        "qcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q2uwvdw",
+        0.2,
+    );
 
     block_on(mm.stop()).unwrap();
 }

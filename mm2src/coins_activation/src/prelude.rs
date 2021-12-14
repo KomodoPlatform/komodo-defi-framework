@@ -1,4 +1,4 @@
-use coins::{coin_conf, CoinBalance, CoinProtocol};
+use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use serde_derive::Serialize;
@@ -27,6 +27,12 @@ pub struct CoinAddressInfo<Balance> {
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;
+
+pub trait TryPlatformCoinFromMmCoinEnum {
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized;
+}
 
 pub trait TryFromCoinProtocol {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>

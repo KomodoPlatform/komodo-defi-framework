@@ -21,7 +21,7 @@ use ethabi::{Contract, Token};
 use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
-use keys::{AddressHash, Signature};
+use keys::{AddressHashEnum, Signature};
 use script::Builder as ScriptBuilder;
 use serialization::serialize;
 use std::str::FromStr;
@@ -87,7 +87,7 @@ impl QtumDelegationOps for QtumCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn generate_pod(&self, addr_hash: AddressHash) -> Result<Signature, MmError<QtumStakingAbiError>> {
+    fn generate_pod(&self, addr_hash: AddressHashEnum) -> Result<Signature, MmError<QtumStakingAbiError>> {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
@@ -129,7 +129,7 @@ impl QtumCoin {
             },
             UtxoRpcClientEnum::Electrum(electrum) => electrum,
         };
-        let v = contract_addr_from_utxo_addr(utxo.my_address.clone());
+        let v = contract_addr_from_utxo_addr(utxo.my_address.clone()).map_to_mm(StakingInfosError::Internal)?;
         let address = contract_addr_into_rpc_format(&v);
         let add_delegation_history = client
             .blockchain_contract_event_get_history(&address, &contract_address, QTUM_ADD_DELEGATION_TOPIC)
@@ -225,7 +225,8 @@ impl QtumCoin {
             Address::from_str(request.address.as_str()).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
-        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone());
+        let staker_address_hex =
+            qtum::contract_addr_from_utxo_addr(to_addr.clone()).map_to_mm(DelegationError::AddressError)?;
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
             to_addr.hash,
@@ -340,7 +341,7 @@ impl QtumCoin {
     fn add_delegation_output(
         &self,
         to_addr: H160,
-        addr_hash: AddressHash,
+        addr_hash: AddressHashEnum,
         fee: u64,
         gas_limit: u64,
         gas_price: u64,

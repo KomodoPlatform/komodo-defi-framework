@@ -310,13 +310,13 @@ impl Qrc20Coin {
             let internal_id = TxInternalId::new(tx_hash.clone(), receipt.output_index, log_index as u64);
 
             let from = if is_transferred_from_contract(&script_pubkey) {
-                qtum::display_as_contract_address(from)
+                qtum::display_as_contract_address(from)?
             } else {
                 try_s!(from.display_address())
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
-                qtum::display_as_contract_address(to)
+                qtum::display_as_contract_address(to)?
             } else {
                 try_s!(to.display_address())
             };
@@ -343,7 +343,11 @@ impl Qrc20Coin {
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
         mm_counter!(metrics, "tx.history.request.count", 1,
                     "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
-        let history_res = TransferHistoryBuilder::new(self.clone()).build_tx_idents().await;
+        let transfer_history_builder = match TransferHistoryBuilder::new(self.clone()) {
+            Ok(builder) => builder,
+            Err(e) => return RequestTxHistoryResult::UnknownError(e),
+        };
+        let history_res = transfer_history_builder.build_tx_idents().await;
         let history = match history_res {
             Ok(h) => h,
             Err(e) => match e.into_inner() {
@@ -576,15 +580,15 @@ struct TransferHistoryParams {
 }
 
 impl TransferHistoryBuilder {
-    pub fn new(coin: Qrc20Coin) -> TransferHistoryBuilder {
-        let address = qtum::contract_addr_from_utxo_addr(coin.utxo.my_address.clone());
+    pub fn new(coin: Qrc20Coin) -> Result<TransferHistoryBuilder, String> {
+        let address = qtum::contract_addr_from_utxo_addr(coin.utxo.my_address.clone())?;
         let token_address = coin.contract_address;
         let params = TransferHistoryParams {
             from_block: 0,
             address,
             token_address,
         };
-        TransferHistoryBuilder { coin, params }
+        Ok(TransferHistoryBuilder { coin, params })
     }
 
     #[allow(clippy::wrong_self_convention)]

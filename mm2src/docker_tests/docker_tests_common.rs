@@ -23,7 +23,7 @@ use common::mm_ctx::{MmArc, MmCtxBuilder};
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
-use keys::Address;
+use keys::{Address, AddressHashEnum};
 use primitives::hash::{H160, H256};
 use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
@@ -289,7 +289,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     };
 
     let from_addr = get_address_by_label(coin, QTUM_ADDRESS_LABEL);
-    let to_addr = coin.my_addr_as_contract_addr();
+    let to_addr = coin.my_addr_as_contract_addr().unwrap();
     let satoshis = sat_from_big_decimal(&amount, coin.as_ref().decimals).expect("!sat_from_big_decimal");
 
     let hash = client
@@ -736,7 +736,7 @@ pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
 pub fn utxo_burn_address() -> Address {
     Address {
         prefix: 60,
-        hash: H160::default(),
+        hash: AddressHashEnum::default_address_hash(),
         t_addr_prefix: 0,
         checksum_type: ChecksumType::DSHA256,
         hrp: None,

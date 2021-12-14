@@ -1,4 +1,4 @@
-use super::rpc_clients::{ListSinceBlockRes, NetworkInfo};
+use super::rpc_clients::{BlockHashOrHeight, ListSinceBlockRes, NetworkInfo};
 use super::*;
 use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
@@ -71,7 +71,7 @@ fn utxo_coin_fields_for_test(
     let key_pair = key_pair_from_seed(&seed).unwrap();
     let my_address = Address {
         prefix: 60,
-        hash: key_pair.public().address_hash(),
+        hash: key_pair.public().address_hash().into(),
         t_addr_prefix: 0,
         checksum_type,
         hrp: None,
@@ -372,7 +372,7 @@ fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl::default();
 
     static mut OUTPUT_SPEND_CALLED: bool = false;
-    NativeClient::find_output_spend.mock_safe(|_, _, _, _| {
+    NativeClient::find_output_spend.mock_safe(|_, _, _, _, _| {
         unsafe { OUTPUT_SPEND_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
@@ -393,7 +393,7 @@ fn test_wait_for_payment_spend_timeout_native() {
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
     static mut OUTPUT_SPEND_CALLED: bool = false;
-    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _| {
+    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _| {
         unsafe { OUTPUT_SPEND_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
@@ -2372,7 +2372,14 @@ fn test_find_output_spend_skips_conflicting_transactions() {
     let tx: UtxoTx = "0400008085202f89027f57730fcbbc2c72fb18bcc3766a713044831a117bb1cade3ed88644864f7333020000006a47304402206e3737b2fcf078b61b16fa67340cc3e79c5d5e2dc9ffda09608371552a3887450220460a332aa1b8ad8f2de92d319666f70751078b221199951f80265b4f7cef8543012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff42b916a80430b80a77e114445b08cf120735447a524de10742fac8f6a9d4170f000000006a473044022004aa053edafb9d161ea8146e0c21ed1593aa6b9404dd44294bcdf920a1695fd902202365eac15dbcc5e9f83e2eed56a8f2f0e5aded36206f9c3fabc668fd4665fa2d012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff03547b16000000000017a9143e8ad0e2bf573d32cb0b3d3a304d9ebcd0c2023b870000000000000000166a144e2b3c0323ab3c2dc6f86dc5ec0729f11e42f56103970400000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac89c5925f000000000000000000000000000000".into();
     let vout = 0;
     let from_block = 0;
-    let actual = client.find_output_spend(&tx, vout, from_block).wait();
+    let actual = client
+        .find_output_spend(
+            tx.hash(),
+            &tx.outputs[vout].script_pubkey,
+            vout,
+            BlockHashOrHeight::Height(from_block),
+        )
+        .wait();
     assert_eq!(actual, Ok(None));
     assert_eq!(unsafe { GET_RAW_TRANSACTION_BYTES_CALLED }, 1);
 }
@@ -3143,7 +3150,7 @@ fn test_withdraw_to_p2wpkh() {
     let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
-    let expected_script = Builder::build_p2wpkh(&p2wpkh_address.hash);
+    let expected_script = Builder::build_witness_script(&p2wpkh_address.hash);
 
     assert_eq!(output_script, expected_script);
 }
