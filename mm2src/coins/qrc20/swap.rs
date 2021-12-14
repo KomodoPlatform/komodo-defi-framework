@@ -124,7 +124,7 @@ impl Qrc20Coin {
 
         let expected_call_bytes = {
             let expected_value = try_s!(wei_from_big_decimal(&amount, self.utxo.decimals));
-            let expected_receiver = qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone());
+            let expected_receiver = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
             try_s!(self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -245,7 +245,7 @@ impl Qrc20Coin {
         }
 
         // Else try to find a 'senderRefund' contract call.
-        let sender = qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone());
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
         let refund_txs = try_s!(self.sender_refund_transactions(sender, search_from_block).await);
         let found = refund_txs.into_iter().find(|tx| {
             find_swap_contract_call_with_swap_id(MutContractCallType::SenderRefund, tx, &expected_swap_id).is_some()
@@ -268,7 +268,7 @@ impl Qrc20Coin {
             return Ok(None);
         };
 
-        let sender = qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone());
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
         let erc20_payment_txs = try_s!(self.erc20_payment_transactions(sender, search_from_block).await);
         let found = erc20_payment_txs
             .into_iter()
@@ -433,7 +433,10 @@ impl Qrc20Coin {
             .utxo
             .rpc_client
             .rpc_contract_call(ViewContractCallType::Allowance, &self.contract_address, &[
-                Token::Address(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone())),
+                Token::Address(
+                    qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone())
+                        .map_to_mm(UtxoRpcError::Internal)?,
+                ),
                 Token::Address(spender),
             ])
             .compat()
@@ -766,8 +769,9 @@ impl Qrc20Coin {
         caller_address: H160,
         from_block: u64,
     ) -> Result<Vec<UtxoTx>, String> {
+        let transfer_history_builder = TransferHistoryBuilder::new(self.clone())?;
         let receipts = try_s!(
-            TransferHistoryBuilder::new(self.clone())
+            transfer_history_builder
                 .from_block(from_block)
                 .address(caller_address)
                 .build()

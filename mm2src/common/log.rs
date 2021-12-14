@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
-pub use log::{debug, error, info, trace, warn, LevelFilter};
+pub use log::{self as log_crate, debug, error, info, trace, warn, LevelFilter};
 
 #[cfg(target_arch = "wasm32")]
 #[path = "log/wasm_log.rs"]

@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use bech32;
-use AddressHash;
+use AddressHashEnum;
 
 /// Address error.
 #[derive(Debug, PartialEq)]
@@ -70,7 +70,7 @@ pub struct SegwitAddress {
 }
 
 impl SegwitAddress {
-    pub fn new(hash: &AddressHash, hrp: String) -> SegwitAddress {
+    pub fn new(hash: &AddressHashEnum, hrp: String) -> SegwitAddress {
         SegwitAddress {
             hrp,
             version: bech32::u5::try_from_u8(0).expect("0<32"),
@@ -181,6 +181,7 @@ impl FromStr for SegwitAddress {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crypto::sha256;
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -202,8 +203,22 @@ mod tests {
         let public_key = Public::from_slice(&bytes).unwrap();
         let hash = public_key.address_hash();
         let hrp = "bc";
-        let addr = SegwitAddress::new(&hash, hrp.to_string());
+        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash.into()), hrp.to_string());
         assert_eq!(&addr.to_string(), "bc1qvzvkjn4q3nszqxrv3nraga2r822xjty3ykvkuw");
         assert_eq!(addr.address_type(), Some(AddressType::P2wpkh));
+    }
+
+    #[test]
+    fn test_p2wsh_address() {
+        let script = "210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ac";
+        let bytes = hex_to_bytes(script).unwrap();
+        let hash = sha256(&bytes);
+        let hrp = "bc";
+        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash.into()), hrp.to_string());
+        assert_eq!(
+            &addr.to_string(),
+            "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
+        );
+        assert_eq!(addr.address_type(), Some(AddressType::P2wsh));
     }
 }

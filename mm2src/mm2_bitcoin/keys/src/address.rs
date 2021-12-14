@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
-use {AddressHash, CashAddrType, CashAddress, DisplayLayout, Error, SegwitAddress};
+use {AddressHashEnum, CashAddrType, CashAddress, DisplayLayout, Error, SegwitAddress};
 
 /// There are two address formats currently in use.
 /// https://bitcoin.org/en/developer-reference#address-conversion
@@ -28,9 +28,15 @@ pub enum Type {
     /// https://bitcoin.org/en/glossary/p2sh-address
     P2SH,
     /// Pay to Witness PubKey Hash
-    /// Common P2WPKH which begins with the human readable part followed by 1, eg: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4.
+    /// Segwit P2WPKH which begins with the human readable part followed by 1 followed by 39 base32 characters
+    /// as the address hash, eg: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4.
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
     P2WPKH,
+    /// Pay to Witness Script Hash
+    /// Segwit P2WSH which begins with the human readable part followed by 1 followed by 59 base32 characters
+    /// as the scripthash, eg: bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+    P2WSH,
 }
 
 #[derive(Clone, Debug, Display, Deserialize, PartialEq, Serialize)]
@@ -81,7 +87,7 @@ pub struct Address {
     /// Segwit addr human readable part
     pub hrp: Option<String>,
     /// Public key hash.
-    pub hash: AddressHash,
+    pub hash: AddressHashEnum,
     /// Checksum type
     pub checksum_type: ChecksumType,
     /// Address Format
@@ -123,7 +129,7 @@ impl DisplayLayout for Address {
         }
 
         result.push(self.prefix);
-        result.extend_from_slice(&*self.hash);
+        result.extend_from_slice(&self.hash.to_vec());
         let cs = checksum(&result, &self.checksum_type);
         result.extend_from_slice(&*cs);
 
@@ -138,7 +144,7 @@ impl DisplayLayout for Address {
             25 => {
                 let sum_type = detect_checksum(&data[0..21], &data[21..])?;
 
-                let mut hash = AddressHash::default();
+                let mut hash = AddressHashEnum::default_address_hash();
                 hash.copy_from_slice(&data[1..21]);
 
                 let address = Address {
@@ -155,7 +161,7 @@ impl DisplayLayout for Address {
             26 => {
                 let sum_type = detect_checksum(&data[0..22], &data[22..])?;
 
-                let mut hash = AddressHash::default();
+                let mut hash = AddressHashEnum::default_address_hash();
                 hash.copy_from_slice(&data[2..22]);
 
                 let address = Address {
@@ -235,7 +241,7 @@ impl Address {
             return Err("Expect 20 bytes long hash".into());
         }
 
-        let mut hash: AddressHash = Default::default();
+        let mut hash = AddressHashEnum::default_address_hash();
         hash.copy_from_slice(address.hash.as_slice());
 
         let prefix = match address.address_type {
@@ -274,7 +280,7 @@ impl Address {
             ));
         };
 
-        CashAddress::new(network_prefix, self.hash.take().to_vec(), address_type)
+        CashAddress::new(network_prefix, self.hash.to_vec(), address_type)
     }
 
     pub fn from_segwitaddress(
@@ -285,11 +291,13 @@ impl Address {
     ) -> Result<Address, String> {
         let address = SegwitAddress::from_str(segaddr).map_err(|e| e.to_string())?;
 
-        if address.program.len() != 20 {
-            return Err("Expect 20 bytes long hash".into());
-        }
-
-        let mut hash: AddressHash = Default::default();
+        let mut hash = if address.program.len() == 20 {
+            AddressHashEnum::default_address_hash()
+        } else if address.program.len() == 32 {
+            AddressHashEnum::default_witness_script_hash()
+        } else {
+            return Err("Expect either 20 or 32 bytes long hash".into());
+        };
         hash.copy_from_slice(address.program.as_slice());
 
         let hrp = Some(address.hrp);
@@ -314,7 +322,7 @@ impl Address {
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, AddressFormat, CashAddrType, CashAddress, ChecksumType};
+    use super::{Address, AddressFormat, AddressHashEnum, CashAddrType, CashAddress, ChecksumType};
     use crate::NetworkPrefix;
 
     #[test]
@@ -322,7 +330,7 @@ mod tests {
         let address = Address {
             prefix: 0,
             t_addr_prefix: 0,
-            hash: "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
+            hash: AddressHashEnum::AddressHash("3f4aa1fedf1f54eeb03b759deadb36676b184911".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -336,7 +344,7 @@ mod tests {
         let address = Address {
             prefix: 60,
             t_addr_prefix: 0,
-            hash: "05aab5342166f8594baf17a7d9bef5d567443327".into(),
+            hash: AddressHashEnum::AddressHash("05aab5342166f8594baf17a7d9bef5d567443327".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -350,7 +358,7 @@ mod tests {
         let address = Address {
             t_addr_prefix: 29,
             prefix: 37,
-            hash: "05aab5342166f8594baf17a7d9bef5d567443327".into(),
+            hash: AddressHashEnum::AddressHash("05aab5342166f8594baf17a7d9bef5d567443327".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -364,7 +372,7 @@ mod tests {
         let address = Address {
             prefix: 85,
             t_addr_prefix: 0,
-            hash: "ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into(),
+            hash: AddressHashEnum::AddressHash("ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -378,7 +386,7 @@ mod tests {
         let address = Address {
             prefix: 0,
             t_addr_prefix: 0,
-            hash: "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
+            hash: AddressHashEnum::AddressHash("3f4aa1fedf1f54eeb03b759deadb36676b184911".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -393,7 +401,7 @@ mod tests {
         let address = Address {
             prefix: 60,
             t_addr_prefix: 0,
-            hash: "05aab5342166f8594baf17a7d9bef5d567443327".into(),
+            hash: AddressHashEnum::AddressHash("05aab5342166f8594baf17a7d9bef5d567443327".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -408,7 +416,7 @@ mod tests {
         let address = Address {
             t_addr_prefix: 29,
             prefix: 37,
-            hash: "05aab5342166f8594baf17a7d9bef5d567443327".into(),
+            hash: AddressHashEnum::AddressHash("05aab5342166f8594baf17a7d9bef5d567443327".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -423,7 +431,7 @@ mod tests {
         let address = Address {
             prefix: 85,
             t_addr_prefix: 0,
-            hash: "ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into(),
+            hash: AddressHashEnum::AddressHash("ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into()),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -438,7 +446,7 @@ mod tests {
         let address = Address {
             prefix: 36,
             t_addr_prefix: 0,
-            hash: "c3f710deb7320b0efa6edb14e3ebeeb9155fa90d".into(),
+            hash: AddressHashEnum::AddressHash("c3f710deb7320b0efa6edb14e3ebeeb9155fa90d".into()),
             checksum_type: ChecksumType::DGROESTL512,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -453,7 +461,7 @@ mod tests {
         let address = Address {
             prefix: 63,
             t_addr_prefix: 0,
-            hash: "56bb05aa20f5a80cf84e90e5dab05be331333e27".into(),
+            hash: AddressHashEnum::AddressHash("56bb05aa20f5a80cf84e90e5dab05be331333e27".into()),
             checksum_type: ChecksumType::KECCAK256,
             hrp: None,
             addr_format: AddressFormat::Standard,
@@ -510,10 +518,12 @@ mod tests {
         let address = Address {
             prefix: 2,
             t_addr_prefix: 0,
-            hash: [
-                140, 0, 44, 191, 189, 83, 144, 173, 47, 216, 127, 59, 80, 232, 159, 100, 156, 132, 78, 192,
-            ]
-            .into(),
+            hash: AddressHashEnum::AddressHash(
+                [
+                    140, 0, 44, 191, 189, 83, 144, 173, 47, 216, 127, 59, 80, 232, 159, 100, 156, 132, 78, 192,
+                ]
+                .into(),
+            ),
             checksum_type: ChecksumType::DSHA256,
             hrp: None,
             addr_format: AddressFormat::CashAddress {

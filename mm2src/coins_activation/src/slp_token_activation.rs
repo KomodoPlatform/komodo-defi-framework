@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams, TryPlatformCoinFromMmCoinEnum};
+use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 use async_trait::async_trait;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;

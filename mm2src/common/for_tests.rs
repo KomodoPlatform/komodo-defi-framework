@@ -947,6 +947,25 @@ pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str
     json::from_str(&native.1).unwrap()
 }
 
+pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
+    let enable = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "enable_lightning",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "activation_params": {
+                    "name": "test-node"
+                }
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_lightning' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
 /// Use a separate (unique) temporary folder for each MM.
 /// We could also remove the old folders after some time in order not to spam the temporary folder.
 /// Though we don't always want to remove them right away, allowing developers to check the files).

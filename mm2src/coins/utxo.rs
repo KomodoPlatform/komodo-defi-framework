@@ -35,6 +35,7 @@ pub mod utxo_standard;
 
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
+use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::{OutPoint, TransactionInput, TransactionOutput, TxHashAlgo};
 use common::executor::{spawn, Timer};
@@ -53,7 +54,8 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
-pub use keys::{Address, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public, Secret, Type as ScriptType};
+pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
+               Type as ScriptType};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264, H512};
@@ -64,6 +66,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::hash::Hash;
 use std::num::NonZeroU64;
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] use std::path::Path;
@@ -351,7 +354,7 @@ impl RecentlySpentOutPoints {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum BlockchainNetwork {
     #[serde(rename = "mainnet")]
     Mainnet,
@@ -359,6 +362,16 @@ pub enum BlockchainNetwork {
     Testnet,
     #[serde(rename = "regtest")]
     Regtest,
+}
+
+impl From<BlockchainNetwork> for BitcoinNetwork {
+    fn from(network: BlockchainNetwork) -> Self {
+        match network {
+            BlockchainNetwork::Mainnet => BitcoinNetwork::Bitcoin,
+            BlockchainNetwork::Testnet => BitcoinNetwork::Testnet,
+            BlockchainNetwork::Regtest => BitcoinNetwork::Regtest,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1324,7 +1337,7 @@ pub trait UtxoCoinBuilder {
         let my_address = Address {
             prefix: conf.pub_addr_prefix,
             t_addr_prefix: conf.pub_t_addr_prefix,
-            hash: key_pair.public().address_hash(),
+            hash: AddressHashEnum::AddressHash(key_pair.public().address_hash()),
             checksum_type: conf.checksum_type,
             hrp: conf.bech32_hrp.clone(),
             addr_format,
@@ -2044,7 +2057,7 @@ pub fn p2pkh_spend(
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> Result<TransactionInput, String> {
-    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash().into());
     if script != *prev_script {
         return ERR!(
             "p2pkh script {} built from input key pair doesn't match expected prev script {}",
@@ -2108,7 +2121,7 @@ fn p2wpkh_spend(
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> Result<TransactionInput, String> {
-    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash().into());
 
     if script != *prev_script {
         return ERR!(
@@ -2160,11 +2173,12 @@ fn script_sig(message: &H256, key_pair: &KeyPair, fork_id: u32) -> Result<Bytes,
 
 pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     match address.addr_format {
-        UtxoAddressFormat::Segwit => Builder::build_p2wpkh(&address.hash),
+        UtxoAddressFormat::Segwit => Builder::build_witness_script(&address.hash),
         _ => match script_type {
             ScriptType::P2PKH => Builder::build_p2pkh(&address.hash),
             ScriptType::P2SH => Builder::build_p2sh(&address.hash),
-            ScriptType::P2WPKH => Builder::build_p2wpkh(&address.hash),
+            ScriptType::P2WPKH => Builder::build_witness_script(&address.hash),
+            ScriptType::P2WSH => Builder::build_witness_script(&address.hash),
         },
     }
 }
@@ -2192,7 +2206,7 @@ pub fn address_by_conf_and_pubkey_str(
     let address = Address {
         prefix: utxo_conf.pub_addr_prefix,
         t_addr_prefix: utxo_conf.pub_t_addr_prefix,
-        hash,
+        hash: hash.into(),
         checksum_type: utxo_conf.checksum_type,
         hrp: utxo_conf.bech32_hrp,
         addr_format,
