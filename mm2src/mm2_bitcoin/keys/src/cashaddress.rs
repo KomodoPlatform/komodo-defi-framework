@@ -4,7 +4,7 @@ use std::str::FromStr;
 const DEFAULT_PREFIX: NetworkPrefix = NetworkPrefix::BitcoinCash;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AddressType {
     /// Pay to PubKey Hash
     /// https://bitcoin.org/en/glossary/p2pkh-address
@@ -14,7 +14,7 @@ pub enum AddressType {
     P2SH,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum NetworkPrefix {
     BitcoinCash,
     BchTest,
@@ -73,7 +73,7 @@ impl NetworkPrefix {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CashAddress {
     pub prefix: NetworkPrefix,
     pub hash: Vec<u8>,

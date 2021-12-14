@@ -2,8 +2,8 @@ use crate::{BlockHeightAndTime, Transaction, TransactionDetails, TransactionType
 use common::mm_number::BigDecimal;
 use std::collections::HashSet;
 
-pub struct Builder<Addr, Tx: Transaction> {
-    tx: Tx,
+pub struct Builder<'a, Addr, Tx: Transaction> {
+    tx: &'a Tx,
     my_addresses: HashSet<Addr>,
     total_amount: BigDecimal,
     received_by_me: BigDecimal,
@@ -14,8 +14,8 @@ pub struct Builder<Addr, Tx: Transaction> {
     block_height_and_time: Option<BlockHeightAndTime>,
 }
 
-impl<Addr: Clone + Eq + std::hash::Hash, Tx: Transaction> Builder<Addr, Tx> {
-    pub fn new(tx: Tx) -> Self {
+impl<'a, Addr: Clone + Eq + std::hash::Hash, Tx: Transaction> Builder<'a, Addr, Tx> {
+    pub fn new(tx: &'a Tx, block_height_and_time: Option<BlockHeightAndTime>) -> Self {
         Builder {
             tx,
             my_addresses: Default::default(),
@@ -24,7 +24,7 @@ impl<Addr: Clone + Eq + std::hash::Hash, Tx: Transaction> Builder<Addr, Tx> {
             spent_by_me: Default::default(),
             from_addresses: Default::default(),
             to_addresses: Default::default(),
-            block_height_and_time: None,
+            block_height_and_time,
             transaction_type: TransactionType::StandardTransfer,
         }
     }
@@ -33,7 +33,7 @@ impl<Addr: Clone + Eq + std::hash::Hash, Tx: Transaction> Builder<Addr, Tx> {
         if self.my_addresses.contains(&address) {
             self.received_by_me += amount;
         }
-        self.to_addresses.insert(address.clone());
+        self.to_addresses.insert(address);
     }
 
     pub fn transferred_from(&mut self, address: Addr, amount: &BigDecimal) {
@@ -41,7 +41,7 @@ impl<Addr: Clone + Eq + std::hash::Hash, Tx: Transaction> Builder<Addr, Tx> {
             self.spent_by_me += amount;
         }
         self.total_amount += amount;
-        self.from_addresses.insert(address.clone());
+        self.from_addresses.insert(address);
     }
 
     pub fn build(self) -> TransactionDetails {

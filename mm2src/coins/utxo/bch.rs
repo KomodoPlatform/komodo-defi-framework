@@ -1,7 +1,8 @@
 use super::*;
 use crate::history_tx_details::Builder as TxDetailsBuilder;
 use crate::utxo::rpc_clients::UtxoRpcFut;
-use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpTokenInfo, SlpTransaction, SlpUnspent};
+use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
+                       SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
             TradePreimageValue, TxHistoryStorage, TxHistoryStorageError, ValidateAddressResult, WithdrawFut};
@@ -10,6 +11,7 @@ use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
+use itertools::Either as EitherIter;
 use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
@@ -131,13 +133,16 @@ impl From<serialization::Error> for IsSlpUtxoError {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum GetTxDetailsError<E: TxHistoryStorageError> {
     StorageError(E),
-    RpcError(UtxoRpcError),
-    TxDeserializationError(serialization::Error),
     AddressesFromScriptError(String),
-    SlpTokenIdIsNotGenesis(H256),
+    SlpTokenIdIsNotGenesisTx(H256),
+    TxDeserializationError(serialization::Error),
+    RpcError(UtxoRpcError),
     ParseSlpScriptError(ParseSlpScriptError),
+    ToSlpAddressError(String),
+    InvalidSlpTransaction(H256),
 }
 
 impl<E: TxHistoryStorageError> From<UtxoRpcError> for GetTxDetailsError<E> {
@@ -158,6 +163,15 @@ impl<E: TxHistoryStorageError> From<ParseSlpScriptError> for GetTxDetailsError<E
 
 impl BchCoin {
     pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
+
+    pub fn slp_address(&self, address: &Address) -> Result<CashAddress, String> {
+        let conf = &self.as_ref().conf;
+        address.to_cashaddress(
+            &self.slp_prefix().to_string(),
+            conf.pub_addr_prefix,
+            conf.p2sh_addr_prefix,
+        )
+    }
 
     pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
 
@@ -212,15 +226,11 @@ impl BchCoin {
                                 None => result.add_standard(unspent),
                             }
                         },
-                        SlpTransaction::Genesis {
-                            initial_token_mint_quantity,
-                            mint_baton_vout,
-                            ..
-                        } => {
+                        SlpTransaction::Genesis(genesis) => {
                             if unspent.outpoint.index == 1 {
                                 let token_id = prev_tx.hash().reversed();
-                                result.add_slp(token_id, unspent, initial_token_mint_quantity);
-                            } else if Some(unspent.outpoint.index) == mint_baton_vout.map(|u| u as u32) {
+                                result.add_slp(token_id, unspent, genesis.initial_token_mint_quantity);
+                            } else if Some(unspent.outpoint.index) == genesis.mint_baton_vout.map(|u| u as u32) {
                                 result.add_slp_baton(unspent);
                             } else {
                                 result.add_standard(unspent);
@@ -330,18 +340,20 @@ impl BchCoin {
         &self,
         tx_hash: &H256Json,
         storage: &T,
-    ) -> Result<BytesJson, MmError<GetTxDetailsError<T::Error>>> {
+    ) -> Result<UtxoTx, MmError<GetTxDetailsError<T::Error>>> {
         let tx_hash_as_bytes = BytesJson::new(tx_hash.0.to_vec());
-        match storage.tx_bytes_from_cache(self.ticker(), &tx_hash_as_bytes).await? {
-            Some(hex) => Ok(hex),
+        let tx_bytes = match storage.tx_bytes_from_cache(self.ticker(), &tx_hash_as_bytes).await? {
+            Some(tx_bytes) => tx_bytes,
             None => {
                 let tx_bytes = self.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await?;
                 storage
                     .add_tx_to_cache(self.ticker(), &tx_hash_as_bytes, &tx_bytes)
                     .await?;
-                Ok(tx_bytes)
+                tx_bytes
             },
-        }
+        };
+        let tx = deserialize(tx_bytes.0.as_slice())?;
+        Ok(tx)
     }
 
     /// Returns multiple details by tx hash if token transfers also occurred in the transaction
@@ -351,18 +363,7 @@ impl BchCoin {
         block_height_and_time: Option<BlockHeightAndTime>,
         storage: &T,
     ) -> Result<Vec<TransactionDetails>, MmError<GetTxDetailsError<T::Error>>> {
-        let tx_bytes = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
-        let tx: UtxoTx = deserialize(tx_bytes.0.as_slice())?;
-        let mut previous_transactions = HashMap::with_capacity(tx.inputs.len());
-        for input in tx.inputs.iter() {
-            if previous_transactions.contains_key(&input.previous_output.hash) {
-                continue;
-            }
-
-            let tx_bytes = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
-            let tx: UtxoTx = deserialize(tx_bytes.0.as_slice())?;
-            previous_transactions.insert(tx.hash(), tx);
-        }
+        let tx = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
 
         let maybe_op_return: Script = tx.outputs[0].script_pubkey.clone().into();
         if maybe_op_return.is_pay_to_public_key_hash()
@@ -370,21 +371,14 @@ impl BchCoin {
             || maybe_op_return.is_pay_to_script_hash()
         {
             let tx = self
-                .plain_bch_tx_details(tx_hash, tx, &previous_transactions, block_height_and_time)
+                .plain_bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
                 .await?;
             Ok(vec![tx])
         } else {
             match parse_slp_script(&maybe_op_return) {
                 Ok(slp_details) => {
                     let txes = self
-                        .bch_with_slp_tx_details(
-                            tx_hash,
-                            tx,
-                            slp_details.transaction,
-                            &previous_transactions,
-                            block_height_and_time,
-                            storage,
-                        )
+                        .bch_with_slp_tx_details(tx_hash, &tx, slp_details.transaction, block_height_and_time, storage)
                         .await?;
                     Ok(txes.to_vec())
                 },
@@ -394,7 +388,7 @@ impl BchCoin {
                         e, tx_hash
                     );
                     let tx = self
-                        .plain_bch_tx_details(tx_hash, tx, &previous_transactions, block_height_and_time)
+                        .plain_bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
                         .await?;
                     Ok(vec![tx])
                 },
@@ -402,18 +396,20 @@ impl BchCoin {
         }
     }
 
-    async fn plain_bch_tx_details<E: TxHistoryStorageError>(
+    async fn plain_bch_tx_details<T: TxHistoryStorage>(
         &self,
         tx_hash: &H256Json,
-        tx: UtxoTx,
-        previous_transactions: &HashMap<H256, UtxoTx>,
+        tx: &UtxoTx,
         height_and_time: Option<BlockHeightAndTime>,
-    ) -> Result<TransactionDetails, MmError<GetTxDetailsError<E>>> {
-        let mut tx_builder = TxDetailsBuilder::new(tx.clone());
-        for output in tx.outputs {
-            let addresses = self
-                .addresses_from_script(&output.script_pubkey.into())
-                .map_to_mm(GetTxDetailsError::AddressesFromScriptError)?;
+        storage: &T,
+    ) -> Result<TransactionDetails, MmError<GetTxDetailsError<T::Error>>> {
+        let mut tx_builder = TxDetailsBuilder::new(tx, height_and_time);
+        for output in &tx.outputs {
+            let addresses = match self.addresses_from_script(&output.script_pubkey.clone().into()) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+
             if addresses.len() != 1 {
                 let msg = format!(
                     "{} tx {:02x} output script resulted into unexpected number of addresses",
@@ -429,11 +425,11 @@ impl BchCoin {
             }
         }
 
-        for input in tx.inputs {
+        for input in &tx.inputs {
             let index = input.previous_output.index;
-            let prev_tx = previous_transactions
-                .get(&input.previous_output.hash)
-                .expect("Tx to exist");
+            let prev_tx = self
+                .tx_from_storage_or_rpc(&input.previous_output.hash.reversed().into(), storage)
+                .await?;
             let prev_script = prev_tx.outputs[index as usize].script_pubkey.clone().into();
             let addresses = self
                 .addresses_from_script(&prev_script)
@@ -456,80 +452,112 @@ impl BchCoin {
         Ok(tx_builder.build())
     }
 
-    async fn bch_with_slp_tx_details<Storage: TxHistoryStorage>(
+    async fn get_slp_genesis_params<T: TxHistoryStorage>(
         &self,
-        tx_hash: &H256Json,
-        tx: UtxoTx,
+        token_id: H256,
+        storage: &T,
+    ) -> Result<SlpGenesisParams, MmError<GetTxDetailsError<T::Error>>> {
+        let token_genesis_tx = self
+            .tx_from_storage_or_rpc(&token_id.reversed().into(), storage)
+            .await?;
+        let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
+        let slp_details = parse_slp_script(&maybe_genesis_script)?;
+        match slp_details.transaction {
+            SlpTransaction::Genesis(params) => Ok(params),
+            _ => MmError::err(GetTxDetailsError::SlpTokenIdIsNotGenesisTx(token_id)),
+        }
+    }
+
+    async fn slp_transferred_amounts<T: TxHistoryStorage>(
+        &self,
+        utxo_tx: &UtxoTx,
         slp_tx: SlpTransaction,
-        previous_transactions: &HashMap<H256, UtxoTx>,
-        height_and_time: Option<BlockHeightAndTime>,
-        storage: &Storage,
-    ) -> Result<[TransactionDetails; 2], MmError<GetTxDetailsError<Storage::Error>>> {
-        let (slp_decimals, slp_amounts) = match slp_tx {
+        storage: &T,
+    ) -> Result<HashMap<usize, (CashAddress, BigDecimal)>, MmError<GetTxDetailsError<T::Error>>> {
+        let slp_amounts = match slp_tx {
             SlpTransaction::Send { token_id, amounts } => {
-                let token_genesis_tx = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
-                let token_genesis_tx: UtxoTx = deserialize(token_genesis_tx.0.as_slice())?;
-                let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
-                let slp_details = parse_slp_script(&maybe_genesis_script)?;
-                match slp_details.transaction {
-                    SlpTransaction::Genesis { decimals, .. } => (decimals[0], amounts),
-                    _ => return MmError::err(GetTxDetailsError::SlpTokenIdIsNotGenesis(token_id)),
-                }
+                let genesis_params = self.get_slp_genesis_params(token_id, storage).await?;
+                EitherIter::Left(
+                    amounts
+                        .into_iter()
+                        .map(move |amount| big_decimal_from_sat_unsigned(amount, genesis_params.decimals[0])),
+                )
             },
             SlpTransaction::Mint {
                 token_id,
                 additional_token_quantity,
                 ..
             } => {
-                let token_genesis_tx = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
-                let token_genesis_tx: UtxoTx = deserialize(token_genesis_tx.0.as_slice())?;
-                let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
-                let slp_details = parse_slp_script(&maybe_genesis_script)?;
-                match slp_details.transaction {
-                    SlpTransaction::Genesis { decimals, .. } => (decimals[0], vec![additional_token_quantity]),
-                    _ => return MmError::err(GetTxDetailsError::SlpTokenIdIsNotGenesis(token_id)),
-                }
+                let slp_genesis_params = self.get_slp_genesis_params(token_id, storage).await?;
+                EitherIter::Right(std::iter::once(big_decimal_from_sat_unsigned(
+                    additional_token_quantity,
+                    slp_genesis_params.decimals[0],
+                )))
             },
-            SlpTransaction::Genesis {
-                decimals,
-                initial_token_mint_quantity,
-                ..
-            } => (decimals[0], vec![initial_token_mint_quantity]),
+            SlpTransaction::Genesis(genesis_params) => EitherIter::Right(std::iter::once(
+                big_decimal_from_sat_unsigned(genesis_params.initial_token_mint_quantity, genesis_params.decimals[0]),
+            )),
         };
 
-        let mut bch_tx_details_builder = TxDetailsBuilder::new(tx.clone());
-        let slp_tx_details_builder: TxDetailsBuilder<Address, _> = TxDetailsBuilder::new(tx.clone());
-        for input in tx.inputs {
-            let index = input.previous_output.index;
-            let prev_tx = previous_transactions.get(&input.previous_output.hash).unwrap();
-            let prev_script = prev_tx.outputs[index as usize].script_pubkey.clone().into();
-            let addresses = self
-                .addresses_from_script(&prev_script)
-                .map_to_mm(GetTxDetailsError::AddressesFromScriptError)?;
-            if addresses.len() != 1 {
-                let msg = format!(
-                    "{} tx {:02x} output script resulted into unexpected number of addresses",
-                    self.ticker(),
-                    tx_hash,
-                );
-                return MmError::err(GetTxDetailsError::AddressesFromScriptError(msg));
-            }
+        let mut result = HashMap::new();
+        for (i, amount) in slp_amounts.into_iter().enumerate() {
+            let output_index = i + 1;
+            match utxo_tx.outputs.get(output_index) {
+                Some(output) => {
+                    let addresses = self
+                        .addresses_from_script(&output.script_pubkey.clone().into())
+                        .map_to_mm(GetTxDetailsError::AddressesFromScriptError)?;
+                    if addresses.len() != 1 {
+                        let msg = format!(
+                            "{} tx {:?} output script resulted into unexpected number of addresses",
+                            self.ticker(),
+                            utxo_tx.hash().reversed(),
+                        );
+                        return MmError::err(GetTxDetailsError::AddressesFromScriptError(msg));
+                    }
 
-            let prev_value = prev_tx.outputs[index as usize].value;
-            let amount = big_decimal_from_sat_unsigned(prev_value, self.decimals());
-            for address in addresses {
-                bch_tx_details_builder.transferred_from(address, &amount);
-            }
-
-            let prev_tx_maybe_op_return: Script = prev_tx.outputs[0].script_pubkey.clone().into();
-            if prev_tx_maybe_op_return.is_pay_to_script_hash()
-                || prev_tx_maybe_op_return.is_pay_to_public_key_hash()
-                || prev_tx_maybe_op_return.is_pay_to_public_key()
-            {
-            } else {
+                    let slp_address = self
+                        .slp_address(&addresses[0])
+                        .map_to_mm(GetTxDetailsError::ToSlpAddressError)?;
+                    result.insert(output_index, (slp_address, amount));
+                },
+                None => return MmError::err(GetTxDetailsError::InvalidSlpTransaction(utxo_tx.hash().reversed())),
             }
         }
-        Ok([bch_tx_details_builder.build(), slp_tx_details_builder.build()])
+        Ok(result)
+    }
+
+    async fn bch_with_slp_tx_details<Storage: TxHistoryStorage>(
+        &self,
+        tx_hash: &H256Json,
+        tx: &UtxoTx,
+        slp_tx: SlpTransaction,
+        height_and_time: Option<BlockHeightAndTime>,
+        storage: &Storage,
+    ) -> Result<[TransactionDetails; 2], MmError<GetTxDetailsError<Storage::Error>>> {
+        let bch_tx_details = self.plain_bch_tx_details(tx_hash, tx, height_and_time, storage).await?;
+
+        let mut slp_tx_details_builder = TxDetailsBuilder::new(tx, height_and_time);
+        let slp_transferred_amounts = self.slp_transferred_amounts(&tx, slp_tx, storage).await?;
+        for (_, (address, amount)) in slp_transferred_amounts {
+            slp_tx_details_builder.transferred_to(address, &amount);
+        }
+
+        for input in &tx.inputs {
+            let prev_tx = self
+                .tx_from_storage_or_rpc(&input.previous_output.hash.reversed().into(), storage)
+                .await?;
+            if let Ok(slp_tx_details) = parse_slp_script(&prev_tx.outputs[0].script_pubkey) {
+                let mut prev_slp_transferred = self
+                    .slp_transferred_amounts(&prev_tx, slp_tx_details.transaction, storage)
+                    .await?;
+                let i = input.previous_output.index as usize;
+                if let Some((address, amount)) = prev_slp_transferred.remove(&i) {
+                    slp_tx_details_builder.transferred_from(address, &amount);
+                }
+            }
+        }
+        Ok([bch_tx_details, slp_tx_details_builder.build()])
     }
 }
 
