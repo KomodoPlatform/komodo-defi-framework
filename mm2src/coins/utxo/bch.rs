@@ -498,7 +498,7 @@ impl BchCoin {
         };
 
         let mut bch_tx_details_builder = TxDetailsBuilder::new(tx.clone());
-        let mut slp_tx_details_builder: TxDetailsBuilder<Address, _> = TxDetailsBuilder::new(tx.clone());
+        let slp_tx_details_builder: TxDetailsBuilder<Address, _> = TxDetailsBuilder::new(tx.clone());
         for input in tx.inputs {
             let index = input.previous_output.index;
             let prev_tx = previous_transactions.get(&input.previous_output.hash).unwrap();

@@ -542,7 +542,7 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
                 let mut cmus = Vec::new();
                 for hash in block.tx {
                     let tx = native_client
-                        .get_transaction_bytes(hash)
+                        .get_transaction_bytes(&hash)
                         .compat()
                         .await
                         .expect("Panic here to avoid storing invalid tree state to the DB");

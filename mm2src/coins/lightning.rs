@@ -10,6 +10,7 @@ use crate::utxo::{sat_from_big_decimal, FeePolicy, UtxoCommonOps, UtxoTxGenerati
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut, TradePreimageValue, TransactionEnum,
             TransactionFut, UtxoStandardCoin, ValidateAddressResult, WithdrawFut, WithdrawRequest};
+use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::Txid;
@@ -116,6 +117,7 @@ impl LightningCoin {
     fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform_fields.platform_coin }
 }
 
+#[async_trait]
 impl SwapOps for LightningCoin {
     fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
@@ -232,7 +234,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn search_for_swap_tx_spend_my(
+    async fn search_for_swap_tx_spend_my(
         &self,
         _time_lock: u32,
         _other_pub: &[u8],
@@ -244,7 +246,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn search_for_swap_tx_spend_other(
+    async fn search_for_swap_tx_spend_other(
         &self,
         _time_lock: u32,
         _other_pub: &[u8],

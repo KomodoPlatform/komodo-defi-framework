@@ -345,7 +345,7 @@ impl Qrc20Coin {
                     "coin" => self.utxo.conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.contract.event.get_history");
         let transfer_history_builder = match TransferHistoryBuilder::new(self.clone()) {
             Ok(builder) => builder,
-            Err(e) => return RequestTxHistoryResult::UnknownError(e),
+            Err(e) => return RequestTxHistoryResult::CriticalError(e),
         };
         let history_res = transfer_history_builder.build_tx_idents().await;
         let history = match history_res {

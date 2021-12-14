@@ -44,7 +44,7 @@ pub type Secret = H256;
 /// 32 bytes long signable message
 pub type Message = H256;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AddressHashEnum {
     /// 20 bytes long hash derived from public `ripemd160(sha256(public))` used in P2PKH, P2SH, P2WPKH
     AddressHash(H160),

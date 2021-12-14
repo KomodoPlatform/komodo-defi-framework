@@ -542,7 +542,7 @@ async fn process_tx_for_unconfirmation(txid: Txid, filter: Arc<PlatformFields>, 
         .platform_coin
         .as_ref()
         .rpc_client
-        .get_transaction_bytes(H256::from(txid.as_hash().into_inner()).reversed())
+        .get_transaction_bytes(&H256::from(txid.as_hash().into_inner()).reversed())
         .compat()
         .await
         .map_err(|e| e.into_inner())
@@ -597,7 +597,7 @@ async fn process_txs_confirmations(
             .platform_coin
             .as_ref()
             .rpc_client
-            .get_transaction_bytes(rpc_txid.clone())
+            .get_transaction_bytes(&rpc_txid)
             .compat()
             .await
         {
