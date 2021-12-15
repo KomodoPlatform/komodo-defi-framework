@@ -4,14 +4,15 @@ use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::SuccessResponse;
-use crypto::trezor::trezor_rpc_task::{TrezorInteractWithUser, TrezorInteractionError, TrezorInteractionStatuses};
+use crypto::hw_rpc_task::{TrezorConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::TrezorPinMatrix3x3Response;
 use crypto::{CryptoCtx, HwWalletType};
-use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus};
+use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus};
 use serde_json as json;
 use std::convert::TryFrom;
 use std::time::Duration;
 
+const MM_TREZOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
 const MM_INIT_TREZOR_PIN_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub type MmInitTaskManager =
@@ -26,6 +27,7 @@ type MmInitTaskHandle =
 pub enum MmInitInProgressStatus {
     /// TODO replace with more specific statuses.
     Initializing,
+    WaitingForTrezorToConnect,
     InitializingCryptoCtx,
     ReadPublicKeyFromTrezor,
 }
@@ -42,7 +44,7 @@ pub enum MmInitUserAction {
 }
 
 impl TryFrom<MmInitUserAction> for TrezorPinMatrix3x3Response {
-    type Error = TrezorInteractionError;
+    type Error = RpcTaskError;
 
     fn try_from(value: MmInitUserAction) -> Result<Self, Self::Error> {
         match value {
@@ -79,18 +81,18 @@ impl RpcTask for MmInitTask {
         })?;
         match hw_wallet {
             HwWalletType::Trezor => {
-                CryptoCtx::init_with_trezor(self.ctx.clone())
-                    .await
-                    .interact_with_user_if_required(
-                        MM_INIT_TREZOR_PIN_TIMEOUT,
-                        task_handle,
-                        TrezorInteractionStatuses {
-                            on_button_request: MmInitInProgressStatus::ReadPublicKeyFromTrezor,
-                            on_pin_request: MmInitAwaitingStatus::WaitForTrezorPin,
-                            on_ready: MmInitInProgressStatus::Initializing,
-                        },
-                    )
-                    .await??;
+                let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, TrezorConnectStatuses {
+                    on_connect: MmInitInProgressStatus::WaitingForTrezorToConnect,
+                    on_connected: MmInitInProgressStatus::Initializing,
+                    on_connection_failed: MmInitInProgressStatus::Initializing,
+                    on_button_request: MmInitInProgressStatus::ReadPublicKeyFromTrezor,
+                    on_pin_request: MmInitAwaitingStatus::WaitForTrezorPin,
+                    on_ready: MmInitInProgressStatus::Initializing,
+                })
+                .with_connect_timeout(MM_TREZOR_CONNECT_TIMEOUT)
+                .with_pin_timeout(MM_INIT_TREZOR_PIN_TIMEOUT);
+
+                CryptoCtx::init_with_trezor(self.ctx.weak(), &trezor_connect_processor).await?;
             },
         }
 

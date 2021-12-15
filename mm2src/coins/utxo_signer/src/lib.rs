@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
 use common::mm_error::prelude::*;
-use crypto::trezor::{TrezorClient, TrezorCoin, TrezorError};
+use crypto::trezor::client::TrezorClient;
+use crypto::trezor::{TrezorCoin, TrezorError};
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
@@ -110,7 +111,7 @@ pub trait TxProvider {
 }
 
 pub enum SignPolicy<'a> {
-    WithTrezor(&'a TrezorClient),
+    WithTrezor(TrezorClient),
     WithKeyPair(&'a KeyPair),
 }
 
@@ -130,7 +131,7 @@ pub trait UtxoSignerOps {
         match sign_policy {
             SignPolicy::WithTrezor(trezor) => {
                 let signer = with_trezor::TrezorTxSigner {
-                    trezor: trezor.clone(),
+                    trezor,
                     tx_provider: self.tx_provider(),
                     trezor_coin: self.trezor_coin()?,
                     params,

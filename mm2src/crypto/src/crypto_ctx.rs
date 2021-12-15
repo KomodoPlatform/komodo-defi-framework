@@ -1,8 +1,7 @@
-use crate::hw_client::{HwClient, HwError};
+use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
 use crate::hw_ctx::HardwareWalletCtx;
 use crate::key_pair_ctx::KeyPairCtx;
-use crate::HwWalletType;
-use bip32::Error as Bip32Error;
+use crate::HwResult;
 use bitcrypto::dhash160;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
@@ -10,11 +9,10 @@ use common::privkey::{key_pair_from_seed, PrivKeyError};
 use derive_more::Display;
 use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
+use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use std::ops::Deref;
 use std::sync::Arc;
-use trezor::response_channel::TrezorResponseReceiver;
-use trezor::TrezorError;
 
 pub type CryptoInitResult<T> = Result<T, MmError<CryptoInitError>>;
 
@@ -36,26 +34,11 @@ pub enum CryptoInitError {
     NullStringPassphrase,
     #[display(fmt = "Invalid passphrase: '{}'", _0)]
     InvalidPassphrase(PrivKeyError),
-    #[display(fmt = "Invalid xpub received from a device: '{}'", _0)]
-    InvalidXpub(Bip32Error),
-    HardwareWalletError(HwError),
     Internal(String),
 }
 
 impl From<PrivKeyError> for CryptoInitError {
     fn from(e: PrivKeyError) -> Self { CryptoInitError::InvalidPassphrase(e) }
-}
-
-impl From<Bip32Error> for CryptoInitError {
-    fn from(e: Bip32Error) -> Self { CryptoInitError::InvalidXpub(e) }
-}
-
-impl From<HwError> for CryptoInitError {
-    fn from(hw: HwError) -> Self { CryptoInitError::HardwareWalletError(hw) }
-}
-
-impl From<TrezorError> for CryptoInitError {
-    fn from(trezor: TrezorError) -> Self { CryptoInitError::HardwareWalletError(HwError::from(trezor)) }
 }
 
 pub enum CryptoCtx {
@@ -117,49 +100,52 @@ impl CryptoCtx {
         Ok(())
     }
 
-    pub async fn init_with_trezor(ctx: MmArc) -> TrezorResponseReceiver<CryptoInitResult<()>> {
-        let ctx_weak = ctx.weak();
-        let trezor = match HwClient::trezor().await {
-            Ok(trezor) => trezor,
-            Err(e) => {
-                let (hw_error, trace) = e.split();
-                let init_error = CryptoInitError::from(hw_error);
-                return TrezorResponseReceiver::ready(MmError::err_with_trace(init_error, trace));
-            },
+    pub async fn init_with_trezor<Processor>(
+        ctx_weak: MmWeak,
+        processor: &Processor,
+    ) -> MmResult<(), HwProcessingError<Processor::Error>>
+    where
+        Processor: TrezorConnectProcessor + Sync,
+    {
+        let trezor = HwClient::trezor(processor).await?;
+        let mm_internal_pubkey = {
+            let mut session = trezor.session().await?;
+            HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?
         };
 
-        HardwareWalletCtx::trezor_mm_internal_pubkey(&trezor).and_then(move |mm_internal_pubkey| {
-            CryptoCtx::init_with_hw_wallet_internal_xpub(ctx_weak.clone(), HwWalletType::Trezor, mm_internal_pubkey)
-        })
+        Ok(CryptoCtx::init_with_hw_wallet_internal_xpub(
+            ctx_weak,
+            HwClient::from(trezor),
+            mm_internal_pubkey,
+        )?)
     }
 
     fn init_with_hw_wallet_internal_xpub(
         ctx_weak: MmWeak,
-        hw_wallet_type: HwWalletType,
+        hw_client: HwClient,
         mm2_internal_pubkey: H264,
-    ) -> CryptoInitResult<()> {
-        // const DEFAULT_SECP
-
+    ) -> HwResult<()> {
         let ctx = match MmArc::from_weak(&ctx_weak) {
             Some(ctx) => ctx,
-            None => return MmError::err(CryptoInitError::Internal("MmArc is dropped".to_owned())),
+            None => return MmError::err(HwError::Internal("MmArc is dropped".to_owned())),
         };
 
         let mut ctx_field = ctx
             .crypto_ctx
             .lock()
-            .map_to_mm(|poison| CryptoInitError::Internal(poison.to_string()))?;
+            .map_to_mm(|poison| HwError::Internal(poison.to_string()))?;
         if ctx_field.is_some() {
-            return MmError::err(CryptoInitError::InitializedAlready);
+            return MmError::err(HwError::Internal("'crypto_ctx' is initialized already".to_owned()));
         }
 
         // TODO remove initializing legacy fields when lp_swap and lp_ordermatch support CryptoCtx.
         let rmd160 = dhash160(mm2_internal_pubkey.as_slice());
-        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
+        ctx.rmd160.pin(rmd160).map_to_mm(HwError::Internal)?;
 
         let crypto_ctx = CryptoCtx::HardwareWallet(HardwareWalletCtx {
             mm2_internal_pubkey,
-            hw_wallet_type,
+            hw_wallet_type: hw_client.hw_wallet_type(),
+            hw_wallet: PaMutex::new(Some(hw_client)),
         });
         *ctx_field = Some(Arc::new(crypto_ctx));
         Ok(())

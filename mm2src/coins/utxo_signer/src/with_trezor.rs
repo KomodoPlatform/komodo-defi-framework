@@ -28,11 +28,12 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
         }
 
         let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await?;
+        let mut session = self.trezor.session().await?;
 
         let TxSignResult {
             signatures,
             serialized_tx,
-        } = self.trezor.sign_utxo_tx(trezor_unsigned_tx).await?;
+        } = session.sign_utxo_tx(trezor_unsigned_tx).await?;
         debug!("Transaction signed by Trezor: {}", hex::encode(serialized_tx));
         if signatures.len() != self.params.inputs_count() {
             return MmError::err(UtxoSignTxError::InvalidSignaturesNumber {

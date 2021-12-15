@@ -1,101 +1,92 @@
-use crate::{TrezorError, TrezorEvent, TrezorPinMatrix3x3Response, TrezorResponseReceiver};
+use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
+use crate::TrezorPinMatrix3x3Response;
 use async_trait::async_trait;
 use common::mm_error::prelude::*;
-use derive_more::Display;
-use futures::StreamExt;
-use rpc_task::{RpcTaskError, RpcTaskHandle};
-use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::time::Duration;
 
-pub type TrezorInteractionResult<T> = Result<T, MmError<TrezorInteractionError>>;
+pub use rpc_task::{RpcTaskError, RpcTaskHandle};
 
-#[derive(Display)]
-pub enum TrezorInteractionError {
-    TrezorError(TrezorError),
-    RpcTaskError(RpcTaskError),
-    UnexpectedUserAction { expected: String },
-    Internal(String),
-}
+const DEFAULT_PIN_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
-impl From<TrezorError> for TrezorInteractionError {
-    fn from(trezor: TrezorError) -> Self { TrezorInteractionError::TrezorError(trezor) }
-}
-
-impl From<RpcTaskError> for TrezorInteractionError {
-    fn from(rpc: RpcTaskError) -> Self { TrezorInteractionError::RpcTaskError(rpc) }
-}
-
-pub struct TrezorInteractionStatuses<InProgressStatus, AwaitingStatus> {
+pub struct TrezorRequestStatuses<InProgressStatus, AwaitingStatus> {
     pub on_button_request: InProgressStatus,
     pub on_pin_request: AwaitingStatus,
     pub on_ready: InProgressStatus,
 }
 
-#[async_trait]
-pub trait TrezorInteractWithUser<T, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
+pub struct TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
 where
-    Self: Sized,
     Item: Serialize,
     Error: SerMmErrorType,
 {
-    async fn interact_with_user_if_required(
-        self,
-        timeout: Duration,
-        task_handle: &RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-        statuses: TrezorInteractionStatuses<InProgressStatus, AwaitingStatus>,
-    ) -> TrezorInteractionResult<T>;
+    task_handle: &'a RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
+    statuses: TrezorRequestStatuses<InProgressStatus, AwaitingStatus>,
+    pin_timeout: Duration,
 }
 
 #[async_trait]
-impl<T, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    TrezorInteractWithUser<T, Item, Error, InProgressStatus, AwaitingStatus, UserAction> for TrezorResponseReceiver<T>
+impl<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction> TrezorRequestProcessor
+    for TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
 where
-    Item: Serialize + Send + Sync,
-    Error: SerMmErrorType + Send + Sync,
-    T: Send + 'static,
-    InProgressStatus: Clone + Serialize + Send + Sync,
-    AwaitingStatus: Clone + Serialize + Send + Sync,
-    UserAction: DeserializeOwned + Send + Sync,
-    TrezorPinMatrix3x3Response: TryFrom<UserAction, Error = TrezorInteractionError> + Send,
+    Item: Serialize + Send,
+    Error: SerMmErrorType + Send,
+    InProgressStatus: Clone + Send + Sync,
+    AwaitingStatus: Clone + Send + Sync,
+    UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
 {
-    async fn interact_with_user_if_required(
-        mut self,
-        timeout: Duration,
-        task_handle: &RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-        statuses: TrezorInteractionStatuses<InProgressStatus, AwaitingStatus>,
-    ) -> TrezorInteractionResult<T> {
-        let TrezorInteractionStatuses {
-            on_button_request,
-            on_pin_request,
-            on_ready,
-        } = statuses;
-        let fut = async move {
-            while let Some(trezor_event) = self.next().await {
-                match trezor_event {
-                    TrezorEvent::Ready(result) => return Ok(result),
-                    TrezorEvent::ButtonRequest(button_ack) => {
-                        button_ack.ack()?;
-                        // Notify the user should accept/decline the operation on his Trezor.
-                        task_handle.update_in_progress_status(on_button_request.clone())?;
-                    },
-                    TrezorEvent::PinMatrix3x3Request(pin_ack) => {
-                        // Notify the user should enter a pin and wait until he sends it.
-                        let user_action = task_handle
-                            .wait_for_user_action(timeout, on_pin_request.clone())
-                            .await?;
-                        let pin_response: TrezorPinMatrix3x3Response = user_action.try_into()?;
-                        pin_ack.enter_pin(pin_response)?;
-                    },
-                }
-            }
-            MmError::err(TrezorInteractionError::Internal(
-                "Event loop finished unexpectedly".to_owned(),
-            ))
-        };
-        let result = fut.await;
-        task_handle.update_in_progress_status(on_ready)?;
-        result
+    type Error = RpcTaskError;
+
+    async fn on_button_request(&self) -> MmResult<(), TrezorProcessingError<RpcTaskError>> {
+        self.update_in_progress_status(self.statuses.on_button_request.clone())
+    }
+
+    async fn on_pin_request(&self) -> MmResult<TrezorPinMatrix3x3Response, TrezorProcessingError<RpcTaskError>> {
+        let user_action = self
+            .task_handle
+            .wait_for_user_action(self.pin_timeout, self.statuses.on_pin_request.clone())
+            .await
+            .mm_err(TrezorProcessingError::ProcessorError)?;
+        let pin_response: TrezorPinMatrix3x3Response = user_action
+            .try_into()
+            .map_to_mm(TrezorProcessingError::ProcessorError)?;
+        Ok(pin_response)
+    }
+
+    async fn on_ready(&self) -> MmResult<(), TrezorProcessingError<RpcTaskError>> {
+        self.update_in_progress_status(self.statuses.on_ready.clone())
+    }
+}
+
+impl<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
+    TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
+where
+    Item: Serialize,
+    Error: SerMmErrorType,
+{
+    pub fn new(
+        task_handle: &'a RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
+        statuses: TrezorRequestStatuses<InProgressStatus, AwaitingStatus>,
+    ) -> TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction> {
+        TrezorRpcTaskProcessor {
+            task_handle,
+            statuses,
+            pin_timeout: DEFAULT_PIN_REQUEST_TIMEOUT,
+        }
+    }
+
+    pub fn with_pin_timeout(mut self, pin_timeout: Duration) -> Self {
+        self.pin_timeout = pin_timeout;
+        self
+    }
+
+    pub fn update_in_progress_status(
+        &self,
+        in_progress: InProgressStatus,
+    ) -> MmResult<(), TrezorProcessingError<RpcTaskError>> {
+        self.task_handle
+            .update_in_progress_status(in_progress)
+            .mm_err(TrezorProcessingError::ProcessorError)
     }
 }

@@ -5,18 +5,19 @@ pub mod constants;
 pub mod error;
 mod proto;
 pub mod response;
-pub mod response_channel;
+mod response_processor;
+mod result_handler;
 pub mod transport;
 pub mod trezor_rpc_task;
 pub mod user_interaction;
 pub mod utxo;
 
-pub use client::TrezorClient;
+pub use client::{TrezorClient, TrezorSession};
 pub use constants::TrezorCoin;
 pub use error::{OperationFailure, TrezorError, TrezorResult};
 pub use hw_common::primitives::{DerivationPath, EcdsaCurve};
 pub use response::{ButtonRequest, PinMatrixRequest, TrezorResponse};
-pub use response_channel::{TrezorEvent, TrezorResponseReceiver};
+pub use response_processor::{ProcessTrezorResponse, TrezorProcessingError, TrezorRequestProcessor};
 pub use user_interaction::{TrezorPinMatrix3x3Response, TrezorUserInteraction};
 
 pub(crate) fn serialize_derivation_path(path: &DerivationPath) -> Vec<u32> {

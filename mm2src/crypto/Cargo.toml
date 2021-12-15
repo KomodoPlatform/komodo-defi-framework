@@ -11,9 +11,11 @@ bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "sec
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 common = { path = "../common" }
 derive_more = "0.99"
+futures = "0.3"
 hex = "0.4.2"
 http = "0.2"
 hw_common = { path = "../hw_common" }
+parking_lot = { version = "0.11", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 keys = { path = "../mm2_bitcoin/keys" }
 secp256k1 = "0.20"

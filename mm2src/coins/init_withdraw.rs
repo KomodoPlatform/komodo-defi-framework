@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{HttpStatusCode, SuccessResponse};
-use crypto::trezor::trezor_rpc_task::TrezorInteractionError;
 use crypto::trezor::TrezorPinMatrix3x3Response;
 use derive_more::Display;
 use http::StatusCode;
@@ -126,7 +125,6 @@ pub enum WithdrawInProgressStatus {
     WaitingForTrezorToConnect,
     WaitingForUserToConfirmPubkey,
     WaitingForUserToConfirmSigning,
-    WaitingForUserToConnectToTrezor,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -141,7 +139,7 @@ pub enum WithdrawUserAction {
 }
 
 impl TryFrom<WithdrawUserAction> for TrezorPinMatrix3x3Response {
-    type Error = TrezorInteractionError;
+    type Error = RpcTaskError;
 
     fn try_from(value: WithdrawUserAction) -> Result<Self, Self::Error> {
         match value {

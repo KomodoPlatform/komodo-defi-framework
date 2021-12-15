@@ -11,10 +11,12 @@ use common::log::info;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::now_ms;
-use crypto::trezor::trezor_rpc_task::{TrezorInteractWithUser, TrezorInteractionError, TrezorInteractionStatuses};
-use crypto::trezor::{TrezorClient, TrezorError};
+use crypto::hw_rpc_task::{TrezorConnectStatuses, TrezorRpcTaskConnectProcessor};
+use crypto::trezor::client::TrezorClient;
+use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
+use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletCtx, HwError,
-             HwWalletType};
+             HwProcessingError, HwWalletType};
 use keys::{Public as PublicKey, Type as ScriptType};
 use primitives::hash::H264;
 use rpc_task::RpcTaskError;
@@ -27,8 +29,8 @@ use utxo_signer::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxP
 use utxo_signer::{with_key_pair, UtxoSignTxError};
 use utxo_signer::{SignPolicy, UtxoSignerOps};
 
-const TREZOR_CONNECTING_TIMEOUT: Duration = Duration::from_secs(300);
-const TREZOR_GETTING_PUBKEY_TIMEOUT: Duration = Duration::from_secs(300);
+const TREZOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
+const TREZOR_PIN_TIMEOUT: Duration = Duration::from_secs(300);
 const UTXO_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
 
 impl From<UtxoSignTxError> for WithdrawError {
@@ -42,15 +44,20 @@ impl From<UtxoSignTxError> for WithdrawError {
     }
 }
 
-impl From<TrezorInteractionError> for WithdrawError {
-    fn from(e: TrezorInteractionError) -> Self {
+impl From<HwProcessingError<RpcTaskError>> for WithdrawError {
+    fn from(e: HwProcessingError<RpcTaskError>) -> Self {
         match e {
-            TrezorInteractionError::TrezorError(trezor) => WithdrawError::from(trezor),
-            TrezorInteractionError::RpcTaskError(rpc_task) => WithdrawError::from(rpc_task),
-            TrezorInteractionError::UnexpectedUserAction { expected } => {
-                WithdrawError::UnexpectedUserAction { expected }
-            },
-            TrezorInteractionError::Internal(internal) => WithdrawError::InternalError(internal),
+            HwProcessingError::HwError(hw) => WithdrawError::from(hw),
+            HwProcessingError::ProcessorError(rpc_task) => WithdrawError::from(rpc_task),
+        }
+    }
+}
+
+impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
+    fn from(e: TrezorProcessingError<RpcTaskError>) -> Self {
+        match e {
+            TrezorProcessingError::TrezorError(trezor) => WithdrawError::from(trezor),
+            TrezorProcessingError::ProcessorError(rpc_task) => WithdrawError::from(rpc_task),
         }
     }
 }
@@ -313,7 +320,7 @@ where
         let sign_policy = match self.coin.as_ref().priv_key_policy {
             PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
             PrivKeyPolicy::HardwareWallet => match self.trezor {
-                Some(ref trezor) => SignPolicy::WithTrezor(trezor),
+                Some(ref trezor) => SignPolicy::WithTrezor(trezor.clone()),
                 None => {
                     let error = "'InitUtxoWithdraw::trezor' is expected to be set".to_owned();
                     return MmError::err(WithdrawError::InternalError(error));
@@ -376,30 +383,42 @@ where
         req: WithdrawRequest,
         task_handle: &'a WithdrawTaskHandle,
     ) -> Result<InitUtxoWithdraw<'a, Coin>, MmError<WithdrawError>> {
+        let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, TrezorConnectStatuses {
+            on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,
+            on_connected: WithdrawInProgressStatus::Preparing,
+            on_connection_failed: WithdrawInProgressStatus::Finishing,
+            on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
+            on_pin_request: WithdrawAwaitingStatus::WaitForTrezorPin,
+            on_ready: WithdrawInProgressStatus::Preparing,
+        })
+        .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
+        .with_pin_timeout(TREZOR_PIN_TIMEOUT);
+
+        let trezor_get_pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, TrezorRequestStatuses {
+            on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
+            on_pin_request: WithdrawAwaitingStatus::WaitForTrezorPin,
+            on_ready: WithdrawInProgressStatus::Preparing,
+        })
+        .with_pin_timeout(TREZOR_PIN_TIMEOUT);
+
+        let trezor_client = hw_ctx.trezor(&trezor_connect_processor).await?;
+
         let from_derivation_path = match req.from {
             Some(WithdrawFromAddress::DerivationPath { ref derivation_path }) => derivation_path,
             None => return MmError::err(WithdrawError::FromAddressIsNotSet),
         };
         let from_derivation_path = DerivationPath::from_str(from_derivation_path)
             .map_to_mm(|e| WithdrawError::ErrorParsingFromAddress(e.to_string()))?;
-        let trezor = hw_ctx
-            .trezor()
-            .await
-            .interact_with_user_if_required(TREZOR_CONNECTING_TIMEOUT, task_handle, TrezorInteractionStatuses {
-                on_button_request: WithdrawInProgressStatus::WaitingForTrezorToConnect,
-                on_pin_request: WithdrawAwaitingStatus::WaitForTrezorPin,
-                on_ready: WithdrawInProgressStatus::Preparing,
-            })
-            .await??;
+
         let trezor_coin = coin.trezor_coin()?;
-        let from_pubkey_string = trezor
-            .get_public_key(from_derivation_path.clone(), trezor_coin, UTXO_ECDSA_CURVE)
-            .interact_with_user_if_required(TREZOR_GETTING_PUBKEY_TIMEOUT, task_handle, TrezorInteractionStatuses {
-                on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
-                on_pin_request: WithdrawAwaitingStatus::WaitForTrezorPin,
-                on_ready: WithdrawInProgressStatus::Preparing,
-            })
-            .await??;
+        let from_pubkey_string = {
+            let mut trezor_session = trezor_client.session().await?;
+            trezor_session
+                .get_public_key(from_derivation_path.clone(), trezor_coin, UTXO_ECDSA_CURVE)
+                .await?
+                .process(&trezor_get_pubkey_processor)
+                .await?
+        };
         let extended_pubkey = ExtendedPublicKey::<secp256k1::PublicKey>::from_str(&from_pubkey_string)?;
         let from_pubkey = PublicKey::Compressed(H264::from(extended_pubkey.public_key().serialize()));
         let from_address = coin.address_from_pubkey(&from_pubkey);
@@ -413,7 +432,7 @@ where
             from_address_string,
             from_derivation_path,
             from_pubkey,
-            trezor: Some(trezor),
+            trezor: Some(trezor_client),
         })
     }
 }

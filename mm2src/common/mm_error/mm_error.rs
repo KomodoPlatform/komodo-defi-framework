@@ -100,7 +100,7 @@ pub mod prelude {
     pub use crate::mm_error::map_to_mm_fut::MapToMmFutureExt;
     pub use crate::mm_error::mm_json_error::MmJsonError;
     pub use crate::mm_error::or_mm_error::OrMmError;
-    pub use crate::mm_error::{MmError, NotMmError, SerMmErrorType};
+    pub use crate::mm_error::{MmError, MmResult, NotMmError, SerMmErrorType};
     pub use ser_error::SerializeErrorType;
 }
 
@@ -109,6 +109,8 @@ mod map_to_mm;
 mod map_to_mm_fut;
 mod mm_json_error;
 mod or_mm_error;
+
+pub type MmResult<T, E> = Result<T, MmError<E>>;
 
 pub auto trait NotMmError {}
 

@@ -1,15 +1,17 @@
 use crate::crypto_ctx::{MM2_INTERNAL_DERIVATION_PATH, MM2_INTERNAL_ECDSA_CURVE};
-use crate::hw_client::{HwClient, HwError, HwResult};
-use crate::trezor::TrezorClient;
+use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
+use crate::trezor::TrezorSession;
 use crate::HwWalletType;
 use bip32::ExtendedPublicKey;
+use common::log::warn;
 use common::mm_error::prelude::*;
 use hw_common::primitives::DerivationPath;
 use keys::Public as PublicKey;
+use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use std::str::FromStr;
-use trezor::response_channel::TrezorResponseReceiver;
-use trezor::TrezorCoin;
+use trezor::client::TrezorClient;
+use trezor::{ProcessTrezorResponse, TrezorCoin, TrezorRequestProcessor};
 
 pub(crate) const MM2_TREZOR_INTERNAL_COIN: TrezorCoin = TrezorCoin::Komodo;
 
@@ -17,41 +19,78 @@ pub struct HardwareWalletCtx {
     /// The pubkey derived from `MM2_INTERNAL_DERIVATION_PATH`.
     pub(crate) mm2_internal_pubkey: H264,
     pub(crate) hw_wallet_type: HwWalletType,
+    /// Please avoid locking multiple mutexes.
+    /// The mutex hasn't be locked while the wallet is used
+    /// because every variant of the Hardware Wallet client uses an internal mutex to operate with the device.
+    /// Clone the `Option<HwClient>` instance instead.
+    pub(crate) hw_wallet: PaMutex<Option<HwClient>>,
 }
 
 impl HardwareWalletCtx {
     pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }
 
     /// Connects to a Trezor device and checks if MM was initialized from this particular device.
-    /// TODO consider taking a timeout for connecting.
-    pub async fn trezor(&self) -> TrezorResponseReceiver<HwResult<TrezorClient>> {
-        let trezor = match HwClient::trezor().await {
-            Ok(trezor) => trezor,
-            Err(e) => return TrezorResponseReceiver::ready(Err(e)),
-        };
-        let expected_pubkey = self.mm2_internal_pubkey;
-
-        HardwareWalletCtx::trezor_mm_internal_pubkey(&trezor).and_then(move |actual_pubkey| {
-            if actual_pubkey != expected_pubkey {
-                return MmError::err(HwError::FoundUnexpectedDevice {
-                    actual_pubkey,
-                    expected_pubkey,
-                });
+    pub async fn trezor<Processor>(
+        &self,
+        processor: &Processor,
+    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>>
+    where
+        Processor: TrezorConnectProcessor + Sync,
+        Processor::Error: std::fmt::Display,
+    {
+        let hw_wallet = self.hw_wallet.lock().clone();
+        if let Some(HwClient::Trezor(connected_trezor)) = hw_wallet {
+            match self.check_trezor(&connected_trezor, processor).await {
+                Ok(()) => return Ok(connected_trezor),
+                // The device could be unplugged. We should try to reconnect to the device.
+                Err(e) => warn!("Error checking a connected device: '{}'. Trying to reconnect...", e),
             }
-            Ok(trezor.clone())
-        })
+        }
+        // Connect to a device.
+        let trezor = HwClient::trezor(processor).await?;
+        // Check if the connected device has the same public key as we used to initialize the app.
+        self.check_trezor(&trezor, processor).await?;
+        Ok(trezor)
     }
 
     pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.mm2_internal_pubkey) }
 
-    pub(crate) fn trezor_mm_internal_pubkey(trezor: &TrezorClient) -> TrezorResponseReceiver<HwResult<H264>> {
+    pub(crate) async fn trezor_mm_internal_pubkey<Processor>(
+        trezor: &mut TrezorSession<'_>,
+        processor: &Processor,
+    ) -> MmResult<H264, HwProcessingError<Processor::Error>>
+    where
+        Processor: TrezorRequestProcessor + Sync,
+    {
         let path = DerivationPath::from_str(MM2_INTERNAL_DERIVATION_PATH)
             .expect("'MM2_INTERNAL_DERIVATION_PATH' is expected to be valid derivation path");
-        trezor
+        let mm2_internal_xpub = trezor
             .get_public_key(path, MM2_TREZOR_INTERNAL_COIN, MM2_INTERNAL_ECDSA_CURVE)
-            .and_then(|mm2_internal_xpub| {
-                let extended_pubkey = ExtendedPublicKey::<secp256k1::PublicKey>::from_str(&mm2_internal_xpub)?;
-                Ok(H264::from(extended_pubkey.public_key().serialize()))
-            })
+            .await
+            .mm_err(HwError::from)?
+            .process(processor)
+            .await?;
+        let extended_pubkey =
+            ExtendedPublicKey::<secp256k1::PublicKey>::from_str(&mm2_internal_xpub).map_to_mm(HwError::from)?;
+        Ok(H264::from(extended_pubkey.public_key().serialize()))
+    }
+
+    async fn check_trezor<Processor>(
+        &self,
+        trezor: &TrezorClient,
+        processor: &Processor,
+    ) -> MmResult<(), HwProcessingError<Processor::Error>>
+    where
+        Processor: TrezorRequestProcessor + Sync,
+    {
+        let mut session = trezor.session().await.mm_err(HwError::from)?;
+        let actual_pubkey = Self::trezor_mm_internal_pubkey(&mut session, processor).await?;
+        if actual_pubkey != self.mm2_internal_pubkey {
+            return MmError::err(HwProcessingError::HwError(HwError::FoundUnexpectedDevice {
+                actual_pubkey,
+                expected_pubkey: self.mm2_internal_pubkey,
+            }));
+        }
+        Ok(())
     }
 }

@@ -23,8 +23,7 @@ use common::executor::{spawn, spawn_boxed, Timer};
 use common::log::{error, info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
 use common::mm_error::prelude::*;
-use crypto::trezor::trezor_rpc_task::TrezorInteractionError;
-use crypto::{CryptoCtx, CryptoInitError, HwError};
+use crypto::{CryptoCtx, CryptoInitError, HwError, HwProcessingError};
 use derive_more::Display;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
 use rand::random;
@@ -143,16 +142,10 @@ pub enum MmInitError {
     NullStringPassphrase,
     #[display(fmt = "Invalid passphrase: {}", _0)]
     InvalidPassphrase(String),
-    #[display(fmt = "Invalid Hardware Wallet device response: {}", _0)]
-    InvalidHardwareDeviceResponse(String),
     #[display(fmt = "No Trezor device available")]
     NoTrezorDeviceAvailable,
     #[display(fmt = "Hardware Wallet error: {}", _0)]
     HardwareWalletError(String),
-    #[display(fmt = "Unexpected user action. Expected '{}'", expected)]
-    UnexpectedUserAction {
-        expected: String,
-    },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -204,10 +197,6 @@ impl From<CryptoInitError> for MmInitError {
             },
             CryptoInitError::NullStringPassphrase => MmInitError::NullStringPassphrase,
             CryptoInitError::InvalidPassphrase(pass) => MmInitError::InvalidPassphrase(pass.to_string()),
-            CryptoInitError::InvalidXpub(bip32_err) => {
-                MmInitError::InvalidHardwareDeviceResponse(bip32_err.to_string())
-            },
-            CryptoInitError::HardwareWalletError(hw) => MmInitError::from(hw),
             CryptoInitError::Internal(internal) => MmInitError::Internal(internal),
         }
     }
@@ -235,13 +224,11 @@ impl From<RpcTaskError> for MmInitError {
     }
 }
 
-impl From<TrezorInteractionError> for MmInitError {
-    fn from(e: TrezorInteractionError) -> Self {
+impl From<HwProcessingError<RpcTaskError>> for MmInitError {
+    fn from(e: HwProcessingError<RpcTaskError>) -> Self {
         match e {
-            TrezorInteractionError::TrezorError(trezor) => MmInitError::from(HwError::from(trezor)),
-            TrezorInteractionError::RpcTaskError(rpc) => MmInitError::from(rpc),
-            TrezorInteractionError::UnexpectedUserAction { expected } => MmInitError::UnexpectedUserAction { expected },
-            TrezorInteractionError::Internal(internal) => MmInitError::Internal(internal),
+            HwProcessingError::HwError(hw) => MmInitError::from(hw),
+            HwProcessingError::ProcessorError(rpc_task) => MmInitError::from(rpc_task),
         }
     }
 }
