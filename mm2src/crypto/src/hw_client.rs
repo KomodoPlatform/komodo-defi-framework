@@ -141,7 +141,7 @@ impl HwClient {
                 return MmError::err(HwProcessingError::HwError(HwError::NoTrezorDeviceAvailable));
             }
             let device = devices.available.remove(0);
-            let transport = device.connect().await?;
+            Ok(device.connect().await?)
         };
 
         match fut.await {

@@ -10,8 +10,8 @@ use std::time::Duration;
 pub use hw_common::transport::libusb::UsbDeviceInfo;
 
 // TODO these timeouts should be optional and depend on the context of use.
-const READ_TIMEOUT: Duration = Duration::from_secs(300);
-const WRITE_TIMEOUT: Duration = Duration::from_secs(300);
+const READ_TIMEOUT: Duration = Duration::from_secs(600);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(600);
 
 // The following constants are imported from
 // https://github.com/tezedge/tezedge-client/blob/master/trezor_api/src/transport/usb.rs
