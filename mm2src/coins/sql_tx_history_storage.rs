@@ -155,7 +155,7 @@ pub struct SqliteTxHistoryStorage(pub Arc<Mutex<Connection>>);
 
 #[cfg(test)]
 impl SqliteTxHistoryStorage {
-    fn in_memory() -> Self { SqliteTxHistoryStorage(Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))) }
+    pub fn in_memory() -> Self { SqliteTxHistoryStorage(Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))) }
 
     fn is_table_empty(&self, table_name: &str) -> bool {
         validate_table_name(table_name).unwrap();

@@ -753,7 +753,7 @@ impl SlpToken {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SlpGenesisParams {
-    token_ticker: String,
+    pub(super) token_ticker: String,
     token_name: String,
     token_document_url: String,
     token_document_hash: Vec<u8>,
@@ -775,6 +775,15 @@ pub enum SlpTransaction {
     },
     /// https://slp.dev/specs/slp-token-type-1/#send-spend-transaction
     Send { token_id: H256, amounts: Vec<u64> },
+}
+
+impl SlpTransaction {
+    pub fn token_id(&self) -> Option<H256> {
+        match self {
+            SlpTransaction::Send { token_id, .. } | SlpTransaction::Mint { token_id, .. } => Some(*token_id),
+            SlpTransaction::Genesis(_) => None,
+        }
+    }
 }
 
 impl Deserializable for SlpTransaction {

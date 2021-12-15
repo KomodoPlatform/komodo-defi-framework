@@ -1,6 +1,6 @@
 use crate::docker_tests::docker_tests_common::*;
 use bigdecimal::BigDecimal;
-use common::for_tests::{enable_bch_with_tokens, enable_slp};
+use common::for_tests::{enable_bch_with_tokens, enable_slp, UtxoRpcMode};
 use serde_json::{self as json};
 use std::time::Duration;
 
@@ -85,7 +85,7 @@ fn test_bch_and_slp_balance_enable_slp_v2() {
 fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let mm = slp_supplied_node();
 
-    let enable_bch_with_tokens = block_on(enable_bch_with_tokens(&mm, "FORSLP", &["ADEXSLP"]));
+    let enable_bch_with_tokens = block_on(enable_bch_with_tokens(&mm, "FORSLP", &["ADEXSLP"], UtxoRpcMode::Native));
     let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
         json::from_value(enable_bch_with_tokens).unwrap();
 

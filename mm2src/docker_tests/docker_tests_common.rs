@@ -304,7 +304,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
         .expect("!transfer_tokens")
         .txid;
 
-    let tx_bytes = client.get_transaction_bytes(hash).wait().unwrap();
+    let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
     log!({ "{:02x}", tx_bytes });
     coin.wait_for_confirmations(&tx_bytes, 1, false, timeout, 1)
         .wait()
@@ -426,7 +426,7 @@ where
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
         client.import_address(address, address, false).wait().unwrap();
         let hash = client.send_to_address(address, &amount).wait().unwrap();
-        let tx_bytes = client.get_transaction_bytes(hash).wait().unwrap();
+        let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
         coin.wait_for_confirmations(&tx_bytes, 1, false, timeout, 1)
             .wait()
             .unwrap();

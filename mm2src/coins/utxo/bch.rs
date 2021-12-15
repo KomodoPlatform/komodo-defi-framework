@@ -5,8 +5,9 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, TxHistoryStorage, TxHistoryStorageError, ValidateAddressResult, WithdrawFut};
-use common::log::{error, warn};
+            TradePreimageValue, TransactionType, TxFeeDetails, TxHistoryStorage, TxHistoryStorageError,
+            ValidateAddressResult, WithdrawFut};
+use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
@@ -365,50 +366,43 @@ impl BchCoin {
     ) -> Result<Vec<TransactionDetails>, MmError<GetTxDetailsError<T::Error>>> {
         let tx = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
 
+        let bch_tx_details = self
+            .bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
+            .await?;
+        let mut result = vec![bch_tx_details];
         let maybe_op_return: Script = tx.outputs[0].script_pubkey.clone().into();
-        if maybe_op_return.is_pay_to_public_key_hash()
+        if !(maybe_op_return.is_pay_to_public_key_hash()
             || maybe_op_return.is_pay_to_public_key()
-            || maybe_op_return.is_pay_to_script_hash()
+            || maybe_op_return.is_pay_to_script_hash())
         {
-            let tx = self
-                .plain_bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
-                .await?;
-            Ok(vec![tx])
-        } else {
-            match parse_slp_script(&maybe_op_return) {
-                Ok(slp_details) => {
-                    let txes = self
-                        .bch_with_slp_tx_details(tx_hash, &tx, slp_details.transaction, block_height_and_time, storage)
-                        .await?;
-                    Ok(txes.to_vec())
-                },
-                Err(e) => {
-                    error!(
-                        "Error {} on parse_slp_script, considering tx {:02x} as plain BCH",
-                        e, tx_hash
-                    );
-                    let tx = self
-                        .plain_bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
-                        .await?;
-                    Ok(vec![tx])
-                },
+            if let Ok(slp_details) = parse_slp_script(&maybe_op_return) {
+                let slp_tx_details = self
+                    .slp_tx_details(&tx, slp_details.transaction, block_height_and_time, storage)
+                    .await?;
+                result.push(slp_tx_details);
             }
         }
+        Ok(result)
     }
 
-    async fn plain_bch_tx_details<T: TxHistoryStorage>(
+    async fn bch_tx_details<T: TxHistoryStorage>(
         &self,
         tx_hash: &H256Json,
         tx: &UtxoTx,
         height_and_time: Option<BlockHeightAndTime>,
         storage: &T,
     ) -> Result<TransactionDetails, MmError<GetTxDetailsError<T::Error>>> {
-        let mut tx_builder = TxDetailsBuilder::new(tx, height_and_time);
+        let my_addresses = [self.as_ref().my_address.clone()];
+        let mut tx_builder = TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, my_addresses);
         for output in &tx.outputs {
             let addresses = match self.addresses_from_script(&output.script_pubkey.clone().into()) {
                 Ok(a) => a,
                 Err(_) => continue,
             };
+
+            if addresses.is_empty() {
+                continue;
+            }
 
             if addresses.len() != 1 {
                 let msg = format!(
@@ -425,6 +419,7 @@ impl BchCoin {
             }
         }
 
+        let mut total_input = 0;
         for input in &tx.inputs {
             let index = input.previous_output.index;
             let prev_tx = self
@@ -444,11 +439,18 @@ impl BchCoin {
             }
 
             let prev_value = prev_tx.outputs[index as usize].value;
+            total_input += prev_value;
             let amount = big_decimal_from_sat_unsigned(prev_value, self.decimals());
             for address in addresses {
                 tx_builder.transferred_from(address, &amount);
             }
         }
+
+        let total_output = tx.outputs.iter().fold(0, |total, output| total + output.value);
+        let fee = Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+            amount: big_decimal_from_sat_unsigned(total_input - total_output, self.decimals()),
+        }));
+        tx_builder.set_tx_fee(fee);
         Ok(tx_builder.build())
     }
 
@@ -457,9 +459,7 @@ impl BchCoin {
         token_id: H256,
         storage: &T,
     ) -> Result<SlpGenesisParams, MmError<GetTxDetailsError<T::Error>>> {
-        let token_genesis_tx = self
-            .tx_from_storage_or_rpc(&token_id.reversed().into(), storage)
-            .await?;
+        let token_genesis_tx = self.tx_from_storage_or_rpc(&token_id.into(), storage).await?;
         let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
         let slp_details = parse_slp_script(&maybe_genesis_script)?;
         match slp_details.transaction {
@@ -527,17 +527,25 @@ impl BchCoin {
         Ok(result)
     }
 
-    async fn bch_with_slp_tx_details<Storage: TxHistoryStorage>(
+    async fn slp_tx_details<Storage: TxHistoryStorage>(
         &self,
-        tx_hash: &H256Json,
         tx: &UtxoTx,
         slp_tx: SlpTransaction,
         height_and_time: Option<BlockHeightAndTime>,
         storage: &Storage,
-    ) -> Result<[TransactionDetails; 2], MmError<GetTxDetailsError<Storage::Error>>> {
-        let bch_tx_details = self.plain_bch_tx_details(tx_hash, tx, height_and_time, storage).await?;
+    ) -> Result<TransactionDetails, MmError<GetTxDetailsError<Storage::Error>>> {
+        let token_id = match slp_tx.token_id() {
+            Some(id) => id,
+            None => tx.hash().reversed(),
+        };
 
-        let mut slp_tx_details_builder = TxDetailsBuilder::new(tx, height_and_time);
+        let slp_address = self
+            .slp_address(&self.as_ref().my_address)
+            .map_to_mm(GetTxDetailsError::ToSlpAddressError)?;
+        let addresses = [slp_address];
+
+        let mut slp_tx_details_builder =
+            TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, addresses);
         let slp_transferred_amounts = self.slp_transferred_amounts(&tx, slp_tx, storage).await?;
         for (_, (address, amount)) in slp_transferred_amounts {
             slp_tx_details_builder.transferred_to(address, &amount);
@@ -557,7 +565,10 @@ impl BchCoin {
                 }
             }
         }
-        Ok([bch_tx_details, slp_tx_details_builder.build()])
+
+        slp_tx_details_builder.set_transaction_type(TransactionType::TokenTransfer(token_id.take().to_vec().into()));
+
+        Ok(slp_tx_details_builder.build())
     }
 }
 
@@ -1175,4 +1186,110 @@ pub fn bch_coin_for_test() -> BchCoin {
         &*keypair.private().secret,
     ))
     .unwrap()
+}
+
+#[cfg(test)]
+mod bch_tests {
+    use super::*;
+    use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
+    use crate::{TransactionType, TxFeeDetails};
+    use common::block_on;
+
+    fn init_storage_for(ticker: &str) -> impl TxHistoryStorage {
+        let storage = SqliteTxHistoryStorage::in_memory();
+        block_on(storage.init(ticker)).unwrap();
+        storage
+    }
+
+    #[test]
+    fn test_get_slp_genesis_params() {
+        let coin = tbch_coin_for_test();
+        let token_id = "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into();
+        let storage = init_storage_for(coin.ticker());
+
+        let slp_params = block_on(coin.get_slp_genesis_params(token_id, &storage)).unwrap();
+        assert_eq!("USDF", slp_params.token_ticker);
+        assert_eq!(4, slp_params.decimals[0]);
+    }
+
+    #[test]
+    fn test_plain_bch_tx_details() {
+        let coin = tbch_coin_for_test();
+        let storage = init_storage_for(coin.ticker());
+
+        let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
+        let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();
+
+        let details = block_on(coin.bch_tx_details(&hash, &tx, None, &storage)).unwrap();
+        let expected_total: BigDecimal = "0.11407782".parse().unwrap();
+        assert_eq!(expected_total, details.total_amount);
+
+        let expected_received: BigDecimal = "0.11405301".parse().unwrap();
+        assert_eq!(expected_received, details.received_by_me);
+
+        let expected_spent: BigDecimal = "0.11407782".parse().unwrap();
+        assert_eq!(expected_spent, details.spent_by_me);
+
+        let expected_balance_change: BigDecimal = "-0.00002481".parse().unwrap();
+        assert_eq!(expected_balance_change, details.my_balance_change);
+
+        let expected_from = vec!["bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_owned()];
+        assert_eq!(expected_from, details.from);
+
+        let expected_to = vec![
+            "bchtest:qrhdt5adye8lc68upfj9fctfdgcd3aq9hctf8ft6md".to_owned(),
+            "bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_owned(),
+        ];
+        assert_eq!(expected_to, details.to);
+
+        let expected_internal_id = BytesJson::from("a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390");
+        assert_eq!(expected_internal_id, details.internal_id);
+
+        let expected_fee = Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+            amount: "0.00001481".parse().unwrap(),
+        }));
+        assert_eq!(expected_fee, details.fee_details);
+
+        assert_eq!(coin.ticker(), details.coin);
+    }
+
+    #[test]
+    fn test_slp_tx_details() {
+        let coin = tbch_coin_for_test();
+        let storage = init_storage_for(coin.ticker());
+
+        let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
+        let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();
+
+        let slp_details = parse_slp_script(&tx.outputs[0].script_pubkey).unwrap();
+
+        let slp_tx_details = block_on(coin.slp_tx_details(&tx, slp_details.transaction, None, &storage)).unwrap();
+
+        let expected_total: BigDecimal = "6.2974".parse().unwrap();
+        assert_eq!(expected_total, slp_tx_details.total_amount);
+
+        let expected_spent: BigDecimal = "6.2974".parse().unwrap();
+        assert_eq!(expected_spent, slp_tx_details.spent_by_me);
+
+        let expected_received: BigDecimal = "5.2974".parse().unwrap();
+        assert_eq!(expected_received, slp_tx_details.received_by_me);
+
+        let expected_balance_change = BigDecimal::from(-1);
+        assert_eq!(expected_balance_change, slp_tx_details.my_balance_change);
+
+        let expected_from = vec!["slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_owned()];
+        assert_eq!(expected_from, slp_tx_details.from);
+
+        let expected_to = vec![
+            "slptest:qrhdt5adye8lc68upfj9fctfdgcd3aq9hcsaqj3dfs".to_owned(),
+            "slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_owned(),
+        ];
+        assert_eq!(expected_to, slp_tx_details.to);
+
+        let expected_tx_type =
+            TransactionType::TokenTransfer("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into());
+        assert_eq!(expected_tx_type, slp_tx_details.transaction_type);
+
+        assert_eq!(coin.ticker(), slp_tx_details.coin);
+    }
 }

@@ -188,7 +188,17 @@ impl fmt::Display for Address {
                     .to_string()
                     .fmt(f)
             },
-            _ => self.layout().to_base58().fmt(f),
+            AddressFormat::CashAddress {
+                network,
+                pub_addr_prefix,
+                p2sh_addr_prefix,
+            } => {
+                let cash_address = self
+                    .to_cashaddress(network, *pub_addr_prefix, *p2sh_addr_prefix)
+                    .expect("A valid address");
+                cash_address.encode().expect("A valid address").fmt(f)
+            },
+            AddressFormat::Standard => self.layout().to_base58().fmt(f),
         }
     }
 }

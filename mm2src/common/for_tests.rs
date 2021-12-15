@@ -907,7 +907,35 @@ pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_bch_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens: &[&str]) -> Json {
+#[derive(Serialize)]
+pub struct ElectrumRpcRequest {
+    pub url: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "rpc", content = "rpc_data")]
+pub enum UtxoRpcMode {
+    Native,
+    Electrum { servers: Vec<ElectrumRpcRequest> },
+}
+
+impl UtxoRpcMode {
+    pub fn electrum(servers: &[&str]) -> Self {
+        UtxoRpcMode::Electrum {
+            servers: servers
+                .into_iter()
+                .map(|url| ElectrumRpcRequest { url: url.to_string() })
+                .collect(),
+        }
+    }
+}
+
+pub async fn enable_bch_with_tokens(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    mode: UtxoRpcMode,
+) -> Json {
     let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
     let enable = mm
@@ -919,9 +947,7 @@ pub async fn enable_bch_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tok
                 "ticker": platform_coin,
                 "allow_slp_unsafe_conf": true,
                 "bchd_urls": [],
-                "mode": {
-                    "rpc": "Native",
-                },
+                "mode": mode,
                 "slp_tokens_requests": slp_requests,
             }
         }))
