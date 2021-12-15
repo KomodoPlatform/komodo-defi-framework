@@ -97,7 +97,7 @@ pub fn p2pkh_spend(
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
-    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash().into());
     if script != prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PKH".to_owned(),
@@ -155,7 +155,7 @@ pub fn p2wpkh_spend(
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
-    let script = Builder::build_p2pkh(&key_pair.public().address_hash());
+    let script = Builder::build_p2pkh(&key_pair.public().address_hash().into());
     if script != prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PKH".to_owned(),

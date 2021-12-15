@@ -31,6 +31,35 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
+pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "Finished",
+];
+
+pub const TAKER_ERROR_EVENTS: [&str; 13] = [
+    "StartFailed",
+    "NegotiateFailed",
+    "TakerFeeSendFailed",
+    "MakerPaymentValidateFailed",
+    "MakerPaymentWaitConfirmFailed",
+    "TakerPaymentTransactionFailed",
+    "TakerPaymentWaitConfirmFailed",
+    "TakerPaymentDataSendFailed",
+    "TakerPaymentWaitForSpendFailed",
+    "MakerPaymentSpendFailed",
+    "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefunded",
+    "TakerPaymentRefundFailed",
+];
+
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
 
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -50,33 +79,8 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
-            success_events: vec![
-                "Started".into(),
-                "Negotiated".into(),
-                "TakerFeeSent".into(),
-                "MakerPaymentReceived".into(),
-                "MakerPaymentWaitConfirmStarted".into(),
-                "MakerPaymentValidatedAndConfirmed".into(),
-                "TakerPaymentSent".into(),
-                "TakerPaymentSpent".into(),
-                "MakerPaymentSpent".into(),
-                "Finished".into(),
-            ],
-            error_events: vec![
-                "StartFailed".into(),
-                "NegotiateFailed".into(),
-                "TakerFeeSendFailed".into(),
-                "MakerPaymentValidateFailed".into(),
-                "MakerPaymentWaitConfirmFailed".into(),
-                "TakerPaymentTransactionFailed".into(),
-                "TakerPaymentWaitConfirmFailed".into(),
-                "TakerPaymentDataSendFailed".into(),
-                "TakerPaymentWaitForSpendFailed".into(),
-                "MakerPaymentSpendFailed".into(),
-                "TakerPaymentWaitRefundStarted".into(),
-                "TakerPaymentRefunded".into(),
-                "TakerPaymentRefundFailed".into(),
-            ],
+            success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+            error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
         }),
         Err(e) => return ERR!("{}", e),
     };
@@ -91,10 +95,10 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedEvent {
-    timestamp: u64,
-    event: TakerSwapEvent,
+    pub timestamp: u64,
+    pub event: TakerSwapEvent,
 }
 
 impl TakerSavedEvent {
@@ -128,19 +132,19 @@ impl TakerSavedEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
-    my_order_uuid: Option<Uuid>,
+    pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
-    maker_amount: Option<BigDecimal>,
-    maker_coin: Option<String>,
-    taker_amount: Option<BigDecimal>,
-    taker_coin: Option<String>,
-    gui: Option<String>,
-    mm_version: Option<String>,
-    success_events: Vec<String>,
-    error_events: Vec<String>,
+    pub maker_amount: Option<BigDecimal>,
+    pub maker_coin: Option<String>,
+    pub taker_amount: Option<BigDecimal>,
+    pub taker_coin: Option<String>,
+    pub gui: Option<String>,
+    pub mm_version: Option<String>,
+    pub success_events: Vec<String>,
+    pub error_events: Vec<String>,
 }
 
 impl TakerSavedSwap {
@@ -394,35 +398,35 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 pub struct TakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
-    maker: H256Json,
-    my_persistent_pub: H264Json,
-    lock_duration: u64,
+    pub maker: H256Json,
+    pub my_persistent_pub: H264Json,
+    pub lock_duration: u64,
     pub maker_amount: BigDecimal,
     pub taker_amount: BigDecimal,
-    maker_payment_confirmations: u64,
-    maker_payment_requires_nota: Option<bool>,
-    taker_payment_confirmations: u64,
-    taker_payment_requires_nota: Option<bool>,
-    taker_payment_lock: u64,
+    pub maker_payment_confirmations: u64,
+    pub maker_payment_requires_nota: Option<bool>,
+    pub taker_payment_confirmations: u64,
+    pub taker_payment_requires_nota: Option<bool>,
+    pub taker_payment_lock: u64,
     /// Allows to recognize one SWAP from the other in the logs. #274.
-    uuid: Uuid,
+    pub uuid: Uuid,
     pub started_at: u64,
-    maker_payment_wait: u64,
-    maker_coin_start_block: u64,
-    taker_coin_start_block: u64,
+    pub maker_payment_wait: u64,
+    pub maker_coin_start_block: u64,
+    pub taker_coin_start_block: u64,
     /// A transaction fee that should be paid to send a `TakerFee`.
     /// Note this value is used to calculate locked amount only.
-    fee_to_send_taker_fee: Option<SavedTradeFee>,
+    pub fee_to_send_taker_fee: Option<SavedTradeFee>,
     /// A `TakerPayment` transaction fee.
     /// Note this value is used to calculate locked amount only.
-    taker_payment_trade_fee: Option<SavedTradeFee>,
+    pub taker_payment_trade_fee: Option<SavedTradeFee>,
     /// A transaction fee that should be paid to spend a `MakerPayment`.
     /// Note this value is used to calculate locked amount only.
-    maker_payment_spend_trade_fee: Option<SavedTradeFee>,
+    pub maker_payment_spend_trade_fee: Option<SavedTradeFee>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    maker_coin_swap_contract_address: Option<BytesJson>,
+    pub maker_coin_swap_contract_address: Option<BytesJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    taker_coin_swap_contract_address: Option<BytesJson>,
+    pub taker_coin_swap_contract_address: Option<BytesJson>,
 }
 
 pub struct TakerSwapMut {
@@ -459,17 +463,17 @@ pub struct TakerSwap {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerPaymentSpentData {
-    transaction: TransactionIdentifier,
-    secret: H256Json,
+    pub transaction: TransactionIdentifier,
+    pub secret: H256Json,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MakerNegotiationData {
-    maker_payment_locktime: u64,
-    maker_pubkey: H264Json,
-    secret_hash: H160Json,
-    maker_coin_swap_contract_addr: Option<BytesJson>,
-    taker_coin_swap_contract_addr: Option<BytesJson>,
+    pub maker_payment_locktime: u64,
+    pub maker_pubkey: H264Json,
+    pub secret_hash: H160Json,
+    pub maker_coin_swap_contract_addr: Option<BytesJson>,
+    pub taker_coin_swap_contract_addr: Option<BytesJson>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -502,7 +506,7 @@ pub enum TakerSwapEvent {
 }
 
 impl TakerSwapEvent {
-    fn status_str(&self) -> String {
+    pub fn status_str(&self) -> String {
         match self {
             TakerSwapEvent::Started(_) => "Started...".to_owned(),
             TakerSwapEvent::StartFailed(_) => "Start failed...".to_owned(),
@@ -786,7 +790,7 @@ impl TakerSwap {
             taker_payment_lock: started_at + self.payment_locktime,
             my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
-            maker_payment_wait: started_at + (self.payment_locktime * 2) / 5,
+            maker_payment_wait: maker_payment_wait(started_at, self.payment_locktime),
             maker_coin_start_block,
             taker_coin_start_block,
             fee_to_send_taker_fee: Some(SavedTradeFee::from(fee_to_send_dex_fee)),
@@ -1829,6 +1833,10 @@ pub fn max_taker_vol_from_available(
         });
     }
     Ok(max_vol)
+}
+
+pub fn maker_payment_wait(swap_started_at: u64, payment_locktime: u64) -> u64 {
+    swap_started_at + (payment_locktime * 2) / 5
 }
 
 #[cfg(test)]

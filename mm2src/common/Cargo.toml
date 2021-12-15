@@ -9,6 +9,9 @@ name = "common"
 path = "common.rs"
 doctest = false
 
+[features]
+track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
+
 [dependencies]
 arrayref = "0.3"
 async-std = { version = "1.5", features = ["unstable"] }
@@ -33,7 +36,7 @@ http-body = "0.1"
 itertools = "0.8"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
-lightning = "0.0.101"
+lightning = "0.0.103"
 log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
@@ -53,6 +56,7 @@ serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 serde_repr = "0.1.6"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
+shared_ref_counter = { path = "shared_ref_counter" }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
 winapi = "0.3"
@@ -80,7 +84,6 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.22", default-features = false, features = ["webpki-tokio"] }
 libc = { version = "0.2" }
-lightning-background-processor = "0.0.101"
 log4rs = { version = "1.0" }
 metrics = { version = "0.12" }
 metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }

@@ -125,7 +125,7 @@ impl Qrc20Coin {
         let expected_call_bytes = {
             let expected_value = try_s!(wei_from_big_decimal(&amount, self.utxo.decimals));
             let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
-            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address);
+            let expected_receiver = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
             try_s!(self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -247,7 +247,7 @@ impl Qrc20Coin {
 
         // Else try to find a 'senderRefund' contract call.
         let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
-        let sender = qtum::contract_addr_from_utxo_addr(my_address);
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let refund_txs = try_s!(self.sender_refund_transactions(sender, search_from_block).await);
         let found = refund_txs.into_iter().find(|tx| {
             find_swap_contract_call_with_swap_id(MutContractCallType::SenderRefund, tx, &expected_swap_id).is_some()
@@ -271,7 +271,7 @@ impl Qrc20Coin {
         };
 
         let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
-        let sender = qtum::contract_addr_from_utxo_addr(my_address);
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let erc20_payment_txs = try_s!(self.erc20_payment_transactions(sender, search_from_block).await);
         let found = erc20_payment_txs
             .into_iter()
@@ -441,7 +441,10 @@ impl Qrc20Coin {
             .utxo
             .rpc_client
             .rpc_contract_call(ViewContractCallType::Allowance, &self.contract_address, &[
-                Token::Address(qtum::contract_addr_from_utxo_addr(my_address.clone())),
+                Token::Address(
+                    qtum::contract_addr_from_utxo_addr(my_address.clone())
+                        .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
+                ),
                 Token::Address(spender),
             ])
             .compat()

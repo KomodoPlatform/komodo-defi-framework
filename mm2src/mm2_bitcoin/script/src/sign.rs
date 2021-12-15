@@ -600,8 +600,8 @@ mod tests {
                 UnsignedTransactionInput};
     use bytes::Bytes;
     use chain::{OutPoint, Transaction, TransactionOutput};
-    use hash::H256;
-    use keys::{Address, Private};
+    use hash::{H160, H256};
+    use keys::{Address, AddressHashEnum, Private};
     use script::Script;
     use sign::SignerHashAlgo;
 
@@ -615,13 +615,18 @@ mod tests {
             H256::from_reversed_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
         let previous_output_index = 0;
         let to: Address = "1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa".into();
+        assert!(to.hash.is_address_hash());
         let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
         let current_output: Bytes = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".into();
         let value = 91234;
         let expected_signature_hash: H256 = "5fda68729a6312e17e641e9a49fac2a4a6a680126610af573caab270d232f850".into();
 
         // this is irrelevant
-        assert_eq!(&current_output[3..23], &*to.hash);
+        let mut hash = H160::default();
+        if let AddressHashEnum::AddressHash(h) = to.hash {
+            hash = h;
+        }
+        assert_eq!(&current_output[3..23], &*hash);
 
         let unsigned_input = UnsignedTransactionInput {
             sequence: 0xffff_ffff,

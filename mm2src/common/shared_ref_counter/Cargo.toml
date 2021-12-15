@@ -1,0 +1,10 @@
+[package]
+name = "shared_ref_counter"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+enable = []
+
+[dependencies]
+log = { version = "0.4.8", optional = true }

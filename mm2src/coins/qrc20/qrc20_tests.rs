@@ -438,7 +438,7 @@ fn test_generate_token_transfer_script_pubkey() {
     };
 
     let to_addr: UtxoAddress = "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into();
-    let to_addr = qtum::contract_addr_from_utxo_addr(to_addr);
+    let to_addr = qtum::contract_addr_from_utxo_addr(to_addr).unwrap();
     let amount: U256 = 1000000000.into();
     let actual = coin
         .transfer_output(to_addr.clone(), amount, gas_limit, gas_price)

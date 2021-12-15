@@ -1,6 +1,7 @@
 use super::*;
 use crate::init_withdraw::WithdrawTaskHandle;
-use crate::utxo::rpc_clients::{electrum_script_hash, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
+                               UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawResult};
 use bigdecimal::{BigDecimal, Zero};
@@ -19,7 +20,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use keys::bytes::Bytes;
-use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHash, Public, SegwitAddress, Type as ScriptType};
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Public, SegwitAddress, Type as ScriptType};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
@@ -231,6 +232,7 @@ pub fn addresses_from_script<T: AsRef<UtxoCoinFields> + UtxoCommonOps>(
                     coin.addr_format_for_standard_scripts(),
                 ),
                 ScriptType::P2WPKH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
+                ScriptType::P2WSH => (conf.pub_addr_prefix, conf.pub_t_addr_prefix, UtxoAddressFormat::Segwit),
             };
 
             Address {
@@ -316,6 +318,24 @@ where
 {
     let fut = send_outputs_from_my_address_impl(coin, outputs);
     Box::new(fut.boxed().compat().map(|tx| tx.into()))
+}
+
+pub fn tx_size_in_v_bytes(from_addr_format: &UtxoAddressFormat, tx: &UtxoTx) -> usize {
+    let transaction_bytes = serialize(tx);
+    // 2 bytes are used to indicate the length of signature and pubkey
+    // total is 107
+    let additional_len = 2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN;
+    // Virtual size of the transaction
+    // https://bitcoin.stackexchange.com/questions/87275/how-to-calculate-segwit-transaction-fee-in-bytes/87276#87276
+    match from_addr_format {
+        UtxoAddressFormat::Segwit => {
+            let base_size = transaction_bytes.len();
+            // 4 additional bytes (2 for the marker and 2 for the flag) and 1 additional byte for every input in the witness for the SIGHASH flag
+            let total_size = transaction_bytes.len() + 4 + tx.inputs().len() * (additional_len + 1);
+            ((0.75 * base_size as f64) + (0.25 * total_size as f64)) as usize
+        },
+        _ => transaction_bytes.len() + tx.inputs().len() * additional_len,
+    }
 }
 
 pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
@@ -407,31 +427,27 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     }
 
     /// Recalculates fee and checks whether transaction is complete (inputs collected cover the outputs)
-    fn update_fee_and_check_completeness(&mut self, actual_tx_fee: &ActualTxFee) -> bool {
+    fn update_fee_and_check_completeness(
+        &mut self,
+        from_addr_format: &UtxoAddressFormat,
+        actual_tx_fee: &ActualTxFee,
+    ) -> bool {
         self.tx_fee = match &actual_tx_fee {
             ActualTxFee::Fixed(f) => *f,
             ActualTxFee::Dynamic(f) => {
                 let transaction = UtxoTx::from(self.tx.clone());
-                let transaction_bytes = serialize(&transaction);
-                // 2 bytes are used to indicate the length of signature and pubkey
-                // total is 107
-                let additional_len = 2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN;
-                let tx_size = transaction_bytes.len() + transaction.inputs().len() * additional_len;
-                (f * tx_size as u64) / KILO_BYTE
+                let v_size = tx_size_in_v_bytes(from_addr_format, &transaction);
+                (f * v_size as u64) / KILO_BYTE
             },
             ActualTxFee::FixedPerKb(f) => {
                 let transaction = UtxoTx::from(self.tx.clone());
-                let transaction_bytes = serialize(&transaction);
-                // 2 bytes are used to indicate the length of signature and pubkey
-                // total is 107
-                let additional_len = 2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN;
-                let tx_size_bytes = (transaction_bytes.len() + transaction.inputs().len() * additional_len) as u64;
-                let tx_size_kb = if tx_size_bytes % KILO_BYTE == 0 {
-                    tx_size_bytes / KILO_BYTE
+                let v_size = tx_size_in_v_bytes(from_addr_format, &transaction) as u64;
+                let v_size_kb = if v_size % KILO_BYTE == 0 {
+                    v_size / KILO_BYTE
                 } else {
-                    tx_size_bytes / KILO_BYTE + 1
+                    v_size / KILO_BYTE + 1
                 };
-                f * tx_size_kb
+                f * v_size_kb
             },
         };
 
@@ -549,7 +565,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             });
             self.sum_inputs += utxo.value;
 
-            if self.update_fee_and_check_completeness(&actual_tx_fee) {
+            if self.update_fee_and_check_completeness(&from.addr_format, &actual_tx_fee) {
                 break;
             }
         }
@@ -1267,7 +1283,7 @@ where
         &try_fus!(Public::from_slice(other_pub)),
     );
     let hash = dhash160(&script);
-    let p2sh = Builder::build_p2sh(&hash);
+    let p2sh = Builder::build_p2sh(&hash.into());
     let script_hash = electrum_script_hash(&p2sh);
     let fut = async move {
         match &coin.as_ref().rpc_client {
@@ -1287,7 +1303,7 @@ where
                 let target_addr = Address {
                     t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
                     prefix: coin.as_ref().conf.p2sh_addr_prefix,
-                    hash,
+                    hash: hash.into(),
                     checksum_type: coin.as_ref().conf.checksum_type,
                     hrp: coin.as_ref().conf.bech32_hrp.clone(),
                     addr_format: coin.addr_format().clone(),
@@ -1465,8 +1481,18 @@ pub fn wait_for_output_spend(
     let tx_hash_algo = coin.tx_hash_algo;
     let fut = async move {
         loop {
-            match client.find_output_spend(&tx, output_index, from_block).compat().await {
-                Ok(Some(mut tx)) => {
+            match client
+                .find_output_spend(
+                    tx.hash(),
+                    &tx.outputs[output_index].script_pubkey,
+                    output_index,
+                    BlockHashOrHeight::Height(from_block as i64),
+                )
+                .compat()
+                .await
+            {
+                Ok(Some(spent_output_info)) => {
+                    let mut tx = spent_output_info.spending_tx;
                     tx.tx_hash_algo = tx_hash_algo;
                     return Ok(tx.into());
                 },
@@ -2372,7 +2398,7 @@ where
         let value = sat_from_big_decimal(&dex_fee_amount, decimals)?;
         let output = TransactionOutput {
             value,
-            script_pubkey: Builder::build_p2pkh(&AddressHash::default()).to_bytes(),
+            script_pubkey: Builder::build_p2pkh(&AddressHashEnum::default_address_hash()).to_bytes(),
         };
         let gas_fee = None;
         let fee_amount = coin
@@ -2622,7 +2648,7 @@ pub fn address_from_raw_pubkey(
     Ok(Address {
         t_addr_prefix,
         prefix,
-        hash: try_s!(Public::from_slice(pub_key)).address_hash(),
+        hash: try_s!(Public::from_slice(pub_key)).address_hash().into(),
         checksum_type,
         hrp,
         addr_format,
@@ -2640,7 +2666,7 @@ pub fn address_from_pubkey(
     Address {
         t_addr_prefix,
         prefix,
-        hash: pub_key.address_hash(),
+        hash: pub_key.address_hash().into(),
         checksum_type,
         hrp,
         addr_format,
@@ -2701,7 +2727,7 @@ where
 
             let expected_output = TransactionOutput {
                 value: amount,
-                script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem)).into(),
+                script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
             };
 
             let actual_output = tx.outputs.get(output_index);
@@ -2732,7 +2758,7 @@ async fn search_for_swap_output_spend(
     let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.tx_hash_algo;
     let script = payment_script(time_lock, secret_hash, first_pub, second_pub);
-    let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script)).to_bytes();
+    let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script).into()).to_bytes();
     if tx.outputs[0].script_pubkey != expected_script_pubkey {
         return ERR!(
             "Transaction {:?} output 0 script_pubkey doesn't match expected {:?}",
@@ -2743,12 +2769,18 @@ async fn search_for_swap_output_spend(
 
     let spend = try_s!(
         coin.rpc_client
-            .find_output_spend(&tx, output_index, search_from_block)
+            .find_output_spend(
+                tx.hash(),
+                &tx.outputs[output_index].script_pubkey,
+                output_index,
+                BlockHashOrHeight::Height(search_from_block as i64)
+            )
             .compat()
             .await
     );
     match spend {
-        Some(mut tx) => {
+        Some(spent_output_info) => {
+            let mut tx = spent_output_info.spending_tx;
             tx.tx_hash_algo = coin.tx_hash_algo;
             let script: Script = tx.inputs[0].script_sig.clone().into();
             if let Some(Ok(ref i)) = script.iter().nth(2) {
@@ -2798,7 +2830,7 @@ where
     let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
     let htlc_out = TransactionOutput {
         value: amount,
-        script_pubkey: Builder::build_p2sh(&redeem_script_hash).into(),
+        script_pubkey: Builder::build_p2sh(&redeem_script_hash.into()).into(),
     };
     // record secret hash to blockchain too making it impossible to lose
     // lock time may be easily brute forced so it is not mandatory to record it
@@ -2820,7 +2852,7 @@ where
 
     let payment_address = Address {
         checksum_type: coin.as_ref().conf.checksum_type,
-        hash: redeem_script_hash,
+        hash: redeem_script_hash.into(),
         prefix: coin.as_ref().conf.p2sh_addr_prefix,
         t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
         hrp: coin.as_ref().conf.bech32_hrp.clone(),
@@ -3125,4 +3157,38 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
+}
+
+#[test]
+fn test_tx_v_size() {
+    // Multiple legacy inputs with P2SH and P2PKH output
+    // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
+    let mut tx: UtxoTx = "0100000002440f1a2929eb08c350cc8d2385c77c40411560c3b43b65efb5b06f997fc67672020000006b483045022100f82e88af256d2487afe0c30a166c9ecf6b7013e764e1407317c712d47f7731bd0220358a4d7987bfde2271599b5c4376d26f9ce9f1df2e04f5de8f89593352607110012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edfffffffffb9c2fd7a19b55a4ffbda2ce5065d988a4f4efcf1ae567b4ddb6d97529c8fb0c000000006b483045022100dd75291db32dc859657a5eead13b85c340b4d508e57d2450ebfad76484f254130220727fcd65dda046ea62b449ab217da264dbf7c7ca7e63b39c8835973a152752c1012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edffffffff03102700000000000017a9148d0ad41545dea44e914c419d33d422148c35a274870000000000000000166a149c0a919d4e9a23f0234df916a7dd21f9e2fdaa8f931d0000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88acbd8ff160".into();
+    // Removing inputs script_sig as it's not included in UnsignedTransactionInput when fees are calculated
+    tx.inputs[0].script_sig = Bytes::new();
+    tx.inputs[1].script_sig = Bytes::new();
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &tx);
+    assert_eq!(v_size, 403);
+    // Segwit input with 2 P2WPKH outputs
+    // https://live.blockcypher.com/btc-testnet/tx/8a32e794b2a8a0356bb3b2717279d118b4010bf8bb3229abb5a2b4fb86541bb2/
+    // the transaction is deserialized without the witnesses which makes the calculation of v_size similar to how
+    // it's calculated in generate_transaction
+    let tx: UtxoTx = "0200000000010192a4497268107d7999e9551be733f5e0eab479be7d995a061a7bbdc43ef0e5ed0000000000feffffff02cd857a00000000001600145cb39bfcd68d520e29cadc990bceb5cd1562c507a0860100000000001600149a85cc05e9a722575feb770a217c73fd6145cf01024730440220030e0fb58889ab939c701f12d950f00b64836a1a33ec0d6697fd3053d469d244022053e33d72ef53b37b86eea8dfebbafffb0f919ef952dcb6ea6058b81576d8dc86012102225de6aed071dc29d0ca10b9f64a4b502e33e55b3c0759eedd8e333834c6a7d07a1f2000".into();
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    assert_eq!(v_size, 141);
+    // Segwit input with 1 P2WSH output
+    // https://live.blockcypher.com/btc-testnet/tx/f8c1fed6f307eb131040965bd11018787567413e6437c907b1fd15de6517ad16/
+    let tx: UtxoTx = "010000000001017996e77b2b1f4e66da606cfc2f16e3f52e1eac4a294168985bd4dbd54442e61f0100000000ffffffff01ab36010000000000220020693090c0e291752d448826a9dc72c9045b34ed4f7bd77e6e8e62645c23d69ac502483045022100d0800719239d646e69171ede7f02af916ac778ffe384fa0a5928645b23826c9f022044072622de2b47cfc81ac5172b646160b0c48d69d881a0ce77be06dbd6f6e5ac0121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb3735a9e61".into();
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    assert_eq!(v_size, 122);
+    // Multipl segwit inputs with P2PKH output
+    // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
+    let tx: UtxoTx = "0100000000010250c434acbad252481564d56b41990577c55d247aedf4bb853dca3567c4404c8f0000000000ffffffff55baf016f0628ecf0f0ec228e24d8029879b0491ab18bac61865afaa9d16e8bb0000000000ffffffff01e8030000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac0247304402202611c05dd0e748f7c9955ed94a172af7ed56a0cdf773e8c919bef6e70b13ec1c02202fd7407891c857d95cdad1038dcc333186815f50da2fc9a334f814dd8d0a2d63012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed02483045022100bb9d483f6b2b46f8e70d62d65b33b6de056e1878c9c2a1beed69005daef2f89502201690cd44cf6b114fa0d494258f427e1ed11a21d897e407d8a1ff3b7e09b9a426012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed9cf7bd60".into();
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    assert_eq!(v_size, 181);
+    // Multiple segwit inputs
+    // https://live.blockcypher.com/btc-testnet/tx/a7bb128703b57058955d555ed48b65c2c9bdefab6d3acbb4243c56e430533def/
+    let tx: UtxoTx = "010000000001023b7308e5ca5d02000b743441f7653c1110e07275b7ab0e983f489e92bfdd2b360100000000ffffffffd6c4f22e9b1090b2584a82cf4cb6f85595dd13c16ad065711a7585cc373ae2e50000000000ffffffff02947b2a00000000001600148474e72f396d44504cd30b1e7b992b65344240c609050700000000001600141b891309c8fe1338786fa3476d5d1a9718d43a0202483045022100bfae465fcd8d2636b2513f68618eb4996334c94d47e285cb538e3416eaf4521b02201b953f46ff21c8715a0997888445ca814dfdb834ef373a29e304bee8b32454d901210226bde3bca3fe7c91e4afb22c4bc58951c60b9bd73514081b6bd35f5c09b8c9a602483045022100ba48839f7becbf8f91266140f9727edd08974fcc18017661477af1d19603ed31022042fd35af1b393eeb818b420e3a5922079776cc73f006d26dd67be932e1b4f9000121034b6a54040ad2175e4c198370ac36b70d0b0ab515b59becf100c4cd310afbfd0c00000000".into();
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    assert_eq!(v_size, 209)
 }

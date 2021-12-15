@@ -722,6 +722,7 @@ dependencies = [
 name = "chain"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "bitcrypto",
  "primitives",
  "rustc-hex 2.1.0",
@@ -867,6 +868,7 @@ dependencies = [
  "common",
  "crypto",
  "derive_more",
+ "hex 0.4.3",
  "rpc",
  "rpc_task",
  "ser_error",
@@ -917,7 +919,6 @@ dependencies = [
  "lazy_static",
  "libc",
  "lightning",
- "lightning-background-processor",
  "log 0.4.11",
  "log4rs",
  "metrics",
@@ -944,6 +945,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_repr",
+ "shared_ref_counter",
  "tokio",
  "uuid",
  "wasm-bindgen",
@@ -2905,9 +2907,9 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.101"
+version = "0.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b0bcd8d72c1177579fe7cfe42309967e11e432688b2e87c86d0d8b707d60530"
+checksum = "9f4cc6a6bc500226fe2716b8557fe66b57fd8d86348e4478b57de13a4dd6b8f0"
 dependencies = [
  "bitcoin",
  "secp256k1",
@@ -2915,9 +2917,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.101"
+version = "0.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0629a41f3450eac5a702562cbcc52a3375b97524990c12442bdcd72dceb30c5"
+checksum = "2c0cded269444c0b1d19d92b79a60b1d9188f377c2e7ddd6d0c8860b80f3ea4a"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -2926,9 +2928,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.101"
+version = "0.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a71819192c8aa987bf0db3ff1effd55bdc945d546ed2a401a137946c7ef2f88"
+checksum = "af4ba9c57851bfaa872a9fbea41065812d03da30bf24680e08c074b972cb3e8d"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -2937,9 +2939,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-persister"
-version = "0.0.101"
+version = "0.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1888e0a7bc69df004b49b087648e95a3ee5540eb762768d9b4f35148234cd599"
+checksum = "5ea68c7b0a8b0bc01103d189206bd09c8501bd0fad721229d1e36743a80ed010"
 dependencies = [
  "bitcoin",
  "libc",
@@ -4955,6 +4957,13 @@ dependencies = [
  "digest 0.8.1",
  "keccak",
  "opaque-debug 0.2.3",
+]
+
+[[package]]
+name = "shared_ref_counter"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.11",
 ]
 
 [[package]]

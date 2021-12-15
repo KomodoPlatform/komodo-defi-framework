@@ -42,7 +42,7 @@ pub async fn z_send_htlc(
     let htlc_address = Address {
         prefix: coin.utxo_arc.conf.p2sh_addr_prefix,
         t_addr_prefix: coin.utxo_arc.conf.p2sh_t_addr_prefix,
-        hash: script_hash,
+        hash: script_hash.into(),
         checksum_type: coin.utxo_arc.conf.checksum_type,
         addr_format: UtxoAddressFormat::Standard,
         hrp: None,
@@ -54,7 +54,7 @@ pub async fn z_send_htlc(
         native.import_address(&address, &address, false).compat().await.unwrap();
     }
 
-    let htlc_script = ScriptBuilder::build_p2sh(&script_hash).to_bytes().take();
+    let htlc_script = ScriptBuilder::build_p2sh(&script_hash.into()).to_bytes().take();
     let htlc_output = TxOut {
         value: Amount::from_u64(amount_sat).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
         script_pubkey: ZCashScript(htlc_script),

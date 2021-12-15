@@ -30,6 +30,36 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
+pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeValidated",
+    "MakerPaymentSent",
+    "TakerPaymentReceived",
+    "TakerPaymentWaitConfirmStarted",
+    "TakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSpent",
+    "TakerPaymentSpendConfirmStarted",
+    "TakerPaymentSpendConfirmed",
+    "Finished",
+];
+
+pub const MAKER_ERROR_EVENTS: [&str; 13] = [
+    "StartFailed",
+    "NegotiateFailed",
+    "TakerFeeValidateFailed",
+    "MakerPaymentTransactionFailed",
+    "MakerPaymentDataSendFailed",
+    "MakerPaymentWaitConfirmFailed",
+    "TakerPaymentValidateFailed",
+    "TakerPaymentWaitConfirmFailed",
+    "TakerPaymentSpendFailed",
+    "TakerPaymentSpendConfirmFailed",
+    "MakerPaymentWaitRefundStarted",
+    "MakerPaymentRefunded",
+    "MakerPaymentRefundFailed",
+];
+
 pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("MAKER") }
 
 pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -49,34 +79,8 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
-            success_events: vec![
-                "Started".into(),
-                "Negotiated".into(),
-                "TakerFeeValidated".into(),
-                "MakerPaymentSent".into(),
-                "TakerPaymentReceived".into(),
-                "TakerPaymentWaitConfirmStarted".into(),
-                "TakerPaymentValidatedAndConfirmed".into(),
-                "TakerPaymentSpent".into(),
-                "TakerPaymentSpendConfirmStarted".into(),
-                "TakerPaymentSpendConfirmed".into(),
-                "Finished".into(),
-            ],
-            error_events: vec![
-                "StartFailed".into(),
-                "NegotiateFailed".into(),
-                "TakerFeeValidateFailed".into(),
-                "MakerPaymentTransactionFailed".into(),
-                "MakerPaymentDataSendFailed".into(),
-                "MakerPaymentWaitConfirmFailed".into(),
-                "TakerPaymentValidateFailed".into(),
-                "TakerPaymentWaitConfirmFailed".into(),
-                "TakerPaymentSpendFailed".into(),
-                "TakerPaymentSpendConfirmFailed".into(),
-                "MakerPaymentWaitRefundStarted".into(),
-                "MakerPaymentRefunded".into(),
-                "MakerPaymentRefundFailed".into(),
-            ],
+            success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+            error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
         }),
         Err(e) => return ERR!("{}", e),
     };
@@ -103,33 +107,33 @@ pub struct TakerNegotiationData {
 pub struct MakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
-    taker: H256Json,
-    secret: H256Json,
-    secret_hash: Option<H160Json>,
-    my_persistent_pub: H264Json,
-    lock_duration: u64,
+    pub taker: H256Json,
+    pub secret: H256Json,
+    pub secret_hash: Option<H160Json>,
+    pub my_persistent_pub: H264Json,
+    pub lock_duration: u64,
     pub maker_amount: BigDecimal,
     pub taker_amount: BigDecimal,
-    maker_payment_confirmations: u64,
-    maker_payment_requires_nota: Option<bool>,
-    taker_payment_confirmations: u64,
-    taker_payment_requires_nota: Option<bool>,
-    maker_payment_lock: u64,
+    pub maker_payment_confirmations: u64,
+    pub maker_payment_requires_nota: Option<bool>,
+    pub taker_payment_confirmations: u64,
+    pub taker_payment_requires_nota: Option<bool>,
+    pub maker_payment_lock: u64,
     /// Allows to recognize one SWAP from the other in the logs. #274.
-    uuid: Uuid,
+    pub uuid: Uuid,
     pub started_at: u64,
-    maker_coin_start_block: u64,
-    taker_coin_start_block: u64,
+    pub maker_coin_start_block: u64,
+    pub taker_coin_start_block: u64,
     /// A `MakerPayment` transaction fee.
     /// Note this value is used to calculate locked amount only.
-    maker_payment_trade_fee: Option<SavedTradeFee>,
+    pub maker_payment_trade_fee: Option<SavedTradeFee>,
     /// A transaction fee that should be paid to spend a `TakerPayment`.
     /// Note this value is used to calculate locked amount only.
-    taker_payment_spend_trade_fee: Option<SavedTradeFee>,
+    pub taker_payment_spend_trade_fee: Option<SavedTradeFee>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    maker_coin_swap_contract_address: Option<BytesJson>,
+    pub maker_coin_swap_contract_address: Option<BytesJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    taker_coin_swap_contract_address: Option<BytesJson>,
+    pub taker_coin_swap_contract_address: Option<BytesJson>,
 }
 
 pub struct MakerSwapMut {
@@ -1214,8 +1218,8 @@ impl MakerSwapEvent {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MakerSavedEvent {
-    timestamp: u64,
-    event: MakerSwapEvent,
+    pub timestamp: u64,
+    pub event: MakerSwapEvent,
 }
 
 impl MakerSavedEvent {
@@ -1277,19 +1281,19 @@ impl MakerSwapStatusChanged {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
-    my_order_uuid: Option<Uuid>,
-    events: Vec<MakerSavedEvent>,
-    maker_amount: Option<BigDecimal>,
-    maker_coin: Option<String>,
-    taker_amount: Option<BigDecimal>,
-    taker_coin: Option<String>,
-    gui: Option<String>,
-    mm_version: Option<String>,
-    success_events: Vec<String>,
-    error_events: Vec<String>,
+    pub my_order_uuid: Option<Uuid>,
+    pub events: Vec<MakerSavedEvent>,
+    pub maker_amount: Option<BigDecimal>,
+    pub maker_coin: Option<String>,
+    pub taker_amount: Option<BigDecimal>,
+    pub taker_coin: Option<String>,
+    pub gui: Option<String>,
+    pub mm_version: Option<String>,
+    pub success_events: Vec<String>,
+    pub error_events: Vec<String>,
 }
 
 #[cfg(test)]

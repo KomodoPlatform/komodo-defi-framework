@@ -23,7 +23,7 @@ use common::mm_ctx::{MmArc, MmCtxBuilder};
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
-use keys::Address;
+use keys::{Address, AddressHashEnum};
 use primitives::hash::{H160, H256};
 use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
@@ -736,7 +736,7 @@ pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
 pub fn utxo_burn_address() -> Address {
     Address {
         prefix: 60,
-        hash: H160::default(),
+        hash: AddressHashEnum::default_address_hash(),
         t_addr_prefix: 0,
         checksum_type: ChecksumType::DSHA256,
         hrp: None,

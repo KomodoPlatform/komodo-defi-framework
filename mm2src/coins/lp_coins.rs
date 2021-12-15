@@ -94,7 +94,7 @@ use utxo::qtum::{self, qtum_coin_from_with_priv_key, QtumCoin};
 use utxo::slp::SlpToken;
 use utxo::utxo_common::big_decimal_from_sat_unsigned;
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-use utxo::{GenerateTxError, UtxoFeeDetails, UtxoTx};
+use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 pub mod qrc20;
 use crate::utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
@@ -113,11 +113,13 @@ pub use test_coin::TestCoin;
 pub mod z_coin;
 
 use crate::init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
+use crate::lightning::LightningCoin;
 use crate::qrc20::Qrc20ActivationParams;
+use crate::qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
 use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use crate::utxo::{UnsupportedAddr, UtxoActivationParams};
+use crate::utxo::UtxoActivationParams;
 use crypto::CryptoCtx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 use z_coin::{z_coin_from_conf_and_params, ZCoin};
@@ -426,7 +428,7 @@ pub trait MarketCoinOps {
     fn min_trading_vol(&self) -> MmNumber;
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum WithdrawFee {
     UtxoFixed {
@@ -491,6 +493,24 @@ pub struct GetStakingInfosRequest {
 }
 
 impl WithdrawRequest {
+    pub fn new(
+        coin: String,
+        from: Option<WithdrawFromAddress>,
+        to: String,
+        amount: BigDecimal,
+        max: bool,
+        fee: Option<WithdrawFee>,
+    ) -> WithdrawRequest {
+        WithdrawRequest {
+            coin,
+            from,
+            to,
+            amount,
+            max,
+            fee,
+        }
+    }
+
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -856,6 +876,17 @@ impl From<DerivationMethodNotSupported> for StakingInfosError {
     fn from(e: DerivationMethodNotSupported) -> Self { StakingInfosError::DerivationMethodNotSupported(e.to_string()) }
 }
 
+impl From<Qrc20AddressError> for StakingInfosError {
+    fn from(e: Qrc20AddressError) -> Self {
+        match e {
+            Qrc20AddressError::DerivationMethodNotSupported(e) => StakingInfosError::DerivationMethodNotSupported(e),
+            Qrc20AddressError::ScriptHashTypeNotSupported { script_hash_type } => {
+                StakingInfosError::Internal(format!("Script hash type '{}' is not supported", script_hash_type))
+            },
+        }
+    }
+}
+
 impl HttpStatusCode for StakingInfosError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -972,6 +1003,10 @@ impl From<DerivationMethodNotSupported> for DelegationError {
     fn from(e: DerivationMethodNotSupported) -> Self {
         DelegationError::DelegationOpsNotSupported { reason: e.to_string() }
     }
+}
+
+impl From<ScriptHashTypeNotSupported> for DelegationError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self { DelegationError::AddressError(e.to_string()) }
 }
 
 impl HttpStatusCode for DelegationError {
@@ -1127,10 +1162,6 @@ impl From<CoinFindError> for WithdrawError {
             CoinFindError::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
-}
-
-impl From<UnsupportedAddr> for WithdrawError {
-    fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
 impl From<UtxoSignWithKeyPairError> for WithdrawError {
@@ -1296,6 +1327,7 @@ pub enum MmCoinEnum {
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
+    LightningCoin(LightningCoin),
     Test(TestCoin),
 }
 
@@ -1327,6 +1359,10 @@ impl From<SlpToken> for MmCoinEnum {
     fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpToken(c) }
 }
 
+impl From<LightningCoin> for MmCoinEnum {
+    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
+}
+
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
@@ -1343,6 +1379,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::EthCoin(ref c) => c,
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
+            MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
@@ -1497,6 +1534,11 @@ pub enum CoinProtocol {
     },
     BCH {
         slp_prefix: String,
+    },
+    LIGHTNING {
+        platform: String,
+        // Mainnet/Testnet/Signet/RegTest
+        network: BlockchainNetwork,
     },
     #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
     ZHTLC,
@@ -1746,6 +1788,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, params, &secret, dbdir).await).into()
         },
+        proto => return ERR!("{:?} is not supported by lp_coininit", proto),
     };
 
     let register_params = RegisterCoinParams {
@@ -2310,6 +2353,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 },
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
+        },
+        CoinProtocol::LIGHTNING { .. } => {
+            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
         CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),

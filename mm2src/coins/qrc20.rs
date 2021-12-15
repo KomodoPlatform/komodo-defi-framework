@@ -1006,16 +1006,15 @@ impl MarketCoinOps for Qrc20Coin {
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        let my_address = match self.my_addr_as_contract_addr() {
-            Ok(addr) => addr,
-            Err(e) => return Box::new(futures01::future::err(e.map(BalanceError::from))),
-        };
-        let params = [Token::Address(my_address)];
-        let contract_address = self.contract_address;
         let decimals = self.utxo.decimals;
 
         let coin = self.clone();
         let fut = async move {
+            let my_address = coin
+                .my_addr_as_contract_addr()
+                .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+            let params = [Token::Address(my_address)];
+            let contract_address = coin.contract_address;
             let tokens = coin
                 .utxo
                 .rpc_client
@@ -1341,12 +1340,8 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     };
 
     // [`Qrc20Coin::transfer_output`] shouldn't fail if the arguments are correct
-    let transfer_output = coin.transfer_output(
-        qtum::contract_addr_from_utxo_addr(to_addr.clone()),
-        qrc20_amount_sat,
-        gas_limit,
-        gas_price,
-    )?;
+    let contract_addr = qtum::contract_addr_from_utxo_addr(to_addr.clone())?;
+    let transfer_output = coin.transfer_output(contract_addr, qrc20_amount_sat, gas_limit, gas_price)?;
     let outputs = vec![transfer_output];
 
     let GenerateQrc20TxResult {

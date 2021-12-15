@@ -1,3 +1,5 @@
+#[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
+use crate::executor::Timer;
 use crate::log::{self, LogState};
 use crate::mm_metrics::{MetricsArc, MetricsOps};
 use crate::{bits256, small_rng};
@@ -7,13 +9,14 @@ use primitives::hash::H160;
 use rand::Rng;
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
+use shared_ref_counter::{SharedRc, WeakRc};
 use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 
 cfg_wasm32! {
     use crate::wasm_rpc::WasmRpcSender;
@@ -21,9 +24,7 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use crate::executor::Timer;
     use crate::mm_metrics::prometheus;
-    use lightning_background_processor::BackgroundProcessor;
     use rusqlite::Connection;
     use std::net::{IpAddr, SocketAddr};
     use std::sync::MutexGuard;
@@ -101,9 +102,6 @@ pub struct MmCtx {
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
-    /// The lightning node background processor that takes care of tasks that need to happen periodically
-    #[cfg(not(target_arch = "wasm32"))]
-    pub ln_background_processor: Constructible<BackgroundProcessor>,
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Mutex<Connection>>,
     pub mm_version: String,
@@ -140,8 +138,6 @@ impl MmCtx {
             stats_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            ln_background_processor: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
@@ -212,20 +208,6 @@ impl MmCtx {
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
-    pub fn stop(&self) -> Result<(), String> {
-        try_s!(self.stop.pin(true));
-        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
-        // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
-        // because otherwise there might be reference counting instances remaining in a listener
-        // that would prevent the contexts from properly `Drop`ping.
-        for mut listener in stop_listeners.drain(..) {
-            if let Err(err) = listener() {
-                log! ({"MmCtx::stop] Listener error: {}", err})
-            }
-        }
-        Ok(())
-    }
-
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
 
@@ -291,6 +273,17 @@ impl Default for MmCtx {
     fn default() -> Self { Self::with_log_state(LogState::in_memory()) }
 }
 
+impl Drop for MmCtx {
+    fn drop(&mut self) {
+        let ffi_handle = self
+            .ffi_handle
+            .as_option()
+            .map(|handle| handle.to_string())
+            .unwrap_or_else(|| "UNKNOWN".to_owned());
+        log!("MmCtx ("(ffi_handle)") has been dropped")
+    }
+}
+
 // We don't want to send `MmCtx` across threads, it will only obstruct the normal use case
 // (and might result in undefined behaviour if there's a C struct or value in the context that is aliased from the various MM threads).
 // Only the `MmArc` is `Send`.
@@ -298,21 +291,26 @@ impl Default for MmCtx {
 // which will likely come useful during the gradual port.
 //not-implemented-on-stable// impl !Send for MmCtx {}
 
-pub struct MmArc(pub Arc<MmCtx>);
+pub struct MmArc(pub SharedRc<MmCtx>);
+
 // NB: Explicit `Send` and `Sync` marks here should become unnecessary later,
 // after we finish the initial port and replace the C values with the corresponding Rust alternatives.
 unsafe impl Send for MmArc {}
 unsafe impl Sync for MmArc {}
+
 impl Clone for MmArc {
+    #[track_caller]
     fn clone(&self) -> MmArc { MmArc(self.0.clone()) }
 }
+
 impl Deref for MmArc {
     type Target = MmCtx;
-    fn deref(&self) -> &MmCtx { &*self.0 }
+    fn deref(&self) -> &MmCtx { &self.0 }
 }
 
 #[derive(Clone, Default)]
-pub struct MmWeak(Weak<MmCtx>);
+pub struct MmWeak(WeakRc<MmCtx>);
+
 // Same as `MmArc`.
 unsafe impl Send for MmWeak {}
 unsafe impl Sync for MmWeak {}
@@ -361,6 +359,48 @@ struct NativeCtx {
 }
 
 impl MmArc {
+    pub fn new(ctx: MmCtx) -> MmArc { MmArc(SharedRc::new(ctx)) }
+
+    pub fn stop(&self) -> Result<(), String> {
+        try_s!(self.stop.pin(true));
+        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
+        // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
+        // because otherwise there might be reference counting instances remaining in a listener
+        // that would prevent the contexts from properly `Drop`ping.
+        for mut listener in stop_listeners.drain(..) {
+            if let Err(err) = listener() {
+                log! ({"MmCtx::stop] Listener error: {}", err})
+            }
+        }
+
+        #[cfg(feature = "track-ctx-pointer")]
+        self.track_ctx_pointer();
+
+        Ok(())
+    }
+
+    #[cfg(feature = "track-ctx-pointer")]
+    fn track_ctx_pointer(&self) {
+        let ctx_weak = self.weak();
+        let fut = async move {
+            let level = log::log_crate::Level::Info;
+            loop {
+                Timer::sleep(5.).await;
+                match MmArc::from_weak(&ctx_weak) {
+                    Some(ctx) => ctx.log_existing_pointers(level),
+                    None => {
+                        log::info!("MmCtx was dropped. Stop the loop");
+                        break;
+                    },
+                }
+            }
+        };
+        crate::executor::spawn(fut);
+    }
+
+    #[cfg(feature = "track-ctx-pointer")]
+    pub fn log_existing_pointers(&self, level: log::log_crate::Level) { self.0.log_existing_pointers(level, "MmArc") }
+
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     pub fn ffi_handle(&self) -> Result<u32, String> {
         let mut mm_ctx_ffi = try_s!(MM_CTX_FFI.lock());
@@ -392,6 +432,7 @@ impl MmArc {
 
     /// Tries getting access to the MM context.  
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
+    #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {
         if ffi_handle == 0 {
             return ERR!("MmArc] Zeroed ffi_handle");
@@ -406,10 +447,11 @@ impl MmArc {
         }
     }
 
-    /// Generates a weak link, to track the context without prolonging its life.
-    pub fn weak(&self) -> MmWeak { MmWeak(Arc::downgrade(&self.0)) }
+    /// Generates a weak pointer, to track the allocated data without prolonging its life.
+    pub fn weak(&self) -> MmWeak { MmWeak(SharedRc::downgrade(&self.0)) }
 
-    /// Tries to obtain the MM context from the weak link.
+    /// Tries to obtain the MM context from the weak pointer.
+    #[track_caller]
     pub fn from_weak(weak: &MmWeak) -> Option<MmArc> { weak.0.upgrade().map(MmArc) }
 
     /// Init metrics with dashboard.
@@ -541,6 +583,6 @@ impl MmCtxBuilder {
             ctx.db_namespace = self.db_namespace;
         }
 
-        MmArc(Arc::new(ctx))
+        MmArc::new(ctx)
     }
 }

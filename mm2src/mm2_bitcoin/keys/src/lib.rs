@@ -38,13 +38,57 @@ pub use signature::{CompactSignature, Signature};
 use hash::{H160, H256};
 use lazy_static::lazy_static;
 use secp256k1::{Secp256k1, SignOnly, VerifyOnly};
+use std::fmt;
 
-/// 20 bytes long hash derived from public `ripemd160(sha256(public))`
-pub type AddressHash = H160;
 /// 32 bytes long secret key
 pub type Secret = H256;
 /// 32 bytes long signable message
 pub type Message = H256;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum AddressHashEnum {
+    /// 20 bytes long hash derived from public `ripemd160(sha256(public))` used in P2PKH, P2SH, P2WPKH
+    AddressHash(H160),
+    /// 32 bytes long hash derived from script `sha256(script)` used in P2WSH
+    WitnessScriptHash(H256),
+}
+
+impl AddressHashEnum {
+    pub fn default_address_hash() -> Self { AddressHashEnum::AddressHash(H160::default()) }
+
+    pub fn default_witness_script_hash() -> Self { AddressHashEnum::WitnessScriptHash(H256::default()) }
+
+    pub fn copy_from_slice(&mut self, src: &[u8]) {
+        match self {
+            AddressHashEnum::AddressHash(h) => h.copy_from_slice(src),
+            AddressHashEnum::WitnessScriptHash(s) => s.copy_from_slice(src),
+        }
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        match self {
+            AddressHashEnum::AddressHash(h) => h.to_vec(),
+            AddressHashEnum::WitnessScriptHash(s) => s.to_vec(),
+        }
+    }
+
+    pub fn is_address_hash(&self) -> bool { matches!(*self, AddressHashEnum::AddressHash(_)) }
+
+    pub fn is_witness_script_hash(&self) -> bool { matches!(*self, AddressHashEnum::WitnessScriptHash(_)) }
+}
+
+impl fmt::Display for AddressHashEnum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AddressHashEnum::AddressHash(h) => f.write_str(&h.to_string()),
+            AddressHashEnum::WitnessScriptHash(s) => f.write_str(&s.to_string()),
+        }
+    }
+}
+
+impl From<H160> for AddressHashEnum {
+    fn from(hash: H160) -> Self { AddressHashEnum::AddressHash(hash) }
+}
 
 lazy_static! {
     static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();

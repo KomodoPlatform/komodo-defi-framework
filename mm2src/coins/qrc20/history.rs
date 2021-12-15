@@ -312,13 +312,13 @@ impl Qrc20Coin {
             let internal_id = TxInternalId::new(tx_hash.clone(), receipt.output_index, log_index as u64);
 
             let from = if is_transferred_from_contract(&script_pubkey) {
-                qtum::display_as_contract_address(from)
+                try_s!(qtum::display_as_contract_address(from))
             } else {
                 try_s!(from.display_address())
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
-                qtum::display_as_contract_address(to)
+                try_s!(qtum::display_as_contract_address(to))
             } else {
                 try_s!(to.display_address())
             };
@@ -628,6 +628,7 @@ impl TransferHistoryBuilder {
                     .iguana_or_err()
                     .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
                 qtum::contract_addr_from_utxo_addr(my_address.clone())
+                    .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?
             },
         };
 

@@ -1,10 +1,10 @@
 use crate::SECP_VERIFY;
 use crypto::dhash160;
-use hash::{H264, H520};
+use hash::{H160, H264, H520};
 use hex::ToHex;
 use secp256k1::{Message as SecpMessage, PublicKey, Signature as SecpSignature};
 use std::{fmt, ops};
-use {AddressHash, Error, Message, Signature};
+use {Error, Message, Signature};
 
 /// Secret public key
 #[derive(Copy, Clone)]
@@ -36,7 +36,7 @@ impl Public {
         }
     }
 
-    pub fn address_hash(&self) -> AddressHash { dhash160(self) }
+    pub fn address_hash(&self) -> H160 { dhash160(self) }
 
     pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
         let public = match self {

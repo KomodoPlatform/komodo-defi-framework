@@ -688,11 +688,12 @@ async fn process_bot_logic(ctx: &MmArc) {
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let maker_orders = ordermatch_ctx.my_maker_orders.lock().await.clone();
+    let maker_orders = ordermatch_ctx.my_maker_orders.lock().clone();
     let mut futures_order_update = Vec::with_capacity(0);
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
-    for (uuid, value) in maker_orders.into_iter() {
-        let key_trade_pair = TradingPair::new(value.base.clone(), value.rel.clone());
+    for (uuid, order_mutex) in maker_orders.into_iter() {
+        let order = order_mutex.lock().await;
+        let key_trade_pair = TradingPair::new(order.base.clone(), order.rel.clone());
         match cfg.get(&key_trade_pair.as_combination()) {
             Some(coin_cfg) => {
                 if !coin_cfg.enable {
@@ -706,7 +707,7 @@ async fn process_bot_logic(ctx: &MmArc) {
                     key_trade_pair.clone(),
                     coin_cfg.clone(),
                 );
-                futures_order_update.push(execute_update_order(uuid, value, cloned_infos));
+                futures_order_update.push(execute_update_order(uuid, order.clone(), cloned_infos));
                 memoization_pair_registry.insert(key_trade_pair.as_combination());
             },
             _ => continue,

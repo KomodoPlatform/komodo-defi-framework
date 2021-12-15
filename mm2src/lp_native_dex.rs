@@ -441,7 +441,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
     spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
-    spawn(clean_memory_loop(ctx.clone()));
+    spawn(clean_memory_loop(ctx.weak()));
     Ok(())
 }
 

@@ -2,7 +2,7 @@ use super::{lp_main, LpMainParams};
 use bigdecimal::BigDecimal;
 use common::block_on;
 use common::executor::Timer;
-use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
+use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_lightning,
                         enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
                         mm_spat, wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump,
                         MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
@@ -6726,6 +6726,33 @@ fn test_update_maker_order_fail() {
         update_maker_order.1
     );
 
+    log!("Issue bob batch of 2 update maker order requests that should make the second request fail because the order state changed due to the first request");
+    let batch_json = json!([
+        {
+            "userpass": mm_bob.userpass,
+            "method": "update_maker_order",
+            "uuid": uuid,
+            "new_price": 3,
+            "volume_delta": 1,
+        },
+        {
+            "userpass": mm_bob.userpass,
+            "method": "update_maker_order",
+            "uuid": uuid,
+            "new_price": 2,
+            "volume_delta": 1,
+        },
+    ]);
+
+    let rc = block_on(mm_bob.rpc(batch_json)).unwrap();
+    assert!(rc.0.is_success(), "!batch: {}", rc.1);
+    log!((rc.1));
+    let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
+    assert!(responses[1]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Order state has changed after price/volume/balance checks. Please try to update the order again if it's still needed."));
+
     log!("Issue bob batch update maker order and cancel order request that should make update maker order fail because Order with UUID has been deleted");
     let batch_json = json!([
         {
@@ -6747,9 +6774,13 @@ fn test_update_maker_order_fail() {
     log!((rc.1));
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
     if responses[1]["result"] == *"success" {
-        assert_eq!(responses[0].get("result"), None);
+        assert!(responses[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("Order with UUID: {} has been deleted", uuid)));
     }
 }
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order_after_matched() {
@@ -8493,7 +8524,7 @@ fn test_enable_lightning() {
 
     let coins = json! ([
         {
-            "coin": "tBTC",
+            "coin": "tBTC-TEST-segwit",
             "name": "tbitcoin",
             "fname": "tBitcoin",
             "rpcport": 18332,
@@ -8502,19 +8533,27 @@ fn test_enable_lightning() {
             "wiftype": 239,
             "segwit": true,
             "bech32_hrp": "tb",
-            "lightning": true,
-            "network": "testnet",
+            "address_format":{"format":"segwit"},
+            "orderbook_ticker": "tBTC-TEST",
             "txfee": 0,
             "estimate_fee_mode": "ECONOMICAL",
             "mm2": 1,
             "required_confirmations": 0,
             "protocol": {
-                "type": "UTXO"
-            },
-            "address_format": {
-                "format": "segwit",
+              "type": "UTXO"
             }
-        }
+          },
+          {
+            "coin": "tBTC-TEST-lightning",
+            "mm2": 1,
+            "protocol": {
+              "type": "LIGHTNING",
+              "protocol_data":{
+                "platform": "tBTC-TEST-segwit",
+                "network": "testnet"
+              }
+            }
+          }
     ]);
 
     let mut mm = MarketMakerIt::start(
@@ -8538,7 +8577,7 @@ fn test_enable_lightning() {
     let electrum = block_on(mm.rpc(json!({
         "userpass": mm.userpass,
         "method": "electrum",
-        "coin": "tBTC",
+        "coin": "tBTC-TEST-segwit",
         "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
         "mm2": 1,
     }))).unwrap();
@@ -8550,23 +8589,8 @@ fn test_enable_lightning() {
         electrum.1
     );
 
-    let enable_lightning = block_on(mm.rpc(json!({
-        "mmrpc": "2.0",
-        "method": "enable_lightning",
-        "userpass": mm.userpass,
-        "params": {
-            "coin": "tBTC",
-            "name": "test_node",
-        },
-    })))
-    .unwrap();
-    assert_eq!(
-        enable_lightning.0,
-        StatusCode::OK,
-        "RPC «enable_lightning» failed with {} {}",
-        enable_lightning.0,
-        enable_lightning.1
-    );
+    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
+    assert_eq!(enable_lightning["result"]["platform_coin"], "tBTC-TEST-segwit");
 
     block_on(mm.wait_for_log(60., |log| log.contains("Calling ChannelManager's timer_tick_occurred"))).unwrap();
 
