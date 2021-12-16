@@ -2,7 +2,7 @@ use super::RequestTxHistoryResult;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
 use crate::utxo::UtxoStandardOps;
-use crate::{HistorySyncState, MarketCoinOps, TxHistoryStorage};
+use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps, TxHistoryStorage};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -216,9 +216,15 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
                         .find(|(hash, _)| hash.0.as_ref() == tx.tx_hash.0.as_slice());
                     match found {
                         Some((_, height)) => {
-                            tx.block_height = *height;
-                            if let Err(e) = ctx.storage.update_tx_in_history(ctx.coin.ticker(), &tx).await {
-                                return Self::change_state(Stopped::storage_error(e));
+                            if *height > 0 {
+                                match ctx.coin.get_block_timestamp(*height).await {
+                                    Ok(time) => tx.timestamp = time,
+                                    Err(_) => return Self::change_state(OnIoErrorCooldown::new()),
+                                };
+                                tx.block_height = *height;
+                                if let Err(e) = ctx.storage.update_tx_in_history(ctx.coin.ticker(), &tx).await {
+                                    return Self::change_state(Stopped::storage_error(e));
+                                }
                             }
                         },
                         None => {
@@ -264,7 +270,7 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
-        for (tx_hash, _) in self.all_tx_ids_with_height {
+        for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
             match ctx
                 .storage
@@ -276,9 +282,18 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),
             }
 
+            let block_height_and_time = if height > 0 {
+                let timestamp = match ctx.coin.get_block_timestamp(*height).await {
+                    Ok(time) => time,
+                    Err(_) => return Self::change_state(OnIoErrorCooldown::new()),
+                };
+                Some(BlockHeightAndTime { height, timestamp })
+            } else {
+                None
+            };
             let tx_details = match ctx
                 .coin
-                .transaction_details_with_token_transfers(&tx_hash, None, &ctx.storage)
+                .transaction_details_with_token_transfers(&tx_hash, block_height_and_time, &ctx.storage)
                 .await
             {
                 Ok(tx) => tx,
@@ -304,6 +319,7 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
             // wait for for one second to reduce the number of requests to electrum servers
             Timer::sleep(1.).await;
         }
+        info!("Tx history fetching finished for {}", ctx.coin.ticker());
         *ctx.coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Finished;
         Self::change_state(WaitForHistoryUpdateTrigger::new())
     }

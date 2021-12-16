@@ -372,12 +372,12 @@ fn test_common_cashaddresses() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_bch_and_slp_testnet_history() {
     let coins = json!([
-        {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"UTXO"},
+        {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}},
          "address_format":{"format":"cashaddress","network":"bchtest"}},
         {"coin":"USDF","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":4,"token_id":"bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7","platform":"tBCH","required_confirmations":1}}}
     ]);
 
-    let mm = MarketMakerIt::start(
+    let mut mm = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -396,5 +396,9 @@ fn test_bch_and_slp_testnet_history() {
     log!({ "log path: {}", mm.log_path.display() });
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
-    let enable_bch_with_usdf = block_on(enable_bch_with_tokens(&mm, "tBCH", &["USDF"], rpc_mode));
+    let tx_history = true;
+    let enable_bch_with_usdf = block_on(enable_bch_with_tokens(&mm, "tBCH", &["USDF"], rpc_mode, tx_history));
+    log!({ "enable_bch_with_usdf: {:?}", enable_bch_with_usdf });
+
+    block_on(mm.wait_for_log(777., |log| log.contains("Tx history fetching finished for tBCH"))).unwrap();
 }

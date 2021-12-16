@@ -935,6 +935,7 @@ pub async fn enable_bch_with_tokens(
     platform_coin: &str,
     tokens: &[&str],
     mode: UtxoRpcMode,
+    tx_history: bool,
 ) -> Json {
     let slp_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
@@ -948,6 +949,7 @@ pub async fn enable_bch_with_tokens(
                 "allow_slp_unsafe_conf": true,
                 "bchd_urls": [],
                 "mode": mode,
+                "tx_history": tx_history,
                 "slp_tokens_requests": slp_requests,
             }
         }))

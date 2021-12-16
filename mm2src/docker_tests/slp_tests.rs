@@ -85,7 +85,14 @@ fn test_bch_and_slp_balance_enable_slp_v2() {
 fn test_bch_and_slp_balance_enable_bch_with_tokens_v2() {
     let mm = slp_supplied_node();
 
-    let enable_bch_with_tokens = block_on(enable_bch_with_tokens(&mm, "FORSLP", &["ADEXSLP"], UtxoRpcMode::Native));
+    let tx_history = false;
+    let enable_bch_with_tokens = block_on(enable_bch_with_tokens(
+        &mm,
+        "FORSLP",
+        &["ADEXSLP"],
+        UtxoRpcMode::Native,
+        tx_history,
+    ));
     let enable_bch_with_tokens: RpcV2Response<EnableBchWithTokensResponse> =
         json::from_value(enable_bch_with_tokens).unwrap();
 
