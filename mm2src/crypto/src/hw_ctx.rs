@@ -50,6 +50,10 @@ impl HardwareWalletCtx {
         let trezor = HwClient::trezor(processor).await?;
         // Check if the connected device has the same public key as we used to initialize the app.
         self.check_trezor(&trezor, processor).await?;
+
+        // Reinitialize the field to avoid reconnecting next time.
+        *self.hw_wallet.lock() = Some(HwClient::Trezor(trezor.clone()));
+
         Ok(trezor)
     }
 
