@@ -55,9 +55,10 @@ where
 /// such race condition but `select_ok_sequential` might be still useful to reduce the networking overhead.
 /// There is no reason actually to send same request to all servers concurrently when it's enough to use just 1.
 /// But we do a kind of round-robin if first server fails to respond, etc, and we return error only if all servers attempts failed.
+/// When a server responds successfully we return the response and the number of failed attempts in a tuple.
 pub fn select_ok_sequential<I: IntoIterator>(
     i: I,
-) -> impl Future<Item = <I::Item as IntoFuture>::Item, Error = Vec<<I::Item as IntoFuture>::Error>>
+) -> impl Future<Item = (<I::Item as IntoFuture>::Item, usize), Error = Vec<<I::Item as IntoFuture>::Error>>
 where
     I::Item: IntoFuture,
 {
@@ -79,7 +80,7 @@ where
             };
 
             if let Some(val) = val {
-                Ok(Loop::Break(val))
+                Ok(Loop::Break((val, errors.len())))
             } else {
                 Err(errors)
             }

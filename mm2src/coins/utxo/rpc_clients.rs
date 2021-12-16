@@ -1255,12 +1255,13 @@ async fn electrum_request_multi(
         return ERR!("All electrums are currently disconnected");
     }
     if request.method != "server.ping" {
-        Ok(try_s!(
-            select_ok_sequential(futures)
-                .map_err(|e| ERRL!("{:?}", e))
-                .compat()
-                .await
-        ))
+        match select_ok_sequential(futures).compat().await {
+            Ok((res, no_of_failed_requests)) => {
+                client.clone().rotate_servers(no_of_failed_requests).await;
+                Ok(res)
+            },
+            Err(e) => return ERR!("{:?}", e),
+        }
     } else {
         // server.ping must be sent to all servers to keep all connections alive
         Ok(try_s!(
@@ -1323,16 +1324,10 @@ impl ElectrumClientImpl {
         Ok(())
     }
 
-    /// Moves the Electrum server if it's the first to the end of the connections to be used last with multi requests.
-    pub async fn rotate_servers(&self, server_addr: &str) -> Result<(), String> {
+    /// Moves the Electrum servers that fail in a multi request to the end.
+    pub async fn rotate_servers(&self, no_of_rotations: usize) {
         let mut connections = self.connections.lock().await;
-        let first_conn = connections
-            .first()
-            .ok_or(ERRL!("Unknown electrum address {}", server_addr))?;
-        if first_conn.addr == server_addr {
-            connections.rotate_left(1);
-        }
-        Ok(())
+        connections.rotate_left(no_of_rotations);
     }
 
     /// Check if one of the spawned connections is connected.
