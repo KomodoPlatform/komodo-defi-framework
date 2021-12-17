@@ -1342,7 +1342,7 @@ fn test_round_to() {
     assert_eq!(round_to(&BigDecimal::from(-0), 0), "0");
 }
 
-const fn ten() -> usize { 10 }
+pub const fn ten() -> usize { 10 }
 
 fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
 
@@ -1572,4 +1572,14 @@ fn test_calc_total_pages() {
     assert_eq!(1, calc_total_pages(1, 1));
     assert_eq!(2, calc_total_pages(16, 8));
     assert_eq!(2, calc_total_pages(15, 8));
+}
+
+#[derive(Deserialize, Serialize)]
+pub enum PagingOptionsEnum<Id> {
+    FromId(Id),
+    PageNumber(NonZeroUsize),
+}
+
+impl<Id> Default for PagingOptionsEnum<Id> {
+    fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
 }

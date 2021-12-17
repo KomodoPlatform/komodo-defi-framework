@@ -1,8 +1,9 @@
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::my_tx_history_v2::TxHistoryStorage;
 #[cfg(not(target_arch = "wasm32"))]
 use coins::sql_tx_history_storage::SqliteTxHistoryStorage;
-use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum, TxHistoryStorage};
+use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;

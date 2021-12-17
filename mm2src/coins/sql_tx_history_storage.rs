@@ -1,4 +1,5 @@
-use crate::{RemoveTxResult, TransactionDetails, TransactionType, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
+use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
 use common::async_blocking;
 use common::mm_error::prelude::*;
@@ -184,6 +185,8 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         })
         .await
     }
+
+    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>> { todo!() }
 
     async fn add_transactions_to_history(
         &self,

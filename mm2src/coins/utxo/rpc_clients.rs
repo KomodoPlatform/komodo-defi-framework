@@ -3,6 +3,7 @@
 
 use crate::utxo::{output_script, sat_from_big_decimal};
 use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
@@ -248,6 +249,7 @@ impl From<NumConversError> for UtxoRpcError {
 }
 
 /// Common operations that both types of UTXO clients have but implement them differently
+#[async_trait]
 pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>>;
 
@@ -289,6 +291,8 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         count: NonZeroU64,
         coin_variant: CoinVariant,
     ) -> UtxoRpcFut<u32>;
+
+    async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>>;
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -594,6 +598,8 @@ impl JsonRpcClient for NativeClientImpl {
     }
 }
 
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
+#[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for NativeClient {
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
@@ -751,6 +757,8 @@ impl UtxoRpcClientOps for NativeClient {
         };
         Box::new(fut.boxed().compat())
     }
+
+    async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> { todo!() }
 }
 
 #[cfg_attr(test, mockable)]
@@ -1615,6 +1623,8 @@ impl ElectrumClient {
     }
 }
 
+// if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
+#[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for ElectrumClient {
     fn list_unspent(&self, address: &Address, _decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
@@ -1770,6 +1780,13 @@ impl UtxoRpcClientOps for ElectrumClient {
                     Ok(median(timestamps.as_mut_slice()).unwrap())
                 }),
         )
+    }
+
+    async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> {
+        let header_bytes = self.blockchain_block_header(height).compat().await?;
+        let header: BlockHeader =
+            deserialize(header_bytes.0.as_slice()).map_to_mm(|e| UtxoRpcError::InvalidResponse(format!("{:?}", e)))?;
+        Ok(header.time as u64)
     }
 }
 

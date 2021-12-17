@@ -1,8 +1,9 @@
 use super::RequestTxHistoryResult;
+use crate::my_tx_history_v2::TxHistoryStorage;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
 use crate::utxo::UtxoStandardOps;
-use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps, TxHistoryStorage};
+use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -124,6 +125,7 @@ impl<T> OnIoErrorCooldown<T> {
 
 impl<T> TransitionFrom<FetchingTxHashes<T>> for OnIoErrorCooldown<T> {}
 impl<T> TransitionFrom<FetchingTransactionsData<T>> for OnIoErrorCooldown<T> {}
+impl<T> TransitionFrom<UpdatingUnconfirmedTxes<T>> for OnIoErrorCooldown<T> {}
 
 #[async_trait]
 impl<T: TxHistoryStorage> State for OnIoErrorCooldown<T> {
@@ -283,7 +285,7 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
             }
 
             let block_height_and_time = if height > 0 {
-                let timestamp = match ctx.coin.get_block_timestamp(*height).await {
+                let timestamp = match ctx.coin.get_block_timestamp(height).await {
                     Ok(time) => time,
                     Err(_) => return Self::change_state(OnIoErrorCooldown::new()),
                 };

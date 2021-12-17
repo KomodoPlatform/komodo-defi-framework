@@ -1,12 +1,11 @@
 use super::*;
-use crate::history_tx_details::Builder as TxDetailsBuilder;
+use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, TransactionType, TxFeeDetails, TxHistoryStorage, TxHistoryStorageError,
-            ValidateAddressResult, WithdrawFut};
+            TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -569,6 +568,10 @@ impl BchCoin {
         slp_tx_details_builder.set_transaction_type(TransactionType::TokenTransfer(token_id.take().to_vec().into()));
 
         Ok(slp_tx_details_builder.build())
+    }
+
+    pub async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> {
+        self.as_ref().rpc_client.get_block_timestamp(height).await
     }
 }
 

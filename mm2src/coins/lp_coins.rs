@@ -37,7 +37,7 @@ use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
-use common::{calc_total_pages, now_ms, HttpStatusCode, NotSame};
+use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -107,7 +107,7 @@ pub use test_coin::TestCoin;
 
 #[cfg(target_arch = "wasm32")] pub mod tx_history_db;
 
-mod history_tx_details;
+pub mod my_tx_history_v2;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
@@ -1824,8 +1824,6 @@ pub enum HistorySyncState {
     Finished,
 }
 
-fn ten() -> usize { 10 }
-
 #[derive(Deserialize)]
 struct MyTxHistoryRequest {
     coin: String,
@@ -2272,75 +2270,4 @@ where
         Ok(())
     };
     Box::new(fut.boxed().compat())
-}
-
-#[derive(Debug)]
-pub enum RemoveTxResult {
-    TxRemoved,
-    TxDidNotExist,
-}
-
-impl RemoveTxResult {
-    pub fn tx_existed(&self) -> bool { matches!(self, RemoveTxResult::TxRemoved) }
-}
-
-pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotSame + Send {}
-
-#[async_trait]
-pub trait TxHistoryStorage: Send + Sync + 'static {
-    type Error: TxHistoryStorageError;
-
-    /// Initializes collection/tables in storage for a specified coin
-    async fn init(&self, for_coin: &str) -> Result<(), MmError<Self::Error>>;
-
-    /// Adds multiple transactions to the selected coin's history
-    /// Also consider adding tx_hex to the cache during this operation
-    async fn add_transactions_to_history(
-        &self,
-        for_coin: &str,
-        transactions: impl IntoIterator<Item = TransactionDetails> + Send + 'static,
-    ) -> Result<(), MmError<Self::Error>>;
-
-    /// Removes the transaction by internal_id from the selected coin's history
-    async fn remove_tx_from_history(
-        &self,
-        for_coin: &str,
-        internal_id: &BytesJson,
-    ) -> Result<RemoveTxResult, MmError<Self::Error>>;
-
-    /// Gets the transaction by internal_id from the selected coin's history
-    async fn get_tx_from_history(
-        &self,
-        for_coin: &str,
-        internal_id: &BytesJson,
-    ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>;
-
-    /// Returns whether the history contains unconfirmed transactions
-    async fn history_contains_unconfirmed_txes(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>>;
-
-    /// Gets the unconfirmed transactions from the history
-    async fn get_unconfirmed_txes_from_history(
-        &self,
-        for_coin: &str,
-    ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
-
-    /// Updates transaction in the selected coin's history
-    async fn update_tx_in_history(&self, for_coin: &str, tx: &TransactionDetails) -> Result<(), MmError<Self::Error>>;
-
-    async fn history_has_tx_hash(&self, for_coin: &str, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
-
-    async fn unique_tx_hashes_num_in_history(&self, for_coin: &str) -> Result<usize, MmError<Self::Error>>;
-
-    async fn add_tx_to_cache(
-        &self,
-        for_coin: &str,
-        tx_hash: &BytesJson,
-        tx_hex: &BytesJson,
-    ) -> Result<(), MmError<Self::Error>>;
-
-    async fn tx_bytes_from_cache(
-        &self,
-        for_coin: &str,
-        tx_hash: &BytesJson,
-    ) -> Result<Option<BytesJson>, MmError<Self::Error>>;
 }
