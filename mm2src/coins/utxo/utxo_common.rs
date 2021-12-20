@@ -145,7 +145,6 @@ struct UtxoMergeParams {
 pub async fn get_tx_fee(coin: &UtxoCoinFields) -> Result<ActualTxFee, JsonRpcError> {
     let conf = &coin.conf;
     match &coin.tx_fee {
-        TxFee::Fixed(fee) => Ok(ActualTxFee::Fixed(*fee)),
         TxFee::Dynamic(method) => {
             let fee = coin
                 .rpc_client
@@ -165,7 +164,6 @@ where
 {
     let coin_fee = coin.get_tx_fee().await?;
     let mut fee = match coin_fee {
-        ActualTxFee::Fixed(fee) => fee,
         // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
         ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * SWAP_TX_SPEND_SIZE) / KILO_BYTE,
         // return satoshis here as swap spend transaction size is always less than 1 kb
@@ -399,7 +397,6 @@ where
             witness: Vec::new(),
         });
         tx_fee = match &coin_tx_fee {
-            ActualTxFee::Fixed(f) => *f,
             ActualTxFee::Dynamic(f) => {
                 let transaction = UtxoTx::from(tx.clone());
                 let v_size = tx_size_in_v_bytes(&coin.as_ref().my_address.addr_format, &transaction);
@@ -1434,7 +1431,7 @@ where
     let fee = match req.fee {
         Some(WithdrawFee::UtxoFixed { amount }) => {
             let fixed = sat_from_big_decimal(&amount, decimals)?;
-            Some(ActualTxFee::Fixed(fixed))
+            Some(ActualTxFee::FixedPerKb(fixed))
         },
         Some(WithdrawFee::UtxoPerKbyte { amount }) => {
             let dynamic = sat_from_big_decimal(&amount, decimals)?;
@@ -2130,7 +2127,6 @@ where
     let fut = async move {
         let fee = try_s!(coin.get_tx_fee().await);
         let amount = match fee {
-            ActualTxFee::Fixed(f) => f,
             ActualTxFee::Dynamic(f) => f,
             ActualTxFee::FixedPerKb(f) => f,
         };
@@ -2172,10 +2168,6 @@ where
     let is_amount_upper_bound = matches!(fee_policy, FeePolicy::DeductFromOutput(_));
 
     match tx_fee {
-        ActualTxFee::Fixed(fee_amount) => {
-            let amount = big_decimal_from_sat(fee_amount as i64, decimals);
-            Ok(amount)
-        },
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
         ActualTxFee::Dynamic(fee) => {
             // take into account that the dynamic tx fee may increase during the swap

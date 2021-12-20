@@ -600,11 +600,20 @@ impl TradePreimageError {
             GenerateTxError::OutputValueLessThanDust { value, dust } => {
                 if is_upper_bound {
                     // If the preimage value is [`TradePreimageValue::UpperBound`], then we had to pass the account balance as the output value.
-                    let error = format!(
-                        "Output value {} (equal to the account balance) less than dust {}. Probably, dust is not set or outdated",
-                        value, dust
-                    );
-                    TradePreimageError::InternalError(error)
+                    if value == 0 {
+                        let required = big_decimal_from_sat_unsigned(dust, decimals);
+                        TradePreimageError::NotSufficientBalance {
+                            coin,
+                            available: big_decimal_from_sat_unsigned(value, decimals),
+                            required,
+                        }
+                    } else {
+                        let error = format!(
+                            "Output value {} (equal to the account balance) less than dust {}. Probably, dust is not set or outdated",
+                            value, dust
+                        );
+                        TradePreimageError::InternalError(error)
+                    }
                 } else {
                     let amount = big_decimal_from_sat_unsigned(value, decimals);
                     let threshold = big_decimal_from_sat_unsigned(dust, decimals);

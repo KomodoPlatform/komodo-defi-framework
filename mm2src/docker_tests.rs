@@ -1883,19 +1883,29 @@ mod docker_tests {
     #[test]
     fn test_trade_preimage_not_sufficient_balance() {
         #[track_caller]
-        fn expect_not_sufficient_balance(res: &str, available: BigDecimal, required: BigDecimal) {
+        fn expect_not_sufficient_balance(
+            res: &str,
+            available: BigDecimal,
+            required: BigDecimal,
+            locked_by_swaps: Option<BigDecimal>,
+        ) {
             let actual: RpcErrorResponse<trade_preimage_error::NotSufficientBalance> = json::from_str(res).unwrap();
             assert_eq!(actual.error_type, "NotSufficientBalance");
             let expected = trade_preimage_error::NotSufficientBalance {
                 coin: "MYCOIN".to_owned(),
                 available,
                 required,
-                locked_by_swaps: Some(BigDecimal::from(0)),
+                locked_by_swaps,
             };
             assert_eq!(actual.error_data, Some(expected));
         }
 
         let priv_key = SecretKey::new(&mut rand6::thread_rng());
+        let fill_balance_functor = |amount: BigDecimal| {
+            let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
+            let my_address = mycoin.my_address().expect("!my_address");
+            fill_address(&mycoin, &my_address, amount, 30);
+        };
 
         let coins = json!([
             {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -1920,6 +1930,7 @@ mod docker_tests {
         log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
         log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
 
+        fill_balance_functor(MmNumber::from("0.000015").to_decimal());
         // Try sell the max amount with the zero balance.
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1935,10 +1946,10 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
-        let available = BigDecimal::from(0);
+        let available = MmNumber::from("0.000015").to_decimal();
         // Required at least 0.00002 MYCOIN to pay the transaction_fee(0.00001) and to send a value not less than dust(0.00001).
         let required = MmNumber::from("0.00002").to_decimal();
-        expect_not_sufficient_balance(&rc.1, available, required);
+        expect_not_sufficient_balance(&rc.1, available, required, None);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -1955,40 +1966,9 @@ mod docker_tests {
         .unwrap();
         assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
         // Required 0.00001 MYCOIN to pay the transaction fee and the specified 0.1 volume.
-        let available = BigDecimal::from(0);
+        let available = MmNumber::from("0.000015").to_decimal();
         let required = MmNumber::from("0.10001").to_decimal();
-        expect_not_sufficient_balance(&rc.1, available, required);
-
-        let rc = block_on(mm.rpc(json!({
-            "userpass": mm.userpass,
-            "mmrpc": "2.0",
-            "method": "trade_preimage",
-            "params": {
-                "base": "MYCOIN",
-                "rel": "MYCOIN1",
-                "swap_method": "sell",
-                "price": 1,
-                "volume": 0.01,
-            },
-        })))
-        .unwrap();
-        assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
-        let available = BigDecimal::from(0);
-        // `required = volume + fee_to_send_taker_payment + dex_fee + fee_to_send_dex_fee`,
-        // where `volume = 0.01`, `fee_to_send_taker_payment = fee_to_send_dex_fee = 0.00001`, `dex_fee = 0.0001`.
-        // Please note `dex_fee = 0.01 / 7770` < `min_dex_fee = 0.0001`, so `dex_fee = min_dex_fee = 0.0001`
-        let required = MmNumber::from("0.01") + MmNumber::from("0.00012");
-        expect_not_sufficient_balance(&rc.1, available, required.to_decimal());
-
-        // The max available value = balance (0.000015) - transaction_fee (0.00001) = 0.000005 that is less than dust (0.00001).
-        // In this case we have to receive the `NotSufficientBalance` error.
-        //
-        // vvv Fill the MYCOIN balance vvv
-
-        let low_balance = MmNumber::from("0.000015").to_decimal();
-        let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
-        let my_address = mycoin.my_address().expect("!my_address");
-        fill_address(&mycoin, &my_address, low_balance.clone(), 30);
+        expect_not_sufficient_balance(&rc.1, available, required, None);
 
         let rc = block_on(mm.rpc(json!({
             "userpass": mm.userpass,
@@ -2005,10 +1985,33 @@ mod docker_tests {
         .unwrap();
         assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
         // balance(0.000015)
-        let available = low_balance;
+        let available = MmNumber::from("0.000015").to_decimal();
         // balance(0.000015) + transaction_fee(0.00001)
         let required = MmNumber::from("0.00002").to_decimal();
-        expect_not_sufficient_balance(&rc.1, available, required);
+        expect_not_sufficient_balance(&rc.1, available, required, None);
+
+        fill_balance_functor(MmNumber::from("7.770085").to_decimal());
+        let rc = block_on(mm.rpc(json!({
+            "userpass": mm.userpass,
+            "mmrpc": "2.0",
+            "method": "trade_preimage",
+            "params": {
+                "base": "MYCOIN",
+                "rel": "MYCOIN1",
+                "swap_method": "sell",
+                "price": 1,
+                "volume": 7.77,
+            },
+        })))
+        .unwrap();
+        assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
+        let available = MmNumber::from("7.7701").to_decimal();
+        // `required = volume + fee_to_send_taker_payment + dex_fee + fee_to_send_dex_fee`,
+        // where `volume = 7.77`, `fee_to_send_taker_payment = fee_to_send_dex_fee = 0.00001`, `dex_fee = 0.01`.
+        // Please note `dex_fee = 7.77 / 777` with dex_fee = 0.01
+        // required = 7.77 + 0.01 (dex_fee) + (0.0001 * 2) = 7.78002
+        let required = MmNumber::from("7.78002");
+        expect_not_sufficient_balance(&rc.1, available, required.to_decimal(), Some(BigDecimal::from(0)));
     }
 
     /// This test ensures that `trade_preimage` will not succeed on input that will fail on `buy/sell/setprice`.
