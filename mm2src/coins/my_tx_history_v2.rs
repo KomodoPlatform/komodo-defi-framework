@@ -7,6 +7,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::BigDecimal;
 use common::{ten, NotSame, PagingOptionsEnum};
+use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
 use rpc::v1::types::Bytes as BytesJson;
 use std::collections::HashSet;
@@ -86,7 +87,7 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn get_history(
         &self,
         coin_type: HistoryCoinType,
-        paging: PagingOptionsEnum<BytesJson>,
+        paging: &PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
 }
@@ -216,7 +217,7 @@ pub struct MyTxHistoryRequestV2 {
 }
 
 #[derive(Serialize)]
-pub struct MyHistoryTxDetails {
+pub struct MyTxHistoryDetails {
     #[serde(flatten)]
     details: TransactionDetails,
     confirmations: u64,
@@ -226,7 +227,7 @@ pub struct MyHistoryTxDetails {
 pub struct MyTxHistoryResponseV2 {
     coin: String,
     current_block: u64,
-    transactions: Vec<MyHistoryTxDetails>,
+    transactions: Vec<MyTxHistoryDetails>,
     sync_status: HistorySyncState,
     limit: usize,
     skipped: usize,
@@ -239,6 +240,7 @@ pub enum MyTxHistoryErrorV2 {
     CoinIsNotActive(String),
     StorageIsNotInitialized(String),
     StorageError(String),
+    RpcError(String),
 }
 
 impl From<CoinFindError> for MyTxHistoryErrorV2 {
@@ -298,21 +300,37 @@ pub async fn my_tx_history_v2_rpc(
         let msg = format!("Storage is not initialized for {}", coin.ticker());
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
+    let current_block = coin
+        .current_block()
+        .compat()
+        .await
+        .map_to_mm(MyTxHistoryErrorV2::RpcError)?;
+
     let transactions = tx_history_storage
-        .get_history(coin.get_history_coin_type(), request.paging_options, request.limit)
+        .get_history(coin.get_history_coin_type(), &request.paging_options, request.limit)
         .await?;
-    unimplemented!()
-    /*
-    MyTxHistoryResponseV2 {
+
+    let transactions = transactions
+        .into_iter()
+        .map(|details| {
+            let confirmations = if details.block_height == 0 || details.block_height > current_block {
+                0
+            } else {
+                current_block + 1 - details.block_height
+            };
+            MyTxHistoryDetails { confirmations, details }
+        })
+        .collect();
+
+    Ok(MyTxHistoryResponseV2 {
         coin: request.coin,
-        current_block: 0,
-        transactions: vec![],
+        current_block,
+        transactions,
         sync_status: coin.history_sync_status(),
         limit: request.limit,
         skipped: 0,
         total: 0,
         total_pages: 0,
         paging_options: request.paging_options,
-    }
-     */
+    })
 }

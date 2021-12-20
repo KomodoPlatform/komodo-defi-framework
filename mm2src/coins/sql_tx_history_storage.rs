@@ -3,11 +3,13 @@ use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
 use common::mm_error::prelude::*;
 use common::rusqlite::types::Type;
-use common::rusqlite::{Connection, Error as SqlError, NO_PARAMS};
+use common::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
 use common::{async_blocking, PagingOptionsEnum};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
 use std::sync::{Arc, Mutex};
+
+const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
 
 fn tx_history_table(ticker: &str) -> String { ticker.to_owned() + "_tx_history" }
 
@@ -169,6 +171,21 @@ impl SqliteTxHistoryStorage {
 
 impl TxHistoryStorageError for SqlError {}
 
+fn query_single_row<T>(
+    conn: &mut Connection,
+    query: &str,
+    params: &[dyn ToSql],
+    map_fn: FnOnce(&Row<'_>) -> Result<T, SqlError>,
+) -> Result<Option<T>, MmError<SqlError>> {
+    let maybe_result = conn.query_row(query, params, map_fn);
+    if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
+        return Ok(None);
+    }
+
+    let result = maybe_result?;
+    Ok(Some(result))
+}
+
 #[async_trait]
 impl TxHistoryStorage for SqliteTxHistoryStorage {
     type Error = SqlError;
@@ -186,7 +203,19 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>> { todo!() }
+    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>> {
+        let tx_history_table = tx_history_table(for_coin);
+        validate_table_name(&tx_history_table)?;
+
+        let tx_cache_table = tx_cache_table(for_coin);
+        validate_table_name(&tx_cache_table)?;
+
+        let selfi = self.clone();
+        async_blocking(move || {
+            let mut conn = selfi.0.lock().unwrap();
+        })
+        .await
+    }
 
     async fn add_transactions_to_history(
         &self,
@@ -400,7 +429,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
     async fn get_history(
         &self,
         coin_type: HistoryCoinType,
-        paging: PagingOptionsEnum<BytesJson>,
+        paging: &PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
         todo!()
@@ -416,9 +445,15 @@ mod sql_tx_history_storage_tests {
     fn test_init_collection() {
         let for_coin = "init_collection";
         let storage = SqliteTxHistoryStorage::in_memory();
+        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        assert!(!initialized);
+
         block_on(storage.init(for_coin)).unwrap();
         // repetitive init must not fail
         block_on(storage.init(for_coin)).unwrap();
+
+        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        assert!(initialized);
     }
 
     #[test]
