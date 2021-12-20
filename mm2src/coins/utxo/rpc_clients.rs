@@ -758,7 +758,10 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(fut.boxed().compat())
     }
 
-    async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> { todo!() }
+    async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> {
+        let block = self.get_block_by_height(height).await?;
+        Ok(block.time as u64)
+    }
 }
 
 #[cfg_attr(test, mockable)]

@@ -1,6 +1,6 @@
 use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
-use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, Transaction, TransactionDetails,
-            TransactionType, TxFeeDetails};
+use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MarketCoinOps, MmCoinEnum,
+            Transaction, TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::mm_ctx::MmArc;
@@ -82,6 +82,13 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
         for_coin: &str,
         tx_hash: &BytesJson,
     ) -> Result<Option<BytesJson>, MmError<Self::Error>>;
+
+    async fn get_history(
+        &self,
+        coin_type: HistoryCoinType,
+        paging: PagingOptionsEnum<BytesJson>,
+        limit: usize,
+    ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
 }
 
 pub trait DisplayAddress {
@@ -249,6 +256,30 @@ impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
     }
 }
 
+pub enum HistoryCoinType {
+    Coin(String),
+    Token { platform: String, token_id: BytesJson },
+    // TODO extend with the L2 required info
+    L2 { platform: String },
+}
+
+trait GetHistoryCoinType {
+    fn get_history_coin_type(&self) -> HistoryCoinType;
+}
+
+impl GetHistoryCoinType for MmCoinEnum {
+    fn get_history_coin_type(&self) -> HistoryCoinType {
+        match self {
+            MmCoinEnum::Bch(bch) => HistoryCoinType::Coin(bch.ticker().to_owned()),
+            MmCoinEnum::SlpToken(token) => HistoryCoinType::Token {
+                platform: token.platform_ticker().to_owned(),
+                token_id: token.token_id().take().to_vec().into(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
@@ -267,5 +298,21 @@ pub async fn my_tx_history_v2_rpc(
         let msg = format!("Storage is not initialized for {}", coin.ticker());
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
+    let transactions = tx_history_storage
+        .get_history(coin.get_history_coin_type(), request.paging_options, request.limit)
+        .await?;
     unimplemented!()
+    /*
+    MyTxHistoryResponseV2 {
+        coin: request.coin,
+        current_block: 0,
+        transactions: vec![],
+        sync_status: coin.history_sync_status(),
+        limit: request.limit,
+        skipped: 0,
+        total: 0,
+        total_pages: 0,
+        paging_options: request.paging_options,
+    }
+     */
 }

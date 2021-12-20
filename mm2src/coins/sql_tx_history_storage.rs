@@ -1,10 +1,10 @@
-use crate::my_tx_history_v2::{RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{HistoryCoinType, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
 use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
-use common::async_blocking;
 use common::mm_error::prelude::*;
 use common::rusqlite::types::Type;
 use common::rusqlite::{Connection, Error as SqlError, NO_PARAMS};
+use common::{async_blocking, PagingOptionsEnum};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
 use std::sync::{Arc, Mutex};
@@ -395,6 +395,15 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             Ok(Some(tx_bytes.into()))
         })
         .await
+    }
+
+    async fn get_history(
+        &self,
+        coin_type: HistoryCoinType,
+        paging: PagingOptionsEnum<BytesJson>,
+        limit: usize,
+    ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
+        todo!()
     }
 }
 

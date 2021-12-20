@@ -3,6 +3,7 @@ use crate::executor::Timer;
 use crate::log::{self, LogState};
 use crate::mm_metrics::{MetricsArc, MetricsOps};
 use crate::{bits256, small_rng};
+use futures::future::AbortHandle;
 use gstuff::Constructible;
 use keys::KeyPair;
 use primitives::hash::H160;
@@ -106,6 +107,7 @@ pub struct MmCtx {
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub abort_handlers: Mutex<Vec<AbortHandle>>,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -142,6 +144,7 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
+            abort_handlers: Mutex::new(Vec::new()),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -363,6 +366,9 @@ impl MmArc {
 
     pub fn stop(&self) -> Result<(), String> {
         try_s!(self.stop.pin(true));
+        for handler in self.abort_handlers.lock().unwrap().drain(..) {
+            handler.abort();
+        }
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
         // because otherwise there might be reference counting instances remaining in a listener

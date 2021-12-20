@@ -11,6 +11,7 @@ coins = { path = "../coins" }
 common = { path = "../common" }
 crypto = { path = "../crypto" }
 derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 hex = "0.4.2"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }

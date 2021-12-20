@@ -10,11 +10,13 @@ use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::utxo::UtxoCommonOps;
 use coins::{CoinBalance, CoinProtocol, DerivationMethodNotSupported, MarketCoinOps, MmCoin, PrivKeyNotAllowed};
 use common::executor::spawn;
+use common::log::info;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
 use common::Future01CompatExt;
+use futures::future::{abortable, AbortHandle};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -267,12 +269,20 @@ impl PlatformWithTokensActivationOps for BchCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage + Send + 'static,
         initial_balance: BigDecimal,
-    ) {
-        spawn(bch_and_slp_history_loop(
+    ) -> AbortHandle {
+        let ticker = self.ticker().to_owned();
+        let (fut, abort_handle) = abortable(bch_and_slp_history_loop(
             self.clone(),
             storage,
             metrics,
             initial_balance,
-        ))
+        ));
+        spawn(async move {
+            if let Err(e) = fut.await {
+                info!("bch_and_slp_history_loop stopped for {}, reason {}", ticker, e);
+            }
+            ()
+        });
+        abort_handle
     }
 }

@@ -10,6 +10,7 @@ use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
 use common::{HttpStatusCode, NotSame, StatusCode};
 use derive_more::Display;
+use futures::future::AbortHandle;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -162,7 +163,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage + Send + 'static,
         initial_balance: BigDecimal,
-    );
+    ) -> AbortHandle;
 }
 
 #[derive(Debug, Deserialize)]
@@ -302,13 +303,15 @@ where
     }
 
     let activation_result = platform_coin.get_activation_result().await?;
+
+    #[cfg(not(target_arch = "wasm32"))]
     if req.request.tx_history_enabled() {
-        #[cfg(not(target_arch = "wasm32"))]
-        platform_coin.start_history_background_fetching(
+        let abort_handler = platform_coin.start_history_background_fetching(
             ctx.metrics.clone(),
             SqliteTxHistoryStorage(ctx.sqlite_connection.as_option().unwrap().clone()),
             activation_result.get_platform_balance(),
         );
+        ctx.abort_handlers.lock().unwrap().push(abort_handler);
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

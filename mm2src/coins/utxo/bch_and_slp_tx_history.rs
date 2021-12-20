@@ -1,3 +1,5 @@
+/// This module is named bch_and_slp_tx_history temporary. We will most likely use the same approach for every
+/// supported UTXO coin.
 use super::RequestTxHistoryResult;
 use crate::my_tx_history_v2::TxHistoryStorage;
 use crate::utxo::bch::BchCoin;
