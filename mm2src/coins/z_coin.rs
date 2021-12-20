@@ -2,13 +2,13 @@ use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcResult};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, UtxoArcBuilder};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams,
-                  UtxoAddressFormat, UtxoArc, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails,
-                  UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            ValidateAddressResult, WithdrawFut, WithdrawRequest};
+                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, PrivKeyBuildPolicy, RecentlySpentOutPoints,
+                  UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps,
+                  UtxoFeeDetails, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
+use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
+            TxFeeDetails, ValidateAddressResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -579,8 +579,8 @@ async fn z_coin_from_conf_and_params_with_z_key(
     mut db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, params, secp_priv_key);
-    let utxo_arc = builder.build().await.map_to_mm(ZCoinBuildError::UtxoBuilderError)?;
+    let builder = UtxoArcBuilder::new(ctx, ticker, conf, params, PrivKeyBuildPolicy::PrivKey(secp_priv_key));
+    let utxo_arc = builder.build().await?;
     let db_name = format!("{}_CACHE.db", ticker);
 
     db_dir_path.push(&db_name);
@@ -695,11 +695,11 @@ impl MarketCoinOps for ZCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn display_priv_key(&self) -> String {
-        encode_extended_spending_key(
+    fn display_priv_key(&self) -> Result<String, String> {
+        Ok(encode_extended_spending_key(
             z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             &self.z_fields.z_spending_key,
-        )
+        ))
     }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
@@ -764,11 +764,12 @@ impl SwapOps for ZCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_fus!(ZTransaction::read(taker_payment_tx));
+        let key_pair = try_fus!(self.utxo_arc.priv_key_policy.key_pair_or_err());
         let redeem_script = payment_script(
             time_lock,
             &*dhash160(secret),
             &try_fus!(Public::from_slice(taker_pub)),
-            self.utxo_arc.key_pair.public(),
+            key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
             .push_data(secret)
@@ -792,11 +793,12 @@ impl SwapOps for ZCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_fus!(ZTransaction::read(maker_payment_tx));
+        let key_pair = try_fus!(self.utxo_arc.priv_key_policy.key_pair_or_err());
         let redeem_script = payment_script(
             time_lock,
             &*dhash160(secret),
             &try_fus!(Public::from_slice(maker_pub)),
-            self.utxo_arc.key_pair.public(),
+            key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
             .push_data(secret)
@@ -820,10 +822,11 @@ impl SwapOps for ZCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_fus!(ZTransaction::read(taker_payment_tx));
+        let key_pair = try_fus!(self.utxo_arc.priv_key_policy.key_pair_or_err());
         let redeem_script = payment_script(
             time_lock,
             secret_hash,
-            self.utxo_arc.key_pair.public(),
+            key_pair.public(),
             &try_fus!(Public::from_slice(maker_pub)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
@@ -845,10 +848,11 @@ impl SwapOps for ZCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_fus!(ZTransaction::read(maker_payment_tx));
+        let key_pair = try_fus!(self.utxo_arc.priv_key_policy.key_pair_or_err());
         let redeem_script = payment_script(
             time_lock,
             secret_hash,
-            self.utxo_arc.key_pair.public(),
+            key_pair.public(),
             &try_fus!(Public::from_slice(taker_pub)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
@@ -1164,10 +1168,10 @@ impl MmCoin for ZCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
-        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+        utxo_common::is_coin_protocol_supported(self, info)
     }
 }
 
@@ -1204,10 +1208,12 @@ impl UtxoCommonOps for ZCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
+    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+        utxo_common::my_public_key(self.as_ref())
+    }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::checked_address_from_str(self.as_ref(), address)
+        utxo_common::checked_address_from_str(self, address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -1299,8 +1305,22 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::p2sh_tx_locktime(self, self.ticker(), htlc_locktime).await
     }
 
+    fn addr_format(&self) -> &UtxoAddressFormat { utxo_common::addr_format(self) }
+
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
         utxo_common::addr_format_for_standard_scripts(self)
+    }
+
+    fn address_from_pubkey(&self, pubkey: &Public) -> Address {
+        let conf = &self.utxo_arc.conf;
+        utxo_common::address_from_pubkey(
+            pubkey,
+            conf.pub_addr_prefix,
+            conf.pub_t_addr_prefix,
+            conf.checksum_type,
+            conf.bech32_hrp.clone(),
+            self.addr_format().clone(),
+        )
     }
 }
 

@@ -1,0 +1,14 @@
+[package]
+name = "rpc_task"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+common = { path = "../common" }
+derive_more = "0.99"
+futures = "0.3"
+serde = "1"
+serde_derive = "1"

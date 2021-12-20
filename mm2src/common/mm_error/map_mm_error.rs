@@ -1,5 +1,4 @@
-use super::{MmError, NotMmError, TraceLocation};
-use std::panic::Location;
+use super::{MmError, NotMmError};
 
 pub trait MapMmError<T, E1, E2: NotMmError> {
     fn mm_err<F>(self, f: F) -> Result<T, MmError<E2>>
@@ -34,12 +33,7 @@ where
         // do not use [`Result::map_err`], because we should keep the `track_caller` chain
         match self {
             Ok(x) => Ok(x),
-            Err(e1) => {
-                let e2 = f(e1.etype);
-                let mut trace = e1.trace;
-                trace.push(TraceLocation::from(Location::caller()));
-                Err(MmError { etype: e2, trace })
-            },
+            Err(e1) => Err(e1.map(f)),
         }
     }
 }

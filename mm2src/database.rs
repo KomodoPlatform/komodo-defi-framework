@@ -10,43 +10,47 @@ pub mod database_common;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::{log::{debug, error, info},
              mm_ctx::MmArc,
-             rusqlite::{Connection, Result as SqlResult, NO_PARAMS}};
+             rusqlite::{Result as SqlResult, NO_PARAMS}};
 
 use my_swaps::fill_my_swaps_from_json_statements;
 use stats_swaps::create_and_fill_stats_swaps_from_json_statements;
 
 const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
 
-fn get_current_migration(conn: &Connection) -> SqlResult<i64> {
+fn get_current_migration(ctx: &MmArc) -> SqlResult<i64> {
+    let conn = ctx.sqlite_connection();
     conn.query_row(SELECT_MIGRATION, NO_PARAMS, |row| row.get(0))
 }
 
-pub async fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()> {
+pub async fn init_and_migrate_db(ctx: &MmArc) -> SqlResult<()> {
     info!("Checking the current SQLite migration");
-    match get_current_migration(conn) {
+    match get_current_migration(ctx) {
         Ok(current_migration) => {
             if current_migration >= 1 {
                 info!(
                     "Current migration is {}, skipping the init, trying to migrate",
                     current_migration
                 );
-                migrate_sqlite_database(ctx, conn, current_migration).await?;
+                migrate_sqlite_database(ctx, current_migration).await?;
                 return Ok(());
             }
         },
         Err(e) => {
-            debug!("Error {} on getting current migration. The database is either empty or corrupted, trying to clean it first", e);
-            if let Err(e) = conn.execute_batch(
-                "DROP TABLE migration;
-                    DROP TABLE my_swaps;",
-            ) {
-                error!("Error {} on SQLite database cleanup", e);
-            }
+            debug!("Error '{}' on getting current migration. The database is either empty or corrupted, trying to clean it first", e);
+            clean_db(ctx);
         },
     };
 
     info!("Trying to initialize the SQLite database");
 
+    init_db(ctx)?;
+    migrate_sqlite_database(ctx, 1).await?;
+    info!("SQLite database initialization is successful");
+    Ok(())
+}
+
+fn init_db(ctx: &MmArc) -> SqlResult<()> {
+    let conn = ctx.sqlite_connection();
     let init_batch = concat!(
         "BEGIN;
         CREATE TABLE IF NOT EXISTS migration (current_migration INTEGER NOT_NULL UNIQUE);
@@ -54,10 +58,17 @@ pub async fn init_and_migrate_db(ctx: &MmArc, conn: &Connection) -> SqlResult<()
         CREATE_MY_SWAPS_TABLE!(),
         "COMMIT;"
     );
-    conn.execute_batch(init_batch)?;
-    migrate_sqlite_database(ctx, conn, 1).await?;
-    info!("SQLite database initialization is successful");
-    Ok(())
+    conn.execute_batch(init_batch)
+}
+
+fn clean_db(ctx: &MmArc) {
+    let conn = ctx.sqlite_connection();
+    if let Err(e) = conn.execute_batch(
+        "DROP TABLE migration;
+                    DROP TABLE my_swaps;",
+    ) {
+        error!("Error {} on SQLite database cleanup", e);
+    }
 }
 
 async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx).await }
@@ -91,10 +102,13 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
     }
 }
 
-pub async fn migrate_sqlite_database(ctx: &MmArc, conn: &Connection, mut current_migration: i64) -> SqlResult<()> {
+pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64) -> SqlResult<()> {
     info!("migrate_sqlite_database, current migration {}", current_migration);
-    let transaction = conn.unchecked_transaction()?;
     while let Some(statements_with_params) = statements_for_migration(ctx, current_migration).await {
+        // `statements_for_migration` locks the [`MmCtx::sqlite_connection`] mutex,
+        // so we can't create a transaction outside of this loop.
+        let conn = ctx.sqlite_connection();
+        let transaction = conn.unchecked_transaction()?;
         for (statement, params) in statements_with_params {
             debug!("Executing SQL statement {:?} with params {:?}", statement, params);
             transaction.execute(statement, params)?;
@@ -103,8 +117,8 @@ pub async fn migrate_sqlite_database(ctx: &MmArc, conn: &Connection, mut current
         transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", &[
             current_migration,
         ])?;
+        transaction.commit()?;
     }
-    transaction.commit()?;
     info!("migrate_sqlite_database complete, migrated to {}", current_migration);
     Ok(())
 }

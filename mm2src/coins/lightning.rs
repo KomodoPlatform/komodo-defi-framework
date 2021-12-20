@@ -308,7 +308,7 @@ impl MarketCoinOps for LightningCoin {
         self.platform_coin().current_block()
     }
 
-    fn display_priv_key(&self) -> String { unimplemented!() }
+    fn display_priv_key(&self) -> Result<String, String> { unimplemented!() }
 
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
@@ -441,9 +441,8 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;
-    let (unspents, _) = platform_coin
-        .ordered_mature_unspents(&platform_coin.as_ref().my_address)
-        .await?;
+    let my_address = platform_coin.as_ref().derivation_method.iguana_or_err()?;
+    let (unspents, _) = platform_coin.ordered_mature_unspents(my_address).await?;
     let (value, fee_policy) = match req.amount {
         ChannelOpenAmount::Max => (
             unspents.iter().fold(0, |sum, unspent| sum + unspent.value),

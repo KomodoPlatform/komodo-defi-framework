@@ -90,6 +90,7 @@ use http::StatusCode;
 use itertools::Itertools;
 use ser_error::SerializeErrorType;
 use serde::{Serialize, Serializer};
+use std::cell::UnsafeCell;
 use std::fmt;
 use std::panic::Location;
 
@@ -97,15 +98,19 @@ pub mod prelude {
     pub use crate::mm_error::map_mm_error::MapMmError;
     pub use crate::mm_error::map_to_mm::MapToMmResult;
     pub use crate::mm_error::map_to_mm_fut::MapToMmFutureExt;
+    pub use crate::mm_error::mm_json_error::MmJsonError;
     pub use crate::mm_error::or_mm_error::OrMmError;
-    pub use crate::mm_error::{MmError, NotMmError, SerMmErrorType};
+    pub use crate::mm_error::{MmError, MmResult, NotMmError, SerMmErrorType};
     pub use ser_error::SerializeErrorType;
 }
 
 mod map_mm_error;
 mod map_to_mm;
 mod map_to_mm_fut;
+mod mm_json_error;
 mod or_mm_error;
+
+pub type MmResult<T, E> = Result<T, MmError<E>>;
 
 pub auto trait NotMmError {}
 
@@ -115,12 +120,14 @@ impl<E> !NotMmError for MmError<E> {}
 /// e.g for Box<dyn Trait>.
 impl<T: ?Sized> NotMmError for Box<T> {}
 
+impl<T: ?Sized> NotMmError for UnsafeCell<T> {}
+
 pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
 /// The unified error representation tracing an error path.
-#[derive(Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[display(fmt = "{} {}", "trace.formatted()", etype)]
 pub struct MmError<E: NotMmError> {
     etype: E,
@@ -135,14 +142,7 @@ where
     (E1, E2): NotSame,
 {
     #[track_caller]
-    fn from(orig: MmError<E1>) -> Self {
-        let mut trace = orig.trace;
-        trace.push(TraceLocation::from(Location::caller()));
-        MmError {
-            etype: E2::from(orig.etype),
-            trace,
-        }
-    }
+    fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
 }
 
 /// Track the location whenever `MmError<E2>::from(E1)` is called.
@@ -190,6 +190,14 @@ where
     fn status_code(&self) -> StatusCode { self.etype.status_code() }
 }
 
+pub struct MmErrorTrace {
+    trace: Vec<TraceLocation>,
+}
+
+impl MmErrorTrace {
+    pub fn new(trace: Vec<TraceLocation>) -> MmErrorTrace { MmErrorTrace { trace } }
+}
+
 impl<E: NotMmError> MmError<E> {
     #[track_caller]
     pub fn new(etype: E) -> MmError<E> {
@@ -201,7 +209,36 @@ impl<E: NotMmError> MmError<E> {
     }
 
     #[track_caller]
+    pub fn new_with_trace(etype: E, mut trace: MmErrorTrace) -> MmError<E> {
+        trace.trace.push(TraceLocation::from(Location::caller()));
+        MmError {
+            etype,
+            trace: trace.trace,
+        }
+    }
+
+    pub fn split(self) -> (E, MmErrorTrace) { (self.etype, MmErrorTrace::new(self.trace)) }
+
+    #[track_caller]
+    pub fn map<MapE, F>(mut self, f: F) -> MmError<MapE>
+    where
+        MapE: NotMmError,
+        F: FnOnce(E) -> MapE,
+    {
+        self.trace.push(TraceLocation::from(Location::caller()));
+        MmError {
+            etype: f(self.etype),
+            trace: self.trace,
+        }
+    }
+
+    #[track_caller]
     pub fn err<T>(etype: E) -> Result<T, MmError<E>> { Err(MmError::new(etype)) }
+
+    #[track_caller]
+    pub fn err_with_trace<T>(etype: E, trace: MmErrorTrace) -> Result<T, MmError<E>> {
+        Err(MmError::new_with_trace(etype, trace))
+    }
 
     pub fn get_inner(&self) -> &E { &self.etype }
 
@@ -239,7 +276,7 @@ pub trait FormattedTrace {
 /// ```txt
 /// location_file:379]
 /// ```
-#[derive(Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[display(fmt = "{}:{}]", file, line)]
 pub struct TraceLocation {
     file: &'static str,

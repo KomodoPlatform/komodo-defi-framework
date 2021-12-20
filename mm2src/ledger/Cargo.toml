@@ -1,0 +1,23 @@
+[package]
+name = "ledger"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+byteorder = "1.3.2"
+common = { path = "../common" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+hw_common = { path = "../hw_common" }
+serde = "1.0"
+serde_derive = "1.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3.27" }
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
+wasm-bindgen-futures = { version = "0.4.1" }
+wasm-bindgen-test = { version = "0.3.1" }
+web-sys = { version = "0.3.55" }

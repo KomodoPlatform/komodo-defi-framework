@@ -1,0 +1,177 @@
+use crate::client::TrezorSession;
+use crate::proto::messages_common as proto_common;
+use crate::result_handler::ResultHandler;
+use crate::user_interaction::TrezorUserInteraction;
+use crate::{TrezorError, TrezorResult};
+use async_trait::async_trait;
+use common::mm_error::prelude::*;
+use std::fmt;
+
+pub use crate::proto::messages_common::button_request::ButtonRequestType;
+pub use crate::proto::messages_common::pin_matrix_request::PinMatrixRequestType;
+use crate::response_processor::{ProcessTrezorResponse, TrezorProcessingError, TrezorRequestProcessor};
+
+/// The different types of user interactions the Trezor device can request.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum InteractionType {
+    Button,
+    PinMatrix,
+    Passphrase,
+    PassphraseState,
+}
+
+/// A response from a Trezor device.
+///
+/// On every message exchange, instead of the expected/desired response,
+/// the Trezor can ask for some user interaction, or can send a failure.
+#[derive(Debug)]
+pub enum TrezorResponse<'a, 'b, T> {
+    Ready(T),
+    ButtonRequest(ButtonRequest<'a, 'b, T>),
+    PinMatrixRequest(PinMatrixRequest<'a, 'b, T>),
+}
+
+impl<'a, 'b, T: 'static> TrezorResponse<'a, 'b, T> {
+    /// Get the actual `Ok` response value or an error if not `Ok`.
+    pub fn ok(self) -> TrezorResult<T> {
+        match self {
+            TrezorResponse::Ready(m) => Ok(m),
+            TrezorResponse::ButtonRequest(_) => MmError::err(TrezorError::UnexpectedInteractionRequest(
+                TrezorUserInteraction::ButtonRequest,
+            )),
+            TrezorResponse::PinMatrixRequest(_) => MmError::err(TrezorError::UnexpectedInteractionRequest(
+                TrezorUserInteraction::PinMatrix3x3,
+            )),
+        }
+    }
+
+    /// Agrees to wait for all `HW button press` requests and returns final `Result`.
+    ///
+    /// # Error
+    ///
+    /// Will error if it receives requests, which require input like: `PinMatrixRequest`.
+    pub async fn ack_all(self) -> TrezorResult<T> {
+        let mut resp = self;
+        loop {
+            resp = match resp {
+                Self::Ready(val) => {
+                    return Ok(val);
+                },
+                Self::ButtonRequest(req) => req.ack().await?,
+                Self::PinMatrixRequest(_) => {
+                    return MmError::err(TrezorError::UnexpectedInteractionRequest(
+                        TrezorUserInteraction::PinMatrix3x3,
+                    ));
+                },
+            };
+        }
+    }
+
+    pub(crate) fn new_button_request(
+        session: &'b mut TrezorSession<'a>,
+        message: proto_common::ButtonRequest,
+        result_handler: ResultHandler<T>,
+    ) -> Self {
+        TrezorResponse::ButtonRequest(ButtonRequest {
+            session,
+            message,
+            result_handler,
+        })
+    }
+
+    pub(crate) fn new_pin_matrix_request(
+        session: &'b mut TrezorSession<'a>,
+        message: proto_common::PinMatrixRequest,
+        result_handler: ResultHandler<T>,
+    ) -> Self {
+        TrezorResponse::PinMatrixRequest(PinMatrixRequest {
+            session,
+            message,
+            result_handler,
+        })
+    }
+}
+
+#[async_trait]
+impl<'a, 'b, T> ProcessTrezorResponse<T> for TrezorResponse<'a, 'b, T>
+where
+    T: Send + Sync + 'static,
+{
+    async fn process<Processor>(self, processor: &Processor) -> MmResult<T, TrezorProcessingError<Processor::Error>>
+    where
+        Processor: TrezorRequestProcessor + Sync,
+    {
+        let fut = async move {
+            let mut response = self;
+            loop {
+                response = match response {
+                    TrezorResponse::Ready(result) => return Ok(result),
+                    TrezorResponse::ButtonRequest(button_req) => {
+                        processor.on_button_request().await?;
+                        button_req.ack().await?
+                    },
+                    TrezorResponse::PinMatrixRequest(pin_req) => {
+                        let pin_response = processor.on_pin_request().await?;
+                        pin_req.ack_pin(pin_response.pin).await?
+                    },
+                };
+            }
+        };
+        let res = fut.await;
+        processor.on_ready().await?;
+        res
+    }
+}
+
+/// A button request message sent by the device.
+pub struct ButtonRequest<'a, 'b, T> {
+    session: &'b mut TrezorSession<'a>,
+    message: proto_common::ButtonRequest,
+    result_handler: ResultHandler<T>,
+}
+
+impl<'a, 'b, T> fmt::Debug for ButtonRequest<'a, 'b, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
+}
+
+impl<'a, 'b, T: 'static> ButtonRequest<'a, 'b, T> {
+    /// The type of button request.
+    pub fn request_type(&self) -> Option<ButtonRequestType> { self.message.code.and_then(ButtonRequestType::from_i32) }
+
+    /// Ack the request and get the next message from the device.
+    pub async fn ack(self) -> TrezorResult<TrezorResponse<'a, 'b, T>> {
+        let req = proto_common::ButtonAck {};
+        self.session.call(req, self.result_handler).await
+    }
+
+    /// TODO add an optional `timeout` param.
+    pub async fn ack_all(self) -> TrezorResult<T> { self.ack().await?.ack_all().await }
+
+    pub async fn cancel(self) { self.session.cancel_last_op().await }
+}
+
+/// A PIN matrix request message sent by the device.
+pub struct PinMatrixRequest<'a, 'b, T> {
+    session: &'b mut TrezorSession<'a>,
+    message: proto_common::PinMatrixRequest,
+    result_handler: ResultHandler<T>,
+}
+
+impl<'a, 'b, T> fmt::Debug for PinMatrixRequest<'a, 'b, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
+}
+
+impl<'a, 'b, T: 'static> PinMatrixRequest<'a, 'b, T> {
+    /// The type of PIN matrix request.
+    pub fn request_type(&self) -> Option<PinMatrixRequestType> {
+        self.message.r#type.and_then(PinMatrixRequestType::from_i32)
+    }
+
+    /// Ack the request with a PIN and get the next message from the device.
+    pub async fn ack_pin(self, pin: String) -> TrezorResult<TrezorResponse<'a, 'b, T>> {
+        let req = proto_common::PinMatrixAck { pin };
+        self.session.call(req, self.result_handler).await
+    }
+
+    pub async fn cancel(self) { self.session.cancel_last_op().await }
+}

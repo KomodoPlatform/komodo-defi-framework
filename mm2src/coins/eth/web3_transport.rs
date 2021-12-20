@@ -1,5 +1,4 @@
 use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
-use common::log::warn;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
@@ -11,8 +10,6 @@ use std::sync::Arc;
 use web3::error::{Error, ErrorKind};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
-
-const REQUEST_TIMEOUT_S: f64 = 60.;
 
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
@@ -110,10 +107,13 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
+    use common::log::warn;
     use common::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
+
+    const REQUEST_TIMEOUT_S: f64 = 60.;
 
     let mut errors = Vec::new();
     for uri in uris.iter() {

@@ -407,7 +407,7 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Serialize)]
 pub enum NetIdError {
     #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
     LargerThanMax { netid: u16, max_netid: u16 },

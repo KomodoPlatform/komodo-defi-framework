@@ -86,6 +86,8 @@ pub struct MmCtx {
     pub peer_id: Constructible<String>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub coins_activation_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     pub rmd160: Constructible<H160>,
     /// secp256k1 key pair derived from passphrase.
@@ -103,6 +105,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
+    pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -126,6 +129,8 @@ impl MmCtx {
             p2p_ctx: Mutex::new(None),
             peer_id: Constructible::default(),
             coins_ctx: Mutex::new(None),
+            coins_activation_ctx: Mutex::new(None),
+            crypto_ctx: Mutex::new(None),
             rmd160: Constructible::default(),
             secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
@@ -136,6 +141,7 @@ impl MmCtx {
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
+            mm_init_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }

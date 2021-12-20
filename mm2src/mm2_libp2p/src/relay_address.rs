@@ -1,10 +1,10 @@
 use crate::{NetworkInfo, NetworkPorts};
 use derive_more::Display;
 use libp2p::Multiaddr;
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Serialize)]
 pub enum RelayAddressError {
     #[display(
         fmt = "Error parsing 'RelayAddress' from {}: address has unknown protocol, expected either IPv4 or DNS or Memory address",

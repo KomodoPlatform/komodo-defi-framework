@@ -14,7 +14,6 @@ use std::str::FromStr;
 cfg_native! {
     use crate::utxo::rpc_clients::{electrum_script_hash, BestBlock as RpcBestBlock, ElectrumBlockHeader, ElectrumClient,
                                    ElectrumNonce, UtxoRpcError};
-    use crate::utxo::sign_tx;
     use bitcoin::blockdata::block::BlockHeader;
     use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::blockdata::script::Script;
@@ -52,6 +51,7 @@ cfg_native! {
     use std::sync::Arc;
     use std::time::SystemTime;
     use tokio::net::TcpListener;
+    use utxo_signer::with_key_pair::sign_tx;
 }
 
 cfg_native! {
@@ -1069,15 +1069,17 @@ async fn sign_funding_transaction(
     };
     unsigned.outputs[0].script_pubkey = output_script.to_bytes().into();
 
-    let prev_script = Builder::build_p2pkh(&coin.as_ref().my_address.hash);
+    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
+    let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err()?;
+
+    let prev_script = Builder::build_p2pkh(&my_address.hash);
     let signed = sign_tx(
         unsigned,
-        &coin.as_ref().key_pair,
+        key_pair,
         prev_script,
         SignatureVersion::WitnessV0,
         coin.as_ref().conf.fork_id,
-    )
-    .map_to_mm(OpenChannelError::InternalError)?;
+    )?;
 
     Transaction::try_from(signed).map_to_mm(|e| OpenChannelError::ConvertTxErr(e.to_string()))
 }

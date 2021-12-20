@@ -5,6 +5,7 @@ use coins::lightning::ln_errors::EnableLightningError;
 use coins::lightning::ln_utils::{start_lightning, LightningParams};
 use coins::lightning::{LightningCoin, LightningProtocolConf};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
+use coins::utxo::UtxoCommonOps;
 use coins::{CoinProtocol, MarketCoinOps, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -114,7 +115,7 @@ impl L2ActivationOps for LightningCoin {
         // Channel funding transactions need to spend segwit outputs
         // and while the witness script can be generated from pubkey and be used
         // it's better for the coin to be enabled in segwit to check if balance is enough for funding transaction, etc...
-        if !platform_coin.as_ref().my_address.addr_format.is_segwit() {
+        if !platform_coin.addr_format().is_segwit() {
             return MmError::err(
                 LightningValidationErr::UnsupportedMode("Lightning network".into(), "segwit".into()).into(),
             );

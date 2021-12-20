@@ -60,6 +60,7 @@ common = { path = "mm2src/common" }
 crc = "1.8"
 crc32fast = { version = "1.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
+crypto = { path = "mm2src/crypto" }
 derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
@@ -74,15 +75,18 @@ hash-db = "0.15.2"
 hex = "0.4.2"
 hex-literal = "0.3.1"
 http = "0.2"
+hw_common = { path = "mm2src/hw_common" }
 itertools = "0.9"
 keys = { path = "mm2src/mm2_bitcoin/keys" }
 lazy_static = "1.4"
+# ledger = { path = "mm2src/ledger" }
 libc = "0.2"
 metrics = "0.12"
 mm2-libp2p = { path = "mm2src/mm2_libp2p" }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
 rpc = { path = "mm2src/mm2_bitcoin/rpc" }
+rpc_task = { path = "mm2src/rpc_task" }
 parking_lot = { version = "0.11", features = ["nightly"] }
 parity-util-mem = "0.9"
 # AP: portfolio RPCs are not documented and not used as of now
@@ -117,7 +121,7 @@ js-sys = { version = "0.3.27" }
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.1" }
-web-sys = { version = "0.3.4", features = ["console"] }
+web-sys = { version = "0.3.55", features = ["console"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
@@ -140,8 +144,14 @@ regex = "1"
 [workspace]
 members = [
     "mm2src/coins",
+    "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
+    "mm2src/crypto",
+    "mm2src/derives/ser_error",
+    "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",
+    "mm2src/gossipsub",
+    "mm2src/hw_common",
     "mm2src/mm2_bitcoin/crypto",
     "mm2src/mm2_bitcoin/chain",
     "mm2src/mm2_bitcoin/keys",
@@ -151,9 +161,8 @@ members = [
     "mm2src/mm2_bitcoin/serialization",
     "mm2src/mm2_bitcoin/serialization_derive",
     "mm2src/mm2_libp2p",
-    "mm2src/gossipsub",
-    "mm2src/derives/ser_error",
-    "mm2src/derives/ser_error_derive",
+    "mm2src/rpc_task",
+    "mm2src/trezor",
 ]
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"

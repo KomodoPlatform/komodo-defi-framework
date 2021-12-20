@@ -10,7 +10,7 @@ use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::{ARRRConsensusParams, SendOutputsErr, ZOutput, DEX_FEE_OVK};
-use crate::NumConversError;
+use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use chain::Transaction as UtxoTx;
@@ -36,7 +36,8 @@ pub async fn z_send_htlc(
     secret_hash: &[u8],
     amount: BigDecimal,
 ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-    let payment_script = payment_script(time_lock, secret_hash, coin.utxo_arc.key_pair.public(), &other_pub);
+    let key_pair = coin.utxo_arc.priv_key_policy.key_pair_or_err()?;
+    let payment_script = payment_script(time_lock, secret_hash, key_pair.public(), &other_pub);
     let script_hash = dhash160(&payment_script);
     let htlc_address = Address {
         prefix: coin.utxo_arc.conf.p2sh_addr_prefix,
@@ -96,11 +97,16 @@ pub async fn z_send_dex_fee(
 #[allow(clippy::large_enum_variant, clippy::upper_case_acronyms)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
+    PrivKeyNotAllowed(PrivKeyNotAllowed),
     Rpc(UtxoRpcError),
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
     fn from(tx_builder: ZTxBuilderError) -> ZP2SHSpendError { ZP2SHSpendError::ZTxBuilderError(tx_builder) }
+}
+
+impl From<PrivKeyNotAllowed> for ZP2SHSpendError {
+    fn from(err: PrivKeyNotAllowed) -> Self { ZP2SHSpendError::PrivKeyNotAllowed(err) }
 }
 
 impl From<UtxoRpcError> for ZP2SHSpendError {
@@ -120,8 +126,8 @@ pub async fn z_p2sh_spend(
     let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 
-    let secp_secret =
-        SecretKey::from_slice(&*coin.utxo_arc.key_pair.private().secret).expect("Keypair contains a valid secret key");
+    let key_pair = coin.utxo_arc.priv_key_policy.key_pair_or_err()?;
+    let secp_secret = SecretKey::from_slice(&*key_pair.private().secret).expect("Keypair contains a valid secret key");
 
     let outpoint = ZCashOutpoint::new(p2sh_tx.txid().0, 0);
     let tx_out = TxOut {

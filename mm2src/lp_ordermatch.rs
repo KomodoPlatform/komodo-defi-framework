@@ -28,9 +28,11 @@ use coins::{find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, FeeApproxStag
 use common::executor::{spawn, Timer};
 use common::log::{error, LogOnError};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
+use common::mm_error::prelude::*;
 use common::mm_number::{Fraction, MmNumber};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
+use crypto::CryptoCtx;
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
@@ -63,7 +65,6 @@ use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, chec
                           SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::best_orders_rpc;
-use common::mm_error::MmError;
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
                         MyOrdersHistory, MyOrdersStorage};
@@ -79,7 +80,6 @@ cfg_wasm32! {
 
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
 #[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
-use common::mm_error::prelude::MapToMmResult;
 pub use lp_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
                  StartSimpleMakerBotRequest, TradingBotEvent, KMD_PRICE_ENDPOINT};
 
@@ -117,6 +117,18 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 /// Alphabetically ordered orderbook pair
 type AlbOrderedOrderbookPair = String;
 type PubkeyOrders = Vec<(Uuid, OrderbookP2PItem)>;
+
+pub type OrdermatchInitResult<T> = Result<T, MmError<OrdermatchInitError>>;
+
+#[derive(Debug, Deserialize, Display, Serialize)]
+pub enum OrdermatchInitError {
+    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    ErrorDeserializingConfig {
+        field: String,
+        error: String,
+    },
+    Internal(String),
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CancelAllOrdersResponse {
@@ -2063,7 +2075,10 @@ impl From<MakerConnected> for new_protocol::OrdermatchMessage {
 }
 
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
-    let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
+    let my_pubsecp = CryptoCtx::from_ctx(&ctx)
+        .expect("CryptoCtx not available")
+        .secp256k1_pubkey_hex();
+
     while !ctx.is_stopping() {
         Timer::sleep(MIN_ORDER_KEEP_ALIVE_INTERVAL as f64).await;
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
@@ -2509,7 +2524,7 @@ struct OrdermatchContext {
     ordermatch_db: ConstructibleDb<OrdermatchDb>,
 }
 
-pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
+pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     // Helper
     #[derive(Deserialize)]
     struct CoinConf {
@@ -2517,7 +2532,11 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
         orderbook_ticker: Option<String>,
     }
 
-    let coins: Vec<CoinConf> = try_s!(json::from_value(ctx.conf["coins"].clone()));
+    let coins: Vec<CoinConf> =
+        json::from_value(ctx.conf["coins"].clone()).map_to_mm(|e| OrdermatchInitError::ErrorDeserializingConfig {
+            field: "coins".to_owned(),
+            error: e.to_string(),
+        })?;
     let mut orderbook_tickers = HashMap::new();
     let mut original_tickers = HashMap::new();
     for coin in coins {
@@ -2541,7 +2560,9 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> Result<(), String> {
         ordermatch_db: ConstructibleDb::from_ctx(ctx),
     };
 
-    from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context)).map(|_| ())
+    from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context))
+        .map(|_| ())
+        .map_to_mm(OrdermatchInitError::Internal)
 }
 
 #[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
@@ -2763,7 +2784,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
-    let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
+    let my_pubsecp = CryptoCtx::from_ctx(&ctx)
+        .expect("CryptoCtx not available")
+        .secp256k1_pubkey_hex();
+
     let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
     loop {
         if ctx.is_stopping() {

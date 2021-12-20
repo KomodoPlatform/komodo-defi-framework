@@ -9,6 +9,7 @@ extern crate primitives;
 extern crate rustc_hex as hex;
 extern crate secp256k1;
 extern crate serde;
+#[macro_use] extern crate serde_derive;
 
 mod address;
 mod cashaddress;

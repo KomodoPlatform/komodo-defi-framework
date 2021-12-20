@@ -1280,7 +1280,7 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn display_priv_key(&self) -> String { format!("{:#02x}", self.key_pair.secret()) }
+    fn display_priv_key(&self) -> Result<String, String> { Ok(format!("{:#02x}", self.key_pair.secret())) }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 

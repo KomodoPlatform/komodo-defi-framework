@@ -17,23 +17,48 @@
 //  marketmaker
 //
 
+use crate::mm_error::prelude::*;
 use bitcrypto::{sha256, ChecksumType};
+use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private};
 use primitives::hash::H256;
+use rustc_hex::FromHexError;
 
-fn private_from_seed(seed: &str) -> Result<Private, String> {
+pub type PrivKeyResult<T> = Result<T, MmError<PrivKeyError>>;
+
+#[derive(Debug, Display, Serialize)]
+pub enum PrivKeyError {
+    #[display(fmt = "Provided WIF passphrase has invalid checksum!")]
+    WifPassphraseInvalidChecksum,
+    #[display(fmt = "Error parsing passphrase: {}", _0)]
+    ErrorParsingPassphrase(String),
+    #[display(fmt = "Invalid private key: {}", _0)]
+    InvalidPrivKey(KeysError),
+    #[display(fmt = "We only support compressed keys at the moment")]
+    ExpectedCompressedKeys,
+}
+
+impl From<FromHexError> for PrivKeyError {
+    fn from(e: FromHexError) -> Self { PrivKeyError::ErrorParsingPassphrase(e.to_string()) }
+}
+
+impl From<KeysError> for PrivKeyError {
+    fn from(e: KeysError) -> Self { PrivKeyError::InvalidPrivKey(e) }
+}
+
+fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
     match seed.parse() {
         Ok(private) => return Ok(private),
         Err(e) => {
             if let KeysError::InvalidChecksum = e {
-                return ERR!("Provided WIF passphrase has invalid checksum!");
+                return MmError::err(PrivKeyError::WifPassphraseInvalidChecksum);
             }
         }, // else ignore other errors, assume the passphrase is not WIF
     }
 
     match seed.strip_prefix("0x") {
         Some(stripped) => {
-            let hash: H256 = try_s!(stripped.parse());
+            let hash: H256 = stripped.parse()?;
             Ok(Private {
                 prefix: 0,
                 secret: hash,
@@ -57,23 +82,23 @@ fn private_from_seed(seed: &str) -> Result<Private, String> {
     }
 }
 
-pub fn key_pair_from_seed(seed: &str) -> Result<KeyPair, String> {
-    let private = try_s!(private_from_seed(seed));
+pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {
+    let private = private_from_seed(seed)?;
     if !private.compressed {
-        return ERR!("We only support compressed keys at the moment");
+        return MmError::err(PrivKeyError::ExpectedCompressedKeys);
     }
-    let pair = try_s!(KeyPair::from_private(private));
+    let pair = KeyPair::from_private(private)?;
     // Just a sanity check. We rely on the public key being 33 bytes (aka compressed).
     assert_eq!(pair.public().len(), 33);
     Ok(pair)
 }
 
-pub fn key_pair_from_secret(secret: [u8; 32]) -> Result<KeyPair, String> {
+pub fn key_pair_from_secret(secret: [u8; 32]) -> PrivKeyResult<KeyPair> {
     let private = Private {
         prefix: 0,
         secret: secret.into(),
         compressed: true,
         checksum_type: Default::default(),
     };
-    KeyPair::from_private(private).map_err(|e| format!("{}", e))
+    Ok(KeyPair::from_private(private)?)
 }

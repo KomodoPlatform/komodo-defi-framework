@@ -90,13 +90,18 @@ pub struct Telegram {
 
 #[derive(Display)]
 pub enum InitMessageServiceError {
-    #[display(fmt = "Deserialization Error: {}", _0)]
-    JsonError(String),
+    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    ErrorDeserializingConfig { field: String, error: String },
 }
 
 pub async fn init_message_service(ctx: &MmArc) -> Result<(), MmError<InitMessageServiceError>> {
-    let maybe_cfg: Option<MessageServiceCfg> = json::from_value(ctx.conf["message_service_cfg"].clone())
-        .map_to_mm(|e| InitMessageServiceError::JsonError(e.to_string()))?;
+    let maybe_cfg: Option<MessageServiceCfg> =
+        json::from_value(ctx.conf["message_service_cfg"].clone()).map_to_mm(|e| {
+            InitMessageServiceError::ErrorDeserializingConfig {
+                field: "message_service_cfg".to_owned(),
+                error: e.to_string(),
+            }
+        })?;
     if let Some(message_service_cfg) = maybe_cfg {
         let message_service_ctx = MessageServiceContext::from_ctx(ctx).unwrap();
         let mut message_service = message_service_ctx.message_service.lock().await;

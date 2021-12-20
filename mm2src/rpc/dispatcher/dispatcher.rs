@@ -1,19 +1,21 @@
-use super::lp_protocol::{MmRpcBuilder, MmRpcRequest};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
+use crate::mm2::lp_native_dex::rpc_command::{mm_init_status, mm_init_user_action};
 use crate::mm2::lp_ordermatch::{start_simple_market_maker_bot, stop_simple_market_maker_bot};
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
-            mm2::lp_swap::trade_preimage_rpc,
+            mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
             mm2::rpc::get_public_key::get_public_key};
+use coins::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
 use coins::lightning::{connect_to_lightning_node, open_channel, LightningCoin};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::slp::SlpToken;
 use coins::{add_delegation, get_staking_infos, remove_delegation, withdraw};
-use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token};
+use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token, init_utxo, init_utxo_status};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
+use common::mm_rpc_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
 use common::HttpStatusCode;
 use futures::Future as Future03;
 use http::Response;
@@ -41,7 +43,9 @@ pub async fn process_single_request(
     }
 
     auth(&request, &ctx, &client).await?;
-    dispatcher(request, ctx).await
+    match request.mmrpc {
+        MmRpcVersion::V2 => dispatcher_v2(request, ctx).await,
+    }
 }
 
 /// # Examples
@@ -95,7 +99,7 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
     }
 }
 
-async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
+async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     match request.method.as_str() {
         // "activate_bch_protocol_coin" => handle_mmrpc(ctx, request, activate_bch_protocol_coin).await,
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
@@ -106,7 +110,13 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "init_utxo" => handle_mmrpc(ctx, request, init_utxo).await,
+        "init_utxo_status" => handle_mmrpc(ctx, request, init_utxo_status).await,
+        "init_withdraw" => handle_mmrpc(ctx, request, init_withdraw).await,
+        "mm_init_status" => handle_mmrpc(ctx, request, mm_init_status).await,
+        "mm_init_user_action" => handle_mmrpc(ctx, request, mm_init_user_action).await,
         "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
+        "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
@@ -116,6 +126,8 @@ async fn dispatcher(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Respo
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
+        "withdraw_status" => handle_mmrpc(ctx, request, withdraw_status).await,
+        "withdraw_user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

@@ -76,6 +76,7 @@ fn test_withdraw_impl_fee_details() {
 
     let withdraw_req = WithdrawRequest {
         amount: 10.into(),
+        from: None,
         to: "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into(),
         coin: "QRC20".into(),
         max: false,
@@ -110,7 +111,10 @@ fn test_validate_maker_payment() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
-    assert_eq!(coin.utxo.my_address, "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into());
+    assert_eq!(
+        *coin.utxo.derivation_method.unwrap_iguana(),
+        "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into()
+    );
 
     // tx_hash: 016a59dd2b181b3906b0f0333d5c7561dacb332dc99ac39679a591e523f2c49a
     let payment_tx = hex::decode("010000000194448324c14fc6b78c7a52c59debe3240fc392019dbd6f1457422e3308ce1e75010000006b483045022100800a4956a30a36708536d98e8ea55a3d0983b963af6c924f60241616e2ff056d0220239e622f8ec8f1a0f5ef0fc93ff094a8e6b5aab964a62bed680b17bf6a848aac012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a0c692f2ec8ebab181a79e31b7baab30fef0902e57f901c47a342643eeafa6b510000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8320101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000005f72ec7514ba8b71f3544b93e2f681f996da519a98ace0107ac201319302000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac40ed725f").unwrap();
@@ -203,7 +207,10 @@ fn test_wait_for_confirmations_excepted() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
-    assert_eq!(coin.utxo.my_address, "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into());
+    assert_eq!(
+        *coin.utxo.derivation_method.unwrap_iguana(),
+        "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into()
+    );
 
     // tx_hash: 35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac
     // `approve` contract call excepted only, and `erc20Payment` completed
@@ -261,7 +268,7 @@ fn test_send_taker_fee() {
     let result = coin
         .validate_fee(
             &tx,
-            &*coin.utxo.key_pair.public(),
+            coin.my_public_key().unwrap(),
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &amount,
             0,

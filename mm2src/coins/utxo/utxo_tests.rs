@@ -1,9 +1,9 @@
 use super::rpc_clients::{BlockHashOrHeight, ListSinceBlockRes, NetworkInfo};
 use super::*;
-use crate::utxo::qtum::{qtum_coin_from_conf_and_params, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
+use crate::utxo::qtum::{qtum_coin_from_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{GetAddressInfoRes, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_common::{UtxoArcBuilder, UtxoTxBuilder};
-use crate::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
+use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
 use bigdecimal::{BigDecimal, Signed};
@@ -33,7 +33,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         "servers": servers,
     });
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let builder = UtxoArcBuilder::new(&ctx, TEST_COIN_NAME, &Json::Null, params, &[]);
+    let builder = UtxoArcBuilder::with_priv_key(&ctx, TEST_COIN_NAME, &Json::Null, params, &[]);
     let args = ElectrumBuilderArgs {
         spawn_ping: false,
         negotiate_version: true,
@@ -78,6 +78,10 @@ fn utxo_coin_fields_for_test(
         addr_format: UtxoAddressFormat::Standard,
     };
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
+
+    let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
+    let derivation_method = DerivationMethod::Iguana(my_address);
+
     let bech32_hrp = if is_segwit_coin {
         Some(TEST_COIN_HRP.to_string())
     } else {
@@ -115,13 +119,15 @@ fn utxo_coin_fields_for_test(
             estimate_fee_blocks: 1,
             lightning: false,
             network: None,
+            trezor_coin: None,
+            derivation_path: None,
         },
         decimals: 8,
         dust_amount: UTXO_DUST_AMOUNT,
         tx_fee: TxFee::Fixed(1000),
         rpc_client,
-        key_pair,
-        my_address,
+        priv_key_policy,
+        derivation_method,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         tx_cache_directory: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
@@ -207,7 +213,7 @@ fn test_generate_transaction() {
     }];
 
     let outputs = vec![TransactionOutput {
-        script_pubkey: Builder::build_p2pkh(&coin.as_ref().my_address.hash).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(&coin.as_ref().derivation_method.unwrap_iguana().hash).to_bytes(),
         value: 100000,
     }];
 
@@ -434,7 +440,7 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
 
     let found = block_on(coin.search_for_swap_tx_spend_my(
         1591928233,
-        &*coin.my_public_key(),
+        &*coin.my_public_key().unwrap(),
         &*dhash160(&secret),
         &payment_tx_bytes,
         0,
@@ -466,7 +472,7 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 
     let found = block_on(coin.search_for_swap_tx_spend_my(
         1591933469,
-        coin.as_ref().key_pair.public(),
+        coin.as_ref().priv_key_policy.key_pair_or_err().unwrap().public(),
         &secret,
         &payment_tx_bytes,
         0,
@@ -499,6 +505,7 @@ fn test_withdraw_impl_set_fixed_fee() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -538,6 +545,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -580,6 +588,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -624,6 +633,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -668,6 +678,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: "9.97939455".parse().unwrap(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -700,6 +711,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: 0.into(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: true,
@@ -759,6 +771,7 @@ fn test_withdraw_kmd_rewards_impl(
 
     let withdraw_req = WithdrawRequest {
         amount: BigDecimal::from_str("0.00001").unwrap(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "KMD".to_owned(),
         max: false,
@@ -831,6 +844,7 @@ fn test_withdraw_rick_rewards_none() {
 
     let withdraw_req = WithdrawRequest {
         amount: BigDecimal::from_str("0.00001").unwrap(),
+        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "RICK".to_owned(),
         max: false,
@@ -870,7 +884,7 @@ fn test_utxo_lock() {
     let coin = utxo_coin_for_test(client.into(), None, false);
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(&coin.as_ref().my_address.hash).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(&coin.as_ref().derivation_method.unwrap_iguana().hash).to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -1275,10 +1289,7 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_params(
-        &ctx, "BCH", &conf, params, &[1u8; 32],
-    ))
-    .unwrap();
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "BCH", &conf, params, &[1u8; 32])).unwrap();
 
     let hash = hex::decode("0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751").unwrap();
     let fut = async {
@@ -1322,10 +1333,7 @@ fn test_address_from_str_with_cashaddress_activated() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_params(
-        &ctx, "BCH", &conf, params, &[1u8; 32],
-    ))
-    .unwrap();
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "BCH", &conf, params, &[1u8; 32])).unwrap();
 
     // other error on parse
     let error = coin
@@ -1357,10 +1365,7 @@ fn test_address_from_str_with_legacy_address_activated() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_params(
-        &ctx, "BCH", &conf, params, &[1u8; 32],
-    ))
-    .unwrap();
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "BCH", &conf, params, &[1u8; 32])).unwrap();
 
     let error = coin
         .address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55")
@@ -1401,7 +1406,7 @@ fn test_unavailable_electrum_proto_version() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let error = block_on(utxo_standard_coin_from_conf_and_params(
+    let error = block_on(utxo_standard_coin_with_priv_key(
         &ctx, "RICK", &conf, params, &[1u8; 32],
     ))
     .err()
@@ -1424,7 +1429,7 @@ fn test_spam_rick() {
     let key_pair = key_pair_from_seed("my_seed").unwrap();
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(utxo_standard_coin_from_conf_and_params(
+    let coin = block_on(utxo_standard_coin_with_priv_key(
         &ctx,
         "RICK",
         &conf,
@@ -1435,7 +1440,7 @@ fn test_spam_rick() {
 
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(&coin.as_ref().my_address.hash).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(&coin.as_ref().derivation_method.unwrap_iguana().hash).to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -1477,10 +1482,7 @@ fn test_one_unavailable_electrum_proto_version() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(utxo_standard_coin_from_conf_and_params(
-        &ctx, "BTC", &conf, params, &[1u8; 32],
-    ))
-    .unwrap();
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "BTC", &conf, params, &[1u8; 32])).unwrap();
 
     block_on(async { Timer::sleep(0.5).await });
 
@@ -1549,7 +1551,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(68);
@@ -1573,7 +1575,7 @@ fn test_qtum_generate_pod() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
     let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.generate_pod(address.hash).unwrap();
@@ -1591,7 +1593,7 @@ fn test_qtum_add_delegation() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(
+    let coin = block_on(qtum_coin_from_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1630,7 +1632,7 @@ fn test_qtum_add_delegation_on_already_delegating() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(
+    let coin = block_on(qtum_coin_from_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1661,7 +1663,7 @@ fn test_qtum_get_delegation_infos() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(
+    let coin = block_on(qtum_coin_from_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1691,7 +1693,7 @@ fn test_qtum_remove_delegation() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(
+    let coin = block_on(qtum_coin_from_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1743,7 +1745,7 @@ fn test_qtum_unspendable_balance_failed() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let error = coin.my_balance().wait().err().unwrap();
     log!("error: "[error]);
@@ -1791,7 +1793,7 @@ fn test_qtum_my_balance() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_conf_and_params(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(66);
@@ -2680,9 +2682,10 @@ fn test_generate_tx_doge_fee() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
 
-    let doge: UtxoStandardCoin = block_on(UtxoArcBuilder::new(&ctx, "DOGE", &config, params, &[1; 32]).build())
-        .unwrap()
-        .into();
+    let doge: UtxoStandardCoin =
+        block_on(UtxoArcBuilder::with_priv_key(&ctx, "DOGE", &config, params, &[1; 32]).build())
+            .unwrap()
+            .into();
 
     let unspents = vec![UnspentInfo {
         outpoint: Default::default(),
@@ -2861,7 +2864,7 @@ fn test_tx_details_kmd_rewards() {
     ]);
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
-    fields.my_address = Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk");
+    fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
     let mut input_transactions = HistoryUtxoTxMap::new();
@@ -2894,7 +2897,7 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
     ]);
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
-    fields.my_address = Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk");
+    fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
     let mut input_transactions = HistoryUtxoTxMap::new();
@@ -2947,7 +2950,7 @@ fn test_update_kmd_rewards() {
     ]);
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
-    fields.my_address = Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk");
+    fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
     let mut input_transactions = HistoryUtxoTxMap::default();
@@ -2978,7 +2981,7 @@ fn test_update_kmd_rewards_claimed_not_by_me() {
     ]);
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
-    fields.my_address = Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk");
+    fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
     let mut input_transactions = HistoryUtxoTxMap::default();
@@ -3040,15 +3043,16 @@ fn test_withdraw_to_p2pkh() {
     // Create a p2pkh address for the test coin
     let p2pkh_address = Address {
         prefix: coin.as_ref().conf.pub_addr_prefix,
-        hash: coin.as_ref().my_address.hash.clone(),
+        hash: coin.as_ref().derivation_method.unwrap_iguana().hash.clone(),
         t_addr_prefix: coin.as_ref().conf.pub_t_addr_prefix,
-        checksum_type: coin.as_ref().my_address.checksum_type,
+        checksum_type: coin.as_ref().derivation_method.unwrap_iguana().checksum_type,
         hrp: coin.as_ref().conf.bech32_hrp.clone(),
         addr_format: UtxoAddressFormat::Standard,
     };
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
+        from: None,
         to: p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -3086,15 +3090,16 @@ fn test_withdraw_to_p2sh() {
     // Create a p2sh address for the test coin
     let p2sh_address = Address {
         prefix: coin.as_ref().conf.p2sh_addr_prefix,
-        hash: coin.as_ref().my_address.hash.clone(),
+        hash: coin.as_ref().derivation_method.unwrap_iguana().hash.clone(),
         t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
-        checksum_type: coin.as_ref().my_address.checksum_type,
+        checksum_type: coin.as_ref().derivation_method.unwrap_iguana().checksum_type,
         hrp: coin.as_ref().conf.bech32_hrp.clone(),
         addr_format: UtxoAddressFormat::Standard,
     };
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
+        from: None,
         to: p2sh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,
@@ -3132,15 +3137,16 @@ fn test_withdraw_to_p2wpkh() {
     // Create a p2wpkh address for the test coin
     let p2wpkh_address = Address {
         prefix: coin.as_ref().conf.pub_addr_prefix,
-        hash: coin.as_ref().my_address.hash.clone(),
+        hash: coin.as_ref().derivation_method.unwrap_iguana().hash.clone(),
         t_addr_prefix: coin.as_ref().conf.pub_t_addr_prefix,
-        checksum_type: coin.as_ref().my_address.checksum_type,
+        checksum_type: coin.as_ref().derivation_method.unwrap_iguana().checksum_type,
         hrp: coin.as_ref().conf.bech32_hrp.clone(),
         addr_format: UtxoAddressFormat::Segwit,
     };
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
+        from: None,
         to: p2wpkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
         max: false,

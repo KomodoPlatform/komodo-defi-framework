@@ -1,6 +1,5 @@
-use common::mm_error::prelude::*;
-use common::HttpStatusCode;
-use derive_more::Display;
+use crate::mm_error::prelude::*;
+use crate::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -18,6 +17,7 @@ pub struct MmRpcRequest {
     pub mmrpc: MmRpcVersion,
     pub userpass: Option<String>,
     pub method: String,
+    #[serde(default)]
     pub params: Json,
     pub id: Option<usize>,
 }
@@ -71,7 +71,7 @@ impl<T: Serialize, E: SerMmErrorType> MmRpcBuilder<T, E> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum MmRpcResult<T: Serialize, E: SerMmErrorType> {
     Ok { result: T },
@@ -89,6 +89,13 @@ where
             MmRpcResult::Err(e) => e.status_code(),
         }
     }
+}
+
+impl<T: Serialize, E: SerMmErrorType> MmRpcResult<T, E> {
+    pub fn ok(result: T) -> MmRpcResult<T, E> { MmRpcResult::Ok { result } }
+
+    #[track_caller]
+    pub fn mm_err(error: E) -> MmRpcResult<T, E> { MmRpcResult::Err(MmError::new(error)) }
 }
 
 #[derive(Serialize)]
@@ -110,13 +117,6 @@ impl<T: Serialize, E: SerMmErrorType> MmRpcResponse<T, E> {
     }
 
     fn error_to_json(&self, error: impl serde::ser::Error) -> Json {
-        #[derive(Display, Serialize, SerializeErrorType)]
-        #[serde(tag = "error_type", content = "error_data")]
-        enum SerializationError {
-            #[display(fmt = "Internal error: Couldn't serialize an RPC response: {}", _0)]
-            InternalError(String),
-        }
-
         let response: MmRpcResponse<(), _> = MmRpcResponse {
             mmrpc: self.mmrpc,
             result: MmRpcResult::Err(MmError::new(SerializationError::InternalError(error.to_string()))),
@@ -149,6 +149,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use derive_more::Display;
     use serde::Serializer;
 
     #[derive(Display, Serialize, SerializeErrorType)]
@@ -185,8 +186,8 @@ mod tests {
         let expected = json!({
             "mmrpc": "2.0",
             "error": "Not sufficient balance. Top up your balance by 123",
-            "error_path": "lp_protocol",
-            "error_trace": format!("lp_protocol:{}]", err_line),
+            "error_path": "mm_rpc_protocol",
+            "error_trace": format!("mm_rpc_protocol:{}]", err_line),
             "error_type": "NotSufficientBalance",
             "error_data": {
                 "missing": 123,

@@ -103,7 +103,7 @@ mod docker_tests {
     use coins::utxo::slp::SlpToken;
     use coins::utxo::slp::{slp_genesis_output, SlpOutput};
     use coins::utxo::utxo_common::send_outputs_from_my_address;
-    use coins::utxo::utxo_standard::{utxo_standard_coin_from_conf_and_params, UtxoStandardCoin};
+    use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
     use coins::utxo::{dhash160, UtxoActivationParams, UtxoCommonOps};
     use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum,
                 WithdrawRequest};
@@ -236,10 +236,7 @@ mod docker_tests {
             let ctx = MmCtxBuilder::new().into_mm_arc();
             let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-            let coin = block_on(utxo_standard_coin_from_conf_and_params(
-                &ctx, ticker, &conf, params, &priv_key,
-            ))
-            .unwrap();
+            let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, params, &priv_key)).unwrap();
             UtxoAssetDockerOps { ctx, coin }
         }
     }
@@ -316,7 +313,8 @@ mod docker_tests {
             let slp_genesis_op_ret = slp_genesis_output("ADEXSLP", "ADEXSLP", None, None, 8, None, 1000000_00000000);
             let slp_genesis = TransactionOutput {
                 value: self.coin.as_ref().dust_amount,
-                script_pubkey: Builder::build_p2pkh(&self.coin.my_public_key().address_hash().into()).to_bytes(),
+                script_pubkey: Builder::build_p2pkh(&self.coin.my_public_key().unwrap().address_hash().into())
+                    .to_bytes(),
             };
 
             let mut bch_outputs = vec![slp_genesis_op_ret, slp_genesis];
@@ -401,10 +399,11 @@ mod docker_tests {
     fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+        let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into(), &None)
+            .send_taker_payment(time_lock, my_public_key, &[0; 20], 1.into(), &None)
             .wait()
             .unwrap();
 
@@ -413,7 +412,7 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20], &None)
+            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None)
             .wait()
             .unwrap();
 
@@ -438,10 +437,11 @@ mod docker_tests {
     fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+        let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, &*coin.my_public_key(), &[0; 20], 1.into(), &None)
+            .send_maker_payment(time_lock, my_public_key, &[0; 20], 1.into(), &None)
             .wait()
             .unwrap();
 
@@ -450,7 +450,7 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &[0; 20], &None)
+            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None)
             .wait()
             .unwrap();
 
@@ -476,10 +476,11 @@ mod docker_tests {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
         let secret = [0; 32];
+        let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into(), &None)
+            .send_taker_payment(time_lock, my_public_key, &*dhash160(&secret), 1.into(), &None)
             .wait()
             .unwrap();
 
@@ -488,7 +489,7 @@ mod docker_tests {
             .unwrap();
 
         let spend_tx = coin
-            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret, &None)
+            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, my_public_key, &secret, &None)
             .wait()
             .unwrap();
 
@@ -514,10 +515,11 @@ mod docker_tests {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
         let secret = [0; 32];
+        let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, &*coin.my_public_key(), &*dhash160(&secret), 1.into(), &None)
+            .send_maker_payment(time_lock, my_public_key, &*dhash160(&secret), 1.into(), &None)
             .wait()
             .unwrap();
 
@@ -526,7 +528,7 @@ mod docker_tests {
             .unwrap();
 
         let spend_tx = coin
-            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, &*coin.my_public_key(), &secret, &None)
+            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, my_public_key, &secret, &None)
             .wait()
             .unwrap();
 
@@ -553,6 +555,7 @@ mod docker_tests {
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
         fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
         let secret = [0; 32];
+        let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let mut unspents = vec![];
@@ -561,7 +564,7 @@ mod docker_tests {
             let tx = coin
                 .send_maker_payment(
                     time_lock + i,
-                    &*coin.my_public_key(),
+                    my_public_key,
                     &*dhash160(&secret),
                     1.into(),
                     &coin.swap_contract_address(),
@@ -3215,7 +3218,8 @@ mod docker_tests {
             .unwrap();
 
         thread::sleep(Duration::from_secs(2));
-        let (unspents, _) = block_on(coin.list_unspent_ordered(&coin.as_ref().my_address)).unwrap();
+        let (unspents, _) =
+            block_on(coin.list_unspent_ordered(&coin.as_ref().derivation_method.unwrap_iguana())).unwrap();
         assert_eq!(unspents.len(), 1);
     }
 
@@ -3272,7 +3276,8 @@ mod docker_tests {
             .unwrap();
 
         thread::sleep(Duration::from_secs(2));
-        let (unspents, _) = block_on(coin.list_unspent_ordered(&coin.as_ref().my_address)).unwrap();
+        let (unspents, _) =
+            block_on(coin.list_unspent_ordered(&coin.as_ref().derivation_method.unwrap_iguana())).unwrap();
         // 4 utxos are merged of 5 so the resulting unspents len must be 2
         assert_eq!(unspents.len(), 2);
     }

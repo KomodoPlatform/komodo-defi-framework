@@ -1,0 +1,27 @@
+[package]
+name = "crypto"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+bitcrypto = { path = "../mm2_bitcoin/crypto" }
+common = { path = "../common" }
+derive_more = "0.99"
+futures = "0.3"
+hex = "0.4.2"
+http = "0.2"
+hw_common = { path = "../hw_common" }
+parking_lot = { version = "0.11", features = ["nightly"] }
+primitives = { path = "../mm2_bitcoin/primitives" }
+keys = { path = "../mm2_bitcoin/keys" }
+secp256k1 = "0.20"
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+trezor = { path = "../trezor" }

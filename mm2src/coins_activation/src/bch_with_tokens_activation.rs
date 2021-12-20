@@ -8,7 +8,7 @@ use coins::utxo::bch_and_slp_tx_history::bch_and_slp_history_loop;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::utxo::UtxoCommonOps;
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
+use coins::{CoinBalance, CoinProtocol, DerivationMethodNotSupported, MarketCoinOps, MmCoin, PrivKeyNotAllowed};
 use common::executor::spawn;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -88,6 +88,12 @@ impl From<BchWithTokensActivationError> for EnablePlatformCoinWithTokensError {
                     prefix, ticker, error
                 ))
             },
+            BchWithTokensActivationError::PrivKeyNotAllowed(e) => {
+                EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(e)
+            },
+            BchWithTokensActivationError::DerivationMethodNotSupported(e) => {
+                EnablePlatformCoinWithTokensError::DerivationMethodNotSupported(e)
+            },
             BchWithTokensActivationError::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
             BchWithTokensActivationError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
         }
@@ -149,12 +155,24 @@ pub enum BchWithTokensActivationError {
         prefix: String,
         error: String,
     },
+    PrivKeyNotAllowed(String),
+    DerivationMethodNotSupported(String),
     Transport(String),
     Internal(String),
 }
 
 impl From<UtxoRpcError> for BchWithTokensActivationError {
     fn from(err: UtxoRpcError) -> Self { BchWithTokensActivationError::Transport(err.to_string()) }
+}
+
+impl From<DerivationMethodNotSupported> for BchWithTokensActivationError {
+    fn from(e: DerivationMethodNotSupported) -> Self {
+        BchWithTokensActivationError::DerivationMethodNotSupported(e.to_string())
+    }
+}
+
+impl From<PrivKeyNotAllowed> for BchWithTokensActivationError {
+    fn from(e: PrivKeyNotAllowed) -> Self { BchWithTokensActivationError::PrivKeyNotAllowed(e.to_string()) }
 }
 
 #[async_trait]
@@ -204,7 +222,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
     async fn get_activation_result(
         &self,
     ) -> Result<BchWithTokensActivationResult, MmError<BchWithTokensActivationError>> {
-        let my_address = &self.as_ref().my_address;
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
         let my_slp_address = self
             .get_my_slp_address()
             .map_to_mm(BchWithTokensActivationError::Internal)?
@@ -232,13 +250,13 @@ impl PlatformWithTokensActivationOps for BchCoin {
             .bch_addresses_infos
             .insert(my_address.to_string(), CoinAddressInfo {
                 derivation_method: DerivationMethod::Iguana,
-                pubkey: self.my_public_key().to_string(),
+                pubkey: self.my_public_key()?.to_string(),
                 balances: bch_balance,
             });
 
         result.slp_addresses_infos.insert(my_slp_address, CoinAddressInfo {
             derivation_method: DerivationMethod::Iguana,
-            pubkey: self.my_public_key().to_string(),
+            pubkey: self.my_public_key()?.to_string(),
             balances: token_balances,
         });
         Ok(result)

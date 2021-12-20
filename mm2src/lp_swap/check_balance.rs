@@ -222,6 +222,7 @@ impl From<BalanceError> for CheckBalanceError {
             BalanceError::Transport(transport) | BalanceError::InvalidResponse(transport) => {
                 CheckBalanceError::Transport(transport)
             },
+            e @ BalanceError::DerivationMethodNotSupported(_) => CheckBalanceError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => CheckBalanceError::InternalError(internal),
         }
     }

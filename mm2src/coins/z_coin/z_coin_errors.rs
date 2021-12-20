@@ -1,6 +1,7 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::NumConversError;
+use crate::utxo::UtxoCoinBuildError;
 use crate::WithdrawError;
+use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
 use derive_more::Display;
 use rpc::v1::types::Bytes as BytesJson;
@@ -81,6 +82,11 @@ pub enum SendOutputsErr {
     NumConversion(NumConversError),
     Rpc(UtxoRpcError),
     TxNotMined(String),
+    PrivKeyNotAllowed(PrivKeyNotAllowed),
+}
+
+impl From<PrivKeyNotAllowed> for SendOutputsErr {
+    fn from(err: PrivKeyNotAllowed) -> Self { SendOutputsErr::PrivKeyNotAllowed(err) }
 }
 
 impl From<GenTxError> for SendOutputsErr {
@@ -109,7 +115,7 @@ impl From<SqliteError> for GetUnspentWitnessErr {
 
 #[derive(Debug, Display)]
 pub enum ZCoinBuildError {
-    UtxoBuilderError(String),
+    UtxoBuilderError(UtxoCoinBuildError),
     GetAddressError,
     SqliteError(SqliteError),
     Rpc(UtxoRpcError),
@@ -126,6 +132,10 @@ impl From<SqliteError> for ZCoinBuildError {
 
 impl From<UtxoRpcError> for ZCoinBuildError {
     fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err) }
+}
+
+impl From<UtxoCoinBuildError> for ZCoinBuildError {
+    fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
 }
 
 impl From<std::io::Error> for ZCoinBuildError {

@@ -124,7 +124,8 @@ impl Qrc20Coin {
 
         let expected_call_bytes = {
             let expected_value = try_s!(wei_from_big_decimal(&amount, self.utxo.decimals));
-            let expected_receiver = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
+            let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
+            let expected_receiver = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
             try_s!(self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -245,7 +246,8 @@ impl Qrc20Coin {
         }
 
         // Else try to find a 'senderRefund' contract call.
-        let sender = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
+        let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let refund_txs = try_s!(self.sender_refund_transactions(sender, search_from_block).await);
         let found = refund_txs.into_iter().find(|tx| {
             find_swap_contract_call_with_swap_id(MutContractCallType::SenderRefund, tx, &expected_swap_id).is_some()
@@ -268,7 +270,8 @@ impl Qrc20Coin {
             return Ok(None);
         };
 
-        let sender = try_s!(qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone()));
+        let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
+        let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let erc20_payment_txs = try_s!(self.erc20_payment_transactions(sender, search_from_block).await);
         let found = erc20_payment_txs
             .into_iter()
@@ -429,13 +432,18 @@ impl Qrc20Coin {
     }
 
     pub async fn allowance(&self, spender: H160) -> UtxoRpcResult<U256> {
+        let my_address = self
+            .utxo
+            .derivation_method
+            .iguana_or_err()
+            .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
         let tokens = self
             .utxo
             .rpc_client
             .rpc_contract_call(ViewContractCallType::Allowance, &self.contract_address, &[
                 Token::Address(
-                    qtum::contract_addr_from_utxo_addr(self.utxo.my_address.clone())
-                        .map_to_mm(UtxoRpcError::Internal)?,
+                    qtum::contract_addr_from_utxo_addr(my_address.clone())
+                        .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
                 ),
                 Token::Address(spender),
             ])
@@ -769,9 +777,8 @@ impl Qrc20Coin {
         caller_address: H160,
         from_block: u64,
     ) -> Result<Vec<UtxoTx>, String> {
-        let transfer_history_builder = TransferHistoryBuilder::new(self.clone())?;
         let receipts = try_s!(
-            transfer_history_builder
+            TransferHistoryBuilder::new(self.clone())
                 .from_block(from_block)
                 .address(caller_address)
                 .build()

@@ -1,10 +1,11 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::GenerateTxError;
-use crate::{BalanceError, CoinFindError, NumConversError};
+use crate::{BalanceError, CoinFindError, DerivationMethodNotSupported, NumConversError, PrivKeyNotAllowed};
 use common::mm_error::prelude::*;
 use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
+use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
@@ -117,12 +118,15 @@ pub enum OpenChannelError {
     GenerateTxErr(String),
     #[display(fmt = "Error converting transaction: {}", _0)]
     ConvertTxErr(String),
+    PrivKeyNotAllowed(String),
 }
 
 impl HttpStatusCode for OpenChannelError {
     fn status_code(&self) -> StatusCode {
         match self {
-            OpenChannelError::UnsupportedCoin(_) | OpenChannelError::RpcError(_) => StatusCode::BAD_REQUEST,
+            OpenChannelError::UnsupportedCoin(_)
+            | OpenChannelError::RpcError(_)
+            | OpenChannelError::PrivKeyNotAllowed(_) => StatusCode::BAD_REQUEST,
             OpenChannelError::UnsupportedMode(_, _) => StatusCode::NOT_IMPLEMENTED,
             OpenChannelError::FailureToOpenChannel(_, _)
             | OpenChannelError::ConnectToNodeError(_)
@@ -162,4 +166,16 @@ impl From<GenerateTxError> for OpenChannelError {
 
 impl From<UtxoRpcError> for OpenChannelError {
     fn from(e: UtxoRpcError) -> Self { OpenChannelError::RpcError(e.to_string()) }
+}
+
+impl From<DerivationMethodNotSupported> for OpenChannelError {
+    fn from(e: DerivationMethodNotSupported) -> Self { OpenChannelError::InternalError(e.to_string()) }
+}
+
+impl From<UtxoSignWithKeyPairError> for OpenChannelError {
+    fn from(e: UtxoSignWithKeyPairError) -> Self { OpenChannelError::InternalError(e.to_string()) }
+}
+
+impl From<PrivKeyNotAllowed> for OpenChannelError {
+    fn from(e: PrivKeyNotAllowed) -> Self { OpenChannelError::PrivKeyNotAllowed(e.to_string()) }
 }

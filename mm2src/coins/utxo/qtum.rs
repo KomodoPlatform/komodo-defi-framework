@@ -1,15 +1,44 @@
 use super::*;
-use crate::utxo::qtum::qtum_delegation::QtumStakingAbiError;
-use crate::{eth, CanRefundHtlc, CoinBalance, DelegationFut, NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps,
-            TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
+use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, NegotiateSwapContractAddrErr,
+            StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
+use crypto::trezor::TrezorCoin;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
 use keys::AddressHashEnum;
 use serialization::CoinVariant;
+use utxo_signer::UtxoSignerOps;
 
 pub const QTUM_STANDARD_DUST: u64 = 1000;
+
+#[derive(Debug, Display)]
+pub enum Qrc20AddressError {
+    DerivationMethodNotSupported(String),
+    ScriptHashTypeNotSupported { script_hash_type: String },
+}
+
+impl From<DerivationMethodNotSupported> for Qrc20AddressError {
+    fn from(e: DerivationMethodNotSupported) -> Self { Qrc20AddressError::DerivationMethodNotSupported(e.to_string()) }
+}
+
+impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self {
+        Qrc20AddressError::ScriptHashTypeNotSupported {
+            script_hash_type: e.script_hash_type,
+        }
+    }
+}
+
+#[derive(Debug, Display)]
+pub struct ScriptHashTypeNotSupported {
+    pub script_hash_type: String,
+}
+
+impl From<ScriptHashTypeNotSupported> for WithdrawError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
 
 #[path = "qtum_delegation.rs"] mod qtum_delegation;
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,16 +60,17 @@ pub trait QtumDelegationOps {
 
     fn remove_delegation(&self) -> DelegationFut;
 
-    fn generate_pod(&self, addr_hash: AddressHashEnum) -> Result<keys::Signature, MmError<QtumStakingAbiError>>;
+    fn generate_pod(&self, addr_hash: AddressHashEnum) -> Result<keys::Signature, MmError<DelegationError>>;
 }
 
 #[async_trait]
 pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
     async fn qtum_balance(&self) -> BalanceResult<CoinBalance> {
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?.clone();
         let balance = self
             .as_ref()
             .rpc_client
-            .display_balance(self.as_ref().my_address.clone(), self.as_ref().decimals)
+            .display_balance(my_address, self.as_ref().decimals)
             .compat()
             .await?;
 
@@ -55,7 +85,7 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
         let from_address = try_s!(self.utxo_address_from_any_format(from));
         match to_address_format {
             QtumAddressFormat::Wallet => Ok(from_address.to_string()),
-            QtumAddressFormat::Contract => Ok(display_as_contract_address(from_address)?),
+            QtumAddressFormat::Contract => Ok(try_s!(display_as_contract_address(from_address))),
         }
     }
 
@@ -75,8 +105,8 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
         let utxo_segwit_err = match Address::from_segwitaddress(
             from,
             self.as_ref().conf.checksum_type,
-            self.as_ref().my_address.prefix,
-            self.as_ref().my_address.t_addr_prefix,
+            self.as_ref().conf.pub_addr_prefix,
+            self.as_ref().conf.pub_t_addr_prefix,
         ) {
             Ok(addr) => {
                 let is_segwit =
@@ -108,12 +138,13 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             hash: AddressHashEnum::AddressHash(address.0.into()),
             checksum_type: utxo.conf.checksum_type,
             hrp: utxo.conf.bech32_hrp.clone(),
-            addr_format: utxo.my_address.addr_format.clone(),
+            addr_format: self.addr_format().clone(),
         }
     }
 
-    fn my_addr_as_contract_addr(&self) -> Result<H160, String> {
-        contract_addr_from_utxo_addr(self.as_ref().my_address.clone())
+    fn my_addr_as_contract_addr(&self) -> MmResult<H160, Qrc20AddressError> {
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?.clone();
+        contract_addr_from_utxo_addr(my_address).mm_err(Qrc20AddressError::from)
     }
 
     fn utxo_address_from_contract_addr(&self, address: H160) -> Address {
@@ -124,7 +155,7 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             hash: AddressHashEnum::AddressHash(address.0.into()),
             checksum_type: utxo.conf.checksum_type,
             hrp: utxo.conf.bech32_hrp.clone(),
-            addr_format: utxo.my_address.addr_format.clone(),
+            addr_format: self.addr_format().clone(),
         }
     }
 
@@ -136,9 +167,9 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
             utxo.conf.pub_t_addr_prefix,
             utxo.conf.checksum_type,
             utxo.conf.bech32_hrp.clone(),
-            utxo.my_address.addr_format.clone()
+            self.addr_format().clone()
         ));
-        let contract_addr = try_s!(qtum::contract_addr_from_utxo_addr(qtum_address));
+        let contract_addr = try_s!(contract_addr_from_utxo_addr(qtum_address));
         Ok(contract_addr)
     }
 
@@ -166,7 +197,7 @@ impl From<QtumCoin> for UtxoArc {
     fn from(coin: QtumCoin) -> Self { coin.utxo_arc }
 }
 
-pub async fn qtum_coin_from_conf_and_params(
+pub async fn qtum_coin_from_with_priv_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
@@ -174,8 +205,15 @@ pub async fn qtum_coin_from_conf_and_params(
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
     let coin: QtumCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, activation_params, priv_key, QtumCoin::from)
-            .await
+        utxo_common::utxo_arc_from_conf_and_params(
+            ctx,
+            ticker,
+            conf,
+            activation_params,
+            PrivKeyBuildPolicy::PrivKey(priv_key),
+            QtumCoin::from
+        )
+        .await
     );
     Ok(coin)
 }
@@ -233,10 +271,12 @@ impl UtxoCommonOps for QtumCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> &Public { self.utxo_arc.key_pair.public() }
+    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+        utxo_common::my_public_key(self.as_ref())
+    }
 
     fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        utxo_common::checked_address_from_str(&self.utxo_arc, address)
+        utxo_common::checked_address_from_str(self, address)
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
@@ -326,8 +366,22 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::p2sh_tx_locktime(self, &self.utxo_arc.conf.ticker, htlc_locktime).await
     }
 
+    fn addr_format(&self) -> &UtxoAddressFormat { utxo_common::addr_format(self) }
+
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
         utxo_common::addr_format_for_standard_scripts(self)
+    }
+
+    fn address_from_pubkey(&self, pubkey: &Public) -> Address {
+        let conf = &self.utxo_arc.conf;
+        utxo_common::address_from_pubkey(
+            pubkey,
+            conf.pub_addr_prefix,
+            conf.pub_t_addr_prefix,
+            conf.checksum_type,
+            conf.bech32_hrp.clone(),
+            self.addr_format().clone(),
+        )
     }
 }
 
@@ -607,7 +661,7 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn display_priv_key(&self) -> String { utxo_common::display_priv_key(&self.utxo_arc) }
+    fn display_priv_key(&self) -> Result<String, String> { utxo_common::display_priv_key(&self.utxo_arc) }
 
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 
@@ -677,27 +731,58 @@ impl MmCoin for QtumCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(&self.utxo_arc) }
+    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
-        utxo_common::is_coin_protocol_supported(&self.utxo_arc, info)
+        utxo_common::is_coin_protocol_supported(self, info)
     }
+}
+
+#[async_trait]
+impl InitWithdrawCoin for QtumCoin {
+    async fn init_withdraw(
+        &self,
+        ctx: MmArc,
+        req: WithdrawRequest,
+        task_handle: &WithdrawTaskHandle,
+    ) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        utxo_common::init_withdraw(ctx, self.clone(), req, task_handle).await
+    }
+}
+
+impl UtxoSignerOps for QtumCoin {
+    type TxGetter = UtxoRpcClientEnum;
+
+    fn trezor_coin(&self) -> UtxoSignTxResult<TrezorCoin> {
+        self.utxo_arc
+            .conf
+            .trezor_coin
+            .or_mm_err(|| UtxoSignTxError::CoinNotSupportedWithTrezor {
+                coin: self.utxo_arc.conf.ticker.clone(),
+            })
+    }
+
+    fn fork_id(&self) -> u32 { self.utxo_arc.conf.fork_id }
+
+    fn branch_id(&self) -> u32 { self.utxo_arc.conf.consensus_branch_id }
+
+    fn tx_provider(&self) -> Self::TxGetter { self.utxo_arc.rpc_client.clone() }
 }
 
 /// Parse contract address (H160) from string.
 /// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
 pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> { eth::addr_from_str(addr) }
 
-pub fn contract_addr_from_utxo_addr(address: Address) -> Result<H160, String> {
+pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHashTypeNotSupported> {
     match address.hash {
         AddressHashEnum::AddressHash(h) => Ok(h.take().into()),
-        AddressHashEnum::WitnessScriptHash(_) => {
-            Err("Witness script hash address is not supported for contract_addr_from_utxo_addr".into())
-        },
+        AddressHashEnum::WitnessScriptHash(_) => MmError::err(ScriptHashTypeNotSupported {
+            script_hash_type: "Witness".to_owned(),
+        }),
     }
 }
 
-pub fn display_as_contract_address(address: Address) -> Result<String, String> {
+pub fn display_as_contract_address(address: Address) -> MmResult<String, ScriptHashTypeNotSupported> {
     let address = qtum::contract_addr_from_utxo_addr(address)?;
     Ok(format!("{:#02x}", address))
 }

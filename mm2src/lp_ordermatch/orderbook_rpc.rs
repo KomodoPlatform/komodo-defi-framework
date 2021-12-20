@@ -2,6 +2,7 @@ use super::{subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
 use crate::mm2::lp_ordermatch::addr_format_from_protocol_info;
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
+use crypto::CryptoCtx;
 use http::Response;
 use num_rational::BigRational;
 use num_traits::Zero;
@@ -103,7 +104,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock().await;
-    let my_pubsecp = hex::encode(&**ctx.secp256k1_key_pair().public());
+    let my_pubsecp = try_s!(CryptoCtx::from_ctx(&ctx)).secp256k1_pubkey_hex();
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {

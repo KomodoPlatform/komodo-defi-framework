@@ -234,7 +234,7 @@ impl<T> TimedAsyncMutex<T> {
 
 #[derive(Debug)]
 pub struct TimeoutError {
-    duration: Duration,
+    pub duration: Duration,
 }
 
 impl fmt::Display for TimeoutError {

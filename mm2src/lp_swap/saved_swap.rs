@@ -32,6 +32,14 @@ pub enum SavedSwap {
     Taker(TakerSavedSwap),
 }
 
+impl From<MakerSavedSwap> for SavedSwap {
+    fn from(maker: MakerSavedSwap) -> Self { SavedSwap::Maker(maker) }
+}
+
+impl From<TakerSavedSwap> for SavedSwap {
+    fn from(taker: TakerSavedSwap) -> Self { SavedSwap::Taker(taker) }
+}
+
 impl SavedSwap {
     pub fn is_finished_and_success(&self) -> bool {
         match self {

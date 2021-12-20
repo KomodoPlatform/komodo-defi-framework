@@ -1,6 +1,7 @@
 use common::mm_ctx::MmArc;
 use common::mm_error::MmError;
 use common::HttpStatusCode;
+use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use http::StatusCode;
 use serde_json::Value as Json;
@@ -9,6 +10,10 @@ use serde_json::Value as Json;
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetPublicKeyError {
     Internal(String),
+}
+
+impl From<CryptoInitError> for GetPublicKeyError {
+    fn from(_: CryptoInitError) -> Self { GetPublicKeyError::Internal("public_key not available".to_string()) }
 }
 
 #[derive(Serialize)]
@@ -27,9 +32,6 @@ impl HttpStatusCode for GetPublicKeyError {
 }
 
 pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyResponse> {
-    let public_key = match ctx.secp256k1_key_pair.as_option() {
-        None => return MmError::err(GetPublicKeyError::Internal("public_key not available".to_string())),
-        Some(keypair) => keypair.public().to_string(),
-    };
+    let public_key = CryptoCtx::from_ctx(&ctx)?.secp256k1_pubkey().to_string();
     Ok(GetPublicKeyResponse { public_key })
 }
