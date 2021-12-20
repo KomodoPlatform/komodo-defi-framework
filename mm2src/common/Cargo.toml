@@ -90,6 +90,7 @@ metrics-runtime = { version = "0.13", default-features = false, features = ["met
 metrics-core = { version = "0.5" }
 metrics-util = { version = "0.3" }
 rusqlite = { version = "0.24.2", features = ["bundled"] }
+sql-builder = "3.1.1"
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
 [build-dependencies]

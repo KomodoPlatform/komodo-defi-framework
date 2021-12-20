@@ -166,6 +166,7 @@ pub mod fs;
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
     pub use rusqlite;
+    pub use sql_builder;
 
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};

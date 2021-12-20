@@ -4,8 +4,8 @@ use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, Rece
 use common::log::debug;
 use common::mm_ctx::MmArc;
 use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use common::sql_builder::SqlBuilder;
 use common::{now_ms, PagingOptions};
-use sql_builder::SqlBuilder;
 use std::convert::TryInto;
 use uuid::Uuid;
 

@@ -1,6 +1,6 @@
 use common::log::debug;
 use common::rusqlite::{Connection, Result as SqlResult, ToSql};
-use sql_builder::SqlBuilder;
+use common::sql_builder::SqlBuilder;
 use std::convert::TryInto;
 use uuid::Uuid;
 

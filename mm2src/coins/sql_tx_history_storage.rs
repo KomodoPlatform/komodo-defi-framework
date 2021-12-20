@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use common::mm_error::prelude::*;
 use common::rusqlite::types::Type;
 use common::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
+use common::sql_builder::SqlBuilder;
 use common::{async_blocking, PagingOptionsEnum};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
@@ -153,6 +154,23 @@ fn get_tx_hex_from_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     Ok(sql)
 }
 
+fn get_coin_history_sql(for_coin: &str, offset: usize, limit: usize) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let mut sql_builder = SqlBuilder::select_from(table_name);
+    sql_builder.field("details_json");
+    sql_builder.and_where("token_id = ''");
+    sql_builder.offset(offset);
+    sql_builder.limit(limit);
+    sql_builder.order_asc("confirmation_status");
+    sql_builder.order_desc("block_height");
+    sql_builder.order_asc("id");
+
+    let sql = sql_builder.sql().expect("valid sql");
+    Ok(sql)
+}
+
 #[derive(Clone)]
 pub struct SqliteTxHistoryStorage(pub Arc<Mutex<Connection>>);
 
@@ -171,12 +189,17 @@ impl SqliteTxHistoryStorage {
 
 impl TxHistoryStorageError for SqlError {}
 
-fn query_single_row<T>(
-    conn: &mut Connection,
+fn query_single_row<T, P, F>(
+    conn: &Connection,
     query: &str,
-    params: &[dyn ToSql],
-    map_fn: FnOnce(&Row<'_>) -> Result<T, SqlError>,
-) -> Result<Option<T>, MmError<SqlError>> {
+    params: P,
+    map_fn: F,
+) -> Result<Option<T>, MmError<SqlError>>
+where
+    P: IntoIterator,
+    P::Item: ToSql,
+    F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
+{
     let maybe_result = conn.query_row(query, params, map_fn);
     if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
         return Ok(None);
@@ -184,6 +207,13 @@ fn query_single_row<T>(
 
     let result = maybe_result?;
     Ok(Some(result))
+}
+
+fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
+
+fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
+    let json_string: String = row.get(0)?;
+    json::from_str(&json_string).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
 #[async_trait]
@@ -212,7 +242,11 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
         let selfi = self.clone();
         async_blocking(move || {
-            let mut conn = selfi.0.lock().unwrap();
+            let conn = selfi.0.lock().unwrap();
+            let history_initialized =
+                query_single_row(&conn, CHECK_TABLE_EXISTS_SQL, [tx_history_table], string_from_row)?;
+            let cache_initialized = query_single_row(&conn, CHECK_TABLE_EXISTS_SQL, [tx_cache_table], string_from_row)?;
+            Ok(history_initialized.is_some() && cache_initialized.is_some())
         })
         .await
     }
@@ -243,7 +277,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 let tx_hex = format!("{:02x}", tx.tx_hex);
                 let tx_cache_params = [&tx_hash, &tx_hex];
 
-                sql_transaction.execute(&insert_tx_in_cache_sql(&for_coin)?, &tx_cache_params)?;
+                sql_transaction.execute(&insert_tx_in_cache_sql(&for_coin)?, tx_cache_params)?;
 
                 let params = [
                     tx_hash,
@@ -297,16 +331,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let maybe_json_string = conn.query_row::<String, _, _>(&sql, &params, |row| row.get(0));
-            if let Err(SqlError::QueryReturnedNoRows) = maybe_json_string {
-                return Ok(None);
-            }
-
-            let json_string = maybe_json_string?;
-            let tx_details = json::from_str(&json_string)
-                .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?;
-
-            Ok(Some(tx_details))
+            query_single_row(&conn, &sql, params, tx_details_from_row)
         })
         .await
     }
@@ -334,12 +359,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             let conn = selfi.0.lock().unwrap();
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query(NO_PARAMS)?;
-            let result = rows
-                .mapped(|row| {
-                    let string: String = row.get(0)?;
-                    json::from_str(&string).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
-                })
-                .collect::<Result<_, _>>()?;
+            let result = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
             Ok(result)
         })
         .await
@@ -432,7 +452,24 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         paging: &PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
-        todo!()
+        let offset = match paging {
+            PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+            PagingOptionsEnum::FromId(id) => unimplemented!(),
+        };
+        let sql = match coin_type {
+            HistoryCoinType::Coin(ticker) => get_coin_history_sql(&ticker, offset, limit)?,
+            _ => unimplemented!(),
+        };
+        let selfi = self.clone();
+
+        async_blocking(move || {
+            let conn = selfi.0.lock().unwrap();
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query(NO_PARAMS)?;
+            let result = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
+            Ok(result)
+        })
+        .await
     }
 }
 
@@ -440,6 +477,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 mod sql_tx_history_storage_tests {
     use super::*;
     use common::block_on;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn test_init_collection() {
@@ -672,5 +710,33 @@ mod sql_tx_history_storage_tests {
             .unwrap();
 
         assert_eq!(tx_hex, expected_tx_hex);
+    }
+
+    #[test]
+    fn get_history_for_coin_page_number() {
+        let for_coin = "tBCH";
+        let storage = SqliteTxHistoryStorage::in_memory();
+        block_on(storage.init(for_coin)).unwrap();
+        let tx_details = include_str!("for_tests/tBCH_tx_history_fixtures.json");
+        let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
+
+        block_on(storage.add_transactions_to_history(for_coin, transactions)).unwrap();
+
+        let coin_type = HistoryCoinType::Coin("tBCH".into());
+        let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
+        let limit = 4;
+
+        let transactions = block_on(storage.get_history(coin_type, &paging, limit)).unwrap();
+
+        let expected_internal_ids: Vec<BytesJson> = vec![
+            "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
+            "c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce".into(),
+            "091877294268b2b1734255067146f15c3ac5e6199e72cd4f68a8d9dec32bb0c0".into(),
+            "d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7".into(),
+        ];
+
+        let actual_ids: Vec<_> = transactions.into_iter().map(|tx| tx.internal_id).collect();
+
+        assert_eq!(expected_internal_ids, actual_ids);
     }
 }

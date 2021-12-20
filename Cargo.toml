@@ -109,7 +109,6 @@ serialization = { path = "mm2src/mm2_bitcoin/serialization" }
 serialization_derive = { path = "mm2src/mm2_bitcoin/serialization_derive" }
 sp-runtime-interface = { version = "3.0.0", default-features = false, features = ["disable_target_static_assertions"] }
 sp-trie = { version = "3.0", default-features = false }
-sql-builder = "3.1.1"
 
 trie-db = { version = "0.22.6", default-features = false }
 trie-root = "0.16.0"

@@ -3,8 +3,8 @@ use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwa
 use common::log::debug;
 use common::mm_ctx::MmArc;
 use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use common::sql_builder::SqlBuilder;
 use common::PagingOptions;
-use sql_builder::SqlBuilder;
 use std::convert::TryInto;
 
 use super::database_common::offset_by_uuid;
