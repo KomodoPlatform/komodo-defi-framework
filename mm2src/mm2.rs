@@ -104,7 +104,7 @@ pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError
         static ref REGEX_NUMBER: Regex = Regex::new(".*[0-9].*").unwrap();
         static ref REGEX_LOWERCASE: Regex = Regex::new(".*[a-z].*").unwrap();
         static ref REGEX_UPPERCASE: Regex = Regex::new(".*[A-Z].*").unwrap();
-        static ref REGEX_SPECIFIC_CHARS: Regex = Regex::new(".*[*.!@#$%^&(){}:;'<>,.?/~`_+\\-=|].*").unwrap();
+        static ref REGEX_SPECIFIC_CHARS: Regex = Regex::new(".*[^A-Za-z0-9].*").unwrap();
     }
     if password.to_lowercase().contains("password") {
         return MmError::err(PasswordPolicyError::ContainsTheWordPassword);
@@ -180,8 +180,9 @@ fn check_password_policy() {
         PasswordPolicyError::ContainsTheWordPassword
     );
 
-    // Valid password
-    assert_eq!(password_policy("StrongPass123*").is_err(), false);
+    // Valid passwords
+    password_policy("StrongPass123*").unwrap();
+    password_policy(r#"StrongPass123[]\± "#).unwrap();
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
