@@ -1314,12 +1314,12 @@ fn test_withdraw_and_send_legacy_to_segwit() {
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-    let (_ctx, coin, _priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000.into(), Some(0));
+    let (_ctx, coin, _priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000u64.into(), Some(0));
     let my_public_key = coin.my_public_key().unwrap();
 
     let time_lock = (now_ms() / 1000) as u32 - 3600;
     let tx = coin
-        .send_maker_payment(time_lock, my_public_key, &[0; 20], 1.into(), &None)
+        .send_maker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None)
         .wait()
         .unwrap();
 
@@ -1336,10 +1336,16 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         .wait()
         .unwrap();
 
-    let found =
-        block_on(coin.search_for_swap_tx_spend_my(time_lock, &*coin.my_public_key(), &[0; 20], &tx.tx_hex(), 0, &None))
-            .unwrap()
-            .unwrap();
+    let found = block_on(coin.search_for_swap_tx_spend_my(
+        time_lock,
+        &*coin.my_public_key().unwrap(),
+        &[0; 20],
+        &tx.tx_hex(),
+        0,
+        &None,
+    ))
+    .unwrap()
+    .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
 }
 
@@ -1347,12 +1353,12 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-    let (_ctx, coin, _priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000.into(), Some(0));
+    let (_ctx, coin, _priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000u64.into(), Some(0));
     let my_public_key = coin.my_public_key().unwrap();
 
     let time_lock = (now_ms() / 1000) as u32 - 3600;
     let tx = coin
-        .send_taker_payment(time_lock, my_public_key, &[0; 20], 1.into(), &None)
+        .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None)
         .wait()
         .unwrap();
 
@@ -1369,10 +1375,16 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         .wait()
         .unwrap();
 
-    let found =
-        block_on(coin.search_for_swap_tx_spend_my(time_lock, &*coin.my_public_key(), &[0; 20], &tx.tx_hex(), 0, &None))
-            .unwrap()
-            .unwrap();
+    let found = block_on(coin.search_for_swap_tx_spend_my(
+        time_lock,
+        &*coin.my_public_key().unwrap(),
+        &[0; 20],
+        &tx.tx_hex(),
+        0,
+        &None,
+    ))
+    .unwrap()
+    .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
 }
 

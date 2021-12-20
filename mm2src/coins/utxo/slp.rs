@@ -1052,7 +1052,8 @@ impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> {
-        let slp_address = try_s!(self.platform_coin.slp_address(&self.platform_coin.as_ref().my_address));
+        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
+        let slp_address = try_s!(self.platform_coin.slp_address(my_address));
         slp_address.encode()
     }
 

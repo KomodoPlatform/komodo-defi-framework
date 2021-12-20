@@ -1899,7 +1899,7 @@ where
         UtxoRpcClientEnum::Electrum(client) => {
             let my_address = match coin.as_ref().derivation_method.iguana_or_err() {
                 Ok(my_address) => my_address,
-                Err(e) => return RequestTxHistoryResult::UnknownError(e.to_string()),
+                Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
             };
             let script = output_script(my_address, ScriptType::P2PKH);
             let script_hash = electrum_script_hash(&script);

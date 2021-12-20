@@ -143,6 +143,7 @@ pub enum GetTxDetailsError<E: TxHistoryStorageError> {
     ParseSlpScriptError(ParseSlpScriptError),
     ToSlpAddressError(String),
     InvalidSlpTransaction(H256),
+    AddressDerivationError(DerivationMethodNotSupported),
 }
 
 impl<E: TxHistoryStorageError> From<UtxoRpcError> for GetTxDetailsError<E> {
@@ -159,6 +160,10 @@ impl<E: TxHistoryStorageError> From<serialization::Error> for GetTxDetailsError<
 
 impl<E: TxHistoryStorageError> From<ParseSlpScriptError> for GetTxDetailsError<E> {
     fn from(err: ParseSlpScriptError) -> Self { GetTxDetailsError::ParseSlpScriptError(err) }
+}
+
+impl<E: TxHistoryStorageError> From<DerivationMethodNotSupported> for GetTxDetailsError<E> {
+    fn from(err: DerivationMethodNotSupported) -> Self { GetTxDetailsError::AddressDerivationError(err) }
 }
 
 impl BchCoin {
@@ -402,7 +407,8 @@ impl BchCoin {
         height_and_time: Option<BlockHeightAndTime>,
         storage: &T,
     ) -> Result<TransactionDetails, MmError<GetTxDetailsError<T::Error>>> {
-        let my_addresses = [self.as_ref().my_address.clone()];
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
+        let my_addresses = [my_address.clone()];
         let mut tx_builder = TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, my_addresses);
         for output in &tx.outputs {
             let addresses = match self.addresses_from_script(&output.script_pubkey.clone().into()) {
@@ -549,8 +555,9 @@ impl BchCoin {
             None => tx.hash().reversed(),
         };
 
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
         let slp_address = self
-            .slp_address(&self.as_ref().my_address)
+            .slp_address(my_address)
             .map_to_mm(GetTxDetailsError::ToSlpAddressError)?;
         let addresses = [slp_address];
 
