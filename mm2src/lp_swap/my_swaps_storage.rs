@@ -44,7 +44,7 @@ impl MySwapsStorage {
 mod native_impl {
     use super::*;
     use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectRecentSwapsUuidsErr};
-    use common::rusqlite::Error as SqlError;
+    use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectRecentSwapsUuidsErr> for MySwapsError {
         fn from(e: SelectRecentSwapsUuidsErr) -> Self {

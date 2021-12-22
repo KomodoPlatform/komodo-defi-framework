@@ -61,6 +61,7 @@ crc = "1.8"
 crc32fast = { version = "1.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 crypto = { path = "mm2src/crypto" }
+db_common = { path = "mm2src/db_common" }
 derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
@@ -146,6 +147,7 @@ members = [
     "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
     "mm2src/crypto",
+    "mm2src/db_common",
     "mm2src/derives/ser_error",
     "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",

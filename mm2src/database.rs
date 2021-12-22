@@ -1,16 +1,15 @@
 /// The module responsible to work with SQLite database
 ///
-#[path = "database/database_common.rs"]
-pub mod database_common;
-#[path = "database/my_orders.rs"] pub mod my_orders;
+#[path = "database/my_orders.rs"]
+pub mod my_orders;
 #[path = "database/my_swaps.rs"] pub mod my_swaps;
 #[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::{log::{debug, error, info},
-             mm_ctx::MmArc,
-             rusqlite::{Result as SqlResult, NO_PARAMS}};
+             mm_ctx::MmArc};
+use db_common::sqlite::rusqlite::{Result as SqlResult, NO_PARAMS};
 
 use my_swaps::fill_my_swaps_from_json_statements;
 use stats_swaps::create_and_fill_stats_swaps_from_json_statements;

@@ -2,12 +2,11 @@
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use common::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
-use common::sql_builder::SqlBuilder;
 use common::PagingOptions;
+use db_common::sqlite::offset_by_uuid;
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use db_common::sqlite::sql_builder::SqlBuilder;
 use std::convert::TryInto;
-
-use super::database_common::offset_by_uuid;
 
 const MY_SWAPS_TABLE: &str = "my_swaps";
 

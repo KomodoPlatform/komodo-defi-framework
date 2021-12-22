@@ -48,7 +48,7 @@ use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 cfg_native! {
     use common::ip_addr::myipaddr;
-    use common::rusqlite::Error as SqlError;
+    use db_common::sqlite::rusqlite::Error as SqlError;
 }
 
 #[path = "lp_init/init_context.rs"] mod init_context;

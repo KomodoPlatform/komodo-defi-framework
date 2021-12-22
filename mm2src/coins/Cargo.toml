@@ -26,6 +26,7 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
 crypto = { path = "../crypto" }
+db_common = { path = "../db_common" }
 derive_more = "0.99"
 ethabi = { git = "https://github.com/artemii235/ethabi" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }

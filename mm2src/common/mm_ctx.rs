@@ -26,7 +26,7 @@ cfg_wasm32! {
 
 cfg_native! {
     use crate::mm_metrics::prometheus;
-    use rusqlite::Connection;
+    use db_common::sqlite::rusqlite::Connection;
     use std::net::{IpAddr, SocketAddr};
     use std::sync::MutexGuard;
 }

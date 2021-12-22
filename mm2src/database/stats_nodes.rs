@@ -2,7 +2,7 @@
 use crate::mm2::lp_stats::{NodeInfo, NodeVersionStat};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use common::rusqlite::{Error as SqlError, Result as SqlResult, NO_PARAMS};
+use db_common::sqlite::rusqlite::{Error as SqlError, Result as SqlResult, NO_PARAMS};
 use std::collections::hash_map::HashMap;
 
 pub const CREATE_NODES_TABLE: &str = "CREATE TABLE IF NOT EXISTS nodes (

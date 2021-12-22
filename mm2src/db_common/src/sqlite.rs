@@ -1,7 +1,8 @@
-use common::log::debug;
-use common::rusqlite::{Connection, Result as SqlResult, ToSql};
-use common::sql_builder::SqlBuilder;
-use std::convert::TryInto;
+pub use rusqlite;
+pub use sql_builder;
+
+use rusqlite::{Connection, Result as SqlResult, ToSql};
+use sql_builder::SqlBuilder;
 use uuid::Uuid;
 
 /// Calculates the offset to skip records by uuid.
@@ -37,10 +38,12 @@ pub fn offset_by_uuid(
         .iter()
         .map(|(key, value)| (*key, value as &dyn ToSql))
         .collect();
+    /*
     debug!(
         "Trying to execute SQL query {} with params {:?}",
         external_query, params_for_offset
     );
+     */
     let mut stmt = conn.prepare(&external_query)?;
     let offset: isize = stmt.query_row_named(params_as_trait.as_slice(), |row| row.get(0))?;
     Ok(offset.try_into().expect("row index should be always above zero"))
