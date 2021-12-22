@@ -178,7 +178,7 @@ where
         match req.fee {
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
                 let fixed = sat_from_big_decimal(&amount, decimals)?;
-                tx_builder = tx_builder.with_fee(ActualTxFee::Fixed(fixed));
+                tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed));
             },
             Some(WithdrawFee::UtxoPerKbyte { ref amount }) => {
                 let dynamic = sat_from_big_decimal(&amount, decimals)?;

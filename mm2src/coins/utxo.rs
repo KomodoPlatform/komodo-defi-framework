@@ -294,18 +294,15 @@ pub struct AdditionalTxData {
 /// The fee set from coins config
 #[derive(Debug)]
 pub enum TxFee {
-    /// Tell the coin that it has fixed tx fee not depending on transaction size
-    Fixed(u64),
     /// Tell the coin that it should request the fee from daemon RPC and calculate it relying on tx size
     Dynamic(EstimateFeeMethod),
+    /// Tell the coin that it has fixed tx fee per kb.
     FixedPerKb(u64),
 }
 
 /// The actual "runtime" fee that is received from RPC in case of dynamic calculation
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ActualTxFee {
-    /// fixed tx fee not depending on transaction size
-    Fixed(u64),
     /// fee amount per Kbyte received from coin RPC
     Dynamic(u64),
     /// Use specified amount per each 1 kb of transaction and also per each output less than amount.
@@ -1586,15 +1583,9 @@ pub trait UtxoCoinBuilder {
         Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
     }
 
-    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<TxFee> {
-        const ONE_DOGE: u64 = 100000000;
-
-        if self.ticker() == "DOGE" {
-            return Ok(TxFee::FixedPerKb(ONE_DOGE));
-        }
-
+    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, MmError<UtxoCoinBuildError>> {
         let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => TxFee::Fixed(1000),
+            None => TxFee::FixedPerKb(1000),
             Some(0) => {
                 let fee_method = match &rpc_client {
                     UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
@@ -1606,7 +1597,7 @@ pub trait UtxoCoinBuilder {
                 };
                 TxFee::Dynamic(fee_method)
             },
-            Some(fee) => TxFee::Fixed(fee),
+            Some(fee) => TxFee::FixedPerKb(fee),
         };
         Ok(tx_fee)
     }

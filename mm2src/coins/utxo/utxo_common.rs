@@ -166,7 +166,6 @@ pub struct UtxoMergeParams {
 pub async fn get_tx_fee(coin: &UtxoCoinFields) -> Result<ActualTxFee, JsonRpcError> {
     let conf = &coin.conf;
     match &coin.tx_fee {
-        TxFee::Fixed(fee) => Ok(ActualTxFee::Fixed(*fee)),
         TxFee::Dynamic(method) => {
             let fee = coin
                 .rpc_client
@@ -186,7 +185,6 @@ where
 {
     let coin_fee = coin.get_tx_fee().await?;
     let mut fee = match coin_fee {
-        ActualTxFee::Fixed(fee) => fee,
         // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
         ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * tx_size) / KILO_BYTE,
         // return satoshis here as swap spend transaction size is always less than 1 kb
@@ -433,7 +431,6 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         actual_tx_fee: &ActualTxFee,
     ) -> bool {
         self.tx_fee = match &actual_tx_fee {
-            ActualTxFee::Fixed(f) => *f,
             ActualTxFee::Dynamic(f) => {
                 let transaction = UtxoTx::from(self.tx.clone());
                 let v_size = tx_size_in_v_bytes(from_addr_format, &transaction);
@@ -2207,7 +2204,6 @@ where
     let fut = async move {
         let fee = try_s!(coin.get_tx_fee().await);
         let amount = match fee {
-            ActualTxFee::Fixed(f) => f,
             ActualTxFee::Dynamic(f) => f,
             ActualTxFee::FixedPerKb(f) => f,
         };
@@ -2250,10 +2246,6 @@ where
     let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
 
     match tx_fee {
-        ActualTxFee::Fixed(fee_amount) => {
-            let amount = big_decimal_from_sat(fee_amount as i64, decimals);
-            Ok(amount)
-        },
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
         ActualTxFee::Dynamic(fee) => {
             // take into account that the dynamic tx fee may increase during the swap

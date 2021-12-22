@@ -623,7 +623,7 @@ fn test_get_trade_fee() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
     // check if the coin's tx fee is expected
-    check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
+    check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
     let actual_trade_fee = coin.get_trade_fee().wait().unwrap();
     let expected_trade_fee_amount = big_decimal_from_sat(
@@ -650,7 +650,7 @@ fn test_sender_trade_preimage_zero_allowance() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
     // check if the coin's tx fee is expected
-    check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
+    check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
     let allowance = block_on(coin.allowance(coin.swap_contract_address)).expect("!allowance");
     assert_eq!(allowance, 0.into());
@@ -687,7 +687,7 @@ fn test_sender_trade_preimage_with_allowance() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
     // check if the coin's tx fee is expected
-    check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
+    check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
     let allowance = block_on(coin.allowance(coin.swap_contract_address)).expect("!allowance");
     assert_eq!(allowance, 300_000_000.into());
@@ -736,7 +736,7 @@ fn test_receiver_trade_preimage() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
     // check if the coin's tx fee is expected
-    check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
+    check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
     let actual = coin
         .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
@@ -763,7 +763,7 @@ fn test_taker_fee_tx_fee() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
     // check if the coin's tx fee is expected
-    check_tx_fee(&coin, ActualTxFee::Fixed(EXPECTED_TX_FEE as u64));
+    check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
     let expected_balance = CoinBalance {
         spendable: BigDecimal::from(5),
         unspendable: BigDecimal::from(0),

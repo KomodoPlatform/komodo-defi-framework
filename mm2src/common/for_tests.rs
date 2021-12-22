@@ -247,6 +247,7 @@ impl MarketMakerIt {
         local: Option<LocalStart>,
         envs: &[(&str, &str)],
     ) -> Result<MarketMakerIt, String> {
+        conf["allow_weak_password"] = true.into();
         let ip = try_s!(Self::myipaddr_from_conf(&mut conf));
         let folder = new_mm2_temp_folder_path(Some(ip));
         let db_dir = match conf["dbdir"].as_str() {

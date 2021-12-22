@@ -142,6 +142,7 @@ use std::ffi::CStr;
 use std::fmt::{self, Write as FmtWrite};
 use std::future::Future as Future03;
 use std::io::Write;
+use std::iter::Peekable;
 use std::mem::{forget, size_of, zeroed};
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
@@ -1606,6 +1607,75 @@ fn test_calc_total_pages() {
     assert_eq!(1, calc_total_pages(1, 1));
     assert_eq!(2, calc_total_pages(16, 8));
     assert_eq!(2, calc_total_pages(15, 8));
+}
+
+struct SequentialCount<I>
+where
+    I: Iterator,
+{
+    iter: Peekable<I>,
+}
+
+impl<I> SequentialCount<I>
+where
+    I: Iterator,
+{
+    fn new(iter: I) -> Self { SequentialCount { iter: iter.peekable() } }
+}
+
+/// https://stackoverflow.com/questions/32702386/iterator-adapter-that-counts-repeated-characters
+impl<I> Iterator for SequentialCount<I>
+where
+    I: Iterator,
+    I::Item: Eq,
+{
+    type Item = (I::Item, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check the next value in the inner iterator
+        match self.iter.next() {
+            // There is a value, so keep it
+            Some(head) => {
+                // We've seen one value so far
+                let mut count = 1;
+                // Check to see what the next value is without
+                // actually advancing the inner iterator
+                while self.iter.peek() == Some(&head) {
+                    // It's the same value, so go ahead and consume it
+                    self.iter.next();
+                    count += 1;
+                }
+                // The next element doesn't match the current value
+                // complete this iteration
+                Some((head, count))
+            },
+            // The inner iterator is complete, so we are also complete
+            None => None,
+        }
+    }
+}
+
+pub fn is_acceptable_input_on_repeated_characters(entry: &str, limit: usize) -> bool {
+    for (_, count) in SequentialCount::new(entry.chars()) {
+        if count >= limit {
+            return false;
+        }
+    }
+    true
+}
+
+#[test]
+fn test_is_acceptable_input_on_repeated_characters() {
+    assert_eq!(is_acceptable_input_on_repeated_characters("Hello", 3), true);
+    assert_eq!(is_acceptable_input_on_repeated_characters("Hellooo", 3), false);
+    assert_eq!(
+        is_acceptable_input_on_repeated_characters("SuperStrongPassword123*", 3),
+        true
+    );
+    assert_eq!(
+        is_acceptable_input_on_repeated_characters("SuperStrongaaaPassword123*", 3),
+        false
+    );
 }
 
 #[derive(Deserialize, Serialize)]

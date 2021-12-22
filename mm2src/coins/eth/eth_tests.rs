@@ -46,6 +46,7 @@ fn eth_coin_for_test(
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         my_address: key_pair.address(),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
@@ -220,6 +221,7 @@ fn send_and_refund_erc20_payment() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -282,6 +284,7 @@ fn send_and_refund_eth_payment() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -363,6 +366,7 @@ fn test_nonce_several_urls() {
         decimals: 18,
         gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotStarted),
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
@@ -399,6 +403,7 @@ fn test_wait_for_payment_spend_timeout() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -458,6 +463,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -513,29 +519,34 @@ fn test_search_for_swap_tx_spend_was_spent() {
 #[test]
 fn test_gas_station() {
     make_gas_station_request.mock_safe(|_| {
-        let data = GasStationData { average: 500.0 };
+        let data = GasStationData {
+            average: 500.into(),
+            fast: 1000.into(),
+        };
         MockResult::Return(Box::pin(async move { Ok(data) }))
     });
-    let res_eth = GasStationData::get_gas_price("https://ethgasstation.info/api/ethgasAPI.json", 8)
-        .wait()
-        .unwrap();
-
-    let result_eth = block_on(make_gas_station_request(
+    let res_eth = GasStationData::get_gas_price(
         "https://ethgasstation.info/api/ethgasAPI.json",
-    ))
+        8,
+        GasStationPricePolicy::MeanAverageFast,
+    )
+    .wait()
     .unwrap();
-    assert_eq!(
-        BigDecimal::from(result_eth.average),
-        u256_to_big_decimal(res_eth, 8).unwrap()
-    );
-    let res_polygon = GasStationData::get_gas_price("https://gasstation-mainnet.matic.network/", 9)
-        .wait()
-        .unwrap();
-    let result_polygon = block_on(make_gas_station_request("https://gasstation-mainnet.matic.network/")).unwrap();
-    assert_eq!(
-        BigDecimal::from(result_polygon.average),
-        u256_to_big_decimal(res_polygon, 9).unwrap()
-    );
+    let one_gwei = U256::from(10u64.pow(9));
+
+    let expected_eth_wei = U256::from(75) * one_gwei;
+    assert_eq!(expected_eth_wei, res_eth);
+
+    let res_polygon = GasStationData::get_gas_price(
+        "https://gasstation-mainnet.matic.network/",
+        9,
+        GasStationPricePolicy::Average,
+    )
+    .wait()
+    .unwrap();
+
+    let expected_eth_polygon = U256::from(500) * one_gwei;
+    assert_eq!(expected_eth_polygon, res_polygon);
 }
 
 #[test]
@@ -560,6 +571,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         decimals: 18,
         gas_station_url: None,
         gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         key_pair,
@@ -752,7 +764,7 @@ fn get_sender_trade_preimage() {
         }
     }
 
-    EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
+    EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
 
@@ -800,7 +812,7 @@ fn get_erc20_sender_trade_preimage() {
     EthCoin::allowance
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(unsafe { ALLOWANCE.into() }))));
 
-    EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
+    EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
     EthCoinImpl::estimate_gas.mock_safe(|_, _| {
         unsafe { ESTIMATE_GAS_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(APPROVE_GAS_LIMIT.into())))
@@ -883,7 +895,7 @@ fn get_erc20_sender_trade_preimage() {
 
 #[test]
 fn get_receiver_trade_preimage() {
-    EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
+    EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
     let amount = u256_to_big_decimal((150_000 * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");
@@ -905,7 +917,7 @@ fn test_get_fee_to_send_taker_fee() {
     const DEX_FEE_AMOUNT: u64 = 100_000;
     const TRANSFER_GAS_LIMIT: u64 = 40_000;
 
-    EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
+    EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
     EthCoinImpl::estimate_gas
         .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(TRANSFER_GAS_LIMIT.into()))));
 
@@ -952,7 +964,7 @@ fn test_get_fee_to_send_taker_fee() {
 fn test_get_fee_to_send_taker_fee_insufficient_balance() {
     const DEX_FEE_AMOUNT: u64 = 100_000_000_000;
 
-    EthCoinImpl::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(40.into()))));
+    EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(40.into()))));
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Erc20 {
             platform: "ETH".to_string(),

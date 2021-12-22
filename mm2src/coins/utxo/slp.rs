@@ -1489,7 +1489,7 @@ impl MmCoin for SlpToken {
             match req.fee {
                 Some(WithdrawFee::UtxoFixed { amount }) => {
                     let fixed = sat_from_big_decimal(&amount, platform_decimals)?;
-                    tx_builder = tx_builder.with_fee(ActualTxFee::Fixed(fixed))
+                    tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed))
                 },
                 Some(WithdrawFee::UtxoPerKbyte { amount }) => {
                     let dynamic = sat_from_big_decimal(&amount, platform_decimals)?;

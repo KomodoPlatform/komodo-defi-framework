@@ -2472,7 +2472,7 @@ impl Orderbook {
             }
 
             if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
-                log::warn!(
+                log::debug!(
                     "Received zero or hashed_null_node pair {} trie root from pub {}",
                     alb_pair,
                     from_pubkey

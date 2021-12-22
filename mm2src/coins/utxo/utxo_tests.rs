@@ -124,7 +124,7 @@ fn utxo_coin_fields_for_test(
         },
         decimals: 8,
         dust_amount: UTXO_DUST_AMOUNT,
-        tx_fee: TxFee::Fixed(1000),
+        tx_fee: TxFee::FixedPerKb(1000),
         rpc_client,
         priv_key_policy,
         derivation_method,
@@ -2654,8 +2654,7 @@ fn firo_lelantus_tx_details() {
 
 #[test]
 fn test_generate_tx_doge_fee() {
-    // A tx below 1kb is always 1 doge fee yes.
-    // But keep in mind that every output below 1 doge will incur and extra 1 doge dust fee
+    // A tx below 1kb is always 0,01 doge fee per kb.
     let config = json!({
         "coin": "DOGE",
         "name": "dogecoin",
@@ -2664,9 +2663,8 @@ fn test_generate_tx_doge_fee() {
         "pubtype": 30,
         "p2shtype": 22,
         "wiftype": 158,
-        "txfee": 0,
+        "txfee": 1000000,
         "force_min_relay_fee": true,
-        "dust": 100000000,
         "mm2": 1,
         "required_confirmations": 2,
         "avg_blocktime": 1,
@@ -2700,7 +2698,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 100000000;
+    let expected_fee = 1000000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -2721,7 +2719,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 200000000;
+    let expected_fee = 2000000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -2742,7 +2740,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 300000000;
+    let expected_fee = 3000000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 

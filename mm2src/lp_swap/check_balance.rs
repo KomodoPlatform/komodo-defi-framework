@@ -2,7 +2,7 @@ use super::taker_swap::MaxTakerVolumeLessThanDust;
 use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 use bigdecimal::BigDecimal;
 use coins::{BalanceError, MmCoinEnum, TradeFee, TradePreimageError};
-use common::log::info;
+use common::log::debug;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
@@ -24,7 +24,7 @@ pub async fn check_my_coin_balance_for_swap(
     taker_fee: Option<TakerFeeAdditionalInfo>,
 ) -> CheckBalanceResult<()> {
     let ticker = coin.ticker();
-    info!("Check my_coin '{}' balance for swap", ticker);
+    debug!("Check my_coin '{}' balance for swap", ticker);
     let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
 
     let locked = match swap_uuid {
@@ -59,7 +59,7 @@ pub async fn check_my_coin_balance_for_swap(
         MmNumber::from(0)
     };
 
-    info!(
+    debug!(
         "{} balance {:?}, locked {:?}, volume {:?}, fee {:?}, dex_fee {:?}",
         ticker,
         balance.to_fraction(),
@@ -94,7 +94,7 @@ pub async fn check_other_coin_balance_for_swap(
         return Ok(());
     }
     let ticker = coin.ticker();
-    info!("Check other_coin '{}' balance for swap", ticker);
+    debug!("Check other_coin '{}' balance for swap", ticker);
     let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
 
     let locked = match swap_uuid {
@@ -105,7 +105,7 @@ pub async fn check_other_coin_balance_for_swap(
     if ticker == trade_fee.coin {
         let available = &balance - &locked;
         let required = trade_fee.amount;
-        info!(
+        debug!(
             "{} balance {:?}, locked {:?}, required {:?}",
             ticker,
             balance.to_fraction(),
@@ -136,7 +136,7 @@ pub async fn check_base_coin_balance_for_swap(
 ) -> CheckBalanceResult<()> {
     let ticker = trade_fee.coin.as_str();
     let trade_fee_fraction = trade_fee.amount.to_fraction();
-    info!(
+    debug!(
         "Check if the base coin '{}' has sufficient balance to pay the trade fee {:?}",
         ticker, trade_fee_fraction
     );
@@ -148,7 +148,7 @@ pub async fn check_base_coin_balance_for_swap(
     };
     let available = balance - &locked;
 
-    info!(
+    debug!(
         "{} balance {:?}, locked {:?}",
         ticker,
         balance.to_fraction(),
