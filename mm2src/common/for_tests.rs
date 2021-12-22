@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::executor::Timer;
 use crate::mm_ctx::MmArc;
 use crate::mm_metrics::{MetricType, MetricsJson};
-use crate::{now_float, now_ms};
+use crate::{now_float, now_ms, PagingOptionsEnum};
 
 cfg_wasm32! {
     use crate::log::LogLevel;
@@ -956,7 +956,35 @@ pub async fn enable_bch_with_tokens(
         }))
         .await
         .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_slp' failed: {}", enable.1);
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_bch_with_tokens' failed: {}",
+        enable.1
+    );
+    json::from_str(&enable.1).unwrap()
+}
+
+pub async fn my_tx_history_v2<T>(
+    mm: &MarketMakerIt,
+    coin: &str,
+    limit: usize,
+    paging: Option<PagingOptionsEnum<T>>,
+) -> Json {
+    let request = mm
+        .rpc(json! ({
+            "userpass": mm.userpass,
+            "method": "my_tx_history",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "limit": limit,
+                "paging_options": paging,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'my_tx_history' failed: {}", enable.1);
     json::from_str(&enable.1).unwrap()
 }
 

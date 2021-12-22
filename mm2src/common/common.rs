@@ -1675,7 +1675,7 @@ fn test_is_acceptable_input_on_repeated_characters() {
     );
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub enum PagingOptionsEnum<Id> {
     FromId(Id),
     PageNumber(NonZeroUsize),

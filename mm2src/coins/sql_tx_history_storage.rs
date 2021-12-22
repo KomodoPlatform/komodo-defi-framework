@@ -1,4 +1,5 @@
-use crate::my_tx_history_v2::{HistoryCoinType, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{GetHistoryResult, HistoryCoinType, RemoveTxResult, TxHistoryStorage,
+                              TxHistoryStorageError};
 use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
 use common::mm_error::prelude::*;
@@ -6,8 +7,10 @@ use common::{async_blocking, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
+use db_common::sqlite::{offset_by_id, validate_table_name};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
@@ -15,16 +18,6 @@ const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type=
 fn tx_history_table(ticker: &str) -> String { ticker.to_owned() + "_tx_history" }
 
 fn tx_cache_table(ticker: &str) -> String { ticker.to_owned() + "_tx_cache" }
-
-fn validate_table_name(table_name: &str) -> Result<(), MmError<SqlError>> {
-    // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.
-    // So we have to use a plain concatenation disallowing any characters in the table name that may lead to SQL injection.
-    if table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        Ok(())
-    } else {
-        MmError::err(SqlError::InvalidParameterName(table_name.to_string()))
-    }
-}
 
 fn create_tx_history_table_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(for_coin);
@@ -154,21 +147,22 @@ fn get_tx_hex_from_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     Ok(sql)
 }
 
-fn get_coin_history_sql(for_coin: &str, offset: usize, limit: usize) -> Result<String, MmError<SqlError>> {
+fn get_history_builder_preimage(for_coin: &str) -> Result<SqlBuilder, MmError<SqlError>> {
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
     let mut sql_builder = SqlBuilder::select_from(table_name);
-    sql_builder.field("details_json");
     sql_builder.and_where("token_id = ?1");
+    Ok(sql_builder)
+}
+
+fn finalize_get_history_sql_builder(sql_builder: &mut SqlBuilder, offset: usize, limit: usize) {
+    sql_builder.field("details_json");
     sql_builder.offset(offset);
     sql_builder.limit(limit);
     sql_builder.order_asc("confirmation_status");
     sql_builder.order_desc("block_height");
     sql_builder.order_asc("id");
-
-    let sql = sql_builder.sql().expect("valid sql");
-    Ok(sql)
 }
 
 #[derive(Clone)]
@@ -449,29 +443,55 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
     async fn get_history(
         &self,
         coin_type: HistoryCoinType,
-        paging: &PagingOptionsEnum<BytesJson>,
+        paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
-    ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
-        let offset = match paging {
-            PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-            PagingOptionsEnum::FromId(id) => unimplemented!(),
-        };
-        let (sql, token_id) = match coin_type {
-            HistoryCoinType::Coin(ticker) => (get_coin_history_sql(&ticker, offset, limit)?, "".to_owned()),
-            HistoryCoinType::Token { platform, token_id } => (
-                get_coin_history_sql(&platform, offset, limit)?,
-                format!("{:02x}", token_id),
-            ),
-            _ => unimplemented!(),
-        };
+    ) -> Result<GetHistoryResult, MmError<Self::Error>> {
         let selfi = self.clone();
-        let params = [token_id];
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
+            let (mut sql_builder, token_id) = match coin_type {
+                HistoryCoinType::Coin(ticker) => (get_history_builder_preimage(&ticker)?, "".to_owned()),
+                HistoryCoinType::Token { platform, token_id } => {
+                    (get_history_builder_preimage(&platform)?, format!("{:02x}", token_id))
+                },
+                HistoryCoinType::L2 { .. } => unimplemented!("Not implemented yet for HistoryCoinType::L2"),
+            };
+
+            let mut total_builder = sql_builder.clone();
+            total_builder.count("id");
+            let total_sql = total_builder.sql().expect("valid sql");
+            let total: isize = conn.query_row(&total_sql, [&token_id], |row| row.get(0))?;
+            let total = total.try_into().expect("count should be always above zero");
+
+            let offset = match paging {
+                PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+                PagingOptionsEnum::FromId(id) => {
+                    let id_str = format!("{:02x}", id);
+                    let params = [&token_id, &id_str];
+                    offset_by_id(
+                        &conn,
+                        &sql_builder,
+                        params,
+                        "internal_id",
+                        "confirmation_status ASC, block_height DESC, id ASC",
+                        "internal_id = ?2",
+                    )?
+                },
+            };
+
+            finalize_get_history_sql_builder(&mut sql_builder, offset, limit);
+            let params = [token_id];
+
+            let sql = sql_builder.sql().expect("valid sql");
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query(params)?;
-            let result = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
+            let transactions = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
+            let result = GetHistoryResult {
+                transactions,
+                skipped: offset,
+                total,
+            };
             Ok(result)
         })
         .await
@@ -718,7 +738,7 @@ mod sql_tx_history_storage_tests {
     }
 
     #[test]
-    fn get_history_for_coin_page_number() {
+    fn get_history_page_number() {
         let for_coin = "tBCH";
         let storage = SqliteTxHistoryStorage::in_memory();
         block_on(storage.init(for_coin)).unwrap();
@@ -731,7 +751,7 @@ mod sql_tx_history_storage_tests {
         let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
         let limit = 4;
 
-        let transactions = block_on(storage.get_history(coin_type, &paging, limit)).unwrap();
+        let result = block_on(storage.get_history(coin_type, paging, limit)).unwrap();
 
         let expected_internal_ids: Vec<BytesJson> = vec![
             "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
@@ -740,8 +760,10 @@ mod sql_tx_history_storage_tests {
             "d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7".into(),
         ];
 
-        let actual_ids: Vec<_> = transactions.into_iter().map(|tx| tx.internal_id).collect();
+        let actual_ids: Vec<_> = result.transactions.into_iter().map(|tx| tx.internal_id).collect();
 
+        assert_eq!(0, result.skipped);
+        assert_eq!(123, result.total);
         assert_eq!(expected_internal_ids, actual_ids);
 
         let coin_type = HistoryCoinType::Token {
@@ -751,7 +773,7 @@ mod sql_tx_history_storage_tests {
         let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap());
         let limit = 5;
 
-        let transactions = block_on(storage.get_history(coin_type, &paging, limit)).unwrap();
+        let result = block_on(storage.get_history(coin_type, paging, limit)).unwrap();
 
         let expected_internal_ids: Vec<BytesJson> = vec![
             "433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into(),
@@ -761,7 +783,58 @@ mod sql_tx_history_storage_tests {
             "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
         ];
 
-        let actual_ids: Vec<_> = transactions.into_iter().map(|tx| tx.internal_id).collect();
+        let actual_ids: Vec<_> = result.transactions.into_iter().map(|tx| tx.internal_id).collect();
+
+        assert_eq!(5, result.skipped);
+        assert_eq!(121, result.total);
+        assert_eq!(expected_internal_ids, actual_ids);
+    }
+
+    #[test]
+    fn get_history_from_id() {
+        let for_coin = "tBCH";
+        let storage = SqliteTxHistoryStorage::in_memory();
+        block_on(storage.init(for_coin)).unwrap();
+        let tx_details = include_str!("for_tests/tBCH_tx_history_fixtures.json");
+        let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
+
+        block_on(storage.add_transactions_to_history(for_coin, transactions)).unwrap();
+
+        let coin_type = HistoryCoinType::Coin("tBCH".into());
+        let paging =
+            PagingOptionsEnum::FromId("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into());
+        let limit = 3;
+
+        let result = block_on(storage.get_history(coin_type, paging, limit)).unwrap();
+
+        let expected_internal_ids: Vec<BytesJson> = vec![
+            "c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce".into(),
+            "091877294268b2b1734255067146f15c3ac5e6199e72cd4f68a8d9dec32bb0c0".into(),
+            "d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7".into(),
+        ];
+
+        let actual_ids: Vec<_> = result.transactions.into_iter().map(|tx| tx.internal_id).collect();
+
+        assert_eq!(expected_internal_ids, actual_ids);
+
+        let coin_type = HistoryCoinType::Token {
+            platform: "tBCH".into(),
+            token_id: "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into(),
+        };
+        let paging =
+            PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
+        let limit = 4;
+
+        let result = block_on(storage.get_history(coin_type, paging, limit)).unwrap();
+
+        let expected_internal_ids: Vec<BytesJson> = vec![
+            "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
+            "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
+            "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
+            "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
+        ];
+
+        let actual_ids: Vec<_> = result.transactions.into_iter().map(|tx| tx.internal_id).collect();
 
         assert_eq!(expected_internal_ids, actual_ids);
     }

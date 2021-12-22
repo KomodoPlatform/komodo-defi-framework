@@ -8,6 +8,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::get_public_key::get_public_key};
 use coins::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
 use coins::lightning::{connect_to_lightning_node, open_channel, LightningCoin};
+use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::slp::SlpToken;
 use coins::{add_delegation, get_staking_infos, remove_delegation, withdraw};
@@ -115,6 +116,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "init_withdraw" => handle_mmrpc(ctx, request, init_withdraw).await,
         "mm_init_status" => handle_mmrpc(ctx, request, mm_init_status).await,
         "mm_init_user_action" => handle_mmrpc(ctx, request, mm_init_user_action).await,
+        "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
         "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,

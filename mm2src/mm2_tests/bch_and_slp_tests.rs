@@ -397,8 +397,6 @@ fn test_bch_and_slp_testnet_history() {
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let tx_history = true;
-    let enable_bch_with_usdf = block_on(enable_bch_with_tokens(&mm, "tBCH", &["USDF"], rpc_mode, tx_history));
+    let enable_bch_with_usdf = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
     log!({ "enable_bch_with_usdf: {:?}", enable_bch_with_usdf });
-
-    block_on(mm.wait_for_log(777., |log| log.contains("Tx history fetching finished for tBCH"))).unwrap();
 }

@@ -6,7 +6,8 @@ use bitcrypto::sha256;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::BigDecimal;
-use common::{ten, NotSame, PagingOptionsEnum};
+use common::{calc_total_pages, ten, HttpStatusCode, NotSame, PagingOptionsEnum, StatusCode};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
 use rpc::v1::types::Bytes as BytesJson;
@@ -20,6 +21,12 @@ pub enum RemoveTxResult {
 
 impl RemoveTxResult {
     pub fn tx_existed(&self) -> bool { matches!(self, RemoveTxResult::TxRemoved) }
+}
+
+pub struct GetHistoryResult {
+    pub transactions: Vec<TransactionDetails>,
+    pub skipped: usize,
+    pub total: usize,
 }
 
 pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotSame + Send {}
@@ -87,9 +94,9 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn get_history(
         &self,
         coin_type: HistoryCoinType,
-        paging: &PagingOptionsEnum<BytesJson>,
+        paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
-    ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
+    ) -> Result<GetHistoryResult, MmError<Self::Error>>;
 }
 
 pub trait DisplayAddress {
@@ -236,11 +243,24 @@ pub struct MyTxHistoryResponseV2 {
     paging_options: PagingOptionsEnum<BytesJson>,
 }
 
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum MyTxHistoryErrorV2 {
     CoinIsNotActive(String),
     StorageIsNotInitialized(String),
     StorageError(String),
     RpcError(String),
+}
+
+impl HttpStatusCode for MyTxHistoryErrorV2 {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            MyTxHistoryErrorV2::CoinIsNotActive(_) => StatusCode::PRECONDITION_REQUIRED,
+            MyTxHistoryErrorV2::StorageIsNotInitialized(_)
+            | MyTxHistoryErrorV2::StorageError(_)
+            | MyTxHistoryErrorV2::RpcError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 }
 
 impl From<CoinFindError> for MyTxHistoryErrorV2 {
@@ -306,11 +326,16 @@ pub async fn my_tx_history_v2_rpc(
         .await
         .map_to_mm(MyTxHistoryErrorV2::RpcError)?;
 
-    let transactions = tx_history_storage
-        .get_history(coin.get_history_coin_type(), &request.paging_options, request.limit)
+    let history = tx_history_storage
+        .get_history(
+            coin.get_history_coin_type(),
+            request.paging_options.clone(),
+            request.limit,
+        )
         .await?;
 
-    let transactions = transactions
+    let transactions = history
+        .transactions
         .into_iter()
         .map(|details| {
             let confirmations = if details.block_height == 0 || details.block_height > current_block {
@@ -328,9 +353,9 @@ pub async fn my_tx_history_v2_rpc(
         transactions,
         sync_status: coin.history_sync_status(),
         limit: request.limit,
-        skipped: 0,
-        total: 0,
-        total_pages: 0,
+        skipped: history.skipped,
+        total: history.total,
+        total_pages: calc_total_pages(history.total, request.limit),
         paging_options: request.paging_options,
     })
 }
