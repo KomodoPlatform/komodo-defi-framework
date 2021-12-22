@@ -109,7 +109,8 @@ pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError
     if password.to_lowercase().contains("password") {
         return MmError::err(PasswordPolicyError::ContainsTheWordPassword);
     }
-    if password.len() < 8 || password.len() > 32 {
+    let password_len = password.chars().count();
+    if password_len < 8 || password_len > 32 {
         return MmError::err(PasswordPolicyError::PasswordLength);
     }
     if !REGEX_NUMBER.is_match(password) {
@@ -183,6 +184,7 @@ fn check_password_policy() {
     // Valid passwords
     password_policy("StrongPass123*").unwrap();
     password_policy(r#"StrongPass123[]\± "#).unwrap();
+    password_policy("StrongPass123£StrongPass123£Pass").unwrap();
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
