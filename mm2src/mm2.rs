@@ -110,7 +110,7 @@ pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError
         return MmError::err(PasswordPolicyError::ContainsTheWordPassword);
     }
     let password_len = password.chars().count();
-    if password_len < 8 || password_len > 32 {
+    if !(8..=32).contains(&password_len) {
         return MmError::err(PasswordPolicyError::PasswordLength);
     }
     if !REGEX_NUMBER.is_match(password) {
