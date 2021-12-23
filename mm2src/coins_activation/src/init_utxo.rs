@@ -347,9 +347,7 @@ impl InitUtxoTask {
             .map_to_mm(|e| InitUtxoError::InvalidCoinProtocol(e.to_string()))?;
 
         let priv_key_policy = match *crypto_ctx {
-            CryptoCtx::KeyPair(ref key_pair_ctx) => {
-                PrivKeyBuildPolicy::PrivKey(&key_pair_ctx.secp256k1_privkey_bytes())
-            },
+            CryptoCtx::KeyPair(ref key_pair_ctx) => PrivKeyBuildPolicy::PrivKey(key_pair_ctx.secp256k1_privkey_bytes()),
             CryptoCtx::HardwareWallet(_) => PrivKeyBuildPolicy::HardwareWallet,
         };
 

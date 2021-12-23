@@ -114,7 +114,7 @@ impl<T: Future> Future for SendFuture<T> {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> { self.0.poll() }
 }
 
-unsafe impl<T> Send for SendFuture<T> {}
+unsafe impl<T> Send for SendFuture<T> where T: Send {}
 unsafe impl<T> Sync for SendFuture<T> {}
 
 impl Transport for Web3Transport {

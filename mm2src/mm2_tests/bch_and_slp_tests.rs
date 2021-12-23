@@ -1,5 +1,5 @@
 use super::*;
-use common::for_tests::{enable_bch_with_tokens, UtxoRpcMode};
+use common::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, UtxoRpcMode};
 
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",
@@ -368,6 +368,22 @@ fn test_common_cashaddresses() {
     );
 }
 
+async fn wait_till_history_has_records(
+    mm: &MarketMakerIt,
+    expected_len: usize,
+    for_coin: &str,
+    paging: Option<common::PagingOptionsEnum<String>>,
+) -> MyTxHistoryV2Response {
+    loop {
+        let history_json = my_tx_history_v2(mm, for_coin, expected_len, paging.clone()).await;
+        let history: MyTxHistoryV2Response = json::from_value(history_json["result"].clone()).unwrap();
+        if history.transactions.len() >= expected_len {
+            break history;
+        }
+        Timer::sleep(1.).await;
+    }
+}
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_bch_and_slp_testnet_history() {
@@ -377,7 +393,7 @@ fn test_bch_and_slp_testnet_history() {
         {"coin":"USDF","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":4,"token_id":"bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7","platform":"tBCH","required_confirmations":1}}}
     ]);
 
-    let mut mm = MarketMakerIt::start(
+    let mm = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -397,6 +413,54 @@ fn test_bch_and_slp_testnet_history() {
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let tx_history = true;
-    let enable_bch_with_usdf = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
-    log!({ "enable_bch_with_usdf: {:?}", enable_bch_with_usdf });
+    let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
+    log!({ "enable_bch: {:?}", enable_bch });
+    let history = block_on(wait_till_history_has_records(&mm, 4, "tBCH", None));
+    log!({ "bch history: {:?}", history });
+
+    let expected_internal_ids = vec![
+        "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69",
+        "c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce",
+        "091877294268b2b1734255067146f15c3ac5e6199e72cd4f68a8d9dec32bb0c0",
+        "d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7",
+    ];
+
+    let actual_ids: Vec<_> = history
+        .transactions
+        .iter()
+        .map(|tx| tx.tx.internal_id.as_str())
+        .collect();
+
+    assert_eq!(expected_internal_ids, actual_ids);
+
+    let enable_usdf = block_on(enable_slp(&mm, "USDF"));
+    log!({ "enable_usdf: {:?}", enable_usdf });
+
+    let paging =
+        common::PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
+    let slp_history = block_on(wait_till_history_has_records(&mm, 4, "USDF", Some(paging)));
+
+    log!({ "slp history: {:?}", slp_history });
+
+    let expected_slp_ids = vec![
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
+        "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97",
+        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06",
+        "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c",
+    ];
+
+    let actual_slp_ids: Vec<_> = slp_history
+        .transactions
+        .iter()
+        .map(|tx| tx.tx.internal_id.as_str())
+        .collect();
+
+    assert_eq!(expected_slp_ids, actual_slp_ids);
+
+    for tx in slp_history.transactions {
+        assert_eq!("USDF", tx.tx.coin);
+
+        let fee_details: UtxoFeeDetails = json::from_value(tx.tx.fee_details).unwrap();
+        assert_eq!(fee_details.coin, Some("tBCH".to_owned()));
+    }
 }

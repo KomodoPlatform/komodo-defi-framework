@@ -59,6 +59,7 @@ pub struct BchCoin {
     slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum IsSlpUtxoError {
     Rpc(UtxoRpcError),
     TxDeserialization(serialization::Error),
@@ -384,7 +385,6 @@ impl BchCoin {
         let bch_tx_details = self
             .bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
             .await?;
-        let mut result = vec![bch_tx_details];
         let maybe_op_return: Script = tx.outputs[0].script_pubkey.clone().into();
         if !(maybe_op_return.is_pay_to_public_key_hash()
             || maybe_op_return.is_pay_to_public_key()
@@ -392,12 +392,19 @@ impl BchCoin {
         {
             if let Ok(slp_details) = parse_slp_script(&maybe_op_return) {
                 let slp_tx_details = self
-                    .slp_tx_details(&tx, slp_details.transaction, block_height_and_time, storage)
+                    .slp_tx_details(
+                        &tx,
+                        slp_details.transaction,
+                        block_height_and_time,
+                        bch_tx_details.fee_details.clone(),
+                        storage,
+                    )
                     .await?;
-                result.push(slp_tx_details);
+                return Ok(vec![bch_tx_details, slp_tx_details]);
             }
         }
-        Ok(result)
+
+        Ok(vec![bch_tx_details])
     }
 
     async fn bch_tx_details<T: TxHistoryStorage>(
@@ -464,6 +471,7 @@ impl BchCoin {
 
         let total_output = tx.outputs.iter().fold(0, |total, output| total + output.value);
         let fee = Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+            coin: Some(self.ticker().into()),
             amount: big_decimal_from_sat_unsigned(total_input - total_output, self.decimals()),
         }));
         tx_builder.set_tx_fee(fee);
@@ -548,6 +556,7 @@ impl BchCoin {
         tx: &UtxoTx,
         slp_tx: SlpTransaction,
         height_and_time: Option<BlockHeightAndTime>,
+        tx_fee: Option<TxFeeDetails>,
         storage: &Storage,
     ) -> Result<TransactionDetails, MmError<GetTxDetailsError<Storage::Error>>> {
         let token_id = match slp_tx.token_id() {
@@ -563,7 +572,7 @@ impl BchCoin {
 
         let mut slp_tx_details_builder =
             TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, addresses);
-        let slp_transferred_amounts = self.slp_transferred_amounts(&tx, slp_tx, storage).await?;
+        let slp_transferred_amounts = self.slp_transferred_amounts(tx, slp_tx, storage).await?;
         for (_, (address, amount)) in slp_transferred_amounts {
             slp_tx_details_builder.transferred_to(address, &amount);
         }
@@ -584,6 +593,7 @@ impl BchCoin {
         }
 
         slp_tx_details_builder.set_transaction_type(TransactionType::TokenTransfer(token_id.take().to_vec().into()));
+        slp_tx_details_builder.set_tx_fee(tx_fee);
 
         Ok(slp_tx_details_builder.build())
     }
@@ -1287,6 +1297,7 @@ mod bch_tests {
         assert_eq!(expected_internal_id, details.internal_id);
 
         let expected_fee = Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+            coin: Some("BCH".into()),
             amount: "0.00001481".parse().unwrap(),
         }));
         assert_eq!(expected_fee, details.fee_details);
@@ -1304,7 +1315,7 @@ mod bch_tests {
 
         let slp_details = parse_slp_script(&tx.outputs[0].script_pubkey).unwrap();
 
-        let slp_tx_details = block_on(coin.slp_tx_details(&tx, slp_details.transaction, None, &storage)).unwrap();
+        let slp_tx_details = block_on(coin.slp_tx_details(&tx, slp_details.transaction, None, None, &storage)).unwrap();
 
         let expected_total: BigDecimal = "6.2974".parse().unwrap();
         assert_eq!(expected_total, slp_tx_details.total_amount);
@@ -1315,7 +1326,7 @@ mod bch_tests {
         let expected_received: BigDecimal = "5.2974".parse().unwrap();
         assert_eq!(expected_received, slp_tx_details.received_by_me);
 
-        let expected_balance_change = BigDecimal::from(-1);
+        let expected_balance_change = BigDecimal::from(-1i32);
         assert_eq!(expected_balance_change, slp_tx_details.my_balance_change);
 
         let expected_from = vec!["slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_owned()];

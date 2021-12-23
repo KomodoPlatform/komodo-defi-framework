@@ -37,6 +37,7 @@ use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 
 #[derive(Debug, Display)]
+#[allow(clippy::enum_variant_names)]
 pub enum P2PRequestError {
     EncodeError(String),
     DecodeError(String),

@@ -83,9 +83,9 @@ impl CryptoCtx {
             return MmError::err(CryptoInitError::NullStringPassphrase);
         }
 
-        let secp256k1_key_pair = key_pair_from_seed(&passphrase)?;
+        let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
         // We can't clone `secp256k1_key_pair`, but it's used later to initialize legacy `MmCtx` fields.
-        let secp256k1_key_pair_for_legacy = key_pair_from_seed(&passphrase)?;
+        let secp256k1_key_pair_for_legacy = key_pair_from_seed(passphrase)?;
 
         let rmd160 = secp256k1_key_pair.public().address_hash();
         let crypto_ctx = CryptoCtx::KeyPair(KeyPairCtx { secp256k1_key_pair });

@@ -188,7 +188,7 @@ fn process_pubkey_full_trie(
         .trie_roots
         .get(alb_pair)
         .copied()
-        .unwrap_or_else(H64::default);
+        .unwrap_or_default();
     new_root
 }
 
@@ -212,11 +212,7 @@ fn process_trie_delta(
     }
 
     let new_root = match orderbook.pubkeys_state.get(pubkey) {
-        Some(pubkey_state) => pubkey_state
-            .trie_roots
-            .get(alb_pair)
-            .copied()
-            .unwrap_or_else(H64::default),
+        Some(pubkey_state) => pubkey_state.trie_roots.get(alb_pair).copied().unwrap_or_default(),
         None => H64::default(),
     };
     new_root
@@ -2853,8 +2849,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                             let request_orderbook = false;
                             if let Err(e) = subscribe_to_orderbook_topic(
                                 &ctx,
-                                &order.base_orderbook_ticker(),
-                                &order.rel_orderbook_ticker(),
+                                order.base_orderbook_ticker(),
+                                order.rel_orderbook_ticker(),
                                 request_orderbook,
                             )
                             .await
@@ -3052,11 +3048,11 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     };
 
     // our base and rel coins should match maker's side tickers for a proper is_coin_protocol_supported check
-    let (base_coin, rel_coin) =
-        match find_pair(&ctx, &my_order.maker_coin_ticker(), &my_order.taker_coin_ticker()).await {
-            Ok(Some(c)) => c,
-            _ => return, // attempt to match with deactivated coin
-        };
+    let (base_coin, rel_coin) = match find_pair(&ctx, my_order.maker_coin_ticker(), my_order.taker_coin_ticker()).await
+    {
+        Ok(Some(c)) => c,
+        _ => return, // attempt to match with deactivated coin
+    };
     let mut pending_map = ordermatch_ctx.pending_maker_reserved.lock().await;
     if let Some(mut reserved_messages) = pending_map.remove(&uuid) {
         reserved_messages.sort_unstable_by_key(|r| r.price());
@@ -3275,12 +3271,15 @@ pub struct AutoBuyInput {
     volume: MmNumber,
     timeout: Option<u64>,
     /// Not used. Deprecated.
+    #[allow(dead_code)]
     duration: Option<u32>,
     // TODO: remove this field on API refactoring, method should be separated from params
     method: String,
+    #[allow(dead_code)]
     gui: Option<String>,
     #[serde(rename = "destpubkey")]
     #[serde(default)]
+    #[allow(dead_code)]
     dest_pub_key: H256Json,
     #[serde(default)]
     match_by: MatchBy,
@@ -3474,7 +3473,7 @@ pub async fn lp_auto_buy(
         subscribe_to_orderbook_topic(
             ctx,
             order.base_orderbook_ticker(),
-            &order.rel_orderbook_ticker(),
+            order.rel_orderbook_ticker(),
             request_orderbook
         )
         .await
@@ -4075,9 +4074,9 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     let request_orderbook = false;
     try_s!(
         subscribe_to_orderbook_topic(
-            &ctx,
-            &new_order.base_orderbook_ticker(),
-            &new_order.rel_orderbook_ticker(),
+            ctx,
+            new_order.base_orderbook_ticker(),
+            new_order.rel_orderbook_ticker(),
             request_orderbook
         )
         .await

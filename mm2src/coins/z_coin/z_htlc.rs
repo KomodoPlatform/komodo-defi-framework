@@ -37,7 +37,7 @@ pub async fn z_send_htlc(
     amount: BigDecimal,
 ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
     let key_pair = coin.utxo_arc.priv_key_policy.key_pair_or_err()?;
-    let payment_script = payment_script(time_lock, secret_hash, key_pair.public(), &other_pub);
+    let payment_script = payment_script(time_lock, secret_hash, key_pair.public(), other_pub);
     let script_hash = dhash160(&payment_script);
     let htlc_address = Address {
         prefix: coin.utxo_arc.conf.p2sh_addr_prefix,

@@ -124,16 +124,9 @@ impl Default for GossipsubConfig {
     }
 }
 
+#[derive(Default)]
 pub struct GossipsubConfigBuilder {
     config: GossipsubConfig,
-}
-
-impl Default for GossipsubConfigBuilder {
-    fn default() -> GossipsubConfigBuilder {
-        GossipsubConfigBuilder {
-            config: GossipsubConfig::default(),
-        }
-    }
 }
 
 impl GossipsubConfigBuilder {

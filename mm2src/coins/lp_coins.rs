@@ -1284,7 +1284,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
-        let my_address = my_address.replace(":", "_");
+        let my_address = my_address.replace(':', "_");
         ctx.dbdir()
             .join("TRANSACTIONS")
             .join(format!("{}_{}.json", self.ticker(), my_address))
@@ -1776,7 +1776,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             platform,
             contract_address,
         } => {
-            let params = try_s!(Qrc20ActivationParams::from_legacy_req(&req));
+            let params = try_s!(Qrc20ActivationParams::from_legacy_req(req));
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
 
             try_s!(
@@ -1786,7 +1786,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             .into()
         },
         CoinProtocol::BCH { slp_prefix } => {
-            let prefix = try_s!(CashAddrPrefix::from_str(&slp_prefix));
+            let prefix = try_s!(CashAddrPrefix::from_str(slp_prefix));
             let params = try_s!(BchActivationRequest::from_legacy_req(req));
 
             let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, &secret).await);
@@ -1798,7 +1798,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             decimals,
             required_confirmations,
         } => {
-            let platform_coin = try_s!(lp_coinfind(ctx, &platform).await);
+            let platform_coin = try_s!(lp_coinfind(ctx, platform).await);
             let platform_coin = match platform_coin {
                 Some(MmCoinEnum::Bch(coin)) => coin,
                 Some(_) => return ERR!("Platform coin {} is not BCH", platform),
@@ -2366,7 +2366,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {
-            let platform_conf = coin_conf(&ctx, &platform);
+            let platform_conf = coin_conf(ctx, &platform);
             if platform_conf.is_null() {
                 return ERR!("platform {} conf is null", platform);
             }
@@ -2425,7 +2425,7 @@ where
     T: MmCoin + ?Sized,
 {
     let ticker = coin.ticker().to_owned();
-    let history_path = coin.tx_history_path(&ctx);
+    let history_path = coin.tx_history_path(ctx);
     let ctx = ctx.clone();
 
     let fut = async move {

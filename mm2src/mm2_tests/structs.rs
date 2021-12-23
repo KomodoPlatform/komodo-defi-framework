@@ -9,6 +9,7 @@ use num_rational::BigRational;
 use rpc::v1::types::H256 as H256Json;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -517,6 +518,7 @@ pub enum TransactionType {
     StakingDelegation,
     RemoveDelegation,
     StandardTransfer,
+    TokenTransfer(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -661,4 +663,40 @@ pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
     pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryTransactionDetails {
+    #[serde(flatten)]
+    pub tx: TransactionDetails,
+    pub confirmations: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub enum PagingOptionsEnum {
+    FromId(String),
+    PageNumber(NonZeroUsize),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MyTxHistoryV2Response {
+    pub coin: String,
+    pub current_block: u64,
+    pub transactions: Vec<HistoryTransactionDetails>,
+    pub sync_status: Json,
+    pub limit: usize,
+    pub skipped: usize,
+    pub total: usize,
+    pub total_pages: usize,
+    pub paging_options: PagingOptionsEnum,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UtxoFeeDetails {
+    pub r#type: String,
+    pub coin: Option<String>,
+    pub amount: BigDecimal,
 }

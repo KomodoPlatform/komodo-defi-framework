@@ -177,11 +177,11 @@ where
 
         match req.fee {
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
-                let fixed = sat_from_big_decimal(&amount, decimals)?;
+                let fixed = sat_from_big_decimal(amount, decimals)?;
                 tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed));
             },
             Some(WithdrawFee::UtxoPerKbyte { ref amount }) => {
-                let dynamic = sat_from_big_decimal(&amount, decimals)?;
+                let dynamic = sat_from_big_decimal(amount, decimals)?;
                 tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
             },
             Some(ref fee_policy) => {
@@ -205,6 +205,7 @@ where
 
         let fee_amount = data.fee_amount + data.unused_change.unwrap_or_default();
         let fee_details = UtxoFeeDetails {
+            coin: Some(self.coin().as_ref().conf.ticker.clone()),
             amount: big_decimal_from_sat(fee_amount as i64, decimals),
         };
         let tx_hex = match coin.addr_format() {

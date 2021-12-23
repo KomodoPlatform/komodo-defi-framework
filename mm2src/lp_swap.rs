@@ -365,8 +365,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     swap_lock
         .iter()
         .filter_map(|swap| swap.upgrade())
-        .map(|swap| swap.locked_amount())
-        .flatten()
+        .flat_map(|swap| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
                 total_amount += locked.amount;
@@ -399,8 +398,7 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
         .iter()
         .filter_map(|swap| swap.upgrade())
         .filter(|swap| swap.uuid() != except_uuid)
-        .map(|swap| swap.locked_amount())
-        .flatten()
+        .flat_map(|swap| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
                 total_amount += locked.amount;

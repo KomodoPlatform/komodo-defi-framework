@@ -1277,6 +1277,7 @@ checksum = "72aa14c04dfae8dd7d8a2b1cb7ca2152618cd01336dbfe704b8dcbf8d41dbd69"
 name = "db_common"
 version = "0.1.0"
 dependencies = [
+ "log 0.4.11",
  "rusqlite",
  "sql-builder",
  "uuid",

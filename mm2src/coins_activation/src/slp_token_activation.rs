@@ -71,6 +71,7 @@ pub struct SlpInitResult {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SlpInitError {
     GetBalanceError(UtxoRpcError),
     MyAddressError(String),

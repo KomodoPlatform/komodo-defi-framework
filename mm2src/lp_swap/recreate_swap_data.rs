@@ -46,6 +46,7 @@ impl RecreateSwapError {
 /// The input swap can be either tagged by `type` or not.
 #[derive(Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::enum_variant_names)]
 pub enum InputSwap {
     SavedSwap(SavedSwap),
     MakerSavedSwap(MakerSavedSwap),

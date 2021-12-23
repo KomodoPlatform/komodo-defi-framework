@@ -957,7 +957,7 @@ impl MakerSwap {
                     timelock,
                     other_pub.as_slice(),
                     secret_hash,
-                    &taker_payment_hex,
+                    taker_payment_hex,
                     taker_coin_start_block,
                     &taker_coin_swap_contract_address,
                 )
@@ -984,7 +984,7 @@ impl MakerSwap {
             selfi
                 .taker_coin
                 .send_maker_spends_taker_payment(
-                    &taker_payment_hex,
+                    taker_payment_hex,
                     timelock,
                     other_pub.as_slice(),
                     &secret,

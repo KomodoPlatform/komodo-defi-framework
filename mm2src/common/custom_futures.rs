@@ -297,7 +297,7 @@ where
     }
 }
 
-unsafe impl<F> Send for Timeout<F> {}
+unsafe impl<F> Send for Timeout<F> where F: Send {}
 
 #[test]
 fn test_timeout() {

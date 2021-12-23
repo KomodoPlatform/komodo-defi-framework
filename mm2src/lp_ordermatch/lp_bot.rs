@@ -258,7 +258,7 @@ impl TradingBotContext {
 
     async fn on_ctx_stop(&self, ctx: &MmArc) {
         info!("on_ctx_stop event received");
-        let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(&ctx).unwrap();
+        let simple_market_maker_bot_ctx = TradingBotContext::from_ctx(ctx).unwrap();
         let mut state = simple_market_maker_bot_ctx.trading_bot_states.lock().await;
         match &*state {
             TradingBotState::Running(running_state) => {
@@ -301,7 +301,9 @@ impl EventListener for ArcTradingBotContext {
 
 #[derive(Default, Clone, Debug)]
 pub struct RateInfos {
+    #[allow(dead_code)]
     base: String,
+    #[allow(dead_code)]
     rel: String,
     base_price: MmNumber,
     rel_price: MmNumber,

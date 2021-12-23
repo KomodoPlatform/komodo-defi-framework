@@ -6,6 +6,7 @@ use rand::Rng;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::num::NonZeroUsize;
 use std::process::Child;
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -689,7 +690,7 @@ pub async fn common_wait_for_log_re(req: Bytes) -> Result<Vec<u8>, String> {
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn wait_for_log_re(ctx: &MmArc, timeout_sec: f64, re_pred: &str) -> Result<(), String> {
     let re = try_s!(Regex::new(re_pred));
-    wait_for_log(&ctx, timeout_sec, |line| re.is_match(line)).await
+    wait_for_log(ctx, timeout_sec, |line| re.is_match(line)).await
 }
 
 /// Create RAII variables to the effect of dumping the log and the status dashboard at the end of the scope.
@@ -924,7 +925,7 @@ impl UtxoRpcMode {
     pub fn electrum(servers: &[&str]) -> Self {
         UtxoRpcMode::Electrum {
             servers: servers
-                .into_iter()
+                .iter()
                 .map(|url| ElectrumRpcRequest { url: url.to_string() })
                 .collect(),
         }
@@ -965,12 +966,13 @@ pub async fn enable_bch_with_tokens(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn my_tx_history_v2<T>(
+pub async fn my_tx_history_v2(
     mm: &MarketMakerIt,
     coin: &str,
     limit: usize,
-    paging: Option<PagingOptionsEnum<T>>,
+    paging: Option<PagingOptionsEnum<String>>,
 ) -> Json {
+    let paging = paging.unwrap_or(PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap()));
     let request = mm
         .rpc(json! ({
             "userpass": mm.userpass,
@@ -984,8 +986,8 @@ pub async fn my_tx_history_v2<T>(
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'my_tx_history' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
+    assert_eq!(request.0, StatusCode::OK, "'my_tx_history' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
 }
 
 pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {

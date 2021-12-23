@@ -281,7 +281,6 @@ impl PlatformWithTokensActivationOps for BchCoin {
             if let Err(e) = fut.await {
                 info!("bch_and_slp_history_loop stopped for {}, reason {}", ticker, e);
             }
-            ()
         });
         abort_handle
     }

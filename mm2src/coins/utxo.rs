@@ -22,7 +22,7 @@
 pub mod bch;
 pub mod bch_and_slp_tx_history;
 mod bchd_grpc;
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::all)]
 #[rustfmt::skip]
 #[path = "utxo/pb.rs"]
 mod bchd_pb;
@@ -633,6 +633,7 @@ impl UtxoCoinFields {
 }
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum BroadcastTxErr {
     /// RPC client error
     Rpc(UtxoRpcError),
@@ -911,6 +912,7 @@ pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType)
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UtxoFeeDetails {
+    pub coin: Option<String>,
     pub amount: BigDecimal,
 }
 

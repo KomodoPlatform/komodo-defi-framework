@@ -64,7 +64,7 @@ fn check_enum_attributes(input: &DeriveInput) -> Result<(), CompileError> {
     let mut tag = None;
     let mut content = None;
 
-    for meta_item in input.attrs.iter().flat_map(|attr| get_serde_meta_items(attr)) {
+    for meta_item in input.attrs.iter().flat_map(get_serde_meta_items) {
         match meta_item {
             NestedMeta::Meta(NameValue(m)) if m.path.is_ident(TAG_ATTR) => tag = Some(parse_lit_str(TAG_ATTR, m.lit)?),
             NestedMeta::Meta(NameValue(m)) if m.path.is_ident(CONTENT_ATTR) => {

@@ -4,7 +4,7 @@ use std::sync::{Arc, Weak};
 
 pub struct SharedRc<T>(Arc<T>);
 
-unsafe impl<T> Send for SharedRc<T> {}
+unsafe impl<T> Send for SharedRc<T> where Arc<T>: Send {}
 unsafe impl<T> Sync for SharedRc<T> {}
 
 impl<T> Deref for SharedRc<T> {
@@ -28,7 +28,7 @@ impl<T> SharedRc<T> {
 
 pub struct WeakRc<T>(Weak<T>);
 
-unsafe impl<T> Send for WeakRc<T> {}
+unsafe impl<T> Send for WeakRc<T> where Weak<T>: Send {}
 unsafe impl<T> Sync for WeakRc<T> {}
 
 impl<T> Clone for WeakRc<T> {

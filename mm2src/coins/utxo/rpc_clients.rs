@@ -59,6 +59,7 @@ cfg_native! {
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AddressPurpose {
     purpose: String,
 }
@@ -377,10 +378,12 @@ pub struct EstimateSmartFeeRes {
 pub struct ListSinceBlockRes {
     transactions: Vec<ListTransactionsItem>,
     #[serde(rename = "lastblock")]
+    #[allow(dead_code)]
     last_block: H256Json,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct NetworkInfoLocalAddress {
     address: String,
     port: u16,
@@ -388,6 +391,7 @@ pub struct NetworkInfoLocalAddress {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct NetworkInfoNetwork {
     name: String,
     limited: bool,
@@ -397,6 +401,7 @@ pub struct NetworkInfoNetwork {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct NetworkInfo {
     connections: u64,
     #[serde(rename = "localaddresses")]
@@ -1000,6 +1005,7 @@ impl Into<BlockHeaderNonce> for ElectrumNonce {
 pub struct ElectrumBlockHeadersRes {
     count: u64,
     pub hex: BytesJson,
+    #[allow(dead_code)]
     max: u64,
 }
 
@@ -1272,6 +1278,7 @@ pub struct ElectrumConnection {
     /// The client connected to this SocketAddr
     addr: String,
     /// Configuration
+    #[allow(dead_code)]
     config: ElectrumConfig,
     /// The Sender forwarding requests to writing part of underlying stream
     tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,

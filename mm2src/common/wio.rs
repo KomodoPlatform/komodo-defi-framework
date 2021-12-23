@@ -156,7 +156,7 @@ impl<R> Timeout<R> {
     }
 }
 
-unsafe impl<R> Send for Timeout<R> {}
+unsafe impl<R> Send for Timeout<R> where Box<dyn Future<Item = R, Error = String>>: Send {}
 
 /// Initialize the crate.
 pub fn init() {

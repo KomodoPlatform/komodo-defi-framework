@@ -132,7 +132,7 @@ impl PeersExchange {
 
     fn forget_peer_addresses(&mut self, peer: &PeerId) {
         for address in self.request_response.addresses_of_peer(peer) {
-            if !self.is_reserved_peer(&peer) {
+            if !self.is_reserved_peer(peer) {
                 self.request_response.remove_address(peer, &address);
             }
         }
@@ -163,14 +163,14 @@ impl PeersExchange {
             }
         }
 
-        if !self.reserved_peers.contains(&peer) && !addresses.is_empty() {
+        if !self.reserved_peers.contains(peer) && !addresses.is_empty() {
             self.reserved_peers.push(*peer);
         }
 
         let already_reserved = self.request_response.addresses_of_peer(peer);
         for address in addresses {
             if !already_reserved.contains(&address) {
-                self.request_response.add_address(&peer, address);
+                self.request_response.add_address(peer, address);
             }
         }
     }

@@ -23,6 +23,7 @@ pub struct Failure {
 pub mod failure {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
+    #[allow(clippy::enum_variant_names)]
     pub enum FailureType {
         FailureUnexpectedMessage = 1,
         FailureButtonExpected = 2,

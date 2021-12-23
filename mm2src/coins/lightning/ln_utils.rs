@@ -159,11 +159,11 @@ impl EventHandler for LightningEventHandler {
                 // Give the funding transaction back to LDK for opening the channel.
                 match self
                     .channel_manager
-                    .funding_transaction_generated(&temporary_channel_id, funding_tx.clone())
+                    .funding_transaction_generated(temporary_channel_id, funding_tx.clone())
                 {
                     Ok(_) => {
                         let txid = funding_tx.txid();
-                        self.filter.register_tx(&txid, &output_script);
+                        self.filter.register_tx(&txid, output_script);
                         let output_to_be_registered = TxOut {
                             value: *channel_value_satoshis,
                             script_pubkey: output_script.clone(),
@@ -260,7 +260,7 @@ pub async fn start_lightning(
     let broadcaster = Arc::new(platform_coin.clone());
 
     // Initialize Persist
-    let ln_data_dir = my_ln_data_dir(&ctx, &ticker)
+    let ln_data_dir = my_ln_data_dir(ctx, &ticker)
         .as_path()
         .to_str()
         .ok_or("Data dir is a non-UTF-8 string")
@@ -455,7 +455,7 @@ pub async fn start_lightning(
 
     // If node is restarting read other nodes data from disk and reconnect to channel nodes/peers if possible.
     if restarting_node {
-        let mut nodes_data = read_nodes_data_from_file(&nodes_data_path(&ctx, &ticker))?;
+        let mut nodes_data = read_nodes_data_from_file(&nodes_data_path(ctx, &ticker))?;
         for (pubkey, node_addr) in nodes_data.drain() {
             for chan_info in channel_manager.list_channels() {
                 if pubkey == chan_info.counterparty.node_id {

@@ -90,8 +90,8 @@ impl RelayAddress {
         };
 
         match self {
-            RelayAddress::IPv4(ipv4) => Ok(ipv4_multiaddr(&ipv4, network_ports)),
-            RelayAddress::Dns(dns) => Ok(dns_multiaddr(&dns, network_ports)),
+            RelayAddress::IPv4(ipv4) => Ok(ipv4_multiaddr(ipv4, network_ports)),
+            RelayAddress::Dns(dns) => Ok(dns_multiaddr(dns, network_ports)),
             RelayAddress::Memory(_) => Err(RelayAddressError::memory_addr_on_distributed_network(self)),
         }
     }

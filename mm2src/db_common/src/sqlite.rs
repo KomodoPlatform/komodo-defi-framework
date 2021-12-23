@@ -1,6 +1,7 @@
 pub use rusqlite;
 pub use sql_builder;
 
+use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use sql_builder::SqlBuilder;
 use uuid::Uuid;
@@ -48,12 +49,12 @@ pub fn offset_by_uuid(
         .iter()
         .map(|(key, value)| (*key, value as &dyn ToSql))
         .collect();
-    /*
+
     debug!(
         "Trying to execute SQL query {} with params {:?}",
         external_query, params_for_offset
     );
-     */
+
     let mut stmt = conn.prepare(&external_query)?;
     let offset: isize = stmt.query_row_named(params_as_trait.as_slice(), |row| row.get(0))?;
     Ok(offset.try_into().expect("row index should be always above zero"))
@@ -67,9 +68,9 @@ pub fn offset_by_id<P>(
     id_field: &str,
     order_by: &str,
     where_id: &str,
-) -> SqlResult<usize>
+) -> SqlResult<Option<usize>>
 where
-    P: IntoIterator,
+    P: IntoIterator + std::fmt::Debug,
     P::Item: ToSql,
 {
     let row_number = format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by);
@@ -86,13 +87,16 @@ where
         .sql()
         .expect("SQL query builder should never fail here");
 
-    /*
     debug!(
         "Trying to execute SQL query {} with params {:?}",
-        external_query, params_for_offset
+        external_query, params,
     );
-     */
+
     let mut stmt = conn.prepare(&external_query)?;
-    let offset: isize = stmt.query_row(params, |row| row.get(0))?;
-    Ok(offset.try_into().expect("row index should be always above zero"))
+    let maybe_offset = stmt.query_row(params, |row| row.get::<_, isize>(0));
+    if let Err(SqlError::QueryReturnedNoRows) = maybe_offset {
+        return Ok(None);
+    }
+    let offset = maybe_offset?;
+    Ok(Some(offset.try_into().expect("row index should be always above zero")))
 }

@@ -2064,6 +2064,11 @@ where
     to_addresses.sort();
     to_addresses.dedup();
 
+    let fee_details = UtxoFeeDetails {
+        coin: Some(coin.as_ref().conf.ticker.clone()),
+        amount: fee,
+    };
+
     Ok(TransactionDetails {
         from: from_addresses,
         to: to_addresses,
@@ -2073,7 +2078,7 @@ where
         total_amount: big_decimal_from_sat_unsigned(input_amount, coin.as_ref().decimals),
         tx_hash: tx.hash().reversed().to_vec().into(),
         tx_hex: verbose_tx.hex,
-        fee_details: Some(UtxoFeeDetails { amount: fee }.into()),
+        fee_details: Some(fee_details.into()),
         block_height: verbose_tx.height.unwrap_or(0),
         coin: ticker.clone(),
         internal_id: tx.hash().reversed().to_vec().into(),
@@ -2139,9 +2144,10 @@ where
     let kmd_rewards = coin.calc_interest_of_tx(&tx, input_transactions).await?;
     let kmd_rewards = big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals);
 
-    if let Some(TxFeeDetails::Utxo(UtxoFeeDetails { ref amount })) = tx_details.fee_details {
+    if let Some(TxFeeDetails::Utxo(UtxoFeeDetails { ref amount, .. })) = tx_details.fee_details {
         let actual_fee_amount = amount + &kmd_rewards;
         tx_details.fee_details = Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+            coin: Some(coin.as_ref().conf.ticker.clone()),
             amount: actual_fee_amount,
         }));
     }

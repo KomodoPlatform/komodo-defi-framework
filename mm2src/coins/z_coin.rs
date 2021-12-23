@@ -1091,6 +1091,7 @@ impl MmCoin for ZCoin {
                 block_height: 0,
                 timestamp: 0,
                 fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+                    coin: Some(coin.utxo_arc.conf.ticker.clone()),
                     amount: big_decimal_from_sat_unsigned(data.fee_amount, coin.decimals()),
                 })),
                 coin: coin.ticker().to_owned(),

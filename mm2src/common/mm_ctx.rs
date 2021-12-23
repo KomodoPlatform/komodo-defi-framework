@@ -298,6 +298,7 @@ pub struct MmArc(pub SharedRc<MmCtx>);
 
 // NB: Explicit `Send` and `Sync` marks here should become unnecessary later,
 // after we finish the initial port and replace the C values with the corresponding Rust alternatives.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for MmArc {}
 unsafe impl Sync for MmArc {}
 
@@ -315,6 +316,7 @@ impl Deref for MmArc {
 pub struct MmWeak(WeakRc<MmCtx>);
 
 // Same as `MmArc`.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for MmWeak {}
 unsafe impl Sync for MmWeak {}
 

@@ -285,6 +285,15 @@ pub enum HistoryCoinType {
     L2 { platform: String },
 }
 
+impl HistoryCoinType {
+    fn storage_ticker(&self) -> &str {
+        match self {
+            HistoryCoinType::Coin(ticker) => ticker,
+            HistoryCoinType::Token { platform, .. } | HistoryCoinType::L2 { platform } => platform,
+        }
+    }
+}
+
 trait GetHistoryCoinType {
     fn get_history_coin_type(&self) -> HistoryCoinType;
 }
@@ -315,9 +324,12 @@ pub async fn my_tx_history_v2_rpc(
             )))?
             .clone(),
     );
-    let is_storage_init = tx_history_storage.is_initialized_for(coin.ticker()).await?;
+    let history_coin_type = coin.get_history_coin_type();
+    let is_storage_init = tx_history_storage
+        .is_initialized_for(history_coin_type.storage_ticker())
+        .await?;
     if !is_storage_init {
-        let msg = format!("Storage is not initialized for {}", coin.ticker());
+        let msg = format!("Storage is not initialized for {}", history_coin_type.storage_ticker());
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
     let current_block = coin
@@ -327,17 +339,17 @@ pub async fn my_tx_history_v2_rpc(
         .map_to_mm(MyTxHistoryErrorV2::RpcError)?;
 
     let history = tx_history_storage
-        .get_history(
-            coin.get_history_coin_type(),
-            request.paging_options.clone(),
-            request.limit,
-        )
+        .get_history(history_coin_type, request.paging_options.clone(), request.limit)
         .await?;
 
     let transactions = history
         .transactions
         .into_iter()
-        .map(|details| {
+        .map(|mut details| {
+            // it can be the platform ticker instead of the token ticker for a pre-saved record
+            if details.coin != request.coin {
+                details.coin = request.coin.clone();
+            }
             let confirmations = if details.block_height == 0 || details.block_height > current_block {
                 0
             } else {

@@ -469,14 +469,24 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 PagingOptionsEnum::FromId(id) => {
                     let id_str = format!("{:02x}", id);
                     let params = [&token_id, &id_str];
-                    offset_by_id(
+                    let maybe_offset = offset_by_id(
                         &conn,
                         &sql_builder,
                         params,
                         "internal_id",
                         "confirmation_status ASC, block_height DESC, id ASC",
                         "internal_id = ?2",
-                    )?
+                    )?;
+                    match maybe_offset {
+                        Some(offset) => offset,
+                        None => {
+                            return Ok(GetHistoryResult {
+                                transactions: vec![],
+                                skipped: 0,
+                                total,
+                            })
+                        },
+                    }
                 },
             };
 

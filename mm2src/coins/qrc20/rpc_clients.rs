@@ -139,6 +139,7 @@ pub struct ExecutionResult {
 
 #[derive(Debug, Deserialize)]
 pub struct ContractCallResult {
+    #[allow(dead_code)]
     address: H160Json,
     #[serde(rename = "executionResult")]
     pub execution_result: ExecutionResult,

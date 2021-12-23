@@ -51,7 +51,7 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
-    let conf = coin_conf(&ctx, coin);
+    let conf = coin_conf(ctx, coin);
     if conf.is_null() {
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()));
     }
