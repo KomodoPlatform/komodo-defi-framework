@@ -1092,6 +1092,14 @@ where
     wio::CORE.0.block_on(f)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn block_on<F>(f: F) -> F::Output
+where
+    F: Future03,
+{
+    panic!("block_on is not supported in WASM!");
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn async_blocking<F, R>(blocking_fn: F) -> R
 where

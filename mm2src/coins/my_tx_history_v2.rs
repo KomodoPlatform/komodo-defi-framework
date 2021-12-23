@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MarketCoinOps, MmCoinEnum,
             Transaction, TransactionDetails, TransactionType, TxFeeDetails};
@@ -250,6 +251,8 @@ pub enum MyTxHistoryErrorV2 {
     StorageIsNotInitialized(String),
     StorageError(String),
     RpcError(String),
+    #[cfg(target_arch = "wasm32")]
+    NotSupportedInWasm,
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -259,6 +262,8 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             MyTxHistoryErrorV2::StorageIsNotInitialized(_)
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            #[cfg(target_arch = "wasm32")]
+            MyTxHistoryErrorV2::NotSupportedInWasm => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -370,4 +375,12 @@ pub async fn my_tx_history_v2_rpc(
         total_pages: calc_total_pages(history.total, request.limit),
         paging_options: request.paging_options,
     })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn my_tx_history_v2_rpc(
+    _ctx: MmArc,
+    _request: MyTxHistoryRequestV2,
+) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
+    MmError::err(MyTxHistoryErrorV2::NotSupportedInWasm)
 }
