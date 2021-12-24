@@ -1167,3 +1167,22 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
     let result = coin.negotiate_swap_contract_addr(Some(slice)).unwrap();
     assert_eq!(Some(fallback.to_vec().into()), result);
 }
+
+#[test]
+fn polygon_check_if_my_payment_sent() {
+    let conf = json!(  {
+      "coin": "MATIC",
+      "name": "matic",
+      "fname": "Polygon",
+      "rpcport": 80,
+      "mm2": 1,
+      "chain_id": 137,
+      "avg_blocktime": 0.03,
+      "required_confirmations": 3,
+      "protocol": {
+        "type": "ETH"
+      }
+    });
+
+    let request =
+}
