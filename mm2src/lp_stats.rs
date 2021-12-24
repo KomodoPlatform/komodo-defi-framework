@@ -175,16 +175,16 @@ pub enum NetworkInfoRequest {
     GetMm2Version,
 }
 
-async fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
     let response = ctx.mm_version().to_string();
     let encoded = try_s!(encode_message(&response));
     Ok(Some(encoded))
 }
 
-pub async fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
+pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
     log::debug!("Got stats request {:?}", request);
     match request {
-        NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx).await,
+        NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
     }
 }
 
