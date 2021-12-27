@@ -59,12 +59,10 @@ use uuid::Uuid;
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
-                          CheckBalanceError, MakerSwap, RunMakerSwapInput, RunTakerSwapInput,
-                          SwapConfirmationsSettings, TakerSwap};
+                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
+                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::best_orders_rpc;
-use common::mm_error::MmError;
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::orderbook_rpc;
 
@@ -287,6 +285,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock().await;
 
+    let my_pubkey = ctx.secp256k1_key_pair().public();
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
@@ -296,6 +295,10 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
                 continue;
             },
         };
+        if pubkey_bytes.as_slice() == my_pubkey.as_ref() {
+            continue;
+        }
+
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
             log::warn!("Pubkey {} is banned", pubkey);
             continue;
@@ -1819,24 +1822,6 @@ impl MakerOrder {
         self.updated_at = Some(now_ms());
     }
 
-    async fn check_balance(
-        &self,
-        ctx: &MmArc,
-        base: &MmCoinEnum,
-        rel: &MmCoinEnum,
-    ) -> Result<(), MmError<CheckBalanceError>> {
-        check_balance_for_maker_swap(
-            ctx,
-            base,
-            rel,
-            self.available_amount(),
-            None,
-            None,
-            FeeApproxStage::OrderIssue,
-        )
-        .await
-    }
-
     fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.base) }
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
@@ -2807,43 +2792,67 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
             let mut to_cancel = vec![];
 
-            for (uuid, order) in my_maker_orders.iter() {
+            for (uuid, order) in my_maker_orders.iter_mut() {
                 if !ordermatch_ctx.orderbook.lock().await.order_set.contains_key(uuid) {
-                    if let Ok(Some((base, rel))) = find_pair(&ctx, &order.base, &order.rel).await {
-                        if let Err(e) = order.check_balance(&ctx, &base, &rel).await {
+                    let (base, rel) = match find_pair(&ctx, &order.base, &order.rel).await {
+                        Ok(Some(coins)) => coins,
+                        _ => continue,
+                    };
+
+                    let current_balance = match base.my_spendable_balance().compat().await {
+                        Ok(b) => b,
+                        Err(e) => {
                             log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
                             to_cancel.push(*uuid);
                             continue;
-                        }
-
-                        let topic = order.orderbook_topic();
-                        if !ordermatch_ctx.orderbook.lock().await.is_subscribed_to(&topic) {
-                            let request_orderbook = false;
-                            if let Err(e) = subscribe_to_orderbook_topic(
-                                &ctx,
-                                &order.base_orderbook_ticker(),
-                                &order.rel_orderbook_ticker(),
-                                request_orderbook,
-                            )
-                            .await
-                            {
-                                log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
-                            }
-                        }
-                        maker_order_created_p2p_notify(
-                            ctx.clone(),
-                            order,
-                            base.coin_protocol_info(),
-                            rel.coin_protocol_info(),
-                        )
-                        .await;
+                        },
+                    };
+                    let max_vol =
+                        match calc_max_maker_vol(&ctx, &base, &current_balance, FeeApproxStage::OrderIssue).await {
+                            Ok(max) => max,
+                            Err(e) => {
+                                log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
+                                to_cancel.push(*uuid);
+                                continue;
+                            },
+                        };
+                    if max_vol < order.max_base_vol {
+                        order.max_base_vol = max_vol;
                     }
+                    if order.available_amount() < order.min_base_vol {
+                        log::info!("Insufficient volume available for order {}, cancelling", uuid);
+                        to_cancel.push(*uuid);
+                        continue;
+                    }
+
+                    let topic = order.orderbook_topic();
+                    if !ordermatch_ctx.orderbook.lock().await.is_subscribed_to(&topic) {
+                        let request_orderbook = false;
+                        if let Err(e) = subscribe_to_orderbook_topic(
+                            &ctx,
+                            &order.base_orderbook_ticker(),
+                            &order.rel_orderbook_ticker(),
+                            request_orderbook,
+                        )
+                        .await
+                        {
+                            log::error!("Error {} on subscribing to orderbook topic {}", e, topic);
+                        }
+                    }
+                    maker_order_created_p2p_notify(
+                        ctx.clone(),
+                        order,
+                        base.coin_protocol_info(),
+                        rel.coin_protocol_info(),
+                    )
+                    .await;
                 }
             }
 
             for uuid in to_cancel {
                 if let Some(order) = my_maker_orders.remove(&uuid) {
                     delete_my_maker_order(&ctx, &order, MakerOrderCancellationReason::InsufficientBalance);
+                    maker_order_cancelled_p2p_notify(ctx.clone(), &order).await;
                 }
             }
         }
