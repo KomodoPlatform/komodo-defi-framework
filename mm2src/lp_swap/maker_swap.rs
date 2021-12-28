@@ -1567,7 +1567,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     );
 
     let ctx = swap.ctx.clone();
-    subscribe_to_topic(&ctx, swap_topic(&swap.uuid)).await;
+    subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
     let uuid_str = swap.uuid.to_string();
     macro_rules! swap_tags {

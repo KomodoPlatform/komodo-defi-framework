@@ -103,7 +103,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     }
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
-    let orderbook = ordermatch_ctx.orderbook.lock().await;
+    let orderbook = ordermatch_ctx.orderbook.lock();
     let my_pubsecp = try_s!(CryptoCtx::from_ctx(&ctx)).secp256k1_pubkey_hex();
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {

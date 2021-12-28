@@ -33,14 +33,14 @@ struct BestOrdersRes {
     protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
 }
 
-pub async fn process_best_orders_p2p_request(
+pub fn process_best_orders_p2p_request(
     ctx: MmArc,
     coin: String,
     action: BestOrdersAction,
     required_volume: BigRational,
 ) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
-    let orderbook = ordermatch_ctx.orderbook.lock().await;
+    let orderbook = ordermatch_ctx.orderbook.lock();
     let search_pairs_in = match action {
         BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
         BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
