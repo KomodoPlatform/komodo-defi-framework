@@ -1,8 +1,29 @@
 # AtomicDEX Marketmaker V2
 
-This repository contains the `work in progress` code of brand new Marketmaker version built mainly on Rust.  
-The current state can be considered as very early alpha.  
-**Use with test coins only. You risk to lose your money in case of trying to trade assets with real market cost.**
+<p align="center">
+    <a href="https://github.com/komodoplatform/atomicdex-api/graphs/contributors" alt="Contributors">
+        <img src="https://img.shields.io/github/contributors/komodoplatform/atomicdex-api" /></a>
+    <a href="https://github.com/komodoplatform/atomicdex-api/pulse" alt="Activity">
+        <img src="https://img.shields.io/github/commit-activity/m/komodoplatform/atomicdex-api" /></a>
+    <a href="https://dev.azure.com/ortgma/Marketmaker/_build?definitionId=2">
+        <img src="https://img.shields.io/azure-devops/build/ortgma/marketmaker/2/mm2.1" alt="build status"></a>
+    <a href="https://github.com/KomodoPlatform/dPoW/releases">
+        <img src="https://img.shields.io/github/v/release/komodoplatform/atomicdex-api" alt="release version"></a>
+    <a href="https://discord.gg/3rzDPAr">
+        <img src="https://img.shields.io/discord/412898016371015680?logo=discord"
+            alt="chat on Discord"></a>
+    <a href="https://twitter.com/intent/follow?screen_name=https://twitter.com/atomicdex">
+        <img src="https://img.shields.io/twitter/follow/atomicdex?style=social&logo=twitter"
+            alt="follow on Twitter"></a>
+</p>
+
+<hr>
+
+This repository contains the `work in progress` code of the brand new AtomicDEX API core (mm2) built mainly on Rust.  
+The current state can be considered as a alpha version.
+
+**<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**
+
 
 ## Project structure
 
