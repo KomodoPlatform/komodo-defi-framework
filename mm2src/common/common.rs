@@ -1093,7 +1093,7 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn block_on<F>(f: F) -> F::Output
+pub fn block_on<F>(_f: F) -> F::Output
 where
     F: Future03,
 {
