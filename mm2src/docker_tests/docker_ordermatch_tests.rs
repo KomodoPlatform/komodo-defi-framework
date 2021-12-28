@@ -684,6 +684,8 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(send_raw.0.is_success(), "!send_raw: {}", send_raw.1);
 
+    let new_expected_vol: BigDecimal = "499.99998".parse().unwrap();
+
     thread::sleep(Duration::from_secs(12));
 
     log!("Get MYCOIN/MYCOIN1 orderbook");
@@ -703,8 +705,20 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         1,
         "MYCOIN/MYCOIN1 orderbook must have exactly 1 asks"
     );
-    let expected_vol: BigDecimal = "499.99998".parse().unwrap();
-    assert_eq!(orderbook.asks[0].max_volume, expected_vol);
+    assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
+
+    log!("Get my orders");
+    let rc = block_on(mm_maker.rpc(json! ({
+        "userpass": mm_maker.userpass,
+        "method": "my_orders",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+    let my_orders: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
+    assert_eq!(my_orders.result.maker_orders.len(), 1);
+
+    let my_order = my_orders.result.maker_orders.get(&set_price_res.result.uuid).unwrap();
+    assert_eq!(my_order.max_base_vol, new_expected_vol);
 
     conf["dbdir"] = mm_maker.folder.join("DB").to_str().unwrap().into();
     conf["log"] = mm_maker.folder.join("mm2_dup.log").to_str().unwrap().into();
@@ -754,8 +768,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         1,
         "MYCOIN/MYCOIN1 orderbook must have exactly 1 asks"
     );
-    let expected_vol: BigDecimal = "499.99998".parse().unwrap();
-    assert_eq!(orderbook.asks[0].max_volume, expected_vol);
+    assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
 
     log!("Get my orders");
     let rc = block_on(mm_maker_dup.rpc(json! ({
@@ -768,5 +781,5 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert_eq!(my_orders.result.maker_orders.len(), 1);
 
     let my_order = my_orders.result.maker_orders.get(&set_price_res.result.uuid).unwrap();
-    assert_eq!(my_order.max_base_vol, expected_vol);
+    assert_eq!(my_order.max_base_vol, new_expected_vol);
 }

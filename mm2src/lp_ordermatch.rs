@@ -908,7 +908,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         let mut maker_orders = ordermatch_ctx.my_maker_orders.lock().await;
         *maker_orders = maker_orders
             .drain()
-            .filter_map(|(uuid, order)| {
+            .filter_map(|(uuid, mut order)| {
                 if order.base == coin.ticker() {
                     if new_volume < order.min_base_vol {
                         let ctx = ctx.clone();
@@ -916,8 +916,9 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                         spawn(async move { maker_order_cancelled_p2p_notify(ctx, &order).await });
                         None
                     } else if new_volume < order.available_amount() {
+                        order.max_base_vol = &order.reserved_amount() + &new_volume;
                         let mut update_msg = new_protocol::MakerOrderUpdated::new(order.uuid);
-                        update_msg.with_new_max_volume(new_volume.to_ratio());
+                        update_msg.with_new_max_volume(order.available_amount().into());
                         let topic = order.orderbook_topic();
                         let ctx = ctx.clone();
                         spawn(async move { maker_order_updated_p2p_notify(ctx, topic, update_msg).await });
@@ -2816,8 +2817,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                                 continue;
                             },
                         };
-                    if max_vol < order.max_base_vol {
-                        order.max_base_vol = max_vol;
+                    if max_vol < order.available_amount() {
+                        order.max_base_vol = order.reserved_amount() + max_vol;
                     }
                     if order.available_amount() < order.min_base_vol {
                         log::info!("Insufficient volume available for order {}, cancelling", uuid);
