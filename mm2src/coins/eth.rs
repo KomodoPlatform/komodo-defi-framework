@@ -929,34 +929,52 @@ impl SwapOps for EthCoin {
                     .compat()
                     .await
             );
+
             if status == PAYMENT_STATE_UNINITIALIZED.into() {
                 return Ok(None);
             };
-            let events = try_s!(
-                selfi
-                    .payment_sent_events(swap_contract_address, from_block)
-                    .compat()
-                    .await
-            );
 
-            let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
+            let mut current_block = try_s!(selfi.current_block().compat().await);
+            if current_block < from_block {
+                current_block = from_block;
+            }
 
-            match found {
-                Some(event) => {
-                    let transaction = try_s!(
-                        selfi
-                            .web3
-                            .eth()
-                            .transaction(TransactionId::Hash(event.transaction_hash.unwrap()))
-                            .compat()
-                            .await
-                    );
-                    match transaction {
-                        Some(t) => Ok(Some(try_s!(signed_tx_from_web3_tx(t)).into())),
-                        None => Ok(None),
-                    }
-                },
-                None => Ok(None),
+            let mut from_block = from_block;
+
+            loop {
+                let to_block = current_block.min(from_block + selfi.logs_block_range);
+
+                let events = try_s!(
+                    selfi
+                        .payment_sent_events(swap_contract_address, from_block, to_block)
+                        .compat()
+                        .await
+                );
+
+                let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
+
+                match found {
+                    Some(event) => {
+                        let transaction = try_s!(
+                            selfi
+                                .web3
+                                .eth()
+                                .transaction(TransactionId::Hash(event.transaction_hash.unwrap()))
+                                .compat()
+                                .await
+                        );
+                        match transaction {
+                            Some(t) => break Ok(Some(try_s!(signed_tx_from_web3_tx(t)).into())),
+                            None => break Ok(None),
+                        }
+                    },
+                    None => {
+                        if to_block >= current_block {
+                            break Ok(None);
+                        }
+                        from_block = to_block;
+                    },
+                }
             }
         };
         Box::new(fut.boxed().compat())
@@ -2473,12 +2491,13 @@ impl EthCoin {
         &self,
         swap_contract_address: Address,
         from_block: u64,
+        to_block: u64,
     ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("PaymentSent"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
             .from_block(BlockNumber::Number(from_block))
-            .to_block(BlockNumber::Pending)
+            .to_block(BlockNumber::Number(to_block))
             .address(vec![swap_contract_address])
             .build();
 
