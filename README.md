@@ -19,7 +19,7 @@
         <img src="https://img.shields.io/github/issues-pr-closed/komodoplatform/atomicdex-api" alt="pulls closed"></a>
     <a href="https://dev.azure.com/ortgma/Marketmaker/_build?definitionId=2">
         <img src="https://img.shields.io/azure-devops/build/ortgma/marketmaker/2/mm2.1" alt="build status"></a>
-    <a href="https://github.com/KomodoPlatform/dPoW/releases">
+    <a href="https://github.com/KomodoPlatform/atomicdex-api/releases">
         <img src="https://img.shields.io/github/v/release/komodoplatform/atomicdex-api" alt="release version"></a>
     <a href="https://discord.gg/3rzDPAr">
         <img src="https://img.shields.io/discord/412898016371015680?logo=discord" alt="chat on Discord"></a>
