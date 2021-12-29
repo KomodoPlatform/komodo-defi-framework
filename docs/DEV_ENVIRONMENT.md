@@ -10,7 +10,7 @@ PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey s
 ```
 PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
 ```
-5. MacOS specific: run script
+5. MacOS specific: run script (required after each reboot)
 ```shell
 #!/bin/bash
 for ((i=2;i<256;i++))

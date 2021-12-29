@@ -40,7 +40,7 @@ pub enum OrderType {
     GoodTillCancelled,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OrderConfirmationsSettings {
     pub base_confs: u64,
@@ -49,7 +49,7 @@ pub struct OrderConfirmationsSettings {
     pub rel_nota: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HistoricalOrder {
     max_base_vol: Option<MmNumber>,
@@ -59,14 +59,14 @@ struct HistoricalOrder {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum TakerAction {
     Buy,
     Sell,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "type", content = "data")]
 pub enum MatchBy {
@@ -105,7 +105,7 @@ pub struct BuyOrSellRpcResult {
     pub result: BuyOrSellRpcRes,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TakerRequest {
     base: String,
@@ -123,7 +123,7 @@ pub struct TakerRequest {
     conf_settings: OrderConfirmationsSettings,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MakerReserved {
     base: String,
@@ -140,7 +140,7 @@ pub struct MakerReserved {
     conf_settings: OrderConfirmationsSettings,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TakerConnect {
     taker_order_uuid: Uuid,
@@ -150,7 +150,7 @@ pub struct TakerConnect {
     dest_pub_key: H256Json,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MakerConnected {
     taker_order_uuid: Uuid,
@@ -160,7 +160,7 @@ pub struct MakerConnected {
     dest_pub_key: H256Json,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MakerMatch {
     request: TakerRequest,
@@ -170,7 +170,7 @@ pub struct MakerMatch {
     last_updated: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MakerOrderRpcResult {
     pub max_base_vol: BigDecimal,
@@ -194,7 +194,7 @@ pub struct MakerOrderRpcResult {
     pub rel_orderbook_ticker: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SetPriceResult {
     pub max_base_vol: BigDecimal,
@@ -215,7 +215,7 @@ pub struct SetPriceResult {
     pub rel_orderbook_ticker: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SetPriceResponse {
     pub result: SetPriceResult,

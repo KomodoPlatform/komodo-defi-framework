@@ -1234,7 +1234,7 @@ async fn electrum_request_multi(
 ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
     let mut futures = vec![];
     let connections = client.connections.lock().await;
-    for connection in connections.iter() {
+    for (i, connection) in connections.iter().enumerate() {
         let connection_addr = connection.addr.clone();
         match &*connection.tx.lock().await {
             Some(tx) => {
@@ -1242,7 +1242,7 @@ async fn electrum_request_multi(
                     request.clone(),
                     tx.clone(),
                     connection.responses.clone(),
-                    ELECTRUM_TIMEOUT / connections.len() as u64,
+                    ELECTRUM_TIMEOUT / (connections.len() - i) as u64,
                 )
                 .map(|response| (JsonRpcRemoteAddr(connection_addr), response));
                 futures.push(fut)
@@ -1255,12 +1255,13 @@ async fn electrum_request_multi(
         return ERR!("All electrums are currently disconnected");
     }
     if request.method != "server.ping" {
-        Ok(try_s!(
-            select_ok_sequential(futures)
-                .map_err(|e| ERRL!("{:?}", e))
-                .compat()
-                .await
-        ))
+        match select_ok_sequential(futures).compat().await {
+            Ok((res, no_of_failed_requests)) => {
+                client.clone().rotate_servers(no_of_failed_requests).await;
+                Ok(res)
+            },
+            Err(e) => return ERR!("{:?}", e),
+        }
     } else {
         // server.ping must be sent to all servers to keep all connections alive
         Ok(try_s!(
@@ -1321,6 +1322,12 @@ impl ElectrumClientImpl {
         // shutdown_tx will be closed immediately on the connection drop
         connections.remove(pos);
         Ok(())
+    }
+
+    /// Moves the Electrum servers that fail in a multi request to the end.
+    pub async fn rotate_servers(&self, no_of_rotations: usize) {
+        let mut connections = self.connections.lock().await;
+        connections.rotate_left(no_of_rotations);
     }
 
     /// Check if one of the spawned connections is connected.
