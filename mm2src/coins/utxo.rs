@@ -34,7 +34,7 @@ use chain::{OutPoint, TransactionInput, TransactionOutput, TxHashAlgo};
 use common::executor::{spawn, Timer};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
-use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
+use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
@@ -1517,7 +1517,7 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
     }
 
     spawn(async move {
-        while let Some(c) = weak_client.upgrade() {
+        if let Some(c) = weak_client.upgrade() {
             let client = ElectrumClient(c);
             let available_protocols = client.protocol_version();
             let version = match client
@@ -1528,12 +1528,10 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
                 Ok(version) => version,
                 Err(e) => {
                     log!("Electrum " (electrum_addr) " server.version error \"" [e] "\".");
-                    if let JsonRpcErrorType::Transport(_) = e.error {
-                        Timer::sleep(60.0).await;
-                        continue;
+                    if !e.error.is_transport() {
+                        remove_server(client, &electrum_addr).await;
                     };
-                    remove_server(client, &electrum_addr).await;
-                    break;
+                    return;
                 },
             };
 
@@ -1543,14 +1541,14 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
                 Err(e) => {
                     log!("Error on parse protocol_version "[e]);
                     remove_server(client, &electrum_addr).await;
-                    break;
+                    return;
                 },
             };
 
             if !available_protocols.contains(&actual_version) {
                 log!("Received unsupported protocol version " [actual_version] " from " [electrum_addr] ". Remove the connection");
                 remove_server(client, &electrum_addr).await;
-                break;
+                return;
             }
 
             match client.set_protocol_version(&electrum_addr, actual_version).await {
@@ -1561,8 +1559,6 @@ fn spawn_server_version_retry_loop(weak_client: Weak<ElectrumClientImpl>, client
                     log!("Error on set protocol_version "[e]);
                 },
             };
-
-            break;
         }
     });
 }
