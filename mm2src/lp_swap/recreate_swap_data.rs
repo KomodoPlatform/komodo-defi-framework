@@ -433,7 +433,7 @@ fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
-                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hash) {
+                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex) {
                     Ok(secret) => H256Json::from(secret.as_slice()),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
