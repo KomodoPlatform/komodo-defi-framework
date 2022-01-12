@@ -28,6 +28,16 @@ stages:
           name: 'MM2_Lint_Linux'
           os: 'Linux'
 
+      - template: azure-pipelines-lint-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Lint_MacOS'
+          os: 'Darwin'
+
+      - template: azure-pipelines-lint-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Lint_Win'
+          os: 'Windows_NT'
+
   - stage: WASM
     displayName: WASM build and test
     condition: succeeded('Lint')
