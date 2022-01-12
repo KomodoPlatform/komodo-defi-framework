@@ -20,8 +20,31 @@ trigger:
       - .gitignore
 
 stages:
+  - stage: Lint
+    displayName: Formatting, Clippy, and other checks
+    jobs:
+      - template: azure-pipelines-lint-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_Lint_Linux'
+          os: 'Linux'
+
+  - stage: WASM
+    displayName: WASM build and test
+    condition: succeeded('Lint')
+    jobs:
+      - template: azure-pipelines-wasm-stage-job.yml  # Template reference
+        parameters:
+          name: 'MM2_WASM_Linux'
+          os: 'Linux'
+          bob_passphrase: 'BOB_PASSPHRASE_LINUX'
+          bob_userpass: 'BOB_USERPASS_LINUX'
+          alice_passphrase: 'ALICE_PASSPHRASE_LINUX'
+          alice_userpass: 'ALICE_USERPASS_LINUX'
+          telegram_api_key: 'TELEGRAM_API_KEY'
+
   - stage: Build
     displayName: Build and test Debug
+    condition: succeeded('WASM')
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:
@@ -52,22 +75,3 @@ stages:
           alice_passphrase: 'ALICE_PASSPHRASE_WIN'
           alice_userpass: 'ALICE_USERPASS_WIN'
           telegram_api_key: 'TELEGRAM_API_KEY'
-
-  - stage: Release
-    displayName: Release
-    condition: and(eq(variables['build.sourceBranch'], 'refs/heads/mm2.1'), succeeded('Build'))
-    jobs:
-      - template: azure-pipelines-release-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Release_Linux'
-          os: 'Linux'
-
-      - template: azure-pipelines-release-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Release_MacOS'
-          os: 'Darwin'
-
-      - template: azure-pipelines-release-stage-job.yml  # Template reference
-        parameters:
-          name: 'MM2_Release_Windows'
-          os: 'Windows_NT'

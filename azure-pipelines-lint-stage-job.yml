@@ -1,0 +1,38 @@
+# Job template for MM2 Build
+
+parameters:
+  name: ''  # defaults for any parameters that aren't specified
+  os: ''
+  bob_passphrase: ''
+  bob_userpass: ''
+  alice_passphrase: ''
+  alice_userpass: ''
+  telegram_api_key: ''
+
+jobs:
+  - job: ${{ parameters.name }}
+    timeoutInMinutes: 0 # 0 means infinite for self-hosted agent
+    pool:
+      name: Default
+      demands: agent.os -equals ${{ parameters.os }}
+    steps:
+      - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
+      - bash: |
+          if [ $CLEANUP = "true" ]
+          then
+            git clean -ffdx
+          fi
+        displayName: Clean Up
+        failOnStderr: false
+        continueOnError: true
+      - bash: |
+          cargo clippy -- -D warnings
+        displayName: 'Check Clippy warnings'
+      - bash: |
+          cargo deny check advisories
+        displayName: 'Check Cargo deny advisories'
+        enabled: false
+      - bash: |
+          cargo fmt -- --check
+        displayName: 'Check rustfmt warnings'
