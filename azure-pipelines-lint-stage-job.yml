@@ -27,12 +27,15 @@ jobs:
         failOnStderr: false
         continueOnError: true
       - bash: |
+          cargo fmt -- --check
+        displayName: 'Check rustfmt warnings'
+      - bash: |
           cargo clippy -- -D warnings
         displayName: 'Check Clippy warnings'
+      - bash: |
+          cargo check --tests
+        displayName: 'Check Tests'
       - bash: |
           cargo deny check advisories
         displayName: 'Check Cargo deny advisories'
         enabled: false
-      - bash: |
-          cargo fmt -- --check
-        displayName: 'Check rustfmt warnings'
