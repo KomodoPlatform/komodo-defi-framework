@@ -168,6 +168,11 @@ members = [
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
 
+# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
+# For production builds, it's recommended to run wasm-opt separately.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 # The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function
 # names being printed, but dl_iterate_phdr is present since API version 21 https://github.com/rust-lang/rust/issues/17520#issuecomment-344885468
 # We're using 21 version for Android build so we're fine to use the patch.
