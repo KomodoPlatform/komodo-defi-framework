@@ -38,6 +38,8 @@ jobs:
           cat MM_VERSION
           cargo build --release --features zhtlc
         displayName: 'Build MM2 Release'
+        env:
+          MANUAL_MM_VERSION: true
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
       - bash: |
@@ -51,6 +53,7 @@ jobs:
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
           TELEGRAM_API_KEY: $(${{ parameters.telegram_api_key }})
           RUST_LOG: debug
+          MANUAL_MM_VERSION: true
         condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 target/release/libmm2.a -j

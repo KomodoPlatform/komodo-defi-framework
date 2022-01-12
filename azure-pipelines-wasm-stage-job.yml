@@ -39,6 +39,8 @@ jobs:
           cat MM_VERSION
           wasm-pack build --release --target web --out-dir target/target-wasm-release
         displayName: 'Build MM2 WASM Release'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           cargo test --target wasm32-unknown-unknown --release --bin mm2
         displayName: 'Test MM2 WASM'
@@ -47,6 +49,7 @@ jobs:
           GECKODRIVER: '/home/azureagent/wasm/geckodriver'
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
+          MANUAL_MM_VERSION: true
       - bash: |
           cd target/target-wasm-release/
           zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Release mm2_bg.wasm mm2.js snippets -r
