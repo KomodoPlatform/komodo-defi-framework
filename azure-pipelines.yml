@@ -10,8 +10,6 @@ trigger:
   branches:
     include:
       - refs/heads/*
-  pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=azure-devops&tabs=schema%2Cparameter-schema#pr-trigger
-    drafts: false
   paths:
     exclude:
       - docs/*
@@ -20,6 +18,9 @@ trigger:
       - etomic_build/*
       - iguana/Readme.md
       - .gitignore
+
+pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=azure-devops&tabs=schema%2Cparameter-schema#pr-trigger
+  drafts: false
 
 stages:
   - stage: Lint
