@@ -42,6 +42,7 @@ jobs:
           cat MM_VERSION
           wasm-pack build --release --target web --out-dir target/target-wasm-release
         displayName: 'Build MM2 WASM Release'
+        condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
           MANUAL_MM_VERSION: true
       - bash: |
@@ -53,10 +54,12 @@ jobs:
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           MANUAL_MM_VERSION: true
+        condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
           cd target/target-wasm-release/
           zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Wasm-Release mm2_bg.wasm mm2.js snippets -r
         displayName: 'Prepare release WASM build upload Linux'
+        condition: ne ( variables['Build.Reason'], 'PullRequest' )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
       - task: CopyFilesOverSSH@0
         inputs:
@@ -66,3 +69,4 @@ jobs:
           targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
           overwrite: true
         displayName: 'Upload nightly'
+        condition: ne ( variables['Build.Reason'], 'PullRequest' )
