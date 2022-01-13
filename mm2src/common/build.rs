@@ -104,6 +104,6 @@ fn main() {
     // cf. https://github.com/rust-lang/cargo/issues/4514#issuecomment-330976605
     //     https://github.com/rust-lang/cargo/issues/4213#issuecomment-310697337
     // `RUST_LOG=cargo::core::compiler::fingerprint cargo build` shows the fingerprit files used.
-
+    println!("cargo:rerun-if-changed=seh.c");
     build_c_code();
 }
