@@ -34,7 +34,10 @@ jobs:
       - bash: |
           rm -rf upload
           mkdir upload
-          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
           cat MM_VERSION
           cargo build --release --features zhtlc
         displayName: 'Build MM2 Release'
