@@ -1739,13 +1739,19 @@ async fn electrum_process_chunk(
     }
 }
 
+fn increase_delay(delay: &AtomicU64) {
+    if delay.load(AtomicOrdering::Relaxed) < 60 {
+        delay.fetch_add(5, AtomicOrdering::Relaxed);
+    }
+}
+
 macro_rules! try_loop {
     ($e:expr, $addr: ident, $delay: ident) => {
         match $e {
             Ok(res) => res,
             Err(e) => {
                 error!("{:?} error {:?}", $addr, e);
-                increase_delay(&mut $delay);
+                increase_delay(&$delay);
                 continue;
             },
         }
@@ -1828,13 +1834,7 @@ async fn connect_loop(
     connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<(), ()> {
-    fn increase_delay(delay: &AtomicU64) {
-        if delay.load(AtomicOrdering::Relaxed) < 60 {
-            delay.fetch_add(5, AtomicOrdering::Relaxed);
-        }
-    }
-
-    let mut delay = Arc::new(AtomicU64::new(0));
+    let delay = Arc::new(AtomicU64::new(0));
 
     loop {
         let current_delay = delay.load(AtomicOrdering::Relaxed);
@@ -1963,17 +1963,16 @@ async fn connect_loop(
 
     use common::wasm_ws::ws_transport;
 
-    let mut delay: u64 = 0;
+    let delay = Arc::new(AtomicU64::new(0));
     loop {
-        if delay > 0 {
-            Timer::sleep(delay as f64).await;
+        let current_delay = delay.load(AtomicOrdering::Relaxed);
+        if current_delay > 0 {
+            Timer::sleep(current_delay as f64).await;
         }
 
         let conn_idx = CONN_IDX.fetch_add(1, AtomicOrdering::Relaxed);
         let (mut transport_tx, mut transport_rx) = try_loop!(ws_transport(conn_idx, &addr).await, addr, delay);
 
-        // reset the delay if we've connected successfully
-        delay = 0;
         info!("Electrum client connected to {}", addr);
         try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
 
@@ -1984,6 +1983,7 @@ async fn connect_loop(
         *connection_tx.lock().await = Some(outgoing_tx);
 
         let incoming_fut = {
+            let delay = delay.clone();
             let addr = addr.clone();
             let responses = responses.clone();
             let event_handlers = event_handlers.clone();
@@ -1992,6 +1992,8 @@ async fn connect_loop(
                     last_chunk.store(now_ms(), AtomicOrdering::Relaxed);
                     match incoming_res {
                         Ok(incoming_json) => {
+                            // reset the delay if we've connected successfully and only if we received some data from connection
+                            delay.store(0, AtomicOrdering::Relaxed);
                             // measure the length of each incoming packet
                             let incoming_str = incoming_json.to_string();
                             event_handlers.on_incoming_response(incoming_str.as_bytes());
@@ -2035,6 +2037,7 @@ async fn connect_loop(
             () => {
                 info!("{} connection dropped", addr);
                 *connection_tx.lock().await = None;
+                increase_delay(&delay);
                 continue;
             };
         }
