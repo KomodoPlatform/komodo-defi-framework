@@ -107,6 +107,10 @@ pub enum JsonRpcErrorType {
     Response(JsonRpcRemoteAddr, Json),
 }
 
+impl JsonRpcErrorType {
+    pub fn is_transport(&self) -> bool { matches!(*self, JsonRpcErrorType::Transport(_)) }
+}
+
 impl fmt::Display for JsonRpcError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{:?}", self) }
 }
