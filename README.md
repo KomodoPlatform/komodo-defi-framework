@@ -105,10 +105,7 @@ For example:
   "gui": "core_readme",
   "netid": 7777,
   "rpc_password": "Ent3r_Un1Qu3_Pa$$w0rd",
-  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU",
-  "allow_weak_password": false,
-  "userhome": "/${HOME#\"/\"}",
-  "dbdir": "/path/to/DB/folder"
+  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU"
 }
 ```
 
