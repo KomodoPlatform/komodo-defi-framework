@@ -13,7 +13,7 @@ use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, ChecksumType};
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin};
-use coins::utxo::qtum::{qtum_coin_from_with_priv_key, QtumBasedCoin, QtumCoin};
+use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumBasedCoin, QtumCoin};
 use coins::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcClientOps};
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
@@ -352,7 +352,7 @@ pub fn generate_qtum_coin_with_random_privkey(
     let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "QTUM",
         &conf,
@@ -397,7 +397,7 @@ pub fn generate_segwit_qtum_coin_with_random_privkey(
     let priv_key = SecretKey::new(&mut rand6::thread_rng());
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "QTUM",
         &conf,

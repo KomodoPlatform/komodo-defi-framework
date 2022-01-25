@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{CheckHDAccountBalanceParams, CheckHDAccountBalanceResponse, HDAccountBalanceParams,
                           HDAccountBalanceResponse, HDAddressBalance, HDWalletBalanceRpcOps};
-use crate::utxo::qtum::{qtum_coin_from_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
+use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes,
                                ListSinceBlockRes, ListTransactionsItem, NativeClient, NativeClientImpl, NetworkInfo,
                                UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
@@ -18,6 +18,7 @@ use common::privkey::key_pair_from_seed;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::RpcDerivationPath;
 use futures::future::join_all;
+use futures::TryFutureExt;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -140,6 +141,7 @@ fn utxo_coin_fields_for_test(
         tx_cache_directory: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
+        check_utxo_maturity: false,
     }
 }
 
@@ -494,7 +496,7 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_set_fixed_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -535,7 +537,7 @@ fn test_withdraw_impl_set_fixed_fee() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -579,7 +581,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -625,7 +627,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -671,7 +673,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -704,7 +706,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_max() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -755,7 +757,7 @@ fn test_withdraw_kmd_rewards_impl(
 ) {
     let verbose: RpcTransaction = json::from_str(verbose_serialized).unwrap();
     let unspent_height = verbose.height;
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(move |coin, _| {
         let tx: UtxoTx = tx_hex.into();
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -838,7 +840,7 @@ fn test_withdraw_rick_rewards_none() {
     // https://rick.explorer.dexstats.info/tx/7181400be323acc6b5f3164240e6c4601ff4c252f40ce7649f87e81634330209
     const TX_HEX: &str = "0400008085202f8901df8119c507aa61d32332cd246dbfeb3818a4f96e76492454c1fbba5aa097977e000000004847304402205a7e229ea6929c97fd6dde254c19e4eb890a90353249721701ae7a1c477d99c402206a8b7c5bf42b5095585731d6b4c589ce557f63c20aed69ff242eca22ecfcdc7a01feffffff02d04d1bffbc050000232102afdbba3e3c90db5f0f4064118f79cf308f926c68afd64ea7afc930975663e4c4ac402dd913000000001976a9143e17014eca06281ee600adffa34b4afb0922a22288ac2bdab86035a00e000000000000000000000000";
 
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(move |coin, _| {
         let tx: UtxoTx = TX_HEX.into();
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -874,7 +876,7 @@ fn test_withdraw_rick_rewards_none() {
 }
 
 #[test]
-fn test_ordered_mature_unspents_without_tx_cache() {
+fn test_list_mature_unspents_ordered_without_tx_cache() {
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
@@ -888,7 +890,7 @@ fn test_ordered_mature_unspents_without_tx_cache() {
         "The test address doesn't have unspent outputs"
     );
     let (unspents, _) =
-        block_on(coin.ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))).unwrap();
+        block_on(coin.list_mature_unspent_ordered(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"))).unwrap();
     assert!(!unspents.is_empty());
 }
 
@@ -1558,7 +1560,7 @@ fn test_qtum_unspendable_balance_failed_once() {
             },
         ],
     ];
-    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+    QtumCoin::list_mature_unspent_ordered.mock_safe(move |coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = unspents.pop().unwrap();
         MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
@@ -1578,7 +1580,7 @@ fn test_qtum_unspendable_balance_failed_once() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(68);
@@ -1602,7 +1604,7 @@ fn test_qtum_generate_pod() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
     let expected_res = "20086d757b34c01deacfef97a391f8ed2ca761c72a08d5000adc3d187b1007aca86a03bc5131b1f99b66873a12b51f8603213cdc1aa74c05ca5d48fe164b82152b";
     let address = Address::from_str("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE").unwrap();
     let res = coin.generate_pod(address.hash).unwrap();
@@ -1620,7 +1622,7 @@ fn test_qtum_add_delegation() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1659,7 +1661,7 @@ fn test_qtum_add_delegation_on_already_delegating() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1690,7 +1692,7 @@ fn test_qtum_get_delegation_infos() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1720,7 +1722,7 @@ fn test_qtum_remove_delegation() {
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(
+    let coin = block_on(qtum_coin_with_priv_key(
         &ctx,
         "tQTUM",
         &conf,
@@ -1734,7 +1736,7 @@ fn test_qtum_remove_delegation() {
 
 #[test]
 fn test_qtum_unspendable_balance_failed() {
-    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+    QtumCoin::list_mature_unspent_ordered.mock_safe(move |coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         // spendable balance (69.0) > balance (68.0)
         let unspents = vec![
@@ -1772,7 +1774,7 @@ fn test_qtum_unspendable_balance_failed() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
 
     let error = coin.my_balance().wait().err().unwrap();
     log!("error: "[error]);
@@ -1782,7 +1784,7 @@ fn test_qtum_unspendable_balance_failed() {
 
 #[test]
 fn test_qtum_my_balance() {
-    QtumCoin::ordered_mature_unspents.mock_safe(move |coin, _| {
+    QtumCoin::list_mature_unspent_ordered.mock_safe(move |coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         // spendable balance (66.0) < balance (68.0), then unspendable balance is expected to be (2.0)
         let unspents = vec![
@@ -1820,7 +1822,7 @@ fn test_qtum_my_balance() {
     ];
 
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_from_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
 
     let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
     let expected_spendable = BigDecimal::from(66);
@@ -1829,7 +1831,41 @@ fn test_qtum_my_balance() {
     assert_eq!(unspendable, expected_unspendable);
 }
 
-fn test_ordered_mature_unspents_from_cache_impl(
+#[test]
+fn test_qtum_my_balance_with_check_utxo_maturity_false() {
+    const DISPLAY_BALANCE: u64 = 68;
+    ElectrumClient::display_balance.mock_safe(move |_, _, _| {
+        MockResult::Return(Box::new(futures01::future::ok(BigDecimal::from(DISPLAY_BALANCE))))
+    });
+    QtumCoin::list_all_unspent_ordered.mock_safe(move |_, _| {
+        panic!("'QtumCoin::list_all_unspent_ordered' is not expected to be called when `check_utxo_maturity` is false")
+    });
+
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+        "check_utxo_maturity": false,
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+
+    let priv_key = [
+        184, 199, 116, 240, 113, 222, 8, 199, 253, 143, 98, 185, 127, 26, 87, 38, 246, 206, 159, 27, 207, 20, 27, 112,
+        184, 102, 137, 37, 78, 214, 113, 78,
+    ];
+
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, &priv_key)).unwrap();
+
+    let CoinBalance { spendable, unspendable } = coin.my_balance().wait().unwrap();
+    let expected_spendable = BigDecimal::from(DISPLAY_BALANCE);
+    let expected_unspendable = BigDecimal::from(0);
+    assert_eq!(spendable, expected_spendable);
+    assert_eq!(unspendable, expected_unspendable);
+}
+
+fn test_list_mature_unspents_ordered_from_cache_impl(
     unspent_height: Option<u64>,
     cached_height: Option<u64>,
     cached_confs: u32,
@@ -1875,22 +1911,23 @@ fn test_ordered_mature_unspents_from_cache_impl(
 
     // run test
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(client), None, false);
-    let (unspents, _) = block_on(coin.ordered_mature_unspents(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")))
-        .expect("Expected an empty unspent list");
+    let (unspents, _) =
+        block_on(coin.list_mature_unspent_ordered(&Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")))
+            .expect("Expected an empty unspent list");
     // unspents should be empty because `is_unspent_mature()` always returns false
     assert!(unspents.is_empty());
     assert!(unsafe { IS_UNSPENT_MATURE_CALLED == true });
 }
 
 #[test]
-fn test_ordered_mature_unspents_from_cache() {
+fn test_list_mature_unspents_ordered_from_cache() {
     let unspent_height = None;
     let cached_height = None;
     let cached_confs = 0;
     let block_count = 1000;
     let expected_height = None; // is unknown
     let expected_confs = 0; // is not changed because height is unknown
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1905,7 +1942,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = None; // is unknown
     let expected_confs = 5; // is not changed because height is unknown
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1920,7 +1957,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = Some(998); // as the unspent_height
     let expected_confs = 3; // 1000 - 998 + 1
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1935,7 +1972,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = Some(998); // as the cached_height
     let expected_confs = 3; // 1000 - 998 + 1
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1950,7 +1987,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = Some(998); // as the unspent_height
     let expected_confs = 3; // 1000 - 998 + 1
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1966,7 +2003,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 999;
     let expected_height = Some(1000); // as the cached_height
     let expected_confs = 1; // is not changed because height cannot be calculated
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1982,7 +2019,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = Some(1000); // as the cached_height
     let expected_confs = 1; // 1000 - 1000 + 1
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -1998,7 +2035,7 @@ fn test_ordered_mature_unspents_from_cache() {
     let block_count = 1000;
     let expected_height = Some(0); // as the cached_height
     let expected_confs = 1; // is not changed because tx_height is expected to be not zero
-    test_ordered_mature_unspents_from_cache_impl(
+    test_list_mature_unspents_ordered_from_cache_impl(
         unspent_height,
         cached_height,
         cached_confs,
@@ -3055,7 +3092,7 @@ fn tbch_electroncash_verbose_tx_unconfirmed() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_to_p2pkh() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -3102,7 +3139,7 @@ fn test_withdraw_to_p2pkh() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_to_p2sh() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -3149,7 +3186,7 @@ fn test_withdraw_to_p2sh() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_to_p2wpkh() {
-    UtxoStandardCoin::ordered_mature_unspents.mock_safe(|coin, _| {
+    UtxoStandardCoin::list_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -3191,6 +3228,159 @@ fn test_withdraw_to_p2wpkh() {
     let expected_script = Builder::build_witness_script(&p2wpkh_address.hash);
 
     assert_eq!(output_script, expected_script);
+}
+
+/// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+#[test]
+fn test_utxo_standard_with_check_utxo_maturity_true() {
+    static mut LIST_MATURE_UNSPENT_ORDERED_CALLED: bool = false;
+
+    UtxoStandardCoin::list_mature_unspent_ordered.mock_safe(|coin, _| {
+        unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED = true };
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        let unspents = Vec::new();
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+
+    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
+    let req = json!({
+         "method": "electrum",
+         "servers": [
+             {"url":"electrum1.cipig.net:10017"},
+             {"url":"electrum2.cipig.net:10017"},
+             {"url":"electrum3.cipig.net:10017"},
+         ],
+        "check_utxo_maturity": true,
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "RICK", &conf, &params, &[1u8; 32],
+    ))
+    .unwrap();
+
+    let address = Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW");
+    // Don't use `block_on` here because it's used within a mock of [`UtxoStandardCoin::list_mature_unspent_ordered`].
+    coin.list_unspent_ordered(&address).compat().wait().unwrap();
+    assert!(unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED });
+}
+
+/// `UtxoStandardCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is not set.
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+#[test]
+fn test_utxo_standard_without_check_utxo_maturity() {
+    static mut LIST_ALL_UNSPENT_ORDERED_CALLED: bool = false;
+
+    UtxoStandardCoin::list_all_unspent_ordered.mock_safe(|coin, _| {
+        unsafe { LIST_ALL_UNSPENT_ORDERED_CALLED = true };
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        let unspents = Vec::new();
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+
+    UtxoStandardCoin::list_mature_unspent_ordered.mock_safe(|_, _| {
+        panic!("'UtxoStandardCoin::list_mature_unspent_ordered' is not expected to be called when `check_utxo_maturity` is not set")
+    });
+
+    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
+    let req = json!({
+         "method": "electrum",
+         "servers": [
+             {"url":"electrum1.cipig.net:10017"},
+             {"url":"electrum2.cipig.net:10017"},
+             {"url":"electrum3.cipig.net:10017"},
+         ]
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "RICK", &conf, &params, &[1u8; 32],
+    ))
+    .unwrap();
+
+    let address = Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW");
+    // Don't use `block_on` here because it's used within a mock of [`UtxoStandardCoin::list_mature_unspent_ordered`].
+    coin.list_unspent_ordered(&address).compat().wait().unwrap();
+    assert!(unsafe { LIST_ALL_UNSPENT_ORDERED_CALLED });
+}
+
+/// `QtumCoin` has to check UTXO maturity if `check_utxo_maturity` is not set.
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+#[test]
+fn test_qtum_without_check_utxo_maturity() {
+    static mut LIST_MATURE_UNSPENT_ORDERED_CALLED: bool = false;
+
+    QtumCoin::list_mature_unspent_ordered.mock_safe(|coin, _| {
+        unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED = true };
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        let unspents = Vec::new();
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [
+            {"url":"electrum1.cipig.net:10071"},
+            {"url":"electrum2.cipig.net:10071"},
+            {"url":"electrum3.cipig.net:10071"},
+        ],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, &[1u8; 32])).unwrap();
+
+    let address = Address::from("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+    // Don't use `block_on` here because it's used within a mock of [`QtumCoin::list_mature_unspent_ordered`].
+    coin.list_unspent_ordered(&address).compat().wait().unwrap();
+    assert!(unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED });
+}
+
+/// `QtumCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is `false`.
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+#[test]
+fn test_qtum_with_check_utxo_maturity_false() {
+    static mut LIST_ALL_UNSPENT_ORDERED_CALLED: bool = false;
+
+    QtumCoin::list_all_unspent_ordered.mock_safe(|coin, _| {
+        unsafe { LIST_ALL_UNSPENT_ORDERED_CALLED = true };
+        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
+        let unspents = Vec::new();
+        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+    });
+    QtumCoin::list_mature_unspent_ordered.mock_safe(|_, _| {
+        panic!(
+            "'QtumCoin::list_mature_unspent_ordered' is not expected to be called when `check_utxo_maturity` is false"
+        )
+    });
+
+    let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
+    let req = json!({
+        "method": "electrum",
+        "servers": [
+            {"url":"electrum1.cipig.net:10071"},
+            {"url":"electrum2.cipig.net:10071"},
+            {"url":"electrum3.cipig.net:10071"},
+        ],
+        "check_utxo_maturity": false,
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, &[1u8; 32])).unwrap();
+
+    let address = Address::from("qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE");
+    // Don't use `block_on` here because it's used within a mock of [`QtumCoin::list_mature_unspent_ordered`].
+    coin.list_unspent_ordered(&address).compat().wait().unwrap();
+    assert!(unsafe { LIST_ALL_UNSPENT_ORDERED_CALLED });
 }
 
 #[test]

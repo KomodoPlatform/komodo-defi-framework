@@ -502,6 +502,9 @@ pub struct UtxoCoinFields {
     /// This cache helps to prevent UTXO reuse in such cases
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
+    /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+    pub check_utxo_maturity: bool,
 }
 
 #[derive(Debug, Display)]
@@ -709,8 +712,18 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
         lock_time: u32,
     ) -> Result<UtxoTx, String>;
 
-    /// Get transaction outputs available to spend.
-    async fn ordered_mature_unspents<'a>(
+    /// Returns available unspents in ascending order + RecentlySpentOutPoints MutexGuard for further interaction
+    /// (e.g. to add new transaction to it).
+    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
+    async fn list_all_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
+
+    /// Returns available mature unspents ascending order + RecentlySpentOutPoints MutexGuard for further interaction
+    /// (e.g. to add new transaction to it).
+    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
+    async fn list_mature_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
@@ -1015,6 +1028,9 @@ pub struct UtxoActivationParams {
     pub requires_notarization: Option<bool>,
     pub address_format: Option<UtxoAddressFormat>,
     pub gap_limit: Option<u32>,
+    /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+    pub check_utxo_maturity: Option<bool>,
 }
 
 #[derive(Debug, Display)]
@@ -1025,6 +1041,7 @@ pub enum UtxoFromLegacyReqErr {
     InvalidRequiredConfs(json::Error),
     InvalidRequiresNota(json::Error),
     InvalidAddressFormat(json::Error),
+    InvalidCheckUtxoMaturity(json::Error),
 }
 
 impl UtxoActivationParams {
@@ -1048,6 +1065,8 @@ impl UtxoActivationParams {
             .map_to_mm(UtxoFromLegacyReqErr::InvalidRequiresNota)?;
         let address_format =
             json::from_value(req["address_format"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidAddressFormat)?;
+        let check_utxo_maturity = json::from_value(req["check_utxo_maturity"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidCheckUtxoMaturity)?;
 
         Ok(UtxoActivationParams {
             mode,
@@ -1057,6 +1076,7 @@ impl UtxoActivationParams {
             requires_notarization,
             address_format,
             gap_limit: None,
+            check_utxo_maturity,
         })
     }
 }
@@ -1389,6 +1409,7 @@ pub fn address_by_conf_and_pubkey_str(
         requires_notarization: None,
         address_format: None,
         gap_limit: None,
+        check_utxo_maturity: None,
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
     let utxo_conf = try_s!(conf_builder.build());

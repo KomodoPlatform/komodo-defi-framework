@@ -121,7 +121,7 @@ use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_from_with_priv_key, QtumCoin};
+use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
 use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::SlpToken;
@@ -1896,7 +1896,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         },
         CoinProtocol::QTUM => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(qtum_coin_from_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
+            try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()

@@ -255,12 +255,27 @@ where
     Ok(balances)
 }
 
-pub async fn address_balance(coin: &UtxoCoinFields, address: Address) -> BalanceResult<CoinBalance> {
-    let spendable = coin.rpc_client.display_balance(address, coin.decimals).compat().await?;
-    Ok(CoinBalance {
-        spendable,
-        unspendable: BigDecimal::from(0),
-    })
+pub async fn address_balance<T>(coin: &T, address: &Address) -> BalanceResult<CoinBalance>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+{
+    let balance = coin
+        .as_ref()
+        .rpc_client
+        .display_balance(address.clone(), coin.as_ref().decimals)
+        .compat()
+        .await?;
+
+    if !coin.as_ref().check_utxo_maturity {
+        return Ok(CoinBalance {
+            spendable: balance,
+            unspendable: BigDecimal::from(0),
+        });
+    }
+
+    let unspendable = address_unspendable_balanace(coin, address, &balance).await?;
+    let spendable = &balance - &unspendable;
+    Ok(CoinBalance { spendable, unspendable })
 }
 
 pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> { &coin.derivation_method }
@@ -1510,18 +1525,18 @@ where
     }
 }
 
-pub fn my_balance(coin: &UtxoCoinFields) -> BalanceFut<CoinBalance> {
-    let my_address = try_f!(coin.derivation_method.iguana_or_err().mm_err(BalanceError::from)).clone();
-    Box::new(
-        coin.rpc_client
-            .display_balance(my_address, coin.decimals)
-            .map_to_mm_fut(BalanceError::from)
-            // at the moment standard UTXO coins do not have an unspendable balance
-            .map(|spendable| CoinBalance {
-                spendable,
-                unspendable: BigDecimal::from(0),
-            }),
-    )
+pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+{
+    let my_address = try_f!(coin
+        .as_ref()
+        .derivation_method
+        .iguana_or_err()
+        .mm_err(BalanceError::from))
+    .clone();
+    let fut = async move { address_balance(&coin, &my_address).await };
+    Box::new(fut.boxed().compat())
 }
 
 pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -2520,8 +2535,7 @@ pub fn is_coin_protocol_supported(coin: &dyn UtxoCommonOps, info: &Option<Vec<u8
     }
 }
 
-#[allow(clippy::needless_lifetimes)]
-pub async fn ordered_mature_unspents<'a, T>(
+pub async fn list_mature_unspent_ordered<'a, T>(
     coin: &'a T,
     address: &Address,
 ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>
@@ -2552,7 +2566,7 @@ where
         Ok(confirmations as u32)
     }
 
-    let (unspents, recently_spent) = list_unspent_ordered(coin, address).await?;
+    let (unspents, recently_spent) = coin.list_all_unspent_ordered(address).await?;
     let block_count = coin.as_ref().rpc_client.get_block_count().compat().await?;
 
     let mut result = Vec::with_capacity(unspents.len());
@@ -2666,14 +2680,17 @@ pub async fn cache_transaction_if_possible(_coin: &UtxoCoinFields, _tx: &RpcTran
     Ok(())
 }
 
-pub async fn my_unspendable_balance<T>(coin: &T, total_balance: &BigDecimal) -> BalanceResult<BigDecimal>
+pub async fn address_unspendable_balanace<T>(
+    coin: &T,
+    address: &Address,
+    total_balance: &BigDecimal,
+) -> BalanceResult<BigDecimal>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + ?Sized,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
 {
     let mut attempts = 0i32;
-    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
     loop {
-        let (mature_unspents, _) = coin.ordered_mature_unspents(my_address).await?;
+        let (mature_unspents, _) = coin.list_mature_unspent_ordered(address).await?;
         let spendable_balance = mature_unspents.iter().fold(BigDecimal::zero(), |acc, x| {
             acc + big_decimal_from_sat(x.value as i64, coin.as_ref().decimals)
         });
@@ -2694,7 +2711,7 @@ where
             attempts, spendable_balance, total_balance
         );
 
-        // the balance could be changed by other instance between my_balance() and ordered_mature_unspents() calls
+        // the balance could be changed by other instance between my_balance() and list_mature_unspent_ordered() calls
         // try again
         attempts += 1;
         Timer::sleep(0.3).await;
@@ -2981,8 +2998,21 @@ pub fn dex_fee_script(uuid: [u8; 16], time_lock: u32, watcher_pub: &Public, send
         .into_script()
 }
 
-#[allow(clippy::needless_lifetimes)]
 pub async fn list_unspent_ordered<'a, T>(
+    coin: &'a T,
+    address: &Address,
+) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
+    if coin.as_ref().check_utxo_maturity {
+        coin.list_mature_unspent_ordered(address).await
+    } else {
+        coin.list_all_unspent_ordered(address).await
+    }
+}
+
+pub async fn list_all_unspent_ordered<'a, T>(
     coin: &'a T,
     address: &Address,
 ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>

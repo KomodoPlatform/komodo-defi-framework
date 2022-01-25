@@ -9,8 +9,8 @@ use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivat
 use crate::utxo_activation::utxo_standard_coin_hw_ops::UtxoStandardCoinHwOps;
 use async_trait::async_trait;
 use coins::coin_balance::EnableCoinBalanceOps;
-use coins::utxo::qtum::QtumCoin;
-use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
+use coins::utxo::qtum::{QtumCoin, QtumCoinBuilder};
+use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
 use coins::{lp_register_coin, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy, RegisterCoinParams};
 use common::mm_ctx::MmArc;
@@ -57,18 +57,10 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let hw_ops = UtxoStandardCoinHwOps::new(&ctx, task_handle);
         let tx_history = activation_request.tx_history;
-        let coin = UtxoArcBuilder::new(
-            &ctx,
-            &ticker,
-            &coin_conf,
-            &activation_request,
-            priv_key_policy,
-            hw_ops,
-            QtumCoin::from,
-        )
-        .build()
-        .await
-        .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
+        let coin = QtumCoinBuilder::new(&ctx, &ticker, &coin_conf, &activation_request, priv_key_policy, hw_ops)
+            .build()
+            .await
+            .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
         lp_register_coin(&ctx, MmCoinEnum::from(coin.clone()), RegisterCoinParams {
             ticker: ticker.clone(),
             tx_history,

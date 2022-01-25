@@ -3,10 +3,12 @@ use crate::coin_balance::{common_impl, AddressBalanceOps, CheckHDAccountBalanceP
                           HDAccountBalanceParams, HDAccountBalanceResponse, HDAccountBalanceRpcError,
                           HDAddressBalance, HDWalletBalance, HDWalletBalanceOps, HDWalletBalanceRpcOps};
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
-use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuildHwOps, UtxoCoinBuilder,
+                                UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, AddressDerivingError, Bip44Chain, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod,
-            DelegationError, DelegationFut, InvalidBip44ChainError, NegotiateSwapContractAddrErr, StakingInfosFut,
-            SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
+            DelegationError, DelegationFut, InvalidBip44ChainError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+            StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -15,8 +17,6 @@ use futures::{FutureExt, TryFutureExt};
 use keys::AddressHashEnum;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
-
-pub const QTUM_STANDARD_DUST: u64 = 1000;
 
 #[derive(Debug, Display)]
 pub enum Qrc20AddressError {
@@ -70,19 +70,6 @@ pub trait QtumDelegationOps {
 
 #[async_trait]
 pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
-    async fn qtum_address_balance(&self, address: Address) -> BalanceResult<CoinBalance> {
-        let balance = self
-            .as_ref()
-            .rpc_client
-            .display_balance(address, self.as_ref().decimals)
-            .compat()
-            .await?;
-
-        let unspendable = utxo_common::my_unspendable_balance(self, &balance).await?;
-        let spendable = &balance - &unspendable;
-        Ok(CoinBalance { spendable, unspendable })
-    }
-
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         let to_address_format: QtumAddressFormat =
             json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse Qtum address format {:?}", e))?;
@@ -184,6 +171,156 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
     }
 }
 
+pub struct QtumCoinBuilder<'a, HwOps>
+where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync,
+{
+    ctx: &'a MmArc,
+    ticker: &'a str,
+    conf: &'a Json,
+    activation_params: &'a UtxoActivationParams,
+    priv_key_policy: PrivKeyBuildPolicy<'a>,
+    hw_ops: HwOps,
+}
+
+#[async_trait]
+impl<'a, HwOps> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a, HwOps>
+where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync,
+{
+    fn ctx(&self) -> &MmArc { self.ctx }
+
+    fn conf(&self) -> &Json { self.conf }
+
+    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
+
+    fn ticker(&self) -> &str { self.ticker }
+
+    fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
+}
+
+impl<'a, HwOps> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinBuilder<'a, HwOps> where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync
+{
+}
+
+impl<'a, HwOps> UtxoFieldsWithHardwareWalletBuilder<HwOps> for QtumCoinBuilder<'a, HwOps> where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync
+{
+}
+
+#[async_trait]
+impl<'a, HwOps> UtxoCoinBuilder<HwOps> for QtumCoinBuilder<'a, HwOps>
+where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync,
+{
+    type ResultCoin = QtumCoin;
+    type Error = UtxoCoinBuildError;
+
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
+
+    fn hw_ops(&self) -> &HwOps { &self.hw_ops }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        let utxo = self.build_utxo_fields().await?;
+        let utxo_arc = UtxoArc::new(utxo);
+        let utxo_weak = utxo_arc.downgrade();
+        let result_coin = QtumCoin::from(utxo_arc);
+
+        self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from);
+        Ok(result_coin)
+    }
+}
+
+impl<'a, HwOps> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a, HwOps> where HwOps: UtxoCoinBuildHwOps + Send + Sync {}
+
+impl<'a, HwOps> QtumCoinBuilder<'a, HwOps>
+where
+    HwOps: UtxoCoinBuildHwOps + Send + Sync,
+{
+    pub fn new(
+        ctx: &'a MmArc,
+        ticker: &'a str,
+        conf: &'a Json,
+        activation_params: &'a UtxoActivationParams,
+        priv_key_policy: PrivKeyBuildPolicy<'a>,
+        hw_ops: HwOps,
+    ) -> Self {
+        QtumCoinBuilder {
+            ctx,
+            ticker,
+            conf,
+            activation_params,
+            priv_key_policy,
+            hw_ops,
+        }
+    }
+}
+
+pub struct QtumCoinWithIguanaPrivKeyBuilder<'a> {
+    ctx: &'a MmArc,
+    ticker: &'a str,
+    conf: &'a Json,
+    activation_params: &'a UtxoActivationParams,
+    priv_key: &'a [u8],
+}
+
+impl<'a> UtxoCoinBuilderCommonOps for QtumCoinWithIguanaPrivKeyBuilder<'a> {
+    fn ctx(&self) -> &MmArc { self.ctx }
+
+    fn conf(&self) -> &Json { self.conf }
+
+    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
+
+    fn ticker(&self) -> &str { self.ticker }
+
+    fn check_utxo_maturity(&self) -> bool {
+        self.activation_params()
+            .check_utxo_maturity
+            .unwrap_or(QTUM_CHECK_UTXO_MATURITY)
+    }
+}
+
+impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinWithIguanaPrivKeyBuilder<'a> {}
+
+impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinWithIguanaPrivKeyBuilder<'a> {}
+
+#[async_trait]
+impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for QtumCoinWithIguanaPrivKeyBuilder<'a> {
+    type ResultCoin = QtumCoin;
+    type Error = UtxoCoinBuildError;
+
+    fn priv_key(&self) -> &[u8] { self.priv_key }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
+        let utxo_arc = UtxoArc::new(utxo);
+        let utxo_weak = utxo_arc.downgrade();
+        let result_coin = QtumCoin::from(utxo_arc);
+
+        self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from);
+        Ok(result_coin)
+    }
+}
+
+impl<'a> QtumCoinWithIguanaPrivKeyBuilder<'a> {
+    pub fn new(
+        ctx: &'a MmArc,
+        ticker: &'a str,
+        conf: &'a Json,
+        activation_params: &'a UtxoActivationParams,
+        priv_key: &'a [u8],
+    ) -> Self {
+        QtumCoinWithIguanaPrivKeyBuilder {
+            ctx,
+            ticker,
+            conf,
+            activation_params,
+            priv_key,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct QtumCoin {
     utxo_arc: UtxoArc,
@@ -201,7 +338,7 @@ impl From<QtumCoin> for UtxoArc {
     fn from(coin: QtumCoin) -> Self { coin.utxo_arc }
 }
 
-pub async fn qtum_coin_from_with_priv_key(
+pub async fn qtum_coin_with_priv_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
@@ -209,7 +346,7 @@ pub async fn qtum_coin_from_with_priv_key(
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
     let coin = try_s!(
-        UtxoArcWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, activation_params, priv_key, QtumCoin::from)
+        QtumCoinWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, activation_params, priv_key)
             .build()
             .await
     );
@@ -322,11 +459,18 @@ impl UtxoCommonOps for QtumCoin {
         .await
     }
 
-    async fn ordered_mature_unspents<'a>(
+    async fn list_all_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_all_unspent_ordered(self, address).await
+    }
+
+    async fn list_mature_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
+        utxo_common::list_mature_unspent_ordered(self, address).await
     }
 
     fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
@@ -343,7 +487,7 @@ impl UtxoCommonOps for QtumCoin {
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_unspent_ordered(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(
@@ -605,14 +749,7 @@ impl MarketCoinOps for QtumCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
-    fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        let selfi = self.clone();
-        let fut = async move {
-            let my_address = selfi.as_ref().derivation_method.iguana_or_err()?.clone();
-            selfi.qtum_address_balance(my_address).await
-        };
-        Box::new(fut.boxed().compat())
-    }
+    fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 
@@ -775,7 +912,7 @@ impl AddressBalanceOps for QtumCoin {
     type Address = Address;
 
     async fn address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
-        self.qtum_address_balance(address.clone()).await
+        utxo_common::address_balance(self, address).await
     }
 }
 

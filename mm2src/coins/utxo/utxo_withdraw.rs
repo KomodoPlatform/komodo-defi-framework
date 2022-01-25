@@ -156,7 +156,7 @@ where
         let script_pubkey = output_script(&to, script_type).to_bytes();
 
         let _utxo_lock = UTXO_LOCK.lock().await;
-        let (unspents, _) = coin.ordered_mature_unspents(&self.from_address()).await?;
+        let (unspents, _) = coin.list_unspent_ordered(&self.from_address()).await?;
         let (value, fee_policy) = if req.max {
             (
                 unspents.iter().fold(0, |sum, unspent| sum + unspent.value),

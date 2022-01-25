@@ -13,7 +13,7 @@ use serde_json::Value as Json;
 
 pub struct UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
     ctx: &'a MmArc,
@@ -27,7 +27,7 @@ where
 
 impl<'a, F, T, HwOps> UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
     pub fn new(
@@ -54,7 +54,7 @@ where
 #[async_trait]
 impl<'a, F, T, HwOps> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
     fn ctx(&self) -> &MmArc { self.ctx }
@@ -68,15 +68,14 @@ where
 
 impl<'a, F, T, HwOps> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
 }
 
-#[async_trait]
 impl<'a, F, T, HwOps> UtxoFieldsWithHardwareWalletBuilder<HwOps> for UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
 }
@@ -101,23 +100,22 @@ where
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
-        self.spawn_merge_utxo_loop_if_required(utxo_weak);
+        self.spawn_merge_utxo_loop_if_required(utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
 
-impl<'a, F, T, HwOps> MergeUtxoArcOps<F, T> for UtxoArcBuilder<'a, F, T, HwOps>
+impl<'a, F, T, HwOps> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T, HwOps>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
     HwOps: UtxoCoinBuildHwOps + Send + Sync,
 {
-    fn constructor(&self) -> F { self.constructor.clone() }
 }
 
 pub struct UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -127,10 +125,9 @@ where
     constructor: F,
 }
 
-#[async_trait]
 impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
     fn ctx(&self) -> &MmArc { self.ctx }
 
@@ -141,18 +138,16 @@ where
     fn ticker(&self) -> &str { self.ticker }
 }
 
-#[async_trait]
 impl<'a, F, T> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
 
-impl<'a, F, T> MergeUtxoArcOps<F, T> for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
+impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    fn constructor(&self) -> F { self.constructor.clone() }
 }
 
 #[async_trait]
@@ -172,14 +167,14 @@ where
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
-        self.spawn_merge_utxo_loop_if_required(utxo_weak);
+        self.spawn_merge_utxo_loop_if_required(utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
 
 impl<'a, F, T> UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
     pub fn new(
@@ -201,21 +196,21 @@ where
     }
 }
 
-trait MergeUtxoArcOps<F, T>: UtxoCoinBuilderCommonOps
+pub trait MergeUtxoArcOps<T>: UtxoCoinBuilderCommonOps
 where
-    F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
-    fn constructor(&self) -> F;
-
-    fn spawn_merge_utxo_loop_if_required(&self, weak: UtxoWeak) {
+    fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F)
+    where
+        F: Fn(UtxoArc) -> T + Send + Sync + 'static,
+    {
         if let Some(ref merge_params) = self.activation_params().utxo_merge_params {
             let fut = merge_utxo_loop(
                 weak,
                 merge_params.merge_at,
                 merge_params.check_every,
                 merge_params.max_merge_at_once,
-                self.constructor(),
+                constructor,
             );
             info!("Starting UTXO merge loop for coin {}", self.ticker());
             spawn(fut);

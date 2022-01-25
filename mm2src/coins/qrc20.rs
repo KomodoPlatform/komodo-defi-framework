@@ -235,6 +235,13 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
             Ok(confpath.into())
         }
     }
+
+    fn check_utxo_maturity(&self) -> bool {
+        if let Some(false) = self.activation_params.utxo_params.check_utxo_maturity {
+            warn!("'check_utxo_maturity' is ignored because QRC20 gas refund is returned as a coinbase transaction");
+        }
+        true
+    }
 }
 
 #[async_trait]
@@ -461,7 +468,7 @@ impl Qrc20Coin {
         contract_outputs: Vec<ContractCallOutput>,
     ) -> Result<GenerateQrc20TxResult, MmError<Qrc20GenTxError>> {
         let my_address = self.utxo.derivation_method.iguana_or_err()?;
-        let (unspents, _) = self.ordered_mature_unspents(my_address).await?;
+        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
 
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
@@ -630,11 +637,18 @@ impl UtxoCommonOps for Qrc20Coin {
         .await
     }
 
-    async fn ordered_mature_unspents<'a>(
+    async fn list_all_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_all_unspent_ordered(self, address).await
+    }
+
+    async fn list_mature_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
+        utxo_common::list_mature_unspent_ordered(self, address).await
     }
 
     fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
@@ -651,7 +665,7 @@ impl UtxoCommonOps for Qrc20Coin {
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_unspent_ordered(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(
@@ -1041,13 +1055,8 @@ impl MarketCoinOps for Qrc20Coin {
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        let selfi = self.clone();
-        let fut = async move {
-            let my_qtum_address = selfi.as_ref().derivation_method.iguana_or_err()?.clone();
-            let CoinBalance { spendable, .. } = selfi.qtum_address_balance(my_qtum_address).await?;
-            Ok(spendable)
-        };
-        Box::new(fut.boxed().compat())
+        // use standard UTXO my_balance implementation that returns Qtum balance instead of QRC20
+        Box::new(utxo_common::my_balance(self.clone()).map(|CoinBalance { spendable, .. }| spendable))
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {

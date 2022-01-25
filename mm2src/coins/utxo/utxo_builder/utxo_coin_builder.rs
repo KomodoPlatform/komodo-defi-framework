@@ -163,6 +163,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let initial_history_state = self.initial_history_state();
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
+        let check_utxo_maturity = self.check_utxo_maturity();
 
         let coin = UtxoCoinFields {
             conf,
@@ -176,6 +177,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
             tx_hash_algo,
+            check_utxo_maturity,
         };
         Ok(coin)
     }
@@ -213,6 +215,7 @@ where
         let initial_history_state = self.initial_history_state();
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
+        let check_utxo_maturity = self.check_utxo_maturity();
 
         let coin = UtxoCoinFields {
             conf,
@@ -226,6 +229,7 @@ where
             recently_spent_outpoints,
             tx_fee,
             tx_hash_algo,
+            check_utxo_maturity,
         };
         Ok(coin)
     }
@@ -549,6 +553,8 @@ pub trait UtxoCoinBuilderCommonOps {
             TxHashAlgo::DSHA256
         }
     }
+
+    fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword

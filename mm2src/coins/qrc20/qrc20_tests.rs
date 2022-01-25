@@ -54,7 +54,7 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
 
 #[test]
 fn test_withdraw_impl_fee_details() {
-    Qrc20Coin::ordered_mature_unspents.mock_safe(|coin, _| {
+    Qrc20Coin::list_mature_unspent_ordered.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
