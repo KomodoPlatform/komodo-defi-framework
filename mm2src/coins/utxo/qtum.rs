@@ -277,7 +277,7 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinWithIguanaPrivKeyBuilder<'a> {
     fn check_utxo_maturity(&self) -> bool {
         self.activation_params()
             .check_utxo_maturity
-            .unwrap_or(QTUM_CHECK_UTXO_MATURITY)
+            .unwrap_or(true)
     }
 }
 
