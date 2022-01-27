@@ -52,8 +52,14 @@ jobs:
           MANUAL_MM_VERSION: true
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
+      # On MacOS, run for x86_64-apple-darwin
       - bash: |
-          cargo test --all -- --test-threads=16
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
+          else
+            cargo test --all -- --test-threads=16
+          fi
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:
