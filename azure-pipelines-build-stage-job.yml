@@ -51,6 +51,7 @@ jobs:
           MANUAL_MM_VERSION: true
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
+      # On MacOS, cross-compile for x86_64-apple-darwin
       - bash: |
           if [ $AGENT_OS = "Darwin" ]
           then
