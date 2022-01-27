@@ -64,7 +64,7 @@ pub trait CoinDockerOps {
     }
 
     fn wait_ready(&self) {
-        let timeout = now_ms() + 30000;
+        let timeout = now_ms() + 120000;
         loop {
             match self.rpc_client().get_block_count().wait() {
                 Ok(n) => {

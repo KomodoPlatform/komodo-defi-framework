@@ -39,7 +39,12 @@ jobs:
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
-          cargo build --release --features zhtlc
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo build --release --features zhtlc --target x86_64-apple-darwin
+          else
+            cargo build --release --features zhtlc
+          fi
         displayName: 'Build MM2 Release'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
@@ -47,7 +52,12 @@ jobs:
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
       - bash: |
-          cargo test --all -- --test-threads=16
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
+          else
+            cargo test --all -- --test-threads=16
+          fi
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:
@@ -64,8 +74,8 @@ jobs:
         displayName: 'Prepare release build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
-          cd target/release
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 libmm2.a -r
+          cd target/x86_64-apple-darwin/release
+          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 libmm2.a -r
         displayName: 'Prepare release build upload MacOS'
         condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
