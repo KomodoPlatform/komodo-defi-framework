@@ -31,6 +31,7 @@ jobs:
           export TAG="$(git rev-parse --short=9 HEAD)"
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
+      # On MacOS, cross-compile for x86_64-apple-darwin
       - bash: |
           rm -rf upload
           mkdir upload
@@ -51,14 +52,8 @@ jobs:
           MANUAL_MM_VERSION: true
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
-      # On MacOS, cross-compile for x86_64-apple-darwin
       - bash: |
-          if [ $AGENT_OS = "Darwin" ]
-          then
-            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
-          else
-            cargo test --all -- --test-threads=16
-          fi
+          cargo test --all -- --test-threads=16
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:
