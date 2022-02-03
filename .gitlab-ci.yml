@@ -91,7 +91,7 @@ macos-aarch64:
 #    paths:
 #      - libmm2.a
 
-macos-universal:
+#macos-universal:
 #  tags:
 #    - mac
 #    - universal
