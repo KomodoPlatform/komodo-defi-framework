@@ -78,31 +78,31 @@ macos-aarch64:
     paths:
       - libmm2.a
 
-macos-x86_64:
-  tags:
-    - mac
-    - x86_64
-  stage: post-build
-  needs:
-    - job: macos-build
-  script:
-    - cp /Users/administrator/GitLab/archive/x86_64/libmm2.a .
-  artifacts:
-    paths:
-      - libmm2.a
+#macos-x86_64:
+#  tags:
+#    - mac
+#    - x86_64
+#  stage: post-build
+#  needs:
+#    - job: macos-build
+#  script:
+#    - cp /Users/administrator/GitLab/archive/x86_64/libmm2.a .
+#  artifacts:
+#    paths:
+#      - libmm2.a
 
 macos-universal:
-  tags:
-    - mac
-    - universal
-  stage: post-build
-  needs:
-    - job: macos-build
-  script:
-    - cp /Users/administrator/GitLab/archive/universal/libmm2.a .
-  artifacts:
-    paths:
-      - libmm2.a
+#  tags:
+#    - mac
+#    - universal
+#  stage: post-build
+#  needs:
+#    - job: macos-build
+#  script:
+#    - cp /Users/administrator/GitLab/archive/universal/libmm2.a .
+#  artifacts:
+#    paths:
+#      - libmm2.a
 
 macos-build:
   tags:
@@ -110,7 +110,9 @@ macos-build:
     - universal
   stage: initial-build
   script:
-    - cargo lipo --features native --targets x86_64-apple-ios,aarch64-apple-ios --release
-    - cp target/universal/release/libmm2.a /Users/administrator/GitLab/archive/universal/libmm2.a
-    - cp target/x86_64-apple-ios/release/libmm2.a /Users/administrator/GitLab/archive/x86_64/libmm2.a
+#    - cargo lipo --features native --targets x86_64-apple-ios,aarch64-apple-ios --release
+# TMP disable universal builds until x86_64 build is fixed on server
     - cp target/aarch64-apple-ios/release/libmm2.a /Users/administrator/GitLab/archive/aarch64/libmm2.a
+    - cargo build --target aarch64-apple-ios --release --features native
+#    - cp target/universal/release/libmm2.a /Users/administrator/GitLab/archive/universal/libmm2.a
+#    - cp target/x86_64-apple-ios/release/libmm2.a /Users/administrator/GitLab/archive/x86_64/libmm2.a
