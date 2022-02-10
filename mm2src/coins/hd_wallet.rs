@@ -380,9 +380,7 @@ pub mod common_impl {
             > + MarketCoinOps
             + Sync
             + Send,
-        <Coin as HDWalletCoinOps>::HDWallet: Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
-        <<Coin as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount:,
     {
         let account_id = params.account_id;
         let chain = params.chain;
