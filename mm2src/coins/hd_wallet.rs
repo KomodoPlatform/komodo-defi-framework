@@ -235,14 +235,13 @@ pub struct HDAddress<Address> {
 
 #[async_trait]
 pub trait HDWalletCoinOps {
-    type Address;
+    type Address: Sync;
     type HDWallet: HDWalletOps;
-    type HDAccount: HDAccountOps;
 
     /// Derives an address from the given info.
     fn derive_address(
         &self,
-        hd_account: &Self::HDAccount,
+        hd_account: &<<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
     ) -> MmResult<HDAddress<Self::Address>, AddressDerivingError>;
@@ -250,7 +249,7 @@ pub trait HDWalletCoinOps {
     /// Generates a new address and update the corresponding number of used `hd_account` addresses.
     fn generate_new_address(
         &self,
-        hd_account: &mut Self::HDAccount,
+        hd_account: &mut <<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount,
         chain: Bip44Chain,
     ) -> MmResult<HDAddress<Self::Address>, NewAddressDerivingError>;
 
@@ -260,13 +259,16 @@ pub trait HDWalletCoinOps {
         &self,
         hd_wallet: &'a Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
+    ) -> MmResult<
+        HDAccountMut<'a, <<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount>,
+        NewAccountCreatingError,
+    >
     where
         XPubExtractor: HDXPubExtractor + Sync;
 }
 
 #[async_trait]
-pub trait HDWalletOps {
+pub trait HDWalletOps: Send + Sync {
     type HDAccount: HDAccountOps + Clone + Send;
 
     fn gap_limit(&self) -> u32;
@@ -310,6 +312,14 @@ pub trait HDAccountOps {
 
     /// Returns an index of this account.
     fn account_id(&self) -> u32;
+
+    fn internal_addresses_number(&self) -> u32;
+
+    fn external_addresses_number(&self) -> u32;
+
+    fn internal_addresses_number_mut(&mut self) -> &mut u32;
+
+    fn external_addresses_number_mut(&mut self) -> &mut u32;
 }
 
 #[derive(Deserialize)]
@@ -352,22 +362,27 @@ pub async fn get_new_address(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletCoinAndBalanceOps;
+    use crate::coin_balance::HDWalletBalanceRpcOps;
     use crate::{CoinWithDerivationMethod, MarketCoinOps};
     use crypto::RpcDerivationPath;
     use std::fmt;
+    use std::ops::DerefMut;
 
-    pub async fn get_new_address_rpc<Coin, Address, HDWallet, HDAccount, HDAddressChecker>(
+    pub async fn get_new_address_rpc<Coin>(
         coin: &Coin,
         params: GetNewHDAddressParams,
     ) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError>
     where
-        Coin: CoinWithDerivationMethod<Address = Address, HDWallet = HDWallet>
-            + HDWalletCoinAndBalanceOps<Address, HDWallet, HDAccount, HDAddressChecker>
-            + MarketCoinOps
-            + Sync,
-        Address: fmt::Display,
-        HDWallet: HDWalletOps<HDAccount = HDAccount> + Sync,
+        Coin: HDWalletBalanceRpcOps
+            + CoinWithDerivationMethod<
+                Address = <Coin as HDWalletCoinOps>::Address,
+                HDWallet = <Coin as HDWalletCoinOps>::HDWallet,
+            > + MarketCoinOps
+            + Sync
+            + Send,
+        <Coin as HDWalletCoinOps>::HDWallet: Sync,
+        <Coin as HDWalletCoinOps>::Address: fmt::Display,
+        <<Coin as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount:,
     {
         let account_id = params.account_id;
         let chain = params.chain;
@@ -386,7 +401,7 @@ pub mod common_impl {
         let HDAddress {
             address,
             derivation_path,
-        } = coin.generate_new_address(&mut hd_account, chain)?;
+        } = coin.generate_new_address(hd_account.deref_mut(), chain)?;
         let balance = coin.known_address_balance(&address).await?;
 
         Ok(GetNewHDAddressResponse {

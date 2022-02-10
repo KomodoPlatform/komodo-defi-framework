@@ -1152,6 +1152,14 @@ impl HDAccountOps for UtxoHDAccount {
     fn account_derivation_path(&self) -> DerivationPath { self.account_derivation_path.clone() }
 
     fn account_id(&self) -> u32 { self.account_id }
+
+    fn internal_addresses_number(&self) -> u32 { self.internal_addresses_number }
+
+    fn external_addresses_number(&self) -> u32 { self.external_addresses_number }
+
+    fn internal_addresses_number_mut(&mut self) -> &mut u32 { &mut self.internal_addresses_number }
+
+    fn external_addresses_number_mut(&mut self) -> &mut u32 { &mut self.external_addresses_number }
 }
 
 /// Function calculating KMD interest

@@ -1,8 +1,7 @@
 use super::*;
-use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletCoinAndBalanceOps};
+use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AddressDerivingError, HDAccountMut, InvalidBip44ChainError, NewAccountCreatingError,
-                       NewAddressDerivingError};
+use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError, NewAddressDerivingError};
 use crate::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
@@ -108,15 +107,15 @@ where
 
 pub fn generate_address<T>(
     coin: &T,
-    hd_account: &mut UtxoHDAccount,
+    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
     chain: Bip44Chain,
 ) -> MmResult<HDAddress<Address>, NewAddressDerivingError>
 where
-    T: HDWalletCoinOps<Address = Address, HDAccount = UtxoHDAccount>,
+    T: HDWalletCoinOps<Address = Address>,
 {
     let number_of_used_addresses = match chain {
-        Bip44Chain::External => &mut hd_account.external_addresses_number,
-        Bip44Chain::Internal => &mut hd_account.internal_addresses_number,
+        Bip44Chain::External => hd_account.external_addresses_number_mut(),
+        Bip44Chain::Internal => hd_account.internal_addresses_number_mut(),
     };
     let new_address_id = *number_of_used_addresses;
     if new_address_id >= ChildNumber::HARDENED_FLAG {
@@ -199,12 +198,13 @@ where
 
 pub async fn scan_for_new_addresses<T>(
     coin: &T,
-    hd_account: &mut UtxoHDAccount,
+    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
     address_checker: &UtxoAddressBalanceChecker,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
-    T: HDWalletCoinAndBalanceOps<Address, UtxoHDWallet, UtxoHDAccount, UtxoAddressBalanceChecker> + Sync,
+    T: HDWalletBalanceOps<HDAddressChecker = UtxoAddressBalanceChecker> + Sync,
+    <T as HDWalletCoinOps>::Address: std::fmt::Display,
 {
     let mut addresses =
         scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::External, gap_limit).await?;
@@ -218,13 +218,14 @@ where
 /// The checking stops at the moment when we find `gap_limit` consecutive empty addresses.
 pub async fn scan_for_new_addresses_impl<T>(
     coin: &T,
-    hd_account: &mut UtxoHDAccount,
+    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
     address_checker: &UtxoAddressBalanceChecker,
     chain: Bip44Chain,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
-    T: HDWalletCoinAndBalanceOps<Address, UtxoHDWallet, UtxoHDAccount, UtxoAddressBalanceChecker> + Sync,
+    T: HDWalletBalanceOps<HDAddressChecker = UtxoAddressBalanceChecker> + Sync,
+    <T as HDWalletCoinOps>::Address: std::fmt::Display,
 {
     let mut balances = Vec::with_capacity(gap_limit as usize);
 
@@ -273,8 +274,12 @@ where
     }
 
     match chain {
-        Bip44Chain::Internal => hd_account.internal_addresses_number = checking_address_id - unused_addresses_counter,
-        Bip44Chain::External => hd_account.external_addresses_number = checking_address_id - unused_addresses_counter,
+        Bip44Chain::Internal => {
+            *hd_account.internal_addresses_number_mut() = checking_address_id - unused_addresses_counter
+        },
+        Bip44Chain::External => {
+            *hd_account.external_addresses_number_mut() = checking_address_id - unused_addresses_counter
+        },
     }
 
     Ok(balances)

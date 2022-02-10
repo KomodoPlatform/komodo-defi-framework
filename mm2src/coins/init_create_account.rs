@@ -170,26 +170,23 @@ pub async fn init_create_new_account_user_action(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletCoinAndBalanceOps;
-    use crate::hd_wallet::{HDAccountOps, HDWalletOps};
+    use crate::coin_balance::HDWalletBalanceRpcOps;
+    use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::MarketCoinOps;
 
-    pub async fn init_create_new_account_rpc<'a, Coin, Address, HDWallet, HDAccount, HDAddressChecker, XPubExtractor>(
+    pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
         coin: &Coin,
         params: CreateNewAccountParams,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, HDWalletRpcError>
     where
         Coin: InitCreateHDAccountRpcOps
-            + CoinWithDerivationMethod<HDWallet = HDWallet>
-            + HDWalletCoinAndBalanceOps<Address, HDWallet, HDAccount, HDAddressChecker>
+            + HDWalletBalanceRpcOps
+            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
             + Send
             + Sync
             + MarketCoinOps,
         XPubExtractor: HDXPubExtractor + Sync,
-        HDWallet: HDWalletOps,
-        HDAccount: HDAccountOps,
-        HDAddressChecker: Send + Sync,
     {
         let hd_wallet =
             coin.derivation_method()

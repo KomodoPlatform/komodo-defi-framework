@@ -1,8 +1,7 @@
 use super::*;
-use crate::coin_balance::{self, AccountBalanceParams, AddressBalanceOps, CheckHDAccountBalanceParams,
-                          CheckHDAccountBalanceResponse, HDAccountBalance, HDAccountBalanceResponse,
-                          HDAccountBalanceRpcError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps,
-                          HDWalletBalanceRpcOps};
+use crate::coin_balance::{self, AccountBalanceParams, CheckHDAccountBalanceParams, CheckHDAccountBalanceResponse,
+                          HDAccountBalance, HDAccountBalanceResponse, HDAccountBalanceRpcError, HDAddressBalance,
+                          HDWalletBalance, HDWalletBalanceOps, HDWalletBalanceRpcOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AddressDerivingError, GetNewHDAddressParams, GetNewHDAddressResponse, HDAccountMut,
                        HDWalletRpcError, HDWalletRpcOps, NewAccountCreatingError, NewAddressDerivingError};
@@ -585,15 +584,6 @@ impl UtxoSignerOps for UtxoStandardCoin {
     fn tx_provider(&self) -> Self::TxGetter { self.utxo_arc.rpc_client.clone() }
 }
 
-#[async_trait]
-impl AddressBalanceOps for UtxoStandardCoin {
-    type Address = Address;
-
-    async fn address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
-        utxo_common::address_balance(self, address).await
-    }
-}
-
 impl CoinWithDerivationMethod for UtxoStandardCoin {
     type Address = Address;
     type HDWallet = UtxoHDWallet;
@@ -623,11 +613,10 @@ impl ExtractExtendedPubkey for UtxoStandardCoin {
 impl HDWalletCoinOps for UtxoStandardCoin {
     type Address = Address;
     type HDWallet = UtxoHDWallet;
-    type HDAccount = UtxoHDAccount;
 
     fn derive_address(
         &self,
-        hd_account: &Self::HDAccount,
+        hd_account: &<Self::HDWallet as HDWalletOps>::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
     ) -> MmResult<HDAddress<Self::Address>, AddressDerivingError> {
@@ -636,7 +625,7 @@ impl HDWalletCoinOps for UtxoStandardCoin {
 
     fn generate_new_address(
         &self,
-        hd_account: &mut Self::HDAccount,
+        hd_account: &mut <Self::HDWallet as HDWalletOps>::HDAccount,
         chain: Bip44Chain,
     ) -> MmResult<HDAddress<Self::Address>, NewAddressDerivingError> {
         utxo_common::generate_address(self, hd_account, chain)
@@ -646,7 +635,7 @@ impl HDWalletCoinOps for UtxoStandardCoin {
         &self,
         hd_wallet: &'a Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
+    ) -> MmResult<HDAccountMut<'a, <Self::HDWallet as HDWalletOps>::HDAccount>, NewAccountCreatingError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
@@ -666,8 +655,6 @@ impl HDWalletRpcOps for UtxoStandardCoin {
 
 #[async_trait]
 impl HDWalletBalanceOps for UtxoStandardCoin {
-    type HDWallet = UtxoHDWallet;
-    type HDAccount = UtxoHDAccount;
     type HDAddressChecker = UtxoAddressBalanceChecker;
 
     async fn produce_hd_address_checker(&self) -> BalanceResult<Self::HDAddressChecker> {
@@ -680,11 +667,15 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
 
     async fn scan_for_new_addresses(
         &self,
-        hd_account: &mut Self::HDAccount,
+        hd_account: &mut <Self::HDWallet as HDWalletOps>::HDAccount,
         address_checker: &Self::HDAddressChecker,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance>> {
         utxo_common::scan_for_new_addresses(self, hd_account, address_checker, gap_limit).await
+    }
+
+    async fn address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
+        utxo_common::address_balance(self, address).await
     }
 }
 
