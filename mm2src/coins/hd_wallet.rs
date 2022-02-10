@@ -236,12 +236,13 @@ pub struct HDAddress<Address> {
 #[async_trait]
 pub trait HDWalletCoinOps {
     type Address: Sync;
-    type HDWallet: HDWalletOps;
+    type HDAccount: HDAccountOps;
+    type HDWallet: HDWalletOps<HDAccount = Self::HDAccount>;
 
     /// Derives an address from the given info.
     fn derive_address(
         &self,
-        hd_account: &<<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount,
+        hd_account: &Self::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
     ) -> MmResult<HDAddress<Self::Address>, AddressDerivingError>;
@@ -249,7 +250,7 @@ pub trait HDWalletCoinOps {
     /// Generates a new address and update the corresponding number of used `hd_account` addresses.
     fn generate_new_address(
         &self,
-        hd_account: &mut <<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount,
+        hd_account: &mut Self::HDAccount,
         chain: Bip44Chain,
     ) -> MmResult<HDAddress<Self::Address>, NewAddressDerivingError>;
 
@@ -259,10 +260,7 @@ pub trait HDWalletCoinOps {
         &self,
         hd_wallet: &'a Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<
-        HDAccountMut<'a, <<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount>,
-        NewAccountCreatingError,
-    >
+    ) -> MmResult<HDAccountMut<'a, Self::HDAccount>, NewAccountCreatingError>
     where
         XPubExtractor: HDXPubExtractor + Sync;
 }

@@ -1,4 +1,4 @@
-use crate::hd_wallet::{AddressDerivingError, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
+use crate::hd_wallet::{AddressDerivingError, HDWalletCoinOps, InvalidBip44ChainError};
 use crate::{lp_coinfind_or_err, BalanceError, BalanceResult, Bip44Chain, CoinBalance, CoinFindError,
             CoinWithDerivationMethod, DerivationMethod, MarketCoinOps, MmCoinEnum};
 use async_trait::async_trait;
@@ -211,7 +211,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// Returns balances of the new addresses.
     async fn scan_for_new_addresses(
         &self,
-        hd_account: &mut <<Self as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount,
+        hd_account: &mut Self::HDAccount,
         address_checker: &Self::HDAddressChecker,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance>>;
@@ -300,7 +300,7 @@ pub mod common_impl {
 
     pub(crate) async fn enable_hd_wallet<Coin, HDAddressChecker>(
         coin: &Coin,
-        hd_wallet: &<Coin as HDWalletCoinOps>::HDWallet,
+        hd_wallet: &Coin::HDWallet,
     ) -> BalanceResult<HDWalletBalance>
     where
         Coin: HDWalletBalanceOps<HDAddressChecker = HDAddressChecker> + Sync,
