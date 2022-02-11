@@ -56,7 +56,7 @@ jobs:
       - bash: |
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo test --all --target x86_64-apple-darwin -- --test-threads=32
+            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
           else
             cargo test --all -- --test-threads=32
           fi
