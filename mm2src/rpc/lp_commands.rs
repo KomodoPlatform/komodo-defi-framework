@@ -32,7 +32,7 @@ use std::borrow::Cow;
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use crate::mm2::lp_swap::active_swaps_using_coin;
-use crate::mm2::{MM_DATETIME, MM_VERSION};
+use crate::mm2::MmVersionResult;
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -238,16 +238,7 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
     Ok(try_s!(Response::builder().body(js)))
 }
 
-pub fn version() -> HyRes {
-    rpc_response(
-        200,
-        json! ({
-            "result": MM_VERSION,
-            "datetime": MM_DATETIME
-        })
-        .to_string(),
-    )
-}
+pub fn version() -> HyRes { rpc_response(200, MmVersionResult::new().to_json().to_string()) }
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     use crate::mm2::lp_network::P2PContext;

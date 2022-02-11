@@ -9,6 +9,7 @@ import init, {
     mm2_main,
     mm2_main_status,
     mm2_rpc,
+    mm2_version,
     LogLevel,
     Mm2MainErr,
     MainStatus,
@@ -32,6 +33,9 @@ async function init_wasm() {
 async function run_mm2(params) {
     // run an MM2 instance
     try {
+        const version = mm2_version();
+        console.info(`run_mm2() version=${version.result} datetime=${version.datetime}`);
+
         mm2_main(params, handle_log);
     } catch (e) {
         switch (e) {

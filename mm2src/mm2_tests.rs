@@ -151,6 +151,7 @@ fn test_rpc() {
     .unwrap();
     assert_eq!(version.0, StatusCode::OK);
     assert_eq!((version.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
+    let _version: MmVersion = json::from_str(&version.1).unwrap();
 
     let help = block_on(mm.rpc(json! ({
         "userpass": mm.userpass,

@@ -700,3 +700,10 @@ pub struct UtxoFeeDetails {
     pub coin: Option<String>,
     pub amount: BigDecimal,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MmVersion {
+    pub result: String,
+    pub datetime: String,
+}

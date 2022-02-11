@@ -13,7 +13,7 @@
 //! [blogpost]: https://rustwasm.github.io/2018/10/24/multithreading-rust-and-wasm.html
 
 use super::*;
-use crate::mm2::LpMainParams;
+use crate::mm2::{LpMainParams, MmVersionResult};
 use common::log::{register_callback, LogLevel, WasmCallback};
 use common::wasm_rpc::WasmRpcResponse;
 use common::{executor, set_panic_hook};
@@ -194,7 +194,6 @@ impl From<Mm2RpcErr> for JsValue {
 ///         }
 ///     }
 /// }
-///
 /// ```
 #[wasm_bindgen]
 pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
@@ -228,3 +227,20 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
         JsValue::from(Mm2RpcErr::InternalError)
     })
 }
+
+/// Get the MarketMaker2 version.
+///
+/// # Usage
+///
+/// The function can be used before mm2 runs.
+///
+/// ```javascript
+/// import init, {mm2_version} from "./path/to/mm2.js";
+///
+/// function print_version () {
+///     const response = mm2_version();
+///     console.log(`version: ${response.result}, datetime: ${response.datetime}`);
+/// }
+/// ```
+#[wasm_bindgen]
+pub fn mm2_version() -> JsValue { JsValue::from_serde(&MmVersionResult::new()).expect("expected valid JSON object") }

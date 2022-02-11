@@ -115,6 +115,7 @@ impl Stream for WsEventReceiver {
 pub struct WsOutgoingSender {
     inner: mpsc::Sender<Json>,
     /// Is used to determine when all senders are dropped.
+    #[allow(dead_code)]
     shutdown_tx: OutgoingShutdownTx,
 }
 

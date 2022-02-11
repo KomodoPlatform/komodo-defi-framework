@@ -68,6 +68,23 @@ pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
+#[derive(Serialize)]
+pub struct MmVersionResult {
+    result: &'static str,
+    datetime: &'static str,
+}
+
+impl MmVersionResult {
+    pub const fn new() -> MmVersionResult {
+        MmVersionResult {
+            result: MM_VERSION,
+            datetime: MM_DATETIME,
+        }
+    }
+
+    pub fn to_json(&self) -> Json { json::to_value(self).expect("expected valid JSON object") }
+}
+
 pub struct LpMainParams {
     conf: Json,
     filter: Option<LogLevel>,
