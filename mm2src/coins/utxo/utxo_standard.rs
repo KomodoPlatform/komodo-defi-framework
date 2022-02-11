@@ -4,7 +4,7 @@ use crate::coin_balance::{self, AccountBalanceParams, CheckHDAccountBalanceParam
                           HDWalletBalance, HDWalletBalanceOps, HDWalletBalanceRpcOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AddressDerivingError, GetNewHDAddressParams, GetNewHDAddressResponse, HDAccountMut,
-                       HDWalletRpcError, HDWalletRpcOps, NewAccountCreatingError, NewAddressDerivingError};
+                       HDWalletRpcError, HDWalletRpcOps, NewAccountCreatingError};
 use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
@@ -612,8 +612,8 @@ impl ExtractExtendedPubkey for UtxoStandardCoin {
 #[async_trait]
 impl HDWalletCoinOps for UtxoStandardCoin {
     type Address = Address;
-    type HDAccount = UtxoHDAccount;
     type HDWallet = UtxoHDWallet;
+    type HDAccount = UtxoHDAccount;
 
     fn derive_address(
         &self,
@@ -622,14 +622,6 @@ impl HDWalletCoinOps for UtxoStandardCoin {
         address_id: u32,
     ) -> MmResult<HDAddress<Self::Address>, AddressDerivingError> {
         utxo_common::derive_address(self, hd_account, chain, address_id)
-    }
-
-    fn generate_new_address(
-        &self,
-        hd_account: &mut Self::HDAccount,
-        chain: Bip44Chain,
-    ) -> MmResult<HDAddress<Self::Address>, NewAddressDerivingError> {
-        utxo_common::generate_address(self, hd_account, chain)
     }
 
     async fn create_new_account<'a, XPubExtractor>(
@@ -675,7 +667,7 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
         utxo_common::scan_for_new_addresses(self, hd_account, address_checker, gap_limit).await
     }
 
-    async fn address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
+    async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
         utxo_common::address_balance(self, address).await
     }
 }

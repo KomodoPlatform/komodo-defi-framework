@@ -170,7 +170,7 @@ pub async fn init_create_new_account_user_action(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletBalanceRpcOps;
+    use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::MarketCoinOps;
 
@@ -180,8 +180,7 @@ pub(crate) mod common_impl {
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, HDWalletRpcError>
     where
-        Coin: InitCreateHDAccountRpcOps
-            + HDWalletBalanceRpcOps
+        Coin: HDWalletBalanceOps
             + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
             + Send
             + Sync

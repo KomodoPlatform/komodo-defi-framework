@@ -1142,24 +1142,23 @@ pub struct UtxoHDAccount {
 }
 
 impl HDAccountOps for UtxoHDAccount {
-    fn number_of_used_account_addresses(&self, chain: Bip44Chain) -> MmResult<u32, InvalidBip44ChainError> {
+    fn known_addresses_number(&self, chain: Bip44Chain) -> MmResult<u32, InvalidBip44ChainError> {
         match chain {
             Bip44Chain::External => Ok(self.external_addresses_number),
             Bip44Chain::Internal => Ok(self.internal_addresses_number),
         }
     }
 
+    fn known_addresses_number_mut(&mut self, chain: Bip44Chain) -> MmResult<&mut u32, InvalidBip44ChainError> {
+        match chain {
+            Bip44Chain::External => Ok(&mut self.external_addresses_number),
+            Bip44Chain::Internal => Ok(&mut self.internal_addresses_number),
+        }
+    }
+
     fn account_derivation_path(&self) -> DerivationPath { self.account_derivation_path.clone() }
 
     fn account_id(&self) -> u32 { self.account_id }
-
-    fn internal_addresses_number(&self) -> u32 { self.internal_addresses_number }
-
-    fn external_addresses_number(&self) -> u32 { self.external_addresses_number }
-
-    fn internal_addresses_number_mut(&mut self) -> &mut u32 { &mut self.internal_addresses_number }
-
-    fn external_addresses_number_mut(&mut self) -> &mut u32 { &mut self.external_addresses_number }
 }
 
 /// Function calculating KMD interest

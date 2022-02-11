@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError, NewAddressDerivingError};
+use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
@@ -105,29 +105,6 @@ where
     })
 }
 
-pub fn generate_address<T>(
-    coin: &T,
-    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
-    chain: Bip44Chain,
-) -> MmResult<HDAddress<Address>, NewAddressDerivingError>
-where
-    T: HDWalletCoinOps<Address = Address>,
-{
-    let number_of_used_addresses = match chain {
-        Bip44Chain::External => hd_account.external_addresses_number_mut(),
-        Bip44Chain::Internal => hd_account.internal_addresses_number_mut(),
-    };
-    let new_address_id = *number_of_used_addresses;
-    if new_address_id >= ChildNumber::HARDENED_FLAG {
-        return MmError::err(NewAddressDerivingError::AddressLimitReached {
-            max_addresses_number: ChildNumber::HARDENED_FLAG,
-        });
-    }
-    *number_of_used_addresses += 1;
-    coin.derive_address(hd_account, chain, new_address_id)
-        .mm_err(NewAddressDerivingError::from)
-}
-
 pub async fn create_new_account<'a, Coin, XPubExtractor>(
     coin: &Coin,
     hd_wallet: &'a UtxoHDWallet,
@@ -198,13 +175,13 @@ where
 
 pub async fn scan_for_new_addresses<T>(
     coin: &T,
-    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
-    address_checker: &UtxoAddressBalanceChecker,
+    hd_account: &mut T::HDAccount,
+    address_checker: &T::HDAddressChecker,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
-    T: HDWalletBalanceOps<HDAddressChecker = UtxoAddressBalanceChecker> + Sync,
-    <T as HDWalletCoinOps>::Address: std::fmt::Display,
+    T: HDWalletBalanceOps + Sync,
+    T::Address: std::fmt::Display,
 {
     let mut addresses =
         scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::External, gap_limit).await?;
@@ -218,20 +195,20 @@ where
 /// The checking stops at the moment when we find `gap_limit` consecutive empty addresses.
 pub async fn scan_for_new_addresses_impl<T>(
     coin: &T,
-    hd_account: &mut <T::HDWallet as HDWalletOps>::HDAccount,
-    address_checker: &UtxoAddressBalanceChecker,
+    hd_account: &mut T::HDAccount,
+    address_checker: &T::HDAddressChecker,
     chain: Bip44Chain,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
-    T: HDWalletBalanceOps<HDAddressChecker = UtxoAddressBalanceChecker> + Sync,
-    <T as HDWalletCoinOps>::Address: std::fmt::Display,
+    T: HDWalletBalanceOps + Sync,
+    T::Address: std::fmt::Display,
 {
     let mut balances = Vec::with_capacity(gap_limit as usize);
 
     // Get the first unknown address id.
     let mut checking_address_id = hd_account
-        .number_of_used_account_addresses(chain)
+        .known_addresses_number(chain)
         // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
         .mm_err(|e| BalanceError::Internal(e.to_string()))?;
 
@@ -273,14 +250,11 @@ where
         checking_address_id += 1;
     }
 
-    match chain {
-        Bip44Chain::Internal => {
-            *hd_account.internal_addresses_number_mut() = checking_address_id - unused_addresses_counter
-        },
-        Bip44Chain::External => {
-            *hd_account.external_addresses_number_mut() = checking_address_id - unused_addresses_counter
-        },
-    }
+    let known_addresses_number_mut = hd_account
+        .known_addresses_number_mut(chain)
+        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
+        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+    *known_addresses_number_mut = checking_address_id - unused_addresses_counter;
 
     Ok(balances)
 }

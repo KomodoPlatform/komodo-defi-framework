@@ -7,6 +7,7 @@ use common::mm_error::prelude::*;
 use common::{HttpStatusCode, PagingOptionsEnum};
 use crypto::RpcDerivationPath;
 use derive_more::Display;
+use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use std::fmt;
 use std::ops::Range;
@@ -175,20 +176,19 @@ pub trait EnableCoinBalanceOps {
 }
 
 #[async_trait]
-impl<Coin, Address, HDWallet, HDAddressChecker> EnableCoinBalanceOps for Coin
+impl<Coin> EnableCoinBalanceOps for Coin
 where
-    Coin: CoinWithDerivationMethod<Address = Address, HDWallet = HDWallet>
-        + HDWalletBalanceOps<HDWallet = HDWallet, HDAddressChecker = HDAddressChecker, Address = Address>
+    Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
+        + HDWalletBalanceOps
+        + MarketCoinOps
         + Sync,
-    Address: fmt::Display + Sync,
-    HDWallet: Sync,
-    HDAddressChecker: HDAddressBalanceChecker,
+    <Coin as CoinWithDerivationMethod>::Address: fmt::Display + Sync,
 {
     async fn enable_coin_balance(&self) -> BalanceResult<EnableCoinBalance> {
         match self.derivation_method() {
-            DerivationMethod::Iguana(address) => self.address_balance(address).await.map(|balance| {
+            DerivationMethod::Iguana(my_address) => self.my_balance().compat().await.map(|balance| {
                 EnableCoinBalance::Iguana(IguanaWalletBalance {
-                    address: address.to_string(),
+                    address: my_address.to_string(),
                     balance,
                 })
             }),
@@ -219,9 +219,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// Requests balance of the given `address`.
     /// This function is expected to be more efficient than ['HDWalletBalanceOps::is_address_used'] in most cases
     /// since many of RPC clients allow us to request the address balance without the history.
-    async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
-        self.address_balance(address).await
-    }
+    async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance>;
 
     /// Checks if the address has been used by the user by checking if the transaction history of the given `address` is not empty.
     /// Please note the function can return zero balance even if the address has been used before.
@@ -233,11 +231,10 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         if !checker.is_address_used(address).await? {
             return Ok(AddressBalanceStatus::NotUsed);
         }
-        let balance = self.address_balance(address).await?;
+        // Now we know that the address has been used.
+        let balance = self.known_address_balance(address).await?;
         Ok(AddressBalanceStatus::Used(balance))
     }
-
-    async fn address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance>;
 }
 
 #[async_trait]
@@ -253,7 +250,7 @@ pub enum AddressBalanceStatus<Balance> {
 }
 
 #[async_trait]
-pub trait HDWalletBalanceRpcOps: HDWalletBalanceOps {
+pub trait HDWalletBalanceRpcOps {
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
@@ -298,12 +295,12 @@ pub mod common_impl {
     use crate::hd_wallet::{HDAccountOps, HDAddress, HDWalletOps};
     use common::calc_total_pages;
 
-    pub(crate) async fn enable_hd_wallet<Coin, HDAddressChecker>(
+    pub(crate) async fn enable_hd_wallet<Coin>(
         coin: &Coin,
         hd_wallet: &Coin::HDWallet,
     ) -> BalanceResult<HDWalletBalance>
     where
-        Coin: HDWalletBalanceOps<HDAddressChecker = HDAddressChecker> + Sync,
+        Coin: HDWalletBalanceOps + Sync,
     {
         let mut accounts = hd_wallet.get_accounts_mut().await;
         let gap_limit = hd_wallet.gap_limit();
@@ -339,11 +336,9 @@ pub mod common_impl {
         params: AccountBalanceParams,
     ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>
     where
-        Coin: HDWalletBalanceRpcOps
-            + CoinWithDerivationMethod<
-                Address = <Coin as HDWalletCoinOps>::Address,
-                HDWallet = <Coin as HDWalletCoinOps>::HDWallet,
-            > + MarketCoinOps
+        Coin: HDWalletBalanceOps
+            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
+            + MarketCoinOps
             + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
@@ -359,7 +354,7 @@ pub mod common_impl {
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
-        let total_addresses_number = hd_account.number_of_used_account_addresses(params.chain)?;
+        let total_addresses_number = hd_account.known_addresses_number(params.chain)?;
 
         let from_address_id = match params.paging_options {
             PagingOptionsEnum::FromId(from_address_id) => from_address_id,
@@ -383,7 +378,7 @@ pub mod common_impl {
                 address,
                 derivation_path,
             } = coin.derive_address(&hd_account, chain, address_id)?;
-            let balance = coin.address_balance(&address).await?;
+            let balance = coin.known_address_balance(&address).await?;
 
             result.addresses.push(HDAddressBalance {
                 address: address.to_string(),
@@ -396,15 +391,13 @@ pub mod common_impl {
         Ok(result)
     }
 
-    pub async fn scan_for_new_addresses_rpc<Coin, HDAddressChecker>(
+    pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,
         params: CheckHDAccountBalanceParams,
     ) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError>
     where
-        Coin: CoinWithDerivationMethod<
-                Address = <Coin as HDWalletCoinOps>::Address,
-                HDWallet = <Coin as HDWalletCoinOps>::HDWallet,
-            > + HDWalletBalanceOps<HDAddressChecker = HDAddressChecker>
+        Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
+            + HDWalletBalanceOps
             + MarketCoinOps
             + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
