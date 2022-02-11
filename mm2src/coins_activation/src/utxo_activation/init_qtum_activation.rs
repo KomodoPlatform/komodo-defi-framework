@@ -15,7 +15,6 @@ use coins::{lp_register_coin, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy, Regi
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::hw_rpc_task::HwConnectStatuses;
-use crypto::CryptoCtx;
 use serde_json::Value as Json;
 
 pub struct QtumProtocolInfo;
@@ -55,11 +54,10 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &UtxoStandardRpcTaskHandle,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
         // If the coin builder tries to extract an extended public key despite HD wallet is not supported,
         // [`UtxoCoinBuilder::build`] fails with the [`UtxoCoinBuildError::IguanaPrivKeyNotAllowed`] error.
-        let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(&crypto_ctx, task_handle, HwConnectStatuses {
+        let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(&ctx, task_handle, HwConnectStatuses {
             on_connect: UtxoStandardInProgressStatus::WaitingForTrezorToConnect,
             on_connected: UtxoStandardInProgressStatus::ActivatingCoin,
             on_connection_failed: UtxoStandardInProgressStatus::Finishing,

@@ -12,6 +12,7 @@ use rpc_task::{RpcTaskError, RpcTaskHandle};
 use serde::Serialize;
 use std::convert::TryInto;
 
+#[derive(Clone)]
 pub enum HDExtractPubkeyError {
     IguanaPrivKeyNotAllowed,
     CoinDoesntSupportTrezor,
@@ -166,19 +167,11 @@ where
 
     /// Constructs an Xpub extractor without checking if the MarketMaker is initialized with a hardware wallet.
     pub fn new_unchecked(
-        crypto_ctx: &CryptoCtx,
+        ctx: &MmArc,
         task_handle: &'task RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
         statuses: HwConnectStatuses<InProgressStatus, AwaitingStatus>,
     ) -> XPubExtractorUnchecked<Self> {
-        // Don't use [`CryptoCtx::hw_ctx`] because we are planning to support HD master key.
-        match *crypto_ctx {
-            CryptoCtx::HardwareWallet(ref hw_ctx) => XPubExtractorUnchecked::Allowed(RpcTaskXPubExtractor::Trezor {
-                hw_ctx: hw_ctx.clone(),
-                task_handle,
-                statuses,
-            }),
-            CryptoCtx::KeyPair(_) => XPubExtractorUnchecked::IguanaPrivKeyNotAllowed,
-        }
+        XPubExtractorUnchecked(Self::new(ctx, task_handle, statuses))
     }
 }
 
@@ -212,33 +205,25 @@ where
     }
 }
 
-/// This is a wrapper over `XPubExtractor`. The main goal of this enum is to allow construct an Xpub extractor
+/// This is a wrapper over `XPubExtractor`. The main goal of this structure is to allow construction of an Xpub extractor
 /// even if HD wallet is not supported. But if someone tries to extract an Xpub despite HD wallet is not supported,
-/// it fails with the [`HDExtractPubkeyError::IguanaPrivKeyNotAllowed`] error.
-pub enum XPubExtractorUnchecked<XPubExtractor> {
-    Allowed(XPubExtractor),
-    IguanaPrivKeyNotAllowed,
-}
+/// it fails with an inner `HDExtractPubkeyError` error.
+pub struct XPubExtractorUnchecked<XPubExtractor>(MmResult<XPubExtractor, HDExtractPubkeyError>);
 
 #[async_trait]
 impl<XPubExtractor> HDXPubExtractor for XPubExtractorUnchecked<XPubExtractor>
 where
-    XPubExtractor: HDXPubExtractor + Sync,
+    XPubExtractor: HDXPubExtractor + Send + Sync,
 {
     async fn extract_utxo_xpub(
         &self,
         trezor_utxo_coin: TrezorUtxoCoin,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
-        match self {
-            XPubExtractorUnchecked::Allowed(xpub_extractor) => {
-                xpub_extractor
-                    .extract_utxo_xpub(trezor_utxo_coin, derivation_path)
-                    .await
-            },
-            XPubExtractorUnchecked::IguanaPrivKeyNotAllowed => {
-                MmError::err(HDExtractPubkeyError::IguanaPrivKeyNotAllowed)
-            },
-        }
+        self.0
+            .as_ref()
+            .map_err(Clone::clone)?
+            .extract_utxo_xpub(trezor_utxo_coin, derivation_path)
+            .await
     }
 }

@@ -15,7 +15,6 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
-use crypto::CryptoCtx;
 use rpc_task::RpcTaskManagerShared;
 use serde_json::Value as Json;
 
@@ -72,11 +71,10 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
         // If the coin builder tries to extract an extended public key despite HD wallet is not supported,
         // [`UtxoCoinBuilder::build`] fails with the [`UtxoCoinBuildError::IguanaPrivKeyNotAllowed`] error.
-        let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(&crypto_ctx, task_handle, HwConnectStatuses {
+        let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(&ctx, task_handle, HwConnectStatuses {
             on_connect: UtxoStandardInProgressStatus::WaitingForTrezorToConnect,
             on_connected: UtxoStandardInProgressStatus::ActivatingCoin,
             on_connection_failed: UtxoStandardInProgressStatus::Finishing,

@@ -12,7 +12,7 @@ use trezor::{TrezorError, TrezorProcessingError, TrezorRequestProcessor, TrezorU
 
 pub type HwResult<T> = Result<T, MmError<HwError>>;
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum HwError {
     NoTrezorDeviceAvailable,
     #[display(fmt = "Found multiple devices ({}). Please unplug unused devices", count)]
