@@ -65,7 +65,7 @@ macos-aarch64:
   needs:
     - job: macos-build
   script:
-    - cp /Users/administrator/GitLab/archive/aarch64/libmm2.a .
+    - cp /Users/hetzner/GitLab/archive/aarch64/libmm2.a .
   artifacts:
     paths:
       - libmm2.a
