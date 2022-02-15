@@ -72,6 +72,15 @@ jobs:
           MANUAL_MM_VERSION: true
         condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
+          containers=$(docker ps -q | wc -l)
+          echo $containers
+          if [ $containers -gt 0 ]; then
+            docker rm -f $(docker ps -q)
+          fi
+        displayName: 'Clean up Docker containers'
+        # Run unconditionally even if previous steps failed
+        condition: true
+      - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 target/release/libmm2.a -j
         displayName: 'Prepare release build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )

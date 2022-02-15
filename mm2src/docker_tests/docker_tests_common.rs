@@ -49,7 +49,7 @@ pub static mut QORTY_TOKEN_ADDRESS: Option<H160Eth> = None;
 pub static mut QRC20_SWAP_CONTRACT_ADDRESS: Option<H160Eth> = None;
 pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
-pub const UTXO_ASSET_DOCKER_IMAGE: &str = "artempikulin/testblockchain";
+pub const UTXO_ASSET_DOCKER_IMAGE: &str = "artempikulin/testblockchain:multiarch";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -92,7 +92,7 @@ pub struct UtxoDockerNode<'a> {
 pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> UtxoDockerNode<'a> {
     let args = vec![
         "-v".into(),
-        format!("{}:/data/.zcash-params", zcash_params_path().display()),
+        format!("{}:/root/.zcash-params", zcash_params_path().display()),
         "-p".into(),
         format!("127.0.0.1:{}:{}", port, port).into(),
     ];
@@ -248,10 +248,7 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, UtxoStan
     let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
     let req = json!({"method":"enable"});
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(utxo_standard_coin_with_priv_key(
-        &ctx, ticker, &conf, params, priv_key,
-    ))
-    .unwrap();
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, params, priv_key)).unwrap();
     import_address(&coin);
     (ctx, coin)
 }
