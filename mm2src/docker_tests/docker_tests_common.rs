@@ -68,6 +68,11 @@ pub trait CoinDockerOps {
         loop {
             match self.rpc_client().get_block_count().wait() {
                 Ok(n) => {
+                    if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
+                        let hash = client.get_block_hash(n).wait().unwrap();
+                        let block = client.get_block(hash).wait().unwrap();
+                        println!("Block {:?}", block);
+                    }
                     println!("Current block number {}", n);
                     if n > 1 {
                         break;
