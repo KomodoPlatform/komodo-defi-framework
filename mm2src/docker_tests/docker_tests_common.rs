@@ -72,6 +72,10 @@ pub trait CoinDockerOps {
                         let hash = client.get_block_hash(n).wait().unwrap();
                         let block = client.get_block(hash).wait().unwrap();
                         println!("Block {:?}", block);
+                        if n > 0 {
+                            let transaction = client.get_transaction_bytes(&block.tx[0]).wait().unwrap();
+                            println!("Coinbase tx {:?}", transaction);
+                        }
                     }
                     println!("Current block number {}", n);
                     if n > 1 {
