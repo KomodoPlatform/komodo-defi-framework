@@ -63,23 +63,21 @@ pub trait CoinDockerOps {
         }
     }
 
-    fn wait_ready(&self) {
+    fn wait_ready(&self, expected_tx_version: i32) {
         let timeout = now_ms() + 120000;
         loop {
             match self.rpc_client().get_block_count().wait() {
                 Ok(n) => {
-                    if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
-                        let hash = client.get_block_hash(n).wait().unwrap();
-                        let block = client.get_block(hash).wait().unwrap();
-                        println!("Block {:?}", block);
-                        if n > 0 {
-                            let transaction = client.get_transaction_bytes(&block.tx[0]).wait().unwrap();
-                            println!("Coinbase tx {:?}", transaction);
-                        }
-                    }
-                    println!("Current block number {}", n);
                     if n > 1 {
-                        break;
+                        if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
+                            let hash = client.get_block_hash(n).wait().unwrap();
+                            let block = client.get_block(hash).wait().unwrap();
+                            let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
+                            println!("Coinbase tx {:?} in block {}", coinbase, n);
+                            if coinbase.version == expected_tx_version {
+                                break;
+                            }
+                        }
                     }
                 },
                 Err(e) => log!([e]),
