@@ -68,6 +68,7 @@ pub trait CoinDockerOps {
         loop {
             match self.rpc_client().get_block_count().wait() {
                 Ok(n) => {
+                    println!("Current block number {}", n);
                     if n > 1 {
                         break;
                     }
