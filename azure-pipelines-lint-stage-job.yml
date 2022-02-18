@@ -29,12 +29,18 @@ jobs:
       - bash: |
           cargo fmt -- --check
         displayName: 'Check rustfmt warnings'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           cargo clippy -- -D warnings
         displayName: 'Check Clippy warnings'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           cargo check --tests
         displayName: 'Check Tests'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           cargo deny check advisories
         displayName: 'Check Cargo deny advisories'

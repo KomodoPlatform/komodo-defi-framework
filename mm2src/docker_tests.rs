@@ -163,11 +163,11 @@ mod docker_tests {
             let qtum_ops = QtumDockerOps::new();
             let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
 
-            utxo_ops.wait_ready();
-            utxo_ops1.wait_ready();
-            qtum_ops.wait_ready();
+            utxo_ops.wait_ready(4);
+            utxo_ops1.wait_ready(4);
+            qtum_ops.wait_ready(2);
             qtum_ops.initialize_contracts();
-            for_slp_ops.wait_ready();
+            for_slp_ops.wait_ready(4);
             for_slp_ops.initialize_slp();
 
             containers.push(utxo_node);

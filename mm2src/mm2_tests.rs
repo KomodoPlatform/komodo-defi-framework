@@ -97,6 +97,16 @@ async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> EnableE
     json::from_value(value).unwrap()
 }
 
+async fn enable_coins_rick_morty_electrum(mm: &MarketMakerIt) -> HashMap<&'static str, EnableElectrumResponse> {
+    let mut replies = HashMap::new();
+    replies.insert("RICK", enable_electrum_json(mm, "RICK", false, rick_electrums()).await);
+    replies.insert(
+        "MORTY",
+        enable_electrum_json(mm, "MORTY", false, morty_electrums()).await,
+    );
+    replies
+}
+
 async fn enable_coins_eth_electrum(
     mm: &MarketMakerIt,
     eth_urls: &[&str],
@@ -257,9 +267,7 @@ fn local_start() -> LocalStart { wasm_start_impl }
 fn alice_can_see_the_active_order_after_connection() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob and immediately place the order
@@ -282,7 +290,7 @@ fn alice_can_see_the_active_order_after_connection() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log!({ "enable_coins (bob): {:?}", block_on(enable_coins_eth_electrum(&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"])) });
+    log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -331,7 +339,7 @@ fn alice_can_see_the_active_order_after_connection() {
     let (_eve_dump_log, _eve_dump_dashboard) = mm_eve.mm_dump();
     log!({ "Eve log path: {}", mm_eve.log_path.display() });
     // Enable coins on Eve side. Print the replies in case we need the "address".
-    log!({ "enable_coins (eve): {:?}", block_on(enable_coins_eth_electrum(&mm_eve, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"])) });
+    log!({ "enable_coins (eve): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_eve)) });
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");
     let rc = block_on(mm_eve.rpc(json! ({
@@ -425,7 +433,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log!({ "Alice log path: {}", mm_alice.log_path.display() });
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log!({ "enable_coins (alice): {:?}", block_on(enable_coins_eth_electrum(&mm_alice, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"])) });
+    log!({ "enable_coins (alice): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_alice)) });
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(json! ({
@@ -461,9 +469,7 @@ fn alice_can_see_the_active_order_after_connection() {
 fn orders_of_banned_pubkeys_should_not_be_displayed() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob and immediately place the order
@@ -486,7 +492,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log!({ "enable_coins (bob): {:?}", block_on(enable_coins_eth_electrum(&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"])) });
+    log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -1671,9 +1677,7 @@ fn test_withdraw_legacy() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_alice = MarketMakerIt::start(
@@ -1701,7 +1705,7 @@ fn test_withdraw_legacy() {
     // wait until RPC API is active
 
     // Enable coins. Print the replies in case we need the address.
-    let mut enable_res = block_on(enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]));
+    let mut enable_res = block_on(enable_coins_rick_morty_electrum(&mm_alice));
     enable_res.insert(
         "MORTY_SEGWIT",
         block_on(enable_electrum(&mm_alice, "MORTY_SEGWIT", false, &[
@@ -2048,9 +2052,7 @@ fn test_startup_passphrase() {
 fn test_cancel_order() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","rpcport":80,"protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
     let bob_passphrase = "bob passphrase";
 
@@ -2078,7 +2080,7 @@ fn test_cancel_order() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     log!("Issue sell request on Bob side by setting base/rel price…");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -2118,7 +2120,7 @@ fn test_cancel_order() {
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(json! ({
@@ -2193,9 +2195,7 @@ fn test_cancel_order() {
 fn test_cancel_all_orders() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","rpcport":80,"protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let bob_passphrase = "bob passphrase";
@@ -2223,7 +2223,7 @@ fn test_cancel_all_orders() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     log!("Issue sell request on Bob side by setting base/rel price…");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -2263,7 +2263,7 @@ fn test_cancel_all_orders() {
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
 
     log!("Give Alice 3 seconds to import the order…");
     thread::sleep(Duration::from_secs(3));
@@ -3630,9 +3630,7 @@ fn test_set_price_response_format() {
 fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob and immediately place the order
@@ -3659,7 +3657,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     let set_price_json = json! ({
         "userpass": mm_bob.userpass,
@@ -3697,7 +3695,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(json! ({
@@ -6096,9 +6094,7 @@ fn test_update_maker_order() {
 
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}},"required_confirmations":2}
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
@@ -6121,9 +6117,7 @@ fn test_update_maker_order() {
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log! ({"Bob log path: {}", mm_bob.log_path.display()});
-    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
-        "http://195.201.0.6:8565"
-    ]))]);
+    log!([block_on(enable_coins_rick_morty_electrum(&mm_bob))]);
 
     log!("Issue bob sell request");
     let setprice = block_on(mm_bob.rpc(json! ({
@@ -6229,6 +6223,8 @@ fn test_update_maker_order() {
         BigDecimal::from_str(update_maker_order_json["result"]["max_base_vol"].as_str().unwrap()).unwrap();
     assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
     assert_eq!(max_base_vol, max_volume);
+
+    block_on(mm_bob.stop()).unwrap();
 }
 
 #[test]
@@ -6238,9 +6234,7 @@ fn test_update_maker_order_fail() {
 
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}},"required_confirmations":2}
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
@@ -6263,9 +6257,7 @@ fn test_update_maker_order_fail() {
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log! ({"Bob log path: {}", mm_bob.log_path.display()});
-    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
-        "http://195.201.0.6:8565"
-    ]))]);
+    log!([block_on(enable_coins_rick_morty_electrum(&mm_bob))]);
 
     log!("Issue bob sell request");
     let setprice = block_on(mm_bob.rpc(json! ({
@@ -6394,11 +6386,15 @@ fn test_update_maker_order_fail() {
     let rc = block_on(mm_bob.rpc(batch_json)).unwrap();
     assert!(rc.0.is_success(), "!batch: {}", rc.1);
     log!((rc.1));
+    let err_msg = "Order state has changed after price/volume/balance checks. Please try to update the order again if it's still needed.";
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
-    assert!(responses[1]["error"]
-        .as_str()
-        .unwrap()
-        .contains("Order state has changed after price/volume/balance checks. Please try to update the order again if it's still needed."));
+    if responses[0].get("error").is_some() {
+        assert!(responses[0]["error"].as_str().unwrap().contains(err_msg));
+        assert!(responses[1].get("result").is_some());
+    } else if responses[1].get("error").is_some() {
+        assert!(responses[0].get("result").is_some());
+        assert!(responses[1]["error"].as_str().unwrap().contains(err_msg));
+    }
 
     log!("Issue bob batch update maker order and cancel order request that should make update maker order fail because Order with UUID has been deleted");
     let batch_json = json!([
@@ -6419,13 +6415,17 @@ fn test_update_maker_order_fail() {
     let rc = block_on(mm_bob.rpc(batch_json)).unwrap();
     assert!(rc.0.is_success(), "!batch: {}", rc.1);
     log!((rc.1));
+    let err_msg = format!("Order with UUID: {} has been deleted", uuid);
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
-    if responses[1]["result"] == *"success" {
-        assert!(responses[0]["error"]
-            .as_str()
-            .unwrap()
-            .contains(&format!("Order with UUID: {} has been deleted", uuid)));
+    if responses[0].get("error").is_some() {
+        assert!(responses[0]["error"].as_str().unwrap().contains(&err_msg));
+        assert!(responses[1].get("result").is_some());
+    } else if responses[1].get("error").is_some() {
+        assert!(responses[0].get("result").is_some());
+        assert!(responses[1]["error"].as_str().unwrap().contains(&err_msg));
     }
+
+    block_on(mm_bob.stop()).unwrap();
 }
 
 #[test]
@@ -6560,9 +6560,7 @@ fn test_update_maker_order_after_matched() {
 fn test_trade_fee_returns_numbers_in_various_formats() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob and immediately place the order
@@ -6588,9 +6586,7 @@ fn test_trade_fee_returns_numbers_in_various_formats() {
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
-    block_on(enable_coins_eth_electrum(&mm_bob, &[
-        "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
-    ]));
+    block_on(enable_coins_rick_morty_electrum(&mm_bob));
 
     let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
@@ -6609,9 +6605,7 @@ fn test_trade_fee_returns_numbers_in_various_formats() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_orderbook_is_mine_orders() {
     let coins = json!([{"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0xc0eb7AeD740E1796992A08962c15661bDEB58003"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob and immediately place the order
@@ -6638,7 +6632,7 @@ fn test_orderbook_is_mine_orders() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
@@ -6676,7 +6670,7 @@ fn test_orderbook_is_mine_orders() {
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]))});
+    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
 
     // Bob orderbook must show 1 mine order
     log!("Get RICK/MORTY orderbook on Bob side");
@@ -6858,9 +6852,7 @@ fn test_sell_min_volume_dust() {
 
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","dust":10000000,"required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
@@ -6883,9 +6875,7 @@ fn test_sell_min_volume_dust() {
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log! ({"Bob log path: {}", mm_bob.log_path.display()});
-    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
-        "http://195.201.0.6:8565"
-    ]))]);
+    log!([block_on(enable_coins_rick_morty_electrum(&mm_bob))]);
 
     log!("Issue bob RICK/MORTY sell request");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -6913,9 +6903,7 @@ fn test_setprice_min_volume_dust() {
 
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","dust":10000000,"required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
@@ -6938,9 +6926,7 @@ fn test_setprice_min_volume_dust() {
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log! ({"Bob log path: {}", mm_bob.log_path.display()});
-    log!([block_on(enable_coins_eth_electrum(&mm_bob, &[
-        "http://195.201.0.6:8565"
-    ]))]);
+    log!([block_on(enable_coins_rick_morty_electrum(&mm_bob))]);
 
     log!("Issue bob RICK/MORTY sell request");
     let rc = block_on(mm_bob.rpc(json! ({
@@ -7213,9 +7199,7 @@ fn test_best_orders_duplicates_after_update() {
 
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     // start bob as a seednode
@@ -7257,7 +7241,7 @@ fn test_best_orders_duplicates_after_update() {
     log!({"Bob log path: {}", mm_bob.log_path.display()});
 
     // Enable coins on Eve side. Print the replies in case we need the "address".
-    let eve_coins = block_on(enable_coins_eth_electrum(&mm_eve, &["http://195.201.0.6:8565"]));
+    let eve_coins = block_on(enable_coins_rick_morty_electrum(&mm_eve));
     log!({ "enable_coins (eve): {:?}", eve_coins });
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");

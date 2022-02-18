@@ -40,13 +40,13 @@ jobs:
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
-          wasm-pack build --release --target web --out-dir target/target-wasm-release
+          CC=clang-8 wasm-pack build --release --target web --out-dir target/target-wasm-release
         displayName: 'Build MM2 WASM Release'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo test --target wasm32-unknown-unknown --release --bin mm2
+          CC=clang-8 cargo test --target wasm32-unknown-unknown --release --bin mm2
         displayName: 'Test MM2 WASM'
         env:
           WASM_BINDGEN_TEST_TIMEOUT: 120
