@@ -19,6 +19,8 @@ use rpc::v1::types::H256 as H256Json;
 use std::cmp;
 use std::convert::TryFrom;
 
+const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
+
 impl FeeEstimator for PlatformFields {
     // Gets estimated satoshis of fee required per 1000 Weight-Units.
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
@@ -51,7 +53,9 @@ impl FeeEstimator for PlatformFields {
                 .wait()
                 .unwrap_or(default_fee)
         });
-        cmp::max((fee_per_kb as f64 / 4.0).ceil() as u32, 253)
+        // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
+        // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
+        cmp::max((fee_per_kb as f64 / 4.0).ceil() as u32, MIN_ALLOWED_FEE_PER_1000_WEIGHT)
     }
 }
 

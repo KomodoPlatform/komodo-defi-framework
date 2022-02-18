@@ -3,7 +3,7 @@ use common::executor::{spawn, Timer};
 use derive_more::Display;
 use tokio::net::TcpListener;
 
-const TRY_RECONNECTING_TO_NODE_INTERVAL: u64 = 60;
+const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 
 pub async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
     loop {
@@ -100,6 +100,6 @@ pub async fn connect_to_nodes_loop(
             }
         }
 
-        Timer::sleep(TRY_RECONNECTING_TO_NODE_INTERVAL as f64).await;
+        Timer::sleep(TRY_RECONNECTING_TO_NODE_INTERVAL).await;
     }
 }

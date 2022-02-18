@@ -6,6 +6,7 @@ use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
 use lightning_invoice::SignOrCreationError;
+use rpc::v1::types::H256 as H256Json;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
@@ -219,10 +220,8 @@ pub enum GetChannelDetailsError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "Channel id decoding error: {}", _0)]
-    DecodeError(String),
-    #[display(fmt = "Channel with id: {} is not found", _0)]
-    NoSuchChannel(String),
+    #[display(fmt = "Channel with id: {:?} is not found", _0)]
+    NoSuchChannel(H256Json),
 }
 
 impl HttpStatusCode for GetChannelDetailsError {
@@ -230,7 +229,6 @@ impl HttpStatusCode for GetChannelDetailsError {
         match self {
             GetChannelDetailsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
             GetChannelDetailsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
-            GetChannelDetailsError::DecodeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             GetChannelDetailsError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
         }
     }
@@ -287,8 +285,6 @@ pub enum SendPaymentError {
     #[display(fmt = "Couldn't parse invoice: {}", _0)]
     InvalidInvoice(String),
     #[display(fmt = "Couldn't parse destination pubkey: {}", _0)]
-    InvalidDestination(String),
-    #[display(fmt = "Couldn't find a route for payment: {}", _0)]
     NoRouteFound(String),
     #[display(fmt = "Payment error: {}", _0)]
     PaymentError(String),
@@ -303,7 +299,6 @@ impl HttpStatusCode for SendPaymentError {
             SendPaymentError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
             SendPaymentError::InvalidInvoice(_)
             | SendPaymentError::PaymentError(_)
-            | SendPaymentError::InvalidDestination(_)
             | SendPaymentError::NoRouteFound(_)
             | SendPaymentError::CLTVExpiryError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -387,8 +382,6 @@ pub enum CloseChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "Hex decoding error: {}", _0)]
-    DecodeError(String),
     #[display(fmt = "Closing channel error: {}", _0)]
     CloseChannelError(String),
 }
@@ -398,9 +391,7 @@ impl HttpStatusCode for CloseChannelError {
         match self {
             CloseChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
             CloseChannelError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
-            CloseChannelError::CloseChannelError(_) | CloseChannelError::DecodeError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            CloseChannelError::CloseChannelError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
