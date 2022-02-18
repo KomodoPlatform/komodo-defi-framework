@@ -288,6 +288,10 @@ pub struct OrderbookEntry {
     pub zcredits: u64,
     pub uuid: Uuid,
     pub is_mine: bool,
+    pub base_confs: u64,
+    pub base_nota: bool,
+    pub rel_confs: u64,
+    pub rel_nota: bool,
 }
 
 #[derive(Debug, Deserialize)]

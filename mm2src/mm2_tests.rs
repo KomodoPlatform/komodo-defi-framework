@@ -7453,12 +7453,12 @@ fn test_best_orders_filter_response() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_best_orders_segwit() {
+fn test_best_orders_address_and_confirmations() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
     let bob_coins_config = json!([
-        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"required_confirmations":10,"requires_notarization":true,"protocol":{"type":"UTXO"}},
+        {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":5,"requires_notarization":false,"protocol":{"type":"UTXO"},"address_format":{"format":"segwit"}}
     ]);
 
     let alice_coins_config = json!([
@@ -7585,6 +7585,10 @@ fn test_best_orders_segwit() {
     assert_eq!(1, best_orders.len());
     assert_eq!(best_orders[0].coin, "RICK");
     assert_eq!(best_orders[0].address, rick_address);
+    assert_eq!(best_orders[0].base_confs, 5);
+    assert_eq!(best_orders[0].base_nota, false);
+    assert_eq!(best_orders[0].rel_confs, 10);
+    assert_eq!(best_orders[0].rel_nota, true);
 
     let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
@@ -7600,6 +7604,10 @@ fn test_best_orders_segwit() {
     assert_eq!(1, best_orders.len());
     assert_eq!(best_orders[0].coin, "tBTC");
     assert_eq!(best_orders[0].address, tbtc_segwit_address);
+    assert_eq!(best_orders[0].base_confs, 10);
+    assert_eq!(best_orders[0].base_nota, true);
+    assert_eq!(best_orders[0].rel_confs, 5);
+    assert_eq!(best_orders[0].rel_nota, false);
 
     // checking buy and sell best_orders against ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015"))
     let rc = block_on(mm_alice.rpc(json! ({
@@ -7616,6 +7624,10 @@ fn test_best_orders_segwit() {
     assert_eq!(1, best_orders.len());
     assert_eq!(best_orders[0].coin, "tBTC");
     assert_eq!(best_orders[0].address, tbtc_segwit_address);
+    assert_eq!(best_orders[0].base_confs, 10);
+    assert_eq!(best_orders[0].base_nota, true);
+    assert_eq!(best_orders[0].rel_confs, 5);
+    assert_eq!(best_orders[0].rel_nota, false);
 
     let rc = block_on(mm_alice.rpc(json! ({
         "userpass": mm_alice.userpass,
@@ -7631,6 +7643,10 @@ fn test_best_orders_segwit() {
     assert_eq!(1, best_orders.len());
     assert_eq!(best_orders[0].coin, "RICK");
     assert_eq!(best_orders[0].address, rick_address);
+    assert_eq!(best_orders[0].base_confs, 5);
+    assert_eq!(best_orders[0].base_nota, false);
+    assert_eq!(best_orders[0].rel_confs, 10);
+    assert_eq!(best_orders[0].rel_nota, true);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -7875,9 +7891,8 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!get_public_key: {}", rc.1);
-    log!("GetPublicKeyResult "[rc.1]);
-    let get_public_key_res: Json = json::from_str(&rc.1).unwrap();
-    let bob_pubkey = get_public_key_res["result"]["public_key"].as_str().unwrap();
+    let get_public_key_res: RpcV2Response<GetPublicKeyResult> = serde_json::from_str(&rc.1).unwrap();
+    let bob_pubkey = get_public_key_res.result.public_key;
 
     let mut mm_alice = MarketMakerIt::start(
         json! ({
@@ -8458,9 +8473,8 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!get_public_key: {}", rc.1);
-    log!("GetPublicKeyResult "[rc.1]);
-    let get_public_key_res: Json = json::from_str(&rc.1).unwrap();
-    let bob_pubkey = get_public_key_res["result"]["public_key"].as_str().unwrap();
+    let get_public_key_res: RpcV2Response<GetPublicKeyResult> = serde_json::from_str(&rc.1).unwrap();
+    let bob_pubkey = get_public_key_res.result.public_key;
 
     // Alice coins don't have required_confirmations and requires_notarization set
     let alice_coins = json!([
@@ -8524,20 +8538,15 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
         2,
         "Alice RICK/MORTY orderbook must have exactly 2 ask"
     );
-    let bob_orders_in_orderbook = alice_orderbook
+    let bob_order_in_orderbook = alice_orderbook
         .asks
-        .into_iter()
-        .filter(|entry| entry.pubkey == bob_pubkey)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        bob_orders_in_orderbook.len(),
-        1,
-        "Bob must have exactly 1 ask in RICK/MORTY orderbook"
-    );
-    assert_eq!(bob_orders_in_orderbook[0].base_confs, 10);
-    assert_eq!(bob_orders_in_orderbook[0].base_nota, true);
-    assert_eq!(bob_orders_in_orderbook[0].rel_confs, 5);
-    assert_eq!(bob_orders_in_orderbook[0].rel_nota, false);
+        .iter()
+        .find(|entry| entry.pubkey == bob_pubkey)
+        .unwrap();
+    assert_eq!(bob_order_in_orderbook.base_confs, 10);
+    assert_eq!(bob_order_in_orderbook.base_nota, true);
+    assert_eq!(bob_order_in_orderbook.rel_confs, 5);
+    assert_eq!(bob_order_in_orderbook.rel_nota, false);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();

@@ -3566,7 +3566,12 @@ struct OrderbookP2PItem {
 }
 
 impl OrderbookP2PItem {
-    fn as_rpc_best_orders_buy(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+    fn as_rpc_best_orders_buy(
+        &self,
+        address: String,
+        conf_settings: Option<&OrderConfirmationsSettings>,
+        is_mine: bool,
+    ) -> RpcOrderbookEntry {
         let price_mm = MmNumber::from(self.price.clone());
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -3597,11 +3602,16 @@ impl OrderbookP2PItem {
             base_min_volume,
             rel_max_volume,
             rel_min_volume,
-            conf_settings: None,
+            conf_settings: conf_settings.cloned(),
         }
     }
 
-    fn as_rpc_best_orders_sell(&self, address: String, is_mine: bool) -> RpcOrderbookEntry {
+    fn as_rpc_best_orders_sell(
+        &self,
+        address: String,
+        conf_settings: Option<&OrderConfirmationsSettings>,
+        is_mine: bool,
+    ) -> RpcOrderbookEntry {
         let price_mm = MmNumber::from(1i32) / self.price.clone().into();
         let max_vol_mm = MmNumber::from(self.max_volume.clone());
         let min_vol_mm = MmNumber::from(self.min_volume.clone());
@@ -3610,6 +3620,12 @@ impl OrderbookP2PItem {
         let base_min_volume = (&min_vol_mm / &price_mm).into();
         let rel_max_volume = max_vol_mm.clone().into();
         let rel_min_volume = min_vol_mm.clone().into();
+        let conf_settings = conf_settings.map(|conf| OrderConfirmationsSettings {
+            base_confs: conf.rel_confs,
+            base_nota: conf.rel_nota,
+            rel_confs: conf.base_confs,
+            rel_nota: conf.base_nota,
+        });
 
         RpcOrderbookEntry {
             coin: self.base.clone(),
@@ -3632,7 +3648,7 @@ impl OrderbookP2PItem {
             base_min_volume,
             rel_max_volume,
             rel_min_volume,
-            conf_settings: None,
+            conf_settings,
         }
     }
 }
