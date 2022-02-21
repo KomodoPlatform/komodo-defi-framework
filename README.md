@@ -15,8 +15,8 @@ The current state can be considered as very early alpha.
 1. (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 1. Run
     ```
-    rustup install nightly-2021-12-16
-    rustup default nightly-2021-12-16
+    rustup install nightly-2022-02-01
+    rustup default nightly-2022-02-01
     rustup component add rustfmt-preview
     ```
 1. Run `cargo build` (or `cargo build -vv` to get verbose build output).

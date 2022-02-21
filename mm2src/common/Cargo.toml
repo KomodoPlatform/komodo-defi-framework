@@ -42,7 +42,7 @@ log = "0.4.8"
 num-bigint = { version = "0.2", features = ["serde", "std"] }
 num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
-parking_lot = { version = "0.11", features = ["nightly"] }
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
 primitives = { path = "../mm2_bitcoin/primitives" }

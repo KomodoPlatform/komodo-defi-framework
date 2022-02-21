@@ -88,7 +88,7 @@ num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
 rpc = { path = "mm2src/mm2_bitcoin/rpc" }
 rpc_task = { path = "mm2src/rpc_task" }
-parking_lot = { version = "0.11", features = ["nightly"] }
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 parity-util-mem = "0.9"
 # AP: portfolio RPCs are not documented and not used as of now
 # so the crate is disabled to speed up the entire removal of C code
