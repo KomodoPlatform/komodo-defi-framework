@@ -42,9 +42,9 @@ jobs:
           cat MM_VERSION
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo build --release --features zhtlc --target x86_64-apple-darwin
+            cargo build --bin mm2 --release --features zhtlc --target x86_64-apple-darwin
           else
-            cargo build --release --features zhtlc
+            cargo build --bin mm2 --release --features zhtlc
           fi
         displayName: 'Build MM2 Release'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
@@ -72,16 +72,25 @@ jobs:
           MANUAL_MM_VERSION: true
         condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 target/release/libmm2.a -j
+          containers=$(docker ps -q | wc -l)
+          echo $containers
+          if [ $containers -gt 0 ]; then
+            docker rm -f $(docker ps -q)
+          fi
+        displayName: 'Clean up Docker containers'
+        # Run unconditionally even if previous steps failed
+        condition: true
+      - bash: |
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
         displayName: 'Prepare release build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
           cd target/x86_64-apple-darwin/release
-          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 libmm2.a -r
+          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
         displayName: 'Prepare release build upload MacOS'
         condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
-          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\mm2.lib .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
+          7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare release build upload Windows'
         condition: and ( eq( variables['Agent.OS'], 'Windows_NT' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
