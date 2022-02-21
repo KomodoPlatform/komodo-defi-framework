@@ -20,6 +20,7 @@
 //
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
+use bitcoin_hashes::hex::ToHex;
 use bitcrypto::sha256;
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
@@ -1132,13 +1133,29 @@ impl MarketCoinOps for EthCoin {
             },
         };
 
+        // Box::new(
+        //     self.web3
+        //         .eth()
+        //         .transaction(TransactionId::Hash(H256::from(&bytes[..])))
+        //         .map_err(|err| GetRawTransactionError::Internal(err.to_string()))
+        //         .and_then(|raw_tx| raw_tx.ok_or_else(|| GetRawTransactionError::InvalidTx(original_hash)))
+        //         .map(|raw_tx| signed_tx_from_web3_tx(raw_tx).map(|x| rlp::encode(&x).to_hex()))
+        //         .map_err(|err| MmError::err(err)),
+        // )
+
         Box::new(
             self.web3
                 .eth()
                 .transaction(TransactionId::Hash(H256::from(&bytes[..])))
                 .map_err(|err| GetRawTransactionError::Internal(err.to_string()).into())
-                .and_then(|raw_tx| raw_tx.ok_or_else(|| GetRawTransactionError::InvalidTxHash(original_hash).into()))
-                .map(|raw_tx| format!("{:02x}", raw_tx.hash)),
+                .and_then(|raw_tx| {
+                    raw_tx.ok_or_else(|| MmError::from(GetRawTransactionError::InvalidTxHash(original_hash)))
+                })
+                .map(|raw_tx| {
+                    signed_tx_from_web3_tx(raw_tx).map_err(|msg| MmError::from(GetRawTransactionError::Internal(msg)))
+                })
+                .flatten()
+                .and_then(|signed_tx| Ok(rlp::encode(&signed_tx).to_hex())),
         )
     }
 

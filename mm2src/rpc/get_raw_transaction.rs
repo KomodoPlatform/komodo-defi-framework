@@ -6,11 +6,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RawTransactionRes {
+pub struct RawTransactionResponse {
     pub tx_hex: String,
 }
 
-pub async fn get_raw_transaction(ctx: MmArc, req: Json) -> Result<RawTransactionRes, MmError<GetRawTransactionError>> {
+pub async fn get_raw_transaction(
+    ctx: MmArc,
+    req: Json,
+) -> Result<RawTransactionResponse, MmError<GetRawTransactionError>> {
     let ticker = req["coin"].as_str().ok_or(GetRawTransactionError::NoCoinField)?;
     let coin = lp_coinfind(&ctx, ticker)
         .await
@@ -18,5 +21,5 @@ pub async fn get_raw_transaction(ctx: MmArc, req: Json) -> Result<RawTransaction
         .ok_or_else(|| GetRawTransactionError::InvalidCoin(ticker.to_string()))?;
     let bytes_string = req["tx_hash"].as_str().ok_or(GetRawTransactionError::NoTxHashField)?;
     let res = coin.get_raw_tx(bytes_string).compat().await?;
-    Ok(RawTransactionRes { tx_hex: res })
+    Ok(RawTransactionResponse { tx_hex: res })
 }
