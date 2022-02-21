@@ -2674,7 +2674,7 @@ where
         UtxoRpcClientEnum::Electrum(electrum_client) => electrum_client,
     };
     if tx.outputs.is_empty() {
-        return MmError::err(SPVError::UnknownError);
+        return MmError::err(SPVError::InvalidVout);
     }
     let mut height: u64 = 0;
     for output in tx.outputs.clone() {
@@ -2698,22 +2698,22 @@ where
         }
     }
     if height == 0 {
-        return MmError::err(SPVError::UnknownError);
+        return MmError::err(SPVError::InvalidHeight);
     }
 
     let block_header = client
         .blockchain_block_header(height)
         .compat()
         .await
-        .map_to_mm(|_e| SPVError::UnknownError)?;
+        .map_to_mm(|_e| SPVError::UnableToGetHeader)?;
     let raw_header = RawBlockHeader::new(block_header.0.clone())?;
-    let header: BlockHeader = deserialize(block_header.0.as_slice()).map_to_mm(|_e| SPVError::UnknownError)?;
+    let header: BlockHeader = deserialize(block_header.0.as_slice()).map_to_mm(|_e| SPVError::MalformattedHeader)?;
 
     let merkle_branch = client
         .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
         .compat()
         .await
-        .map_to_mm(|_e| SPVError::UnknownError)?;
+        .map_to_mm(|_e| SPVError::UnableToGetMerkle)?;
     let intermediate_nodes: Vec<H256> = merkle_branch
         .merkle
         .into_iter()

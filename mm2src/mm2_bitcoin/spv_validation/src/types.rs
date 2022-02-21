@@ -39,7 +39,7 @@ pub enum SPVError {
     WrongPrevHash,
     /// A `vin` (transaction input vector) is malformatted.
     InvalidVin,
-    /// A `vout` (transaction output vector) is malformatted.
+    /// A `vout` (transaction output vector) is malformatted or empty.
     InvalidVout,
     /// When validating an `SPVProof`, the `tx_id` field is not the digest
     /// of the `version`, `vin`, `vout`, and `locktime`.
@@ -47,10 +47,12 @@ pub enum SPVError {
     /// When validating an `SPVProof`, the `intermediate_nodes` is not a valid
     /// merkle proof connecting the `tx_id_le` to the `confirming_header`.
     BadMerkleProof,
+    /// Unable to get merkle tree from network or storage
+    UnableToGetMerkle,
     /// TxOut's reported length does not match passed-in byte slice's length
     OutputLengthMismatch,
-    /// scripthash_get_history return empty history
-    UnableToAccessElectrumHistoryItem,
+    /// Unable to retrieve block height / block height is zero.
+    InvalidHeight,
     /// Any other error
     UnknownError,
 }
