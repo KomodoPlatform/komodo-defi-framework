@@ -16,6 +16,10 @@ pub enum SPVError {
     MalformattedWitnessOutput,
     /// `extract_hash` could not identify the output type.
     MalformattedOutput,
+    /// Unable to get block header from network or storage
+    UnableToGetHeader,
+    /// Unable to deserialize raw block header from electrum to concrete type
+    MalformattedHeader,
     /// Header not exactly 80 bytes.
     WrongLengthHeader,
     /// Header chain changed difficulties unexpectedly
@@ -45,6 +49,8 @@ pub enum SPVError {
     BadMerkleProof,
     /// TxOut's reported length does not match passed-in byte slice's length
     OutputLengthMismatch,
+    /// scripthash_get_history return empty history
+    UnableToAccessElectrumHistoryItem,
     /// Any other error
     UnknownError,
 }

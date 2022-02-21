@@ -2676,21 +2676,24 @@ where
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::UnknownError);
     }
-    // note: all the outputs belong to the same tx, which is validated as the same height
-    // so accessing the history of the first element should be enough.
-    let script_pubkey_str = hex::encode(electrum_script_hash(&tx.outputs[0].script_pubkey));
-    let history = client
-        .scripthash_get_history(script_pubkey_str.as_str())
-        .compat()
-        .await
-        .unwrap_or_default();
-    if history.is_empty() {
-        return MmError::err(SPVError::UnknownError);
-    }
     let mut height: u64 = 0;
-    for item in history {
-        if item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0 {
-            height = item.height as u64;
+    for output in tx.outputs.clone() {
+        let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
+        let history = client
+            .scripthash_get_history(script_pubkey_str.as_str())
+            .compat()
+            .await
+            .unwrap_or_default();
+        if history.is_empty() {
+            continue;
+        }
+        for item in history {
+            if item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0 {
+                height = item.height as u64;
+                break;
+            }
+        }
+        if height != 0 {
             break;
         }
     }
