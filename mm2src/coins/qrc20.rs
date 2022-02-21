@@ -11,12 +11,13 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            GetRawTransactionError, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PrivKeyNotAllowed, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TransactionType,
+            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
+use bitcoin_hashes::hex::ToHex;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
 use common::executor::Timer;
@@ -36,7 +37,7 @@ use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
 use keys::{Address as UtxoAddress, Address, Public};
 #[cfg(test)] use mocktopus::macros::*;
-use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json, H256};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
@@ -46,6 +47,7 @@ use std::ops::{Deref, Neg};
 use std::str::FromStr;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
+use utxo_signer::{TxProvider, TxProviderError};
 
 mod history;
 #[cfg(test)] mod qrc20_tests;
@@ -996,6 +998,16 @@ impl SwapOps for Qrc20Coin {
     }
 }
 
+impl From<TxProviderError> for GetRawTransactionError {
+    fn from(tx_provider_err: TxProviderError) -> Self {
+        match tx_provider_err {
+            TxProviderError::Transport(msg) => GetRawTransactionError::InvalidTx(msg),
+            TxProviderError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
+            TxProviderError::Internal(msg) => GetRawTransactionError::Internal(msg),
+        }
+    }
+}
+
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
@@ -1043,6 +1055,37 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo, tx)
+    }
+
+    fn get_raw_tx(
+        &self,
+        mut tx: &str,
+    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        let original_hash = tx.to_string();
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = match hex::decode(tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Box::new(futures01::future::err(
+                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+                ));
+            },
+        };
+        let qrc20_coin_fields = self.0.clone();
+        Box::new(
+            Box::pin(async move {
+                qrc20_coin_fields
+                    .utxo
+                    .rpc_client
+                    .get_rpc_transaction(&H256::from(&bytes[..]))
+                    .await
+                    .map(|raw_tx| raw_tx.hex.to_hex())
+                    .map_err(|err| err.map(GetRawTransactionError::from))
+            })
+            .compat(),
+        )
     }
 
     fn wait_for_confirmations(

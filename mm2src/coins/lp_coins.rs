@@ -239,7 +239,10 @@ pub enum NegotiateSwapContractAddrErr {
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetRawTransactionError {
+    #[display(fmt = "Internal error `{}`", _0)]
     Internal(String),
+    #[display(fmt = "Invalid response `{}`", _0)]
+    InvalidResponse(String),
     #[display(fmt = "No activated coin with such name `{}`", _0)]
     InvalidCoin(String),
     #[display(fmt = "No valid transaction with such hash `{}`", _0)]
@@ -256,6 +259,7 @@ impl HttpStatusCode for GetRawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetRawTransactionError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            GetRawTransactionError::InvalidResponse(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -402,6 +406,7 @@ pub trait SwapOps {
 
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
+#[async_trait::async_trait]
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
