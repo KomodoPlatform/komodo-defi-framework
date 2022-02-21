@@ -1042,9 +1042,7 @@ impl Gossipsub {
         }
     }
 
-    pub fn get_mesh_peers(&self, topic: &TopicHash) -> Vec<PeerId> {
-        self.mesh.get(topic).cloned().unwrap_or_default()
-    }
+    pub fn get_mesh_peers(&self, topic: &TopicHash) -> Vec<PeerId> { self.mesh.get(topic).cloned().unwrap_or_default() }
 
     pub fn get_topic_peers(&self, topic: &TopicHash) -> Vec<PeerId> {
         self.topic_peers.get(topic).cloned().unwrap_or_default()
