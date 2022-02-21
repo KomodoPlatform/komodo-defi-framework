@@ -1,7 +1,10 @@
 use super::*;
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
-use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, NegotiateSwapContractAddrErr,
-            StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut};
+use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
+use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, GetRawTransactionError,
+            NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult,
+            WithdrawFut};
+use bitcoin_hashes::hex::ToHex;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::TrezorCoin;
@@ -617,6 +620,35 @@ impl MarketCoinOps for QtumCoin {
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
+    }
+
+    fn get_raw_tx(
+        &self,
+        mut tx: &str,
+    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = match hex::decode(tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Box::new(futures01::future::err(
+                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+                ));
+            },
+        };
+        let qtum_coin_fields = self.utxo_arc.clone();
+        Box::new(
+            Box::pin(async move {
+                qtum_coin_fields
+                    .rpc_client
+                    .get_rpc_transaction(&rpc::v1::types::H256::from(&bytes[..]))
+                    .await
+                    .map(|raw_tx| raw_tx.hex.to_hex())
+                    .map_err(|err| err.map(GetRawTransactionError::from))
+            })
+            .compat(),
+        )
     }
 
     fn wait_for_confirmations(
