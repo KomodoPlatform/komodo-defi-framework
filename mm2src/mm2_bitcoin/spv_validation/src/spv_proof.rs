@@ -35,7 +35,6 @@ pub struct SPVProof {
 ///
 /// # Notes
 /// Re-write with our own types based on `bitcoin_spv::std_types::SPVProof::validate`
-/// Support only merkle proof inclusion,vin,vout for now
 impl SPVProof {
     pub fn validate_block_header(&self) -> Result<(), SPVError> {
         if self.confirming_header.hash() != self.raw_header.digest() {
