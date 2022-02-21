@@ -1141,8 +1141,8 @@ pub struct ElectrumTxHistoryItem {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBalance {
-    confirmed: BigInt,
-    unconfirmed: BigInt,
+    pub(crate) confirmed: i128,
+    pub(crate) unconfirmed: i128,
 }
 
 fn sha_256(input: &[u8]) -> Vec<u8> {
@@ -1731,7 +1731,8 @@ impl UtxoRpcClientOps for ElectrumClient {
         let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
         let hash_str = hex::encode(hash);
         Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
-            BigDecimal::from(result.confirmed + result.unconfirmed) / BigDecimal::from(10u64.pow(decimals as u32))
+            let balance_sat = BigInt::from(result.confirmed) + BigInt::from(result.unconfirmed);
+            BigDecimal::from(balance_sat) / BigDecimal::from(10u64.pow(decimals as u32))
         }))
     }
 
