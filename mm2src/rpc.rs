@@ -42,6 +42,8 @@ use std::net::SocketAddr;
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
 mod dispatcher_legacy;
 #[path = "rpc/get_public_key.rs"] mod get_public_key;
+#[path = "rpc/get_raw_transaction.rs"]
+pub mod get_raw_transaction;
 #[path = "rpc/lp_commands.rs"] pub mod lp_commands;
 #[path = "rpc/rate_limiter.rs"] mod rate_limiter;
 

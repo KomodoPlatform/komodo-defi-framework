@@ -236,6 +236,31 @@ pub enum NegotiateSwapContractAddrErr {
     NoOtherAddrAndNoFallback,
 }
 
+#[derive(Serialize, Display, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetRawTransactionError {
+    Internal(String),
+    #[display(fmt = "No activated coin with such name `{}`", _0)]
+    InvalidCoin(String),
+    #[display(fmt = "No valid transaction with such hash `{}`", _0)]
+    InvalidTx(String),
+    #[display(fmt = "Invalid hash `{}`", _0)]
+    InvalidTxHash(String),
+    #[display(fmt = "No 'coin' field")]
+    NoCoinField,
+    #[display(fmt = "No 'tx_hash' field")]
+    NoTxHashField,
+}
+
+impl HttpStatusCode for GetRawTransactionError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetRawTransactionError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -403,6 +428,9 @@ pub trait MarketCoinOps {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
+
+    /// Receives transaction hash in hexadecimal format as input and returns raw transaction
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send>;
 
     fn wait_for_confirmations(
         &self,

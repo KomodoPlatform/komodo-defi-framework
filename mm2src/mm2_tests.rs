@@ -8320,3 +8320,56 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook {}", rc.1);
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_raw_transaction() {
+    // let coins: Json = json!([
+    //     {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+    //     {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+    // ]);
+    //
+    let coins: Json = json!([
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "face pin lock number add byte put seek mime test note password sin tab multiple",
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+    let eth = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method": "enable",
+        "coin": "ETH",
+        "urls": &["https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"],
+        // Dev chain swap contract address
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+        "mm2": 1,
+    })));
+
+    let raw_tx = block_on(mm.rpc(json!({
+      "userpass": mm.userpass,
+      "mmrpc":"2.0",
+      "method":"get_raw_transaction",
+      "params":{
+        "coin":"ETH",
+        "tx_hash": "0xbdef3970c00752b0dc811cd93faadfd75a7a52e6b8e0b608c5519edcad801357"
+      },
+      "id": 0
+    })))
+    .unwrap();
+    dbg!(raw_tx);
+}

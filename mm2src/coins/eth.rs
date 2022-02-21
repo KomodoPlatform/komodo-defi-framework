@@ -31,7 +31,7 @@ use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
-use ethereum_types::{Address, H160, U256};
+use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, KeyPair, Public};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
@@ -64,6 +64,7 @@ pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
 mod web3_transport;
+use crate::GetRawTransactionError;
 use common::mm_number::MmNumber;
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
@@ -1111,6 +1112,33 @@ impl MarketCoinOps for EthCoin {
                 .send_raw_transaction(bytes.into())
                 .map(|res| format!("{:02x}", res))
                 .map_err(|e| ERRL!("{}", e)),
+        )
+    }
+
+    fn get_raw_tx(
+        &self,
+        mut tx: &str,
+    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        let original_hash = tx.to_string();
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = match hex::decode(tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Box::new(futures01::future::err(
+                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+                ));
+            },
+        };
+
+        Box::new(
+            self.web3
+                .eth()
+                .transaction(TransactionId::Hash(H256::from(&bytes[..])))
+                .map_err(|err| GetRawTransactionError::Internal(err.to_string()).into())
+                .and_then(|raw_tx| raw_tx.ok_or(GetRawTransactionError::InvalidTxHash(original_hash).into()))
+                .map(|raw_tx| format!("{:02x}", raw_tx.hash)),
         )
     }
 
