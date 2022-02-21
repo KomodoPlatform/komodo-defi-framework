@@ -1133,16 +1133,6 @@ impl MarketCoinOps for EthCoin {
             },
         };
 
-        // Box::new(
-        //     self.web3
-        //         .eth()
-        //         .transaction(TransactionId::Hash(H256::from(&bytes[..])))
-        //         .map_err(|err| GetRawTransactionError::Internal(err.to_string()))
-        //         .and_then(|raw_tx| raw_tx.ok_or_else(|| GetRawTransactionError::InvalidTx(original_hash)))
-        //         .map(|raw_tx| signed_tx_from_web3_tx(raw_tx).map(|x| rlp::encode(&x).to_hex()))
-        //         .map_err(|err| MmError::err(err)),
-        // )
-
         Box::new(
             self.web3
                 .eth()
@@ -1155,7 +1145,7 @@ impl MarketCoinOps for EthCoin {
                     signed_tx_from_web3_tx(raw_tx).map_err(|msg| MmError::from(GetRawTransactionError::Internal(msg)))
                 })
                 .flatten()
-                .and_then(|signed_tx| Ok(rlp::encode(&signed_tx).to_hex())),
+                .and_then(|signed_tx| Ok(signed_tx.transaction.data.to_hex())),
         )
     }
 
