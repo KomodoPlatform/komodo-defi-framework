@@ -3620,12 +3620,7 @@ impl OrderbookP2PItem {
         let base_min_volume = (&min_vol_mm / &price_mm).into();
         let rel_max_volume = max_vol_mm.clone().into();
         let rel_min_volume = min_vol_mm.clone().into();
-        let conf_settings = conf_settings.map(|conf| OrderConfirmationsSettings {
-            base_confs: conf.rel_confs,
-            base_nota: conf.rel_nota,
-            rel_confs: conf.base_confs,
-            rel_nota: conf.base_nota,
-        });
+        let conf_settings = conf_settings.map(|conf| conf.reversed());
 
         RpcOrderbookEntry {
             coin: self.base.clone(),
@@ -3796,6 +3791,7 @@ impl OrderbookItem {
         let base_min_volume = (&min_vol_mm / &price_mm).into();
         let rel_max_volume = max_vol_mm.clone().into();
         let rel_min_volume = min_vol_mm.clone().into();
+        let conf_settings = self.conf_settings.map(|conf| conf.reversed());
 
         RpcOrderbookEntry {
             coin: self.base.clone(),
@@ -3818,7 +3814,7 @@ impl OrderbookItem {
             base_min_volume,
             rel_max_volume,
             rel_min_volume,
-            conf_settings: self.conf_settings,
+            conf_settings,
         }
     }
 

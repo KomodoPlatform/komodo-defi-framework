@@ -8371,12 +8371,24 @@ fn test_conf_settings_in_orderbook() {
 
     log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
-    log!("Issue sell request on Bob side");
+    log!("Issue set_price request for RICK/MORTY on Bob side");
     let rc = block_on(mm_bob.rpc(json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
         "rel": "MORTY",
+        "price": 0.9,
+        "volume": "0.9",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    log!("Issue set_price request for MORTY/RICK on Bob side");
+    let rc = block_on(mm_bob.rpc(json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "MORTY",
+        "rel": "RICK",
         "price": 0.9,
         "volume": "0.9",
     })))
@@ -8413,6 +8425,7 @@ fn test_conf_settings_in_orderbook() {
 
     let alice_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
     log!("Alice orderbook "[alice_orderbook]);
+
     assert_eq!(
         alice_orderbook.asks.len(),
         1,
@@ -8422,6 +8435,16 @@ fn test_conf_settings_in_orderbook() {
     assert_eq!(alice_orderbook.asks[0].base_nota, true);
     assert_eq!(alice_orderbook.asks[0].rel_confs, 5);
     assert_eq!(alice_orderbook.asks[0].rel_nota, false);
+
+    assert_eq!(
+        alice_orderbook.bids.len(),
+        1,
+        "Alice RICK/MORTY orderbook must have exactly 1 bid"
+    );
+    assert_eq!(alice_orderbook.bids[0].base_confs, 10);
+    assert_eq!(alice_orderbook.bids[0].base_nota, true);
+    assert_eq!(alice_orderbook.bids[0].rel_confs, 5);
+    assert_eq!(alice_orderbook.bids[0].rel_nota, false);
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
