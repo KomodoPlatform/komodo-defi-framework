@@ -253,6 +253,7 @@ pub enum GetRawTransactionError {
     NoCoinField,
     #[display(fmt = "No 'tx_hash' field")]
     NoTxHashField,
+    Transport(String),
 }
 
 impl HttpStatusCode for GetRawTransactionError {

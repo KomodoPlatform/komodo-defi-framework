@@ -2,7 +2,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use crate::utxo::{output_script, sat_from_big_decimal};
-use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use crate::{GetRawTransactionError, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
@@ -237,6 +237,17 @@ impl From<JsonRpcError> for UtxoRpcError {
         match e.error {
             JsonRpcErrorType::Transport(_) => UtxoRpcError::Transport(e),
             JsonRpcErrorType::Parse(_, _) | JsonRpcErrorType::Response(_, _) => UtxoRpcError::ResponseParseError(e),
+        }
+    }
+}
+
+impl From<UtxoRpcError> for GetRawTransactionError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(msg) => GetRawTransactionError::Transport(msg.to_string()),
+            UtxoRpcError::Internal(msg) => GetRawTransactionError::Internal(msg.to_string()),
+            UtxoRpcError::ResponseParseError(msg) => GetRawTransactionError::Internal(msg.to_string()),
+            UtxoRpcError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
         }
     }
 }

@@ -9,13 +9,15 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend,
+            GetRawTransactionError, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            NumConversError, PrivKeyNotAllowed, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
+            ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 
+use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
 use async_trait::async_trait;
+use bitcoin_hashes::hex::ToHex;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
@@ -1080,6 +1082,37 @@ impl MarketCoinOps for SlpToken {
             Ok(format!("{:?}", hash))
         };
         Box::new(fut.boxed().compat())
+    }
+    fn get_raw_tx(
+        &self,
+        mut tx: &str,
+    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = match hex::decode(tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Box::new(futures01::future::err(
+                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+                ));
+            },
+        };
+        let slp_coin_fields = self.platform_coin.clone();
+        Box::new(
+            Box::pin(async move {
+                slp_coin_fields
+                    .get_verbose_transaction_from_cache_or_rpc(rpc::v1::types::H256::from(&bytes[..]))
+                    .compat()
+                    .await
+                    .map(|raw_tx| match raw_tx {
+                        Cache(cache_tx) => cache_tx.hex.to_hex(),
+                        Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
+                    })
+                    .map_err(|err| err.map(GetRawTransactionError::from))
+            })
+            .compat(),
+        )
     }
 
     fn wait_for_confirmations(
