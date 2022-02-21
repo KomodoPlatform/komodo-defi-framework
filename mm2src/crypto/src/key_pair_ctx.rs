@@ -17,10 +17,6 @@ impl From<KeyPair> for KeyPairArc {
 
 impl KeyPairArc {
     pub fn new(ctx: KeyPairCtx) -> KeyPairArc { KeyPairArc(Arc::new(ctx)) }
-
-    pub fn from_key_pair(secp256k1_key_pair: KeyPair) -> KeyPairArc {
-        KeyPairArc(Arc::new(KeyPairCtx { secp256k1_key_pair }))
-    }
 }
 
 pub struct KeyPairCtx {

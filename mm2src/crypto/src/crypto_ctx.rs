@@ -95,7 +95,7 @@ impl CryptoCtx {
         let secp256k1_key_pair_for_legacy = key_pair_from_seed(passphrase)?;
 
         let rmd160 = secp256k1_key_pair.public().address_hash();
-        let crypto_ctx = CryptoCtx::KeyPair(KeyPairArc::from_key_pair(secp256k1_key_pair));
+        let crypto_ctx = CryptoCtx::KeyPair(KeyPairArc::from(secp256k1_key_pair));
         *ctx_field = Some(Arc::new(crypto_ctx));
 
         // TODO remove initializing legacy fields when lp_swap and lp_ordermatch support CryptoCtx.
