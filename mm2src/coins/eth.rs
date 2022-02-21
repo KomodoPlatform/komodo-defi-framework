@@ -1137,7 +1137,7 @@ impl MarketCoinOps for EthCoin {
                 .eth()
                 .transaction(TransactionId::Hash(H256::from(&bytes[..])))
                 .map_err(|err| GetRawTransactionError::Internal(err.to_string()).into())
-                .and_then(|raw_tx| raw_tx.ok_or(GetRawTransactionError::InvalidTxHash(original_hash).into()))
+                .and_then(|raw_tx| raw_tx.ok_or_else(|| GetRawTransactionError::InvalidTxHash(original_hash).into()))
                 .map(|raw_tx| format!("{:02x}", raw_tx.hash)),
         )
     }

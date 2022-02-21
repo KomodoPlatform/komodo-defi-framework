@@ -245,7 +245,7 @@ impl From<UtxoRpcError> for GetRawTransactionError {
     fn from(e: UtxoRpcError) -> Self {
         match e {
             UtxoRpcError::Transport(msg) => GetRawTransactionError::Transport(msg.to_string()),
-            UtxoRpcError::Internal(msg) => GetRawTransactionError::Internal(msg.to_string()),
+            UtxoRpcError::Internal(msg) => GetRawTransactionError::Internal(msg),
             UtxoRpcError::ResponseParseError(msg) => GetRawTransactionError::Internal(msg.to_string()),
             UtxoRpcError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
         }

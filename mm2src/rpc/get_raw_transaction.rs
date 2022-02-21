@@ -14,8 +14,8 @@ pub async fn get_raw_transaction(ctx: MmArc, req: Json) -> Result<RawTransaction
     let ticker = req["coin"].as_str().ok_or(GetRawTransactionError::NoCoinField)?;
     let coin = lp_coinfind(&ctx, ticker)
         .await
-        .map_err(|err| GetRawTransactionError::Internal(err))?
-        .ok_or(GetRawTransactionError::InvalidCoin(ticker.to_string()))?;
+        .map_err(GetRawTransactionError::Internal)?
+        .ok_or_else(|| GetRawTransactionError::InvalidCoin(ticker.to_string()))?;
     let bytes_string = req["tx_hash"].as_str().ok_or(GetRawTransactionError::NoTxHashField)?;
     let res = coin.get_raw_tx(bytes_string).compat().await?;
     Ok(RawTransactionRes { tx_hex: res })

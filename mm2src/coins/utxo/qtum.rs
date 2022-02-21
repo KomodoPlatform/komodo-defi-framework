@@ -1,6 +1,5 @@
 use super::*;
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
-use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
 use crate::{eth, CanRefundHtlc, CoinBalance, DelegationError, DelegationFut, GetRawTransactionError,
             NegotiateSwapContractAddrErr, StakingInfosFut, SwapOps, TradePreimageValue, ValidateAddressResult,
             WithdrawFut};
