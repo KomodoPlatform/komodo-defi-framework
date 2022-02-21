@@ -10,6 +10,7 @@ pub mod constants;
 mod block;
 mod block_header;
 mod merkle_root;
+mod raw_block;
 mod transaction;
 
 /// `IndexedBlock` extension
