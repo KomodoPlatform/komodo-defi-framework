@@ -109,8 +109,10 @@ where
 {
     fn coin(&self) -> &Coin;
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_address(&self) -> Address;
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_address_string(&self) -> String;
 
     fn request(&self) -> &WithdrawRequest;

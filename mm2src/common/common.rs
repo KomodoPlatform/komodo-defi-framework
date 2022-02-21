@@ -1321,7 +1321,7 @@ pub fn round_to(bd: &BigDecimal, places: u8) -> String {
 
         if pos < dot {
             //println! ("{}, pos < dot, stopping at pos {}", bds, pos);
-            let mut integer: i64 = (&bds[0..=pos]).parse().unwrap();
+            let mut integer: i64 = (bds[0..=pos]).parse().unwrap();
             if prev_digit > 5 {
                 if bda[0] == b'-' {
                     integer = integer.checked_sub(1).unwrap()

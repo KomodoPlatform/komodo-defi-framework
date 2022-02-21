@@ -124,14 +124,13 @@ impl QtumCoin {
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
         let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
-        Ok(self
-            .generate_delegation_transaction(
-                outputs,
-                my_address,
-                QRC20_GAS_LIMIT_DEFAULT,
-                TransactionType::RemoveDelegation,
-            )
-            .await?)
+        self.generate_delegation_transaction(
+            outputs,
+            my_address,
+            QRC20_GAS_LIMIT_DEFAULT,
+            TransactionType::RemoveDelegation,
+        )
+        .await
     }
 
     async fn am_i_currently_staking(&self) -> Result<Option<String>, MmError<StakingInfosError>> {
@@ -252,14 +251,13 @@ impl QtumCoin {
 
         let outputs = vec![delegation_output];
         let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
-        Ok(self
-            .generate_delegation_transaction(
-                outputs,
-                my_address,
-                QRC20_GAS_LIMIT_DELEGATION,
-                TransactionType::StakingDelegation,
-            )
-            .await?)
+        self.generate_delegation_transaction(
+            outputs,
+            my_address,
+            QRC20_GAS_LIMIT_DELEGATION,
+            TransactionType::StakingDelegation,
+        )
+        .await
     }
 
     async fn generate_delegation_transaction(

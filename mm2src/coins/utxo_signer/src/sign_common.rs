@@ -105,7 +105,7 @@ pub(crate) fn script_sig_with_pub(public_key: &PublicKey, fork_id: u32, signatur
     let builder = Builder::default();
     builder
         .push_data(&script_sig)
-        .push_data(&public_key.to_vec())
+        .push_data(public_key.to_vec().as_slice())
         .into_bytes()
 }
 

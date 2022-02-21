@@ -3435,6 +3435,7 @@ pub struct TakerRequestForRpc<'a> {
     conf_settings: &'a Option<OrderConfirmationsSettings>,
 }
 
+#[allow(clippy::needless_borrow)]
 pub async fn lp_auto_buy(
     ctx: &MmArc,
     base_coin: &MmCoinEnum,
@@ -3927,6 +3928,7 @@ struct MakerMatchForRpc<'a> {
     last_updated: u64,
 }
 
+#[allow(clippy::needless_borrow)]
 impl<'a> From<&'a MakerMatch> for MakerMatchForRpc<'a> {
     fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc {
         MakerMatchForRpc {
@@ -4654,6 +4656,7 @@ struct TakerMatchForRpc<'a> {
     last_updated: u64,
 }
 
+#[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerMatch> for TakerMatchForRpc<'a> {
     fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc {
         TakerMatchForRpc {
@@ -4676,6 +4679,7 @@ struct TakerOrderForRpc<'a> {
     rel_orderbook_ticker: &'a Option<String>,
 }
 
+#[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
     fn from(order: &'a TakerOrder) -> TakerOrderForRpc {
         TakerOrderForRpc {
