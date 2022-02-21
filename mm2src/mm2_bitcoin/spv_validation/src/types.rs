@@ -1,3 +1,5 @@
+use chain::RawHeaderError;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SPVError {
     /// Overran a checked read on a slice
@@ -70,6 +72,14 @@ impl From<bitcoin_spv::types::SPVError> for SPVError {
             bitcoin_spv::types::SPVError::BadMerkleProof => SPVError::BadMerkleProof,
             bitcoin_spv::types::SPVError::OutputLengthMismatch => SPVError::OutputLengthMismatch,
             bitcoin_spv::types::SPVError::UnknownError => SPVError::UnknownError,
+        }
+    }
+}
+
+impl From<RawHeaderError> for SPVError {
+    fn from(e: RawHeaderError) -> Self {
+        match e {
+            RawHeaderError::WrongLengthHeader => SPVError::WrongLengthHeader,
         }
     }
 }

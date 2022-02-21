@@ -7,7 +7,7 @@ use crate::{CanRefundHtlc, CoinBalance, TradePreimageValue, TxFeeDetails, Valida
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
-use chain::{BlockHeader, OutPoint, TransactionOutput};
+use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::log::{error, info, warn};
@@ -2703,6 +2703,7 @@ where
         .compat()
         .await
         .map_to_mm(|_e| SPVError::UnknownError)?;
+    let raw_header = RawBlockHeader::new(block_header.0.clone())?;
     let header: BlockHeader = deserialize(block_header.0.as_slice()).map_to_mm(|_e| SPVError::UnknownError)?;
 
     let merkle_branch = client
@@ -2721,6 +2722,7 @@ where
         vout: serialize_list(&tx.outputs).take(),
         index: merkle_branch.pos as u64,
         confirming_header: header,
+        raw_header,
         intermediate_nodes,
     };
     match proof.validate() {
