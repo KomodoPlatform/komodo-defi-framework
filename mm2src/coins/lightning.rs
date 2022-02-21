@@ -5,22 +5,28 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::BlockchainNetwork;
+use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::{sat_from_big_decimal, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut, TradePreimageValue, TransactionEnum,
-            TransactionFut, UtxoStandardCoin, ValidateAddressResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionError, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageValue, TransactionEnum, TransactionFut, UtxoStandardCoin, ValidateAddressResult, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::Txid;
+use bitcoin_hashes::hex::ToHex;
 #[cfg(not(target_arch = "wasm32"))] use chain::TransactionOutput;
 #[cfg(not(target_arch = "wasm32"))]
 use common::ip_addr::myipaddr;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
+use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
+use futures::lock::MutexGuard as AsyncMutexGuard;
+use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 #[cfg(not(target_arch = "wasm32"))] use keys::AddressHashEnum;
 use lightning::chain::WatchedOutput;
@@ -280,7 +286,38 @@ impl MarketCoinOps for LightningCoin {
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
-
+    fn get_raw_tx(
+        &self,
+        mut tx: &str,
+    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        if tx.starts_with("0x") {
+            tx = &tx[2..];
+        }
+        let bytes = match hex::decode(tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Box::new(futures01::future::err(
+                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+                ));
+            },
+        };
+        let lightning_coin_fields = self.platform_fields.clone();
+        Box::new(
+            Box::pin(async move {
+                lightning_coin_fields
+                    .platform_coin
+                    .get_verbose_transaction_from_cache_or_rpc(rpc::v1::types::H256::from(&bytes[..]))
+                    .compat()
+                    .await
+                    .map(|raw_tx| match raw_tx {
+                        Cache(cache_tx) => cache_tx.hex.to_hex(),
+                        Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
+                    })
+                    .map_err(|err| err.map(GetRawTransactionError::from))
+            })
+            .compat(),
+        )
+    }
     fn wait_for_confirmations(
         &self,
         _tx: &[u8],
