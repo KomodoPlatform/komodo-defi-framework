@@ -1061,7 +1061,6 @@ impl MarketCoinOps for Qrc20Coin {
         &self,
         mut tx: &str,
     ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        let original_hash = tx.to_string();
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
