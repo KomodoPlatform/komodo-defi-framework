@@ -5345,6 +5345,8 @@ dependencies = [
  "bitcoin-spv",
  "chain",
  "primitives",
+ "rustc-hex 2.1.0",
+ "serialization",
 ]
 
 [[package]]

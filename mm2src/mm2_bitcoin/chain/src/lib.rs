@@ -11,6 +11,7 @@ mod block;
 mod block_header;
 mod merkle_root;
 mod raw_block;
+pub use raw_block::RawBlockHeader;
 mod transaction;
 
 /// `IndexedBlock` extension

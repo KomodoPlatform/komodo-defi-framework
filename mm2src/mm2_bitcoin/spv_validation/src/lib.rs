@@ -1,6 +1,8 @@
 extern crate bitcoin_spv;
 extern crate chain;
 extern crate primitives;
+extern crate rustc_hex as hex;
+extern crate serialization;
 
 /// `types` exposes simple types for on-chain evaluation of SPV proofs
 pub mod types;
