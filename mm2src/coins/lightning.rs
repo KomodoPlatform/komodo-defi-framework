@@ -50,7 +50,6 @@ use serde::{de, Deserialize, Serialize, Serializer};
 use serde_json::Value as Json;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -170,9 +169,7 @@ impl LightningCoin {
             })
     }
 
-    fn pay_invoice(&self, encoded_invoice: String) -> SendPaymentResult<(PaymentHash, PaymentInfo)> {
-        let invoice =
-            Invoice::from_str(&encoded_invoice).map_to_mm(|e| SendPaymentError::InvalidInvoice(e.to_string()))?;
+    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<(PaymentHash, PaymentInfo)> {
         self.invoice_payer
             .pay_invoice(&invoice)
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
@@ -767,6 +764,39 @@ pub async fn get_channel_details(
     Ok(GetChannelDetailsResponse { channel_details })
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct InvoiceForRPC(Invoice);
+
+impl Serialize for InvoiceForRPC {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> de::Deserialize<'de> for InvoiceForRPC {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct InvoiceForRPCVisitor;
+
+        impl<'de> de::Visitor<'de> for InvoiceForRPCVisitor {
+            type Value = InvoiceForRPC;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a lightning invoice")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                let invoice = Invoice::from_str(v).map_err(|e| {
+                    let err = format!("Could not parse lightning invoice from str {}, err {}", v, e);
+                    de::Error::custom(err)
+                })?;
+                Ok(InvoiceForRPC(invoice))
+            }
+        }
+
+        deserializer.deserialize_str(InvoiceForRPCVisitor)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct GenerateInvoiceRequest {
     pub coin: String,
@@ -776,8 +806,8 @@ pub struct GenerateInvoiceRequest {
 
 #[derive(Serialize)]
 pub struct GenerateInvoiceResponse {
-    invoice: String,
     payment_hash: H256Json,
+    invoice: InvoiceForRPC,
 }
 
 /// Generates an invoice (request for payment) that can be paid on the lightning network by another node using send_payment.
@@ -808,8 +838,8 @@ pub async fn generate_invoice(
         req.description,
     )?;
     Ok(GenerateInvoiceResponse {
-        invoice: invoice.to_string(),
         payment_hash: invoice.payment_hash().into_inner().into(),
+        invoice: InvoiceForRPC(invoice),
     })
 }
 
@@ -823,10 +853,7 @@ impl Serialize for PublicKeyForRPC {
 }
 
 impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as de::Deserializer<'de>>::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let slice: &[u8] = de::Deserialize::deserialize(deserializer)?;
         let pubkey =
             PublicKey::from_slice(slice).map_err(|e| de::Error::custom(format!("Error {} parsing pubkey", e)))?;
@@ -839,7 +866,7 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 #[serde(tag = "type")]
 pub enum Payment {
     #[serde(rename = "invoice")]
-    Invoice { invoice: String },
+    Invoice { invoice: InvoiceForRPC },
     #[serde(rename = "keysend")]
     Keysend {
         // The recieving node pubkey (node ID)
@@ -880,7 +907,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let (payment_hash, payment_info) = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice)?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.0)?,
         Payment::Keysend {
             destination,
             amount_in_msat,
@@ -952,7 +979,7 @@ pub async fn list_payments(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResu
 #[derive(Deserialize)]
 pub struct GetPaymentDetailsRequest {
     pub coin: String,
-    pub payment_hash: String,
+    pub payment_hash: H256Json,
 }
 
 #[derive(Serialize)]
@@ -978,19 +1005,15 @@ pub async fn get_payment_details(
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let payment_hash: [u8; 32] = hex::decode(req.payment_hash.clone())
-        .map_to_mm(|e| GetPaymentDetailsError::DecodeError(format!("{}", e)))?
-        .try_into()
-        .map_to_mm(|_| GetPaymentDetailsError::InvalidSize(req.payment_hash.len()))?;
 
-    if let Some(payment_info) = ln_coin.outbound_payments.lock().get(&PaymentHash(payment_hash)) {
+    if let Some(payment_info) = ln_coin.outbound_payments.lock().get(&PaymentHash(req.payment_hash.0)) {
         return Ok(GetPaymentDetailsResponse {
             payment_type: PaymentType::OutboundPayment,
             payment_details: payment_info.clone().into(),
         });
     }
 
-    if let Some(payment_info) = ln_coin.inbound_payments.lock().get(&PaymentHash(payment_hash)) {
+    if let Some(payment_info) = ln_coin.inbound_payments.lock().get(&PaymentHash(req.payment_hash.0)) {
         return Ok(GetPaymentDetailsResponse {
             payment_type: PaymentType::InboundPayment,
             payment_details: payment_info.clone().into(),

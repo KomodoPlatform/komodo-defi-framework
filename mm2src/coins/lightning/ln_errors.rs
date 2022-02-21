@@ -282,8 +282,6 @@ pub enum SendPaymentError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "Couldn't parse invoice: {}", _0)]
-    InvalidInvoice(String),
     #[display(fmt = "Couldn't parse destination pubkey: {}", _0)]
     NoRouteFound(String),
     #[display(fmt = "Payment error: {}", _0)]
@@ -297,8 +295,7 @@ impl HttpStatusCode for SendPaymentError {
         match self {
             SendPaymentError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
             SendPaymentError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
-            SendPaymentError::InvalidInvoice(_)
-            | SendPaymentError::PaymentError(_)
+            SendPaymentError::PaymentError(_)
             | SendPaymentError::NoRouteFound(_)
             | SendPaymentError::CLTVExpiryError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -346,12 +343,8 @@ pub enum GetPaymentDetailsError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
-    #[display(fmt = "Payment hash decoding error: {}", _0)]
-    DecodeError(String),
-    #[display(fmt = "Payment hash should be 64 chars but has invalid size {}:", _0)]
-    InvalidSize(usize),
-    #[display(fmt = "Payment with hash: {} is not found", _0)]
-    NoSuchPayment(String),
+    #[display(fmt = "Payment with hash: {:?} is not found", _0)]
+    NoSuchPayment(H256Json),
 }
 
 impl HttpStatusCode for GetPaymentDetailsError {
@@ -359,9 +352,6 @@ impl HttpStatusCode for GetPaymentDetailsError {
         match self {
             GetPaymentDetailsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
             GetPaymentDetailsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
-            GetPaymentDetailsError::DecodeError(_) | GetPaymentDetailsError::InvalidSize(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
             GetPaymentDetailsError::NoSuchPayment(_) => StatusCode::NOT_FOUND,
         }
     }
