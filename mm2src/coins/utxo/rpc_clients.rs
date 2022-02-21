@@ -12,7 +12,7 @@ use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, Json
                              JsonRpcRequest, JsonRpcResponse, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
 use common::mm_error::prelude::*;
-use common::mm_number::MmNumber;
+use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
 use futures::channel::oneshot as async_oneshot;
@@ -1141,8 +1141,8 @@ pub struct ElectrumTxHistoryItem {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBalance {
-    confirmed: i64,
-    unconfirmed: i64,
+    confirmed: BigInt,
+    unconfirmed: BigInt,
 }
 
 fn sha_256(input: &[u8]) -> Vec<u8> {
