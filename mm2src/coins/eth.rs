@@ -1145,7 +1145,7 @@ impl MarketCoinOps for EthCoin {
                     signed_tx_from_web3_tx(raw_tx).map_err(|msg| MmError::from(GetRawTransactionError::Internal(msg)))
                 })
                 .flatten()
-                .and_then(|signed_tx| Ok(signed_tx.transaction.data.to_hex())),
+                .and_then(|signed_tx| Ok(rlp::encode(&signed_tx).to_hex())),
         )
     }
 
