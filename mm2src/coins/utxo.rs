@@ -97,7 +97,6 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, Coins
             RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError,
             WithdrawRequest};
-use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderStorageError};
 use std::array::TryFromSliceError;
 
 #[cfg(test)] pub mod utxo_tests;
@@ -554,7 +553,6 @@ pub struct UtxoCoinFields {
     pub tx_fee: TxFee,
     /// Minimum transaction value at which the value is not less than fee
     pub dust_amount: u64,
-    pub block_header_storage: Option<Box<dyn BlockHeaderStorage<Error = dyn BlockHeaderStorageError>>>,
     /// RPC client
     pub rpc_client: UtxoRpcClientEnum,
     /// Either ECDSA key pair or a Hardware Wallet info.
@@ -1477,7 +1475,6 @@ pub trait UtxoCoinBuilder {
             conf,
             decimals,
             dust_amount,
-            block_header_storage: None,
             rpc_client,
             priv_key_policy,
             derivation_method,
@@ -1511,7 +1508,6 @@ pub trait UtxoCoinBuilder {
             conf,
             decimals,
             dust_amount,
-            block_header_storage: None,
             rpc_client,
             priv_key_policy: PrivKeyPolicy::HardwareWallet,
             derivation_method: DerivationMethod::HDWallet(HDWalletInfo::new(addr_format)),

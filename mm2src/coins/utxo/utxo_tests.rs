@@ -131,7 +131,6 @@ fn utxo_coin_fields_for_test(
         tx_cache_directory: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
-        block_header_storage: None,
     }
 }
 
