@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use chain::BlockHeader;
 use common::{mm_error::MmError, mm_error::NotMmError, NotSame};
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 
 pub trait BlockHeaderStorageError: std::fmt::Debug + NotMmError + NotSame + Send {}
 
@@ -38,4 +39,8 @@ pub trait BlockHeaderStorage: Send + Sync + 'static {
 
     /// Gets the block header by height from the selected coin's storage as hex
     async fn get_block_header_raw(&self, for_coin: &str, height: u64) -> Result<Option<String>, MmError<Self::Error>>;
+}
+
+impl Debug for dyn BlockHeaderStorage<Error = dyn BlockHeaderStorageError> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { write!(f, "") }
 }
