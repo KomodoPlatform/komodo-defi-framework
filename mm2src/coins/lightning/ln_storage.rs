@@ -7,59 +7,23 @@ use secp256k1::PublicKey;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub fn my_ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
 
-pub fn my_ln_data_backup_dir(path: String, ticker: &str) -> PathBuf {
-    PathBuf::from(path).join("LIGHTNING").join(ticker)
-}
+pub fn my_ln_data_backup_dir(path: &str, ticker: &str) -> PathBuf { PathBuf::from(path).join("LIGHTNING").join(ticker) }
 
 pub fn nodes_data_path(ctx: &MmArc, ticker: &str) -> PathBuf { my_ln_data_dir(ctx, ticker).join("channel_nodes_data") }
 
-fn nodes_data_backup_path(path: String, ticker: &str) -> PathBuf {
+pub fn nodes_data_backup_path(path: &str, ticker: &str) -> PathBuf {
     my_ln_data_backup_dir(path, ticker).join("channel_nodes_data")
 }
 
 pub fn network_graph_path(ctx: &MmArc, ticker: &str) -> PathBuf { my_ln_data_dir(ctx, ticker).join("network_graph") }
 
 pub fn scorer_path(ctx: &MmArc, ticker: &str) -> PathBuf { my_ln_data_dir(ctx, ticker).join("scorer") }
-
-fn pubkey_and_addr_from_str(pubkey_str: &str, addr_str: &str) -> ConnectToNodeResult<(PublicKey, SocketAddr)> {
-    // TODO: support connection to onion addresses
-    let addr = addr_str
-        .to_socket_addrs()
-        .map(|mut r| r.next())
-        .map_to_mm(|e| ConnectToNodeError::ParseError(e.to_string()))?
-        .ok_or_else(|| ConnectToNodeError::ParseError(format!("Couldn't parse {} into a socket address", addr_str)))?;
-
-    let pubkey = PublicKey::from_str(pubkey_str).map_to_mm(|e| ConnectToNodeError::ParseError(e.to_string()))?;
-
-    Ok((pubkey, addr))
-}
-
-pub fn parse_node_info(node_pubkey_and_ip_addr: String) -> ConnectToNodeResult<(PublicKey, SocketAddr)> {
-    let mut pubkey_and_addr = node_pubkey_and_ip_addr.split('@');
-
-    let pubkey = pubkey_and_addr.next().ok_or_else(|| {
-        ConnectToNodeError::ParseError(format!(
-            "Incorrect node id format for {}. The format should be `pubkey@host:port`",
-            node_pubkey_and_ip_addr
-        ))
-    })?;
-
-    let node_addr_str = pubkey_and_addr.next().ok_or_else(|| {
-        ConnectToNodeError::ParseError(format!(
-            "Incorrect node id format for {}. The format should be `pubkey@host:port`",
-            node_pubkey_and_ip_addr
-        ))
-    })?;
-
-    let (pubkey, node_addr) = pubkey_and_addr_from_str(pubkey, node_addr_str)?;
-    Ok((pubkey, node_addr))
-}
 
 pub fn read_nodes_addresses_from_file(path: &Path) -> ConnectToNodeResult<HashMap<PublicKey, SocketAddr>> {
     if !path.exists() {
@@ -79,7 +43,7 @@ pub fn read_nodes_addresses_from_file(path: &Path) -> ConnectToNodeResult<HashMa
         .collect()
 }
 
-fn write_nodes_addresses_to_file(
+pub fn write_nodes_addresses_to_file(
     path: &Path,
     nodes_addresses: HashMap<PublicKey, SocketAddr>,
 ) -> ConnectToNodeResult<()> {
@@ -94,19 +58,6 @@ fn write_nodes_addresses_to_file(
         .open(path)
         .map_to_mm(|e| ConnectToNodeError::IOError(e.to_string()))?;
     serde_json::to_writer(file, &nodes_addresses).map_to_mm(|e| ConnectToNodeError::IOError(e.to_string()))
-}
-
-pub fn persist_nodes_addresses(
-    ctx: &MmArc,
-    ticker: &str,
-    backup_path: Option<String>,
-    nodes_addresses: HashMap<PublicKey, SocketAddr>,
-) -> ConnectToNodeResult<()> {
-    write_nodes_addresses_to_file(&nodes_data_path(ctx, ticker), nodes_addresses.clone())?;
-    if let Some(path) = backup_path {
-        write_nodes_addresses_to_file(&nodes_data_backup_path(path, ticker), nodes_addresses)?;
-    }
-    Ok(())
 }
 
 pub fn save_network_graph_to_file(path: &Path, network_graph: &NetworkGraph) -> EnableLightningResult<()> {

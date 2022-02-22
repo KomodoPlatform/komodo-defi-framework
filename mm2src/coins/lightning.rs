@@ -40,13 +40,15 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
-use ln_storage::{nodes_data_path, parse_node_info, persist_nodes_addresses, read_nodes_addresses_from_file};
+use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
+use ln_storage::{nodes_data_backup_path, nodes_data_path, read_nodes_addresses_from_file,
+                 write_nodes_addresses_to_file};
 use ln_utils::{ChainMonitor, ChannelManager, InvoicePayer, PeerManager};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
 use secp256k1::PublicKey;
-use serde::{de, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -60,6 +62,7 @@ mod ln_connections;
 pub mod ln_errors;
 mod ln_events;
 mod ln_rpc;
+mod ln_serialization;
 mod ln_storage;
 pub mod ln_utils;
 
@@ -209,6 +212,16 @@ impl LightningCoin {
             amt_msat: Some(amount_msat),
             fee_paid_msat: None,
         }))
+    }
+
+    fn persist_nodes_addresses(&self, ctx: &MmArc) -> ConnectToNodeResult<()> {
+        let ticker = self.ticker();
+        let nodes_addresses = self.nodes_addresses.lock().clone();
+        write_nodes_addresses_to_file(&nodes_data_path(ctx, ticker), nodes_addresses.clone())?;
+        if let Some(path) = &self.conf.backup_path {
+            write_nodes_addresses_to_file(&nodes_data_backup_path(path, ticker), nodes_addresses)?;
+        }
+        Ok(())
     }
 }
 
@@ -510,7 +523,7 @@ impl MmCoin for LightningCoin {
 #[derive(Deserialize)]
 pub struct ConnectToNodeRequest {
     pub coin: String,
-    pub node_id: String,
+    pub node_address: NodeAddress,
 }
 
 /// Connect to a certain node on the lightning network.
@@ -521,22 +534,17 @@ pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) ->
         _ => return MmError::err(ConnectToNodeError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
-    let (node_pubkey, node_addr) = parse_node_info(req.node_id.clone())?;
+    let node_pubkey = req.node_address.pubkey;
+    let node_addr = req.node_address.addr;
     let res = connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
 
     // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
     // can be used to reconnect to the new address while saving this new address for reconnections.
     if let ConnectToNodeRes::ConnectedSuccessfully(_, _) = res {
-        let mut nodes_addresses = ln_coin.nodes_addresses.lock();
-        if let Entry::Occupied(mut entry) = nodes_addresses.entry(node_pubkey) {
+        if let Entry::Occupied(mut entry) = ln_coin.nodes_addresses.lock().entry(node_pubkey) {
             entry.insert(node_addr);
-            persist_nodes_addresses(
-                &ctx,
-                ln_coin.ticker(),
-                ln_coin.conf.backup_path.clone(),
-                nodes_addresses.clone(),
-            )?;
         }
+        async_blocking(move || ln_coin.persist_nodes_addresses(&ctx)).await?;
     }
 
     Ok(res.to_string())
@@ -552,7 +560,7 @@ pub enum ChannelOpenAmount {
 #[derive(Deserialize)]
 pub struct OpenChannelRequest {
     pub coin: String,
-    pub node_id: String,
+    pub node_address: NodeAddress,
     pub amount: ChannelOpenAmount,
     /// The amount to push to the counterparty as part of the open, in milli-satoshi. Creates inbound liquidity for the channel.
     /// By setting push_msat to a value, opening channel request will be equivalent to opening a channel then sending a payment with
@@ -567,7 +575,7 @@ pub struct OpenChannelRequest {
 #[derive(Serialize)]
 pub struct OpenChannelResponse {
     temporary_channel_id: H256Json,
-    node_id: String,
+    node_address: NodeAddress,
 }
 
 /// Opens a channel on the lightning network.
@@ -579,7 +587,8 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     };
 
     // Making sure that the node data is correct and that we can connect to it before doing more operations
-    let (node_pubkey, node_addr) = parse_node_info(req.node_id.clone())?;
+    let node_pubkey = req.node_address.pubkey;
+    let node_addr = req.node_address.addr;
     connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
 
     let platform_coin = ln_coin.platform_coin().clone();
@@ -649,20 +658,12 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     }
 
     // Saving node data to reconnect to it on restart
-    {
-        let mut nodes_addresses = ln_coin.nodes_addresses.lock();
-        nodes_addresses.insert(node_pubkey, node_addr);
-        persist_nodes_addresses(
-            &ctx,
-            ln_coin.ticker(),
-            ln_coin.conf.backup_path.clone(),
-            nodes_addresses.clone(),
-        )?;
-    }
+    ln_coin.nodes_addresses.lock().insert(node_pubkey, node_addr);
+    async_blocking(move || ln_coin.persist_nodes_addresses(&ctx)).await?;
 
     Ok(OpenChannelResponse {
         temporary_channel_id: temp_channel_id.into(),
-        node_id: req.node_id,
+        node_address: req.node_address,
     })
 }
 
@@ -764,39 +765,6 @@ pub async fn get_channel_details(
     Ok(GetChannelDetailsResponse { channel_details })
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct InvoiceForRPC(Invoice);
-
-impl Serialize for InvoiceForRPC {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
-
-impl<'de> de::Deserialize<'de> for InvoiceForRPC {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct InvoiceForRPCVisitor;
-
-        impl<'de> de::Visitor<'de> for InvoiceForRPCVisitor {
-            type Value = InvoiceForRPC;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a lightning invoice")
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                let invoice = Invoice::from_str(v).map_err(|e| {
-                    let err = format!("Could not parse lightning invoice from str {}, err {}", v, e);
-                    de::Error::custom(err)
-                })?;
-                Ok(InvoiceForRPC(invoice))
-            }
-        }
-
-        deserializer.deserialize_str(InvoiceForRPCVisitor)
-    }
-}
-
 #[derive(Deserialize)]
 pub struct GenerateInvoiceRequest {
     pub coin: String,
@@ -839,27 +807,8 @@ pub async fn generate_invoice(
     )?;
     Ok(GenerateInvoiceResponse {
         payment_hash: invoice.payment_hash().into_inner().into(),
-        invoice: InvoiceForRPC(invoice),
+        invoice: invoice.into(),
     })
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct PublicKeyForRPC(PublicKey);
-
-impl Serialize for PublicKeyForRPC {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(&self.0.serialize())
-    }
-}
-
-impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let slice: &[u8] = de::Deserialize::deserialize(deserializer)?;
-        let pubkey =
-            PublicKey::from_slice(slice).map_err(|e| de::Error::custom(format!("Error {} parsing pubkey", e)))?;
-
-        Ok(PublicKeyForRPC(pubkey))
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -907,12 +856,12 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let (payment_hash, payment_info) = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.0)?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.into())?,
         Payment::Keysend {
             destination,
             amount_in_msat,
             expiry,
-        } => ln_coin.keysend(destination.0, amount_in_msat, expiry)?,
+        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry)?,
     };
     let mut outbound_payments = ln_coin.outbound_payments.lock();
     outbound_payments.insert(payment_hash, payment_info);

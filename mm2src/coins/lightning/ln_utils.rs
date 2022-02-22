@@ -170,7 +170,7 @@ pub async fn start_lightning(
     }
     let ln_data_backup_dir = match conf.backup_path.clone() {
         Some(backup_path) => {
-            let my_ln_data_backup_dir = ln_storage::my_ln_data_backup_dir(backup_path.clone(), &ticker);
+            let my_ln_data_backup_dir = ln_storage::my_ln_data_backup_dir(&backup_path, &ticker);
             if !ensure_dir_is_writable(&my_ln_data_backup_dir) {
                 return MmError::err(EnableLightningError::IOError(format!(
                     "{} db dir is not writable",

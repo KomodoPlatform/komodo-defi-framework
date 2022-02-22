@@ -211,7 +211,7 @@ fn test_connect_to_lightning_node() {
         "method": "connect_to_lightning_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
-            "node_id": node_1_address,
+            "node_address": node_1_address,
         },
     })))
     .unwrap();
@@ -237,7 +237,7 @@ fn test_open_channel() {
         "method": "open_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
-            "node_id": node_1_address,
+            "node_address": node_1_address,
             "amount": {
                 "type":"Exact",
                 "value":0.00002,
