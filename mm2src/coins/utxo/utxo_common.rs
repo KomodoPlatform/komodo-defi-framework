@@ -3271,9 +3271,17 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-async fn block_header_utxo_loop(_ctx: MmArc, check_every: f64, coin: UtxoArc) {
-    loop {
-        info!("tick block_header_utxo_loop for {}", coin.conf.ticker);
+pub async fn block_header_utxo_loop<T>(
+    _ctx: MmArc,
+    weak: UtxoWeak,
+    check_every: f64,
+    constructor: impl Fn(UtxoArc) -> T,
+) where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
+    while let Some(arc) = weak.upgrade() {
+        let coin = constructor(arc);
+        info!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
         Timer::sleep(check_every).await;
     }
 }

@@ -2,6 +2,7 @@ use crate::hd_pubkey::HDXPubExtractor;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_common::block_header_utxo_loop;
 use crate::utxo::utxo_common::merge_utxo_loop;
 use crate::utxo::{UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
@@ -102,12 +103,21 @@ where
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
-        self.spawn_merge_utxo_loop_if_required(utxo_weak, self.constructor.clone());
+        self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
+        self.spawn_block_header_utxo_loop(self.ctx.clone(), utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
 
 impl<'a, F, T, XPubExtractor> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T, XPubExtractor>
+where
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    XPubExtractor: HDXPubExtractor + Send + Sync,
+{
+}
+
+impl<'a, F, T, XPubExtractor> BlockHeaderUtxoArcOps<T> for UtxoArcBuilder<'a, F, T, XPubExtractor>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
@@ -152,6 +162,13 @@ where
 {
 }
 
+impl<'a, F, T> BlockHeaderUtxoArcOps<T> for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
+where
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+{
+}
+
 #[async_trait]
 impl<'a, F, T> UtxoCoinWithIguanaPrivKeyBuilder for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
@@ -169,7 +186,8 @@ where
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
-        self.spawn_merge_utxo_loop_if_required(utxo_weak, self.constructor.clone());
+        self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
+        self.spawn_block_header_utxo_loop(self.ctx.clone(), utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
@@ -217,5 +235,19 @@ where
             info!("Starting UTXO merge loop for coin {}", self.ticker());
             spawn(fut);
         }
+    }
+}
+
+pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+{
+    fn spawn_block_header_utxo_loop<F>(&self, ctx: MmArc, weak: UtxoWeak, constructor: F)
+    where
+        F: Fn(UtxoArc) -> T + Send + Sync + 'static,
+    {
+        let fut = block_header_utxo_loop(ctx, weak, 60.0, constructor);
+        info!("Starting UTXO block header loop for coin {}", self.ticker());
+        spawn(fut);
     }
 }
