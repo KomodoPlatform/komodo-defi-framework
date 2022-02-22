@@ -151,7 +151,7 @@ where
         spawn(merge_loop);
     }
 
-    let block_header_loop = block_header_utxo_loop(ctx.clone(), 60.0, utxo_arc.clone());
+    let block_header_loop = block_header_utxo_loop(ctx.clone(), 60.0, utxo_arc);
     info!("Starting UTXO download header loop for coin {}", ticker);
     spawn(block_header_loop);
     Ok(coin)
