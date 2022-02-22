@@ -1,68 +1,36 @@
-use crate::{FinishedTaskResult, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, TaskAbortHandle,
-            TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
+use crate::task::RpcTaskTypes;
+use crate::{AtomicTaskId, FinishedTaskResult, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus,
+            RpcTaskStatusAlias, TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError,
+            UserActionSender};
 use common::executor::spawn;
 use common::log::{debug, warn};
 use common::mm_error::prelude::*;
 use futures::channel::oneshot;
 use futures::future::{select, Either};
-use serde::Serialize;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, Weak};
 
-pub type RpcTaskManagerShared<Item, Error, InProgressStatus, AwaitingStatus, UserAction> =
-    Arc<Mutex<RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>>>;
-pub(crate) type RpcTaskManagerWeak<Item, Error, InProgressStatus, AwaitingStatus, UserAction> =
-    Weak<Mutex<RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>>>;
+pub type RpcTaskManagerShared<Task> = Arc<Mutex<RpcTaskManager<Task>>>;
+pub(crate) type RpcTaskManagerWeak<Task> = Weak<Mutex<RpcTaskManager<Task>>>;
 
-pub struct RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
-    tasks: HashMap<TaskId, TaskStatusExt<Item, Error, InProgressStatus, AwaitingStatus, UserAction>>,
-    next_task_id: TaskId,
+static NEXT_RPC_TASK_ID: AtomicTaskId = AtomicTaskId::new(0);
+
+fn next_rpc_task_id() -> TaskId { NEXT_RPC_TASK_ID.fetch_add(1, Ordering::Relaxed) }
+
+pub struct RpcTaskManager<Task: RpcTask> {
+    tasks: HashMap<TaskId, TaskStatusExt<Task>>,
 }
 
-impl<Item, Error, InProgressStatus, AwaitingStatus, UserAction> Default
-    for RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
-    fn default() -> Self {
-        RpcTaskManager {
-            tasks: HashMap::new(),
-            next_task_id: 0,
-        }
-    }
+impl<Task: RpcTask> Default for RpcTaskManager<Task> {
+    fn default() -> Self { RpcTaskManager { tasks: HashMap::new() } }
 }
 
-impl<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize + Clone + Send + Sync + 'static,
-    Error: SerMmErrorType + Clone + Send + Sync + 'static,
-    InProgressStatus: Clone + Send + Sync + 'static,
-    AwaitingStatus: Clone + Send + Sync + 'static,
-    UserAction: Send + Sync + 'static,
-{
+impl<Task: RpcTask> RpcTaskManager<Task> {
     /// Create new instance of `RpcTaskHandle` attached to the only one `RpcTask`.
     /// This function registers corresponding RPC task in the `RpcTaskManager` and returns the task id.
-    pub fn spawn_rpc_task<Task>(
-        this: &RpcTaskManagerShared<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-        task: Task,
-    ) -> RpcTaskResult<TaskId>
-    where
-        Task: RpcTask<
-                Item = Item,
-                Error = Error,
-                InProgressStatus = InProgressStatus,
-                AwaitingStatus = AwaitingStatus,
-                UserAction = UserAction,
-            > + Send
-            + 'static,
-    {
+    pub fn spawn_rpc_task(this: &RpcTaskManagerShared<Task>, task: Task) -> RpcTaskResult<TaskId> {
         let initial_task_status = task.initial_status();
         let (task_id, task_abort_handler) = {
             let mut task_manager = this
@@ -100,22 +68,9 @@ where
         spawn(fut);
         Ok(task_id)
     }
-}
 
-impl<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize + Clone,
-    Error: SerMmErrorType + Clone,
-    InProgressStatus: Clone,
-    AwaitingStatus: Clone,
-{
     /// Returns a task status if it exists, otherwise returns `None`.
-    pub fn task_status(
-        &mut self,
-        task_id: TaskId,
-        forget_if_ready: bool,
-    ) -> Option<RpcTaskStatus<Item, Error, InProgressStatus, AwaitingStatus>> {
+    pub fn task_status(&mut self, task_id: TaskId, forget_if_ready: bool) -> Option<RpcTaskStatusAlias<Task>> {
         let entry = match self.tasks.entry(task_id) {
             Entry::Occupied(entry) => entry,
             Entry::Vacant(_) => return None,
@@ -134,17 +89,8 @@ where
         };
         Some(rpc_status)
     }
-}
 
-impl<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
-    pub fn new_shared() -> RpcTaskManagerShared<Item, Error, InProgressStatus, AwaitingStatus, UserAction> {
-        Arc::new(Mutex::new(RpcTaskManager::default()))
-    }
+    pub fn new_shared() -> RpcTaskManagerShared<Task> { Arc::new(Mutex::new(Self::default())) }
 
     pub fn contains(&self, task_id: TaskId) -> bool { self.tasks.contains_key(&task_id) }
 
@@ -158,9 +104,9 @@ where
 
     pub(crate) fn register_task(
         &mut self,
-        task_initial_in_progress_status: InProgressStatus,
+        task_initial_in_progress_status: Task::InProgressStatus,
     ) -> RpcTaskResult<(TaskId, TaskAbortHandler)> {
-        let task_id = self.next_task_id();
+        let task_id = next_rpc_task_id();
         let (abort_handle, abort_handler) = oneshot::channel();
         match self.tasks.entry(task_id) {
             Entry::Occupied(_entry) => MmError::err(RpcTaskError::UnexpectedTaskStatus {
@@ -178,11 +124,7 @@ where
         }
     }
 
-    pub(crate) fn update_task_status(
-        &mut self,
-        task_id: TaskId,
-        status: TaskStatus<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-    ) -> RpcTaskResult<()> {
+    pub(crate) fn update_task_status(&mut self, task_id: TaskId, status: TaskStatus<Task>) -> RpcTaskResult<()> {
         match status {
             TaskStatus::Ready(result) => self.on_task_finished(task_id, result),
             TaskStatus::InProgress(in_progress) => self.update_in_progress_status(task_id, in_progress),
@@ -207,20 +149,18 @@ where
         }
     }
 
-    fn next_task_id(&mut self) -> TaskId {
-        let id = self.next_task_id;
-        self.next_task_id += 1;
-        id
-    }
-
-    fn on_task_finished(&mut self, task_id: TaskId, task_result: FinishedTaskResult<Item, Error>) -> RpcTaskResult<()> {
+    fn on_task_finished(
+        &mut self,
+        task_id: TaskId,
+        task_result: FinishedTaskResult<Task::Item, Task::Error>,
+    ) -> RpcTaskResult<()> {
         if self.tasks.insert(task_id, TaskStatusExt::Ready(task_result)).is_none() {
             warn!("Finished task '{}' was not ongoing", task_id);
         }
         Ok(())
     }
 
-    fn update_in_progress_status(&mut self, task_id: TaskId, status: InProgressStatus) -> RpcTaskResult<()> {
+    fn update_in_progress_status(&mut self, task_id: TaskId, status: Task::InProgressStatus) -> RpcTaskResult<()> {
         match self.tasks.remove(&task_id) {
             Some(TaskStatusExt::InProgress { abort_handle, .. })
             | Some(TaskStatusExt::Awaiting { abort_handle, .. }) => {
@@ -245,8 +185,8 @@ where
     fn set_task_is_waiting_for_user_action(
         &mut self,
         task_id: TaskId,
-        status: AwaitingStatus,
-        action_sender: UserActionSender<UserAction>,
+        status: Task::AwaitingStatus,
+        action_sender: UserActionSender<Task::UserAction>,
     ) -> RpcTaskResult<()> {
         match self.tasks.remove(&task_id) {
             Some(TaskStatusExt::InProgress {
@@ -270,17 +210,9 @@ where
             None => MmError::err(RpcTaskError::NoSuchTask(task_id)),
         }
     }
-}
 
-impl<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    RpcTaskManager<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-    UserAction: NotMmError,
-{
     /// Notify a spawned interrupted RPC task about the user action if it await the action.
-    pub fn on_user_action(&mut self, task_id: TaskId, user_action: UserAction) -> RpcTaskResult<()> {
+    pub fn on_user_action(&mut self, task_id: TaskId, user_action: Task::UserAction) -> RpcTaskResult<()> {
         match self.tasks.remove(&task_id) {
             Some(TaskStatusExt::Awaiting {
                 action_sender,
@@ -309,20 +241,16 @@ where
 
 /// `TaskStatus` extended with `TaskAbortHandle`.
 /// This is stored in the [`RpcTaskManager::tasks`] container.
-enum TaskStatusExt<Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
+enum TaskStatusExt<Task: RpcTaskTypes> {
     InProgress {
-        status: InProgressStatus,
+        status: Task::InProgressStatus,
         abort_handle: TaskAbortHandle,
     },
     Awaiting {
-        status: AwaitingStatus,
-        action_sender: UserActionSender<UserAction>,
+        status: Task::AwaitingStatus,
+        action_sender: UserActionSender<Task::UserAction>,
         abort_handle: TaskAbortHandle,
-        next_in_progress_status: InProgressStatus,
+        next_in_progress_status: Task::InProgressStatus,
     },
-    Ready(FinishedTaskResult<Item, Error>),
+    Ready(FinishedTaskResult<Task::Item, Task::Error>),
 }

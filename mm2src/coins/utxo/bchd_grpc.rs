@@ -23,7 +23,7 @@ pub struct GrpcWebMultiUrlReqErr {
 #[allow(clippy::needless_lifetimes)]
 async fn grpc_web_multi_url_request<'a, Req, Res, Url>(
     urls: &'a [Url],
-    req: &Req,
+    req: &'a Req,
 ) -> Result<Vec<(&'a Url, Res)>, MmError<GrpcWebMultiUrlReqErr>>
 where
     Req: prost::Message + Send + 'static,

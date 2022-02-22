@@ -3,69 +3,23 @@ use crate::{TransactionDetails, WithdrawRequest};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::{HttpStatusCode, SuccessResponse};
-use crypto::trezor::TrezorPinMatrix3x3Response;
-use derive_more::Display;
-use http::StatusCode;
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, TaskId};
-use std::convert::TryFrom;
+use common::SuccessResponse;
+use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
+use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatusAlias, RpcTaskTypes};
 
-pub type WithdrawTaskManager = RpcTaskManager<
-    TransactionDetails,
-    WithdrawError,
-    WithdrawInProgressStatus,
-    WithdrawAwaitingStatus,
-    WithdrawUserAction,
->;
-pub type WithdrawTaskManagerShared = RpcTaskManagerShared<
-    TransactionDetails,
-    WithdrawError,
-    WithdrawInProgressStatus,
-    WithdrawAwaitingStatus,
-    WithdrawUserAction,
->;
-pub type WithdrawTaskHandle = RpcTaskHandle<
-    TransactionDetails,
-    WithdrawError,
-    WithdrawInProgressStatus,
-    WithdrawAwaitingStatus,
-    WithdrawUserAction,
->;
-pub type WithdrawRpcStatus =
-    RpcTaskStatus<TransactionDetails, WithdrawError, WithdrawInProgressStatus, WithdrawAwaitingStatus>;
+pub type WithdrawAwaitingStatus = HwRpcTaskAwaitingStatus;
+pub type WithdrawUserAction = HwRpcTaskUserAction;
+pub type WithdrawStatusError = RpcTaskStatusError;
+pub type WithdrawUserActionError = RpcTaskUserActionError;
+pub type InitWithdrawResponse = InitRpcTaskResponse;
+pub type WithdrawStatusRequest = RpcTaskStatusRequest;
+pub type WithdrawUserActionRequest = HwRpcTaskUserActionRequest;
+pub type WithdrawTaskManager = RpcTaskManager<WithdrawTask>;
+pub type WithdrawTaskManagerShared = RpcTaskManagerShared<WithdrawTask>;
+pub type WithdrawTaskHandle = RpcTaskHandle<WithdrawTask>;
+pub type WithdrawRpcStatus = RpcTaskStatusAlias<WithdrawTask>;
 pub type WithdrawInitResult<T> = Result<T, MmError<WithdrawError>>;
-
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum WithdrawStatusError {
-    NoSuchTask(TaskId),
-    Internal(String),
-}
-
-impl HttpStatusCode for WithdrawStatusError {
-    fn status_code(&self) -> StatusCode { StatusCode::NOT_FOUND }
-}
-
-#[derive(Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum WithdrawUserActionError {
-    NoSuchTask(TaskId),
-    // UnexpectedUserAction,
-    Internal(String),
-}
-
-impl From<RpcTaskError> for WithdrawUserActionError {
-    fn from(e: RpcTaskError) -> Self {
-        match e {
-            RpcTaskError::NoSuchTask(task_id) => WithdrawUserActionError::NoSuchTask(task_id),
-            error => WithdrawUserActionError::Internal(error.to_string()),
-        }
-    }
-}
-
-impl HttpStatusCode for WithdrawUserActionError {
-    fn status_code(&self) -> StatusCode { StatusCode::INTERNAL_SERVER_ERROR }
-}
 
 #[async_trait]
 pub trait CoinWithdrawInit {
@@ -74,11 +28,6 @@ pub trait CoinWithdrawInit {
         req: WithdrawRequest,
         rpc_task_handle: &WithdrawTaskHandle,
     ) -> WithdrawInitResult<TransactionDetails>;
-}
-
-#[derive(Serialize)]
-pub struct InitWithdrawResponse {
-    task_id: TaskId,
 }
 
 pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInitResult<InitWithdrawResponse> {
@@ -91,13 +40,6 @@ pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInit
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawError::InternalError)?;
     let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, task)?;
     Ok(InitWithdrawResponse { task_id })
-}
-
-#[derive(Deserialize)]
-pub struct WithdrawStatusRequest {
-    task_id: TaskId,
-    #[serde(default = "true_f")]
-    forget_if_finished: bool,
 }
 
 pub async fn withdraw_status(
@@ -125,33 +67,6 @@ pub enum WithdrawInProgressStatus {
     WaitingForTrezorToConnect,
     WaitingForUserToConfirmPubkey,
     WaitingForUserToConfirmSigning,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub enum WithdrawAwaitingStatus {
-    WaitForTrezorPin,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "action_type")]
-pub enum WithdrawUserAction {
-    TrezorPin(TrezorPinMatrix3x3Response),
-}
-
-impl TryFrom<WithdrawUserAction> for TrezorPinMatrix3x3Response {
-    type Error = RpcTaskError;
-
-    fn try_from(value: WithdrawUserAction) -> Result<Self, Self::Error> {
-        match value {
-            WithdrawUserAction::TrezorPin(pin) => Ok(pin),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct WithdrawUserActionRequest {
-    task_id: TaskId,
-    user_action: WithdrawUserAction,
 }
 
 pub async fn withdraw_user_action(
@@ -183,14 +98,16 @@ pub struct WithdrawTask {
     request: WithdrawRequest,
 }
 
-#[async_trait]
-impl RpcTask for WithdrawTask {
+impl RpcTaskTypes for WithdrawTask {
     type Item = TransactionDetails;
     type Error = WithdrawError;
     type InProgressStatus = WithdrawInProgressStatus;
     type AwaitingStatus = WithdrawAwaitingStatus;
     type UserAction = WithdrawUserAction;
+}
 
+#[async_trait]
+impl RpcTask for WithdrawTask {
     fn initial_status(&self) -> Self::InProgressStatus { WithdrawInProgressStatus::Preparing }
 
     async fn run(self, task_handle: &WithdrawTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
@@ -205,5 +122,3 @@ impl RpcTask for WithdrawTask {
         }
     }
 }
-
-fn true_f() -> bool { true }

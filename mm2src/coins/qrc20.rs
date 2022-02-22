@@ -4,10 +4,11 @@ use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc2
 use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
+                                UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError, HistoryUtxoTx,
-                  HistoryUtxoTxMap, PrivKeyBuildPolicy, RecentlySpentOutPoints, UtxoActivationParams,
-                  UtxoAddressFormat, UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilder, UtxoCoinFields,
+                  HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields,
                   UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend,
@@ -149,7 +150,7 @@ struct Qrc20CoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    activation_params: Qrc20ActivationParams,
+    activation_params: &'a Qrc20ActivationParams,
     priv_key: &'a [u8],
     platform: String,
     token_contract_address: H160,
@@ -160,7 +161,7 @@ impl<'a> Qrc20CoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        activation_params: Qrc20ActivationParams,
+        activation_params: &'a Qrc20ActivationParams,
         priv_key: &'a [u8],
         platform: String,
         token_contract_address: H160,
@@ -178,28 +179,14 @@ impl<'a> Qrc20CoinBuilder<'a> {
 }
 
 #[async_trait]
-impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
-    type ResultCoin = Qrc20Coin;
-
-    async fn build(self) -> UtxoCoinBuildResult<Self::ResultCoin> {
-        let utxo = self.build_utxo_fields().await?;
-        let inner = Qrc20CoinFields {
-            utxo,
-            platform: self.platform,
-            contract_address: self.token_contract_address,
-            swap_contract_address: self.activation_params.swap_contract_address,
-            fallback_swap_contract: self.activation_params.fallback_swap_contract,
-        };
-        Ok(Qrc20Coin(Arc::new(inner)))
-    }
-
+impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
 
-    fn ticker(&self) -> &str { self.ticker }
+    fn activation_params(&self) -> &UtxoActivationParams { &self.activation_params.utxo_params }
 
-    fn priv_key(&self) -> PrivKeyBuildPolicy<'_> { PrivKeyBuildPolicy::PrivKey(self.priv_key) }
+    fn ticker(&self) -> &str { self.ticker }
 
     async fn decimals(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<u8> {
         if let Some(d) = self.conf()["decimals"].as_u64() {
@@ -249,7 +236,35 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
         }
     }
 
-    fn activation_params(&self) -> UtxoActivationParams { self.activation_params.utxo_params.clone() }
+    fn check_utxo_maturity(&self) -> bool {
+        if let Some(false) = self.activation_params.utxo_params.check_utxo_maturity {
+            warn!("'check_utxo_maturity' is ignored because QRC20 gas refund is returned as a coinbase transaction");
+        }
+        true
+    }
+}
+
+#[async_trait]
+impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for Qrc20CoinBuilder<'a> {}
+
+#[async_trait]
+impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for Qrc20CoinBuilder<'a> {
+    type ResultCoin = Qrc20Coin;
+    type Error = UtxoCoinBuildError;
+
+    fn priv_key(&self) -> &[u8] { self.priv_key }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
+        let inner = Qrc20CoinFields {
+            utxo,
+            platform: self.platform,
+            contract_address: self.token_contract_address,
+            swap_contract_address: self.activation_params.swap_contract_address,
+            fallback_swap_contract: self.activation_params.fallback_swap_contract,
+        };
+        Ok(Qrc20Coin(Arc::new(inner)))
+    }
 }
 
 pub async fn qrc20_coin_from_conf_and_params(
@@ -257,7 +272,7 @@ pub async fn qrc20_coin_from_conf_and_params(
     ticker: &str,
     platform: &str,
     conf: &Json,
-    params: Qrc20ActivationParams,
+    params: &Qrc20ActivationParams,
     priv_key: &[u8],
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
@@ -453,7 +468,7 @@ impl Qrc20Coin {
         contract_outputs: Vec<ContractCallOutput>,
     ) -> Result<GenerateQrc20TxResult, MmError<Qrc20GenTxError>> {
         let my_address = self.utxo.derivation_method.iguana_or_err()?;
-        let (unspents, _) = self.ordered_mature_unspents(my_address).await?;
+        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
 
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
@@ -622,11 +637,18 @@ impl UtxoCommonOps for Qrc20Coin {
         .await
     }
 
-    async fn ordered_mature_unspents<'a>(
+    async fn list_all_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_all_unspent_ordered(self, address).await
+    }
+
+    async fn list_mature_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
+        utxo_common::list_mature_unspent_ordered(self, address).await
     }
 
     fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
@@ -643,7 +665,7 @@ impl UtxoCommonOps for Qrc20Coin {
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_unspent_ordered(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(
@@ -1033,12 +1055,8 @@ impl MarketCoinOps for Qrc20Coin {
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        let selfi = self.clone();
-        let fut = async move {
-            let CoinBalance { spendable, .. } = selfi.qtum_balance().await?;
-            Ok(spendable)
-        };
-        Box::new(fut.boxed().compat())
+        // use standard UTXO my_balance implementation that returns Qtum balance instead of QRC20
+        Box::new(utxo_common::my_balance(self.clone()).map(|CoinBalance { spendable, .. }| spendable))
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {

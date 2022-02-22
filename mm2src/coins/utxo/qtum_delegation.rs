@@ -205,7 +205,7 @@ impl QtumCoin {
         let my_address = coin.derivation_method.iguana_or_err()?;
 
         let staker = self.am_i_currently_staking().await?;
-        let (unspents, _) = utxo_common::list_unspent_ordered(self, my_address).await?;
+        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
         let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT.into();
         let mut amount = BigDecimal::zero();
         if staker.is_some() {
@@ -274,7 +274,7 @@ impl QtumCoin {
         let key_pair = utxo.priv_key_policy.key_pair_or_err()?;
         let my_address = utxo.derivation_method.iguana_or_err()?;
 
-        let (unspents, _) = self.ordered_mature_unspents(my_address).await?;
+        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
         for output in contract_outputs {
