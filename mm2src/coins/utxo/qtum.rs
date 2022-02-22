@@ -12,7 +12,7 @@ use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBui
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, StakingInfosFut, SwapOps,
-            TradePreimageValue, ValidateAddressResult, WithdrawFut, WithdrawSenderAddress};
+            TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;

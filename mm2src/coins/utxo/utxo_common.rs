@@ -7,8 +7,8 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            TradePreimageValue, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress};
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -65,7 +65,7 @@ lazy_static! {
 
 pub const HISTORY_TOO_LARGE_ERR_CODE: i64 = -1;
 
-pub async fn get_tx_fee(coin: &UtxoCoinFields) -> Result<ActualTxFee, JsonRpcError> {
+pub async fn get_tx_fee(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualTxFee> {
     let conf = &coin.conf;
     match &coin.tx_fee {
         TxFee::Dynamic(method) => {

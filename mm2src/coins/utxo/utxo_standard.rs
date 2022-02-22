@@ -9,8 +9,8 @@ use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccou
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut,
-            WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
