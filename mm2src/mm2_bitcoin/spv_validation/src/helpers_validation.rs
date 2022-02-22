@@ -1,4 +1,5 @@
 use bitcoin_spv::btcspv::verify_hash256_merkle;
+use chain::BlockHeader;
 use primitives::hash::H256;
 use types::SPVError;
 
@@ -28,6 +29,8 @@ pub fn merkle_prove(txid: H256, merkle_root: H256, intermediate_nodes: Vec<H256>
     }
     Ok(())
 }
+
+pub fn validate_headers(_headers: Vec<BlockHeader>) -> bool { true }
 
 #[cfg(test)]
 mod tests {

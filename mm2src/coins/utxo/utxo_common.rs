@@ -3,8 +3,8 @@ use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanc
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::init_withdraw::WithdrawTaskHandle;
-use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
-                               UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, ElectrumBlockHeader, UnspentInfo,
+                               UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawFrom, WithdrawResult,
@@ -32,7 +32,7 @@ use rpc::v1::types::{Bytes as BytesJson, TransactionInputEnum, H256 as H256Json}
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant,
+use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
@@ -47,6 +47,7 @@ use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorag
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 pub use chain::Transaction as UtxoTx;
+use spv_validation::helpers_validation::validate_headers;
 use spv_validation::spv_proof::SPVProof;
 use spv_validation::types::SPVError;
 
@@ -3284,11 +3285,101 @@ fn retrieve_header_storage_from_ctx(ctx: &MmArc) -> impl BlockHeaderStorage {
     SqliteBlockHeadersStorage(ctx.sqlite_connection.as_option().unwrap().clone())
 }
 
+async fn get_best_block(rpc: &ElectrumClient) -> Result<ElectrumBlockHeader, MmError<SPVError>> {
+    rpc.blockchain_headers_subscribe()
+        .compat()
+        .await
+        .map_err(|_e| MmError::new(SPVError::UnableToGetHeader))
+}
+
+pub async fn retrieve_last_headers<T>(
+    coin: &T,
+) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
+    let electrum_rpc_client = match &coin.as_ref().rpc_client {
+        UtxoRpcClientEnum::Native(_) => return MmError::err(SPVError::UnknownError),
+        UtxoRpcClientEnum::Electrum(electrum) => electrum,
+    };
+    let best_block = get_best_block(electrum_rpc_client).await;
+    let (from, count) = match best_block {
+        Ok(block) => {
+            let block_height = block.block_height();
+            let from = if block_height < 100 { 0 } else { block_height - 100 };
+            (from, NonZeroU64::new(100).unwrap())
+        },
+        Err(_) => {
+            error!("Unable to retrieve last block height - skipping");
+            return MmError::err(SPVError::UnableToGetHeader);
+        },
+    };
+    let headers_resp = electrum_rpc_client.blockchain_block_headers(from, count).compat().await;
+    let (block_registry, block_headers) = match headers_resp {
+        Ok(headers) => {
+            if headers.count == 0 {
+                return MmError::err(SPVError::UnableToGetHeader);
+            }
+            let len = CompactInteger::from(headers.count);
+            let mut serialized = serialize(&len).take();
+            serialized.extend(headers.hex.0.into_iter());
+            let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), CoinVariant::Standard);
+            let maybe_block_headers = reader.read_list::<BlockHeader>();
+            let block_headers = match maybe_block_headers {
+                Ok(headers) => headers,
+                Err(_) => return MmError::err(SPVError::MalformattedHeader),
+            };
+            let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
+            let mut starting_height = from;
+            for block_header in &block_headers {
+                block_registry.insert(starting_height, block_header.clone());
+                starting_height += 1;
+            }
+            (block_registry, block_headers)
+        },
+        Err(_) => return MmError::err(SPVError::UnableToGetHeader),
+    };
+    Ok((block_registry, block_headers))
+}
+
 pub async fn block_header_utxo_loop<T>(ctx: MmArc, weak: UtxoWeak, check_every: f64, constructor: impl Fn(UtxoArc) -> T)
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
-    let _storage = retrieve_header_storage_from_ctx(&ctx);
+    let coin = match weak.upgrade() {
+        Some(arc) => constructor(arc),
+        None => return,
+    };
+    match retrieve_last_headers(&coin).await {
+        Ok((block_registry, block_headers)) => {
+            if validate_headers(block_headers) {
+                let ticker = coin.as_ref().conf.ticker.as_str();
+                let storage = retrieve_header_storage_from_ctx(&ctx);
+                match storage.is_initialized_for(ticker).await {
+                    Ok(is_init) => {
+                        if !is_init {
+                            match storage.init(ticker).await {
+                                Ok(()) => {},
+                                Err(e) => {
+                                    error!("{:?}", e);
+                                    return;
+                                },
+                            }
+                        }
+                    },
+                    Err(_e) => return,
+                }
+                let _ = storage
+                    .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), block_registry)
+                    .await;
+            }
+        },
+        Err(err) => {
+            error!("error: {:?}", err);
+            return;
+        },
+    }
+    drop(coin);
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         info!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);

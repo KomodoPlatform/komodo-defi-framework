@@ -1023,7 +1023,7 @@ impl Into<BlockHeaderNonce> for ElectrumNonce {
 
 #[derive(Debug, Deserialize)]
 pub struct ElectrumBlockHeadersRes {
-    count: u64,
+    pub count: u64,
     pub hex: BytesJson,
     #[allow(dead_code)]
     max: u64,
