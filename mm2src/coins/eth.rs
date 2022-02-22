@@ -60,6 +60,7 @@ use super::{BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMe
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageValue, Transaction, TransactionDetails,
             TransactionEnum, TransactionFut, ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut,
             WithdrawRequest, WithdrawResult};
+
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 

@@ -1384,7 +1384,7 @@ fn test_round_to() {
 
 pub const fn ten() -> usize { 10 }
 
-fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
+pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
 
 #[derive(Debug, Deserialize)]
 pub struct PagingOptions {
@@ -1683,7 +1683,7 @@ fn test_is_acceptable_input_on_repeated_characters() {
     );
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub enum PagingOptionsEnum<Id> {
     FromId(Id),
     PageNumber(NonZeroUsize),

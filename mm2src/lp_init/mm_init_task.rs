@@ -4,24 +4,22 @@ use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::SuccessResponse;
-use crypto::hw_rpc_task::{TrezorConnectStatuses, TrezorRpcTaskConnectProcessor};
-use crypto::trezor::TrezorPinMatrix3x3Response;
+use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction,
+                          TrezorRpcTaskConnectProcessor};
 use crypto::{CryptoCtx, HwWalletType};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus};
+use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_json as json;
-use std::convert::TryFrom;
 use std::time::Duration;
 
 const MM_TREZOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(300);
 const MM_INIT_TREZOR_PIN_TIMEOUT: Duration = Duration::from_secs(600);
 
-pub type MmInitTaskManager =
-    RpcTaskManager<SuccessResponse, MmInitError, MmInitInProgressStatus, MmInitAwaitingStatus, MmInitUserAction>;
-pub type MmInitTaskManagerArc =
-    RpcTaskManagerShared<SuccessResponse, MmInitError, MmInitInProgressStatus, MmInitAwaitingStatus, MmInitUserAction>;
+pub type MmInitAwaitingStatus = HwRpcTaskAwaitingStatus;
+pub type MmInitUserAction = HwRpcTaskUserAction;
+
+pub type MmInitTaskManagerShared = RpcTaskManagerShared<MmInitTask>;
 pub type MmInitStatus = RpcTaskStatus<SuccessResponse, MmInitError, MmInitInProgressStatus, MmInitAwaitingStatus>;
-type MmInitTaskHandle =
-    RpcTaskHandle<SuccessResponse, MmInitError, MmInitInProgressStatus, MmInitAwaitingStatus, MmInitUserAction>;
+type MmInitTaskHandle = RpcTaskHandle<MmInitTask>;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub enum MmInitInProgressStatus {
@@ -32,39 +30,20 @@ pub enum MmInitInProgressStatus {
     ReadPublicKeyFromTrezor,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub enum MmInitAwaitingStatus {
-    WaitForTrezorPin,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "action_type")]
-pub enum MmInitUserAction {
-    TrezorPin(TrezorPinMatrix3x3Response),
-}
-
-impl TryFrom<MmInitUserAction> for TrezorPinMatrix3x3Response {
-    type Error = RpcTaskError;
-
-    fn try_from(value: MmInitUserAction) -> Result<Self, Self::Error> {
-        match value {
-            MmInitUserAction::TrezorPin(pin) => Ok(pin),
-        }
-    }
-}
-
 pub struct MmInitTask {
     ctx: MmArc,
 }
 
-#[async_trait]
-impl RpcTask for MmInitTask {
+impl RpcTaskTypes for MmInitTask {
     type Item = SuccessResponse;
     type Error = MmInitError;
     type InProgressStatus = MmInitInProgressStatus;
     type AwaitingStatus = MmInitAwaitingStatus;
     type UserAction = MmInitUserAction;
+}
 
+#[async_trait]
+impl RpcTask for MmInitTask {
     fn initial_status(&self) -> Self::InProgressStatus { MmInitInProgressStatus::InitializingCryptoCtx }
 
     async fn run(self, task_handle: &MmInitTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
@@ -81,7 +60,7 @@ impl RpcTask for MmInitTask {
         })?;
         match hw_wallet {
             HwWalletType::Trezor => {
-                let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, TrezorConnectStatuses {
+                let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, HwConnectStatuses {
                     on_connect: MmInitInProgressStatus::WaitingForTrezorToConnect,
                     on_connected: MmInitInProgressStatus::Initializing,
                     on_connection_failed: MmInitInProgressStatus::Initializing,
@@ -108,7 +87,7 @@ impl MmInitTask {
     /// Panic if the MarketMaker instance is initialized already.
     pub fn spawn(self) -> MmInitResult<()> {
         let init_ctx = MmInitContext::from_ctx(&self.ctx).map_to_mm(MmInitError::Internal)?;
-        let task_id = MmInitTaskManager::spawn_rpc_task(&init_ctx.mm_init_task_manager, self)?;
+        let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.mm_init_task_manager, self)?;
         init_ctx
             .mm_init_task_id
             .pin(task_id)

@@ -11,7 +11,7 @@ bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "sec
 common = { path = "../common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
-#lazy_static = "1.4"
+secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
 serde_derive = "1.0"
 

@@ -1,9 +1,14 @@
 use super::*;
+use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
+use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
+use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{CanRefundHtlc, CoinBalance, TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawResult};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
+            TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress};
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -16,6 +21,7 @@ use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use common::now_ms;
+use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
@@ -61,102 +67,6 @@ lazy_static! {
 
 pub const HISTORY_TOO_LARGE_ERR_CODE: i64 = -1;
 
-pub struct UtxoArcBuilder<'a> {
-    ctx: &'a MmArc,
-    ticker: &'a str,
-    conf: &'a Json,
-    activation_params: UtxoActivationParams,
-    priv_key: PrivKeyBuildPolicy<'a>,
-}
-
-impl<'a> UtxoArcBuilder<'a> {
-    pub fn new(
-        ctx: &'a MmArc,
-        ticker: &'a str,
-        conf: &'a Json,
-        activation_params: UtxoActivationParams,
-        priv_key: PrivKeyBuildPolicy<'a>,
-    ) -> UtxoArcBuilder<'a> {
-        UtxoArcBuilder {
-            ctx,
-            ticker,
-            conf,
-            activation_params,
-            priv_key,
-        }
-    }
-
-    pub fn with_priv_key(
-        ctx: &'a MmArc,
-        ticker: &'a str,
-        conf: &'a Json,
-        activation_params: UtxoActivationParams,
-        priv_key: &'a [u8],
-    ) -> UtxoArcBuilder<'a> {
-        UtxoArcBuilder {
-            ctx,
-            ticker,
-            conf,
-            activation_params,
-            priv_key: PrivKeyBuildPolicy::PrivKey(priv_key),
-        }
-    }
-}
-
-#[async_trait]
-impl UtxoCoinBuilder for UtxoArcBuilder<'_> {
-    type ResultCoin = UtxoArc;
-
-    async fn build(self) -> UtxoCoinBuildResult<Self::ResultCoin> {
-        let utxo = self.build_utxo_fields().await?;
-        Ok(UtxoArc(Arc::new(utxo)))
-    }
-
-    fn ctx(&self) -> &MmArc { self.ctx }
-
-    fn conf(&self) -> &Json { self.conf }
-
-    fn activation_params(&self) -> UtxoActivationParams { self.activation_params.clone() }
-
-    fn ticker(&self) -> &str { self.ticker }
-
-    fn priv_key(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key.clone() }
-}
-
-pub async fn utxo_arc_from_conf_and_params<T>(
-    ctx: &MmArc,
-    ticker: &str,
-    conf: &Json,
-    activation_params: UtxoActivationParams,
-    priv_key: PrivKeyBuildPolicy<'_>,
-    constructor: impl Fn(UtxoArc) -> T + Send + 'static,
-) -> UtxoCoinBuildResult<T>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
-{
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, activation_params.clone(), priv_key);
-    let utxo_arc = builder.build().await?;
-    let coin = constructor(utxo_arc.clone());
-
-    if let Some(merge_params) = activation_params.utxo_merge_params {
-        let weak = utxo_arc.downgrade();
-        let merge_loop = merge_utxo_loop(
-            weak,
-            merge_params.merge_at,
-            merge_params.check_every,
-            merge_params.max_merge_at_once,
-            constructor,
-        );
-        info!("Starting UTXO merge loop for coin {}", ticker);
-        spawn(merge_loop);
-    }
-
-    let block_header_loop = block_header_utxo_loop(ctx.clone(), 60.0, utxo_arc);
-    info!("Starting UTXO download header loop for coin {}", ticker);
-    spawn(block_header_loop);
-    Ok(coin)
-}
-
 fn ten_f64() -> f64 { 10. }
 
 fn one_hundred() -> usize { 100 }
@@ -183,6 +93,228 @@ pub async fn get_tx_fee(coin: &UtxoCoinFields) -> Result<ActualTxFee, JsonRpcErr
         },
         TxFee::FixedPerKb(satoshis) => Ok(ActualTxFee::FixedPerKb(*satoshis)),
     }
+}
+
+pub fn derive_address<T>(
+    coin: &T,
+    hd_account: &UtxoHDAccount,
+    chain: Bip44Chain,
+    address_id: u32,
+) -> MmResult<HDAddress<Address, Public>, AddressDerivingError>
+where
+    T: UtxoCommonOps,
+{
+    let change_child = chain.to_child_number();
+    let address_id_child = ChildNumber::from(address_id);
+
+    let derived_pubkey = hd_account
+        .extended_pubkey
+        .derive_child(change_child)?
+        .derive_child(address_id_child)?;
+    let address = coin.address_from_extended_pubkey(&derived_pubkey);
+    let pubkey = Public::Compressed(H264::from(derived_pubkey.public_key().serialize()));
+
+    let mut derivation_path = hd_account.account_derivation_path.to_derivation_path();
+    derivation_path.push(change_child);
+    derivation_path.push(address_id_child);
+    Ok(HDAddress {
+        address,
+        pubkey,
+        derivation_path,
+    })
+}
+
+pub async fn create_new_account<'a, Coin, XPubExtractor>(
+    coin: &Coin,
+    hd_wallet: &'a UtxoHDWallet,
+    xpub_extractor: &XPubExtractor,
+) -> MmResult<HDAccountMut<'a, UtxoHDAccount>, NewAccountCreatingError>
+where
+    Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>,
+    XPubExtractor: HDXPubExtractor + Sync,
+{
+    const INIT_ACCOUNT_ID: u32 = 0;
+    let new_account_id = hd_wallet
+        .accounts
+        .lock()
+        .await
+        .iter()
+        // The last element of the BTreeMap has the max account index.
+        .last()
+        .map(|(account_id, _account)| *account_id + 1)
+        .unwrap_or(INIT_ACCOUNT_ID);
+    if new_account_id >= ChildNumber::HARDENED_FLAG {
+        return MmError::err(NewAccountCreatingError::AccountLimitReached {
+            max_accounts_number: ChildNumber::HARDENED_FLAG,
+        });
+    }
+
+    let account_child_hardened = true;
+    let account_child = ChildNumber::new(new_account_id, account_child_hardened)
+        .map_to_mm(|e| NewAccountCreatingError::Internal(e.to_string()))?;
+
+    let account_derivation_path: Bip44PathToAccount = hd_wallet.derivation_path.derive(account_child)?;
+    let account_pubkey = coin
+        .extract_extended_pubkey(xpub_extractor, account_derivation_path.to_derivation_path())
+        .await?;
+
+    let new_account = UtxoHDAccount {
+        account_id: new_account_id,
+        extended_pubkey: account_pubkey,
+        account_derivation_path,
+        // We don't know how many addresses are used by the user at this moment.
+        external_addresses_number: 0,
+        internal_addresses_number: 0,
+    };
+
+    let accounts = hd_wallet.accounts.lock().await;
+    if accounts.contains_key(&new_account_id) {
+        let error = format!(
+            "Account '{}' has been activated while we proceed the 'create_new_account' function",
+            new_account_id
+        );
+        return MmError::err(NewAccountCreatingError::Internal(error));
+    }
+    Ok(AsyncMutexGuard::map(accounts, |accounts| {
+        accounts
+            .entry(new_account_id)
+            // the `entry` method should return [`Entry::Vacant`] due to the checks above
+            .or_insert(new_account)
+    }))
+}
+
+pub async fn produce_hd_address_checker<T>(coin: &T) -> BalanceResult<UtxoAddressBalanceChecker>
+where
+    T: AsRef<UtxoCoinFields>,
+{
+    Ok(UtxoAddressBalanceChecker::init(coin.as_ref().rpc_client.clone()).await?)
+}
+
+pub async fn scan_for_new_addresses<T>(
+    coin: &T,
+    hd_account: &mut T::HDAccount,
+    address_checker: &T::HDAddressChecker,
+    gap_limit: u32,
+) -> BalanceResult<Vec<HDAddressBalance>>
+where
+    T: HDWalletBalanceOps + Sync,
+    T::Address: std::fmt::Display,
+{
+    let mut addresses =
+        scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::External, gap_limit).await?;
+    addresses
+        .extend(scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::Internal, gap_limit).await?);
+
+    Ok(addresses)
+}
+
+/// Checks addresses that either had empty transaction history last time we checked or has not been checked before.
+/// The checking stops at the moment when we find `gap_limit` consecutive empty addresses.
+pub async fn scan_for_new_addresses_impl<T>(
+    coin: &T,
+    hd_account: &mut T::HDAccount,
+    address_checker: &T::HDAddressChecker,
+    chain: Bip44Chain,
+    gap_limit: u32,
+) -> BalanceResult<Vec<HDAddressBalance>>
+where
+    T: HDWalletBalanceOps + Sync,
+    T::Address: std::fmt::Display,
+{
+    let mut balances = Vec::with_capacity(gap_limit as usize);
+
+    // Get the first unknown address id.
+    let mut checking_address_id = hd_account
+        .known_addresses_number(chain)
+        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
+        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+
+    let mut unused_addresses_counter = 0;
+    while checking_address_id < ChildNumber::HARDENED_FLAG && unused_addresses_counter < gap_limit {
+        let HDAddress {
+            address: checking_address,
+            derivation_path: checking_address_der_path,
+            ..
+        } = coin.derive_address(hd_account, chain, checking_address_id)?;
+
+        match coin.is_address_used(&checking_address, address_checker).await? {
+            // We found a non-empty address, so we have to fill up the balance list
+            // with zeros starting from `last_non_empty_address_id = checking_address_id - unused_addresses_counter`.
+            AddressBalanceStatus::Used(non_empty_balance) => {
+                let last_non_empty_address_id = checking_address_id - unused_addresses_counter;
+                for empty_address_id in last_non_empty_address_id..checking_address_id {
+                    let empty_address = coin.derive_address(hd_account, chain, empty_address_id)?;
+
+                    balances.push(HDAddressBalance {
+                        address: empty_address.address.to_string(),
+                        derivation_path: RpcDerivationPath(empty_address.derivation_path),
+                        chain,
+                        balance: CoinBalance::default(),
+                    });
+                }
+
+                balances.push(HDAddressBalance {
+                    address: checking_address.to_string(),
+                    derivation_path: RpcDerivationPath(checking_address_der_path),
+                    chain,
+                    balance: non_empty_balance,
+                });
+                // Reset the counter of unused addresses to zero since we found a non-empty address.
+                unused_addresses_counter = 0;
+            },
+            AddressBalanceStatus::NotUsed => unused_addresses_counter += 1,
+        }
+
+        checking_address_id += 1;
+    }
+
+    let known_addresses_number_mut = hd_account
+        .known_addresses_number_mut(chain)
+        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
+        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+    *known_addresses_number_mut = checking_address_id - unused_addresses_counter;
+
+    Ok(balances)
+}
+
+pub async fn address_balance<T>(coin: &T, address: &Address) -> BalanceResult<CoinBalance>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+{
+    let balance = coin
+        .as_ref()
+        .rpc_client
+        .display_balance(address.clone(), coin.as_ref().decimals)
+        .compat()
+        .await?;
+
+    if !coin.as_ref().check_utxo_maturity {
+        return Ok(CoinBalance {
+            spendable: balance,
+            unspendable: BigDecimal::from(0),
+        });
+    }
+
+    let unspendable = address_unspendable_balance(coin, address, &balance).await?;
+    let spendable = &balance - &unspendable;
+    Ok(CoinBalance { spendable, unspendable })
+}
+
+pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> { &coin.derivation_method }
+
+pub async fn extract_extended_pubkey<XPubExtractor>(
+    conf: &UtxoCoinConf,
+    xpub_extractor: &XPubExtractor,
+    derivation_path: DerivationPath,
+) -> MmResult<Secp256k1ExtendedPublicKey, HDExtractPubkeyError>
+where
+    XPubExtractor: HDXPubExtractor,
+{
+    let trezor_coin = conf
+        .trezor_coin
+        .or_mm_err(|| HDExtractPubkeyError::CoinDoesntSupportTrezor)?;
+    let xpub = xpub_extractor.extract_utxo_xpub(trezor_coin, derivation_path).await?;
+    Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(HDExtractPubkeyError::InvalidXpub)
 }
 
 /// returns the fee required to be paid for HTLC spend transaction
@@ -1430,18 +1562,18 @@ where
     }
 }
 
-pub fn my_balance(coin: &UtxoCoinFields) -> BalanceFut<CoinBalance> {
-    let my_address = try_f!(coin.derivation_method.iguana_or_err().mm_err(BalanceError::from)).clone();
-    Box::new(
-        coin.rpc_client
-            .display_balance(my_address, coin.decimals)
-            .map_to_mm_fut(BalanceError::from)
-            // at the moment standard UTXO coins do not have an unspendable balance
-            .map(|spendable| CoinBalance {
-                spendable,
-                unspendable: BigDecimal::from(0),
-            }),
-    )
+pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+{
+    let my_address = try_f!(coin
+        .as_ref()
+        .derivation_method
+        .iguana_or_err()
+        .mm_err(BalanceError::from))
+    .clone();
+    let fut = async move { address_balance(&coin, &my_address).await };
+    Box::new(fut.boxed().compat())
 }
 
 pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -1557,7 +1689,7 @@ pub async fn withdraw<T>(coin: T, req: WithdrawRequest) -> WithdrawResult
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
 {
-    StandardUtxoWithdraw::init(coin, req)?.build().await
+    StandardUtxoWithdraw::new(coin, req)?.build().await
 }
 
 pub async fn init_withdraw<T>(
@@ -1567,9 +1699,102 @@ pub async fn init_withdraw<T>(
     task_handle: &WithdrawTaskHandle,
 ) -> WithdrawResult
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + UtxoSignerOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields>
+        + UtxoCommonOps
+        + MarketCoinOps
+        + UtxoSignerOps
+        + GetWithdrawSenderAddress<Address = Address, Pubkey = Public>
+        + Send
+        + Sync
+        + 'static,
 {
-    InitUtxoWithdraw::init(ctx, coin, req, task_handle).await?.build().await
+    InitUtxoWithdraw::new(ctx, coin, req, task_handle).await?.build().await
+}
+
+pub async fn get_withdraw_from_address<T>(
+    coin: &T,
+    req: &WithdrawRequest,
+) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError>
+where
+    T: CoinWithDerivationMethod<Address = Address, HDWallet = <T as HDWalletCoinOps>::HDWallet>
+        + HDWalletCoinOps<Address = Address, Pubkey = Public>
+        + UtxoCommonOps,
+{
+    match coin.derivation_method() {
+        DerivationMethod::Iguana(my_address) => get_withdraw_iguana_sender(coin, req, my_address),
+        DerivationMethod::HDWallet(hd_wallet) => get_withdraw_hd_sender(coin, req, hd_wallet).await,
+    }
+}
+
+pub fn get_withdraw_iguana_sender<T>(
+    coin: &T,
+    req: &WithdrawRequest,
+    my_address: &Address,
+) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError>
+where
+    T: UtxoCommonOps,
+{
+    if req.from.is_some() {
+        let error = "'from' is not supported if the coin is initialized with an Iguana private key";
+        return MmError::err(WithdrawError::UnexpectedFromAddress(error.to_owned()));
+    }
+    let pubkey = coin
+        .my_public_key()
+        .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
+    Ok(WithdrawSenderAddress {
+        address: my_address.clone(),
+        pubkey: *pubkey,
+        derivation_path: None,
+    })
+}
+
+pub async fn get_withdraw_hd_sender<T>(
+    coin: &T,
+    req: &WithdrawRequest,
+    hd_wallet: &T::HDWallet,
+) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError>
+where
+    T: HDWalletCoinOps<Address = Address, Pubkey = Public>,
+{
+    let HDAddressId {
+        account_id,
+        chain,
+        address_id,
+    } = match req.from.clone().or_mm_err(|| WithdrawError::FromAddressNotFound)? {
+        WithdrawFrom::AddressId(id) => id,
+        WithdrawFrom::DerivationPath { derivation_path } => {
+            let derivation_path = Bip44DerivationPath::from_str(&derivation_path)
+                .map_to_mm(Bip44DerPathError::from)
+                .mm_err(|e| WithdrawError::UnexpectedFromAddress(e.to_string()))?;
+            let coin_type = derivation_path.coin_type();
+            let expected_coin_type = hd_wallet.coin_type();
+            if coin_type != expected_coin_type {
+                let error = format!(
+                    "Derivation path '{}' must has '{}' coin type",
+                    derivation_path, expected_coin_type
+                );
+                return MmError::err(WithdrawError::UnexpectedFromAddress(error));
+            }
+            HDAddressId::from(derivation_path)
+        },
+    };
+
+    let hd_account = hd_wallet
+        .get_account(account_id)
+        .await
+        .or_mm_err(|| WithdrawError::UnknownAccount { account_id })?;
+    let hd_address = coin.derive_address(&hd_account, chain, address_id)?;
+
+    let is_address_activated = hd_account
+        .is_address_activated(chain, address_id)
+        // If [`HDWalletCoinOps::derive_address`] succeeds, [`HDAccountOps::is_address_activated`] shouldn't fails with an `InvalidBip44ChainError`.
+        .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
+    if !is_address_activated {
+        let error = format!("'{}' address is not activated", hd_address.address);
+        return MmError::err(WithdrawError::UnexpectedFromAddress(error));
+    }
+
+    Ok(WithdrawSenderAddress::from(hd_address))
 }
 
 pub fn decimals(coin: &UtxoCoinFields) -> u8 { coin.decimals }
@@ -2440,8 +2665,7 @@ pub fn is_coin_protocol_supported(coin: &dyn UtxoCommonOps, info: &Option<Vec<u8
     }
 }
 
-#[allow(clippy::needless_lifetimes)]
-pub async fn ordered_mature_unspents<'a, T>(
+pub async fn list_mature_unspent_ordered<'a, T>(
     coin: &'a T,
     address: &Address,
 ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>
@@ -2472,7 +2696,7 @@ where
         Ok(confirmations as u32)
     }
 
-    let (unspents, recently_spent) = list_unspent_ordered(coin, address).await?;
+    let (unspents, recently_spent) = coin.list_all_unspent_ordered(address).await?;
     let block_count = coin.as_ref().rpc_client.get_block_count().compat().await?;
 
     let mut result = Vec::with_capacity(unspents.len());
@@ -2586,14 +2810,17 @@ pub async fn cache_transaction_if_possible(_coin: &UtxoCoinFields, _tx: &RpcTran
     Ok(())
 }
 
-pub async fn my_unspendable_balance<T>(coin: &T, total_balance: &BigDecimal) -> BalanceResult<BigDecimal>
+pub async fn address_unspendable_balance<T>(
+    coin: &T,
+    address: &Address,
+    total_balance: &BigDecimal,
+) -> BalanceResult<BigDecimal>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + ?Sized,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
 {
     let mut attempts = 0i32;
-    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
     loop {
-        let (mature_unspents, _) = coin.ordered_mature_unspents(my_address).await?;
+        let (mature_unspents, _) = coin.list_mature_unspent_ordered(address).await?;
         let spendable_balance = mature_unspents.iter().fold(BigDecimal::zero(), |acc, x| {
             acc + big_decimal_from_sat(x.value as i64, coin.as_ref().decimals)
         });
@@ -2614,7 +2841,7 @@ where
             attempts, spendable_balance, total_balance
         );
 
-        // the balance could be changed by other instance between my_balance() and ordered_mature_unspents() calls
+        // the balance could be changed by other instance between my_balance() and list_mature_unspent_ordered() calls
         // try again
         attempts += 1;
         Timer::sleep(0.3).await;
@@ -2970,8 +3197,21 @@ pub fn dex_fee_script(uuid: [u8; 16], time_lock: u32, watcher_pub: &Public, send
         .into_script()
 }
 
-#[allow(clippy::needless_lifetimes)]
 pub async fn list_unspent_ordered<'a, T>(
+    coin: &'a T,
+    address: &Address,
+) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+{
+    if coin.as_ref().check_utxo_maturity {
+        coin.list_mature_unspent_ordered(address).await
+    } else {
+        coin.list_all_unspent_ordered(address).await
+    }
+}
+
+pub async fn list_all_unspent_ordered<'a, T>(
     coin: &'a T,
     address: &Address,
 ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>
@@ -3038,7 +3278,7 @@ async fn block_header_utxo_loop(_ctx: MmArc, check_every: f64, coin: UtxoArc) {
     }
 }
 
-async fn merge_utxo_loop<T>(
+pub async fn merge_utxo_loop<T>(
     weak: UtxoWeak,
     merge_at: usize,
     check_every: f64,
@@ -3133,7 +3373,7 @@ where
 pub fn addr_format(coin: &dyn AsRef<UtxoCoinFields>) -> &UtxoAddressFormat {
     match coin.as_ref().derivation_method {
         DerivationMethod::Iguana(ref my_address) => &my_address.addr_format,
-        DerivationMethod::HDWallet(HDWalletInfo { ref address_format, .. }) => address_format,
+        DerivationMethod::HDWallet(UtxoHDWallet { ref address_format, .. }) => address_format,
     }
 }
 

@@ -13,7 +13,7 @@ doctest = false
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1"
+async-trait = "0.1.52"
 base64 = "0.10.0"
 bigdecimal = { version = "0.1.0", features = ["serde"] }
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
@@ -50,6 +50,7 @@ lightning = "0.0.103"
 metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.8"
 rand = { version = "0.7", features = ["std", "small_rng"] }

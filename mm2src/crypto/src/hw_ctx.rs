@@ -2,18 +2,33 @@ use crate::crypto_ctx::{MM2_INTERNAL_DERIVATION_PATH, MM2_INTERNAL_ECDSA_CURVE};
 use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
 use crate::trezor::TrezorSession;
 use crate::HwWalletType;
-use bip32::ExtendedPublicKey;
 use common::log::warn;
 use common::mm_error::prelude::*;
-use hw_common::primitives::DerivationPath;
+use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
+use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 use trezor::client::TrezorClient;
-use trezor::{ProcessTrezorResponse, TrezorCoin, TrezorRequestProcessor};
+use trezor::utxo::TrezorUtxoCoin;
+use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
-pub(crate) const MM2_TREZOR_INTERNAL_COIN: TrezorCoin = TrezorCoin::Komodo;
+pub(crate) const MM2_TREZOR_INTERNAL_COIN: TrezorUtxoCoin = TrezorUtxoCoin::Komodo;
+
+#[derive(Clone)]
+pub struct HardwareWalletArc(Arc<HardwareWalletCtx>);
+
+impl Deref for HardwareWalletArc {
+    type Target = HardwareWalletCtx;
+
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl HardwareWalletArc {
+    pub fn new(ctx: HardwareWalletCtx) -> HardwareWalletArc { HardwareWalletArc(Arc::new(ctx)) }
+}
 
 pub struct HardwareWalletCtx {
     /// The pubkey derived from `MM2_INTERNAL_DERIVATION_PATH`.
@@ -74,8 +89,7 @@ impl HardwareWalletCtx {
             .mm_err(HwError::from)?
             .process(processor)
             .await?;
-        let extended_pubkey =
-            ExtendedPublicKey::<secp256k1::PublicKey>::from_str(&mm2_internal_xpub).map_to_mm(HwError::from)?;
+        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&mm2_internal_xpub).map_to_mm(HwError::from)?;
         Ok(H264::from(extended_pubkey.public_key().serialize()))
     }
 

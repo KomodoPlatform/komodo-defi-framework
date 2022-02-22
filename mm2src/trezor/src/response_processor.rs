@@ -2,7 +2,9 @@ use crate::{TrezorError, TrezorPinMatrix3x3Response};
 use async_trait::async_trait;
 use common::mm_error::prelude::*;
 use common::NotSame;
+use derive_more::Display;
 
+#[derive(Display)]
 pub enum TrezorProcessingError<E> {
     TrezorError(TrezorError),
     ProcessorError(E),

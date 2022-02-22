@@ -21,6 +21,7 @@
 #![feature(integer_atomics)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
+#![feature(stmt_expr_attributes)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate fomat_macros;
@@ -38,6 +39,7 @@ use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -51,7 +53,7 @@ use serde_json::{self as json, Value as Json};
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::ops::Deref;
+use std::ops::{Add, Deref};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -59,6 +61,19 @@ use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 #[cfg(feature = "zhtlc")]
 use zcash_primitives::transaction::Transaction as ZTransaction;
+
+cfg_native! {
+    use async_std::fs;
+    use futures::AsyncWriteExt;
+    use std::io;
+}
+
+cfg_wasm32! {
+    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use tx_history_db::TxHistoryDb;
+
+    pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
+}
 
 // using custom copy of try_fus as futures crate was renamed to futures01
 macro_rules! try_fus {
@@ -79,68 +94,51 @@ macro_rules! try_f {
     };
 }
 
+pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
-
 pub mod eth;
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
-
+pub mod hd_pubkey;
+pub mod hd_wallet;
+pub mod init_create_account;
 pub mod init_withdraw;
-
-pub mod utxo;
-use utxo::qtum::{self, qtum_coin_from_with_priv_key, QtumCoin};
-use utxo::slp::SlpToken;
-use utxo::utxo_common::big_decimal_from_sat_unsigned;
-use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
-
-pub mod qrc20;
-use crate::utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
-use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
-
 pub mod lightning;
-
+#[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
+pub mod my_tx_history_v2;
+pub mod qrc20;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sql_tx_history_storage;
-
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
-pub use test_coin::TestCoin;
-
 #[cfg(target_arch = "wasm32")] pub mod tx_history_db;
-
-#[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
-pub mod my_tx_history_v2;
-
+pub mod utxo;
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 pub mod z_coin;
 
-use crate::init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
 use crate::lightning::LightningCoin;
-use crate::qrc20::Qrc20ActivationParams;
-use crate::qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
-use crate::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use crate::utxo::UtxoActivationParams;
-use crypto::CryptoCtx;
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use hd_wallet::{HDAddress, HDAddressId};
+use init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared};
+use init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
+use qrc20::Qrc20ActivationParams;
+use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
+use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
+use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
+use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
+use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
+use utxo::rpc_clients::UtxoRpcError;
+use utxo::slp::SlpToken;
+use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
+use utxo::utxo_common::big_decimal_from_sat_unsigned;
+use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
+use utxo::UtxoActivationParams;
+use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
 use z_coin::{z_coin_from_conf_and_params, ZCoin};
 
-cfg_native! {
-    use async_std::fs;
-    use futures::AsyncWriteExt;
-    use std::io;
-}
-
-cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked};
-    use tx_history_db::TxHistoryDb;
-
-    pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
-}
+pub use test_coin::TestCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
@@ -455,17 +453,51 @@ pub enum WithdrawFee {
     },
 }
 
-#[derive(Deserialize)]
+pub struct WithdrawSenderAddress<Address, Pubkey> {
+    address: Address,
+    pubkey: Pubkey,
+    derivation_path: Option<DerivationPath>,
+}
+
+impl<Address, Pubkey> From<HDAddress<Address, Pubkey>> for WithdrawSenderAddress<Address, Pubkey> {
+    fn from(addr: HDAddress<Address, Pubkey>) -> Self {
+        WithdrawSenderAddress {
+            address: addr.address,
+            pubkey: addr.pubkey,
+            derivation_path: Some(addr.derivation_path),
+        }
+    }
+}
+
+/// Rename to `GetWithdrawSenderAddresses` when withdraw supports multiple `from` addresses.
+#[async_trait]
+pub trait GetWithdrawSenderAddress {
+    type Address;
+    type Pubkey;
+
+    async fn get_withdraw_sender_address(
+        &self,
+        req: &WithdrawRequest,
+    ) -> MmResult<WithdrawSenderAddress<Self::Address, Self::Pubkey>, WithdrawError>;
+}
+
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
-pub enum WithdrawFromAddress {
-    DerivationPath { derivation_path: String },
-    // Address { address: String },
+pub enum WithdrawFrom {
+    // AccountId { account_id: u32 },
+    AddressId(HDAddressId),
+    /// Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
+    /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
+    /// It's better to show the user an informative error.
+    DerivationPath {
+        derivation_path: String,
+    },
 }
 
 #[derive(Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
-    from: Option<WithdrawFromAddress>,
+    from: Option<WithdrawFrom>,
     to: String,
     #[serde(default)]
     amount: BigDecimal,
@@ -501,7 +533,7 @@ pub struct GetStakingInfosRequest {
 impl WithdrawRequest {
     pub fn new(
         coin: String,
-        from: Option<WithdrawFromAddress>,
+        from: Option<WithdrawFrom>,
         to: String,
         amount: BigDecimal,
         max: bool,
@@ -707,9 +739,27 @@ pub struct CoinBalance {
 }
 
 impl CoinBalance {
+    pub fn new(spendable: BigDecimal) -> CoinBalance {
+        CoinBalance {
+            spendable,
+            unspendable: BigDecimal::from(0),
+        }
+    }
+
     pub fn into_total(self) -> BigDecimal { self.spendable + self.unspendable }
 
     pub fn get_total(&self) -> BigDecimal { &self.spendable + &self.unspendable }
+}
+
+impl Add for CoinBalance {
+    type Output = CoinBalance;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        CoinBalance {
+            spendable: self.spendable + rhs.spendable,
+            unspendable: self.unspendable + rhs.unspendable,
+        }
+    }
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
@@ -871,6 +921,10 @@ impl From<NumConversError> for BalanceError {
 
 impl From<DerivationMethodNotSupported> for BalanceError {
     fn from(e: DerivationMethodNotSupported) -> Self { BalanceError::DerivationMethodNotSupported(e) }
+}
+
+impl From<Bip32Error> for BalanceError {
+    fn from(e: Bip32Error) -> Self { BalanceError::Internal(e.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -1136,10 +1190,12 @@ pub enum WithdrawError {
     Timeout(Duration),
     #[display(fmt = "Unexpected user action. Expected '{}'", expected)]
     UnexpectedUserAction { expected: String },
-    #[display(fmt = "Request doesn't contain 'from' address")]
-    FromAddressIsNotSet,
-    #[display(fmt = "Error parsing 'from' address")]
-    ErrorParsingFromAddress(String),
+    #[display(fmt = "Request should contain a 'from' address/account")]
+    FromAddressNotFound,
+    #[display(fmt = "Unexpected 'from' address: {}", _0)]
+    UnexpectedFromAddress(String),
+    #[display(fmt = "Unknown '{}' account", account_id)]
+    UnknownAccount { account_id: u32 },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -1158,8 +1214,9 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
-            | WithdrawError::FromAddressIsNotSet
-            | WithdrawError::ErrorParsingFromAddress(_) => StatusCode::BAD_REQUEST,
+            | WithdrawError::FromAddressNotFound
+            | WithdrawError::UnexpectedFromAddress(_)
+            | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::NoTrezorDeviceAvailable
             | WithdrawError::TrezorDisconnected
             | WithdrawError::FoundUnexpectedDevice(_) => StatusCode::GONE,
@@ -1426,6 +1483,7 @@ pub struct CoinsContext {
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     withdraw_task_manager: WithdrawTaskManagerShared,
+    create_account_manager: CreateAccountTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
     /// The database has to be initialized only once!
     tx_history_db: ConstructibleDb<TxHistoryDb>,
@@ -1449,6 +1507,7 @@ impl CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
+                create_account_manager: CreateAccountTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
                 tx_history_db: ConstructibleDb::from_ctx(ctx),
             })
@@ -1514,6 +1573,23 @@ impl<T> PrivKeyPolicy<T> {
     }
 }
 
+#[derive(Clone)]
+pub enum PrivKeyBuildPolicy<'a> {
+    IguanaPrivKey(&'a [u8]),
+    HardwareWallet,
+}
+
+impl<'a> PrivKeyBuildPolicy<'a> {
+    pub fn from_crypto_ctx(crypto_ctx: &'a CryptoCtx) -> PrivKeyBuildPolicy<'a> {
+        match crypto_ctx {
+            CryptoCtx::KeyPair(key_pair_ctx) => {
+                PrivKeyBuildPolicy::IguanaPrivKey(key_pair_ctx.secp256k1_privkey_bytes())
+            },
+            CryptoCtx::HardwareWallet(_) => PrivKeyBuildPolicy::HardwareWallet,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum DerivationMethod<Address, HDWallet> {
     Iguana(Address),
@@ -1533,14 +1609,29 @@ impl<Address, HDWallet> DerivationMethod<Address, HDWallet> {
             .or_mm_err(|| DerivationMethodNotSupported::HdWalletNotSupported)
     }
 
+    pub fn hd_wallet(&self) -> Option<&HDWallet> {
+        match self {
+            DerivationMethod::Iguana(_) => None,
+            DerivationMethod::HDWallet(hd_wallet) => Some(hd_wallet),
+        }
+    }
+
     /// # Panic
     ///
     /// Panic if the address mode is [`DerivationMethod::HDWallet`].
     pub fn unwrap_iguana(&self) -> &Address { self.iguana_or_err().unwrap() }
 }
 
+#[async_trait]
+pub trait CoinWithDerivationMethod {
+    type Address;
+    type HDWallet;
+
+    fn derivation_method(&self) -> &DerivationMethod<Self::Address, Self::HDWallet>;
+}
+
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,
@@ -1764,11 +1855,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(utxo_standard_coin_with_priv_key(ctx, ticker, &coins_en, params, &secret).await).into()
+            try_s!(utxo_standard_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
         CoinProtocol::QTUM => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(qtum_coin_from_with_priv_key(ctx, ticker, &coins_en, params, &secret).await).into()
+            try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
@@ -1781,7 +1872,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
 
             try_s!(
-                qrc20_coin_from_conf_and_params(ctx, ticker, platform, &coins_en, params, &secret, contract_address)
+                qrc20_coin_from_conf_and_params(ctx, ticker, platform, &coins_en, &params, &secret, contract_address)
                     .await
             )
             .into()
@@ -1814,7 +1905,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::ZHTLC => {
             let dbdir = ctx.dbdir();
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, params, &secret, dbdir).await).into()
+            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, &params, &secret, dbdir).await).into()
         },
         proto => return ERR!("{:?} is not supported by lp_coininit", proto),
     };

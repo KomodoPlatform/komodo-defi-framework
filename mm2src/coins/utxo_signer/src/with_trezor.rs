@@ -4,9 +4,9 @@ use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
 use common::mm_error::prelude::*;
-use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
-                           UnsignedTxInput, UnsignedUtxoTx};
-use crypto::trezor::{TrezorClient, TrezorCoin};
+use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TrezorUtxoCoin, TxOutput,
+                           TxSignResult, UnsignedTxInput, UnsignedUtxoTx};
+use crypto::trezor::TrezorClient;
 use keys::bytes::Bytes;
 use rpc::v1::types::H256 as H256Json;
 use script::{SignatureVersion, UnsignedTransactionInput};
@@ -15,7 +15,7 @@ use serialization::deserialize;
 pub struct TrezorTxSigner<TxP> {
     pub trezor: TrezorClient,
     pub tx_provider: TxP,
-    pub trezor_coin: TrezorCoin,
+    pub trezor_coin: TrezorUtxoCoin,
     pub params: UtxoSignTxParams,
     pub fork_id: u32,
     pub branch_id: u32,

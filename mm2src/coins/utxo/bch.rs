@@ -3,6 +3,7 @@ use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStora
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
+use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
             TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult, WithdrawFut};
@@ -629,9 +630,10 @@ pub async fn bch_coin_from_conf_and_params(
             slp_tokens_infos: slp_tokens_infos.clone(),
         }
     };
-    let priv_key_policy = PrivKeyBuildPolicy::PrivKey(priv_key);
-    let coin: BchCoin = try_s!(
-        utxo_common::utxo_arc_from_conf_and_params(ctx, ticker, conf, params.utxo_params, priv_key_policy, constructor)
+
+    let coin = try_s!(
+        UtxoArcWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key, constructor)
+            .build()
             .await
     );
     Ok(coin)
@@ -752,11 +754,18 @@ impl UtxoCommonOps for BchCoin {
         .await
     }
 
-    async fn ordered_mature_unspents<'a>(
+    async fn list_all_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        self.list_unspent_ordered(address).await
+        utxo_common::list_all_unspent_ordered(self, address).await
+    }
+
+    async fn list_mature_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
+        utxo_common::list_all_unspent_ordered(self, address).await
     }
 
     fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {

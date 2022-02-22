@@ -10,5 +10,7 @@ async-trait = "0.1"
 common = { path = "../common" }
 derive_more = "0.99"
 futures = "0.3"
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1"
 serde_derive = "1"

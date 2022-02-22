@@ -1,6 +1,7 @@
-use super::rpc_clients::ElectrumProtocol;
+use super::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumProtocol};
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
+use common::executor::Timer;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
 

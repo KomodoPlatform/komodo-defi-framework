@@ -217,9 +217,9 @@ checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
 
 [[package]]
 name = "async-trait"
-version = "0.1.36"
+version = "0.1.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a265e3abeffdce30b2e26b7a11b222fe37c6067404001b434101457d0385eb92"
+checksum = "061a7acccaa286c011ddc30970520b98fa40e00c9d644633fb26b5fc63a265e3"
 dependencies = [
  "proc-macro2",
  "quote 1.0.7",
@@ -844,6 +844,7 @@ dependencies = [
  "metrics",
  "mocktopus",
  "num-traits 0.2.12",
+ "parking_lot 0.12.0",
  "primitives",
  "prost",
  "prost-build",
@@ -1176,13 +1177,16 @@ dependencies = [
  "bitcrypto",
  "common",
  "derive_more",
+ "enum-primitive-derive",
  "futures 0.3.15",
  "hex 0.4.3",
  "http 0.2.1",
  "hw_common",
  "keys",
+ "num-traits 0.1.43",
  "parking_lot 0.12.0",
  "primitives",
+ "rpc_task",
  "secp256k1",
  "ser_error",
  "ser_error_derive",
@@ -2284,6 +2288,7 @@ dependencies = [
  "futures 0.3.15",
  "js-sys",
  "rusb",
+ "secp256k1",
  "serde",
  "serde_derive",
  "wasm-bindgen",
@@ -4662,6 +4667,8 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.3.15",
+ "ser_error",
+ "ser_error_derive",
  "serde",
  "serde_derive",
 ]

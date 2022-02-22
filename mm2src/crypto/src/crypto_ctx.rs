@@ -1,6 +1,6 @@
 use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
-use crate::hw_ctx::HardwareWalletCtx;
-use crate::key_pair_ctx::KeyPairCtx;
+use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
+use crate::key_pair_ctx::KeyPairArc;
 use crate::HwResult;
 use bitcrypto::dhash160;
 use common::mm_ctx::{MmArc, MmWeak};
@@ -42,8 +42,8 @@ impl From<PrivKeyError> for CryptoInitError {
 }
 
 pub enum CryptoCtx {
-    KeyPair(KeyPairCtx),
-    HardwareWallet(HardwareWalletCtx),
+    KeyPair(KeyPairArc),
+    HardwareWallet(HardwareWalletArc),
 }
 
 impl CryptoCtx {
@@ -70,6 +70,13 @@ impl CryptoCtx {
 
     pub fn secp256k1_pubkey_hex(&self) -> String { hex::encode(&*self.secp256k1_pubkey()) }
 
+    pub fn hw_ctx(&self) -> Option<&HardwareWalletCtx> {
+        match self {
+            CryptoCtx::KeyPair(_) => None,
+            CryptoCtx::HardwareWallet(hw_ctx) => Some(hw_ctx.deref()),
+        }
+    }
+
     pub fn init_with_passphrase(ctx: MmArc, passphrase: &str) -> CryptoInitResult<()> {
         let mut ctx_field = ctx
             .crypto_ctx
@@ -88,7 +95,7 @@ impl CryptoCtx {
         let secp256k1_key_pair_for_legacy = key_pair_from_seed(passphrase)?;
 
         let rmd160 = secp256k1_key_pair.public().address_hash();
-        let crypto_ctx = CryptoCtx::KeyPair(KeyPairCtx { secp256k1_key_pair });
+        let crypto_ctx = CryptoCtx::KeyPair(KeyPairArc::from(secp256k1_key_pair));
         *ctx_field = Some(Arc::new(crypto_ctx));
 
         // TODO remove initializing legacy fields when lp_swap and lp_ordermatch support CryptoCtx.
@@ -142,11 +149,11 @@ impl CryptoCtx {
         let rmd160 = dhash160(mm2_internal_pubkey.as_slice());
         ctx.rmd160.pin(rmd160).map_to_mm(HwError::Internal)?;
 
-        let crypto_ctx = CryptoCtx::HardwareWallet(HardwareWalletCtx {
+        let crypto_ctx = CryptoCtx::HardwareWallet(HardwareWalletArc::new(HardwareWalletCtx {
             mm2_internal_pubkey,
             hw_wallet_type: hw_client.hw_wallet_type(),
             hw_wallet: PaMutex::new(Some(hw_client)),
-        });
+        }));
         *ctx_field = Some(Arc::new(crypto_ctx));
         Ok(())
     }
