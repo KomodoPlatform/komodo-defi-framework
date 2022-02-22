@@ -150,6 +150,10 @@ where
         info!("Starting UTXO merge loop for coin {}", ticker);
         spawn(merge_loop);
     }
+
+    let block_header_loop = block_header_utxo_loop(ctx.clone(), 60.0, utxo_arc.clone());
+    info!("Starting UTXO download header loop for coin {}", ticker);
+    spawn(block_header_loop);
     Ok(coin)
 }
 
@@ -3025,6 +3029,13 @@ where
 fn increase_by_percent(num: u64, percent: f64) -> u64 {
     let percent = num as f64 / 100. * percent;
     num + (percent.round() as u64)
+}
+
+async fn block_header_utxo_loop(_ctx: MmArc, check_every: f64, coin: UtxoArc) {
+    loop {
+        info!("tick block_header_utxo_loop for {}", coin.conf.ticker);
+        Timer::sleep(check_every).await;
+    }
 }
 
 async fn merge_utxo_loop<T>(
