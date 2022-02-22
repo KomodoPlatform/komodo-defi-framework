@@ -1,6 +1,6 @@
-use crate::constants::TrezorCoin;
 use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::utxo::prev_tx::PrevTx;
+use crate::utxo::TrezorUtxoCoin;
 use crate::{serialize_derivation_path, TrezorError, TrezorResult};
 use common::mm_error::prelude::*;
 use hw_common::primitives::DerivationPath;
@@ -145,7 +145,7 @@ impl TxOutput {
 ///                  The main reason why it's ignored is that this can be requested asa extra data:
 ///                  https://docs.trezor.io/trezor-firmware/common/communication/bitcoin-signing.html#extra-data
 pub struct UnsignedUtxoTx {
-    pub coin: TrezorCoin,
+    pub coin: TrezorUtxoCoin,
     /// Transaction inputs.
     pub inputs: Vec<UnsignedTxInput>,
     /// Transaction outputs.

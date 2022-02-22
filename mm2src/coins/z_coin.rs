@@ -1,10 +1,12 @@
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, UtxoArcBuilder};
+use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
+                                UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, PrivKeyBuildPolicy, RecentlySpentOutPoints,
-                  UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinBuilder, UtxoCoinFields, UtxoCommonOps,
-                  UtxoFeeDetails, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
+                  FeePolicy, HistoryUtxoTx, HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams,
+                  UtxoAddressFormat, UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps,
+                  UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
 use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
@@ -410,7 +412,7 @@ pub async fn z_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    params: UtxoActivationParams,
+    params: &UtxoActivationParams,
     secp_priv_key: &[u8],
     db_dir_path: PathBuf,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
@@ -577,64 +579,126 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
     }
 }
 
+pub struct ZCoinBuilder<'a> {
+    ctx: &'a MmArc,
+    ticker: &'a str,
+    conf: &'a Json,
+    params: &'a UtxoActivationParams,
+    secp_priv_key: &'a [u8],
+    db_dir_path: PathBuf,
+    z_spending_key: ExtendedSpendingKey,
+}
+
+impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
+    fn ctx(&self) -> &MmArc { self.ctx }
+
+    fn conf(&self) -> &Json { self.conf }
+
+    fn activation_params(&self) -> &UtxoActivationParams { self.params }
+
+    fn ticker(&self) -> &str { self.ticker }
+}
+
+#[async_trait]
+impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {}
+
+#[async_trait]
+impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
+    type ResultCoin = ZCoin;
+    type Error = ZCoinBuildError;
+
+    fn priv_key(&self) -> &[u8] { self.secp_priv_key }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
+        let utxo_arc = UtxoArc::new(utxo);
+        let db_name = format!("{}_CACHE.db", self.ticker);
+        let mut db_dir_path = self.db_dir_path;
+
+        db_dir_path.push(&db_name);
+        if !db_dir_path.exists() {
+            let default_cache_path = PathBuf::new().join("./").join(db_name);
+            if !default_cache_path.exists() {
+                return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
+                    path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
+                });
+            }
+            std::fs::copy(default_cache_path, &db_dir_path)?;
+        }
+
+        let sqlite = Connection::open(db_dir_path)?;
+        init_db(&sqlite)?;
+        let (_, my_z_addr) = self
+            .z_spending_key
+            .default_address()
+            .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
+
+        let dex_fee_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, DEX_FEE_Z_ADDR)
+            .expect("DEX_FEE_Z_ADDR is a valid z-address")
+            .expect("DEX_FEE_Z_ADDR is a valid z-address");
+
+        let z_tx_prover = LocalTxProver::bundled();
+        let my_z_addr_encoded = encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &my_z_addr);
+        let my_z_key_encoded = encode_extended_spending_key(
+            z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            &self.z_spending_key,
+        );
+
+        let z_fields = ZCoinFields {
+            dex_fee_addr,
+            my_z_addr,
+            my_z_addr_encoded,
+            z_spending_key: self.z_spending_key,
+            z_tx_prover,
+            z_unspent_mutex: AsyncMutex::new(()),
+            sapling_state_synced: AtomicBool::new(false),
+            sqlite: Mutex::new(sqlite),
+        };
+
+        let z_coin = ZCoin {
+            utxo_arc,
+            z_fields: Arc::new(z_fields),
+        };
+
+        z_coin.z_rpc().z_import_key(&my_z_key_encoded).compat().await?;
+        spawn(sapling_state_cache_loop(z_coin.clone()));
+        Ok(z_coin)
+    }
+}
+
+impl<'a> ZCoinBuilder<'a> {
+    pub fn new(
+        ctx: &'a MmArc,
+        ticker: &'a str,
+        conf: &'a Json,
+        params: &'a UtxoActivationParams,
+        secp_priv_key: &'a [u8],
+        db_dir_path: PathBuf,
+        z_spending_key: ExtendedSpendingKey,
+    ) -> ZCoinBuilder<'a> {
+        ZCoinBuilder {
+            ctx,
+            ticker,
+            conf,
+            params,
+            secp_priv_key,
+            db_dir_path,
+            z_spending_key,
+        }
+    }
+}
+
 async fn z_coin_from_conf_and_params_with_z_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    params: UtxoActivationParams,
+    params: &UtxoActivationParams,
     secp_priv_key: &[u8],
-    mut db_dir_path: PathBuf,
+    db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let builder = UtxoArcBuilder::new(ctx, ticker, conf, params, PrivKeyBuildPolicy::PrivKey(secp_priv_key));
-    let utxo_arc = builder.build().await?;
-    let db_name = format!("{}_CACHE.db", ticker);
-
-    db_dir_path.push(&db_name);
-    if !db_dir_path.exists() {
-        let default_cache_path = PathBuf::new().join("./").join(db_name);
-        if !default_cache_path.exists() {
-            return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
-                path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
-            });
-        }
-        std::fs::copy(default_cache_path, &db_dir_path)?;
-    }
-
-    let sqlite = Connection::open(db_dir_path)?;
-    init_db(&sqlite)?;
-    let (_, my_z_addr) = z_spending_key
-        .default_address()
-        .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
-
-    let dex_fee_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, DEX_FEE_Z_ADDR)
-        .expect("DEX_FEE_Z_ADDR is a valid z-address")
-        .expect("DEX_FEE_Z_ADDR is a valid z-address");
-
-    let z_tx_prover = LocalTxProver::bundled();
-    let my_z_addr_encoded = encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &my_z_addr);
-    let my_z_key_encoded =
-        encode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, &z_spending_key);
-
-    let z_fields = ZCoinFields {
-        dex_fee_addr,
-        my_z_addr,
-        my_z_addr_encoded,
-        z_spending_key,
-        z_tx_prover,
-        z_unspent_mutex: AsyncMutex::new(()),
-        sapling_state_synced: AtomicBool::new(false),
-        sqlite: Mutex::new(sqlite),
-    };
-
-    let z_coin = ZCoin {
-        utxo_arc,
-        z_fields: Arc::new(z_fields),
-    };
-
-    z_coin.z_rpc().z_import_key(&my_z_key_encoded).compat().await?;
-    spawn(sapling_state_cache_loop(z_coin.clone()));
-    Ok(z_coin)
+    let builder = ZCoinBuilder::new(ctx, ticker, conf, params, secp_priv_key, db_dir_path, z_spending_key);
+    builder.build().await
 }
 
 impl MarketCoinOps for ZCoin {
@@ -1317,11 +1381,18 @@ impl UtxoCommonOps for ZCoin {
         .await
     }
 
-    async fn ordered_mature_unspents<'a>(
+    async fn list_all_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::ordered_mature_unspents(self, address).await
+        utxo_common::list_all_unspent_ordered(self, address).await
+    }
+
+    async fn list_mature_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
+        utxo_common::list_mature_unspent_ordered(self, address).await
     }
 
     fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {

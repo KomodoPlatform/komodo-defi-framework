@@ -23,7 +23,7 @@ pub trait TokenActivationOps: Into<MmCoinEnum> {
     type ActivationResult;
     type ActivationError: NotMmError;
 
-    async fn init_token(
+    async fn enable_token(
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
@@ -109,7 +109,7 @@ where
     })?;
 
     let (token, activation_result) =
-        Token::init_token(req.ticker, platform_coin, req.activation_params, token_protocol).await?;
+        Token::enable_token(req.ticker, platform_coin, req.activation_params, token_protocol).await?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx

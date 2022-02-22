@@ -151,7 +151,7 @@ impl L2ActivationOps for LightningCoin {
         })
     }
 
-    async fn init_l2(
+    async fn enable_l2(
         ctx: &MmArc,
         ticker: String,
         platform_coin: Self::PlatformCoin,

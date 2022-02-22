@@ -31,7 +31,7 @@ pub trait L2ActivationOps: Into<MmCoinEnum> {
         activation_params: Self::ActivationParams,
     ) -> Result<Self::ValidatedParams, MmError<Self::ActivationError>>;
 
-    async fn init_l2(
+    async fn enable_l2(
         ctx: &MmArc,
         ticker: String,
         platform_coin: Self::PlatformCoin,
@@ -118,7 +118,7 @@ where
 
     let validated_params = L2::validate_activation_params(req.activation_params)?;
 
-    let (l2, activation_result) = L2::init_l2(&ctx, req.ticker, platform_coin, validated_params, l2_protocol).await?;
+    let (l2, activation_result) = L2::enable_l2(&ctx, req.ticker, platform_coin, validated_params, l2_protocol).await?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx

@@ -2,11 +2,10 @@ use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
 use crate::TrezorPinMatrix3x3Response;
 use async_trait::async_trait;
 use common::mm_error::prelude::*;
-use serde::ser::Serialize;
 use std::convert::TryInto;
 use std::time::Duration;
 
-pub use rpc_task::{RpcTaskError, RpcTaskHandle};
+pub use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
 
 const DEFAULT_PIN_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -16,25 +15,17 @@ pub struct TrezorRequestStatuses<InProgressStatus, AwaitingStatus> {
     pub on_ready: InProgressStatus,
 }
 
-pub struct TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
-    task_handle: &'a RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-    statuses: TrezorRequestStatuses<InProgressStatus, AwaitingStatus>,
+pub struct TrezorRpcTaskProcessor<'a, Task: RpcTask> {
+    task_handle: &'a RpcTaskHandle<Task>,
+    statuses: TrezorRequestStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
     pin_timeout: Duration,
 }
 
 #[async_trait]
-impl<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction> TrezorRequestProcessor
-    for TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
+impl<'a, Task> TrezorRequestProcessor for TrezorRpcTaskProcessor<'a, Task>
 where
-    Item: Serialize + Send,
-    Error: SerMmErrorType + Send,
-    InProgressStatus: Clone + Send + Sync,
-    AwaitingStatus: Clone + Send + Sync,
-    UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task: RpcTask,
+    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
 {
     type Error = RpcTaskError;
 
@@ -59,16 +50,11 @@ where
     }
 }
 
-impl<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-    TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction>
-where
-    Item: Serialize,
-    Error: SerMmErrorType,
-{
+impl<'a, Task: RpcTask> TrezorRpcTaskProcessor<'a, Task> {
     pub fn new(
-        task_handle: &'a RpcTaskHandle<Item, Error, InProgressStatus, AwaitingStatus, UserAction>,
-        statuses: TrezorRequestStatuses<InProgressStatus, AwaitingStatus>,
-    ) -> TrezorRpcTaskProcessor<'a, Item, Error, InProgressStatus, AwaitingStatus, UserAction> {
+        task_handle: &'a RpcTaskHandle<Task>,
+        statuses: TrezorRequestStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
+    ) -> TrezorRpcTaskProcessor<'a, Task> {
         TrezorRpcTaskProcessor {
             task_handle,
             statuses,
@@ -83,7 +69,7 @@ where
 
     pub fn update_in_progress_status(
         &self,
-        in_progress: InProgressStatus,
+        in_progress: Task::InProgressStatus,
     ) -> MmResult<(), TrezorProcessingError<RpcTaskError>> {
         self.task_handle
             .update_in_progress_status(in_progress)

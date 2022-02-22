@@ -85,7 +85,7 @@ impl TokenActivationOps for SlpToken {
     type ActivationResult = SlpInitResult;
     type ActivationError = SlpInitError;
 
-    async fn init_token(
+    async fn enable_token(
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,

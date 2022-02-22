@@ -1,7 +1,8 @@
-/// The module implementing Simple Ledger Protocol (SLP) support.
-/// It's a custom token format mostly used on the Bitcoin Cash blockchain.
-/// Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
-/// More info about the protocol and implementation guides can be found at https://slp.dev/
+//! The module implementing Simple Ledger Protocol (SLP) support.
+//! It's a custom token format mostly used on the Bitcoin Cash blockchain.
+//! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
+//! More info about the protocol and implementation guides can be found at https://slp.dev/
+
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};

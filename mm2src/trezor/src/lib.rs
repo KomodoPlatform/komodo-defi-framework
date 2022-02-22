@@ -1,7 +1,6 @@
 #[macro_use] extern crate serde_derive;
 
 pub mod client;
-pub mod constants;
 pub mod error;
 mod proto;
 pub mod response;
@@ -13,7 +12,6 @@ pub mod user_interaction;
 pub mod utxo;
 
 pub use client::{TrezorClient, TrezorSession};
-pub use constants::TrezorCoin;
 pub use error::{OperationFailure, TrezorError, TrezorResult};
 pub use hw_common::primitives::{DerivationPath, EcdsaCurve};
 pub use response::{ButtonRequest, PinMatrixRequest, TrezorResponse};

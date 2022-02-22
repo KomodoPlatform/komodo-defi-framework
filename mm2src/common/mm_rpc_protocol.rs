@@ -98,6 +98,24 @@ impl<T: Serialize, E: SerMmErrorType> MmRpcResult<T, E> {
     pub fn mm_err(error: E) -> MmRpcResult<T, E> { MmRpcResult::Err(MmError::new(error)) }
 }
 
+impl<T, E1> MmRpcResult<T, E1>
+where
+    T: Serialize,
+    E1: SerMmErrorType,
+{
+    #[track_caller]
+    pub fn map_err<E2, F>(self, f: F) -> MmRpcResult<T, E2>
+    where
+        F: FnOnce(E1) -> E2,
+        E2: SerMmErrorType,
+    {
+        match self {
+            MmRpcResult::Ok { result } => MmRpcResult::Ok { result },
+            MmRpcResult::Err(mm_e1) => MmRpcResult::Err(mm_e1.map(f)),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct MmRpcResponse<T: Serialize, E: SerMmErrorType> {
     mmrpc: MmRpcVersion,

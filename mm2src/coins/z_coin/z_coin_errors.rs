@@ -1,5 +1,5 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::utxo::UtxoCoinBuildError;
+use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;

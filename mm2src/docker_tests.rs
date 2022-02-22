@@ -242,7 +242,10 @@ mod docker_tests {
             let ctx = MmCtxBuilder::new().into_mm_arc();
             let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
-            let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, params, &priv_key)).unwrap();
+            let coin = block_on(utxo_standard_coin_with_priv_key(
+                &ctx, ticker, &conf, &params, &priv_key,
+            ))
+            .unwrap();
             UtxoAssetDockerOps { ctx, coin }
         }
     }

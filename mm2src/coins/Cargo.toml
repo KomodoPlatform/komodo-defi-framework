@@ -50,6 +50,7 @@ lightning = "0.0.103"
 metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
+parking_lot = { version = "0.11", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.8"
 rand = { version = "0.7", features = ["std", "small_rng"] }

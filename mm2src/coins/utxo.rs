@@ -29,6 +29,7 @@ mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
+pub mod utxo_builder;
 pub mod utxo_common;
 pub mod utxo_standard;
 pub mod utxo_withdraw;
@@ -39,23 +40,23 @@ use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
+pub use chain::Transaction as UtxoTx;
 use chain::{OutPoint, TransactionOutput, TxHashAlgo};
-use common::executor::{spawn, Timer};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
-use common::{now_ms, small_rng};
-use crypto::trezor::TrezorCoin;
-use crypto::{Bip32Error, ChildNumber, DerivationPath};
+use common::now_ms;
+use crypto::trezor::utxo::TrezorUtxoCoin;
+use crypto::{Bip32DerPathOps, Bip44Chain, Bip44PathToAccount, Bip44PathToCoin, ChildNumber, DerivationPath,
+             Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
-use futures::stream::StreamExt;
 use futures01::Future;
 use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
@@ -63,11 +64,11 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};
-use rand::seq::SliceRandom;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
+use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
@@ -78,23 +79,20 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
-use utxo_common::{big_decimal_from_sat, UtxoMergeParams, UtxoTxBuilder};
+use utxo_builder::UtxoConfBuilder;
+use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-pub use chain::Transaction as UtxoTx;
-
-#[cfg(not(target_arch = "wasm32"))]
-use self::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
-use self::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
-use super::{BalanceError, BalanceFut, BalanceResult, CoinTransportMetrics, CoinsContext, DerivationMethod,
-            DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
-            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RpcClientType,
-            RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError,
-            WithdrawRequest};
-use std::array::TryFromSliceError;
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
+                        NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
+use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMethod, DerivationMethodNotSupported,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin,
+            NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
+use crate::coin_balance::HDAddressBalanceChecker;
+use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -112,70 +110,10 @@ const UTXO_DUST_AMOUNT: u64 = 1000;
 /// 11 > 0
 const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64) };
 const DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT: f64 = 0.5;
-const BIP44_PURPOSE: u32 = 44;
+const DEFAULT_GAP_LIMIT: u32 = 20;
 
 pub type GenerateTxResult = Result<(TransactionInputSigner, AdditionalTxData), MmError<GenerateTxError>>;
 pub type HistoryUtxoTxMap = HashMap<H256Json, HistoryUtxoTx>;
-pub type UtxoConfResult<T> = Result<T, MmError<UtxoConfError>>;
-pub type UtxoCoinBuildResult<T> = Result<T, MmError<UtxoCoinBuildError>>;
-
-#[derive(Debug, Display)]
-pub enum UtxoConfError {
-    #[display(fmt = "'name' field is not found in config")]
-    CurrencyNameIsNotSet,
-    #[display(fmt = "Invalid 'derivation_path' purpose '{}'. BIP44 is supported only", purpose)]
-    InvalidDerivationPathPurpose {
-        purpose: u32,
-    },
-    #[display(
-        fmt = "Invalid length '{}' of 'derivation_path'. Expected \"m/purpose'/coin_type'/\" path, i.e 2 children",
-        found_children
-    )]
-    InvalidDerivationPathLen {
-        found_children: usize,
-    },
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
-    ErrorDeserializingDerivationPath(String),
-    InvalidConsensusBranchId(String),
-    InvalidVersionGroupId(String),
-    InvalidAddressFormat(String),
-    InvalidBlockchainNetwork(String),
-    InvalidDecimals(String),
-}
-
-impl From<Bip32Error> for UtxoConfError {
-    fn from(e: Bip32Error) -> Self { UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()) }
-}
-
-#[derive(Debug, Display)]
-pub enum UtxoCoinBuildError {
-    ConfError(UtxoConfError),
-    #[display(fmt = "Native RPC client is only supported in native mode")]
-    NativeRpcNotSupportedInWasm,
-    ErrorReadingNativeModeConf(String),
-    #[display(fmt = "Rpc port is not set neither in `coins` file nor in native daemon config")]
-    RpcPortIsNotSet,
-    ErrorDetectingFeeMethod(String),
-    ErrorDetectingDecimals(String),
-    #[display(
-        fmt = "Failed to connect to at least 1 of {:?} in {} seconds.",
-        electrum_servers,
-        seconds
-    )]
-    FailedToConnectToElectrums {
-        electrum_servers: Vec<ElectrumRpcRequest>,
-        seconds: u64,
-    },
-    ElectrumProtocolVersionCheckError(String),
-    #[display(fmt = "Can not detect the user home directory")]
-    CantDetectUserHome,
-    #[display(fmt = "Internal error: {}", _0)]
-    Internal(String),
-}
-
-impl From<UtxoConfError> for UtxoCoinBuildError {
-    fn from(e: UtxoConfError) -> Self { UtxoCoinBuildError::ConfError(e) }
-}
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -439,7 +377,7 @@ impl RecentlySpentOutPoints {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum BlockchainNetwork {
     #[serde(rename = "mainnet")]
     Mainnet,
@@ -532,9 +470,7 @@ pub struct UtxoCoinConf {
     /// bitcoin/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: Option<String>,
     /// The name of the coin with which Trezor wallet associates this asset.
-    pub trezor_coin: Option<TrezorCoin>,
-    /// Derivation path used to derive addresses from a master key.
-    pub derivation_path: Option<DerivationPath>,
+    pub trezor_coin: Option<TrezorUtxoCoin>,
 }
 
 #[derive(Debug)]
@@ -555,7 +491,7 @@ pub struct UtxoCoinFields {
     /// Either ECDSA key pair or a Hardware Wallet info.
     pub priv_key_policy: PrivKeyPolicy<KeyPair>,
     /// Either an Iguana address or an info about last derived account/address.
-    pub derivation_method: DerivationMethod<Address, HDWalletInfo>,
+    pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
     /// Path to the TX cache directory
     pub tx_cache_directory: Option<PathBuf>,
@@ -564,6 +500,9 @@ pub struct UtxoCoinFields {
     /// This cache helps to prevent UTXO reuse in such cases
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
+    /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+    pub check_utxo_maturity: bool,
 }
 
 #[derive(Debug, Display)]
@@ -667,6 +606,62 @@ pub trait UtxoTxGenerationOps {
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 }
 
+/// The UTXO address balance checker.
+/// If the coin is initialized with a native RPC client, it's better to request the list of used addresses
+/// right on `UtxoAddressBalanceChecker` initialization.
+/// See [`NativeClientImpl::list_transactions`].
+pub enum UtxoAddressBalanceChecker {
+    Native { non_empty_addresses: HashSet<String> },
+    Electrum(ElectrumClient),
+}
+
+#[async_trait]
+impl HDAddressBalanceChecker for UtxoAddressBalanceChecker {
+    type Address = Address;
+
+    async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
+        let is_used = match self {
+            UtxoAddressBalanceChecker::Native { non_empty_addresses } => {
+                non_empty_addresses.contains(&address.to_string())
+            },
+            UtxoAddressBalanceChecker::Electrum(electrum_client) => {
+                let script = output_script(address, ScriptType::P2PKH);
+                let script_hash = electrum_script_hash(&script);
+
+                let electrum_history = electrum_client
+                    .scripthash_get_history(&hex::encode(script_hash))
+                    .compat()
+                    .await?;
+
+                !electrum_history.is_empty()
+            },
+        };
+        Ok(is_used)
+    }
+}
+
+impl UtxoAddressBalanceChecker {
+    pub async fn init(rpc_client: UtxoRpcClientEnum) -> UtxoRpcResult<UtxoAddressBalanceChecker> {
+        match rpc_client {
+            UtxoRpcClientEnum::Native(native) => UtxoAddressBalanceChecker::init_with_native_client(&native).await,
+            UtxoRpcClientEnum::Electrum(electrum) => Ok(UtxoAddressBalanceChecker::Electrum(electrum)),
+        }
+    }
+
+    pub async fn init_with_native_client(native: &NativeClient) -> UtxoRpcResult<UtxoAddressBalanceChecker> {
+        const STEP: u64 = 100;
+
+        let non_empty_addresses = native
+            .list_all_transactions(STEP)
+            .compat()
+            .await?
+            .into_iter()
+            .map(|tx_item| tx_item.address)
+            .collect();
+        Ok(UtxoAddressBalanceChecker::Native { non_empty_addresses })
+    }
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
@@ -717,8 +712,18 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
         keypair: &KeyPair,
     ) -> Result<UtxoTx, String>;
 
-    /// Get transaction outputs available to spend.
-    async fn ordered_mature_unspents<'a>(
+    /// Returns available unspents in ascending order + RecentlySpentOutPoints MutexGuard for further interaction
+    /// (e.g. to add new transaction to it).
+    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
+    async fn list_all_unspent_ordered<'a>(
+        &'a self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
+
+    /// Returns available mature unspents ascending order + RecentlySpentOutPoints MutexGuard for further interaction
+    /// (e.g. to add new transaction to it).
+    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
+    async fn list_mature_unspent_ordered<'a>(
         &'a self,
         address: &Address,
     ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
@@ -755,6 +760,11 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat;
 
     fn address_from_pubkey(&self, pubkey: &Public) -> Address;
+
+    fn address_from_extended_pubkey(&self, extended_pubkey: &Secp256k1ExtendedPublicKey) -> Address {
+        let pubkey = Public::Compressed(H264::from(extended_pubkey.public_key().serialize()));
+        self.address_from_pubkey(&pubkey)
+    }
 }
 
 #[async_trait]
@@ -787,7 +797,7 @@ impl Deref for UtxoArc {
 }
 
 impl From<UtxoCoinFields> for UtxoArc {
-    fn from(coin: UtxoCoinFields) -> UtxoArc { UtxoArc(Arc::new(coin)) }
+    fn from(coin: UtxoCoinFields) -> UtxoArc { UtxoArc::new(coin) }
 }
 
 impl From<Arc<UtxoCoinFields>> for UtxoArc {
@@ -795,6 +805,10 @@ impl From<Arc<UtxoCoinFields>> for UtxoArc {
 }
 
 impl UtxoArc {
+    pub fn new(fields: UtxoCoinFields) -> UtxoArc { UtxoArc(Arc::new(fields)) }
+
+    pub fn with_arc(inner: Arc<UtxoCoinFields>) -> UtxoArc { UtxoArc(inner) }
+
     /// Returns weak reference to the inner UtxoCoinFields
     pub fn downgrade(&self) -> UtxoWeak {
         let weak = Arc::downgrade(&self.0);
@@ -972,50 +986,6 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     data_dir
 }
 
-/// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
-#[cfg(not(target_arch = "wasm32"))]
-fn read_native_mode_conf(
-    filename: &dyn AsRef<Path>,
-    network: &BlockchainNetwork,
-) -> Result<(Option<u16>, String, String), String> {
-    use ini::Ini;
-
-    fn read_property<'a>(conf: &'a ini::Ini, network: &BlockchainNetwork, property: &str) -> Option<&'a String> {
-        let subsection = match network {
-            BlockchainNetwork::Mainnet => None,
-            BlockchainNetwork::Testnet => conf.section(Some("test")),
-            BlockchainNetwork::Regtest => conf.section(Some("regtest")),
-        };
-        subsection
-            .and_then(|props| props.get(property))
-            .or_else(|| conf.general_section().get(property))
-    }
-
-    let conf: Ini = match Ini::load_from_file(&filename) {
-        Ok(ini) => ini,
-        Err(err) => {
-            return ERR!(
-                "Error parsing the native wallet configuration '{}': {}",
-                filename.as_ref().display(),
-                err
-            )
-        },
-    };
-    let rpc_port = match read_property(&conf, network, "rpcport") {
-        Some(port) => port.parse::<u16>().ok(),
-        None => None,
-    };
-    let rpc_user = try_s!(read_property(&conf, network, "rpcuser").ok_or(ERRL!(
-        "Conf file {} doesn't have the rpcuser key",
-        filename.as_ref().display()
-    )));
-    let rpc_password = try_s!(read_property(&conf, network, "rpcpassword").ok_or(ERRL!(
-        "Conf file {} doesn't have the rpcpassword key",
-        filename.as_ref().display()
-    )));
-    Ok((rpc_port, rpc_user.clone(), rpc_password.clone()))
-}
-
 /// Electrum protocol version verifier.
 /// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
 struct ElectrumProtoVerifier {
@@ -1040,6 +1010,15 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UtxoMergeParams {
+    pub merge_at: usize,
+    #[serde(default = "ten_f64")]
+    pub check_every: f64,
+    #[serde(default = "one_hundred")]
+    pub max_merge_at_once: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoActivationParams {
     pub mode: UtxoRpcMode,
     pub utxo_merge_params: Option<UtxoMergeParams>,
@@ -1048,6 +1027,10 @@ pub struct UtxoActivationParams {
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
     pub address_format: Option<UtxoAddressFormat>,
+    pub gap_limit: Option<u32>,
+    /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
+    pub check_utxo_maturity: Option<bool>,
 }
 
 #[derive(Debug, Display)]
@@ -1058,6 +1041,7 @@ pub enum UtxoFromLegacyReqErr {
     InvalidRequiredConfs(json::Error),
     InvalidRequiresNota(json::Error),
     InvalidAddressFormat(json::Error),
+    InvalidCheckUtxoMaturity(json::Error),
 }
 
 impl UtxoActivationParams {
@@ -1081,6 +1065,8 @@ impl UtxoActivationParams {
             .map_to_mm(UtxoFromLegacyReqErr::InvalidRequiresNota)?;
         let address_format =
             json::from_value(req["address_format"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidAddressFormat)?;
+        let check_utxo_maturity = json::from_value(req["check_utxo_maturity"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidCheckUtxoMaturity)?;
 
         Ok(UtxoActivationParams {
             mode,
@@ -1089,275 +1075,9 @@ impl UtxoActivationParams {
             required_confirmations,
             requires_notarization,
             address_format,
+            gap_limit: None,
+            check_utxo_maturity,
         })
-    }
-}
-
-pub struct UtxoConfBuilder<'a> {
-    conf: &'a Json,
-    ticker: &'a str,
-    params: UtxoActivationParams,
-}
-
-impl<'a> UtxoConfBuilder<'a> {
-    pub fn new(conf: &'a Json, params: UtxoActivationParams, ticker: &'a str) -> Self {
-        UtxoConfBuilder { conf, ticker, params }
-    }
-
-    pub fn build(&self) -> UtxoConfResult<UtxoCoinConf> {
-        let checksum_type = self.checksum_type();
-        let pub_addr_prefix = self.pub_addr_prefix();
-        let p2sh_addr_prefix = self.p2sh_address_prefix();
-        let pub_t_addr_prefix = self.pub_t_address_prefix();
-        let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
-
-        let wif_prefix = self.wif_prefix();
-
-        let bech32_hrp = self.bech32_hrp();
-
-        let default_address_format = self.default_address_format();
-
-        let asset_chain = self.asset_chain();
-        let tx_version = self.tx_version();
-        let overwintered = self.overwintered();
-
-        let tx_fee_volatility_percent = self.tx_fee_volatility_percent();
-        let version_group_id = self.version_group_id(tx_version, overwintered)?;
-        let consensus_branch_id = self.consensus_branch_id(tx_version)?;
-        let signature_version = self.signature_version();
-        let fork_id = self.fork_id();
-
-        // should be sufficient to detect zcash by overwintered flag
-        let zcash = overwintered;
-
-        let required_confirmations = self.required_confirmations();
-        let requires_notarization = self.requires_notarization();
-
-        let mature_confirmations = self.mature_confirmations();
-
-        let is_pos = self.is_pos();
-        let segwit = self.segwit();
-        let force_min_relay_fee = self.conf["force_min_relay_fee"].as_bool().unwrap_or(false);
-        let mtp_block_count = self.mtp_block_count();
-        let estimate_fee_mode = self.estimate_fee_mode();
-        let estimate_fee_blocks = self.estimate_fee_blocks();
-        let lightning = self.lightning();
-        let network = self.network();
-        let trezor_coin = self.trezor_coin();
-        let derivation_path = self.derivation_path()?;
-
-        Ok(UtxoCoinConf {
-            ticker: self.ticker.to_owned(),
-            is_pos,
-            requires_notarization,
-            overwintered,
-            pub_addr_prefix,
-            p2sh_addr_prefix,
-            pub_t_addr_prefix,
-            p2sh_t_addr_prefix,
-            bech32_hrp,
-            segwit,
-            wif_prefix,
-            tx_version,
-            default_address_format,
-            asset_chain,
-            tx_fee_volatility_percent,
-            version_group_id,
-            consensus_branch_id,
-            zcash,
-            checksum_type,
-            signature_version,
-            fork_id,
-            required_confirmations: required_confirmations.into(),
-            force_min_relay_fee,
-            mtp_block_count,
-            estimate_fee_mode,
-            mature_confirmations,
-            estimate_fee_blocks,
-            lightning,
-            network,
-            trezor_coin,
-            derivation_path,
-        })
-    }
-
-    fn checksum_type(&self) -> ChecksumType {
-        match self.ticker {
-            "GRS" => ChecksumType::DGROESTL512,
-            "SMART" => ChecksumType::KECCAK256,
-            _ => ChecksumType::DSHA256,
-        }
-    }
-
-    fn pub_addr_prefix(&self) -> u8 {
-        let pubtype = self.conf["pubtype"]
-            .as_u64()
-            .unwrap_or(if self.ticker == "BTC" { 0 } else { 60 });
-        pubtype as u8
-    }
-
-    fn p2sh_address_prefix(&self) -> u8 {
-        self.conf["p2shtype"]
-            .as_u64()
-            .unwrap_or(if self.ticker == "BTC" { 5 } else { 85 }) as u8
-    }
-
-    fn pub_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
-
-    fn p2sh_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
-
-    fn wif_prefix(&self) -> u8 {
-        let wiftype = self.conf["wiftype"]
-            .as_u64()
-            .unwrap_or(if self.ticker == "BTC" { 128 } else { 188 });
-        wiftype as u8
-    }
-
-    fn bech32_hrp(&self) -> Option<String> { json::from_value(self.conf["bech32_hrp"].clone()).unwrap_or(None) }
-
-    fn default_address_format(&self) -> UtxoAddressFormat {
-        let mut address_format: UtxoAddressFormat =
-            json::from_value(self.conf["address_format"].clone()).unwrap_or(UtxoAddressFormat::Standard);
-
-        if let UtxoAddressFormat::CashAddress {
-            network: _,
-            ref mut pub_addr_prefix,
-            ref mut p2sh_addr_prefix,
-        } = address_format
-        {
-            *pub_addr_prefix = self.pub_addr_prefix();
-            *p2sh_addr_prefix = self.p2sh_address_prefix();
-        }
-
-        address_format
-    }
-
-    fn asset_chain(&self) -> bool { self.conf["asset"].as_str().is_some() }
-
-    fn tx_version(&self) -> i32 { self.conf["txversion"].as_i64().unwrap_or(1) as i32 }
-
-    fn overwintered(&self) -> bool { self.conf["overwintered"].as_u64().unwrap_or(0) == 1 }
-
-    fn tx_fee_volatility_percent(&self) -> f64 {
-        match self.conf["txfee_volatility_percent"].as_f64() {
-            Some(volatility) => volatility,
-            None => DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
-        }
-    }
-
-    fn version_group_id(&self, tx_version: i32, overwintered: bool) -> UtxoConfResult<u32> {
-        let version_group_id = match self.conf["version_group_id"].as_str() {
-            Some(s) => parse_hex_encoded_u32(s).mm_err(UtxoConfError::InvalidVersionGroupId)?,
-            None => {
-                if tx_version == 3 && overwintered {
-                    0x03c4_8270
-                } else if tx_version == 4 && overwintered {
-                    0x892f_2085
-                } else {
-                    0
-                }
-            },
-        };
-        Ok(version_group_id)
-    }
-
-    fn consensus_branch_id(&self, tx_version: i32) -> UtxoConfResult<u32> {
-        let consensus_branch_id = match self.conf["consensus_branch_id"].as_str() {
-            Some(s) => parse_hex_encoded_u32(s).mm_err(UtxoConfError::InvalidConsensusBranchId)?,
-            None => match tx_version {
-                3 => 0x5ba8_1b19,
-                4 => 0x76b8_09bb,
-                _ => 0,
-            },
-        };
-        Ok(consensus_branch_id)
-    }
-
-    fn signature_version(&self) -> SignatureVersion {
-        let default_signature_version = if self.ticker == "BCH" || self.fork_id() != 0 {
-            SignatureVersion::ForkId
-        } else {
-            SignatureVersion::Base
-        };
-        json::from_value(self.conf["signature_version"].clone()).unwrap_or(default_signature_version)
-    }
-
-    fn fork_id(&self) -> u32 {
-        let default_fork_id = match self.ticker {
-            "BCH" => "0x40",
-            _ => "0x0",
-        };
-        let hex_string = self.conf["fork_id"].as_str().unwrap_or(default_fork_id);
-        let fork_id = u32::from_str_radix(hex_string.trim_start_matches("0x"), 16).unwrap();
-        fork_id
-    }
-
-    fn required_confirmations(&self) -> u64 {
-        // param from request should override the config
-        self.params
-            .required_confirmations
-            .unwrap_or_else(|| self.conf["required_confirmations"].as_u64().unwrap_or(1))
-    }
-
-    fn requires_notarization(&self) -> AtomicBool {
-        self.params
-            .requires_notarization
-            .unwrap_or_else(|| self.conf["requires_notarization"].as_bool().unwrap_or(false))
-            .into()
-    }
-
-    fn mature_confirmations(&self) -> u32 {
-        self.conf["mature_confirmations"]
-            .as_u64()
-            .map(|x| x as u32)
-            .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT)
-    }
-
-    fn is_pos(&self) -> bool { self.conf["isPoS"].as_u64() == Some(1) }
-
-    fn segwit(&self) -> bool { self.conf["segwit"].as_bool().unwrap_or(false) }
-
-    fn mtp_block_count(&self) -> NonZeroU64 {
-        json::from_value(self.conf["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT)
-    }
-
-    fn estimate_fee_mode(&self) -> Option<EstimateFeeMode> {
-        json::from_value(self.conf["estimate_fee_mode"].clone()).unwrap_or(None)
-    }
-
-    fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
-
-    fn lightning(&self) -> bool {
-        if self.segwit() && self.bech32_hrp().is_some() {
-            self.conf["lightning"].as_bool().unwrap_or(false)
-        } else {
-            false
-        }
-    }
-
-    fn network(&self) -> Option<String> { json::from_value(self.conf["network"].clone()).unwrap_or(None) }
-
-    fn trezor_coin(&self) -> Option<TrezorCoin> {
-        json::from_value(self.conf["trezor_coin"].clone()).unwrap_or_default()
-    }
-
-    fn derivation_path(&self) -> UtxoConfResult<Option<DerivationPath>> {
-        let derivation_path = match self.conf["derivation_path"].as_str() {
-            Some(derivation_path) => derivation_path,
-            None => return Ok(None),
-        };
-        let derivation_path = DerivationPath::from_str(derivation_path)?;
-        if derivation_path.len() != 2 {
-            return MmError::err(UtxoConfError::InvalidDerivationPathLen {
-                found_children: derivation_path.len(),
-            });
-        }
-        match derivation_path.iter().next() {
-            Some(ChildNumber(BIP44_PURPOSE)) => (),
-            Some(ChildNumber(purpose)) => return MmError::err(UtxoConfError::InvalidDerivationPathPurpose { purpose }),
-            None => return MmError::err(UtxoConfError::InvalidDerivationPathLen { found_children: 0 }),
-        }
-        Ok(Some(derivation_path))
     }
 }
 
@@ -1385,525 +1105,62 @@ impl Default for ElectrumBuilderArgs {
     }
 }
 
-#[derive(Clone)]
-pub enum PrivKeyBuildPolicy<'a> {
-    PrivKey(&'a [u8]),
-    HardwareWallet,
-}
-
 #[derive(Debug)]
-pub struct HDWalletInfo {
+pub struct UtxoHDWallet {
     pub address_format: UtxoAddressFormat,
-    /// [`accounts.len()`] equals to a number of the user's accounts.
-    pub accounts: Mutex<Vec<DerivationAccountInfo>>,
+    /// Derivation path of the coin.
+    /// This derivation path consists of `purpose` and `coin_type` only
+    /// where the full `BIP44` address has the following structure:
+    /// `m/purpose'/coin_type'/account'/change/address_index`.
+    pub derivation_path: Bip44PathToCoin,
+    /// User accounts.
+    pub accounts: HDAccountsMutex<UtxoHDAccount>,
+    pub gap_limit: u32,
 }
 
-/// Consider adding addresses/pubkeys and `ExtendedPublicKey` of the account.
-#[derive(Debug)]
-pub struct DerivationAccountInfo {
-    /// The number of addresses used by the corresponding account.
-    pub addresses_number: u32,
+impl HDWalletOps for UtxoHDWallet {
+    type HDAccount = UtxoHDAccount;
+
+    fn coin_type(&self) -> u32 { self.derivation_path.coin_type() }
+
+    fn gap_limit(&self) -> u32 { self.gap_limit }
+
+    fn get_accounts_mutex(&self) -> &HDAccountsMutex<Self::HDAccount> { &self.accounts }
 }
 
-impl HDWalletInfo {
-    pub fn new(address_format: UtxoAddressFormat) -> HDWalletInfo {
-        HDWalletInfo {
-            address_format,
-            accounts: Mutex::new(Vec::new()),
-        }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct UtxoHDAccount {
+    pub account_id: u32,
+    /// [Extended public key](https://learnmeabitcoin.com/technical/extended-keys) that corresponds to the derivation path:
+    /// `m/purpose'/coin_type'/account'`.
+    pub extended_pubkey: Secp256k1ExtendedPublicKey,
+    /// [`UtxoHDWallet::derivation_path`] derived by [`UtxoHDAccount::account_id`].
+    pub account_derivation_path: Bip44PathToAccount,
+    /// The number of addresses that we know have been used by the user.
+    /// This is used in order not to check the transaction history for each address,
+    /// but to request the balance of addresses whose index is less than `address_number`.
+    pub external_addresses_number: u32,
+    pub internal_addresses_number: u32,
 }
 
-#[async_trait]
-pub trait UtxoCoinBuilder {
-    type ResultCoin;
-
-    async fn build(self) -> UtxoCoinBuildResult<Self::ResultCoin>;
-
-    fn ctx(&self) -> &MmArc;
-
-    fn conf(&self) -> &Json;
-
-    fn activation_params(&self) -> UtxoActivationParams;
-
-    fn ticker(&self) -> &str;
-
-    fn priv_key(&self) -> PrivKeyBuildPolicy<'_>;
-
-    async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        match self.priv_key() {
-            PrivKeyBuildPolicy::PrivKey(priv_key) => self.build_utxo_fields_with_priv_key(priv_key).await,
-            PrivKeyBuildPolicy::HardwareWallet => self.build_utxo_fields_with_hw().await,
+impl HDAccountOps for UtxoHDAccount {
+    fn known_addresses_number(&self, chain: Bip44Chain) -> MmResult<u32, InvalidBip44ChainError> {
+        match chain {
+            Bip44Chain::External => Ok(self.external_addresses_number),
+            Bip44Chain::Internal => Ok(self.internal_addresses_number),
         }
     }
 
-    async fn build_utxo_fields_with_priv_key(&self, priv_key: &[u8]) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-
-        let private = Private {
-            prefix: conf.wif_prefix,
-            secret: H256::from(priv_key),
-            compressed: true,
-            checksum_type: conf.checksum_type,
-        };
-        let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        let addr_format = self.address_format()?;
-        let my_address = Address {
-            prefix: conf.pub_addr_prefix,
-            t_addr_prefix: conf.pub_t_addr_prefix,
-            hash: AddressHashEnum::AddressHash(key_pair.public().address_hash()),
-            checksum_type: conf.checksum_type,
-            hrp: conf.bech32_hrp.clone(),
-            addr_format,
-        };
-
-        let my_script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
-        let derivation_method = DerivationMethod::Iguana(my_address);
-        let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
-
-        let rpc_client = self.rpc_client().await?;
-        let tx_fee = self.tx_fee(&rpc_client).await?;
-        let decimals = self.decimals(&rpc_client).await?;
-        let dust_amount = self.dust_amount();
-
-        let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
-        let tx_hash_algo = self.tx_hash_algo();
-
-        let coin = UtxoCoinFields {
-            conf,
-            decimals,
-            dust_amount,
-            rpc_client,
-            priv_key_policy,
-            derivation_method,
-            history_sync_state: Mutex::new(initial_history_state),
-            tx_cache_directory,
-            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
-            tx_fee,
-            tx_hash_algo,
-        };
-        Ok(coin)
-    }
-
-    async fn build_utxo_fields_with_hw(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-
-        // For now, use a default script pubkey.
-        // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
-        let my_script_pubkey = Bytes::new();
-        let addr_format = self.address_format()?;
-
-        let rpc_client = self.rpc_client().await?;
-        let tx_fee = self.tx_fee(&rpc_client).await?;
-        let decimals = self.decimals(&rpc_client).await?;
-        let dust_amount = self.dust_amount();
-
-        let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
-        let tx_hash_algo = self.tx_hash_algo();
-
-        let coin = UtxoCoinFields {
-            conf,
-            decimals,
-            dust_amount,
-            rpc_client,
-            priv_key_policy: PrivKeyPolicy::HardwareWallet,
-            derivation_method: DerivationMethod::HDWallet(HDWalletInfo::new(addr_format)),
-            history_sync_state: Mutex::new(initial_history_state),
-            tx_cache_directory,
-            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
-            tx_fee,
-            tx_hash_algo,
-        };
-        Ok(coin)
-    }
-
-    fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
-        let format_from_req: Option<UtxoAddressFormat> = self.activation_params().address_format;
-        let format_from_conf = json::from_value::<Option<UtxoAddressFormat>>(self.conf()["address_format"].clone())
-            .map_to_mm(|e| UtxoConfError::InvalidAddressFormat(e.to_string()))?
-            .unwrap_or(UtxoAddressFormat::Standard);
-
-        let mut address_format = match format_from_req {
-            Some(from_req) => {
-                if from_req.is_segwit() != format_from_conf.is_segwit() {
-                    let error = format!(
-                        "Both conf {:?} and request {:?} must be either Segwit or Standard/CashAddress",
-                        format_from_conf, from_req
-                    );
-                    return MmError::err(UtxoCoinBuildError::from(UtxoConfError::InvalidAddressFormat(error)));
-                } else {
-                    from_req
-                }
-            },
-            None => format_from_conf,
-        };
-
-        if let UtxoAddressFormat::CashAddress {
-            network: _,
-            ref mut pub_addr_prefix,
-            ref mut p2sh_addr_prefix,
-        } = address_format
-        {
-            *pub_addr_prefix = self.pub_addr_prefix();
-            *p2sh_addr_prefix = self.p2sh_address_prefix();
-        }
-
-        let is_segwit_in_conf = self.conf()["segwit"].as_bool().unwrap_or(false);
-        if address_format.is_segwit() && (!is_segwit_in_conf || self.conf()["bech32_hrp"].is_null()) {
-            let error =
-                "Cannot use Segwit address format for coin without segwit support or bech32_hrp in config".to_owned();
-            return MmError::err(UtxoCoinBuildError::from(UtxoConfError::InvalidAddressFormat(error)));
-        }
-        Ok(address_format)
-    }
-
-    fn pub_addr_prefix(&self) -> u8 {
-        let pubtype = self.conf()["pubtype"]
-            .as_u64()
-            .unwrap_or(if self.ticker() == "BTC" { 0 } else { 60 });
-        pubtype as u8
-    }
-
-    fn p2sh_address_prefix(&self) -> u8 {
-        self.conf()["p2shtype"]
-            .as_u64()
-            .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
-    }
-
-    fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
-
-    fn network(&self) -> UtxoConfResult<BlockchainNetwork> {
-        let conf = self.conf();
-        if !conf["network"].is_null() {
-            return json::from_value(conf["network"].clone())
-                .map_to_mm(|e| UtxoConfError::InvalidBlockchainNetwork(e.to_string()));
-        }
-        Ok(BlockchainNetwork::Mainnet)
-    }
-
-    async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<u8> {
-        Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
-    }
-
-    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> Result<TxFee, MmError<UtxoCoinBuildError>> {
-        let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => TxFee::FixedPerKb(1000),
-            Some(0) => {
-                let fee_method = match &rpc_client {
-                    UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
-                    UtxoRpcClientEnum::Native(client) => client
-                        .detect_fee_method()
-                        .compat()
-                        .await
-                        .map_to_mm(UtxoCoinBuildError::ErrorDetectingFeeMethod)?,
-                };
-                TxFee::Dynamic(fee_method)
-            },
-            Some(fee) => TxFee::FixedPerKb(fee),
-        };
-        Ok(tx_fee)
-    }
-
-    fn initial_history_state(&self) -> HistorySyncState {
-        if self.activation_params().tx_history {
-            HistorySyncState::NotStarted
-        } else {
-            HistorySyncState::NotEnabled
+    fn known_addresses_number_mut(&mut self, chain: Bip44Chain) -> MmResult<&mut u32, InvalidBip44ChainError> {
+        match chain {
+            Bip44Chain::External => Ok(&mut self.external_addresses_number),
+            Bip44Chain::Internal => Ok(&mut self.internal_addresses_number),
         }
     }
 
-    async fn rpc_client(&self) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
-        match self.activation_params().mode {
-            UtxoRpcMode::Native => {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    MmError::err(UtxoCoinBuildError::NativeRpcNotSupportedInWasm)
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let native = self.native_client()?;
-                    Ok(UtxoRpcClientEnum::Native(native))
-                }
-            },
-            UtxoRpcMode::Electrum { servers } => {
-                let electrum = self.electrum_client(ElectrumBuilderArgs::default(), servers).await?;
-                Ok(UtxoRpcClientEnum::Electrum(electrum))
-            },
-        }
-    }
+    fn account_derivation_path(&self) -> DerivationPath { self.account_derivation_path.to_derivation_path() }
 
-    async fn electrum_client(
-        &self,
-        args: ElectrumBuilderArgs,
-        mut servers: Vec<ElectrumRpcRequest>,
-    ) -> UtxoCoinBuildResult<ElectrumClient> {
-        let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
-        let ticker = self.ticker().to_owned();
-        let ctx = self.ctx();
-        let mut event_handlers = vec![];
-        if args.collect_metrics {
-            event_handlers.push(
-                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
-            );
-        }
-
-        if args.negotiate_version {
-            event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
-        }
-
-        let mut rng = small_rng();
-        servers.as_mut_slice().shuffle(&mut rng);
-        let client = ElectrumClientImpl::new(ticker, event_handlers);
-        for server in servers.iter() {
-            match client.add_server(server).await {
-                Ok(_) => (),
-                Err(e) => log!("Error " (e) " connecting to " [server] ". Address won't be used"),
-            };
-        }
-
-        let mut attempts = 0i32;
-        while !client.is_connected().await {
-            if attempts >= 10 {
-                return MmError::err(UtxoCoinBuildError::FailedToConnectToElectrums {
-                    electrum_servers: servers.clone(),
-                    seconds: 5,
-                });
-            }
-
-            Timer::sleep(0.5).await;
-            attempts += 1;
-        }
-
-        let client = Arc::new(client);
-
-        if args.negotiate_version {
-            let weak_client = Arc::downgrade(&client);
-            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
-
-            wait_for_protocol_version_checked(&client)
-                .await
-                .map_to_mm(UtxoCoinBuildError::ElectrumProtocolVersionCheckError)?;
-        }
-
-        if args.spawn_ping {
-            let weak_client = Arc::downgrade(&client);
-            spawn_electrum_ping_loop(weak_client, servers);
-        }
-
-        Ok(ElectrumClient(client))
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn native_client(&self) -> UtxoCoinBuildResult<NativeClient> {
-        use base64::{encode_config as base64_encode, URL_SAFE};
-
-        let native_conf_path = self.confpath()?;
-        let network = self.network()?;
-        let (rpc_port, rpc_user, rpc_password) = read_native_mode_conf(&native_conf_path, &network)
-            .map_to_mm(UtxoCoinBuildError::ErrorReadingNativeModeConf)?;
-        let auth_str = fomat!((rpc_user)":"(rpc_password));
-        let rpc_port = match rpc_port {
-            Some(p) => p,
-            None => self.conf()["rpcport"]
-                .as_u64()
-                .or_mm_err(|| UtxoCoinBuildError::RpcPortIsNotSet)? as u16,
-        };
-
-        let ctx = self.ctx();
-        let coin_ticker = self.ticker().to_owned();
-        let event_handlers =
-            vec![
-                CoinTransportMetrics::new(ctx.metrics.weak(), coin_ticker.clone(), RpcClientType::Native).into_shared(),
-            ];
-        let client = Arc::new(NativeClientImpl {
-            coin_ticker,
-            uri: fomat!("http://127.0.0.1:"(rpc_port)),
-            auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
-            event_handlers,
-            request_id: 0u64.into(),
-            list_unspent_concurrent_map: ConcurrentRequestMap::new(),
-        });
-
-        Ok(NativeClient(client))
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn confpath(&self) -> UtxoCoinBuildResult<PathBuf> {
-        let conf = self.conf();
-        // Documented at https://github.com/jl777/coins#bitcoin-protocol-specific-json
-        // "USERHOME/" prefix should be replaced with the user's home folder.
-        let declared_confpath = match self.conf()["confpath"].as_str() {
-            Some(path) if !path.is_empty() => path.trim(),
-            _ => {
-                let (name, is_asset_chain) = {
-                    match conf["asset"].as_str() {
-                        Some(a) => (a, true),
-                        None => {
-                            let name = conf["name"]
-                                .as_str()
-                                .or_mm_err(|| UtxoConfError::CurrencyNameIsNotSet)?;
-                            (name, false)
-                        },
-                    }
-                };
-                let data_dir = coin_daemon_data_dir(name, is_asset_chain);
-                let confname = format!("{}.conf", name);
-
-                return Ok(data_dir.join(&confname[..]));
-            },
-        };
-
-        let (confpath, rel_to_home) = match declared_confpath.strip_prefix("~/") {
-            Some(stripped) => (stripped, true),
-            None => match declared_confpath.strip_prefix("USERHOME/") {
-                Some(stripped) => (stripped, true),
-                None => (declared_confpath, false),
-            },
-        };
-
-        if rel_to_home {
-            let home = home_dir().or_mm_err(|| UtxoCoinBuildError::CantDetectUserHome)?;
-            Ok(home.join(confpath))
-        } else {
-            Ok(confpath.into())
-        }
-    }
-
-    fn tx_hash_algo(&self) -> TxHashAlgo {
-        if self.ticker() == "GRS" {
-            TxHashAlgo::SHA256
-        } else {
-            TxHashAlgo::DSHA256
-        }
-    }
-}
-
-/// Ping the electrum servers every 30 seconds to prevent them from disconnecting us.
-/// According to docs server can do it if there are no messages in ~10 minutes.
-/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
-/// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_ping_loop(weak_client: Weak<ElectrumClientImpl>, servers: Vec<ElectrumRpcRequest>) {
-    spawn(async move {
-        loop {
-            if let Some(client) = weak_client.upgrade() {
-                if let Err(e) = ElectrumClient(client).server_ping().compat().await {
-                    log!("Electrum servers " [servers] " ping error " [e]);
-                }
-            } else {
-                log!("Electrum servers " [servers] " ping loop stopped");
-                break;
-            }
-            Timer::sleep(30.).await
-        }
-    });
-}
-
-async fn check_electrum_server_version(
-    weak_client: Weak<ElectrumClientImpl>,
-    client_name: String,
-    electrum_addr: String,
-) {
-    // client.remove_server() is called too often
-    async fn remove_server(client: ElectrumClient, electrum_addr: &str) {
-        if let Err(e) = client.remove_server(electrum_addr).await {
-            log!("Error on remove server "[e]);
-        }
-    }
-
-    if let Some(c) = weak_client.upgrade() {
-        let client = ElectrumClient(c);
-        let available_protocols = client.protocol_version();
-        let version = match client
-            .server_version(&electrum_addr, &client_name, available_protocols)
-            .compat()
-            .await
-        {
-            Ok(version) => version,
-            Err(e) => {
-                log!("Electrum " (electrum_addr) " server.version error \"" [e] "\".");
-                if !e.error.is_transport() {
-                    remove_server(client, &electrum_addr).await;
-                };
-                return;
-            },
-        };
-
-        // check if the version is allowed
-        let actual_version = match version.protocol_version.parse::<f32>() {
-            Ok(v) => v,
-            Err(e) => {
-                log!("Error on parse protocol_version "[e]);
-                remove_server(client, &electrum_addr).await;
-                return;
-            },
-        };
-
-        if !available_protocols.contains(&actual_version) {
-            log!("Received unsupported protocol version " [actual_version] " from " [electrum_addr] ". Remove the connection");
-            remove_server(client, &electrum_addr).await;
-            return;
-        }
-
-        match client.set_protocol_version(&electrum_addr, actual_version).await {
-            Ok(()) => {
-                log!("Use protocol version " [actual_version] " for Electrum " [electrum_addr]);
-            },
-            Err(e) => {
-                log!("Error on set protocol_version "[e]);
-            },
-        };
-    }
-}
-
-/// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
-/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
-/// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_version_loop(
-    weak_client: Weak<ElectrumClientImpl>,
-    mut on_connect_rx: mpsc::UnboundedReceiver<String>,
-    client_name: String,
-) {
-    spawn(async move {
-        while let Some(electrum_addr) = on_connect_rx.next().await {
-            spawn(check_electrum_server_version(
-                weak_client.clone(),
-                client_name.clone(),
-                electrum_addr,
-            ));
-        }
-
-        log!("Electrum server.version loop stopped");
-    });
-}
-
-/// Wait until the protocol version of at least one client's Electrum is checked.
-async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Result<(), String> {
-    let mut attempts = 0;
-    loop {
-        if attempts >= 10 {
-            return ERR!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds.");
-        }
-
-        if client.count_connections().await == 0 {
-            // All of the connections were removed because of server.version checking
-            return ERR!(
-                "There are no Electrums with the required protocol version {:?}",
-                client.protocol_version()
-            );
-        }
-
-        if client.is_protocol_version_checked().await {
-            break;
-        }
-
-        Timer::sleep(0.5).await;
-        attempts += 1;
-    }
-
-    Ok(())
+    fn account_id(&self) -> u32 { self.account_id }
 }
 
 /// Function calculating KMD interest
@@ -2181,8 +1438,10 @@ pub fn address_by_conf_and_pubkey_str(
         required_confirmations: None,
         requires_notarization: None,
         address_format: None,
+        gap_limit: None,
+        check_utxo_maturity: None,
     };
-    let conf_builder = UtxoConfBuilder::new(conf, params, coin);
+    let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
     let utxo_conf = try_s!(conf_builder.build());
     let pubkey_bytes = try_s!(hex::decode(pubkey));
     let hash = dhash160(&pubkey_bytes);
@@ -2207,6 +1466,10 @@ fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {
         .map_to_mm(|e: TryFromSliceError| e.to_string())?;
     Ok(u32::from_be_bytes(be_bytes))
 }
+
+fn ten_f64() -> f64 { 10. }
+
+fn one_hundred() -> usize { 100 }
 
 #[test]
 fn test_parse_hex_encoded_u32() {
