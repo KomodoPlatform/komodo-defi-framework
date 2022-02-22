@@ -947,8 +947,12 @@ impl TakerSwap {
             },
         };
 
-        let maker_coin_swap_contract_bytes = maker_coin_swap_contract_addr.clone().map_or(vec![], |bytes| bytes.0);
-        let taker_coin_swap_contract_bytes = taker_coin_swap_contract_addr.clone().map_or(vec![], |bytes| bytes.0);
+        let maker_coin_swap_contract_bytes = maker_coin_swap_contract_addr
+            .clone()
+            .map_or_else(Vec::new, |bytes| bytes.0);
+        let taker_coin_swap_contract_bytes = taker_coin_swap_contract_addr
+            .clone()
+            .map_or_else(Vec::new, |bytes| bytes.0);
         let my_negotiation_data = self.get_my_negotiation_data(
             maker_data.secret_hash().to_vec(),
             maker_coin_swap_contract_bytes,

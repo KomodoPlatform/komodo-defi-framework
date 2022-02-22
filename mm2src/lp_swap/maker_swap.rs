@@ -153,7 +153,6 @@ pub struct MakerSwapData {
     /// Temporary pubkey used in HTLC redeem script when applicable for taker coin
     pub taker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used to sign P2P messages when applicable
-    /// Temporary privkey used to sign P2P messages when applicable
     pub p2p_privkey: Option<H256Json>,
 }
 
@@ -327,8 +326,14 @@ impl MakerSwap {
     fn get_my_negotiation_data(&self) -> NegotiationDataMsg {
         let r = self.r();
         let secret_hash = dhash160(&r.data.secret.0).take().to_vec();
-        let maker_coin_swap_contract = self.maker_coin.swap_contract_address().map_or(vec![], |addr| addr.0);
-        let taker_coin_swap_contract = self.taker_coin.swap_contract_address().map_or(vec![], |addr| addr.0);
+        let maker_coin_swap_contract = self
+            .maker_coin
+            .swap_contract_address()
+            .map_or_else(Vec::new, |addr| addr.0);
+        let taker_coin_swap_contract = self
+            .taker_coin
+            .swap_contract_address()
+            .map_or_else(Vec::new, |addr| addr.0);
 
         if r.my_maker_coin_htlc_keypair != r.my_taker_coin_htlc_keypair {
             NegotiationDataMsg::V3(NegotiationDataV3 {
