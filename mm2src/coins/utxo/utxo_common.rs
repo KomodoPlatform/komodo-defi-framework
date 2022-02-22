@@ -41,6 +41,11 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+#[cfg(target_arch = "wasm32")]
+use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 pub use chain::Transaction as UtxoTx;
 use spv_validation::spv_proof::SPVProof;
 use spv_validation::types::SPVError;
@@ -3271,14 +3276,19 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-pub async fn block_header_utxo_loop<T>(
-    _ctx: MmArc,
-    weak: UtxoWeak,
-    check_every: f64,
-    constructor: impl Fn(UtxoArc) -> T,
-) where
+#[cfg(target_arch = "wasm32")]
+fn retrieve_header_storage_from_ctx(_ctx: &MmArc) -> impl BlockHeaderStorage { IndexedDBBlockHeadersStorage {} }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn retrieve_header_storage_from_ctx(ctx: &MmArc) -> impl BlockHeaderStorage {
+    SqliteBlockHeadersStorage(ctx.sqlite_connection.as_option().unwrap().clone())
+}
+
+pub async fn block_header_utxo_loop<T>(ctx: MmArc, weak: UtxoWeak, check_every: f64, constructor: impl Fn(UtxoArc) -> T)
+where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
+    let _storage = retrieve_header_storage_from_ctx(&ctx);
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         info!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
