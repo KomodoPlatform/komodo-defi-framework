@@ -43,6 +43,23 @@ pub fn validate_header_work(digest: H256, target: &U256) -> bool {
     U256::from_little_endian(digest.as_slice()) < *target
 }
 
+/// Checks validity of header chain.
+/// Compares the hash of each header to the prevHash in the next header.
+///
+/// # Arguments
+///
+/// * `headers` - Raw byte array of header chain
+/// * `difficulty_check`: Rather the difficulty need to check or not, usefull for chain like Qtum (Pos)
+/// or KMD/SmartChain (Difficulty change NN)
+/// * `constant_difficulty`: If we do not expect difficulty change (BTC difficulty change every 2016 blocks)
+/// use this variable to false when you do not have a chance to use a checkpoint
+///
+/// # Errors
+///
+/// * Errors if header chain is the wrong length, chain is invalid or insufficient work
+///
+/// # Notes
+/// Wrapper inspired by `bitcoin_spv::validatespv::validate_header_chain`
 pub fn validate_headers(
     headers: Vec<BlockHeader>,
     difficulty_check: bool,
