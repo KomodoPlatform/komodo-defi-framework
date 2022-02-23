@@ -3346,6 +3346,7 @@ pub async fn block_header_utxo_loop<T>(
     weak: UtxoWeak,
     check_every: f64,
     difficulty_check: bool,
+    constant_difficulty: bool,
     blocks_limit_to_check: u64,
     constructor: impl Fn(UtxoArc) -> T,
 ) where
@@ -3383,19 +3384,21 @@ pub async fn block_header_utxo_loop<T>(
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         match retrieve_last_headers(&coin, blocks_limit_to_check).await {
-            Ok((block_registry, block_headers)) => match validate_headers(block_headers, difficulty_check) {
-                Ok(_) => {
-                    let storage = retrieve_header_storage_from_ctx(&ctx);
-                    let ticker = coin.as_ref().conf.ticker.as_str();
-                    match storage.add_block_headers_to_storage(ticker, block_registry).await {
-                        Ok(_) => info!(
-                            "Successfully add block header to storage after validation for {}",
-                            ticker
-                        ),
-                        Err(err) => error!("error: {:?}", err),
-                    }
-                },
-                Err(err) => error!("error: {:?}", err),
+            Ok((block_registry, block_headers)) => {
+                match validate_headers(block_headers, difficulty_check, constant_difficulty) {
+                    Ok(_) => {
+                        let storage = retrieve_header_storage_from_ctx(&ctx);
+                        let ticker = coin.as_ref().conf.ticker.as_str();
+                        match storage.add_block_headers_to_storage(ticker, block_registry).await {
+                            Ok(_) => info!(
+                                "Successfully add block header to storage after validation for {}",
+                                ticker
+                            ),
+                            Err(err) => error!("error: {:?}", err),
+                        }
+                    },
+                    Err(err) => error!("error: {:?}", err),
+                }
             },
             Err(err) => error!("error: {:?}", err),
         }

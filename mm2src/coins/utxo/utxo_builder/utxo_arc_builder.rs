@@ -254,6 +254,7 @@ where
                 weak,
                 block_header_verification_params.check_every,
                 block_header_verification_params.difficulty_check,
+                block_header_verification_params.constant_difficulty,
                 block_header_verification_params.blocks_limit_to_check,
                 constructor,
             );

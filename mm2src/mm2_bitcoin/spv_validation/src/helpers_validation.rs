@@ -1,6 +1,7 @@
 use bitcoin_spv::btcspv::verify_hash256_merkle;
-use chain::BlockHeader;
+use chain::{BlockHeader, RawBlockHeader};
 use primitives::hash::H256;
+use primitives::U256;
 use types::SPVError;
 
 /// Evaluates a Bitcoin merkle inclusion proof.
@@ -32,16 +33,28 @@ pub fn merkle_prove(txid: H256, merkle_root: H256, intermediate_nodes: Vec<H256>
 
 fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { actual == to_compare_with }
 
-pub fn validate_headers(headers: Vec<BlockHeader>, difficulty_check: bool) -> Result<(), SPVError> {
+pub fn validate_headers(
+    headers: Vec<BlockHeader>,
+    difficulty_check: bool,
+    constant_difficulty: bool,
+) -> Result<(), SPVError> {
     let mut previous_hash = H256::default();
+    let mut target = U256::default();
     for (i, header) in headers.into_iter().enumerate() {
-        if i != 0 && !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
+        let raw_header = RawBlockHeader::from(header.clone());
+        if i == 0 {
+            target = raw_header.target();
+        }
+        if !constant_difficulty && raw_header.target() != target {
+            return Err(SPVError::UnexpectedDifficultyChange);
+        }
+        if i != 0 && !validate_header_prev_hash(&raw_header.parent(), &previous_hash) {
             return Err(SPVError::InvalidChain);
         }
         if difficulty_check {
             todo!()
         }
-        previous_hash = header.hash();
+        previous_hash = raw_header.digest();
     }
     Ok(())
 }

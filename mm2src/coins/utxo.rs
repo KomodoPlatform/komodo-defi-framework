@@ -1024,6 +1024,7 @@ pub struct UtxoMergeParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoBlockHeaderVerificationParams {
     pub difficulty_check: bool,
+    pub constant_difficulty: bool,
     pub blocks_limit_to_check: u64,
     pub check_every: f64,
 }
