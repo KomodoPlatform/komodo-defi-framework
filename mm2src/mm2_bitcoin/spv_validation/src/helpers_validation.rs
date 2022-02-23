@@ -56,7 +56,7 @@ pub fn validate_header_work(digest: H256, target: &U256) -> bool {
 ///
 /// # Errors
 ///
-/// * Errors if header chain is the wrong length, chain is invalid or insufficient work
+/// * Errors if header chain is invalid, insufficient work, unexpected difficulty change or unable to get a target
 ///
 /// # Notes
 /// Wrapper inspired by `bitcoin_spv::validatespv::validate_header_chain`
@@ -72,12 +72,12 @@ pub fn validate_headers(
         if i == 0 {
             target = match header.target() {
                 Ok(target) => target,
-                Err(_) => return Err(SPVError::MalformattedHeader),
+                Err(_) => return Err(SPVError::UnableToGetTarget),
             };
         }
         let cur_target = match header.target() {
             Ok(target) => target,
-            Err(_) => return Err(SPVError::MalformattedHeader),
+            Err(_) => return Err(SPVError::UnableToGetTarget),
         };
         if (!constant_difficulty && difficulty_check) && cur_target != target {
             return Err(SPVError::UnexpectedDifficultyChange);

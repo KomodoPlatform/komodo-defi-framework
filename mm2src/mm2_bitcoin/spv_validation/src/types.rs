@@ -16,6 +16,8 @@ pub enum SPVError {
     MalformattedWitnessOutput,
     /// `extract_hash` could not identify the output type.
     MalformattedOutput,
+    /// Unable to get target from block header
+    UnableToGetTarget,
     /// Unable to get block header from network or storage
     UnableToGetHeader,
     /// Unable to deserialize raw block header from electrum to concrete type
