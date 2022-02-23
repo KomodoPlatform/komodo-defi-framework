@@ -47,7 +47,6 @@ impl RawBlockHeader {
         // This is safe because it saturates at `0`, which gives an unreachable target of `1`
         let exponent = self.0.as_ref()[75].saturating_sub(3);
         let offset = U256::from(256_u64).pow(exponent.into());
-
         mantissa * offset
     }
 }

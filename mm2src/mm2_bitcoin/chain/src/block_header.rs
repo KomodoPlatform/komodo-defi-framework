@@ -2,6 +2,7 @@ use compact::Compact;
 use crypto::dhash256;
 use hash::H256;
 use hex::FromHex;
+use primitives::U256;
 use ser::{deserialize, serialize, Deserializable, Reader, Serializable, Stream};
 use std::io;
 use transaction::{deserialize_tx, TxType};
@@ -264,6 +265,12 @@ impl Deserializable for BlockHeader {
 
 impl BlockHeader {
     pub fn hash(&self) -> H256 { dhash256(&serialize(self)) }
+    pub fn target(&self) -> Result<U256, U256> {
+        match self.bits {
+            BlockHeaderBits::Compact(compact) => compact.to_u256(),
+            BlockHeaderBits::U32(nb) => Ok(U256::from(nb)),
+        }
+    }
 }
 
 impl From<&'static str> for BlockHeader {
