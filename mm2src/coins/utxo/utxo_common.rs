@@ -3,8 +3,8 @@ use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanc
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::init_withdraw::WithdrawTaskHandle;
-use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, ElectrumBlockHeader, UnspentInfo,
-                               UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
+                               UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawFrom, WithdrawResult,
@@ -3285,29 +3285,28 @@ fn retrieve_header_storage_from_ctx(ctx: &MmArc) -> impl BlockHeaderStorage {
     SqliteBlockHeadersStorage(ctx.sqlite_connection.as_option().unwrap().clone())
 }
 
-async fn get_best_block(rpc: &ElectrumClient) -> Result<ElectrumBlockHeader, MmError<SPVError>> {
-    rpc.blockchain_headers_subscribe()
-        .compat()
-        .await
-        .map_err(|_e| MmError::new(SPVError::UnableToGetHeader))
-}
-
 pub async fn retrieve_last_headers<T>(
     coin: &T,
+    blocks_limit_to_check: u64,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
 {
     let electrum_rpc_client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => return MmError::err(SPVError::UnknownError),
         UtxoRpcClientEnum::Electrum(electrum) => electrum,
     };
-    let best_block = get_best_block(electrum_rpc_client).await;
+
+    let best_block = coin.current_block().compat().await;
     let (from, count) = match best_block {
         Ok(block) => {
-            let block_height = block.block_height();
-            let from = if block_height < 100 { 0 } else { block_height - 100 };
-            (from, NonZeroU64::new(100).unwrap())
+            let block_height = block;
+            let from = if block_height < blocks_limit_to_check {
+                0
+            } else {
+                block_height - blocks_limit_to_check
+            };
+            (from, NonZeroU64::new(blocks_limit_to_check).unwrap())
         },
         Err(_) => {
             error!("Unable to retrieve last block height - skipping");
@@ -3342,46 +3341,64 @@ where
     Ok((block_registry, block_headers))
 }
 
-pub async fn block_header_utxo_loop<T>(ctx: MmArc, weak: UtxoWeak, check_every: f64, constructor: impl Fn(UtxoArc) -> T)
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+pub async fn block_header_utxo_loop<T>(
+    ctx: MmArc,
+    weak: UtxoWeak,
+    check_every: f64,
+    difficulty_check: bool,
+    blocks_limit_to_check: u64,
+    constructor: impl Fn(UtxoArc) -> T,
+) where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
 {
-    let coin = match weak.upgrade() {
-        Some(arc) => constructor(arc),
-        None => return,
-    };
-    match retrieve_last_headers(&coin).await {
-        Ok((block_registry, block_headers)) => {
-            if validate_headers(block_headers) {
-                let ticker = coin.as_ref().conf.ticker.as_str();
-                let storage = retrieve_header_storage_from_ctx(&ctx);
-                match storage.is_initialized_for(ticker).await {
-                    Ok(is_init) => {
-                        if !is_init {
-                            match storage.init(ticker).await {
-                                Ok(()) => {},
-                                Err(e) => {
-                                    error!("{:?}", e);
-                                    return;
-                                },
-                            }
-                        }
-                    },
-                    Err(_e) => return,
+    {
+        let coin = match weak.upgrade() {
+            Some(arc) => constructor(arc),
+            None => return,
+        };
+        let ticker = coin.ticker();
+        let storage = retrieve_header_storage_from_ctx(&ctx);
+        match storage.is_initialized_for(ticker).await {
+            Ok(is_init) => {
+                if !is_init {
+                    match storage.init(ticker).await {
+                        Ok(()) => {
+                            info!("Block Header Storage successfully initialized for {}", ticker);
+                        },
+                        Err(e) => {
+                            error!(
+                                "Couldn't initiate storage - aborting the block_header_utxo_loop: {:?}",
+                                e
+                            );
+                            return;
+                        },
+                    }
+                } else {
+                    info!("Block Header Storage already initialized for {}", ticker);
                 }
-                let _ = storage
-                    .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), block_registry)
-                    .await;
-            }
-        },
-        Err(err) => {
-            error!("error: {:?}", err);
-            return;
-        },
+            },
+            Err(_e) => return,
+        }
     }
-    drop(coin);
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
+        match retrieve_last_headers(&coin, blocks_limit_to_check).await {
+            Ok((block_registry, block_headers)) => match validate_headers(block_headers, difficulty_check) {
+                Ok(_) => {
+                    let storage = retrieve_header_storage_from_ctx(&ctx);
+                    let ticker = coin.as_ref().conf.ticker.as_str();
+                    match storage.add_block_headers_to_storage(ticker, block_registry).await {
+                        Ok(_) => info!(
+                            "Successfully add block header to storage after validation for {}",
+                            ticker
+                        ),
+                        Err(err) => error!("error: {:?}", err),
+                    }
+                },
+                Err(err) => error!("error: {:?}", err),
+            },
+            Err(err) => error!("error: {:?}", err),
+        }
         info!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
         Timer::sleep(check_every).await;
     }

@@ -30,7 +30,21 @@ pub fn merkle_prove(txid: H256, merkle_root: H256, intermediate_nodes: Vec<H256>
     Ok(())
 }
 
-pub fn validate_headers(_headers: Vec<BlockHeader>) -> bool { true }
+fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { actual == to_compare_with }
+
+pub fn validate_headers(headers: Vec<BlockHeader>, difficulty_check: bool) -> Result<(), SPVError> {
+    let mut previous_hash = H256::default();
+    for (i, header) in headers.into_iter().enumerate() {
+        if i != 0 && !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
+            return Err(SPVError::InvalidChain);
+        }
+        if difficulty_check {
+            todo!()
+        }
+        previous_hash = header.hash();
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

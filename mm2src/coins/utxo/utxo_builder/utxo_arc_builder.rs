@@ -5,7 +5,7 @@ use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBui
 use crate::utxo::utxo_common::block_header_utxo_loop;
 use crate::utxo::utxo_common::merge_utxo_loop;
 use crate::utxo::{UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
-use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
+use crate::{MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
 use common::log::info;
@@ -87,7 +87,7 @@ where
 impl<'a, F, T, XPubExtractor> UtxoCoinBuilder<XPubExtractor> for UtxoArcBuilder<'a, F, T, XPubExtractor>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
     XPubExtractor: HDXPubExtractor + Send + Sync,
 {
     type ResultCoin = T;
@@ -104,7 +104,7 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop(self.ctx.clone(), utxo_weak, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(self.ctx.clone(), utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
@@ -120,7 +120,7 @@ where
 impl<'a, F, T, XPubExtractor> BlockHeaderUtxoArcOps<T> for UtxoArcBuilder<'a, F, T, XPubExtractor>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
     XPubExtractor: HDXPubExtractor + Send + Sync,
 {
 }
@@ -165,7 +165,7 @@ where
 impl<'a, F, T> BlockHeaderUtxoArcOps<T> for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
 {
 }
 
@@ -173,7 +173,7 @@ where
 impl<'a, F, T> UtxoCoinWithIguanaPrivKeyBuilder for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -187,7 +187,7 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop(self.ctx.clone(), utxo_weak, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(self.ctx.clone(), utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
@@ -240,14 +240,25 @@ where
 
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
 {
-    fn spawn_block_header_utxo_loop<F>(&self, ctx: MmArc, weak: UtxoWeak, constructor: F)
+    fn spawn_block_header_utxo_loop_if_required<F>(&self, ctx: MmArc, weak: UtxoWeak, constructor: F)
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
-        let fut = block_header_utxo_loop(ctx, weak, 60.0, constructor);
-        info!("Starting UTXO block header loop for coin {}", self.ticker());
-        spawn(fut);
+        if let Some(ref block_header_verification_params) =
+            self.activation_params().utxo_block_header_verification_params
+        {
+            let fut = block_header_utxo_loop(
+                ctx,
+                weak,
+                block_header_verification_params.check_every,
+                block_header_verification_params.difficulty_check,
+                block_header_verification_params.blocks_limit_to_check,
+                constructor,
+            );
+            info!("Starting UTXO block header loop for coin {}", self.ticker());
+            spawn(fut);
+        }
     }
 }
