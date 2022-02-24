@@ -20,17 +20,17 @@ pub struct BlockHeaderStorage {
 
 impl BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new_from_ctx(ctx: MmArc) -> BlockHeaderStorage {
-        BlockHeaderStorage {
-            inner: SqliteBlockHeadersStorage(ctx.sqlite_connection.as_option().unwrap().clone()),
-        }
+    pub fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage> {
+        ctx.sqlite_connection.as_option().map(|connection| BlockHeaderStorage {
+            inner: SqliteBlockHeadersStorage(connection.clone()),
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new_from_ctx(_ctx: MmArc) -> BlockHeaderStorage {
-        BlockHeaderStorage {
+    pub fn new_from_ctx(_ctx: MmArc) -> Option<BlockHeaderStorage> {
+        Some(BlockHeaderStorage {
             inner: IndexedDBBlockHeadersStorage {},
-        }
+        })
     }
 }
 

@@ -3344,7 +3344,10 @@ pub async fn block_header_utxo_loop<T>(
             None => return,
         };
         let ticker = coin.ticker();
-        let storage = &coin.as_ref().block_headers_storage;
+        let storage = match &coin.as_ref().block_headers_storage {
+            None => return,
+            Some(storage) => storage,
+        };
         match storage.is_initialized_for(ticker).await {
             Ok(is_init) => {
                 if !is_init {
@@ -3373,7 +3376,10 @@ pub async fn block_header_utxo_loop<T>(
             Ok((block_registry, block_headers)) => {
                 match validate_headers(block_headers, difficulty_check, constant_difficulty) {
                     Ok(_) => {
-                        let storage = &coin.as_ref().block_headers_storage;
+                        let storage = match &coin.as_ref().block_headers_storage {
+                            None => break,
+                            Some(storage) => storage,
+                        };
                         let ticker = coin.as_ref().conf.ticker.as_str();
                         match storage.add_block_headers_to_storage(ticker, block_registry).await {
                             Ok(_) => info!(
