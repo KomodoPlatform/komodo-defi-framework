@@ -467,6 +467,7 @@ pub struct UtxoCoinConf {
     /// Block count for median time past calculation
     pub mtp_block_count: NonZeroU64,
     pub estimate_fee_mode: Option<EstimateFeeMode>,
+    pub block_header_storage_params: Option<UtxoBlockHeaderVerificationParams>,
     /// The minimum number of confirmations at which a transaction is considered mature
     pub mature_confirmations: u32,
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
@@ -1036,7 +1037,6 @@ pub struct UtxoBlockHeaderVerificationParams {
 pub struct UtxoActivationParams {
     pub mode: UtxoRpcMode,
     pub utxo_merge_params: Option<UtxoMergeParams>,
-    pub utxo_block_header_verification_params: Option<UtxoBlockHeaderVerificationParams>,
     #[serde(default)]
     pub tx_history: bool,
     pub required_confirmations: Option<u64>,
@@ -1074,9 +1074,6 @@ impl UtxoActivationParams {
         let utxo_merge_params =
             json::from_value(req["utxo_merge_params"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidMergeParams)?;
 
-        let utxo_block_header_verification_params = json::from_value(req["block_header_params"].clone())
-            .map_to_mm(UtxoFromLegacyReqErr::InvalidBlockHeaderVerificationParams)?;
-
         let tx_history = req["tx_history"].as_bool().unwrap_or_default();
         let required_confirmations = json::from_value(req["required_confirmations"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidRequiredConfs)?;
@@ -1089,7 +1086,6 @@ impl UtxoActivationParams {
 
         Ok(UtxoActivationParams {
             mode,
-            utxo_block_header_verification_params,
             utxo_merge_params,
             tx_history,
             required_confirmations,
@@ -1454,7 +1450,6 @@ pub fn address_by_conf_and_pubkey_str(
     let params = UtxoActivationParams {
         mode: UtxoRpcMode::Native,
         utxo_merge_params: None,
-        utxo_block_header_verification_params: None,
         tx_history: false,
         required_confirmations: None,
         requires_notarization: None,
