@@ -37,12 +37,13 @@ use ln_errors::{ConnectToNodeError, ConnectToNodeResult, EnableLightningError, E
 use ln_utils::{connect_to_node, last_request_id_path, nodes_data_path, open_ln_channel, parse_node_info,
                read_last_request_id_from_file, read_nodes_data_from_file, save_last_request_id_to_file,
                save_node_data_to_file, ChannelManager, PeerManager};
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 #[cfg(not(target_arch = "wasm32"))] use script::Builder;
 use script::TransactionInputSigner;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::str::FromStr;
 use std::sync::Arc;
 
 pub mod ln_errors;
@@ -285,37 +286,30 @@ impl MarketCoinOps for LightningCoin {
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
-    fn get_raw_tx(
-        &self,
-        mut tx: &str,
-    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
-        }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
-            },
-        };
-        let lightning_coin_fields = self.platform_fields.clone();
-        Box::new(
-            Box::pin(async move {
-                lightning_coin_fields
-                    .platform_coin
-                    .get_verbose_transaction_from_cache_or_rpc(rpc::v1::types::H256::from(&bytes[..]))
-                    .compat()
-                    .await
-                    .map(|raw_tx| match raw_tx {
-                        Cache(cache_tx) => cache_tx.hex.to_hex(),
-                        Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        match H256Json::from_str(tx) {
+            Ok(tx_hash) => {
+                let lightning_coin_fields = self.platform_fields.clone();
+                Box::new(
+                    Box::pin(async move {
+                        lightning_coin_fields
+                            .platform_coin
+                            .get_verbose_transaction_from_cache_or_rpc(tx_hash)
+                            .compat()
+                            .await
+                            .map(|raw_tx| match raw_tx {
+                                Cache(cache_tx) => cache_tx.hex.to_hex(),
+                                Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
+                            })
+                            .map_err(|err| err.map(GetRawTransactionError::from))
                     })
-                    .map_err(|err| err.map(GetRawTransactionError::from))
-            })
-            .compat(),
-        )
+                    .compat(),
+                )
+            },
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
     fn wait_for_confirmations(
         &self,

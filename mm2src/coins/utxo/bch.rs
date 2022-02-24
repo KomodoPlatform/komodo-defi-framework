@@ -16,6 +16,7 @@ use futures::{FutureExt, TryFutureExt};
 use itertools::Either as EitherIter;
 use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
+use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
 use std::sync::MutexGuard;
@@ -1043,26 +1044,25 @@ impl MarketCoinOps for BchCoin {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
+        match H256Json::from_str(tx) {
+            Ok(tx_hash) => {
+                let bch_coin_fields = self.utxo_arc.clone();
+                Box::new(
+                    Box::pin(async move {
+                        bch_coin_fields
+                            .rpc_client
+                            .get_rpc_transaction(&tx_hash)
+                            .await
+                            .map(|raw_tx| raw_tx.hex.to_hex())
+                            .map_err(|err| err.map(GetRawTransactionError::from))
+                    })
+                    .compat(),
+                )
             },
-        };
-        let bch_coin_fields = self.utxo_arc.clone();
-        Box::new(
-            Box::pin(async move {
-                bch_coin_fields
-                    .rpc_client
-                    .get_rpc_transaction(&rpc::v1::types::H256::from(&bytes[..]))
-                    .await
-                    .map(|raw_tx| raw_tx.hex.to_hex())
-                    .map_err(|err| err.map(GetRawTransactionError::from))
-            })
-            .compat(),
-        )
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
     fn wait_for_confirmations(
         &self,

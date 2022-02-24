@@ -7,6 +7,7 @@ use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::TrezorCoin;
 use futures::{FutureExt, TryFutureExt};
+use rpc::v1::types::H256 as H256Json;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
@@ -426,33 +427,26 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
-    fn get_raw_tx(
-        &self,
-        mut tx: &str,
-    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
-        }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        match H256Json::from_str(tx) {
+            Ok(tx_hash) => {
+                let utxo_coin_fields = self.utxo_arc.0.clone();
+                Box::new(
+                    Box::pin(async move {
+                        utxo_coin_fields
+                            .rpc_client
+                            .get_rpc_transaction(&tx_hash)
+                            .await
+                            .map(|raw_tx| raw_tx.hex.to_hex())
+                            .map_err(|err| err.map(GetRawTransactionError::from))
+                    })
+                    .compat(),
+                )
             },
-        };
-        let utxo_coin_fields = self.utxo_arc.0.clone();
-        Box::new(
-            Box::pin(async move {
-                utxo_coin_fields
-                    .rpc_client
-                    .get_rpc_transaction(&rpc::v1::types::H256::from(&bytes[..]))
-                    .await
-                    .map(|raw_tx| raw_tx.hex.to_hex())
-                    .map_err(|err| err.map(GetRawTransactionError::from))
-            })
-            .compat(),
-        )
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
 
     fn wait_for_confirmations(

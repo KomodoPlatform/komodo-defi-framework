@@ -244,9 +244,9 @@ pub enum GetRawTransactionError {
     #[display(fmt = "Invalid response `{}`", _0)]
     InvalidResponse(String),
     #[display(fmt = "No activated coin with such name `{}`", _0)]
-    InvalidCoin(String),
+    CoinIsNotActive(String),
     #[display(fmt = "No valid transaction with such hash `{}`", _0)]
-    InvalidTx(String),
+    TxIsNotFound(String),
     #[display(fmt = "Invalid hash `{}`", _0)]
     InvalidTxHash(String),
     #[display(fmt = "No 'coin' field")]
@@ -261,7 +261,12 @@ impl HttpStatusCode for GetRawTransactionError {
         match self {
             GetRawTransactionError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             GetRawTransactionError::InvalidResponse(_) => StatusCode::BAD_GATEWAY,
-            _ => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::CoinIsNotActive(_) => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::TxIsNotFound(_) => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::InvalidTxHash(_) => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::NoCoinField => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::NoTxHashField => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::Transport(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -407,7 +412,6 @@ pub trait SwapOps {
 
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
-#[async_trait::async_trait]
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 

@@ -1124,29 +1124,26 @@ impl MarketCoinOps for EthCoin {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
-            },
-        };
-
-        Box::new(
-            self.web3
-                .eth()
-                .transaction(TransactionId::Hash(H256::from(&bytes[..])))
-                .map_err(|err| GetRawTransactionError::Internal(err.to_string()).into())
-                .and_then(|raw_tx| {
-                    raw_tx.ok_or_else(|| MmError::from(GetRawTransactionError::InvalidTxHash(original_hash)))
-                })
-                .map(|raw_tx| {
-                    signed_tx_from_web3_tx(raw_tx).map_err(|msg| MmError::from(GetRawTransactionError::Internal(msg)))
-                })
-                .flatten()
-                .and_then(|signed_tx| Ok(rlp::encode(&signed_tx).to_hex())),
-        )
+        match H256::from_str(tx) {
+            Ok(tx_hash) => Box::new(
+                self.web3
+                    .eth()
+                    .transaction(TransactionId::Hash(tx_hash))
+                    .map_err(|err| GetRawTransactionError::Internal(err.to_string()).into())
+                    .and_then(|raw_tx| {
+                        raw_tx.ok_or_else(|| MmError::from(GetRawTransactionError::TxIsNotFound(original_hash)))
+                    })
+                    .and_then(|raw_tx| {
+                        signed_tx_from_web3_tx(raw_tx)
+                            .map_err(|msg| MmError::from(GetRawTransactionError::Internal(msg)))
+                            .map(|signed_tx| Ok(rlp::encode(&signed_tx).to_hex()))
+                    })
+                    .flatten(),
+            ),
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
 
     fn wait_for_confirmations(

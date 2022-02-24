@@ -707,3 +707,9 @@ pub struct MmVersion {
     pub result: String,
     pub datetime: String,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTransactionResponse {
+    pub tx_hex: String,
+}

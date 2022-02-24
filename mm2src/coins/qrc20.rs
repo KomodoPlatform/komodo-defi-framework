@@ -37,7 +37,7 @@ use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
 use keys::{Address as UtxoAddress, Address, Public};
 #[cfg(test)] use mocktopus::macros::*;
-use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json, H256};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
@@ -1001,7 +1001,7 @@ impl SwapOps for Qrc20Coin {
 impl From<TxProviderError> for GetRawTransactionError {
     fn from(tx_provider_err: TxProviderError) -> Self {
         match tx_provider_err {
-            TxProviderError::Transport(msg) => GetRawTransactionError::InvalidTx(msg),
+            TxProviderError::Transport(msg) => GetRawTransactionError::TxIsNotFound(msg),
             TxProviderError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
             TxProviderError::Internal(msg) => GetRawTransactionError::Internal(msg),
         }
@@ -1064,27 +1064,26 @@ impl MarketCoinOps for Qrc20Coin {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
+        match H256Json::from_str(tx) {
+            Ok(tx_hash) => {
+                let qrc20_coin_fields = self.0.clone();
+                Box::new(
+                    Box::pin(async move {
+                        qrc20_coin_fields
+                            .utxo
+                            .rpc_client
+                            .get_rpc_transaction(&tx_hash)
+                            .await
+                            .map(|raw_tx| raw_tx.hex.to_hex())
+                            .map_err(|err| err.map(GetRawTransactionError::from))
+                    })
+                    .compat(),
+                )
             },
-        };
-        let qrc20_coin_fields = self.0.clone();
-        Box::new(
-            Box::pin(async move {
-                qrc20_coin_fields
-                    .utxo
-                    .rpc_client
-                    .get_rpc_transaction(&H256::from(&bytes[..]))
-                    .await
-                    .map(|raw_tx| raw_tx.hex.to_hex())
-                    .map_err(|err| err.map(GetRawTransactionError::from))
-            })
-            .compat(),
-        )
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
 
     fn wait_for_confirmations(

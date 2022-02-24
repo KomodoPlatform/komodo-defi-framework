@@ -10,6 +10,7 @@ use crypto::trezor::TrezorCoin;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
 use keys::AddressHashEnum;
+use rpc::v1::types::H256 as H256Json;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
@@ -628,26 +629,25 @@ impl MarketCoinOps for QtumCoin {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
-        let bytes = match hex::decode(tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Box::new(futures01::future::err(
-                    GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-                ));
+        match H256Json::from_str(tx) {
+            Ok(tx_hash) => {
+                let qtum_coin_fields = self.utxo_arc.clone();
+                Box::new(
+                    Box::pin(async move {
+                        qtum_coin_fields
+                            .rpc_client
+                            .get_rpc_transaction(&tx_hash)
+                            .await
+                            .map(|raw_tx| raw_tx.hex.to_hex())
+                            .map_err(|err| err.map(GetRawTransactionError::from))
+                    })
+                    .compat(),
+                )
             },
-        };
-        let qtum_coin_fields = self.utxo_arc.clone();
-        Box::new(
-            Box::pin(async move {
-                qtum_coin_fields
-                    .rpc_client
-                    .get_rpc_transaction(&rpc::v1::types::H256::from(&bytes[..]))
-                    .await
-                    .map(|raw_tx| raw_tx.hex.to_hex())
-                    .map_err(|err| err.map(GetRawTransactionError::from))
-            })
-            .compat(),
-        )
+            Err(err) => Box::new(futures01::future::err(
+                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+            )),
+        }
     }
 
     fn wait_for_confirmations(

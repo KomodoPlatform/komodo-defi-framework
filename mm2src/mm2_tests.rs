@@ -61,7 +61,6 @@ mod lp_bot_tests;
 
 #[path = "mm2_tests/structs.rs"] pub mod structs;
 
-use crate::mm2::rpc::get_raw_transaction;
 use structs::*;
 
 // TODO: Consider and/or try moving the integration tests into separate Rust files.
@@ -8406,11 +8405,8 @@ fn test_get_raw_transaction() {
     })))
     .unwrap();
 
-    let eth_response =
-        serde_json::from_str::<RpcSuccessResponse<get_raw_transaction::RawTransactionResponse>>(&eth_raw_tx.1).unwrap();
-    let rick_response =
-        serde_json::from_str::<RpcSuccessResponse<get_raw_transaction::RawTransactionResponse>>(&rick_raw_tx.1)
-            .unwrap();
+    let eth_response = serde_json::from_str::<RpcSuccessResponse<RawTransactionResponse>>(&eth_raw_tx.1).unwrap();
+    let rick_response = serde_json::from_str::<RpcSuccessResponse<RawTransactionResponse>>(&rick_raw_tx.1).unwrap();
     assert_eq!((rick_raw_tx.0.as_u16(), rick_response.result.tx_hex), (200u16, "0400008085202f89025655b6fec358091a4a6b34107e69b10bd7660056d8f2a1e5f8eef0db6aec960100000000494830450221008c89db5e2d93d7674fe152e37344dfd24a0b1d4d382a7e0bcfc5d8190a141d72022050ce4ef929429e7e1a6c4ebd3f72a1a2aa25da1e0df65553a2c657658077ed1d01feffffff79cc137b70c39c9c7c2b9230c818ec684ffe731bf1ae821f91ba9d3e526f55f00000000049483045022100868c71f4a8e1452a3bc8b1d053a846959ab7df63fb0d147e9173f69818bbb1f3022060c7e045a34cf6af61bc3a74dc2db7b8bfa4949bc5919acceed40fc07d8706d201feffffff0240043a0000000000232102afdbba3e3c90db5f0f4064118f79cf308f926c68afd64ea7afc930975663e4c4ac201efc01000000001976a914347f2aedf63bac168c2cc4f075a2850435e20ac188ac96d3c96036dd0e000000000000000000000000".to_string() )
                , "rick_get_raw_transaction test has failed");
     assert_eq!((eth_raw_tx.0.as_u16(), eth_response.result.tx_hex ), (200u16,"f8a975843b9aca0083024f8394fab46e002bbf0b4509813474841e0716e673013680b84440c10f190000000000000000000000003ef8b4a81ab3444864377dde648268f00e3cd0700000000000000000000000000000000000000000000000004563918244f4000029a0ee799246e00354e173c2236aac52dca3d9e75ac98d2ac48ce67fdab42712c82ca06c42b9db9ebf22fa2aeb85927ba8275ea057f5bffdc2d4bd923606415a18b58a".to_string())
