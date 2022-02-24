@@ -12,6 +12,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
+pub use chain::Transaction as UtxoTx;
 use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
@@ -34,22 +35,16 @@ use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
+use spv_validation::helpers_validation::validate_headers;
+use spv_validation::spv_proof::SPVProof;
+use spv_validation::types::SPVError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
+use utxo_block_header_storage::BlockHeaderStorageOps;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
-
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-#[cfg(target_arch = "wasm32")]
-use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
-pub use chain::Transaction as UtxoTx;
-use spv_validation::helpers_validation::validate_headers;
-use spv_validation::spv_proof::SPVProof;
-use spv_validation::types::SPVError;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
@@ -3277,14 +3272,6 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn retrieve_header_storage_from_ctx(_ctx: &MmArc) -> impl BlockHeaderStorage { IndexedDBBlockHeadersStorage {} }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn retrieve_header_storage_from_ctx(ctx: &MmArc) -> impl BlockHeaderStorage {
-    SqliteBlockHeadersStorage(ctx.sqlite_connection.as_option().unwrap().clone())
-}
-
 pub async fn retrieve_last_headers<T>(
     coin: &T,
     blocks_limit_to_check: u64,
@@ -3342,7 +3329,6 @@ where
 }
 
 pub async fn block_header_utxo_loop<T>(
-    ctx: MmArc,
     weak: UtxoWeak,
     check_every: f64,
     difficulty_check: bool,
@@ -3358,7 +3344,7 @@ pub async fn block_header_utxo_loop<T>(
             None => return,
         };
         let ticker = coin.ticker();
-        let storage = retrieve_header_storage_from_ctx(&ctx);
+        let storage = &coin.as_ref().block_headers_storage;
         match storage.is_initialized_for(ticker).await {
             Ok(is_init) => {
                 if !is_init {
@@ -3387,7 +3373,7 @@ pub async fn block_header_utxo_loop<T>(
             Ok((block_registry, block_headers)) => {
                 match validate_headers(block_headers, difficulty_check, constant_difficulty) {
                     Ok(_) => {
-                        let storage = retrieve_header_storage_from_ctx(&ctx);
+                        let storage = &coin.as_ref().block_headers_storage;
                         let ticker = coin.as_ref().conf.ticker.as_str();
                         match storage.add_block_headers_to_storage(ticker, block_registry).await {
                             Ok(_) => info!(

@@ -104,7 +104,7 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(self.ctx.clone(), utxo_weak, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
@@ -187,7 +187,7 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(self.ctx.clone(), utxo_weak, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(utxo_weak, self.constructor.clone());
         Ok(result_coin)
     }
 }
@@ -242,7 +242,7 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
 {
-    fn spawn_block_header_utxo_loop_if_required<F>(&self, ctx: MmArc, weak: UtxoWeak, constructor: F)
+    fn spawn_block_header_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F)
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
@@ -250,7 +250,6 @@ where
             self.activation_params().utxo_block_header_verification_params
         {
             let fut = block_header_utxo_loop(
-                ctx,
                 weak,
                 block_header_verification_params.check_every,
                 block_header_verification_params.difficulty_check,

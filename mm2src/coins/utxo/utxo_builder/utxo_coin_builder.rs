@@ -3,6 +3,7 @@ use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
+use crate::utxo::utxo_wrapper_block_header_storage::BlockHeaderStorage;
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
                   TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
                   UTXO_DUST_AMOUNT};
@@ -190,6 +191,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             derivation_method,
             history_sync_state: Mutex::new(initial_history_state),
             tx_cache_directory,
+            block_headers_storage: BlockHeaderStorage::new_from_ctx(self.ctx().clone()),
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
             tx_hash_algo,
@@ -243,6 +245,7 @@ where
             priv_key_policy: PrivKeyPolicy::HardwareWallet,
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
+            block_headers_storage: BlockHeaderStorage::new_from_ctx(self.ctx().clone()),
             tx_cache_directory,
             recently_spent_outpoints,
             tx_fee,

@@ -40,6 +40,8 @@ pub mod utxo_withdraw;
 pub mod utxo_indexedb_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod utxo_sql_block_header_storage;
+pub mod utxo_wrapper_block_header_storage;
+use utxo_wrapper_block_header_storage::BlockHeaderStorage;
 
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -500,6 +502,7 @@ pub struct UtxoCoinFields {
     pub history_sync_state: Mutex<HistorySyncState>,
     /// Path to the TX cache directory
     pub tx_cache_directory: Option<PathBuf>,
+    pub block_headers_storage: BlockHeaderStorage,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
