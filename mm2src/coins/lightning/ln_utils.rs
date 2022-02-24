@@ -12,7 +12,6 @@ use bitcoin::consensus::encode::deserialize;
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
-use common::fs::ensure_dir_is_writable;
 use common::ip_addr::fetch_external_ip;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log;
@@ -32,6 +31,7 @@ use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::payment;
 use lightning_invoice::utils::DefaultRouter;
 use lightning_net_tokio::SocketDescriptor;
+use lightning_persister::storage::Storage;
 use lightning_persister::FilesystemPersister;
 use parking_lot::Mutex as PaMutex;
 use rand::RngCore;
@@ -41,6 +41,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tokio::net::TcpListener;
@@ -106,6 +107,19 @@ pub struct LightningParams {
     // it should do before considering a payment failed or partially failed. If not provided the number of retries will be 5
     // as this is a good default value.
     pub payment_retries: Option<usize>,
+    // Node's backup path for channels and other data that requires backup.
+    pub backup_path: Option<String>,
+}
+
+pub fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
+
+pub fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {
+    path.map(|p| {
+        PathBuf::from(&p)
+            .join(&hex::encode(&**ctx.rmd160()))
+            .join("LIGHTNING")
+            .join(ticker)
+    })
 }
 
 pub async fn start_lightning(
@@ -155,43 +169,13 @@ pub async fn start_lightning(
 
     // Initialize Persist
     let ticker = conf.ticker.clone();
-    let my_ln_data_dir = ln_storage::my_ln_data_dir(ctx, &ticker);
-    let ln_data_dir = my_ln_data_dir
-        .as_path()
-        .to_str()
-        .ok_or("Data dir is a non-UTF-8 string")
-        .map_to_mm(|e| EnableLightningError::InvalidPath(e.into()))?
-        .to_string();
-    if !ensure_dir_is_writable(&my_ln_data_dir) {
-        return MmError::err(EnableLightningError::IOError(format!(
-            "{} db dir is not writable",
-            ln_data_dir
-        )));
+    let ln_data_dir = ln_data_dir(ctx, &ticker);
+    let ln_data_backup_dir = ln_data_backup_dir(ctx, params.backup_path, &ticker);
+    let persister = Arc::new(FilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
+    let is_initialized = persister.is_initialized().await?;
+    if !is_initialized {
+        persister.init().await?;
     }
-    let ln_data_backup_dir = match conf.backup_path.clone() {
-        Some(backup_path) => {
-            let my_ln_data_backup_dir = ln_storage::my_ln_data_backup_dir(&backup_path, &ticker);
-            if !ensure_dir_is_writable(&my_ln_data_backup_dir) {
-                return MmError::err(EnableLightningError::IOError(format!(
-                    "{} db dir is not writable",
-                    backup_path
-                )));
-            }
-            Some(
-                my_ln_data_backup_dir
-                    .as_path()
-                    .to_str()
-                    .ok_or("Data dir is a non-UTF-8 string")
-                    .map_to_mm(|e| EnableLightningError::InvalidPath(e.into()))?
-                    .to_string(),
-            )
-        },
-        None => None,
-    };
-    let persister = Arc::new(FilesystemPersister::new(
-        ln_data_dir.clone(),
-        ln_data_backup_dir.clone(),
-    ));
 
     // Initialize the Filter. PlatformFields implements the Filter trait, we can use it to construct the filter.
     let filter = Some(platform_fields.clone());
@@ -246,7 +230,7 @@ pub async fn start_lightning(
     );
     let (channel_manager_blockhash, channel_manager) = {
         let user_config = conf.clone().into();
-        if let Ok(mut f) = File::open(format!("{}/manager", ln_data_dir.clone())) {
+        if let Ok(mut f) = File::open(persister.manager_path()) {
             let mut channel_monitor_mut_references = Vec::new();
             for (_, channel_monitor) in channelmonitors.iter_mut() {
                 channel_monitor_mut_references.push(channel_monitor);
@@ -315,18 +299,20 @@ pub async fn start_lightning(
 
     // Initialize the NetGraphMsgHandler. This is used for providing routes to send payments over
     let default_network_graph = NetworkGraph::new(genesis_block(network).header.block_hash());
-    let network_graph_path = ln_storage::network_graph_path(ctx, &ticker);
-    let network_graph =
-        Arc::new(ln_storage::read_network_graph_from_file(&network_graph_path).unwrap_or(default_network_graph));
+    let network_graph = Arc::new(persister.get_network_graph().await.unwrap_or(default_network_graph));
     let network_gossip = Arc::new(NetGraphMsgHandler::new(
         network_graph.clone(),
         None::<Arc<dyn Access + Send + Sync>>,
         logger.clone(),
     ));
+    let network_graph_persister = persister.clone();
     let network_graph_persist = network_graph.clone();
     spawn(async move {
         loop {
-            if let Err(e) = ln_storage::save_network_graph_to_file(&network_graph_path, &network_graph_persist) {
+            if let Err(e) = network_graph_persister
+                .save_network_graph(network_graph_persist.clone())
+                .await
+            {
                 log::warn!(
                     "Failed to persist network graph error: {}, please check disk space and permissions",
                     e
@@ -380,14 +366,12 @@ pub async fn start_lightning(
     ));
 
     // Initialize routing Scorer
-    let scorer_path = ln_storage::scorer_path(ctx, &ticker);
-    let scorer = Arc::new(Mutex::new(
-        ln_storage::read_scorer_from_file(&scorer_path).unwrap_or_default(),
-    ));
+    let scorer = Arc::new(Mutex::new(persister.get_scorer().await.unwrap_or_default()));
+    let scorer_persister = persister.clone();
     let scorer_persist = scorer.clone();
     spawn(async move {
         loop {
-            if let Err(e) = ln_storage::save_scorer_to_file(&scorer_path, &scorer_persist.lock().unwrap()) {
+            if let Err(e) = scorer_persister.save_scorer(scorer_persist.clone()).await {
                 log::warn!(
                     "Failed to persist scorer error: {}, please check disk space and permissions",
                     e
@@ -410,9 +394,9 @@ pub async fn start_lightning(
 
     // Persist ChannelManager
     // Note: if the ChannelManager is not persisted properly to disk, there is risk of channels force closing the next time LN starts up
-    let persist_channel_manager_callback = move |node: &ChannelManager| {
-        FilesystemPersister::persist_manager(ln_data_dir.clone(), ln_data_backup_dir.clone(), &*node)
-    };
+    let channel_manager_persister = persister.clone();
+    let persist_channel_manager_callback =
+        move |node: &ChannelManager| channel_manager_persister.persist_manager(&*node);
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
@@ -430,7 +414,7 @@ pub async fn start_lightning(
     // If node is restarting read other nodes data from disk and reconnect to channel nodes/peers if possible.
     let mut nodes_addresses_map = HashMap::new();
     if restarting_node {
-        let mut nodes_addresses = read_nodes_addresses_from_file(&nodes_data_path(ctx, &ticker))?;
+        let mut nodes_addresses = persister.get_nodes_addresses().await?;
         for (pubkey, node_addr) in nodes_addresses.drain() {
             if channel_manager
                 .list_channels()
@@ -466,6 +450,7 @@ pub async fn start_lightning(
         chain_monitor,
         keys_manager,
         invoice_payer,
+        persister,
         inbound_payments,
         outbound_payments,
         nodes_addresses,

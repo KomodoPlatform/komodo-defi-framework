@@ -1,6 +1,7 @@
 use super::*;
 use common::executor::{spawn, Timer};
 use derive_more::Display;
+use lightning_persister::storage::NodesAddressesMapShared;
 use tokio::net::TcpListener;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
@@ -82,10 +83,7 @@ pub async fn connect_to_node(
     ))
 }
 
-pub async fn connect_to_nodes_loop(
-    nodes_addresses: Arc<PaMutex<HashMap<PublicKey, SocketAddr>>>,
-    peer_manager: Arc<PeerManager>,
-) {
+pub async fn connect_to_nodes_loop(nodes_addresses: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
     loop {
         let nodes_addresses = nodes_addresses.lock().clone();
         for (pubkey, node_addr) in nodes_addresses {

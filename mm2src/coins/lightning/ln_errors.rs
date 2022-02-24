@@ -61,6 +61,10 @@ impl HttpStatusCode for EnableLightningError {
     }
 }
 
+impl From<std::io::Error> for EnableLightningError {
+    fn from(err: std::io::Error) -> EnableLightningError { EnableLightningError::IOError(err.to_string()) }
+}
+
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConnectToNodeError {
@@ -100,6 +104,10 @@ impl From<CoinFindError> for ConnectToNodeError {
             CoinFindError::NoSuchCoin { coin } => ConnectToNodeError::NoSuchCoin(coin),
         }
     }
+}
+
+impl From<std::io::Error> for ConnectToNodeError {
+    fn from(err: std::io::Error) -> ConnectToNodeError { ConnectToNodeError::IOError(err.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -185,6 +193,10 @@ impl From<UtxoSignWithKeyPairError> for OpenChannelError {
 
 impl From<PrivKeyNotAllowed> for OpenChannelError {
     fn from(e: PrivKeyNotAllowed) -> Self { OpenChannelError::PrivKeyNotAllowed(e.to_string()) }
+}
+
+impl From<std::io::Error> for OpenChannelError {
+    fn from(err: std::io::Error) -> OpenChannelError { OpenChannelError::IOError(err.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]

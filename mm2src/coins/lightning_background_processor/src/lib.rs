@@ -412,9 +412,13 @@ mod tests {
 
     impl Drop for Node {
         fn drop(&mut self) {
-            let data_dir = self.persister.get_data_dir();
+            let data_dir = self.persister.main_path();
             match fs::remove_dir_all(data_dir.clone()) {
-                Err(e) => println!("Failed to remove test persister directory {}: {}", data_dir, e),
+                Err(e) => println!(
+                    "Failed to remove test persister directory {}: {}",
+                    data_dir.to_str().unwrap(),
+                    e
+                ),
                 _ => {},
             }
         }
@@ -439,7 +443,7 @@ mod tests {
             let chain_source = Arc::new(test_utils::TestChainSource::new(Network::Testnet));
             let logger = Arc::new(test_utils::TestLogger::with_id(format!("node {}", i)));
             let persister = Arc::new(FilesystemPersister::new(
-                format!("{}_persister_{}", persist_dir, i),
+                PathBuf::from(format!("{}_persister_{}", persist_dir, i)),
                 None,
             ));
             let seed = [i as u8; 32];
@@ -643,7 +647,7 @@ mod tests {
         let tx = open_channel!(nodes[0], nodes[1], 100000);
 
         // Initiate the background processors to watch each node.
-        let data_dir = nodes[0].persister.get_data_dir();
+        let node_0_persister = nodes[0].persister.clone();
         let persister = move |node: &ChannelManager<
             InMemorySigner,
             Arc<ChainMonitor>,
@@ -651,7 +655,7 @@ mod tests {
             Arc<KeysManager>,
             Arc<test_utils::TestFeeEstimator>,
             Arc<test_utils::TestLogger>,
-        >| FilesystemPersister::persist_manager(data_dir.clone(), None, node);
+        >| node_0_persister.persist_manager(node);
         let event_handler = |_: &_| {};
         let bg_processor = BackgroundProcessor::start(
             persister,
@@ -726,7 +730,7 @@ mod tests {
         // Test that ChannelManager's and PeerManager's `timer_tick_occurred` is called every
         // `FRESHNESS_TIMER`.
         let nodes = create_nodes(1, "test_timer_tick_called".to_string());
-        let data_dir = nodes[0].persister.get_data_dir();
+        let node_0_persister = nodes[0].persister.clone();
         let persister = move |node: &ChannelManager<
             InMemorySigner,
             Arc<ChainMonitor>,
@@ -734,7 +738,7 @@ mod tests {
             Arc<KeysManager>,
             Arc<test_utils::TestFeeEstimator>,
             Arc<test_utils::TestLogger>,
-        >| FilesystemPersister::persist_manager(data_dir.clone(), None, node);
+        >| node_0_persister.persist_manager(node);
         let event_handler = |_: &_| {};
         let bg_processor = BackgroundProcessor::start(
             persister,
@@ -793,8 +797,8 @@ mod tests {
     fn test_background_event_handling() {
         let mut nodes = create_nodes(2, "test_background_event_handling".to_string());
         let channel_value = 100000;
-        let data_dir = nodes[0].persister.get_data_dir();
-        let persister = move |node: &_| FilesystemPersister::persist_manager(data_dir.clone(), None, node);
+        let node_0_persister = nodes[0].persister.clone();
+        let persister = move |node: &_| node_0_persister.persist_manager(node);
 
         // Set up a background event handler for FundingGenerationReady events.
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -889,7 +893,7 @@ mod tests {
         let nodes = create_nodes(2, "test_invoice_payer".to_string());
 
         // Initiate the background processors to watch each node.
-        let data_dir = nodes[0].persister.get_data_dir();
+        let node_0_persister = nodes[0].persister.clone();
         let persister = move |node: &ChannelManager<
             InMemorySigner,
             Arc<ChainMonitor>,
@@ -897,7 +901,7 @@ mod tests {
             Arc<KeysManager>,
             Arc<test_utils::TestFeeEstimator>,
             Arc<test_utils::TestLogger>,
-        >| FilesystemPersister::persist_manager(data_dir.clone(), None, node);
+        >| node_0_persister.persist_manager(node);
         let router = DefaultRouter::new(Arc::clone(&nodes[0].network_graph), Arc::clone(&nodes[0].logger));
         let scorer = Arc::new(Mutex::new(test_utils::TestScorer::default()));
         let invoice_payer = Arc::new(InvoicePayer::new(

@@ -10,7 +10,7 @@ Utilities to perform required background tasks for Rust Lightning.
 edition = "2018"
 
 [dependencies]
-bitcoin = "0.27"
+bitcoin = "0.27.1"
 lightning = { version = "0.0.104", features = ["std"] }
 
 [dev-dependencies]

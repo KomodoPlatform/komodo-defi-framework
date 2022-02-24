@@ -31,6 +31,8 @@ use lightning::util::config::UserConfig;
 use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::utils::create_invoice_from_channelmanager;
 use lightning_invoice::Invoice;
+use lightning_persister::storage::{NodesAddressesMapShared, Storage};
+use lightning_persister::FilesystemPersister;
 use ln_conf::{ChannelOptions, LightningCoinConf, PlatformCoinConfirmations};
 use ln_connections::{connect_to_node, ConnectToNodeRes};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
@@ -41,8 +43,6 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
-use ln_storage::{nodes_data_backup_path, nodes_data_path, read_nodes_addresses_from_file,
-                 write_nodes_addresses_to_file};
 use ln_utils::{ChainMonitor, ChannelManager, InvoicePayer, PeerManager};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
@@ -63,7 +63,6 @@ pub mod ln_errors;
 mod ln_events;
 mod ln_rpc;
 mod ln_serialization;
-mod ln_storage;
 pub mod ln_utils;
 
 type PaymentsMap = HashMap<PaymentHash, PaymentInfo>;
@@ -139,12 +138,14 @@ pub struct LightningCoin {
     pub keys_manager: Arc<KeysManager>,
     /// The lightning node invoice payer.
     pub invoice_payer: Arc<InvoicePayer<Arc<LightningEventHandler>>>,
+    /// The lightning node persister that takes care of writing/reading data from storage.
+    pub persister: Arc<FilesystemPersister>,
     /// The mutex storing the inbound payments info.
     pub inbound_payments: PaymentsMapShared,
     /// The mutex storing the outbound payments info.
     pub outbound_payments: PaymentsMapShared,
     /// The mutex storing the addresses of the nodes that are used for reconnecting.
-    pub nodes_addresses: Arc<PaMutex<HashMap<PublicKey, SocketAddr>>>,
+    pub nodes_addresses: NodesAddressesMapShared,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -212,16 +213,6 @@ impl LightningCoin {
             amt_msat: Some(amount_msat),
             fee_paid_msat: None,
         }))
-    }
-
-    fn persist_nodes_addresses(&self, ctx: &MmArc) -> ConnectToNodeResult<()> {
-        let ticker = self.ticker();
-        let nodes_addresses = self.nodes_addresses.lock().clone();
-        write_nodes_addresses_to_file(&nodes_data_path(ctx, ticker), nodes_addresses.clone())?;
-        if let Some(path) = &self.conf.backup_path {
-            write_nodes_addresses_to_file(&nodes_data_backup_path(path, ticker), nodes_addresses)?;
-        }
-        Ok(())
     }
 }
 
@@ -544,7 +535,7 @@ pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) ->
         if let Entry::Occupied(mut entry) = ln_coin.nodes_addresses.lock().entry(node_pubkey) {
             entry.insert(node_addr);
         }
-        async_blocking(move || ln_coin.persist_nodes_addresses(&ctx)).await?;
+        ln_coin.persister.save_nodes_addresses(ln_coin.nodes_addresses).await?;
     }
 
     Ok(res.to_string())
@@ -659,7 +650,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     // Saving node data to reconnect to it on restart
     ln_coin.nodes_addresses.lock().insert(node_pubkey, node_addr);
-    async_blocking(move || ln_coin.persist_nodes_addresses(&ctx)).await?;
+    ln_coin.persister.save_nodes_addresses(ln_coin.nodes_addresses).await?;
 
     Ok(OpenChannelResponse {
         temporary_channel_id: temp_channel_id.into(),

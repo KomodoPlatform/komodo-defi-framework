@@ -64,6 +64,8 @@ pub struct LightningActivationParams {
     pub color: Option<String>,
     // The number of payment retries that should be done before considering a payment failed or partially failed.
     pub payment_retries: Option<usize>,
+    // Node's backup path for channels and other data that requires backup.
+    pub backup_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -176,6 +178,7 @@ impl L2ActivationOps for LightningCoin {
             node_name,
             node_color,
             payment_retries: activation_params.payment_retries,
+            backup_path: activation_params.backup_path,
         })
     }
 

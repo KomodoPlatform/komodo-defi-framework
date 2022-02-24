@@ -1,4 +1,4 @@
-use crate::log::error;
+use crate::log::{error, LogOnError};
 use crate::mm_error::prelude::*;
 use async_std::fs as async_fs;
 use derive_more::Display;
@@ -26,6 +26,30 @@ pub enum FsJsonError {
 
 pub mod file_lock;
 
+pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
+    let r: [u8; 32] = random();
+    let mut check: Vec<u8> = Vec::with_capacity(r.len());
+    let fname = dir_path.join("checkval");
+    let mut fp = fs::File::create(&fname)?;
+    fp.write_all(&r)?;
+    drop(fp);
+    let mut fp = fs::File::open(&fname)?;
+    fp.read_to_end(&mut check)?;
+    if check.len() != r.len() {
+        return Err(io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            format!("Expected same data length when reading file: {:?}", fname),
+        ));
+    }
+    if check != r {
+        return Err(io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Expected the same {:?} data: {:?} != {:?}", fname, r, check),
+        ));
+    }
+    Ok(())
+}
+
 /// Invokes `OS_ensure_directory`,
 /// then prints an error and returns `false` if the directory is not writable.
 pub fn ensure_dir_is_writable(dir_path: &Path) -> bool {
@@ -36,37 +60,7 @@ pub fn ensure_dir_is_writable(dir_path: &Path) -> bool {
         error!("Could not create dir {}, error {}", dir_path.display(), e);
         return false;
     }
-    let r: [u8; 32] = random();
-    let mut check: Vec<u8> = Vec::with_capacity(r.len());
-    let fname = dir_path.join("checkval");
-    let mut fp = match fs::File::create(&fname) {
-        Ok(fp) => fp,
-        Err(_) => {
-            error!("FATAL cannot create {:?}", fname);
-            return false;
-        },
-    };
-    if fp.write_all(&r).is_err() {
-        error!("FATAL cannot write to {:?}", fname);
-        return false;
-    }
-    drop(fp);
-    let mut fp = match fs::File::open(&fname) {
-        Ok(fp) => fp,
-        Err(_) => {
-            error!("FATAL cannot open {:?}", fname);
-            return false;
-        },
-    };
-    if fp.read_to_end(&mut check).is_err() || check.len() != r.len() {
-        error!("FATAL cannot read {:?}", fname);
-        return false;
-    }
-    if check != r {
-        error!("FATAL expect the same {:?} data: {:?} != {:?}", fname, r, check);
-        return false;
-    }
-    true
+    check_dir_operations(dir_path).error_log_passthrough().is_ok()
 }
 
 pub fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
