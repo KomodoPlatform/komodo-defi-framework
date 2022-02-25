@@ -256,10 +256,10 @@ impl HttpStatusCode for GetRawTransactionError {
         match self {
             GetRawTransactionError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             GetRawTransactionError::InvalidResponse(_) => StatusCode::BAD_GATEWAY,
-            GetRawTransactionError::CoinIsNotActive(_) => StatusCode::BAD_REQUEST,
-            GetRawTransactionError::TxIsNotFound(_) => StatusCode::BAD_REQUEST,
-            GetRawTransactionError::InvalidTxHash(_) => StatusCode::BAD_REQUEST,
-            GetRawTransactionError::Transport(_) => StatusCode::BAD_REQUEST,
+            GetRawTransactionError::CoinIsNotActive(_)
+            | GetRawTransactionError::TxIsNotFound(_)
+            | GetRawTransactionError::InvalidTxHash(_)
+            | GetRawTransactionError::Transport(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
