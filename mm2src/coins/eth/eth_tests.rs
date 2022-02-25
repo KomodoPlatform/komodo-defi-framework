@@ -232,6 +232,7 @@ fn send_and_refund_erc20_payment() {
     let payment = coin
         .send_maker_payment(
             (now_ms() / 1000) as u32 - 200,
+            &[],
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
             "0.001".parse().unwrap(),
@@ -250,6 +251,7 @@ fn send_and_refund_erc20_payment() {
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
+            &[],
             &coin.swap_contract_address(),
         )
         .wait()
@@ -295,6 +297,7 @@ fn send_and_refund_eth_payment() {
     let payment = coin
         .send_maker_payment(
             (now_ms() / 1000) as u32 - 200,
+            &[],
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
             "0.001".parse().unwrap(),
@@ -313,6 +316,7 @@ fn send_and_refund_eth_payment() {
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
+            &[],
             &coin.swap_contract_address(),
         )
         .wait()
@@ -768,36 +772,28 @@ fn get_sender_trade_preimage() {
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
 
-    let actual = coin
-        .get_sender_trade_fee(
-            TradePreimageValue::UpperBound(150.into()),
-            FeeApproxStage::WithoutApprox,
-        )
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::UpperBound(150.into()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     let expected = expected_fee(GAS_PRICE);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(100.into(), 18).expect("!u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue))
         .expect("!get_sender_trade_fee");
     let expected = expected_fee(GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(1.into(), 18).expect("!u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::StartSwap)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::StartSwap))
         .expect("!get_sender_trade_fee");
     let expected = expected_fee(GAS_PRICE_APPROXIMATION_ON_START_SWAP);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(10000000000u64.into(), 18).expect("!u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage))
         .expect("!get_sender_trade_fee");
     let expected = expected_fee(GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE);
     assert_eq!(actual, expected);
@@ -839,10 +835,9 @@ fn get_erc20_sender_trade_preimage() {
     // value is allowed
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::WithoutApprox)
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let actual =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     log!([actual.amount.to_decimal()]);
     unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(actual, expected_trade_fee(300_000, GAS_PRICE));
@@ -850,9 +845,7 @@ fn get_erc20_sender_trade_preimage() {
     // value is greater than allowance
     unsafe { ALLOWANCE = 999 };
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap))
         .expect("!get_sender_trade_fee");
     unsafe {
         assert!(ESTIMATE_GAS_CALLED);
@@ -866,9 +859,7 @@ fn get_erc20_sender_trade_preimage() {
     // value is allowed
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(999.into(), 18).expect("u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue))
         .expect("!get_sender_trade_fee");
     unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(
@@ -879,9 +870,7 @@ fn get_erc20_sender_trade_preimage() {
     // value is greater than allowance
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(1500.into(), 18).expect("u256_to_big_decimal");
-    let actual = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage)
-        .wait()
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage))
         .expect("!get_sender_trade_fee");
     unsafe {
         assert!(ESTIMATE_GAS_CALLED);
@@ -932,9 +921,7 @@ fn test_get_fee_to_send_taker_fee() {
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
-    let actual = coin
-        .get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)
-        .wait()
+    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox))
         .expect("!get_fee_to_send_taker_fee");
     assert_eq!(actual, expected_fee);
 
@@ -946,9 +933,7 @@ fn test_get_fee_to_send_taker_fee() {
         vec!["http://dummy.dummy".into()],
         None,
     );
-    let actual = coin
-        .get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)
-        .wait()
+    let actual = block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox))
         .expect("!get_fee_to_send_taker_fee");
     assert_eq!(actual, expected_fee);
 }
@@ -975,10 +960,8 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
     );
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
-    let error = coin
-        .get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)
-        .wait()
-        .unwrap_err();
+    let error =
+        block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)).unwrap_err();
     log!((error));
     assert!(
         matches!(error.get_inner(), TradePreimageError::NotSufficientBalance { .. }),
@@ -988,7 +971,11 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
 
 #[test]
 fn validate_dex_fee_invalid_sender_eth() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://eth1.cipig.net:8555".into()], None);
+    let (_ctx, coin) = eth_coin_for_test(
+        EthCoinType::Eth,
+        vec!["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()],
+        None,
+    );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = coin
@@ -1064,7 +1051,11 @@ fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
 
 #[test]
 fn validate_dex_fee_eth_confirmed_before_min_block() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://eth1.cipig.net:8555".into()], None);
+    let (_ctx, coin) = eth_coin_for_test(
+        EthCoinType::Eth,
+        vec!["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()],
+        None,
+    );
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = coin
@@ -1238,7 +1229,14 @@ fn polygon_check_if_my_payment_sent() {
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
     let my_payment = coin
-        .check_if_my_payment_sent(1638764369, &[], &secret_hash, 22185109, &Some(swap_contract_address))
+        .check_if_my_payment_sent(
+            1638764369,
+            &[],
+            &[],
+            &secret_hash,
+            22185109,
+            &Some(swap_contract_address),
+        )
         .wait()
         .unwrap()
         .unwrap();

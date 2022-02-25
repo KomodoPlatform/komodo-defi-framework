@@ -12,7 +12,7 @@ use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, Json
                              JsonRpcRequest, JsonRpcResponse, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
 use common::mm_error::prelude::*;
-use common::mm_number::MmNumber;
+use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
 use futures::channel::oneshot as async_oneshot;
@@ -273,7 +273,7 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
         n_blocks: u32,
-    ) -> RpcRes<u64>;
+    ) -> UtxoRpcFut<u64>;
 
     fn get_relay_fee(&self) -> RpcRes<BigDecimal>;
 
@@ -674,7 +674,7 @@ impl UtxoRpcClientOps for NativeClient {
         fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
         n_blocks: u32,
-    ) -> RpcRes<u64> {
+    ) -> UtxoRpcFut<u64> {
         match fee_method {
             EstimateFeeMethod::Standard => Box::new(self.estimate_fee(n_blocks).map(move |fee| {
                 if fee > 0.00001 {
@@ -878,16 +878,18 @@ impl NativeClientImpl {
     /// It is recommended to set n_blocks as low as possible.
     /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
-    pub fn estimate_fee(&self, n_blocks: u32) -> RpcRes<f64> { rpc_func!(self, "estimatefee", n_blocks) }
+    pub fn estimate_fee(&self, n_blocks: u32) -> UtxoRpcFut<f64> {
+        Box::new(rpc_func!(self, "estimatefee", n_blocks).map_to_mm_fut(UtxoRpcError::from))
+    }
 
     /// https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
     /// It is recommended to set n_blocks as low as possible.
     /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
-    pub fn estimate_smart_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<EstimateSmartFeeRes> {
+    pub fn estimate_smart_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> UtxoRpcFut<EstimateSmartFeeRes> {
         match mode {
-            Some(m) => rpc_func!(self, "estimatesmartfee", n_blocks, m),
-            None => rpc_func!(self, "estimatesmartfee", n_blocks),
+            Some(m) => Box::new(rpc_func!(self, "estimatesmartfee", n_blocks, m).map_to_mm_fut(UtxoRpcError::from)),
+            None => Box::new(rpc_func!(self, "estimatesmartfee", n_blocks).map_to_mm_fut(UtxoRpcError::from)),
         }
     }
 
@@ -1045,8 +1047,8 @@ impl ElectrumBlockHeaderV12 {
     fn as_block_header(&self) -> BlockHeader {
         BlockHeader {
             version: self.version as u32,
-            previous_header_hash: self.prev_block_hash.clone().into(),
-            merkle_root_hash: self.merkle_root.clone().into(),
+            previous_header_hash: self.prev_block_hash.into(),
+            merkle_root_hash: self.merkle_root.into(),
             hash_final_sapling_root: None,
             time: self.timestamp as u32,
             bits: BlockHeaderBits::U32(self.bits as u32),
@@ -1151,8 +1153,8 @@ pub struct ElectrumTxHistoryItem {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ElectrumBalance {
-    confirmed: i64,
-    unconfirmed: i64,
+    pub(crate) confirmed: i128,
+    pub(crate) unconfirmed: i128,
 }
 
 fn sha_256(input: &[u8]) -> Vec<u8> {
@@ -1600,7 +1602,7 @@ impl ElectrumClient {
                 let mut map: HashMap<(H256Json, u32), bool> = HashMap::new();
                 let unspents = unspents
                     .into_iter()
-                    .filter(|unspent| match map.entry((unspent.tx_hash.clone(), unspent.tx_pos)) {
+                    .filter(|unspent| match map.entry((unspent.tx_hash, unspent.tx_pos)) {
                         Entry::Occupied(_) => false,
                         Entry::Vacant(e) => {
                             e.insert(true);
@@ -1647,10 +1649,12 @@ impl ElectrumClient {
     /// It is recommended to set n_blocks as low as possible.
     /// However, in some cases, n_blocks = 1 leads to an unreasonably high fee estimation.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/656#issuecomment-743759659
-    pub fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> RpcRes<f64> {
+    pub fn estimate_fee(&self, mode: &Option<EstimateFeeMode>, n_blocks: u32) -> UtxoRpcFut<f64> {
         match mode {
-            Some(m) => rpc_func!(self, "blockchain.estimatefee", n_blocks, m),
-            None => rpc_func!(self, "blockchain.estimatefee", n_blocks),
+            Some(m) => {
+                Box::new(rpc_func!(self, "blockchain.estimatefee", n_blocks, m).map_to_mm_fut(UtxoRpcError::from))
+            },
+            None => Box::new(rpc_func!(self, "blockchain.estimatefee", n_blocks).map_to_mm_fut(UtxoRpcError::from)),
         }
     }
 
@@ -1741,7 +1745,8 @@ impl UtxoRpcClientOps for ElectrumClient {
         let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
         let hash_str = hex::encode(hash);
         Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
-            BigDecimal::from(result.confirmed + result.unconfirmed) / BigDecimal::from(10u64.pow(decimals as u32))
+            let balance_sat = BigInt::from(result.confirmed) + BigInt::from(result.unconfirmed);
+            BigDecimal::from(balance_sat) / BigDecimal::from(10u64.pow(decimals as u32))
         }))
     }
 
@@ -1751,7 +1756,7 @@ impl UtxoRpcClientOps for ElectrumClient {
         _fee_method: &EstimateFeeMethod,
         mode: &Option<EstimateFeeMode>,
         n_blocks: u32,
-    ) -> RpcRes<u64> {
+    ) -> UtxoRpcFut<u64> {
         Box::new(self.estimate_fee(mode, n_blocks).map(move |fee| {
             if fee > 0.00001 {
                 (fee * 10.0_f64.powf(decimals as f64)) as u64

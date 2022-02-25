@@ -618,7 +618,7 @@ async fn process_txs_confirmations(
                             .await
                             .unwrap_or_default();
                         for item in history {
-                            if item.tx_hash == rpc_txid.clone() {
+                            if item.tx_hash == rpc_txid {
                                 // If a new block mined the transaction while running process_txs_confirmations it will be confirmed later in ln_best_block_update_loop
                                 if item.height > 0 && item.height <= current_height as i64 {
                                     let height: u64 = match item.height.try_into() {
@@ -639,7 +639,7 @@ async fn process_txs_confirmations(
                                         Err(_) => continue,
                                     };
                                     let index = match client
-                                        .blockchain_transaction_get_merkle(rpc_txid.clone(), height)
+                                        .blockchain_transaction_get_merkle(rpc_txid, height)
                                         .compat()
                                         .await
                                     {

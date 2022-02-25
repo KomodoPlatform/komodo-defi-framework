@@ -1,11 +1,12 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap};
-use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap};
+use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
+use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
 use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
 use coins::lp_coinfind;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use derive_more::Display;
+use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
 
 pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
@@ -114,6 +115,30 @@ impl SavedSwap {
             SavedSwap::Maker(saved) => saved.is_recoverable(),
             SavedSwap::Taker(saved) => saved.is_recoverable(),
         }
+    }
+
+    pub fn hide_secrets(&mut self) {
+        match self {
+            SavedSwap::Maker(swap) => {
+                if let Some(ref mut event) = swap.events.first_mut() {
+                    if let MakerSwapEvent::Started(ref mut data) = event.event {
+                        data.secret = H256Json::default();
+                        data.maker_coin_htlc_privkey = None;
+                        data.taker_coin_htlc_privkey = None;
+                        data.p2p_privkey = None;
+                    }
+                }
+            },
+            SavedSwap::Taker(swap) => {
+                if let Some(ref mut event) = swap.events.first_mut() {
+                    if let TakerSwapEvent::Started(ref mut data) = event.event {
+                        data.maker_coin_htlc_privkey = None;
+                        data.taker_coin_htlc_privkey = None;
+                        data.p2p_privkey = None;
+                    }
+                }
+            },
+        };
     }
 }
 
@@ -348,10 +373,7 @@ mod tests {
             first_item_id
         };
 
-        match saved_swap {
-            SavedSwap::Maker(ref mut maker_saved_swap) => maker_saved_swap.hide_secret(),
-            _ => panic!(),
-        }
+        saved_swap.hide_secrets();
 
         let second_saved_item = SavedSwapTable {
             uuid: *saved_swap.uuid(),

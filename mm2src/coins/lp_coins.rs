@@ -46,7 +46,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
-use keys::{AddressFormat as UtxoAddressFormat, NetworkPrefix as CashAddrPrefix};
+use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -234,6 +234,17 @@ pub enum NegotiateSwapContractAddrErr {
     NoOtherAddrAndNoFallback,
 }
 
+#[derive(Clone, Debug)]
+pub struct ValidatePaymentInput {
+    pub payment_tx: Vec<u8>,
+    pub time_lock: u32,
+    pub taker_pub: Vec<u8>,
+    pub maker_pub: Vec<u8>,
+    pub secret_hash: Vec<u8>,
+    pub amount: BigDecimal,
+    pub swap_contract_address: Option<BytesJson>,
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -242,6 +253,7 @@ pub trait SwapOps {
     fn send_maker_payment(
         &self,
         time_lock: u32,
+        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -251,6 +263,7 @@ pub trait SwapOps {
     fn send_taker_payment(
         &self,
         time_lock: u32,
+        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -263,6 +276,7 @@ pub trait SwapOps {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
@@ -272,6 +286,7 @@ pub trait SwapOps {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
@@ -281,6 +296,7 @@ pub trait SwapOps {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
+        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
@@ -290,6 +306,7 @@ pub trait SwapOps {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
+        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
@@ -303,29 +320,14 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn validate_maker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn validate_taker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
+        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
@@ -371,6 +373,8 @@ pub trait SwapOps {
         &self,
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
+
+    fn get_htlc_key_pair(&self) -> KeyPair;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -430,6 +434,8 @@ pub trait MarketCoinOps {
 
     /// Get the minimum amount to trade.
     fn min_trading_vol(&self) -> MmNumber;
+
+    fn is_privacy(&self) -> bool { false }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -1309,6 +1315,7 @@ impl WithdrawError {
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
+#[async_trait]
 pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
@@ -1365,17 +1372,21 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap using the sending value and check if the wallet has sufficient balance to pay the fee.
-    fn get_sender_trade_fee(&self, value: TradePreimageValue, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
+    async fn get_sender_trade_fee(
+        &self,
+        value: TradePreimageValue,
+        stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee>;
 
     /// Get fee to be paid by receiver per whole swap and check if the wallet has sufficient balance to pay the fee.
     fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
 
     /// Get transaction fee the Taker has to pay to send a `TakerFee` transaction and check if the wallet has sufficient balance to pay the fee.
-    fn get_fee_to_send_taker_fee(
+    async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
-    ) -> TradePreimageFut<TradeFee>;
+    ) -> TradePreimageResult<TradeFee>;
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -1898,7 +1909,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             };
 
             let confs = required_confirmations.unwrap_or(platform_coin.required_confirmations());
-            let token = SlpToken::new(*decimals, ticker.into(), token_id.clone().into(), platform_coin, confs);
+            let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
             token.into()
         },
         #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]

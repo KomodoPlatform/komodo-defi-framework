@@ -1,5 +1,5 @@
-use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext,
-            OrdermatchRequest};
+use super::{addr_format_from_protocol_info, BaseRelProtocolInfo, OrderConfirmationsSettings,
+            OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::log;
@@ -31,6 +31,8 @@ struct BestOrdersRes {
     orders: HashMap<String, Vec<OrderbookP2PItemWithProof>>,
     #[serde(default)]
     protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
+    #[serde(default)]
+    conf_infos: HashMap<Uuid, OrderConfirmationsSettings>,
 }
 
 pub fn process_best_orders_p2p_request(
@@ -56,6 +58,7 @@ pub fn process_best_orders_p2p_request(
     });
 
     let mut protocol_infos = HashMap::new();
+    let mut conf_infos = HashMap::new();
 
     for pair in pairs {
         let orders = match orderbook.ordered.get(&pair) {
@@ -85,6 +88,9 @@ pub fn process_best_orders_p2p_request(
                     };
                     let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());
                     protocol_infos.insert(order_w_proof.order.uuid, order_w_proof.order.base_rel_proto_info());
+                    if let Some(info) = order_w_proof.order.conf_settings {
+                        conf_infos.insert(order_w_proof.order.uuid, info);
+                    }
                     best_orders.push(order_w_proof.into());
 
                     collected_volume += max_volume;
@@ -106,6 +112,7 @@ pub fn process_best_orders_p2p_request(
     let response = BestOrdersRes {
         orders: result,
         protocol_infos,
+        conf_infos,
     };
     let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
     Ok(Some(encoded))
@@ -160,9 +167,10 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                             continue;
                         },
                     };
+                let conf_settings = p2p_response.conf_infos.get(&order.uuid);
                 let entry = match req.action {
-                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, false),
-                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, false),
+                    BestOrdersAction::Buy => order.as_rpc_best_orders_buy(address, conf_settings, false),
+                    BestOrdersAction::Sell => order.as_rpc_best_orders_sell(address, conf_settings, false),
                 };
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
@@ -227,7 +235,8 @@ mod best_orders_test {
         }
 
         let orders = make_random_orders("".into(), &[1; 32], "RICK".into(), "MORTY".into(), 10);
-        let orders: Vec<_> = orders
+        let v1_orders: Vec<_> = orders
+            .clone()
             .into_iter()
             .map(|order| BestOrderWithProofV1 {
                 order: order.into(),
@@ -236,21 +245,57 @@ mod best_orders_test {
             })
             .collect();
 
-        let old = BestOrdersResV1 {
-            orders: HashMap::from_iter(std::iter::once(("RICK".into(), orders))),
+        let v1 = BestOrdersResV1 {
+            orders: HashMap::from_iter(std::iter::once(("RICK".into(), v1_orders))),
         };
 
-        let old_serialized = rmp_serde::to_vec(&old).unwrap();
+        let v1_serialized = rmp_serde::to_vec(&v1).unwrap();
 
-        let mut new: BestOrdersRes = rmp_serde::from_read_ref(&old_serialized).unwrap();
+        let mut new: BestOrdersRes = rmp_serde::from_read_ref(&v1_serialized).unwrap();
         new.protocol_infos.insert(Uuid::new_v4(), BaseRelProtocolInfo {
             base: vec![1],
             rel: vec![2],
         });
+        new.conf_infos
+            .insert(Uuid::new_v4(), OrderConfirmationsSettings::default());
 
         let new_serialized = rmp_serde::to_vec(&new).unwrap();
 
-        let old_from_new: BestOrdersResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
-        assert_eq!(old, old_from_new);
+        let v1_from_new: BestOrdersResV1 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+        assert_eq!(v1, v1_from_new);
+
+        #[derive(Debug, Deserialize, PartialEq, Serialize)]
+        struct BestOrdersResV2 {
+            orders: HashMap<String, Vec<OrderbookP2PItemWithProof>>,
+            #[serde(default)]
+            protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
+        }
+        let v2_orders: Vec<_> = orders
+            .into_iter()
+            .map(|order| OrderbookP2PItemWithProof {
+                order: order.into(),
+                last_message_payload: vec![],
+                proof: vec![],
+            })
+            .collect();
+
+        let v2 = BestOrdersResV2 {
+            orders: HashMap::from_iter(std::iter::once(("RICK".into(), v2_orders))),
+            protocol_infos: HashMap::from_iter(std::iter::once((Uuid::new_v4(), BaseRelProtocolInfo {
+                base: vec![1],
+                rel: vec![2],
+            }))),
+        };
+
+        let v2_serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let mut new: BestOrdersRes = rmp_serde::from_read_ref(&v2_serialized).unwrap();
+        new.conf_infos
+            .insert(Uuid::new_v4(), OrderConfirmationsSettings::default());
+
+        let new_serialized = rmp_serde::to_vec(&new).unwrap();
+
+        let v2_from_new: BestOrdersResV2 = rmp_serde::from_read_ref(&new_serialized).unwrap();
+        assert_eq!(v2, v2_from_new);
     }
 }

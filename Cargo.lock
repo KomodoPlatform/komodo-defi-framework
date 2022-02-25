@@ -2582,6 +2582,7 @@ dependencies = [
  "derive_more",
  "lazy_static",
  "primitives",
+ "rand 0.6.5",
  "rustc-hex 2.1.0",
  "secp256k1",
  "serde",

@@ -9,8 +9,8 @@ use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccou
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, ValidateAddressResult, WithdrawFut,
-            WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -64,7 +64,7 @@ impl UtxoTxBroadcastOps for UtxoStandardCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for UtxoStandardCoin {
-    async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
     async fn calc_interest_if_required(
         &self,
@@ -118,6 +118,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn p2sh_spending_tx(
         &self,
         prev_transaction: UtxoTx,
@@ -126,6 +127,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         script_data: Script,
         sequence: u32,
         lock_time: u32,
+        keypair: &KeyPair,
     ) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(
             self,
@@ -135,6 +137,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
             script_data,
             sequence,
             lock_time,
+            keypair,
         )
         .await
     }
@@ -239,23 +242,25 @@ impl SwapOps for UtxoStandardCoin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
+        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_maker_payment(self.clone(), time_lock, taker_pub, secret_hash, amount)
+        utxo_common::send_maker_payment(self.clone(), time_lock, maker_pub, taker_pub, secret_hash, amount)
     }
 
     fn send_taker_payment(
         &self,
         time_lock: u32,
+        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_taker_payment(self.clone(), time_lock, maker_pub, secret_hash, amount)
+        utxo_common::send_taker_payment(self.clone(), time_lock, taker_pub, maker_pub, secret_hash, amount)
     }
 
     fn send_maker_spends_taker_payment(
@@ -264,42 +269,53 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_maker_spends_taker_payment(self.clone(), taker_payment_tx, time_lock, taker_pub, secret)
+        utxo_common::send_maker_spends_taker_payment(
+            self.clone(),
+            taker_payment_tx,
+            time_lock,
+            taker_pub,
+            secret,
+            htlc_privkey,
+        )
     }
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
+        maker_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment(self.clone(), maker_payment_tx, time_lock, maker_pub, secret)
+        utxo_common::send_taker_spends_maker_payment(self.clone(), maker_tx, time_lock, maker_pub, secret, htlc_privkey)
     }
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
+        taker_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
+        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_taker_refunds_payment(self.clone(), taker_payment_tx, time_lock, maker_pub, secret_hash)
+        utxo_common::send_taker_refunds_payment(self.clone(), taker_tx, time_lock, maker_pub, secret_hash, htlc_privkey)
     }
 
     fn send_maker_refunds_payment(
         &self,
-        maker_payment_tx: &[u8],
+        maker_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
+        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        utxo_common::send_maker_refunds_payment(self.clone(), maker_payment_tx, time_lock, taker_pub, secret_hash)
+        utxo_common::send_maker_refunds_payment(self.clone(), maker_tx, time_lock, taker_pub, secret_hash, htlc_privkey)
     }
 
     fn validate_fee(
@@ -326,39 +342,24 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
-    fn validate_maker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::validate_maker_payment(self, payment_tx, time_lock, maker_pub, priv_bn_hash, amount)
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(
-        &self,
-        payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        priv_bn_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        utxo_common::validate_taker_payment(self, payment_tx, time_lock, taker_pub, priv_bn_hash, amount)
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        utxo_common::validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
+        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash)
+        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, my_pub, other_pub, secret_hash)
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -422,6 +423,8 @@ impl SwapOps for UtxoStandardCoin {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
         Ok(None)
     }
+
+    fn get_htlc_key_pair(&self) -> KeyPair { utxo_common::get_htlc_key_pair(self) }
 }
 
 impl MarketCoinOps for UtxoStandardCoin {
@@ -486,6 +489,7 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 }
 
+#[async_trait]
 impl MmCoin for UtxoStandardCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
@@ -516,20 +520,24 @@ impl MmCoin for UtxoStandardCoin {
         utxo_common::get_trade_fee(self.clone())
     }
 
-    fn get_sender_trade_fee(&self, value: TradePreimageValue, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        utxo_common::get_sender_trade_fee(self.clone(), value, stage)
+    async fn get_sender_trade_fee(
+        &self,
+        value: TradePreimageValue,
+        stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_sender_trade_fee(self, value, stage).await
     }
 
     fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         utxo_common::get_receiver_trade_fee(self.clone())
     }
 
-    fn get_fee_to_send_taker_fee(
+    async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
-    ) -> TradePreimageFut<TradeFee> {
-        utxo_common::get_fee_to_send_taker_fee(self.clone(), dex_fee_amount, stage)
+    ) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_fee_to_send_taker_fee(self, dex_fee_amount, stage).await
     }
 
     fn required_confirmations(&self) -> u64 { utxo_common::required_confirmations(&self.utxo_arc) }

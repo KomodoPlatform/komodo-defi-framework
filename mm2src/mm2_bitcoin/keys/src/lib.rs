@@ -91,6 +91,6 @@ impl From<H160> for AddressHashEnum {
 }
 
 lazy_static! {
-    static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
-    static ref SECP_SIGN: Secp256k1<SignOnly> = Secp256k1::signing_only();
+    pub static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
+    pub static ref SECP_SIGN: Secp256k1<SignOnly> = Secp256k1::signing_only();
 }

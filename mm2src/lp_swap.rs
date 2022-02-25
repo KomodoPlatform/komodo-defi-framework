@@ -59,12 +59,15 @@ use crate::mm2::lp_network::broadcast_p2p_msg;
 use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
+use common::log::{debug, warn};
+use common::mm_error::MmError;
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber,
              now_ms, var, PagingOptions};
+use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
@@ -93,8 +96,6 @@ use uuid::Uuid;
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
-use common::mm_error::MmError;
-use derive_more::Display;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
@@ -159,10 +160,16 @@ impl Drop for AbortOnDropHandle {
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every(ctx: MmArc, topic: String, msg: SwapMsg, interval: f64) -> AbortOnDropHandle {
+pub fn broadcast_swap_message_every(
+    ctx: MmArc,
+    topic: String,
+    msg: SwapMsg,
+    interval: f64,
+    p2p_privkey: Option<H256Json>,
+) -> AbortOnDropHandle {
     let fut = async move {
         loop {
-            broadcast_swap_message(&ctx, topic.clone(), msg.clone());
+            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
             Timer::sleep(interval).await;
         }
     };
@@ -172,9 +179,12 @@ pub fn broadcast_swap_message_every(ctx: MmArc, topic: String, msg: SwapMsg, int
 }
 
 /// Broadcast the swap message once
-pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg) {
-    let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-    let encoded_msg = encode_and_sign(&msg, &*key_pair.private().secret).unwrap();
+pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<H256Json>) {
+    let p2p_private = match p2p_privkey {
+        Some(privkey) => privkey.0,
+        None => ctx.secp256k1_key_pair.or(&&|| panic!()).private().secret.take(),
+    };
+    let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg);
 }
 
@@ -203,6 +213,8 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
             return;
         },
     };
+
+    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
@@ -215,6 +227,8 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                 SwapMsg::MakerPayment(maker_payment) => msg_store.maker_payment = Some(maker_payment),
                 SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
             }
+        } else {
+            warn!("Received message from unexpected sender for swap {}", uuid);
         }
     }
 }
@@ -562,10 +576,22 @@ pub struct NegotiationDataV2 {
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataV3 {
+    started_at: u64,
+    payment_locktime: u64,
+    secret_hash: Vec<u8>,
+    maker_coin_swap_contract: Vec<u8>,
+    taker_coin_swap_contract: Vec<u8>,
+    maker_coin_htlc_pub: Vec<u8>,
+    taker_coin_htlc_pub: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum NegotiationDataMsg {
     V1(NegotiationDataV1),
     V2(NegotiationDataV2),
+    V3(NegotiationDataV3),
 }
 
 impl NegotiationDataMsg {
@@ -573,6 +599,7 @@ impl NegotiationDataMsg {
         match self {
             NegotiationDataMsg::V1(v1) => v1.started_at,
             NegotiationDataMsg::V2(v2) => v2.started_at,
+            NegotiationDataMsg::V3(v3) => v3.started_at,
         }
     }
 
@@ -580,6 +607,7 @@ impl NegotiationDataMsg {
         match self {
             NegotiationDataMsg::V1(v1) => v1.payment_locktime,
             NegotiationDataMsg::V2(v2) => v2.payment_locktime,
+            NegotiationDataMsg::V3(v3) => v3.payment_locktime,
         }
     }
 
@@ -587,13 +615,23 @@ impl NegotiationDataMsg {
         match self {
             NegotiationDataMsg::V1(v1) => &v1.secret_hash,
             NegotiationDataMsg::V2(v2) => &v2.secret_hash,
+            NegotiationDataMsg::V3(v3) => &v3.secret_hash,
         }
     }
 
-    pub fn persistent_pubkey(&self) -> &[u8] {
+    pub fn maker_coin_htlc_pub(&self) -> &[u8] {
         match self {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
+            NegotiationDataMsg::V3(v3) => &v3.maker_coin_htlc_pub,
+        }
+    }
+
+    pub fn taker_coin_htlc_pub(&self) -> &[u8] {
+        match self {
+            NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
+            NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
+            NegotiationDataMsg::V3(v3) => &v3.taker_coin_htlc_pub,
         }
     }
 
@@ -601,6 +639,7 @@ impl NegotiationDataMsg {
         match self {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.maker_coin_swap_contract),
+            NegotiationDataMsg::V3(v3) => Some(&v3.maker_coin_swap_contract),
         }
     }
 
@@ -608,6 +647,7 @@ impl NegotiationDataMsg {
         match self {
             NegotiationDataMsg::V1(_) => None,
             NegotiationDataMsg::V2(v2) => Some(&v2.taker_coin_swap_contract),
+            NegotiationDataMsg::V3(v3) => Some(&v3.taker_coin_swap_contract),
         }
     }
 }
@@ -782,10 +822,7 @@ async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String>
         Some(status) => status,
         None => return ERR!("swap data is not found"),
     };
-    match status {
-        SavedSwap::Taker(_) => (), // do nothing for taker
-        SavedSwap::Maker(ref mut swap) => swap.hide_secret(),
-    };
+    status.hide_secrets();
 
     #[cfg(not(target_arch = "wasm32"))]
     try_s!(save_stats_swap(ctx, &status).await);
@@ -1439,5 +1476,22 @@ mod lp_swap_tests {
         let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v2);
+
+        let v3 = NegotiationDataMsg::V3(NegotiationDataV3 {
+            started_at: 0,
+            payment_locktime: 0,
+            secret_hash: vec![0; 20],
+            maker_coin_swap_contract: vec![1; 20],
+            taker_coin_swap_contract: vec![1; 20],
+            maker_coin_htlc_pub: vec![1; 33],
+            taker_coin_htlc_pub: vec![1; 33],
+        });
+
+        // v3 must be deserialized to v3, backward compatibility is not required
+        let serialized = rmp_serde::to_vec(&v3).unwrap();
+
+        let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v3);
     }
 }
