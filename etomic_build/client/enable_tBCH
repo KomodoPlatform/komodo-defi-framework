@@ -10,5 +10,5 @@ curl --url "http://127.0.0.1:7783" --data '{
     {"url":"testnet.bitcoincash.network:60002","protocol":"SSL"},
     {"url":"electrs.electroncash.de:60002","protocol":"SSL"}
   ],
-  "bchd_urls": ["https://bchd-testnet.greyh.at:18335"]
+  "bchd_urls": ["https://bchd-testnet.electroncash.de:18335"]
 }'

@@ -48,6 +48,7 @@ async fn test_send() {
     let tx = coin
         .send_maker_payment(
             1000,
+            &[],
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
             "0.001".parse().unwrap(),

@@ -10,6 +10,7 @@ bech32 = "0.8.0"
 bitcrypto = { path = "../crypto" }
 derive_more = "0.99"
 lazy_static = "1.4"
+rand = "0.6"
 primitives = { path = "../primitives" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -355,7 +355,7 @@ impl Qrc20Coin {
             self.utxo
                 .rpc_client
                 .wait_for_confirmations(
-                    tx_hash.clone(),
+                    tx_hash,
                     qtum_tx.expiry_height,
                     confirmations as u32,
                     requires_nota,

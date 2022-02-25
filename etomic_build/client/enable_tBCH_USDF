@@ -8,7 +8,7 @@ curl --url "http://127.0.0.1:7783" --data '{
     "ticker":"tBCH",
     "allow_slp_unsafe_conf":false,
     "bchd_urls":[
-      "https://bchd-testnet.greyh.at:18335"
+      "https://bchd-testnet.electroncash.de:18335"
     ],
     "mode":{
       "rpc":"Electrum",

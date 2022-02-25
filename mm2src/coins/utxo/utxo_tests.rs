@@ -3,9 +3,9 @@ use crate::coin_balance::{AccountBalanceParams, CheckHDAccountBalanceParams, Che
                           HDAccountBalanceResponse, HDAddressBalance, HDWalletBalanceRpcOps};
 use crate::hd_wallet::HDAccountsMap;
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
-use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes,
-                               ListSinceBlockRes, ListTransactionsItem, NativeClient, NativeClientImpl, NetworkInfo,
-                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClient, ElectrumClientImpl,
+                               GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
+                               NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
@@ -2532,31 +2532,26 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let expected_balance = BigDecimal::from_str("2.22222").expect("!BigDecimal::from_str");
     assert_eq!(my_balance, expected_balance);
 
-    let fee1 = coin
-        .get_sender_trade_fee(
-            TradePreimageValue::UpperBound(my_balance.clone()),
-            FeeApproxStage::WithoutApprox,
-        )
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let fee1 = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::UpperBound(my_balance.clone()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
 
     let value_without_fee = &my_balance - &fee1.amount.to_decimal();
     log!("value_without_fee "(value_without_fee));
-    let fee2 = coin
-        .get_sender_trade_fee(
-            TradePreimageValue::Exact(value_without_fee),
-            FeeApproxStage::WithoutApprox,
-        )
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let fee2 = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::Exact(value_without_fee),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee2);
 
     // `2.21934443` value was obtained as a result of executing the `max_taker_vol` RPC call for this wallet
     let max_taker_vol = BigDecimal::from_str("2.21934443").expect("!BigDecimal::from_str");
-    let fee3 = coin
-        .get_sender_trade_fee(TradePreimageValue::Exact(max_taker_vol), FeeApproxStage::WithoutApprox)
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let fee3 =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(max_taker_vol), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee3);
 }
 
@@ -3790,4 +3785,18 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
+}
+
+/// https://github.com/KomodoPlatform/atomicDEX-API/issues/1196
+#[test]
+fn test_electrum_balance_deserializing() {
+    let serialized = r#"{"confirmed": 988937858554305, "unconfirmed": 18446720562229577551}"#;
+    let actual: ElectrumBalance = json::from_str(serialized).unwrap();
+    assert_eq!(actual.confirmed, 988937858554305i128);
+    assert_eq!(actual.unconfirmed, 18446720562229577551i128);
+
+    let serialized = r#"{"confirmed": -170141183460469231731687303715884105728, "unconfirmed": 170141183460469231731687303715884105727}"#;
+    let actual: ElectrumBalance = json::from_str(serialized).unwrap();
+    assert_eq!(actual.confirmed, i128::MIN);
+    assert_eq!(actual.unconfirmed, i128::MAX);
 }

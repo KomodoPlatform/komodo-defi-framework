@@ -599,7 +599,7 @@ pub trait UtxoTxBroadcastOps {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoTxGenerationOps {
-    async fn get_tx_fee(&self) -> Result<ActualTxFee, JsonRpcError>;
+    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee>;
 
     /// Calculates interest if the coin is KMD
     /// Adds the value to existing output to my_script_pub or creates additional interest output
@@ -706,6 +706,7 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
         utxo_tx_map: &'b mut HistoryUtxoTxMap,
     ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn p2sh_spending_tx(
         &self,
         prev_transaction: UtxoTx,
@@ -714,6 +715,7 @@ pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
         script_data: Script,
         sequence: u32,
         lock_time: u32,
+        keypair: &KeyPair,
     ) -> Result<UtxoTx, String>;
 
     /// Returns available unspents in ascending order + RecentlySpentOutPoints MutexGuard for further interaction

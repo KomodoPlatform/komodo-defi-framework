@@ -308,7 +308,7 @@ impl Qrc20Coin {
             // do not inherit the block_height from qtum_tx (usually it is None)
             let block_height = receipt.block_number;
             let my_balance_change = &received_by_me - &spent_by_me;
-            let internal_id = TxInternalId::new(tx_hash.clone(), receipt.output_index, log_index as u64);
+            let internal_id = TxInternalId::new(tx_hash, receipt.output_index, log_index as u64);
 
             let from = if is_transferred_from_contract(&script_pubkey) {
                 try_s!(qtum::display_as_contract_address(from))
@@ -452,7 +452,7 @@ impl Qrc20Coin {
             }
             if tx.should_update_timestamp() {
                 if qtum_verbose.is_none() {
-                    qtum_verbose = get_verbose_transaction(self, ctx, tx_hash.clone()).await;
+                    qtum_verbose = get_verbose_transaction(self, ctx, *tx_hash).await;
                 }
                 if let Some(ref qtum_verbose) = qtum_verbose {
                     tx.timestamp = qtum_verbose.time as u64;
@@ -499,7 +499,7 @@ impl Qrc20Coin {
             // `transfer` details are not initialized for the `tx_hash`
             // or there is an error in cached `tx_hash_history`
             mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => self.utxo.conf.ticker.clone(), "method" => "transfer_details_by_hash");
-            let tx_hash_history = match self.transfer_details_by_hash(tx_hash.clone()).await {
+            let tx_hash_history = match self.transfer_details_by_hash(tx_hash).await {
                 Ok(d) => d,
                 Err(e) => {
                     ctx.log.log(
@@ -511,7 +511,7 @@ impl Qrc20Coin {
                 },
             };
 
-            if history_map.insert(tx_hash.clone(), tx_hash_history).is_some() {
+            if history_map.insert(tx_hash, tx_hash_history).is_some() {
                 ctx.log.log(
                     "😟",
                     &[&"tx_history", &self.utxo.conf.ticker],
@@ -549,7 +549,7 @@ impl Qrc20Coin {
                     return Ok(HistoryMapByHash::default());
                 },
             };
-            let tx_hash_history = history_map.entry(id.tx_hash.clone()).or_insert_with(HashMap::default);
+            let tx_hash_history = history_map.entry(id.tx_hash).or_insert_with(HashMap::default);
             if tx_hash_history.insert(id, tx).is_some() {
                 ctx.log.log(
                     "😟",
@@ -731,7 +731,7 @@ impl BuildTransferHistory for NativeClient {
         while from_block <= block_count {
             let to_block = from_block + SEARCH_LOGS_STEP - 1;
             let mut receipts = self
-                .search_logs(from_block, Some(to_block), vec![token_address.clone()], topics.clone())
+                .search_logs(from_block, Some(to_block), vec![token_address], topics.clone())
                 .compat()
                 .await?;
 

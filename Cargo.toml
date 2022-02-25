@@ -95,11 +95,13 @@ parity-util-mem = "0.9"
 # portfolio = { path = "mm2src/portfolio" }
 primitives = { path = "mm2src/mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
+rand6 = { version = "0.6", package = "rand" }
 rmp-serde = "0.14.3"
 # TODO: Reduce the size of regex by disabling the features we don't use.
 # cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
 script = { path = "mm2src/mm2_bitcoin/script" }
+secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
 serde_bencode = "0.2"
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -131,8 +133,6 @@ futures-rustls = { version = "0.21.1" }
 
 [dev-dependencies]
 mocktopus = "0.7.0"
-rand6 = { version = "0.6", package = "rand" }
-secp256k1 = { version = "0.20", features = ["rand"] }
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
 winapi = "0.3"
 

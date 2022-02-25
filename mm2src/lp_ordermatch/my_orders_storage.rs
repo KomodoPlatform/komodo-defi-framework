@@ -717,6 +717,7 @@ mod tests {
             save_in_history: true,
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
+            p2p_privkey: None,
         }
     }
 
@@ -744,6 +745,7 @@ mod tests {
             save_in_history: true,
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
+            p2p_privkey: None,
         }
     }
 

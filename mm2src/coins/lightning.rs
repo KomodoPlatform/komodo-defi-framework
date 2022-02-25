@@ -3,8 +3,9 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut, TradePreimageValue, TransactionEnum,
-            TransactionFut, UtxoStandardCoin, ValidateAddressResult, WithdrawError, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionEnum, TransactionFut, UtxoStandardCoin, ValidateAddressResult,
+            ValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::blockdata::script::Script;
@@ -20,7 +21,7 @@ use common::mm_number::MmNumber;
 use common::{async_blocking, log};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::AddressHashEnum;
+use keys::{AddressHashEnum, KeyPair};
 use lightning::chain::channelmonitor::Balance;
 use lightning::chain::keysinterface::KeysInterface;
 use lightning::chain::keysinterface::KeysManager;
@@ -224,6 +225,7 @@ impl SwapOps for LightningCoin {
     fn send_maker_payment(
         &self,
         _time_lock: u32,
+        _maker_pub: &[u8],
         _taker_pub: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
@@ -235,6 +237,7 @@ impl SwapOps for LightningCoin {
     fn send_taker_payment(
         &self,
         _time_lock: u32,
+        _taker_pub: &[u8],
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
@@ -249,6 +252,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret: &[u8],
+        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
@@ -260,6 +264,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret: &[u8],
+        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
@@ -271,6 +276,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
+        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
@@ -282,6 +288,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
+        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         unimplemented!()
@@ -301,24 +308,14 @@ impl SwapOps for LightningCoin {
 
     fn validate_maker_payment(
         &self,
-        _payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
+        _input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
 
     fn validate_taker_payment(
         &self,
-        _payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
+        _input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
@@ -326,6 +323,7 @@ impl SwapOps for LightningCoin {
     fn check_if_my_payment_sent(
         &self,
         _time_lock: u32,
+        _my_pub: &[u8],
         _other_pub: &[u8],
         _secret_hash: &[u8],
         _search_from_block: u64,
@@ -366,6 +364,8 @@ impl SwapOps for LightningCoin {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
         unimplemented!()
     }
+
+    fn get_htlc_key_pair(&self) -> KeyPair { unimplemented!() }
 }
 
 impl MarketCoinOps for LightningCoin {
@@ -433,6 +433,7 @@ impl MarketCoinOps for LightningCoin {
     fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
 }
 
+#[async_trait]
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
@@ -474,7 +475,11 @@ impl MmCoin for LightningCoin {
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_sender_trade_fee(&self, _value: TradePreimageValue, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    async fn get_sender_trade_fee(
+        &self,
+        _value: TradePreimageValue,
+        _stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
     }
 
@@ -482,11 +487,11 @@ impl MmCoin for LightningCoin {
     fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_fee_to_send_taker_fee(
+    async fn get_fee_to_send_taker_fee(
         &self,
         _dex_fee_amount: BigDecimal,
         _stage: FeeApproxStage,
-    ) -> TradePreimageFut<TradeFee> {
+    ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
     }
 

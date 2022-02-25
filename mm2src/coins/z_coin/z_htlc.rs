@@ -32,12 +32,12 @@ use zcash_primitives::transaction::Transaction as ZTransaction;
 pub async fn z_send_htlc(
     coin: &ZCoin,
     time_lock: u32,
+    my_pub: &Public,
     other_pub: &Public,
     secret_hash: &[u8],
     amount: BigDecimal,
 ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-    let key_pair = coin.utxo_arc.priv_key_policy.key_pair_or_err()?;
-    let payment_script = payment_script(time_lock, secret_hash, key_pair.public(), other_pub);
+    let payment_script = payment_script(time_lock, secret_hash, my_pub, other_pub);
     let script_hash = dhash160(&payment_script);
     let htlc_address = Address {
         prefix: coin.utxo_arc.conf.p2sh_addr_prefix,
@@ -121,13 +121,13 @@ pub async fn z_p2sh_spend(
     input_sequence: u32,
     redeem_script: Script,
     script_data: Script,
+    htlc_privkey: &[u8],
 ) -> Result<UtxoTx, MmError<ZP2SHSpendError>> {
     let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
     let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 
-    let key_pair = coin.utxo_arc.priv_key_policy.key_pair_or_err()?;
-    let secp_secret = SecretKey::from_slice(&*key_pair.private().secret).expect("Keypair contains a valid secret key");
+    let secp_secret = SecretKey::from_slice(htlc_privkey).expect("Keypair contains a valid secret key");
 
     let outpoint = ZCashOutpoint::new(p2sh_tx.txid().0, 0);
     let tx_out = TxOut {
