@@ -3185,7 +3185,7 @@ fn test_tx_v_size() {
 }
 
 pub fn get_raw_tx(
-    rpc_client: impl TxProvider + Send + Sync + 'static,
+    rpc_client: UtxoRpcClientEnum,
     mut tx: &str,
 ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
     if tx.starts_with("0x") {
