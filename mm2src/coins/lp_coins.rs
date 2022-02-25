@@ -239,21 +239,16 @@ pub enum NegotiateSwapContractAddrErr {
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetRawTransactionError {
-    #[display(fmt = "Internal error `{}`", _0)]
-    Internal(String),
-    #[display(fmt = "Invalid response `{}`", _0)]
-    InvalidResponse(String),
     #[display(fmt = "No activated coin with such name `{}`", _0)]
     CoinIsNotActive(String),
+    #[display(fmt = "Internal error `{}`", _0)]
+    Internal(String),
+    InvalidResponse(String),
+    #[display(fmt = "Invalid transaction hash `{}`", _0)]
+    InvalidTxHash(String),
+    Transport(String),
     #[display(fmt = "No valid transaction with such hash `{}`", _0)]
     TxIsNotFound(String),
-    #[display(fmt = "Invalid hash `{}`", _0)]
-    InvalidTxHash(String),
-    #[display(fmt = "No 'coin' field")]
-    NoCoinField,
-    #[display(fmt = "No 'tx_hash' field")]
-    NoTxHashField,
-    Transport(String),
 }
 
 impl HttpStatusCode for GetRawTransactionError {
@@ -264,8 +259,6 @@ impl HttpStatusCode for GetRawTransactionError {
             GetRawTransactionError::CoinIsNotActive(_) => StatusCode::BAD_REQUEST,
             GetRawTransactionError::TxIsNotFound(_) => StatusCode::BAD_REQUEST,
             GetRawTransactionError::InvalidTxHash(_) => StatusCode::BAD_REQUEST,
-            GetRawTransactionError::NoCoinField => StatusCode::BAD_REQUEST,
-            GetRawTransactionError::NoTxHashField => StatusCode::BAD_REQUEST,
             GetRawTransactionError::Transport(_) => StatusCode::BAD_REQUEST,
         }
     }
