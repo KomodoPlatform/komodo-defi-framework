@@ -120,6 +120,10 @@ mod tests {
             Err(e) => assert_eq!(e.kind(), io::ErrorKind::PermissionDenied),
             _ => panic!("Unexpected error message"),
         }
+        let mut perms = fs::metadata(path.to_string()).unwrap().permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(path.to_string(), perms).unwrap();
+        fs::remove_dir_all(path).unwrap();
     }
 
     // Test failure to rename in the process of atomically creating a channel
@@ -178,7 +182,7 @@ mod tests {
         // Create the tmp file and make it a directory.
         let tmp_path = get_full_filepath(path.clone(), format!("{}.tmp", filename.clone()));
         fs::create_dir_all(tmp_path).unwrap();
-        match write_to_file(path, filename, &test_writeable) {
+        match write_to_file(path.clone(), filename, &test_writeable) {
             Err(e) => {
                 #[cfg(not(target_os = "windows"))]
                 assert_eq!(e.raw_os_error(), Some(libc::EISDIR));
@@ -187,5 +191,6 @@ mod tests {
             },
             _ => panic!("Unexpected error message"),
         }
+        fs::remove_dir_all(path).unwrap();
     }
 }
