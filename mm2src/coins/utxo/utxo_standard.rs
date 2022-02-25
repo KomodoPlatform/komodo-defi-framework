@@ -13,7 +13,7 @@ use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone, Debug)]
 pub struct UtxoStandardCoin {
-    utxo_arc: UtxoArc,
+    pub(crate) utxo_arc: UtxoArc,
 }
 
 impl AsRef<UtxoCoinFields> for UtxoStandardCoin {

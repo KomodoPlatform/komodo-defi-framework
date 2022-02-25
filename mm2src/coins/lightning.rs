@@ -4,10 +4,9 @@ use super::{lp_coinfind_or_err, MmCoinEnum};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_common::UtxoTxBuilder;
-use crate::utxo::BlockchainNetwork;
-use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::{sat_from_big_decimal, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
+use crate::utxo::{utxo_common, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionError, HistorySyncState,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageValue, TransactionEnum, TransactionFut, UtxoStandardCoin, ValidateAddressResult, WithdrawFut,
@@ -16,16 +15,13 @@ use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::blockdata::script::Script;
 use bitcoin::hash_types::Txid;
-use bitcoin_hashes::hex::ToHex;
 #[cfg(not(target_arch = "wasm32"))] use chain::TransactionOutput;
 #[cfg(not(target_arch = "wasm32"))]
 use common::ip_addr::myipaddr;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
-use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use futures::TryFutureExt;
 use futures01::Future;
 #[cfg(not(target_arch = "wasm32"))] use keys::AddressHashEnum;
 use lightning::chain::WatchedOutput;
@@ -37,13 +33,12 @@ use ln_errors::{ConnectToNodeError, ConnectToNodeResult, EnableLightningError, E
 use ln_utils::{connect_to_node, last_request_id_path, nodes_data_path, open_ln_channel, parse_node_info,
                read_last_request_id_from_file, read_nodes_data_from_file, save_last_request_id_to_file,
                save_node_data_to_file, ChannelManager, PeerManager};
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::Bytes as BytesJson;
 #[cfg(not(target_arch = "wasm32"))] use script::Builder;
 use script::TransactionInputSigner;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub mod ln_errors;
@@ -287,30 +282,9 @@ impl MarketCoinOps for LightningCoin {
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        match H256Json::from_str(tx) {
-            Ok(tx_hash) => {
-                let lightning_coin_fields = self.platform_fields.clone();
-                Box::new(
-                    Box::pin(async move {
-                        lightning_coin_fields
-                            .platform_coin
-                            .get_verbose_transaction_from_cache_or_rpc(tx_hash)
-                            .compat()
-                            .await
-                            .map(|raw_tx| match raw_tx {
-                                Cache(cache_tx) => cache_tx.hex.to_hex(),
-                                Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
-                            })
-                            .map_err(|err| err.map(GetRawTransactionError::from))
-                    })
-                    .compat(),
-                )
-            },
-            Err(err) => Box::new(futures01::future::err(
-                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-            )),
-        }
+        utxo_common::get_raw_tx(self.platform_fields.platform_coin.utxo_arc.rpc_client.clone(), tx)
     }
+
     fn wait_for_confirmations(
         &self,
         _tx: &[u8],

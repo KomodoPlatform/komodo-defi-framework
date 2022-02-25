@@ -15,9 +15,7 @@ use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStag
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
             ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 
-use crate::utxo::VerboseTransactionFrom::{Cache, Rpc};
 use async_trait::async_trait;
-use bitcoin_hashes::hex::ToHex;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
@@ -43,7 +41,6 @@ use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error, Reader};
 use serialization_derive::Deserializable;
 use std::convert::TryInto;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
@@ -1084,35 +1081,8 @@ impl MarketCoinOps for SlpToken {
         };
         Box::new(fut.boxed().compat())
     }
-    fn get_raw_tx(
-        &self,
-        mut tx: &str,
-    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
-        }
-        match H256Json::from_str(tx) {
-            Ok(tx_hash) => {
-                let slp_coin_fields = self.platform_coin.clone();
-                Box::new(
-                    Box::pin(async move {
-                        slp_coin_fields
-                            .get_verbose_transaction_from_cache_or_rpc(tx_hash)
-                            .compat()
-                            .await
-                            .map(|raw_tx| match raw_tx {
-                                Cache(cache_tx) => cache_tx.hex.to_hex(),
-                                Rpc(rpc_tx) => rpc_tx.hex.to_hex(),
-                            })
-                            .map_err(|err| err.map(GetRawTransactionError::from))
-                    })
-                    .compat(),
-                )
-            },
-            Err(err) => Box::new(futures01::future::err(
-                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-            )),
-        }
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        utxo_common::get_raw_tx(self.platform_coin.utxo_arc.rpc_client.clone(), tx)
     }
 
     fn wait_for_confirmations(

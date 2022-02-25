@@ -3,8 +3,10 @@ use crate::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{CanRefundHtlc, CoinBalance, TradePreimageValue, TxFeeDetails, ValidateAddressResult, WithdrawResult};
+use crate::{CanRefundHtlc, CoinBalance, GetRawTransactionError, TradePreimageValue, TxFeeDetails,
+            ValidateAddressResult, WithdrawResult};
 use bigdecimal::{BigDecimal, Zero};
+use bitcoin_hashes::hex::ToHex;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
@@ -3180,4 +3182,28 @@ fn test_tx_v_size() {
     let tx: UtxoTx = "010000000001023b7308e5ca5d02000b743441f7653c1110e07275b7ab0e983f489e92bfdd2b360100000000ffffffffd6c4f22e9b1090b2584a82cf4cb6f85595dd13c16ad065711a7585cc373ae2e50000000000ffffffff02947b2a00000000001600148474e72f396d44504cd30b1e7b992b65344240c609050700000000001600141b891309c8fe1338786fa3476d5d1a9718d43a0202483045022100bfae465fcd8d2636b2513f68618eb4996334c94d47e285cb538e3416eaf4521b02201b953f46ff21c8715a0997888445ca814dfdb834ef373a29e304bee8b32454d901210226bde3bca3fe7c91e4afb22c4bc58951c60b9bd73514081b6bd35f5c09b8c9a602483045022100ba48839f7becbf8f91266140f9727edd08974fcc18017661477af1d19603ed31022042fd35af1b393eeb818b420e3a5922079776cc73f006d26dd67be932e1b4f9000121034b6a54040ad2175e4c198370ac36b70d0b0ab515b59becf100c4cd310afbfd0c00000000".into();
     let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
     assert_eq!(v_size, 209)
+}
+
+pub fn get_raw_tx(
+    rpc_client: impl TxProvider + Send + Sync + 'static,
+    mut tx: &str,
+) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+    if tx.starts_with("0x") {
+        tx = &tx[2..];
+    }
+    match H256Json::from_str(tx) {
+        Ok(tx_hash) => Box::new(
+            Box::pin(async move {
+                rpc_client
+                    .get_rpc_transaction(&tx_hash)
+                    .await
+                    .map(|raw_tx| raw_tx.hex.to_hex())
+                    .map_err(|err| err.map(GetRawTransactionError::from))
+            })
+            .compat(),
+        ),
+        Err(err) => Box::new(futures01::future::err(
+            GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
+        )),
+    }
 }

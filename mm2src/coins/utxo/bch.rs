@@ -7,7 +7,6 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, GetRawTransactionError,
             NegotiateSwapContractAddrErr, SwapOps, TradePreimageValue, TransactionType, TxFeeDetails,
             ValidateAddressResult, WithdrawFut};
-use bitcoin_hashes::hex::ToHex;
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -56,7 +55,7 @@ impl BchActivationRequest {
 
 #[derive(Clone, Debug)]
 pub struct BchCoin {
-    utxo_arc: UtxoArc,
+    pub(crate) utxo_arc: UtxoArc,
     slp_addr_prefix: CashAddrPrefix,
     bchd_urls: Vec<String>,
     slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
@@ -1037,33 +1036,10 @@ impl MarketCoinOps for BchCoin {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
 
-    fn get_raw_tx(
-        &self,
-        mut tx: &str,
-    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
-        }
-        match H256Json::from_str(tx) {
-            Ok(tx_hash) => {
-                let bch_coin_fields = self.utxo_arc.clone();
-                Box::new(
-                    Box::pin(async move {
-                        bch_coin_fields
-                            .rpc_client
-                            .get_rpc_transaction(&tx_hash)
-                            .await
-                            .map(|raw_tx| raw_tx.hex.to_hex())
-                            .map_err(|err| err.map(GetRawTransactionError::from))
-                    })
-                    .compat(),
-                )
-            },
-            Err(err) => Box::new(futures01::future::err(
-                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-            )),
-        }
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        utxo_common::get_raw_tx(self.utxo_arc.0.rpc_client.clone(), tx)
     }
+
     fn wait_for_confirmations(
         &self,
         tx: &[u8],

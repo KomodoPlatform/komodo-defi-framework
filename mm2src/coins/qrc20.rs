@@ -17,7 +17,6 @@ use crate::{BalanceError, BalanceFut, CoinBalance, DerivationMethodNotSupported,
             ValidateAddressResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use bitcoin_hashes::hex::ToHex;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
 use common::executor::Timer;
@@ -47,7 +46,7 @@ use std::ops::{Deref, Neg};
 use std::str::FromStr;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
-use utxo_signer::{TxProvider, TxProviderError};
+use utxo_signer::TxProviderError;
 
 mod history;
 #[cfg(test)] mod qrc20_tests;
@@ -1056,36 +1055,10 @@ impl MarketCoinOps for Qrc20Coin {
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo, tx)
     }
-
-    fn get_raw_tx(
-        &self,
-        mut tx: &str,
-    ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
-        }
-        match H256Json::from_str(tx) {
-            Ok(tx_hash) => {
-                let qrc20_coin_fields = self.0.clone();
-                Box::new(
-                    Box::pin(async move {
-                        qrc20_coin_fields
-                            .utxo
-                            .rpc_client
-                            .get_rpc_transaction(&tx_hash)
-                            .await
-                            .map(|raw_tx| raw_tx.hex.to_hex())
-                            .map_err(|err| err.map(GetRawTransactionError::from))
-                    })
-                    .compat(),
-                )
-            },
-            Err(err) => Box::new(futures01::future::err(
-                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-            )),
-        }
+    fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
+        // panic!()
+        utxo_common::get_raw_tx(self.0.utxo.rpc_client.clone(), tx)
     }
-
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
