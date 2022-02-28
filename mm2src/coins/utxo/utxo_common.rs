@@ -2943,6 +2943,8 @@ where
     )
     .await
     .map_err(|_e| SPVError::UnableToGetHeader)?;
+    // Only specific chains will use the block header storage, for example QTUM will not
+    // Check block header verification only for chains that have storage or storage params.
     if !is_validated && coin.as_ref().conf.block_header_storage_params.is_some() {
         return MmError::err(SPVError::BlockHeaderNotVerified);
     }

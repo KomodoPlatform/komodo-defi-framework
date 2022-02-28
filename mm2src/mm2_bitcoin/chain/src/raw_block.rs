@@ -1,7 +1,6 @@
 use crypto::dhash256;
 use primitives::bytes::Bytes;
 use primitives::hash::H256;
-use primitives::U256;
 use ser::serialize;
 use BlockHeader;
 
@@ -38,16 +37,6 @@ impl RawBlockHeader {
         let mut root = H256::default();
         root.as_mut().copy_from_slice(&self.0.as_ref()[4..36]);
         root
-    }
-
-    /// Extract the target from the header
-    pub fn target(&self) -> U256 {
-        let mantissa = U256::from_little_endian(&self.0.as_ref()[72..75]);
-        // We use saturating here to avoid panicking.
-        // This is safe because it saturates at `0`, which gives an unreachable target of `1`
-        let exponent = self.0.as_ref()[75].saturating_sub(3);
-        let offset = U256::from(256_u64).pow(exponent.into());
-        mantissa * offset
     }
 }
 
