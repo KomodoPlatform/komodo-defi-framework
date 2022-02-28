@@ -622,7 +622,7 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        utxo_common::get_raw_tx(self.utxo_arc.rpc_client.clone(), tx)
+        utxo_common::get_raw_tx(self, tx)
     }
 
     fn wait_for_confirmations(

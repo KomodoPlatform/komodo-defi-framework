@@ -55,7 +55,7 @@ impl BchActivationRequest {
 
 #[derive(Clone, Debug)]
 pub struct BchCoin {
-    pub(crate) utxo_arc: UtxoArc,
+    utxo_arc: UtxoArc,
     slp_addr_prefix: CashAddrPrefix,
     bchd_urls: Vec<String>,
     slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
@@ -1037,7 +1037,7 @@ impl MarketCoinOps for BchCoin {
     }
 
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        utxo_common::get_raw_tx(self.utxo_arc.0.rpc_client.clone(), tx)
+        utxo_common::get_raw_tx(self, tx)
     }
 
     fn wait_for_confirmations(

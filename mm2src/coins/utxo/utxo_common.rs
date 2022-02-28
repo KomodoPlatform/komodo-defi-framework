@@ -3185,12 +3185,10 @@ fn test_tx_v_size() {
 }
 
 pub fn get_raw_tx(
-    rpc_client: UtxoRpcClientEnum,
-    mut tx: &str,
+    coin_fields: impl AsRef<UtxoCoinFields>,
+    tx: &str,
 ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-    if tx.starts_with("0x") {
-        tx = &tx[2..];
-    }
+    let rpc_client = coin_fields.as_ref().rpc_client.clone();
     match H256Json::from_str(tx) {
         Ok(tx_hash) => Box::new(
             Box::pin(async move {

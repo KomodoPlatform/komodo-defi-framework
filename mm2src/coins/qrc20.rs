@@ -1056,8 +1056,7 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::send_raw_tx(&self.utxo, tx)
     }
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        // panic!()
-        utxo_common::get_raw_tx(self.0.utxo.rpc_client.clone(), tx)
+        utxo_common::get_raw_tx(self, tx)
     }
     fn wait_for_confirmations(
         &self,

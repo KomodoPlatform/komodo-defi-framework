@@ -1082,7 +1082,7 @@ impl MarketCoinOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        utxo_common::get_raw_tx(self.platform_coin.utxo_arc.rpc_client.clone(), tx)
+        utxo_common::get_raw_tx(self, tx)
     }
 
     fn wait_for_confirmations(
