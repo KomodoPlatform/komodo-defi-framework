@@ -75,6 +75,7 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
+use spv_validation::types::SPVError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -100,6 +101,7 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
             Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
 use crate::coin_balance::HDAddressBalanceChecker;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -537,6 +539,31 @@ pub enum UnsupportedAddr {
 
 impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
+#[derive(Debug)]
+pub enum GetBlockHeaderError {
+    StorageError(BlockHeaderStorageError),
+    RpcError(JsonRpcError),
+    SerializationError(serialization::Error),
+    SPVError(SPVError),
+    NativeNotSupported(String),
+}
+
+impl From<JsonRpcError> for GetBlockHeaderError {
+    fn from(err: JsonRpcError) -> Self { GetBlockHeaderError::RpcError(err) }
+}
+
+impl From<SPVError> for GetBlockHeaderError {
+    fn from(e: SPVError) -> Self { GetBlockHeaderError::SPVError(e) }
+}
+
+impl From<serialization::Error> for GetBlockHeaderError {
+    fn from(err: serialization::Error) -> Self { GetBlockHeaderError::SerializationError(err) }
+}
+
+impl From<BlockHeaderStorageError> for GetBlockHeaderError {
+    fn from(err: BlockHeaderStorageError) -> Self { GetBlockHeaderError::StorageError(err) }
 }
 
 impl UtxoCoinFields {

@@ -1368,7 +1368,7 @@ pub fn validate_maker_payment<T>(
     input: ValidatePaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
 {
     let my_public = try_fus!(Public::from_slice(&input.taker_pub));
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
@@ -1391,7 +1391,7 @@ pub fn validate_taker_payment<T>(
     input: ValidatePaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
 {
     let my_public = try_fus!(Public::from_slice(&input.maker_pub));
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
@@ -2901,7 +2901,7 @@ pub fn address_from_pubkey(
 
 pub async fn validate_spv_proof<T>(coin: T, tx: UtxoTx) -> Result<(), MmError<SPVError>>
 where
-    T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
 {
     let client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => return Ok(()),
@@ -2935,13 +2935,18 @@ where
         return MmError::err(SPVError::InvalidHeight);
     }
 
-    let block_header = client
-        .blockchain_block_header(height)
-        .compat()
-        .await
-        .map_to_mm(|_e| SPVError::UnableToGetHeader)?;
-    let raw_header = RawBlockHeader::new(block_header.0.clone())?;
-    let header: BlockHeader = deserialize(block_header.0.as_slice()).map_to_mm(|_e| SPVError::MalformattedHeader)?;
+    let (block_header, is_validated) = block_header_from_storage_or_rpc(
+        &coin,
+        height,
+        &coin.as_ref().block_headers_storage,
+        coin.as_ref().conf.block_header_storage_params.clone(),
+    )
+    .await
+    .map_err(|_e| SPVError::UnableToGetHeader)?;
+    if !is_validated && coin.as_ref().conf.block_header_storage_params.is_some() {
+        return MmError::err(SPVError::BlockHeaderNotVerified);
+    }
+    let raw_header = RawBlockHeader::new(block_header.raw().take())?;
 
     let merkle_branch = client
         .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
@@ -2958,7 +2963,7 @@ where
         vin: serialize_list(&tx.inputs).take(),
         vout: serialize_list(&tx.outputs).take(),
         index: merkle_branch.pos as u64,
-        confirming_header: header,
+        confirming_header: block_header,
         raw_header,
         intermediate_nodes,
     };
@@ -2980,7 +2985,7 @@ pub fn validate_payment<T>(
     time_lock: u32,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
 {
     let amount = try_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
@@ -3275,9 +3280,59 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
+pub async fn block_header_from_storage_or_rpc<T>(
+    coin: &T,
+    height: u64,
+    storage: &Option<BlockHeaderStorage>,
+    header_params: Option<UtxoBlockHeaderVerificationParams>,
+) -> Result<(BlockHeader, bool), MmError<GetBlockHeaderError>>
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+{
+    let client = match &coin.as_ref().rpc_client {
+        UtxoRpcClientEnum::Native(_) => {
+            return MmError::err(GetBlockHeaderError::NativeNotSupported(
+                "Native client not supported".to_string(),
+            ))
+        },
+        UtxoRpcClientEnum::Electrum(client) => client,
+    };
+    match storage {
+        None => {
+            let bytes = client.blockchain_block_header(height).compat().await?;
+            let header: BlockHeader = deserialize(bytes.0.as_slice())?;
+            Ok((header, false))
+        },
+        Some(storage) => match storage.get_block_header(coin.ticker(), height).await? {
+            None => {
+                let bytes = client.blockchain_block_header(height).compat().await?;
+                let header: BlockHeader = deserialize(bytes.0.as_slice())?;
+                match header_params {
+                    None => Ok((header, false)),
+                    Some(params) => {
+                        let (_, headers) =
+                            utxo_common::retrieve_last_headers(coin, params.blocks_limit_to_check, Some(height))
+                                .await?;
+                        match spv_validation::helpers_validation::validate_headers(
+                            headers,
+                            params.difficulty_check,
+                            params.constant_difficulty,
+                        ) {
+                            Ok(_) => Ok((header, true)),
+                            Err(_) => Ok((header, false)),
+                        }
+                    },
+                }
+            },
+            Some(header) => Ok((header, true)),
+        },
+    }
+}
+
 pub async fn retrieve_last_headers<T>(
     coin: &T,
     blocks_limit_to_check: u64,
+    current_block: Option<u64>,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
@@ -3287,7 +3342,11 @@ where
         UtxoRpcClientEnum::Electrum(electrum) => electrum,
     };
 
-    let best_block = coin.current_block().compat().await;
+    let best_block = if let Some(block) = current_block {
+        Ok(block)
+    } else {
+        coin.current_block().compat().await
+    };
     let (from, count) = match best_block {
         Ok(block) => {
             let block_height = block;
@@ -3375,7 +3434,7 @@ pub async fn block_header_utxo_loop<T>(
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        match retrieve_last_headers(&coin, blocks_limit_to_check).await {
+        match retrieve_last_headers(&coin, blocks_limit_to_check, None).await {
             Ok((block_registry, block_headers)) => {
                 match validate_headers(block_headers, difficulty_check, constant_difficulty) {
                     Ok(_) => {

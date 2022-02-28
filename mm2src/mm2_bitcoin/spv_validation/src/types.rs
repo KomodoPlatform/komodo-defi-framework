@@ -55,6 +55,8 @@ pub enum SPVError {
     OutputLengthMismatch,
     /// Unable to retrieve block height / block height is zero.
     InvalidHeight,
+    /// Block Header Not Verified / Verification failed
+    BlockHeaderNotVerified,
     /// Any other error
     UnknownError,
 }
