@@ -3312,7 +3312,7 @@ where
                 match header_params {
                     None => Ok((header, false)),
                     Some(params) => {
-                        let (_, headers) =
+                        let (headers_registry, headers) =
                             utxo_common::retrieve_last_headers(coin, params.blocks_limit_to_check, Some(height))
                                 .await?;
                         match spv_validation::helpers_validation::validate_headers(
@@ -3320,7 +3320,12 @@ where
                             params.difficulty_check,
                             params.constant_difficulty,
                         ) {
-                            Ok(_) => Ok((header, true)),
+                            Ok(_) => {
+                                storage
+                                    .add_block_headers_to_storage(coin.ticker(), headers_registry)
+                                    .await?;
+                                Ok((header, true))
+                            },
                             Err(_) => Ok((header, false)),
                         }
                     },
