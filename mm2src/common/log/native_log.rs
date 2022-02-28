@@ -31,6 +31,10 @@ impl LogLevel {
     }
 }
 
+impl Default for LogLevel {
+    fn default() -> Self { DEFAULT_LEVEL_FILTER }
+}
+
 pub struct FfiCallback {
     cb_f: extern "C" fn(line: *const c_char),
 }
@@ -59,7 +63,7 @@ impl Default for UnifiedLoggerBuilder {
     fn default() -> UnifiedLoggerBuilder {
         UnifiedLoggerBuilder {
             console_format: DEFAULT_CONSOLE_FORMAT.to_owned(),
-            filter: DEFAULT_LEVEL_FILTER,
+            filter: LogLevel::default(),
             console: true,
             mm_log: false,
         }

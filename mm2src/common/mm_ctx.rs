@@ -1,6 +1,6 @@
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
 use crate::executor::Timer;
-use crate::log::{self, LogState};
+use crate::log::{self, LogLevel, LogState};
 use crate::mm_metrics::{MetricsArc, MetricsOps};
 use crate::{bits256, small_rng};
 use futures::future::AbortHandle;
@@ -537,6 +537,7 @@ where
 #[derive(Default)]
 pub struct MmCtxBuilder {
     conf: Option<Json>,
+    log_level: LogLevel,
     key_pair: Option<KeyPair>,
     version: String,
     #[cfg(target_arch = "wasm32")]
@@ -548,6 +549,11 @@ impl MmCtxBuilder {
 
     pub fn with_conf(mut self, conf: Json) -> Self {
         self.conf = Some(conf);
+        self
+    }
+
+    pub fn with_log_level(mut self, level: LogLevel) -> Self {
+        self.log_level = level;
         self
     }
 
@@ -570,11 +576,12 @@ impl MmCtxBuilder {
     pub fn into_mm_arc(self) -> MmArc {
         // NB: We avoid recreating LogState
         // in order not to interfere with the integration tests checking LogState drop on shutdown.
-        let log = if let Some(ref conf) = self.conf {
+        let mut log = if let Some(ref conf) = self.conf {
             LogState::mm(conf)
         } else {
             LogState::in_memory()
         };
+        log.set_level(self.log_level);
         let mut ctx = MmCtx::with_log_state(log);
         ctx.mm_version = self.version;
         if let Some(conf) = self.conf {

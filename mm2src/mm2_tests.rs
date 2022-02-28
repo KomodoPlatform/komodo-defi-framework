@@ -2,10 +2,11 @@ use super::{lp_main, LpMainParams};
 use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use bigdecimal::BigDecimal;
 use common::executor::Timer;
-use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_lightning,
+use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                         enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
                         mm_spat, wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump,
                         MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use common::log::LogLevel;
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{Fraction, MmNumber};
 use common::privkey::key_pair_from_seed;
@@ -55,6 +56,10 @@ macro_rules! local_start {
 
 #[path = "mm2_tests/electrums.rs"] pub mod electrums;
 use electrums::*;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "mm2_tests/lightning_tests.rs"]
+mod lightning_tests;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "mm2_tests/lp_bot_tests.rs"]
@@ -182,10 +187,14 @@ fn test_rpc() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_mm_start() {
     if let Ok(conf) = var("_MM2_TEST_CONF") {
-        log!("test_mm_start] Starting the MarketMaker...");
-        let conf: Json = json::from_str(&conf).unwrap();
-        let params = LpMainParams::with_conf(conf);
-        block_on(lp_main(params, &|_ctx| ())).unwrap()
+        if let Ok(log_var) = var("RUST_LOG") {
+            if let Ok(filter) = LogLevel::from_str(&log_var) {
+                log!("test_mm_start] Starting the MarketMaker...");
+                let conf: Json = json::from_str(&conf).unwrap();
+                let params = LpMainParams::with_conf(conf).log_filter(Some(filter));
+                block_on(lp_main(params, &|_ctx| ())).unwrap()
+            }
+        }
     }
 }
 
@@ -8167,88 +8176,6 @@ fn test_mm2_db_migration() {
         None,
     )
     .unwrap();
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_enable_lightning() {
-    let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
-
-    let coins = json! ([
-        {
-            "coin": "tBTC-TEST-segwit",
-            "name": "tbitcoin",
-            "fname": "tBitcoin",
-            "rpcport": 18332,
-            "pubtype": 111,
-            "p2shtype": 196,
-            "wiftype": 239,
-            "segwit": true,
-            "bech32_hrp": "tb",
-            "address_format":{"format":"segwit"},
-            "orderbook_ticker": "tBTC-TEST",
-            "txfee": 0,
-            "estimate_fee_mode": "ECONOMICAL",
-            "mm2": 1,
-            "required_confirmations": 0,
-            "protocol": {
-              "type": "UTXO"
-            }
-          },
-          {
-            "coin": "tBTC-TEST-lightning",
-            "mm2": 1,
-            "protocol": {
-              "type": "LIGHTNING",
-              "protocol_data":{
-                "platform": "tBTC-TEST-segwit",
-                "network": "testnet"
-              }
-            }
-          }
-    ]);
-
-    let mut mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "passphrase": seed.to_string(),
-            "coins": coins,
-            "i_am_seed": true,
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        local_start!("bob"),
-    )
-    .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
-
-    let electrum = block_on(mm.rpc(json!({
-        "userpass": mm.userpass,
-        "method": "electrum",
-        "coin": "tBTC-TEST-segwit",
-        "servers": [{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],
-        "mm2": 1,
-    }))).unwrap();
-    assert_eq!(
-        electrum.0,
-        StatusCode::OK,
-        "RPC «electrum» failed with {} {}",
-        electrum.0,
-        electrum.1
-    );
-
-    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
-    assert_eq!(enable_lightning["result"]["platform_coin"], "tBTC-TEST-segwit");
-
-    block_on(mm.wait_for_log(60., |log| log.contains("Calling ChannelManager's timer_tick_occurred"))).unwrap();
-
-    block_on(mm.wait_for_log(60., |log| log.contains("Calling PeerManager's timer_tick_occurred"))).unwrap();
-
-    block_on(mm.stop()).unwrap();
 }
 
 #[test]

@@ -593,6 +593,8 @@ pub struct LogState {
     /// (this thread becomes a center of gravity for the other registered threads).
     /// In the future we might also use `gravity` to log into a file.
     gravity: DuplexMutex<Option<Arc<Gravity>>>,
+    /// Keeps track of the log level that the log state is initiated with
+    level: LogLevel,
 }
 
 #[derive(Clone)]
@@ -713,6 +715,7 @@ impl LogState {
             dashboard: Arc::new(DuplexMutex::new(Vec::new())),
             tail: Arc::new(DuplexMutex::new(VecDeque::with_capacity(64))),
             gravity: DuplexMutex::new(None),
+            level: LogLevel::default(),
         }
     }
 
@@ -726,8 +729,11 @@ impl LogState {
             dashboard,
             tail: Arc::new(DuplexMutex::new(VecDeque::with_capacity(64))),
             gravity: DuplexMutex::new(None),
+            level: LogLevel::default(),
         }
     }
+
+    pub fn set_level(&mut self, level: LogLevel) { self.level = level; }
 
     /// The operation is considered "in progress" while the `StatusHandle` exists.
     ///
@@ -889,11 +895,13 @@ impl LogState {
         tail.push_back(entry);
         drop(tail);
 
-        self.chunk2log(chunk)
+        self.chunk2log(chunk, self.level)
     }
 
-    fn chunk2log(&self, chunk: String) {
-        self::chunk2log(chunk, LogLevel::Info)
+    fn chunk2log(&self, chunk: String, level: LogLevel) {
+        if self.level.ge(&level) {
+            self::chunk2log(chunk, level);
+        }
         /*
         match self.log_file {
             Some (ref f) => match f.lock() {
@@ -916,7 +924,7 @@ impl LogState {
     /// Writes into the *raw* portion of the log, the one not shared with the UI.
     pub fn rawln(&self, mut line: String) {
         line.push('\n');
-        self.chunk2log(line);
+        self.chunk2log(line, self.level);
     }
 
     /// Binds the logger to the current thread,
@@ -967,7 +975,8 @@ impl LogState {
 impl LightningLogger for LogState {
     fn log(&self, record: &LightningRecord) {
         let level = match record.level {
-            LightningLevel::Trace => Level::Trace,
+            LightningLevel::Gossip => Level::Trace,
+            LightningLevel::Trace => Level::Debug,
             LightningLevel::Debug => Level::Debug,
             LightningLevel::Info => Level::Info,
             LightningLevel::Warn => Level::Warn,
@@ -983,7 +992,7 @@ impl LightningLogger for LogState {
             .build();
         let as_string = format_record(&record);
         let level = LogLevel::from(record.metadata().level());
-        chunk2log(as_string, level);
+        self.chunk2log(as_string, level);
     }
 }
 

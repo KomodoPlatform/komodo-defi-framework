@@ -68,6 +68,7 @@ use futures01::Future;
 use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
+use lightning_invoice::Currency as LightningCurrency;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};
@@ -406,6 +407,16 @@ impl From<BlockchainNetwork> for BitcoinNetwork {
     }
 }
 
+impl From<BlockchainNetwork> for LightningCurrency {
+    fn from(network: BlockchainNetwork) -> Self {
+        match network {
+            BlockchainNetwork::Mainnet => LightningCurrency::Bitcoin,
+            BlockchainNetwork::Testnet => LightningCurrency::BitcoinTestnet,
+            BlockchainNetwork::Regtest => LightningCurrency::Regtest,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct UtxoCoinConf {
     pub ticker: String,
@@ -474,11 +485,6 @@ pub struct UtxoCoinConf {
     pub mature_confirmations: u32,
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
     pub estimate_fee_blocks: u32,
-    /// Defines if the coin can be used in the lightning network
-    /// For now BTC is only supported by LDK but in the future any segwit coins can be supported in lightning network
-    pub lightning: bool,
-    /// bitcoin/testnet/signet/regtest Needed for lightning node to know which network to connect to
-    pub network: Option<String>,
     /// The name of the coin with which Trezor wallet associates this asset.
     pub trezor_coin: Option<TrezorUtxoCoin>,
 }

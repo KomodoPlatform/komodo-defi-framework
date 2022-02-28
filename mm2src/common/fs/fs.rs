@@ -1,14 +1,15 @@
-use crate::log::error;
+use crate::log::{error, LogOnError};
 use crate::mm_error::prelude::*;
 use async_std::fs as async_fs;
 use derive_more::Display;
 use futures::AsyncWriteExt;
+use rand::random;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Error as JsonError};
 use std::ffi::OsStr;
 use std::fs::{self, DirEntry};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -24,6 +25,62 @@ pub enum FsJsonError {
 }
 
 pub mod file_lock;
+
+pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
+    let r: [u8; 32] = random();
+    let mut check: Vec<u8> = Vec::with_capacity(r.len());
+    let fname = dir_path.join("checkval");
+    let mut fp = fs::File::create(&fname)?;
+    fp.write_all(&r)?;
+    drop(fp);
+    let mut fp = fs::File::open(&fname)?;
+    fp.read_to_end(&mut check)?;
+    if check.len() != r.len() {
+        return Err(io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            format!("Expected same data length when reading file: {:?}", fname),
+        ));
+    }
+    if check != r {
+        return Err(io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Expected the same {:?} data: {:?} != {:?}", fname, r, check),
+        ));
+    }
+    Ok(())
+}
+
+/// Invokes `OS_ensure_directory`,
+/// then prints an error and returns `false` if the directory is not writable.
+pub fn ensure_dir_is_writable(dir_path: &Path) -> bool {
+    if dir_path.exists() && !dir_path.is_dir() {
+        error!("The {} is not a directory", dir_path.display());
+        return false;
+    } else if let Err(e) = std::fs::create_dir_all(dir_path) {
+        error!("Could not create dir {}, error {}", dir_path.display(), e);
+        return false;
+    }
+    check_dir_operations(dir_path).error_log_passthrough().is_ok()
+}
+
+pub fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
+    if fs::File::open(file_path).is_err() {
+        // try to create file if opening fails
+        if let Err(e) = fs::OpenOptions::new().write(true).create_new(true).open(file_path) {
+            return ERR!("{} when trying to create the file {}", e, file_path.display());
+        }
+    } else {
+        // try to open file in write append mode
+        if let Err(e) = fs::OpenOptions::new().write(true).append(true).open(file_path) {
+            return ERR!(
+                "{} when trying to open the file {} in write mode",
+                e,
+                file_path.display()
+            );
+        }
+    }
+    Ok(())
+}
 
 pub fn slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> { Ok(gstuff::slurp(path)) }
 

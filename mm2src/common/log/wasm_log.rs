@@ -66,6 +66,10 @@ pub enum LogLevel {
     Trace = 5,
 }
 
+impl Default for LogLevel {
+    fn default() -> Self { DEFAULT_LEVEL_FILTER }
+}
+
 impl From<LogLevel> for JsValue {
     fn from(lvl: LogLevel) -> Self { JsValue::from(lvl as u32) }
 }

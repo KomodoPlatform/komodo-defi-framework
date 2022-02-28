@@ -1,17 +1,20 @@
 use crate::l2::{EnableL2Error, L2ActivationOps, L2ProtocolParams};
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::lightning::ln_conf::{LightningCoinConf, LightningProtocolConf};
 use coins::lightning::ln_errors::EnableLightningError;
 use coins::lightning::ln_utils::{start_lightning, LightningParams};
-use coins::lightning::{LightningCoin, LightningProtocolConf};
+use coins::lightning::LightningCoin;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{CoinProtocol, MarketCoinOps, MmCoinEnum};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use derive_more::Display;
+use futures::compat::Future01CompatExt;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::{self as json, Value as Json};
 
 const DEFAULT_LISTENING_PORT: u16 = 9735;
 
@@ -33,9 +36,14 @@ impl TryFromCoinProtocol for LightningProtocolConf {
         Self: Sized,
     {
         match proto {
-            CoinProtocol::LIGHTNING { platform, network } => Ok(LightningProtocolConf {
+            CoinProtocol::LIGHTNING {
+                platform,
+                network,
+                confirmations,
+            } => Ok(LightningProtocolConf {
                 platform_coin_ticker: platform,
                 network,
+                confirmations,
             }),
             proto => MmError::err(proto),
         }
@@ -54,6 +62,10 @@ pub struct LightningActivationParams {
     pub name: String,
     // Node's HEX color. This is used for showing the node in a network graph with the desired color.
     pub color: Option<String>,
+    // The number of payment retries that should be done before considering a payment failed or partially failed.
+    pub payment_retries: Option<usize>,
+    // Node's backup path for channels and other data that requires backup.
+    pub backup_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -72,22 +84,33 @@ pub enum LightningValidationErr {
 #[derive(Debug, Serialize)]
 pub struct LightningInitResult {
     platform_coin: String,
+    address: String,
+    balance: CoinBalance,
 }
 
 #[derive(Debug)]
 pub enum LightningInitError {
+    InvalidConfiguration(String),
     EnableLightningError(EnableLightningError),
     LightningValidationErr(LightningValidationErr),
+    MyBalanceError(BalanceError),
+    MyAddressError(String),
 }
 
 impl From<LightningInitError> for EnableL2Error {
     fn from(err: LightningInitError) -> Self {
         match err {
+            LightningInitError::InvalidConfiguration(err) => EnableL2Error::L2ConfigParseError(err),
             LightningInitError::EnableLightningError(enable_err) => match enable_err {
                 EnableLightningError::RpcError(rpc_err) => EnableL2Error::Transport(rpc_err),
                 enable_error => EnableL2Error::Internal(enable_error.to_string()),
             },
             LightningInitError::LightningValidationErr(req_err) => EnableL2Error::Internal(req_err.to_string()),
+            LightningInitError::MyBalanceError(balance_err) => match balance_err {
+                BalanceError::Transport(e) => EnableL2Error::Transport(e),
+                balance_error => EnableL2Error::Internal(balance_error.to_string()),
+            },
+            LightningInitError::MyAddressError(e) => EnableL2Error::Internal(e),
         }
     }
 }
@@ -106,8 +129,14 @@ impl L2ActivationOps for LightningCoin {
     type ActivationParams = LightningActivationParams;
     type ProtocolInfo = LightningProtocolConf;
     type ValidatedParams = LightningParams;
+    type CoinConf = LightningCoinConf;
     type ActivationResult = LightningInitResult;
     type ActivationError = LightningInitError;
+
+    fn coin_conf_from_json(json: Json) -> Result<Self::CoinConf, MmError<Self::ActivationError>> {
+        json::from_value::<LightningCoinConf>(json)
+            .map_to_mm(|e| LightningInitError::InvalidConfiguration(e.to_string()))
+    }
 
     fn validate_platform_configuration(
         platform_coin: &Self::PlatformCoin,
@@ -148,26 +177,32 @@ impl L2ActivationOps for LightningCoin {
             listening_port,
             node_name,
             node_color,
+            payment_retries: activation_params.payment_retries,
+            backup_path: activation_params.backup_path,
         })
     }
 
     async fn enable_l2(
         ctx: &MmArc,
-        ticker: String,
         platform_coin: Self::PlatformCoin,
         validated_params: Self::ValidatedParams,
         protocol_conf: Self::ProtocolInfo,
+        coin_conf: Self::CoinConf,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        let lightning_coin = start_lightning(
-            ctx,
-            platform_coin.clone(),
-            ticker,
-            validated_params,
-            protocol_conf.network.into(),
-        )
-        .await?;
+        let lightning_coin =
+            start_lightning(ctx, platform_coin.clone(), protocol_conf, coin_conf, validated_params).await?;
+        let address = lightning_coin
+            .my_address()
+            .map_to_mm(LightningInitError::MyAddressError)?;
+        let balance = lightning_coin
+            .my_balance()
+            .compat()
+            .await
+            .mm_err(LightningInitError::MyBalanceError)?;
         let init_result = LightningInitResult {
             platform_coin: platform_coin.ticker().into(),
+            address,
+            balance,
         };
         Ok((lightning_coin, init_result))
     }

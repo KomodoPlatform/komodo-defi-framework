@@ -50,6 +50,7 @@ pub enum UtxoCoinBuildError {
     RpcPortIsNotSet,
     ErrorDetectingFeeMethod(String),
     ErrorDetectingDecimals(String),
+    InvalidBlockchainNetwork(String),
     #[display(
         fmt = "Failed to connect to at least 1 of {:?} in {} seconds.",
         electrum_servers,
@@ -372,11 +373,11 @@ pub trait UtxoCoinBuilderCommonOps {
 
     fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
 
-    fn network(&self) -> UtxoConfResult<BlockchainNetwork> {
+    fn network(&self) -> UtxoCoinBuildResult<BlockchainNetwork> {
         let conf = self.conf();
         if !conf["network"].is_null() {
             return json::from_value(conf["network"].clone())
-                .map_to_mm(|e| UtxoConfError::InvalidBlockchainNetwork(e.to_string()));
+                .map_to_mm(|e| UtxoCoinBuildError::InvalidBlockchainNetwork(e.to_string()));
         }
         Ok(BlockchainNetwork::Mainnet)
     }

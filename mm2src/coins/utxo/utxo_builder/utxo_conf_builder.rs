@@ -40,7 +40,6 @@ pub enum UtxoConfError {
     InvalidConsensusBranchId(String),
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
-    InvalidBlockchainNetwork(String),
     InvalidDecimals(String),
 }
 
@@ -97,8 +96,6 @@ impl<'a> UtxoConfBuilder<'a> {
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
-        let lightning = self.lightning();
-        let network = self.network();
         let trezor_coin = self.trezor_coin();
 
         Ok(UtxoCoinConf {
@@ -130,8 +127,6 @@ impl<'a> UtxoConfBuilder<'a> {
             block_header_storage_params,
             mature_confirmations,
             estimate_fee_blocks,
-            lightning,
-            network,
             trezor_coin,
         })
     }
@@ -281,16 +276,6 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
-
-    fn lightning(&self) -> bool {
-        if self.segwit() && self.bech32_hrp().is_some() {
-            self.conf["lightning"].as_bool().unwrap_or(false)
-        } else {
-            false
-        }
-    }
-
-    fn network(&self) -> Option<String> { json::from_value(self.conf["network"].clone()).unwrap_or(None) }
 
     fn trezor_coin(&self) -> Option<TrezorUtxoCoin> {
         json::from_value(self.conf["trezor_coin"].clone()).unwrap_or_default()

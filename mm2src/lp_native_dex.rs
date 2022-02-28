@@ -20,18 +20,17 @@
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{spawn, spawn_boxed, Timer};
-use common::log::{error, info, warn};
+use common::log::{info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
 use common::mm_error::prelude::*;
 use crypto::{CryptoCtx, CryptoInitError, HwError, HwProcessingError};
 use derive_more::Display;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
-use rand::random;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
 use std::fs;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
 
@@ -47,6 +46,7 @@ use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 cfg_native! {
+    use common::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use common::ip_addr::myipaddr;
     use db_common::sqlite::rusqlite::Error as SqlError;
 }
@@ -263,68 +263,6 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
     } else {
         Vec::new()
     }
-}
-
-/// Invokes `OS_ensure_directory`,
-/// then prints an error and returns `false` if the directory is not writable.
-fn ensure_dir_is_writable(dir_path: &Path) -> bool {
-    if dir_path.exists() && !dir_path.is_dir() {
-        error!("The {} is not a directory", dir_path.display());
-        return false;
-    } else if let Err(e) = std::fs::create_dir_all(dir_path) {
-        error!("Could not create dir {}, error {}", dir_path.display(), e);
-        return false;
-    }
-    let r: [u8; 32] = random();
-    let mut check: Vec<u8> = Vec::with_capacity(r.len());
-    let fname = dir_path.join("checkval");
-    let mut fp = match fs::File::create(&fname) {
-        Ok(fp) => fp,
-        Err(_) => {
-            error!("FATAL cannot create {:?}", fname);
-            return false;
-        },
-    };
-    if fp.write_all(&r).is_err() {
-        error!("FATAL cannot write to {:?}", fname);
-        return false;
-    }
-    drop(fp);
-    let mut fp = match fs::File::open(&fname) {
-        Ok(fp) => fp,
-        Err(_) => {
-            error!("FATAL cannot open {:?}", fname);
-            return false;
-        },
-    };
-    if fp.read_to_end(&mut check).is_err() || check.len() != r.len() {
-        error!("FATAL cannot read {:?}", fname);
-        return false;
-    }
-    if check != r {
-        error!("FATAL expect the same {:?} data: {:?} != {:?}", fname, r, check);
-        return false;
-    }
-    true
-}
-
-fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
-    if fs::File::open(file_path).is_err() {
-        // try to create file if opening fails
-        if let Err(e) = fs::OpenOptions::new().write(true).create_new(true).open(file_path) {
-            return ERR!("{} when trying to create the file {}", e, file_path.display());
-        }
-    } else {
-        // try to open file in write append mode
-        if let Err(e) = fs::OpenOptions::new().write(true).append(true).open(file_path) {
-            return ERR!(
-                "{} when trying to open the file {} in write mode",
-                e,
-                file_path.display()
-            );
-        }
-    }
-    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]

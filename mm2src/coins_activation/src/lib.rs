@@ -1,7 +1,7 @@
 mod bch_with_tokens_activation;
 mod context;
 mod l2;
-mod lightning_activation;
+#[cfg(not(target_arch = "wasm32"))] mod lightning_activation;
 mod platform_coin_with_tokens;
 mod prelude;
 mod slp_token_activation;

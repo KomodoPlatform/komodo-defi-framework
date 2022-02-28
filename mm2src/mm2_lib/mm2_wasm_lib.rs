@@ -46,7 +46,7 @@ struct MainParams {
 }
 
 impl From<MainParams> for LpMainParams {
-    fn from(orig: MainParams) -> Self { LpMainParams::with_conf(orig.conf).log_filter(orig.log_level) }
+    fn from(orig: MainParams) -> Self { LpMainParams::with_conf(orig.conf).log_filter(Some(orig.log_level)) }
 }
 
 /// Run the MarketMaker2.

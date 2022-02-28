@@ -63,7 +63,6 @@ pub mod database;
 #[path = "mm2_tests.rs"]
 pub mod mm2_tests;
 
-const DEFAULT_LOG_FILTER: LogLevel = LogLevel::Info;
 pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
@@ -93,9 +92,8 @@ pub struct LpMainParams {
 impl LpMainParams {
     pub fn with_conf(conf: Json) -> LpMainParams { LpMainParams { conf, filter: None } }
 
-    #[allow(dead_code)]
-    pub fn log_filter(mut self, filter: LogLevel) -> LpMainParams {
-        self.filter = Some(filter);
+    pub fn log_filter(mut self, filter: Option<LogLevel>) -> LpMainParams {
+        self.filter = filter;
         self
     }
 }
@@ -208,7 +206,8 @@ fn check_password_policy() {
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
-    if let Err(e) = init_logger(params.filter) {
+    let log_filter = params.filter.unwrap_or_default();
+    if let Err(e) = init_logger(log_filter) {
         log!("Logger initialization failed: "(e))
     }
 
@@ -234,6 +233,7 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
 
     let ctx = MmCtxBuilder::new()
         .with_conf(conf)
+        .with_log_level(log_filter)
         .with_version(MM_VERSION.into())
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
@@ -425,7 +425,9 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
         }
     }
 
-    let params = LpMainParams::with_conf(conf);
+    let log_filter = LogLevel::from_env();
+
+    let params = LpMainParams::with_conf(conf).log_filter(log_filter);
     try_s!(block_on(lp_main(params, ctx_cb)));
     Ok(())
 }
@@ -460,13 +462,9 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn init_logger(level: Option<LogLevel>) -> Result<(), String> {
+fn init_logger(level: LogLevel) -> Result<(), String> {
     use common::log::UnifiedLoggerBuilder;
 
-    let level = match level {
-        Some(l) => l,
-        None => LogLevel::from_env().unwrap_or(DEFAULT_LOG_FILTER),
-    };
     UnifiedLoggerBuilder::default()
         .level_filter(level)
         .console(false)
@@ -475,9 +473,6 @@ fn init_logger(level: Option<LogLevel>) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn init_logger(level: Option<LogLevel>) -> Result<(), String> {
-    use common::log::WasmLoggerBuilder;
-
-    let level = level.unwrap_or(DEFAULT_LOG_FILTER);
-    WasmLoggerBuilder::default().level_filter(level).try_init()
+fn init_logger(level: LogLevel) -> Result<(), String> {
+    common::log::WasmLoggerBuilder::default().level_filter(level).try_init()
 }

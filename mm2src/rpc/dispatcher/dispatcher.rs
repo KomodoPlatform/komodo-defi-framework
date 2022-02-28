@@ -11,7 +11,6 @@ use coins::hd_wallet::get_new_address;
 use coins::init_create_account::{init_create_new_account, init_create_new_account_status,
                                  init_create_new_account_user_action};
 use coins::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
-use coins::lightning::{connect_to_lightning_node, open_channel, LightningCoin};
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
@@ -30,6 +29,12 @@ use http::Response;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
+
+cfg_native! {
+    use coins::lightning::{close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
+        get_claimable_balances, get_payment_details, list_channels, list_payments, open_channel,
+        send_payment, LightningCoin};
+}
 
 pub async fn process_single_request(
     ctx: MmArc,
@@ -113,9 +118,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "account_balance" => handle_mmrpc(ctx, request, account_balance).await,
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
-        "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
-        "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
@@ -135,7 +138,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "mm_init_status" => handle_mmrpc(ctx, request, mm_init_status).await,
         "mm_init_user_action" => handle_mmrpc(ctx, request, mm_init_user_action).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
-        "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
@@ -149,6 +151,22 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         "withdraw_status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw_user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
+        #[cfg(not(target_arch = "wasm32"))]
+        native_only_methods => match native_only_methods {
+            "close_channel" => handle_mmrpc(ctx, request, close_channel).await,
+            "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
+            "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
+            "generate_invoice" => handle_mmrpc(ctx, request, generate_invoice).await,
+            "get_channel_details" => handle_mmrpc(ctx, request, get_channel_details).await,
+            "get_claimable_balances" => handle_mmrpc(ctx, request, get_claimable_balances).await,
+            "get_payment_details" => handle_mmrpc(ctx, request, get_payment_details).await,
+            "list_channels" => handle_mmrpc(ctx, request, list_channels).await,
+            "list_payments" => handle_mmrpc(ctx, request, list_payments).await,
+            "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
+            "send_payment" => handle_mmrpc(ctx, request, send_payment).await,
+            _ => MmError::err(DispatcherError::NoSuchMethod),
+        },
+        #[cfg(target_arch = "wasm32")]
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

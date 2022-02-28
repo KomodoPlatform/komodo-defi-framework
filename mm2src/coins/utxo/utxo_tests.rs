@@ -129,8 +129,6 @@ fn utxo_coin_fields_for_test(
             block_header_storage_params: None,
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
-            lightning: false,
-            network: None,
             trezor_coin: None,
         },
         decimals: TEST_COIN_DECIMALS,
