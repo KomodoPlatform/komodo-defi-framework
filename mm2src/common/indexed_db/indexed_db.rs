@@ -29,7 +29,7 @@ mod indexed_cursor;
 
 pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
                     OnUpgradeError, OnUpgradeResult};
-pub use db_lock::{ConstructibleDb, DbLocked};
+pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
 use indexed_cursor::{cursor_event_loop, DbCursorEventTx, DbEmptyCursor};

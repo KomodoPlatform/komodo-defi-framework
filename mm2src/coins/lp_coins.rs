@@ -71,9 +71,11 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
+    use hd_wallet_storage::HDWalletDb;
     use tx_history_db::TxHistoryDb;
 
+    pub type HDWalletDbLocked<'a> = DbLocked<'a, HDWalletDb>;
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
 
@@ -103,6 +105,7 @@ pub mod coins_tests;
 pub mod eth;
 pub mod hd_pubkey;
 pub mod hd_wallet;
+pub mod hd_wallet_storage;
 pub mod init_create_account;
 pub mod init_withdraw;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
@@ -1500,8 +1503,9 @@ pub struct CoinsContext {
     withdraw_task_manager: WithdrawTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
-    /// The database has to be initialized only once!
-    tx_history_db: ConstructibleDb<TxHistoryDb>,
+    tx_history_db: SharedDb<TxHistoryDb>,
+    #[cfg(target_arch = "wasm32")]
+    hd_wallet_db: SharedDb<HDWalletDb>,
 }
 
 #[derive(Debug)]
@@ -1524,7 +1528,9 @@ impl CoinsContext {
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
-                tx_history_db: ConstructibleDb::from_ctx(ctx),
+                tx_history_db: ConstructibleDb::new_shared(ctx),
+                #[cfg(target_arch = "wasm32")]
+                hd_wallet_db: ConstructibleDb::new_shared(ctx),
             })
         })))
     }
@@ -2504,6 +2510,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
+    // TODO
     let my_address = coin.my_address().unwrap_or_default();
 
     let fut = async move {

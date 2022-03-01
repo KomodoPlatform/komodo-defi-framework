@@ -220,6 +220,7 @@ where
             .await?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
+            hd_wallet_storage: todo!(),
             address_format,
             derivation_path,
             accounts: HDAccountsMutex::new(accounts),

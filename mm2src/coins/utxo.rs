@@ -94,6 +94,7 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
             Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
 use crate::coin_balance::HDAddressBalanceChecker;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
+use crate::hd_wallet_storage::HDWalletCoinStorage;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -1113,6 +1114,7 @@ impl Default for ElectrumBuilderArgs {
 
 #[derive(Debug)]
 pub struct UtxoHDWallet {
+    pub hd_wallet_storage: HDWalletCoinStorage,
     pub address_format: UtxoAddressFormat,
     /// Derivation path of the coin.
     /// This derivation path consists of `purpose` and `coin_type` only

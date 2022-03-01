@@ -2,12 +2,13 @@ use crate::crypto_ctx::{MM2_INTERNAL_DERIVATION_PATH, MM2_INTERNAL_ECDSA_CURVE};
 use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
 use crate::trezor::TrezorSession;
 use crate::HwWalletType;
+use bitcrypto::dhash160;
 use common::log::warn;
 use common::mm_error::prelude::*;
 use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::H264;
+use primitives::hash::{H160, H264};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -32,7 +33,7 @@ impl HardwareWalletArc {
 
 pub struct HardwareWalletCtx {
     /// The pubkey derived from `MM2_INTERNAL_DERIVATION_PATH`.
-    pub(crate) mm2_internal_pubkey: H264,
+    pub(crate) hw_internal_pubkey: H264,
     pub(crate) hw_wallet_type: HwWalletType,
     /// Please avoid locking multiple mutexes.
     /// The mutex hasn't be locked while the wallet is used
@@ -72,7 +73,9 @@ impl HardwareWalletCtx {
         Ok(trezor)
     }
 
-    pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.mm2_internal_pubkey) }
+    pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.hw_internal_pubkey) }
+
+    pub fn rmd160(&self) -> H160 { dhash160(self.hw_internal_pubkey.as_slice()) }
 
     pub(crate) async fn trezor_mm_internal_pubkey<Processor>(
         trezor: &mut TrezorSession<'_>,
@@ -103,10 +106,10 @@ impl HardwareWalletCtx {
     {
         let mut session = trezor.session().await.mm_err(HwError::from)?;
         let actual_pubkey = Self::trezor_mm_internal_pubkey(&mut session, processor).await?;
-        if actual_pubkey != self.mm2_internal_pubkey {
+        if actual_pubkey != self.hw_internal_pubkey {
             return MmError::err(HwProcessingError::HwError(HwError::FoundUnexpectedDevice {
                 actual_pubkey,
-                expected_pubkey: self.mm2_internal_pubkey,
+                expected_pubkey: self.hw_internal_pubkey,
             }));
         }
         Ok(())

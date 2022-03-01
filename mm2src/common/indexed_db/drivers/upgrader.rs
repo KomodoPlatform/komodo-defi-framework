@@ -74,7 +74,7 @@ impl TableUpgrader {
             })
     }
 
-    /// Create an index with the multiple keys.
+    /// Creates an index with the multiple keys.
     /// The key has to be a field of the table.
     /// Such indexes are used to find records that satisfy constraints imposed on multiple fields.
     pub fn create_multi_index(&self, index: &str, fields: &[&str], unique: bool) -> OnUpgradeResult<()> {

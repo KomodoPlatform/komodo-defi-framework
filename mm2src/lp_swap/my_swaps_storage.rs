@@ -227,7 +227,10 @@ mod wasm_impl {
                 },
             };
 
-            let uuids: BTreeSet<OrderedUuid> = items.into_iter().map(OrderedUuid::from).collect();
+            let uuids: BTreeSet<OrderedUuid> = items
+                .into_iter()
+                .map(|(_item_id, item)| OrderedUuid::from(item))
+                .collect();
             match paging_options {
                 Some(paging) => Ok(take_according_to_paging_opts(uuids, paging)),
                 None => {
