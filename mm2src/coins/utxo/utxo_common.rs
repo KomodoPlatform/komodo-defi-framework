@@ -3185,10 +3185,10 @@ fn test_tx_v_size() {
 }
 
 pub fn get_raw_tx(
-    coin_fields: impl AsRef<UtxoCoinFields>,
+    coin_fields: &UtxoCoinFields,
     tx: &str,
 ) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-    let rpc_client = coin_fields.as_ref().rpc_client.clone();
+    let rpc_client = coin_fields.rpc_client.clone();
     match H256Json::from_str(tx) {
         Ok(tx_hash) => Box::new(
             Box::pin(async move {
@@ -3203,5 +3203,15 @@ pub fn get_raw_tx(
         Err(err) => Box::new(futures01::future::err(
             GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
         )),
+    }
+}
+
+impl From<TxProviderError> for GetRawTransactionError {
+    fn from(tx_provider_err: TxProviderError) -> Self {
+        match tx_provider_err {
+            TxProviderError::Transport(msg) => GetRawTransactionError::TxIsNotFound(msg),
+            TxProviderError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
+            TxProviderError::Internal(msg) => GetRawTransactionError::Internal(msg),
+        }
     }
 }

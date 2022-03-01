@@ -46,7 +46,6 @@ use std::ops::{Deref, Neg};
 use std::str::FromStr;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
-use utxo_signer::TxProviderError;
 
 mod history;
 #[cfg(test)] mod qrc20_tests;
@@ -997,16 +996,6 @@ impl SwapOps for Qrc20Coin {
     }
 }
 
-impl From<TxProviderError> for GetRawTransactionError {
-    fn from(tx_provider_err: TxProviderError) -> Self {
-        match tx_provider_err {
-            TxProviderError::Transport(msg) => GetRawTransactionError::TxIsNotFound(msg),
-            TxProviderError::InvalidResponse(msg) => GetRawTransactionError::InvalidResponse(msg),
-            TxProviderError::Internal(msg) => GetRawTransactionError::Internal(msg),
-        }
-    }
-}
-
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
@@ -1056,7 +1045,7 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::send_raw_tx(&self.utxo, tx)
     }
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        utxo_common::get_raw_tx(self, tx)
+        utxo_common::get_raw_tx(&self.utxo, tx)
     }
     fn wait_for_confirmations(
         &self,
