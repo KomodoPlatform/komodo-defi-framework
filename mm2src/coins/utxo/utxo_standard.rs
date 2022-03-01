@@ -2,7 +2,6 @@ use super::*;
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::{CanRefundHtlc, CoinBalance, GetRawTransactionError, NegotiateSwapContractAddrErr, SwapOps,
             TradePreimageValue, ValidateAddressResult, WithdrawFut};
-use bitcoin_hashes::hex::ToHex;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::TrezorCoin;
@@ -13,7 +12,7 @@ use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone, Debug)]
 pub struct UtxoStandardCoin {
-    pub(crate) utxo_arc: UtxoArc,
+    utxo_arc: UtxoArc,
 }
 
 impl AsRef<UtxoCoinFields> for UtxoStandardCoin {
@@ -428,25 +427,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
     fn get_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<GetRawTransactionError>> + Send> {
-        match H256Json::from_str(tx) {
-            Ok(tx_hash) => {
-                let utxo_coin_fields = self.utxo_arc.0.clone();
-                Box::new(
-                    Box::pin(async move {
-                        utxo_coin_fields
-                            .rpc_client
-                            .get_rpc_transaction(&tx_hash)
-                            .await
-                            .map(|raw_tx| raw_tx.hex.to_hex())
-                            .map_err(|err| err.map(GetRawTransactionError::from))
-                    })
-                    .compat(),
-                )
-            },
-            Err(err) => Box::new(futures01::future::err(
-                GetRawTransactionError::InvalidTxHash(err.to_string()).into(),
-            )),
-        }
+        utxo_common::get_raw_tx(self, tx)
     }
 
     fn wait_for_confirmations(
