@@ -3387,6 +3387,19 @@ where
     Ok((block_registry, block_headers))
 }
 
+macro_rules! try_loop {
+    ($e:expr, $delay: ident) => {
+        match $e {
+            Ok(res) => res,
+            Err(e) => {
+                error!("error {:?}", e);
+                Timer::sleep($delay).await;
+                continue;
+            },
+        }
+    };
+}
+
 pub async fn block_header_utxo_loop<T>(
     weak: UtxoWeak,
     check_every: f64,
@@ -3431,36 +3444,24 @@ pub async fn block_header_utxo_loop<T>(
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        let height = match coin.as_ref().rpc_client.get_block_count().compat().await {
-            Ok(height) => height,
-            Err(err) => {
-                error!("error: {:?}", err);
-                Timer::sleep(check_every).await;
-                continue;
-            },
+        let height = try_loop!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
+        let (block_registry, block_headers) = try_loop!(
+            retrieve_last_headers(&coin, blocks_limit_to_check, height).await,
+            check_every
+        );
+        try_loop!(
+            validate_headers(block_headers, difficulty_check, constant_difficulty),
+            check_every
+        );
+        let storage = match &coin.as_ref().block_headers_storage {
+            None => break,
+            Some(storage) => storage,
         };
-        match retrieve_last_headers(&coin, blocks_limit_to_check, height).await {
-            Ok((block_registry, block_headers)) => {
-                match validate_headers(block_headers, difficulty_check, constant_difficulty) {
-                    Ok(_) => {
-                        let storage = match &coin.as_ref().block_headers_storage {
-                            None => break,
-                            Some(storage) => storage,
-                        };
-                        let ticker = coin.as_ref().conf.ticker.as_str();
-                        match storage.add_block_headers_to_storage(ticker, block_registry).await {
-                            Ok(_) => info!(
-                                "Successfully add block header to storage after validation for {}",
-                                ticker
-                            ),
-                            Err(err) => error!("error: {:?}", err),
-                        }
-                    },
-                    Err(err) => error!("error: {:?}", err),
-                }
-            },
-            Err(err) => error!("error: {:?}", err),
-        }
+        let ticker = coin.as_ref().conf.ticker.as_str();
+        try_loop!(
+            storage.add_block_headers_to_storage(ticker, block_registry).await,
+            check_every
+        );
         debug!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
         Timer::sleep(check_every).await;
     }
