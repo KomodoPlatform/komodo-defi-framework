@@ -5,7 +5,7 @@ use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBui
 use crate::utxo::utxo_common::block_header_utxo_loop;
 use crate::utxo::utxo_common::merge_utxo_loop;
 use crate::utxo::{UtxoArc, UtxoBlockHeaderVerificationParams, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
-use crate::{MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
+use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
 use common::log::info;
@@ -87,7 +87,7 @@ where
 impl<'a, F, T, XPubExtractor> UtxoCoinBuilder<XPubExtractor> for UtxoArcBuilder<'a, F, T, XPubExtractor>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
     XPubExtractor: HDXPubExtractor + Send + Sync,
 {
     type ResultCoin = T;
@@ -121,7 +121,7 @@ where
 impl<'a, F, T, XPubExtractor> BlockHeaderUtxoArcOps<T> for UtxoArcBuilder<'a, F, T, XPubExtractor>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
     XPubExtractor: HDXPubExtractor + Send + Sync,
 {
 }
@@ -166,7 +166,7 @@ where
 impl<'a, F, T> BlockHeaderUtxoArcOps<T> for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
 }
 
@@ -174,7 +174,7 @@ where
 impl<'a, F, T> UtxoCoinWithIguanaPrivKeyBuilder for UtxoArcWithIguanaPrivKeyBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -242,7 +242,7 @@ where
 
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
 {
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,

@@ -2910,29 +2910,8 @@ where
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::InvalidVout);
     }
-    let mut height: u64 = 0;
-    for output in tx.outputs.clone() {
-        let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
-        let history = client
-            .scripthash_get_history(script_pubkey_str.as_str())
-            .compat()
-            .await
-            .unwrap_or_default();
-        if history.is_empty() {
-            continue;
-        }
-        match history
-            .into_iter()
-            .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
-        {
-            None => {},
-            Some(item) => {
-                height = item.height as u64;
-                break;
-            },
-        }
-    }
-    if height == 0 {
+    let height = get_tx_height(&tx, client).await;
+    if height.is_zero() {
         return MmError::err(SPVError::InvalidHeight);
     }
 
@@ -2971,6 +2950,29 @@ where
         intermediate_nodes,
     };
     proof.validate().map_err(MmError::new)
+}
+
+pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> u64 {
+    let mut height: u64 = 0;
+    for output in tx.outputs.clone() {
+        let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
+        let history = client
+            .scripthash_get_history(script_pubkey_str.as_str())
+            .compat()
+            .await
+            .unwrap_or_default();
+        if history.is_empty() {
+            continue;
+        }
+        if let Some(item) = history
+            .into_iter()
+            .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
+        {
+            height = item.height as u64;
+            break;
+        }
+    }
+    height
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3314,8 +3316,7 @@ where
                     None => Ok((header, false)),
                     Some(params) => {
                         let (headers_registry, headers) =
-                            utxo_common::retrieve_last_headers(coin, params.blocks_limit_to_check, Some(height))
-                                .await?;
+                            utxo_common::retrieve_last_headers(coin, params.blocks_limit_to_check, height).await?;
                         match spv_validation::helpers_validation::validate_headers(
                             headers,
                             params.difficulty_check,
@@ -3340,7 +3341,7 @@ where
 pub async fn retrieve_last_headers<T>(
     coin: &T,
     blocks_limit_to_check: u64,
-    current_block: Option<u64>,
+    block_height: u64,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
 where
     T: AsRef<UtxoCoinFields>,
@@ -3350,25 +3351,13 @@ where
         UtxoRpcClientEnum::Electrum(electrum) => electrum,
     };
 
-    let best_block = if let Some(block) = current_block {
-        Ok(block)
-    } else {
-        coin.as_ref().rpc_client.get_block_count().compat().await
-    };
-    let (from, count) = match best_block {
-        Ok(block) => {
-            let block_height = block;
-            let from = if block_height < blocks_limit_to_check {
-                0
-            } else {
-                block_height - blocks_limit_to_check
-            };
-            (from, NonZeroU64::new(blocks_limit_to_check).unwrap())
-        },
-        Err(_) => {
-            error!("Unable to retrieve last block height - skipping");
-            return MmError::err(SPVError::UnableToGetHeader);
-        },
+    let (from, count) = {
+        let from = if block_height < blocks_limit_to_check {
+            0
+        } else {
+            block_height - blocks_limit_to_check
+        };
+        (from, NonZeroU64::new(blocks_limit_to_check).unwrap())
     };
     let headers_resp = electrum_rpc_client.blockchain_block_headers(from, count).compat().await;
     let (block_registry, block_headers) = match headers_resp {
@@ -3406,14 +3395,14 @@ pub async fn block_header_utxo_loop<T>(
     blocks_limit_to_check: u64,
     constructor: impl Fn(UtxoArc) -> T,
 ) where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
     {
         let coin = match weak.upgrade() {
             Some(arc) => constructor(arc),
             None => return,
         };
-        let ticker = coin.ticker();
+        let ticker = coin.as_ref().conf.ticker.as_str();
         let storage = match &coin.as_ref().block_headers_storage {
             None => return,
             Some(storage) => storage,
@@ -3442,7 +3431,15 @@ pub async fn block_header_utxo_loop<T>(
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        match retrieve_last_headers(&coin, blocks_limit_to_check, None).await {
+        let height = match coin.as_ref().rpc_client.get_block_count().compat().await {
+            Ok(height) => height,
+            Err(err) => {
+                error!("error: {:?}", err);
+                Timer::sleep(check_every).await;
+                continue;
+            },
+        };
+        match retrieve_last_headers(&coin, blocks_limit_to_check, height).await {
             Ok((block_registry, block_headers)) => {
                 match validate_headers(block_headers, difficulty_check, constant_difficulty) {
                     Ok(_) => {
