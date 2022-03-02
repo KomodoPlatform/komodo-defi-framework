@@ -1,9 +1,11 @@
 use crate::utxo::rpc_clients::ElectrumBlockHeader;
 use async_trait::async_trait;
 use chain::BlockHeader;
+use common::mm_ctx::MmArc;
 use common::mm_error::MmError;
 use derive_more::Display;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -34,6 +36,20 @@ pub enum BlockHeaderStorageError {
     CommitError { ticker: String, reason: String },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", ticker, reason)]
     DecodeError { ticker: String, reason: String },
+}
+
+pub struct BlockHeaderStorage {
+    pub inner: Box<dyn BlockHeaderStorageOps>,
+}
+
+impl Debug for BlockHeaderStorage {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
+}
+
+pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
+    fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage>
+    where
+        Self: Sized;
 }
 
 #[async_trait]

@@ -7,7 +7,7 @@ use common::mm_error::MmError;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use db_common::sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::validate_table_name;
-use serialization::{deserialize, serialize};
+use serialization::deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -84,6 +84,55 @@ where
 
 fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
+struct SqlBlockHeader(String, String);
+
+impl From<ElectrumBlockHeader> for SqlBlockHeader {
+    fn from(header: ElectrumBlockHeader) -> Self {
+        match header {
+            ElectrumBlockHeader::V12(h) => {
+                let block_hex = h.as_hex();
+                let block_height = h.block_height.to_string();
+                SqlBlockHeader(block_height, block_hex)
+            },
+            ElectrumBlockHeader::V14(h) => {
+                let block_hex = format!("{:02x}", h.hex);
+                let block_height = h.height.to_string();
+                SqlBlockHeader(block_height, block_hex)
+            },
+        }
+    }
+}
+async fn common_headers_insert(
+    for_coin: &str,
+    storage: SqliteBlockHeadersStorage,
+    headers: Vec<SqlBlockHeader>,
+) -> Result<(), MmError<BlockHeaderStorageError>> {
+    let for_coin = for_coin.to_owned();
+    let mut conn = storage.0.lock().unwrap();
+    let sql_transaction = conn
+        .transaction()
+        .map_err(|e| BlockHeaderStorageError::TransactionError {
+            ticker: for_coin.to_string(),
+            reason: e.to_string(),
+        })?;
+    for header in headers {
+        let block_cache_params = [&header.0, &header.1];
+        sql_transaction
+            .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
+            .map_err(|e| BlockHeaderStorageError::ExecutionError {
+                ticker: for_coin.to_string(),
+                reason: e.to_string(),
+            })?;
+    }
+    sql_transaction
+        .commit()
+        .map_err(|e| BlockHeaderStorageError::CommitError {
+            ticker: for_coin.to_string(),
+            reason: e.to_string(),
+        })?;
+    Ok(())
+}
+
 #[async_trait]
 impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     async fn init(&self, for_coin: &str) -> Result<(), MmError<BlockHeaderStorageError>> {
@@ -131,49 +180,8 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         for_coin: &str,
         headers: Vec<ElectrumBlockHeader>,
     ) -> Result<(), MmError<BlockHeaderStorageError>> {
-        let for_coin = for_coin.to_owned();
-        let selfi = self.clone();
-        async_blocking(move || {
-            let mut conn = selfi.0.lock().unwrap();
-            let sql_transaction = conn
-                .transaction()
-                .map_err(|e| BlockHeaderStorageError::TransactionError {
-                    ticker: for_coin.to_string(),
-                    reason: e.to_string(),
-                })?;
-            for header in headers {
-                match header {
-                    ElectrumBlockHeader::V12(h) => {
-                        let block_hex = h.as_hex();
-                        let block_cache_params = [&h.block_height.to_string(), &block_hex];
-                        sql_transaction
-                            .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
-                            .map_err(|e| BlockHeaderStorageError::ExecutionError {
-                                ticker: for_coin.to_string(),
-                                reason: e.to_string(),
-                            })?;
-                    },
-                    ElectrumBlockHeader::V14(h) => {
-                        let block_hex = format!("{:02x}", h.hex);
-                        let block_cache_params = [&h.height.to_string(), &block_hex];
-                        sql_transaction
-                            .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
-                            .map_err(|e| BlockHeaderStorageError::ExecutionError {
-                                ticker: for_coin.to_string(),
-                                reason: e.to_string(),
-                            })?;
-                    },
-                }
-            }
-            sql_transaction
-                .commit()
-                .map_err(|e| BlockHeaderStorageError::CommitError {
-                    ticker: for_coin.to_string(),
-                    reason: e.to_string(),
-                })?;
-            Ok(())
-        })
-        .await
+        let headers_for_sql = headers.into_iter().map(Into::into).collect();
+        common_headers_insert(for_coin, self.clone(), headers_for_sql).await
     }
 
     async fn add_block_headers_to_storage(
@@ -181,36 +189,11 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         for_coin: &str,
         headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), MmError<BlockHeaderStorageError>> {
-        let for_coin = for_coin.to_owned();
-        let selfi = self.clone();
-        async_blocking(move || {
-            let mut conn = selfi.0.lock().unwrap();
-            let sql_transaction = conn
-                .transaction()
-                .map_err(|e| BlockHeaderStorageError::TransactionError {
-                    ticker: for_coin.to_string(),
-                    reason: e.to_string(),
-                })?;
-            for (height, header) in headers {
-                let serialized = serialize(&header);
-                let block_hex = hex::encode(&serialized);
-                let block_cache_params = [&height.to_string(), &block_hex];
-                sql_transaction
-                    .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
-                    .map_err(|e| BlockHeaderStorageError::ExecutionError {
-                        ticker: for_coin.to_string(),
-                        reason: e.to_string(),
-                    })?;
-            }
-            sql_transaction
-                .commit()
-                .map_err(|e| BlockHeaderStorageError::CommitError {
-                    ticker: for_coin.to_string(),
-                    reason: e.to_string(),
-                })?;
-            Ok(())
-        })
-        .await
+        let headers_for_sql = headers
+            .into_iter()
+            .map(|(height, header)| SqlBlockHeader(height.to_string(), hex::encode(header.raw())))
+            .collect();
+        common_headers_insert(for_coin, self.clone(), headers_for_sql).await
     }
 
     async fn get_block_header(

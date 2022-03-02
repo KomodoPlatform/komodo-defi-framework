@@ -16,7 +16,7 @@ pub use chain::Transaction as UtxoTx;
 use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{error, info, warn};
+use common::log::{debug, error, info, warn};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
@@ -2969,10 +2969,7 @@ where
         raw_header,
         intermediate_nodes,
     };
-    match proof.validate() {
-        Ok(_) => Ok(()),
-        Err(err) => MmError::err(err),
-    }
+    proof.validate().map_err(MmError::new)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3463,7 +3460,7 @@ pub async fn block_header_utxo_loop<T>(
             },
             Err(err) => error!("error: {:?}", err),
         }
-        info!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
+        debug!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
         Timer::sleep(check_every).await;
     }
 }

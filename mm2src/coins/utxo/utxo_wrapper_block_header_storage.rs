@@ -1,5 +1,6 @@
 use crate::utxo::rpc_clients::ElectrumBlockHeader;
-use crate::utxo::utxo_block_header_storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderStorageError, BlockHeaderStorageOps,
+                                             InitBlockHeaderStorageOps};
 #[cfg(target_arch = "wasm32")]
 use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,26 +11,18 @@ use common::mm_ctx::MmArc;
 use common::mm_error::MmError;
 use std::collections::HashMap;
 
-#[derive(Debug)]
-pub struct BlockHeaderStorage {
+impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    inner: SqliteBlockHeadersStorage,
-    #[cfg(target_arch = "wasm32")]
-    inner: IndexedDBBlockHeadersStorage,
-}
-
-impl BlockHeaderStorage {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage> {
+    fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage> {
         ctx.sqlite_connection.as_option().map(|connection| BlockHeaderStorage {
-            inner: SqliteBlockHeadersStorage(connection.clone()),
+            inner: Box::new(SqliteBlockHeadersStorage(connection.clone())),
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new_from_ctx(_ctx: MmArc) -> Option<BlockHeaderStorage> {
+    fn new_from_ctx(_ctx: MmArc) -> Option<BlockHeaderStorage> {
         Some(BlockHeaderStorage {
-            inner: IndexedDBBlockHeadersStorage {},
+            inner: Box::new(IndexedDBBlockHeadersStorage {}),
         })
     }
 }
