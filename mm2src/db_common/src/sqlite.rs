@@ -2,9 +2,28 @@ pub use rusqlite;
 pub use sql_builder;
 
 use log::debug;
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
+use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use uuid::Uuid;
+
+pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
+
+pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
+
+pub fn query_single_row<T, P, F>(conn: &Connection, query: &str, params: P, map_fn: F) -> Result<Option<T>, SqlError>
+where
+    P: IntoIterator,
+    P::Item: ToSql,
+    F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
+{
+    let maybe_result = conn.query_row(query, params, map_fn);
+    if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
+        return Ok(None);
+    }
+
+    let result = maybe_result?;
+    Ok(Some(result))
+}
 
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.

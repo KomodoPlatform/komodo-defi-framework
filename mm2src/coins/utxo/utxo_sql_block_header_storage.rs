@@ -4,14 +4,14 @@ use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
 use common::mm_error::MmError;
-use db_common::sqlite::rusqlite::Error as SqlError;
-use db_common::sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS};
-use db_common::sqlite::validate_table_name;
+use db_common::{sqlite::rusqlite::Error as SqlError,
+                sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS},
+                sqlite::string_from_row,
+                sqlite::validate_table_name,
+                sqlite::CHECK_TABLE_EXISTS_SQL};
 use serialization::deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
 
 fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
 
@@ -70,19 +70,13 @@ where
     P::Item: ToSql,
     F: FnOnce(&Row<'_>) -> Result<T, SqlError>,
 {
-    let maybe_result = conn.query_row(query, params, map_fn);
-    if let Err(SqlError::QueryReturnedNoRows) = maybe_result {
-        return Ok(None);
-    }
-
-    let result = maybe_result.map_err(|e| BlockHeaderStorageError::QueryError {
-        query: query.to_string(),
-        reason: e.to_string(),
-    })?;
-    Ok(Some(result))
+    db_common::sqlite::query_single_row(conn, query, params, map_fn).map_err(|e| {
+        MmError::new(BlockHeaderStorageError::QueryError {
+            query: query.to_string(),
+            reason: e.to_string(),
+        })
+    })
 }
-
-fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
 struct SqlBlockHeader(String, String);
 

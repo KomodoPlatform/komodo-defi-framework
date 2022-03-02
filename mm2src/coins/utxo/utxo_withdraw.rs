@@ -104,22 +104,20 @@ where
 {
     fn coin(&self) -> &Coin;
 
-    #[allow(clippy::wrong_self_convention)]
-    fn from_address(&self) -> Address;
+    fn sender_address(&self) -> Address;
 
-    #[allow(clippy::wrong_self_convention)]
-    fn from_address_string(&self) -> String;
+    fn sender_address_string(&self) -> String;
 
     fn request(&self) -> &WithdrawRequest;
 
     fn signature_version(&self) -> SignatureVersion {
-        match self.from_address().addr_format {
+        match self.sender_address().addr_format {
             UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
             _ => self.coin().as_ref().conf.signature_version,
         }
     }
 
-    fn prev_script(&self) -> Script { Builder::build_p2pkh(&self.from_address().hash) }
+    fn prev_script(&self) -> Script { Builder::build_p2pkh(&self.sender_address().hash) }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
 
@@ -154,7 +152,7 @@ where
         let script_pubkey = output_script(&to, script_type).to_bytes();
 
         let _utxo_lock = UTXO_LOCK.lock().await;
-        let (unspents, _) = coin.list_unspent_ordered(&self.from_address()).await?;
+        let (unspents, _) = coin.list_unspent_ordered(&self.sender_address()).await?;
         let (value, fee_policy) = if req.max {
             (
                 unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
@@ -167,7 +165,7 @@ where
         let outputs = vec![TransactionOutput { value, script_pubkey }];
 
         let mut tx_builder = UtxoTxBuilder::new(coin)
-            .with_from_address(self.from_address())
+            .with_from_address(self.sender_address())
             .add_available_inputs(unspents)
             .add_outputs(outputs)
             .with_fee_policy(fee_policy);
@@ -210,7 +208,7 @@ where
             _ => serialize(&signed).into(),
         };
         Ok(TransactionDetails {
-            from: vec![self.from_address_string()],
+            from: vec![self.sender_address_string()],
             to: vec![req.to.clone()],
             total_amount: big_decimal_from_sat(data.spent_by_me as i64, decimals),
             spent_by_me: big_decimal_from_sat(data.spent_by_me as i64, decimals),
@@ -250,9 +248,9 @@ where
 {
     fn coin(&self) -> &Coin { &self.coin }
 
-    fn from_address(&self) -> Address { self.from_address.clone() }
+    fn sender_address(&self) -> Address { self.from_address.clone() }
 
-    fn from_address_string(&self) -> String { self.from_address_string.clone() }
+    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
 
     fn request(&self) -> &WithdrawRequest { &self.req }
 
@@ -438,9 +436,9 @@ where
 {
     fn coin(&self) -> &Coin { &self.coin }
 
-    fn from_address(&self) -> Address { self.my_address.clone() }
+    fn sender_address(&self) -> Address { self.my_address.clone() }
 
-    fn from_address_string(&self) -> String { self.my_address_string.clone() }
+    fn sender_address_string(&self) -> String { self.my_address_string.clone() }
 
     fn request(&self) -> &WithdrawRequest { &self.req }
 

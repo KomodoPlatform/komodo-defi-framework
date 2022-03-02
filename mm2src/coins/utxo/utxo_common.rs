@@ -1368,7 +1368,7 @@ pub fn validate_maker_payment<T>(
     input: ValidatePaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static,
 {
     let my_public = try_fus!(Public::from_slice(&input.taker_pub));
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
@@ -1391,7 +1391,7 @@ pub fn validate_taker_payment<T>(
     input: ValidatePaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields> + Clone + Send + Sync + 'static,
 {
     let my_public = try_fus!(Public::from_slice(&input.maker_pub));
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
@@ -2901,7 +2901,7 @@ pub fn address_from_pubkey(
 
 pub async fn validate_spv_proof<T>(coin: T, tx: UtxoTx) -> Result<(), MmError<SPVError>>
 where
-    T: AsRef<UtxoCoinFields> + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
 {
     let client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => return Ok(()),
@@ -2984,7 +2984,7 @@ pub fn validate_payment<T>(
     time_lock: u32,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
-    T: AsRef<UtxoCoinFields> + Send + Sync + 'static + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
 {
     let amount = try_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
@@ -3286,7 +3286,7 @@ pub async fn block_header_from_storage_or_rpc<T>(
     header_params: Option<UtxoBlockHeaderVerificationParams>,
 ) -> Result<(BlockHeader, bool), MmError<GetBlockHeaderError>>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields>,
 {
     let client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => {
@@ -3302,7 +3302,10 @@ where
             let header: BlockHeader = deserialize(bytes.0.as_slice())?;
             Ok((header, false))
         },
-        Some(storage) => match storage.get_block_header(coin.ticker(), height).await? {
+        Some(storage) => match storage
+            .get_block_header(coin.as_ref().conf.ticker.as_str(), height)
+            .await?
+        {
             None => {
                 let bytes = client.blockchain_block_header(height).compat().await?;
                 let header: BlockHeader = deserialize(bytes.0.as_slice())?;
@@ -3319,7 +3322,7 @@ where
                         ) {
                             Ok(_) => {
                                 storage
-                                    .add_block_headers_to_storage(coin.ticker(), headers_registry)
+                                    .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), headers_registry)
                                     .await?;
                                 Ok((header, true))
                             },
@@ -3339,7 +3342,7 @@ pub async fn retrieve_last_headers<T>(
     current_block: Option<u64>,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+    T: AsRef<UtxoCoinFields>,
 {
     let electrum_rpc_client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => return MmError::err(SPVError::UnknownError),
@@ -3349,7 +3352,7 @@ where
     let best_block = if let Some(block) = current_block {
         Ok(block)
     } else {
-        coin.current_block().compat().await
+        coin.as_ref().rpc_client.get_block_count().compat().await
     };
     let (from, count) = match best_block {
         Ok(block) => {
