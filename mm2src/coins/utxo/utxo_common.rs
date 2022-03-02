@@ -2921,14 +2921,15 @@ where
         if history.is_empty() {
             continue;
         }
-        for item in history {
-            if item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0 {
+        match history
+            .into_iter()
+            .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
+        {
+            None => {},
+            Some(item) => {
                 height = item.height as u64;
                 break;
-            }
-        }
-        if height != 0 {
-            break;
+            },
         }
     }
     if height == 0 {
