@@ -3328,55 +3328,6 @@ where
     }
 }
 
-/*pub async fn retrieve_last_headers<T>(
-    coin: &T,
-    blocks_limit_to_check: u64,
-    block_height: u64,
-) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>), MmError<SPVError>>
-where
-    T: AsRef<UtxoCoinFields>,
-{
-    let electrum_rpc_client = match &coin.as_ref().rpc_client {
-        UtxoRpcClientEnum::Native(_) => return MmError::err(SPVError::UnknownError),
-        UtxoRpcClientEnum::Electrum(electrum) => electrum,
-    };
-
-    let (from, count) = {
-        let from = if block_height < blocks_limit_to_check {
-            0
-        } else {
-            block_height - blocks_limit_to_check
-        };
-        (from, NonZeroU64::new(blocks_limit_to_check).unwrap())
-    };
-    let headers_resp = electrum_rpc_client.blockchain_block_headers(from, count).compat().await;
-    let (block_registry, block_headers) = match headers_resp {
-        Ok(headers) => {
-            if headers.count == 0 {
-                return MmError::err(SPVError::UnableToGetHeader);
-            }
-            let len = CompactInteger::from(headers.count);
-            let mut serialized = serialize(&len).take();
-            serialized.extend(headers.hex.0.into_iter());
-            let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), CoinVariant::Standard);
-            let maybe_block_headers = reader.read_list::<BlockHeader>();
-            let block_headers = match maybe_block_headers {
-                Ok(headers) => headers,
-                Err(_) => return MmError::err(SPVError::MalformattedHeader),
-            };
-            let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
-            let mut starting_height = from;
-            for block_header in &block_headers {
-                block_registry.insert(starting_height, block_header.clone());
-                starting_height += 1;
-            }
-            (block_registry, block_headers)
-        },
-        Err(_) => return MmError::err(SPVError::UnableToGetHeader),
-    };
-    Ok((block_registry, block_headers))
-}*/
-
 macro_rules! try_loop {
     ($e:expr, $delay: ident) => {
         match $e {
