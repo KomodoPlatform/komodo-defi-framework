@@ -548,6 +548,19 @@ impl From<UnsupportedAddr> for WithdrawError {
 }
 
 #[derive(Debug)]
+pub enum GetTxHeightError {
+    HeightNotFound,
+}
+
+impl From<GetTxHeightError> for SPVError {
+    fn from(e: GetTxHeightError) -> Self {
+        match e {
+            GetTxHeightError::HeightNotFound => SPVError::InvalidHeight,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum GetBlockHeaderError {
     StorageError(BlockHeaderStorageError),
     RpcError(JsonRpcError),

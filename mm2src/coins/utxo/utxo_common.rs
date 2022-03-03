@@ -2910,11 +2910,7 @@ where
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::InvalidVout);
     }
-    let height = get_tx_height(&tx, client).await;
-    if height.is_zero() {
-        return MmError::err(SPVError::InvalidHeight);
-    }
-
+    let height = get_tx_height(&tx, client).await?;
     let (block_header, is_validated) = block_header_from_storage_or_rpc(
         &coin,
         height,
@@ -2952,8 +2948,7 @@ where
     proof.validate().map_err(MmError::new)
 }
 
-pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> u64 {
-    let mut height: u64 = 0;
+pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
     for output in tx.outputs.clone() {
         let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
         let history = client
@@ -2968,11 +2963,10 @@ pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> u64 {
             .into_iter()
             .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
         {
-            height = item.height as u64;
-            break;
+            return Ok(item.height as u64);
         }
     }
-    height
+    MmError::err(GetTxHeightError::HeightNotFound)
 }
 
 #[allow(clippy::too_many_arguments)]
