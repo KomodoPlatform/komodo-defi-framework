@@ -34,7 +34,7 @@ use rpc::v1::types::{Bytes as BytesJson, TransactionInputEnum, H256 as H256Json}
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger, Reader,
+use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant,
                     SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
 use spv_validation::spv_proof::SPVProof;
@@ -2951,19 +2951,13 @@ where
 pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
     for output in tx.outputs.clone() {
         let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
-        let history = client
-            .scripthash_get_history(script_pubkey_str.as_str())
-            .compat()
-            .await
-            .unwrap_or_default();
-        if history.is_empty() {
-            continue;
-        }
-        if let Some(item) = history
-            .into_iter()
-            .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
-        {
-            return Ok(item.height as u64);
+        if let Ok(history) = client.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
+            if let Some(item) = history
+                .into_iter()
+                .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
+            {
+                return Ok(item.height as u64);
+            }
         }
     }
     MmError::err(GetTxHeightError::HeightNotFound)
@@ -3309,8 +3303,10 @@ where
                 match header_params {
                     None => Ok((header, false)),
                     Some(params) => {
-                        let (headers_registry, headers) =
-                            utxo_common::retrieve_last_headers(coin, params.blocks_limit_to_check, height).await?;
+                        let (headers_registry, headers) = client
+                            .retrieve_last_headers(params.blocks_limit_to_check, height)
+                            .compat()
+                            .await?;
                         match spv_validation::helpers_validation::validate_headers(
                             headers,
                             params.difficulty_check,
@@ -3332,7 +3328,7 @@ where
     }
 }
 
-pub async fn retrieve_last_headers<T>(
+/*pub async fn retrieve_last_headers<T>(
     coin: &T,
     blocks_limit_to_check: u64,
     block_height: u64,
@@ -3379,7 +3375,7 @@ where
         Err(_) => return MmError::err(SPVError::UnableToGetHeader),
     };
     Ok((block_registry, block_headers))
-}
+}*/
 
 macro_rules! try_loop {
     ($e:expr, $delay: ident) => {
@@ -3439,8 +3435,15 @@ pub async fn block_header_utxo_loop<T>(
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         let height = try_loop!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
+        let client = match &coin.as_ref().rpc_client {
+            UtxoRpcClientEnum::Native(_) => break,
+            UtxoRpcClientEnum::Electrum(client) => client,
+        };
         let (block_registry, block_headers) = try_loop!(
-            retrieve_last_headers(&coin, blocks_limit_to_check, height).await,
+            client
+                .retrieve_last_headers(blocks_limit_to_check, height)
+                .compat()
+                .await,
             check_every
         );
         try_loop!(

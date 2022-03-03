@@ -565,12 +565,24 @@ pub enum GetBlockHeaderError {
     StorageError(BlockHeaderStorageError),
     RpcError(JsonRpcError),
     SerializationError(serialization::Error),
+    InvalidResponse(String),
     SPVError(SPVError),
     NativeNotSupported(String),
+    Internal(String),
 }
 
 impl From<JsonRpcError> for GetBlockHeaderError {
     fn from(err: JsonRpcError) -> Self { GetBlockHeaderError::RpcError(err) }
+}
+
+impl From<UtxoRpcError> for GetBlockHeaderError {
+    fn from(e: UtxoRpcError) -> Self {
+        match e {
+            UtxoRpcError::Transport(e) | UtxoRpcError::ResponseParseError(e) => GetBlockHeaderError::RpcError(e),
+            UtxoRpcError::InvalidResponse(e) => GetBlockHeaderError::InvalidResponse(e),
+            UtxoRpcError::Internal(e) => GetBlockHeaderError::Internal(e),
+        }
+    }
 }
 
 impl From<SPVError> for GetBlockHeaderError {
