@@ -3303,10 +3303,10 @@ where
                 match header_params {
                     None => Ok((header, false)),
                     Some(params) => {
-                        let (headers_registry, headers) = client
-                            .retrieve_last_headers(params.blocks_limit_to_check, height)
-                            .compat()
-                            .await?;
+                        let blocks_limit = NonZeroU64::new(params.blocks_limit_to_check)
+                            .ok_or_else(|| GetBlockHeaderError::Internal("invalid block limit to check".to_string()))?;
+                        let (headers_registry, headers) =
+                            client.retrieve_last_headers(blocks_limit, height).compat().await?;
                         match spv_validation::helpers_validation::validate_headers(
                             headers,
                             params.difficulty_check,
@@ -3384,12 +3384,16 @@ where
             Some(storage) => storage,
         };
         let params = storage.params.clone();
-        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (
+        let (check_every, maybe_blocks_limit_to_check, difficulty_check, constant_difficulty) = (
             params.check_every,
-            params.blocks_limit_to_check,
+            NonZeroU64::new(params.blocks_limit_to_check),
             params.difficulty_check,
             params.constant_difficulty,
         );
+        let blocks_limit_to_check = match maybe_blocks_limit_to_check {
+            None => break,
+            Some(blocks_limit_to_check) => blocks_limit_to_check,
+        };
         let height = try_loop!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,

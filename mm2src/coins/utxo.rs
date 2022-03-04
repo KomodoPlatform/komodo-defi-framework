@@ -101,7 +101,6 @@ use utxo_block_header_storage::BlockHeaderStorage;
 pub mod utxo_indexedb_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod utxo_sql_block_header_storage;
-pub mod utxo_wrapper_block_header_storage;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;

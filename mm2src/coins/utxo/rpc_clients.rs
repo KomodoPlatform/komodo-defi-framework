@@ -1670,16 +1670,16 @@ impl ElectrumClient {
 
     pub fn retrieve_last_headers(
         &self,
-        blocks_limit_to_check: u64,
+        blocks_limit_to_check: NonZeroU64,
         block_height: u64,
     ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
         let (from, count) = {
-            let from = if block_height < blocks_limit_to_check {
+            let from = if block_height < blocks_limit_to_check.get() {
                 0
             } else {
-                block_height - blocks_limit_to_check
+                block_height - blocks_limit_to_check.get()
             };
-            (from, NonZeroU64::new(blocks_limit_to_check).unwrap())
+            (from, blocks_limit_to_check)
         };
         Box::new(
             self.blockchain_block_headers(from, count)
