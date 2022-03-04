@@ -91,7 +91,7 @@ impl From<bitcoin_spv::types::SPVError> for SPVError {
 impl From<RawHeaderError> for SPVError {
     fn from(e: RawHeaderError) -> Self {
         match e {
-            RawHeaderError::WrongLengthHeader => SPVError::WrongLengthHeader,
+            RawHeaderError::WrongLengthHeader { .. } => SPVError::WrongLengthHeader,
         }
     }
 }

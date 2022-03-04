@@ -15,13 +15,17 @@ use std::sync::{Arc, Mutex};
 
 fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
 
-fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
+fn get_table_name_and_validate(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
     let table_name = block_headers_cache_table(for_coin);
     validate_table_name(&table_name).map_err(|e| BlockHeaderStorageError::CantRetrieveTableError {
         ticker: for_coin.to_string(),
         reason: e.to_string(),
     })?;
+    Ok(table_name)
+}
 
+fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
+    let table_name = get_table_name_and_validate(for_coin)?;
     let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
         + &table_name
         + " (
@@ -33,24 +37,14 @@ fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError
 }
 
 fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
-    let table_name = block_headers_cache_table(for_coin);
-    validate_table_name(&table_name).map_err(|e| BlockHeaderStorageError::CantRetrieveTableError {
-        ticker: for_coin.to_string(),
-        reason: e.to_string(),
-    })?;
-
+    let table_name = get_table_name_and_validate(for_coin)?;
     // We can simply ignore the repetitive attempt to insert the same block_height
     let sql = "INSERT OR IGNORE INTO ".to_owned() + &table_name + " (block_height, hex) VALUES (?1, ?2);";
     Ok(sql)
 }
 
 fn get_block_header_by_height(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
-    let table_name = block_headers_cache_table(for_coin);
-    validate_table_name(&table_name).map_err(|e| BlockHeaderStorageError::CantRetrieveTableError {
-        ticker: for_coin.to_string(),
-        reason: e.to_string(),
-    })?;
-
+    let table_name = get_table_name_and_validate(for_coin)?;
     let sql = "SELECT hex FROM ".to_owned() + &table_name + " WHERE block_height=?1;";
 
     Ok(sql)
@@ -78,7 +72,10 @@ where
     })
 }
 
-struct SqlBlockHeader(String, String);
+struct SqlBlockHeader {
+    block_height: String,
+    block_hex: String,
+}
 
 impl From<ElectrumBlockHeader> for SqlBlockHeader {
     fn from(header: ElectrumBlockHeader) -> Self {
@@ -86,12 +83,18 @@ impl From<ElectrumBlockHeader> for SqlBlockHeader {
             ElectrumBlockHeader::V12(h) => {
                 let block_hex = h.as_hex();
                 let block_height = h.block_height.to_string();
-                SqlBlockHeader(block_height, block_hex)
+                SqlBlockHeader {
+                    block_height,
+                    block_hex,
+                }
             },
             ElectrumBlockHeader::V14(h) => {
                 let block_hex = format!("{:02x}", h.hex);
                 let block_height = h.height.to_string();
-                SqlBlockHeader(block_height, block_hex)
+                SqlBlockHeader {
+                    block_height,
+                    block_hex,
+                }
             },
         }
     }
@@ -110,7 +113,7 @@ async fn common_headers_insert(
             reason: e.to_string(),
         })?;
     for header in headers {
-        let block_cache_params = [&header.0, &header.1];
+        let block_cache_params = [&header.block_height, &header.block_hex];
         sql_transaction
             .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
             .map_err(|e| BlockHeaderStorageError::ExecutionError {
@@ -147,14 +150,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     }
 
     async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<BlockHeaderStorageError>> {
-        let block_headers_cache_table = block_headers_cache_table(for_coin);
-        validate_table_name(&block_headers_cache_table).map_err(|e| {
-            BlockHeaderStorageError::CantRetrieveTableError {
-                ticker: for_coin.to_string(),
-                reason: e.to_string(),
-            }
-        })?;
-
+        let block_headers_cache_table = get_table_name_and_validate(for_coin)?;
         let selfi = self.clone();
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
@@ -185,7 +181,10 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     ) -> Result<(), MmError<BlockHeaderStorageError>> {
         let headers_for_sql = headers
             .into_iter()
-            .map(|(height, header)| SqlBlockHeader(height.to_string(), hex::encode(header.raw())))
+            .map(|(height, header)| SqlBlockHeader {
+                block_height: height.to_string(),
+                block_hex: hex::encode(header.raw()),
+            })
             .collect();
         common_headers_insert(for_coin, self.clone(), headers_for_sql).await
     }

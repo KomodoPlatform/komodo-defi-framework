@@ -4,19 +4,23 @@ use primitives::hash::H256;
 use ser::serialize;
 use BlockHeader;
 
+pub const MIN_RAW_HEADER_SIZE: usize = 80_usize;
+
 /// Hex-encoded block
 #[derive(Default, PartialEq, Clone, Eq, Hash)]
 pub struct RawBlockHeader(Bytes);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RawHeaderError {
-    WrongLengthHeader,
+    WrongLengthHeader { min_length: usize },
 }
 
 impl RawBlockHeader {
     pub fn new(buf: Vec<u8>) -> Result<Self, RawHeaderError> {
-        if buf.len() < 80 {
-            return Err(RawHeaderError::WrongLengthHeader);
+        if buf.len() < MIN_RAW_HEADER_SIZE {
+            return Err(RawHeaderError::WrongLengthHeader {
+                min_length: MIN_RAW_HEADER_SIZE,
+            });
         }
         let header = RawBlockHeader(buf.into());
         Ok(header)
