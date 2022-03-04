@@ -2911,15 +2911,9 @@ where
         return MmError::err(SPVError::InvalidVout);
     }
     let height = get_tx_height(&tx, client).await?;
-    let (block_header, is_validated) =
-        block_header_from_storage_or_rpc(&coin, height, &coin.as_ref().block_headers_storage)
-            .await
-            .map_err(|_e| SPVError::UnableToGetHeader)?;
-    // Only specific chains will use the block header storage, for example QTUM will not
-    // Check block header verification only for chains that have storage.
-    if !is_validated && coin.as_ref().block_headers_storage.is_some() {
-        return MmError::err(SPVError::BlockHeaderNotVerified);
-    }
+    let block_header = block_header_from_storage_or_rpc(&coin, height, &coin.as_ref().block_headers_storage)
+        .await
+        .map_err(|_e| SPVError::UnableToGetHeader)?;
     let raw_header = RawBlockHeader::new(block_header.raw().take())?;
 
     let merkle_branch = client
@@ -3266,11 +3260,49 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
+pub async fn valid_block_header_from_storage<T>(
+    coin: &T,
+    height: u64,
+    storage: &BlockHeaderStorage,
+    client: &ElectrumClient,
+) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
+where
+    T: AsRef<UtxoCoinFields>,
+{
+    match storage
+        .get_block_header(coin.as_ref().conf.ticker.as_str(), height)
+        .await?
+    {
+        None => {
+            let bytes = client.blockchain_block_header(height).compat().await?;
+            let header: BlockHeader = deserialize(bytes.0.as_slice())?;
+            let params = storage.params.clone();
+            let blocks_limit = NonZeroU64::new(params.blocks_limit_to_check)
+                .ok_or_else(|| GetBlockHeaderError::Internal("invalid block limit to check".to_string()))?;
+            let (headers_registry, headers) = client.retrieve_last_headers(blocks_limit, height).compat().await?;
+            match spv_validation::helpers_validation::validate_headers(
+                headers,
+                params.difficulty_check,
+                params.constant_difficulty,
+            ) {
+                Ok(_) => {
+                    storage
+                        .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), headers_registry)
+                        .await?;
+                    Ok(header)
+                },
+                Err(err) => MmError::err(GetBlockHeaderError::SPVError(err)),
+            }
+        },
+        Some(header) => Ok(header),
+    }
+}
+
 pub async fn block_header_from_storage_or_rpc<T>(
     coin: &T,
     height: u64,
     storage: &Option<BlockHeaderStorage>,
-) -> Result<(BlockHeader, bool), MmError<GetBlockHeaderError>>
+) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
 where
     T: AsRef<UtxoCoinFields>,
 {
@@ -3282,39 +3314,12 @@ where
         },
         UtxoRpcClientEnum::Electrum(client) => client,
     };
+
     match storage {
-        None => {
-            let bytes = client.blockchain_block_header(height).compat().await?;
-            let header: BlockHeader = deserialize(bytes.0.as_slice())?;
-            Ok((header, false))
-        },
-        Some(storage) => match storage
-            .get_block_header(coin.as_ref().conf.ticker.as_str(), height)
-            .await?
-        {
-            None => {
-                let bytes = client.blockchain_block_header(height).compat().await?;
-                let header: BlockHeader = deserialize(bytes.0.as_slice())?;
-                let params = storage.params.clone();
-                let blocks_limit = NonZeroU64::new(params.blocks_limit_to_check)
-                    .ok_or_else(|| GetBlockHeaderError::Internal("invalid block limit to check".to_string()))?;
-                let (headers_registry, headers) = client.retrieve_last_headers(blocks_limit, height).compat().await?;
-                match spv_validation::helpers_validation::validate_headers(
-                    headers,
-                    params.difficulty_check,
-                    params.constant_difficulty,
-                ) {
-                    Ok(_) => {
-                        storage
-                            .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), headers_registry)
-                            .await?;
-                        Ok((header, true))
-                    },
-                    Err(_) => Ok((header, false)),
-                }
-            },
-            Some(header) => Ok((header, true)),
-        },
+        Some(ref storage) => valid_block_header_from_storage(&coin, height, storage, client).await,
+        None => Ok(deserialize(
+            client.blockchain_block_header(height).compat().await?.as_slice(),
+        )?),
     }
 }
 
