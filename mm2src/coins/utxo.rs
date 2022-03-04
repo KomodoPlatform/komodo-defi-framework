@@ -35,14 +35,6 @@ pub mod utxo_common;
 pub mod utxo_standard;
 pub mod utxo_withdraw;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
-#[cfg(target_arch = "wasm32")]
-pub mod utxo_indexedb_block_header_storage;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod utxo_sql_block_header_storage;
-pub mod utxo_wrapper_block_header_storage;
-use utxo_block_header_storage::BlockHeaderStorage;
-
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::network::constants::Network as BitcoinNetwork;
@@ -103,6 +95,13 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
 use crate::coin_balance::HDAddressBalanceChecker;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
+use utxo_block_header_storage::BlockHeaderStorage;
+#[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
+#[cfg(target_arch = "wasm32")]
+pub mod utxo_indexedb_block_header_storage;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod utxo_sql_block_header_storage;
+pub mod utxo_wrapper_block_header_storage;
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;

@@ -1,4 +1,5 @@
 use crate::utxo::rpc_clients::ElectrumBlockHeader;
+use crate::utxo::UtxoBlockHeaderVerificationParams;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::mm_ctx::MmArc;
@@ -40,6 +41,7 @@ pub enum BlockHeaderStorageError {
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
+    pub params: UtxoBlockHeaderVerificationParams,
 }
 
 impl Debug for BlockHeaderStorage {
@@ -47,7 +49,7 @@ impl Debug for BlockHeaderStorage {
 }
 
 pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
-    fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage>
+    fn new_from_ctx(ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage>
     where
         Self: Sized;
 }

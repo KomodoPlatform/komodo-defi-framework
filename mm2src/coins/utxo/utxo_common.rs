@@ -3341,14 +3341,8 @@ macro_rules! try_loop {
     };
 }
 
-pub async fn block_header_utxo_loop<T>(
-    weak: UtxoWeak,
-    check_every: f64,
-    difficulty_check: bool,
-    constant_difficulty: bool,
-    blocks_limit_to_check: u64,
-    constructor: impl Fn(UtxoArc) -> T,
-) where
+pub async fn block_header_utxo_loop<T>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T)
+where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,
 {
     {
@@ -3385,6 +3379,17 @@ pub async fn block_header_utxo_loop<T>(
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
+        let storage = match &coin.as_ref().block_headers_storage {
+            None => break,
+            Some(storage) => storage,
+        };
+        let params = storage.params.clone();
+        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (
+            params.check_every,
+            params.blocks_limit_to_check,
+            params.difficulty_check,
+            params.constant_difficulty,
+        );
         let height = try_loop!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
@@ -3401,10 +3406,7 @@ pub async fn block_header_utxo_loop<T>(
             validate_headers(block_headers, difficulty_check, constant_difficulty),
             check_every
         );
-        let storage = match &coin.as_ref().block_headers_storage {
-            None => break,
-            Some(storage) => storage,
-        };
+
         let ticker = coin.as_ref().conf.ticker.as_str();
         try_loop!(
             storage.add_block_headers_to_storage(ticker, block_registry).await,

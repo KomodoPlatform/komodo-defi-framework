@@ -1,10 +1,11 @@
 use crate::hd_pubkey::HDXPubExtractor;
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::block_header_utxo_loop;
 use crate::utxo::utxo_common::merge_utxo_loop;
-use crate::utxo::{UtxoArc, UtxoBlockHeaderVerificationParams, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
+use crate::utxo::{UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
@@ -99,13 +100,16 @@ where
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let utxo_block_header_params = utxo.conf.block_header_storage_params.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(utxo_weak, utxo_block_header_params, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(
+            utxo_weak,
+            &result_coin.as_ref().block_headers_storage,
+            self.constructor.clone(),
+        );
         Ok(result_coin)
     }
 }
@@ -183,13 +187,16 @@ where
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
-        let utxo_block_header_params = utxo.conf.block_header_storage_params.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(utxo_weak, utxo_block_header_params, self.constructor.clone());
+        self.spawn_block_header_utxo_loop_if_required(
+            utxo_weak,
+            &result_coin.as_ref().block_headers_storage,
+            self.constructor.clone(),
+        );
         Ok(result_coin)
     }
 }
@@ -247,20 +254,13 @@ where
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,
         weak: UtxoWeak,
-        utxo_header_params: Option<UtxoBlockHeaderVerificationParams>,
+        maybe_storage: &Option<BlockHeaderStorage>,
         constructor: F,
     ) where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
-        if let Some(block_header_verification_params) = utxo_header_params {
-            let fut = block_header_utxo_loop(
-                weak,
-                block_header_verification_params.check_every,
-                block_header_verification_params.difficulty_check,
-                block_header_verification_params.constant_difficulty,
-                block_header_verification_params.blocks_limit_to_check,
-                constructor,
-            );
+        if maybe_storage.is_some() {
+            let fut = block_header_utxo_loop(weak, constructor);
             info!("Starting UTXO block header loop for coin {}", self.ticker());
             spawn(fut);
         }

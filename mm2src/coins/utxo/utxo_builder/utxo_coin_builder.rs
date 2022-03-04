@@ -182,10 +182,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
-        let block_headers_storage = match conf.block_header_storage_params {
-            None => None,
-            Some(_) => BlockHeaderStorage::new_from_ctx(self.ctx().clone()),
-        };
+        let block_headers_storage = self.block_headers_storage();
 
         let coin = UtxoCoinFields {
             conf,
@@ -241,6 +238,7 @@ where
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
+        let block_headers_storage = self.block_headers_storage();
 
         let coin = UtxoCoinFields {
             conf,
@@ -250,7 +248,7 @@ where
             priv_key_policy: PrivKeyPolicy::HardwareWallet,
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
-            block_headers_storage: BlockHeaderStorage::new_from_ctx(self.ctx().clone()),
+            block_headers_storage,
             tx_cache_directory,
             recently_spent_outpoints,
             tx_fee,
@@ -321,6 +319,11 @@ pub trait UtxoCoinBuilderCommonOps {
     fn activation_params(&self) -> &UtxoActivationParams;
 
     fn ticker(&self) -> &str;
+
+    fn block_headers_storage(&self) -> Option<BlockHeaderStorage> {
+        let params = json::from_value(self.conf()["block_header_params"].clone()).ok()?;
+        BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)
+    }
 
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();

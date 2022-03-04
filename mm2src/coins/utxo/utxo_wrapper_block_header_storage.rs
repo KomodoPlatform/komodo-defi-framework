@@ -5,6 +5,7 @@ use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderStor
 use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
+use crate::utxo::UtxoBlockHeaderVerificationParams;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::mm_ctx::MmArc;
@@ -13,16 +14,18 @@ use std::collections::HashMap;
 
 impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_from_ctx(ctx: MmArc) -> Option<BlockHeaderStorage> {
+    fn new_from_ctx(ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage> {
         ctx.sqlite_connection.as_option().map(|connection| BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage(connection.clone())),
+            params,
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(_ctx: MmArc) -> Option<BlockHeaderStorage> {
+    fn new_from_ctx(_ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage> {
         Some(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
+            params,
         })
     }
 }
