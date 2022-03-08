@@ -443,6 +443,21 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         }
     }
 
+    pub async fn delete_items_by_index<Value>(
+        &self,
+        index: &str,
+        index_value: Value,
+    ) -> DbTransactionResult<Vec<ItemId>>
+    where
+        Value: Serialize,
+    {
+        let ids = self.get_item_ids(index, index_value).await?;
+        for item_id in ids.iter() {
+            self.delete_item(*item_id).await?;
+        }
+        Ok(ids)
+    }
+
     pub async fn clear(&self) -> DbTransactionResult<()> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::Clear { result_tx };

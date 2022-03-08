@@ -75,7 +75,6 @@ cfg_wasm32! {
     use hd_wallet_storage::HDWalletDb;
     use tx_history_db::TxHistoryDb;
 
-    pub type HDWalletDbLocked<'a> = DbLocked<'a, HDWalletDb>;
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
 
@@ -177,6 +176,7 @@ pub enum PrivKeyNotAllowed {
     HardwareWalletNotSupported,
 }
 
+/// TODO rename to `UnexpectedDerivationMethod`.
 #[derive(Debug, Display, PartialEq)]
 pub enum DerivationMethodNotSupported {
     #[display(fmt = "HD wallets are not supported")]
@@ -907,8 +907,9 @@ pub enum BalanceError {
     Transport(String),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
-    #[display(fmt = "{}", _0)]
     DerivationMethodNotSupported(DerivationMethodNotSupported),
+    #[display(fmt = "Wallet storage error: {}", _0)]
+    WalletStorageError(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -1075,6 +1076,7 @@ impl From<BalanceError> for DelegationError {
             BalanceError::DerivationMethodNotSupported(e) => {
                 DelegationError::DelegationOpsNotSupported { reason: e.to_string() }
             },
+            e @ BalanceError::WalletStorageError(_) => DelegationError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
@@ -1246,6 +1248,7 @@ impl From<BalanceError> for WithdrawError {
         match e {
             BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => WithdrawError::Transport(error),
             BalanceError::DerivationMethodNotSupported(e) => WithdrawError::from(e),
+            e @ BalanceError::WalletStorageError(_) => WithdrawError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
         }
     }

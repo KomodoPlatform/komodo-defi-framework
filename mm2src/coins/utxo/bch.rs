@@ -3,11 +3,11 @@ use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStora
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
-use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
-            WithdrawFut};
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, SwapOps, TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult,
+            ValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -632,8 +632,9 @@ pub async fn bch_coin_from_conf_and_params(
         }
     };
 
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
-        UtxoArcWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key, constructor)
+        UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
             .build()
             .await
     );

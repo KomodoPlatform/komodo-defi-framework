@@ -1,4 +1,4 @@
-use crate::hd_wallet_storage::{HDAccountInfo, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
+use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 
@@ -13,13 +13,13 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         todo!()
     }
 
-    async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountInfo>> { todo!() }
+    async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> { todo!() }
 
     async fn load_account(
         &self,
         wallet_id: HDWalletId,
         account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountInfo>> {
+    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
         todo!()
     }
 
@@ -51,7 +51,13 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         todo!()
     }
 
-    async fn upload_new_account(&self, wallet_id: HDWalletId, account: HDAccountInfo) -> HDWalletStorageResult<()> {
+    async fn upload_new_account(
+        &self,
+        wallet_id: HDWalletId,
+        account: HDAccountStorageItem,
+    ) -> HDWalletStorageResult<()> {
         todo!()
     }
+
+    async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()> { todo!() }
 }

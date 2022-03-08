@@ -1,11 +1,10 @@
-use crate::hd_pubkey::{HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
+use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
-                  TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
-                  UTXO_DUST_AMOUNT};
+                  TxFee, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, PrivKeyBuildPolicy,
             PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
@@ -15,8 +14,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::small_rng;
 use crypto::trezor::TrezorError;
-use crypto::{Bip32DerPathError, Bip32DerPathOps, Bip44DerPathError, Bip44PathToCoin, ChildNumber, CryptoInitError,
-             DerivationPath, HwError, Secp256k1ExtendedPublicKey};
+use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoInitError, HwError};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
@@ -65,10 +63,11 @@ pub enum UtxoCoinBuildError {
     #[display(fmt = "Derivation method not supported: {}", _0)]
     DerivationMethodNotSupported(String),
     HardwareWalletError(HwError),
+    HDWalletStorageError(HDWalletStorageError),
     #[display(fmt = "Error processing Hardware Wallet request: {}", _0)]
     ErrorProcessingHwRequest(String),
     #[display(fmt = "Cannot extract an extended public key from an Iguana key pair")]
-    IguanaPrivKeyNotAllowed,
+    HDWalletUnavailable,
     #[display(
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
@@ -94,44 +93,27 @@ impl From<CryptoInitError> for UtxoCoinBuildError {
     fn from(crypto_err: CryptoInitError) -> Self { UtxoCoinBuildError::Internal(crypto_err.to_string()) }
 }
 
-impl From<HDExtractPubkeyError> for UtxoCoinBuildError {
-    fn from(e: HDExtractPubkeyError) -> Self {
-        match e {
-            HDExtractPubkeyError::IguanaPrivKeyNotAllowed => UtxoCoinBuildError::IguanaPrivKeyNotAllowed,
-            HDExtractPubkeyError::CoinDoesntSupportTrezor => UtxoCoinBuildError::CoinDoesntSupportTrezor,
-            HDExtractPubkeyError::RpcTaskError(error) => {
-                UtxoCoinBuildError::ErrorProcessingHwRequest(error.to_string())
-            },
-            HDExtractPubkeyError::HardwareWalletError(hw) => UtxoCoinBuildError::HardwareWalletError(hw),
-            HDExtractPubkeyError::InvalidXpub(xpub) => UtxoCoinBuildError::HardwareWalletError(HwError::from(xpub)),
-            HDExtractPubkeyError::Internal(internal) => UtxoCoinBuildError::Internal(internal),
-        }
-    }
-}
-
 impl From<Bip32DerPathError> for UtxoCoinBuildError {
     fn from(e: Bip32DerPathError) -> Self { UtxoCoinBuildError::Internal(Bip44DerPathError::from(e).to_string()) }
 }
 
+impl From<HDWalletStorageError> for UtxoCoinBuildError {
+    fn from(e: HDWalletStorageError) -> Self { UtxoCoinBuildError::HDWalletStorageError(e) }
+}
+
 #[async_trait]
-pub trait UtxoCoinBuilder<XPubExtractor>:
-    UtxoFieldsWithIguanaPrivKeyBuilder + UtxoFieldsWithHardwareWalletBuilder<XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
+pub trait UtxoCoinBuilder: UtxoFieldsWithIguanaPrivKeyBuilder + UtxoFieldsWithHardwareWalletBuilder {
     type ResultCoin;
     type Error: NotMmError;
 
     fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_>;
-
-    fn xpub_extractor(&self) -> &XPubExtractor;
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error>;
 
     async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         match self.priv_key_policy() {
             PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_priv_key(priv_key).await,
-            PrivKeyBuildPolicy::HardwareWallet => self.build_utxo_fields_with_xpub(self.xpub_extractor()).await,
+            PrivKeyBuildPolicy::HardwareWallet => self.build_utxo_fields_with_xpub().await,
         }
     }
 }
@@ -201,12 +183,10 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
 }
 
 #[async_trait]
-pub trait UtxoFieldsWithHardwareWalletBuilder<XPubExtractor>: UtxoCoinBuilderCommonOps
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
-    async fn build_utxo_fields_with_xpub(&self, xpub_extractor: &XPubExtractor) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
+    async fn build_utxo_fields_with_xpub(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
+        let ticker = self.ticker().to_owned();
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
 
         // For now, use a default script pubkey.
         // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
@@ -215,12 +195,15 @@ where
 
         let address_format = self.address_format()?;
         let derivation_path = self.derivation_path()?;
+
+        let hd_wallet_storage = HDWalletCoinStorage::new(self.ctx(), ticker)?;
+
         let accounts = self
-            .hd_wallet_accounts(xpub_extractor, &conf, derivation_path.clone())
+            .load_hd_wallet_accounts(&hd_wallet_storage, &derivation_path)
             .await?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
-            hd_wallet_storage: todo!(),
+            hd_wallet_storage,
             address_format,
             derivation_path,
             accounts: HDAccountsMutex::new(accounts),
@@ -254,34 +237,14 @@ where
         Ok(coin)
     }
 
-    /// Currently, initializes first account only.
-    /// Later user can specify how many accounts we should initialize.
-    async fn hd_wallet_accounts(
+    async fn load_hd_wallet_accounts(
         &self,
-        xpub_extractor: &XPubExtractor,
-        conf: &UtxoCoinConf,
-        derivation_path: Bip44PathToCoin,
+        hd_wallet_storage: &HDWalletCoinStorage,
+        derivation_path: &Bip44PathToCoin,
     ) -> UtxoCoinBuildResult<HDAccountsMap<UtxoHDAccount>> {
-        let initial_account_id = 0;
-        let account_child_hardened = true;
-        let account_child =
-            ChildNumber::new(initial_account_id, account_child_hardened).expect("'initial_account_id' < HARDENED_FLAG");
-        let account_derivation_path = derivation_path.derive(account_child)?;
-        let extended_pubkey = self
-            .extract_hd_account_pubkey(conf, xpub_extractor, derivation_path.to_derivation_path())
-            .await?;
-
-        let hd_account = UtxoHDAccount {
-            account_id: initial_account_id,
-            extended_pubkey,
-            account_derivation_path,
-            // We don't know how many addresses are used by the user at this moment.
-            external_addresses_number: 0,
-            internal_addresses_number: 0,
-        };
-        let mut accounts = HDAccountsMap::new();
-        accounts.insert(initial_account_id, hd_account);
-        Ok(accounts)
+        utxo_common::load_hd_accounts_from_storage(hd_wallet_storage, derivation_path)
+            .await
+            .mm_err(UtxoCoinBuildError::from)
     }
 
     fn derivation_path(&self) -> UtxoConfResult<Bip44PathToCoin> {
@@ -293,17 +256,6 @@ where
     }
 
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
-
-    async fn extract_hd_account_pubkey(
-        &self,
-        conf: &UtxoCoinConf,
-        xpub_extractor: &XPubExtractor,
-        account_derivation_path: DerivationPath,
-    ) -> UtxoCoinBuildResult<Secp256k1ExtendedPublicKey> {
-        utxo_common::extract_extended_pubkey(conf, xpub_extractor, account_derivation_path)
-            .await
-            .mm_err(UtxoCoinBuildError::from)
-    }
 }
 
 #[async_trait]

@@ -29,7 +29,22 @@ pub struct CreateNewAccountRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateAccountScanPolicy {
+    /// Don't scan for new addresses.
+    DoNotScan,
+    /// Scan for new addresses of the created HD account.
+    Scan,
+}
+
+impl Default for CreateAccountScanPolicy {
+    fn default() -> Self { CreateAccountScanPolicy::Scan }
+}
+
+#[derive(Deserialize)]
 pub struct CreateNewAccountParams {
+    #[serde(default)]
+    scan_policy: CreateAccountScanPolicy,
     gap_limit: Option<u32>,
 }
 
@@ -176,10 +191,14 @@ pub(crate) mod common_impl {
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
-        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-        let addresses = coin
-            .scan_for_new_addresses(&mut new_account, &address_checker, gap_limit)
-            .await?;
+        let addresses = match params.scan_policy {
+            CreateAccountScanPolicy::DoNotScan => Vec::new(),
+            CreateAccountScanPolicy::Scan => {
+                let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+                coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_checker, gap_limit)
+                    .await?
+            },
+        };
 
         let total_balance = addresses
             .iter()

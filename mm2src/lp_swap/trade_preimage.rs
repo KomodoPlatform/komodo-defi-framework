@@ -261,6 +261,7 @@ impl From<BalanceError> for TradePreimageRpcError {
                 TradePreimageRpcError::Transport(transport)
             },
             e @ BalanceError::DerivationMethodNotSupported(_) => TradePreimageRpcError::InternalError(e.to_string()),
+            e @ BalanceError::WalletStorageError(_) => TradePreimageRpcError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => TradePreimageRpcError::InternalError(internal),
         }
     }

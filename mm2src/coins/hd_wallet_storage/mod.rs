@@ -17,17 +17,16 @@ use hd_wallet_sqlite_storage::HDWalletSqliteStorage as HDWalletStorageInstance;
 
 #[cfg(target_arch = "wasm32")] mod hd_wallet_wasm_storage;
 #[cfg(target_arch = "wasm32")]
-pub use hd_wallet_wasm_storage::HDWalletDb;
-#[cfg(target_arch = "wasm32")]
 use hd_wallet_wasm_storage::HDWalletIndexedDbStorage as HDWalletStorageInstance;
+#[cfg(target_arch = "wasm32")]
+pub use hd_wallet_wasm_storage::{HDWalletDb, HDWalletDbLocked};
 
 pub type HDWalletStorageResult<T> = MmResult<T, HDWalletStorageError>;
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum HDWalletStorageError {
-    // TODO consider renaming
     #[display(fmt = "HD wallet not allowed")]
-    HDWalletNotAllowed,
+    HDWalletUnavailable,
     #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_id)]
     HDAccountNotFound { wallet_id: HDWalletId, account_id: u32 },
     #[display(fmt = "Error saving the a swap: {}", _0)]
@@ -44,6 +43,10 @@ pub enum HDWalletStorageError {
 
 impl From<CryptoInitError> for HDWalletStorageError {
     fn from(e: CryptoInitError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
+}
+
+impl HDWalletStorageError {
+    pub fn is_deserializing_err(&self) -> bool { matches!(self, HDWalletStorageError::ErrorDeserializing(_)) }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -67,9 +70,9 @@ impl HDWalletId {
     }
 }
 
-pub struct HDAccountInfo {
+#[derive(Debug, Clone, PartialEq)]
+pub struct HDAccountStorageItem {
     pub account_id: u32,
-    pub account_derivation_path: String,
     pub account_xpub: XPub,
     /// The number of addresses that we know have been used by the user.
     pub external_addresses_number: u32,
@@ -82,13 +85,13 @@ pub trait HDWalletStorageInternalOps {
     where
         Self: Sized;
 
-    async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountInfo>>;
+    async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
 
     async fn load_account(
         &self,
         wallet_id: HDWalletId,
         account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountInfo>>;
+    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>>;
 
     async fn update_external_addresses_number(
         &self,
@@ -112,27 +115,31 @@ pub trait HDWalletStorageInternalOps {
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()>;
 
-    async fn upload_new_account(&self, wallet_id: HDWalletId, account: HDAccountInfo) -> HDWalletStorageResult<()>;
+    async fn upload_new_account(
+        &self,
+        wallet_id: HDWalletId,
+        account: HDAccountStorageItem,
+    ) -> HDWalletStorageResult<()>;
+
+    async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 }
 
 #[async_trait]
 pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
-    fn hd_wallet_storage(&self, hd_wallet: &Self::HDWallet) -> HDWalletCoinStorage;
+    fn hd_wallet_storage<'a>(&self, hd_wallet: &'a Self::HDWallet) -> &'a HDWalletCoinStorage;
 
-    async fn load_all_accounts(&self, hd_wallet: &Self::HDWallet) -> HDWalletStorageResult<Vec<HDAccountInfo>> {
+    async fn load_all_accounts(&self, hd_wallet: &Self::HDWallet) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
-        storage.inner.load_accounts(wallet_id).await
+        storage.load_all_accounts().await
     }
 
     async fn load_account(
         &self,
         hd_wallet: &Self::HDWallet,
         account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountInfo>> {
+    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
-        storage.inner.load_account(wallet_id, account_id).await
+        storage.load_account(account_id).await
     }
 
     async fn update_external_addresses_number(
@@ -142,10 +149,8 @@ pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
         storage
-            .inner
-            .update_external_addresses_number(wallet_id, account_id, new_external_addresses_number)
+            .update_external_addresses_number(account_id, new_external_addresses_number)
             .await
     }
 
@@ -156,10 +161,8 @@ pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
         storage
-            .inner
-            .update_internal_addresses_number(wallet_id, account_id, new_internal_addresses_number)
+            .update_internal_addresses_number(account_id, new_internal_addresses_number)
             .await
     }
 
@@ -171,26 +174,23 @@ pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
         storage
-            .inner
-            .update_addresses_numbers(
-                wallet_id,
-                account_id,
-                new_external_addresses_number,
-                new_internal_addresses_number,
-            )
+            .update_addresses_numbers(account_id, new_external_addresses_number, new_internal_addresses_number)
             .await
     }
 
     async fn upload_new_account(
         &self,
         hd_wallet: &Self::HDWallet,
-        account_info: HDAccountInfo,
+        account_info: HDAccountStorageItem,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage(hd_wallet);
-        let wallet_id = storage.wallet_id();
-        storage.inner.upload_new_account(wallet_id, account_info).await
+        storage.upload_new_account(account_info).await
+    }
+
+    async fn clear_accounts(&self, hd_wallet: &Self::HDWallet) -> HDWalletStorageResult<()> {
+        let storage = self.hd_wallet_storage(hd_wallet);
+        storage.clear_accounts().await
     }
 }
 
@@ -225,7 +225,7 @@ impl HDWalletCoinStorage {
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
         let hd_wallet_rmd160 = crypto_ctx
             .hd_wallet_rmd160()
-            .or_mm_err(|| HDWalletStorageError::HDWalletNotAllowed)?;
+            .or_mm_err(|| HDWalletStorageError::HDWalletUnavailable)?;
         Ok(HDWalletCoinStorage {
             coin,
             mm2_rmd160: *ctx.rmd160(),
@@ -234,7 +234,82 @@ impl HDWalletCoinStorage {
         })
     }
 
+    #[cfg(any(test, target_arch = "wasm32"))]
+    fn with_rmd160(
+        ctx: &MmArc,
+        coin: String,
+        mm2_rmd160: H160,
+        hd_wallet_rmd160: H160,
+    ) -> HDWalletStorageResult<HDWalletCoinStorage> {
+        let inner = HDWalletStorageInstance::new(ctx)?;
+        Ok(HDWalletCoinStorage {
+            coin,
+            mm2_rmd160,
+            hd_wallet_rmd160,
+            inner,
+        })
+    }
+
     pub fn wallet_id(&self) -> HDWalletId { HDWalletId::new(&self.coin, &self.mm2_rmd160, &self.hd_wallet_rmd160) }
+
+    pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let wallet_id = self.wallet_id();
+        self.inner.load_accounts(wallet_id).await
+    }
+
+    async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
+        let wallet_id = self.wallet_id();
+        self.inner.load_account(wallet_id, account_id).await
+    }
+
+    async fn update_external_addresses_number(
+        &self,
+        account_id: u32,
+        new_external_addresses_number: u32,
+    ) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner
+            .update_external_addresses_number(wallet_id, account_id, new_external_addresses_number)
+            .await
+    }
+
+    async fn update_internal_addresses_number(
+        &self,
+        account_id: u32,
+        new_internal_addresses_number: u32,
+    ) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner
+            .update_internal_addresses_number(wallet_id, account_id, new_internal_addresses_number)
+            .await
+    }
+
+    async fn update_addresses_numbers(
+        &self,
+        account_id: u32,
+        new_external_addresses_number: u32,
+        new_internal_addresses_number: u32,
+    ) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner
+            .update_addresses_numbers(
+                wallet_id,
+                account_id,
+                new_external_addresses_number,
+                new_internal_addresses_number,
+            )
+            .await
+    }
+
+    async fn upload_new_account(&self, account_info: HDAccountStorageItem) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner.upload_new_account(wallet_id, account_info).await
+    }
+
+    pub async fn clear_accounts(&self) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner.clear_accounts(wallet_id).await
+    }
 }
 
 fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }

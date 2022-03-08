@@ -50,8 +50,8 @@ use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
-use crypto::{Bip32DerPathOps, Bip44Chain, Bip44PathToAccount, Bip44PathToCoin, ChildNumber, DerivationPath,
-             Secp256k1ExtendedPublicKey};
+use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
+             ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc;
@@ -92,9 +92,9 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
             NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
-use crate::coin_balance::HDAddressBalanceChecker;
+use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceChecker};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
-use crate::hd_wallet_storage::HDWalletCoinStorage;
+use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
@@ -204,6 +204,14 @@ impl From<UtxoRpcError> for TxProviderError {
             UtxoRpcError::Internal(internal) => TxProviderError::Internal(internal),
         }
     }
+}
+
+impl From<Bip44DerPathError> for HDWalletStorageError {
+    fn from(e: Bip44DerPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
+}
+
+impl From<Bip32Error> for HDWalletStorageError {
+    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
 }
 
 #[async_trait]
@@ -1035,6 +1043,8 @@ pub struct UtxoActivationParams {
     pub requires_notarization: Option<bool>,
     pub address_format: Option<UtxoAddressFormat>,
     pub gap_limit: Option<u32>,
+    #[serde(default)]
+    pub scan_policy: EnableCoinScanPolicy,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: Option<bool>,
@@ -1074,6 +1084,7 @@ impl UtxoActivationParams {
             json::from_value(req["address_format"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidAddressFormat)?;
         let check_utxo_maturity = json::from_value(req["check_utxo_maturity"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidCheckUtxoMaturity)?;
+        let scan_policy = EnableCoinScanPolicy::default();
 
         Ok(UtxoActivationParams {
             mode,
@@ -1083,6 +1094,7 @@ impl UtxoActivationParams {
             requires_notarization,
             address_format,
             gap_limit: None,
+            scan_policy,
             check_utxo_maturity,
         })
     }
@@ -1159,16 +1171,40 @@ impl HDAccountOps for UtxoHDAccount {
         }
     }
 
-    fn known_addresses_number_mut(&mut self, chain: Bip44Chain) -> MmResult<&mut u32, InvalidBip44ChainError> {
-        match chain {
-            Bip44Chain::External => Ok(&mut self.external_addresses_number),
-            Bip44Chain::Internal => Ok(&mut self.internal_addresses_number),
-        }
-    }
-
     fn account_derivation_path(&self) -> DerivationPath { self.account_derivation_path.to_derivation_path() }
 
     fn account_id(&self) -> u32 { self.account_id }
+}
+
+impl UtxoHDAccount {
+    pub fn try_from_storage_item(
+        wallet_der_path: &Bip44PathToCoin,
+        account_info: &HDAccountStorageItem,
+    ) -> HDWalletStorageResult<UtxoHDAccount> {
+        const ACCOUNT_CHILD_HARDENED: bool = true;
+
+        let account_child = ChildNumber::new(account_info.account_id, ACCOUNT_CHILD_HARDENED)?;
+        let account_derivation_path = wallet_der_path
+            .derive(account_child)
+            .map_to_mm(Bip44DerPathError::from)?;
+        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&account_info.account_xpub)?;
+        Ok(UtxoHDAccount {
+            account_id: account_info.account_id,
+            extended_pubkey,
+            account_derivation_path,
+            external_addresses_number: account_info.external_addresses_number,
+            internal_addresses_number: account_info.internal_addresses_number,
+        })
+    }
+
+    pub fn to_storage_item(&self) -> HDAccountStorageItem {
+        HDAccountStorageItem {
+            account_id: self.account_id,
+            account_xpub: self.extended_pubkey.to_string(bip32::Prefix::XPUB),
+            external_addresses_number: self.external_addresses_number,
+            internal_addresses_number: self.internal_addresses_number,
+        }
+    }
 }
 
 /// Function calculating KMD interest
@@ -1447,6 +1483,7 @@ pub fn address_by_conf_and_pubkey_str(
         requires_notarization: None,
         address_format: None,
         gap_limit: None,
+        scan_policy: EnableCoinScanPolicy::default(),
         check_utxo_maturity: None,
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);

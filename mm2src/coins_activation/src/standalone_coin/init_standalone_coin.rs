@@ -29,7 +29,7 @@ pub struct InitStandaloneCoinReq<T> {
 
 #[async_trait]
 pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
-    type ActivationRequest: Send;
+    type ActivationRequest: Sync + Send;
     type StandaloneProtocol: TryFromCoinProtocol + Send;
     // The following types are related to `RpcTask` management.
     type ActivationResult: serde::Serialize + Clone + Send + Sync + 'static;
@@ -45,7 +45,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         ctx: MmArc,
         ticker: String,
         coin_conf: Json,
-        activation_request: Self::ActivationRequest,
+        activation_request: &Self::ActivationRequest,
         protocol_info: Self::StandaloneProtocol,
         priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &InitStandaloneCoinTaskHandle<Self>,
@@ -53,7 +53,9 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
 
     async fn get_activation_result(
         &self,
+        ctx: MmArc,
         task_handle: &InitStandaloneCoinTaskHandle<Self>,
+        activation_request: &Self::ActivationRequest,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>>;
 }
 
@@ -157,17 +159,18 @@ where
     async fn run(self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let priv_key_policy = PrivKeyBuildPolicy::from_crypto_ctx(&self.crypto_ctx);
         let coin = Standalone::init_standalone_coin(
-            self.ctx,
+            self.ctx.clone(),
             self.request.ticker,
             self.coin_conf,
-            self.request.activation_params,
+            &self.request.activation_params,
             self.protocol_info,
             priv_key_policy,
             task_handle,
         )
         .await?;
 
-        coin.get_activation_result(task_handle).await
+        coin.get_activation_result(self.ctx, task_handle, &self.request.activation_params)
+            .await
     }
 }
 
