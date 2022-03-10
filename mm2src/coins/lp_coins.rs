@@ -156,6 +156,50 @@ pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePre
 pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
 pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
+pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
+pub type RawTransactionFut = Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send>;
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum RawTransactionError {
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "Invalid  hash: {}", _0)]
+    InvalidHashError(String),
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+}
+
+impl HttpStatusCode for RawTransactionError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            RawTransactionError::NoSuchCoin { .. } | RawTransactionError::InvalidHashError(_) => {
+                StatusCode::BAD_REQUEST
+            },
+            RawTransactionError::Transport(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for RawTransactionError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => RawTransactionError::NoSuchCoin { coin },
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RawTransactionRequest {
+    pub coin: String,
+    pub tx_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RawTransactionRes {
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    pub tx_hex: BytesJson,
+}
 
 #[derive(Debug, Display)]
 pub enum TxHistoryError {
@@ -1334,6 +1378,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
+
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 
@@ -2104,6 +2150,11 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    coin.get_raw_transaction(req).compat().await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
