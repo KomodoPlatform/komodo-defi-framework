@@ -4,7 +4,11 @@ pub use sql_builder;
 use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use sql_builder::SqlBuilder;
+use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
+
+pub type SqliteConnShared = Arc<Mutex<Connection>>;
+pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.

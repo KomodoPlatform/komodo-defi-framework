@@ -196,7 +196,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let address_format = self.address_format()?;
         let derivation_path = self.derivation_path()?;
 
-        let hd_wallet_storage = HDWalletCoinStorage::new(self.ctx(), ticker)?;
+        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
 
         let accounts = self
             .load_hd_wallet_accounts(&hd_wallet_storage, &derivation_path)

@@ -2,6 +2,7 @@ use super::*;
 use crate::coin_balance::{AccountBalanceParams, CheckHDAccountBalanceParams, CheckHDAccountBalanceResponse,
                           HDAccountBalanceResponse, HDAddressBalance, HDWalletBalanceRpcOps};
 use crate::hd_wallet::HDAccountsMap;
+use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClient, ElectrumClientImpl,
                                GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
@@ -3453,6 +3454,7 @@ fn test_account_balance_rpc() {
         internal_addresses_number: 1,
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
+        hd_wallet_storage: HDWalletCoinStorage::default(),
         address_format: UtxoAddressFormat::Standard,
         derivation_path: Bip44PathToCoin::from_str("m/44'/141'").unwrap(),
         accounts: HDAccountsMutex::new(hd_accounts),
@@ -3473,6 +3475,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/0", "m/44'/141'/0'/0/1", "m/44'/141'/0'/0/2"),
+        page_balance: CoinBalance::new(BigDecimal::from(0)),
         limit: 3,
         skipped: 0,
         total: 7,
@@ -3494,6 +3497,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/3", "m/44'/141'/0'/0/4", "m/44'/141'/0'/0/5"),
+        page_balance: CoinBalance::new(BigDecimal::from(99)),
         limit: 3,
         skipped: 3,
         total: 7,
@@ -3515,6 +3519,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/6"),
+        page_balance: CoinBalance::new(BigDecimal::from(32)),
         limit: 3,
         skipped: 6,
         total: 7,
@@ -3536,6 +3541,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: Vec::new(),
+        page_balance: CoinBalance::default(),
         limit: 3,
         skipped: 7,
         total: 7,
@@ -3557,6 +3563,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/1/1", "m/44'/141'/0'/1/2"),
+        page_balance: CoinBalance::new(BigDecimal::from(54)),
         limit: 3,
         skipped: 1,
         total: 3,
@@ -3578,6 +3585,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
+        page_balance: CoinBalance::default(),
         limit: 3,
         skipped: 0,
         total: 0,
@@ -3599,6 +3607,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/1'/1/0"),
+        page_balance: CoinBalance::new(BigDecimal::from(0)),
         limit: 3,
         skipped: 0,
         total: 1,
@@ -3620,6 +3629,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
+        page_balance: CoinBalance::default(),
         limit: 3,
         skipped: 1,
         total: 1,
@@ -3738,6 +3748,7 @@ fn test_scan_for_new_addresses() {
         internal_addresses_number: 2,
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
+        hd_wallet_storage: HDWalletCoinStorage::default(),
         address_format: UtxoAddressFormat::Standard,
         derivation_path: Bip44PathToCoin::from_str("m/44'/141'").unwrap(),
         accounts: HDAccountsMutex::new(hd_accounts),

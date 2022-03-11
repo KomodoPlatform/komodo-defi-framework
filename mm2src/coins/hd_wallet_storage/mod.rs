@@ -4,24 +4,33 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::{CryptoCtx, CryptoInitError, XPub};
 use derive_more::Display;
+#[cfg(any(test, target_arch = "wasm32"))]
+use mocktopus::macros::*;
 use primitives::hash::H160;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Formatter;
 use std::ops::Deref;
 
-#[cfg(not(target_arch = "wasm32"))] mod hd_wallet_sqlite_storage;
-#[cfg(not(target_arch = "wasm32"))]
-use hd_wallet_sqlite_storage::HDWalletSqliteStorage as HDWalletStorageInstance;
-// #[cfg(not(target_arch = "wasm32"))] pub use hw_wallet_sqlite_storage::
+#[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
+#[cfg(target_arch = "wasm32")] mod wasm_storage;
 
-#[cfg(target_arch = "wasm32")] mod hd_wallet_wasm_storage;
-#[cfg(target_arch = "wasm32")]
-use hd_wallet_wasm_storage::HDWalletIndexedDbStorage as HDWalletStorageInstance;
-#[cfg(target_arch = "wasm32")]
-pub use hd_wallet_wasm_storage::{HDWalletDb, HDWalletDbLocked};
+#[cfg(any(test, target_arch = "wasm32"))] mod mock_storage;
+#[cfg(any(test, target_arch = "wasm32"))]
+pub use mock_storage::HDWalletMockStorage;
+
+cfg_wasm32! {
+    use wasm_storage::HDWalletIndexedDbStorage as HDWalletStorageInstance;
+
+    pub use wasm_storage::{HDWalletDb, HDWalletDbLocked};
+}
+
+cfg_native! {
+    use sqlite_storage::HDWalletSqliteStorage as HDWalletStorageInstance;
+}
 
 pub type HDWalletStorageResult<T> = MmResult<T, HDWalletStorageError>;
+type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 
 #[derive(Debug, Display)]
 pub enum HDWalletStorageError {
@@ -50,23 +59,25 @@ impl HDWalletStorageError {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct HDWalletId(String);
-
-impl HDWalletId {
-    /// `mm2_rmd160` is RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched.
+pub struct HDWalletId {
+    coin: String,
+    /// RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched.
     /// It's expected to be equal to [`MmCtx::rmd160`].
     /// This property allows us to store DB items that are unique to each user (passphrase).
-    ///
-    /// `hd_wallet_rmd160` is RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
+    mm2_rmd160: String,
+    /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device.
     /// Please note it can be equal to [`HDWalletId::mm2_rmd160`] if mm2 is launched with a HD private key derived from a passphrase.
-    pub fn new(ticker: &str, mm2_rmd160: &H160, hd_wallet_rmd160: &H160) -> HDWalletId {
-        HDWalletId(format!(
-            "{}_{}_{}",
-            ticker,
-            display_rmd160(mm2_rmd160),
-            display_rmd160(hd_wallet_rmd160)
-        ))
+    hd_wallet_rmd160: String,
+}
+
+impl HDWalletId {
+    pub fn new(coin: String, mm2_rmd160: &H160, hd_wallet_rmd160: &H160) -> HDWalletId {
+        HDWalletId {
+            coin,
+            mm2_rmd160: display_rmd160(mm2_rmd160),
+            hd_wallet_rmd160: display_rmd160(hd_wallet_rmd160),
+        }
     }
 }
 
@@ -80,8 +91,9 @@ pub struct HDAccountStorageItem {
 }
 
 #[async_trait]
+#[cfg_attr(any(test, target_arch = "wasm32"), mockable)]
 pub trait HDWalletStorageInternalOps {
-    fn new(ctx: &MmArc) -> HDWalletStorageResult<Self>
+    async fn init(ctx: &MmArc) -> HDWalletStorageResult<Self>
     where
         Self: Sized;
 
@@ -104,14 +116,6 @@ pub trait HDWalletStorageInternalOps {
         &self,
         wallet_id: HDWalletId,
         account_id: u32,
-        new_internal_addresses_number: u32,
-    ) -> HDWalletStorageResult<()>;
-
-    async fn update_addresses_numbers(
-        &self,
-        wallet_id: HDWalletId,
-        account_id: u32,
-        new_external_addresses_number: u32,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()>;
 
@@ -166,19 +170,6 @@ pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
             .await
     }
 
-    async fn update_addresses_numbers(
-        &self,
-        hd_wallet: &Self::HDWallet,
-        account_id: u32,
-        new_external_addresses_number: u32,
-        new_internal_addresses_number: u32,
-    ) -> HDWalletStorageResult<()> {
-        let storage = self.hd_wallet_storage(hd_wallet);
-        storage
-            .update_addresses_numbers(account_id, new_external_addresses_number, new_internal_addresses_number)
-            .await
-    }
-
     async fn upload_new_account(
         &self,
         hd_wallet: &Self::HDWallet,
@@ -206,7 +197,7 @@ pub struct HDWalletCoinStorage {
     /// This property allows us to store DB items that are unique to each Hardware Wallet device.
     /// Please note it can be equal to [`HDWalletId::mm2_rmd160`] if mm2 is launched with a HD private key derived from a passphrase.
     hd_wallet_rmd160: H160,
-    inner: HDWalletStorageInstance,
+    inner: HDWalletStorageBoxed,
 }
 
 impl fmt::Debug for HDWalletCoinStorage {
@@ -219,9 +210,21 @@ impl fmt::Debug for HDWalletCoinStorage {
     }
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+impl Default for HDWalletCoinStorage {
+    fn default() -> Self {
+        HDWalletCoinStorage {
+            coin: String::default(),
+            mm2_rmd160: H160::default(),
+            hd_wallet_rmd160: H160::default(),
+            inner: Box::new(HDWalletMockStorage),
+        }
+    }
+}
+
 impl HDWalletCoinStorage {
-    pub fn new(ctx: &MmArc, coin: String) -> HDWalletStorageResult<HDWalletCoinStorage> {
-        let inner = HDWalletStorageInstance::new(ctx)?;
+    pub async fn init(ctx: &MmArc, coin: String) -> HDWalletStorageResult<HDWalletCoinStorage> {
+        let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
         let hd_wallet_rmd160 = crypto_ctx
             .hd_wallet_rmd160()
@@ -235,13 +238,13 @@ impl HDWalletCoinStorage {
     }
 
     #[cfg(any(test, target_arch = "wasm32"))]
-    fn with_rmd160(
+    pub async fn init_with_rmd160(
         ctx: &MmArc,
         coin: String,
         mm2_rmd160: H160,
         hd_wallet_rmd160: H160,
     ) -> HDWalletStorageResult<HDWalletCoinStorage> {
-        let inner = HDWalletStorageInstance::new(ctx)?;
+        let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         Ok(HDWalletCoinStorage {
             coin,
             mm2_rmd160,
@@ -250,7 +253,9 @@ impl HDWalletCoinStorage {
         })
     }
 
-    pub fn wallet_id(&self) -> HDWalletId { HDWalletId::new(&self.coin, &self.mm2_rmd160, &self.hd_wallet_rmd160) }
+    pub fn wallet_id(&self) -> HDWalletId {
+        HDWalletId::new(self.coin.clone(), &self.mm2_rmd160, &self.hd_wallet_rmd160)
+    }
 
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
@@ -284,23 +289,6 @@ impl HDWalletCoinStorage {
             .await
     }
 
-    async fn update_addresses_numbers(
-        &self,
-        account_id: u32,
-        new_external_addresses_number: u32,
-        new_internal_addresses_number: u32,
-    ) -> HDWalletStorageResult<()> {
-        let wallet_id = self.wallet_id();
-        self.inner
-            .update_addresses_numbers(
-                wallet_id,
-                account_id,
-                new_external_addresses_number,
-                new_internal_addresses_number,
-            )
-            .await
-    }
-
     async fn upload_new_account(&self, account_info: HDAccountStorageItem) -> HDWalletStorageResult<()> {
         let wallet_id = self.wallet_id();
         self.inner.upload_new_account(wallet_id, account_info).await
@@ -313,3 +301,243 @@ impl HDWalletCoinStorage {
 }
 
 fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }
+
+#[cfg(any(test, target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use common::mm_ctx::MmCtxBuilder;
+    use itertools::Itertools;
+    use primitives::hash::H160;
+
+    cfg_wasm32! {
+        use crate::hd_wallet_storage::wasm_storage::get_all_storage_items;
+        use wasm_bindgen_test::*;
+
+        wasm_bindgen_test_configure!(run_in_browser);
+    }
+
+    cfg_native! {
+        use crate::hd_wallet_storage::sqlite_storage::get_all_storage_items;
+        use common::block_on;
+        use db_common::sqlite::rusqlite::Connection;
+        use std::sync::{Arc, Mutex};
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn mm_ctx_with_custom_db() -> MmArc {
+        let ctx = MmCtxBuilder::new().into_mm_arc();
+        let connection = Connection::open_in_memory().unwrap();
+        let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+        ctx
+    }
+
+    async fn test_unique_wallets_impl() {
+        let rick_user0_device0_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let rick_user0_device0_account1 = HDAccountStorageItem {
+            account_id: 1,
+            account_xpub: "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let rick_user0_device1_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6EuV33a2DXxAhoJTRTnr8qnysu81AA4YHpLY6o8NiGkEJ8KADJ35T64eJsStWsmRf1xXkEANVjXFXnaUKbRtFwuSPCLfDdZwYNZToh4LBCd".to_owned(),
+            external_addresses_number: 3,
+            internal_addresses_number: 4,
+        };
+        let rick_user1_device0_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz".to_owned(),
+            external_addresses_number: 5,
+            internal_addresses_number: 6,
+        };
+        let morty_user0_device0_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6AHA9hZDN11k2ijHMeS5QqHx2KP9aMBRhTDqANMnwVtdyw2TDYRmF8PjpvwUFcL1Et8Hj59S3gTSMcUQ5gAqTz3Wd8EsMTmF3DChhqPQBnU".to_owned(),
+            external_addresses_number: 7,
+            internal_addresses_number: 8,
+        };
+
+        let ctx = mm_ctx_with_custom_db();
+        let user0_rmd160 = H160::from("0000000000000000000000000000000000000000");
+        let user1_rmd160 = H160::from("0000000000000000000000000000000000000001");
+        let device0_rmd160 = H160::from("0000000000000000000000000000000000000020");
+        let device1_rmd160 = H160::from("0000000000000000000000000000000000000030");
+
+        let rick_user0_device0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user0_rmd160, device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let rick_user0_device1_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user0_rmd160, device1_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let rick_user1_device0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user1_rmd160, device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let morty_user0_device0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), user0_rmd160, device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+
+        rick_user0_device0_db
+            .upload_new_account(rick_user0_device0_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=0 account=0");
+        rick_user0_device0_db
+            .upload_new_account(rick_user0_device0_account1.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=0 account=1");
+        rick_user0_device1_db
+            .upload_new_account(rick_user0_device1_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=0 device=1 account=0");
+        rick_user1_device0_db
+            .upload_new_account(rick_user1_device0_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK user=1 device=0 account=0");
+        morty_user0_device0_db
+            .upload_new_account(morty_user0_device0_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: MORTY user=0 device=0 account=0");
+
+        // All accounts must be in the only one database.
+        // Rows in the database must differ by only `coin`, `mm2_rmd160`, `hd_wallet_rmd160` and `account_id` values.
+        let all_accounts: Vec<_> = get_all_storage_items(&ctx)
+            .await
+            .into_iter()
+            .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
+            .collect();
+        assert_eq!(all_accounts, vec![
+            rick_user0_device0_account0.clone(),
+            rick_user0_device0_account1.clone(),
+            rick_user0_device1_account0.clone(),
+            rick_user1_device0_account0.clone(),
+            morty_user0_device0_account0.clone()
+        ]);
+
+        let mut actual = rick_user0_device0_db
+            .load_all_accounts()
+            .await
+            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=0 device=0");
+        actual.sort_by(|x, y| x.account_id.cmp(&y.account_id));
+        assert_eq!(actual, vec![rick_user0_device0_account0, rick_user0_device0_account1]);
+
+        let actual = rick_user0_device1_db
+            .load_all_accounts()
+            .await
+            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=0 device=1");
+        assert_eq!(actual, vec![rick_user0_device1_account0]);
+
+        let actual = rick_user1_device0_db
+            .load_all_accounts()
+            .await
+            .expect("HDWalletCoinStorage::load_all_accounts: RICK user=1 device=0");
+        assert_eq!(actual, vec![rick_user1_device0_account0]);
+
+        let actual = morty_user0_device0_db
+            .load_all_accounts()
+            .await
+            .expect("HDWalletCoinStorage::load_all_accounts: MORTY user=0 device=0");
+        assert_eq!(actual, vec![morty_user0_device0_account0]);
+    }
+
+    async fn test_delete_accounts_impl() {
+        let wallet0_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let wallet0_account1 = HDAccountStorageItem {
+            account_id: 1,
+            account_xpub: "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let wallet1_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6EuV33a2DXxAhoJTRTnr8qnysu81AA4YHpLY6o8NiGkEJ8KADJ35T64eJsStWsmRf1xXkEANVjXFXnaUKbRtFwuSPCLfDdZwYNZToh4LBCd".to_owned(),
+            external_addresses_number: 3,
+            internal_addresses_number: 4,
+        };
+        let wallet2_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz".to_owned(),
+            external_addresses_number: 5,
+            internal_addresses_number: 6,
+        };
+
+        let ctx = mm_ctx_with_custom_db();
+        let user_rmd160 = H160::from("0000000000000000000000000000000000000000");
+        let device0_rmd160 = H160::from("0000000000000000000000000000000000000010");
+        let device1_rmd160 = H160::from("0000000000000000000000000000000000000020");
+        let device2_rmd160 = H160::from("0000000000000000000000000000000000000030");
+
+        let wallet0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device0_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+        let wallet1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device1_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+        let wallet2_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device2_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+
+        wallet0_db
+            .upload_new_account(wallet0_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=0");
+        wallet0_db
+            .upload_new_account(wallet0_account1.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=1");
+        wallet1_db
+            .upload_new_account(wallet1_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=1 account=0");
+        wallet2_db
+            .upload_new_account(wallet2_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=2 account=0");
+
+        wallet0_db
+            .clear_accounts()
+            .await
+            .expect("HDWalletCoinStorage::clear_accounts: RICK wallet=0");
+
+        // All accounts must be in the only one database.
+        // Rows in the database must differ by only `coin`, `mm2_rmd160`, `hd_wallet_rmd160` and `account_id` values.
+        let all_accounts: Vec<_> = get_all_storage_items(&ctx)
+            .await
+            .into_iter()
+            .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
+            .collect();
+        assert_eq!(all_accounts, vec![wallet1_account0, wallet2_account0]);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    async fn test_unique_wallets() { test_unique_wallets_impl().await }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_unique_wallets() { block_on(test_unique_wallets_impl()) }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    async fn test_delete_accounts() { test_delete_accounts_impl().await }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_delete_accounts() { block_on(test_delete_accounts_impl()) }
+}
