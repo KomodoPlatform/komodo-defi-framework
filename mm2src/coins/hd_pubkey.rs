@@ -69,7 +69,7 @@ impl From<HDExtractPubkeyError> for NewAccountCreatingError {
 impl From<HDExtractPubkeyError> for HDWalletRpcError {
     fn from(e: HDExtractPubkeyError) -> Self {
         match e {
-            HDExtractPubkeyError::HDWalletUnavailable => HDWalletRpcError::HDWalletUnavailable,
+            HDExtractPubkeyError::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
             HDExtractPubkeyError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
             HDExtractPubkeyError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
             HDExtractPubkeyError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),

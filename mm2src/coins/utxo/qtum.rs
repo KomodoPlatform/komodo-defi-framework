@@ -28,12 +28,12 @@ use utxo_signer::UtxoSignerOps;
 
 #[derive(Debug, Display)]
 pub enum Qrc20AddressError {
-    DerivationMethodNotSupported(String),
+    UnexpectedDerivationMethod(String),
     ScriptHashTypeNotSupported { script_hash_type: String },
 }
 
-impl From<DerivationMethodNotSupported> for Qrc20AddressError {
-    fn from(e: DerivationMethodNotSupported) -> Self { Qrc20AddressError::DerivationMethodNotSupported(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for Qrc20AddressError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20AddressError::UnexpectedDerivationMethod(e.to_string()) }
 }
 
 impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
@@ -328,7 +328,7 @@ impl UtxoCommonOps for QtumCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 

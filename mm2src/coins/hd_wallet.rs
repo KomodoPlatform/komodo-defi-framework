@@ -1,7 +1,8 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::hd_pubkey::HDXPubExtractor;
 use crate::hd_wallet_storage::HDWalletStorageError;
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinWithDerivationMethod, MmCoinEnum, WithdrawError};
+use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinWithDerivationMethod, MmCoinEnum,
+            UnexpectedDerivationMethod, WithdrawError};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -119,7 +120,7 @@ impl From<HDWalletStorageError> for NewAccountCreatingError {
 impl From<NewAccountCreatingError> for HDWalletRpcError {
     fn from(e: NewAccountCreatingError) -> Self {
         match e {
-            NewAccountCreatingError::HDWalletUnavailable => HDWalletRpcError::HDWalletUnavailable,
+            NewAccountCreatingError::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
             NewAccountCreatingError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
             NewAccountCreatingError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
             NewAccountCreatingError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),
@@ -195,13 +196,8 @@ pub enum HDWalletRpcError {
     NoSuchCoin { coin: String },
     #[display(fmt = "Withdraw timed out {:?}", _0)]
     Timeout(Duration),
-    #[display(
-        fmt = "'{}' coin is expected to be activated with the HD wallet derivation method",
-        coin
-    )]
-    CoinIsActivatedNotWithHDWallet { coin: String },
-    #[display(fmt = "Cannot extract an extended public key from an Iguana key pair")]
-    HDWalletUnavailable,
+    #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
+    CoinIsActivatedNotWithHDWallet,
     #[display(fmt = "HD account '{}' is not activated", account_id)]
     UnknownAccount { account_id: u32 },
     #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
@@ -230,15 +226,24 @@ impl From<CoinFindError> for HDWalletRpcError {
     }
 }
 
+impl From<UnexpectedDerivationMethod> for HDWalletRpcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        match e {
+            UnexpectedDerivationMethod::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
+            unexpected_error => HDWalletRpcError::Internal(unexpected_error.to_string()),
+        }
+    }
+}
+
 impl From<BalanceError> for HDWalletRpcError {
     fn from(e: BalanceError) -> Self {
         match e {
             BalanceError::Transport(transport) => HDWalletRpcError::Transport(transport),
             BalanceError::InvalidResponse(rpc) => HDWalletRpcError::RpcInvalidResponse(rpc),
-            // TODO refactor
-            BalanceError::DerivationMethodNotSupported(error) => HDWalletRpcError::Internal(error.to_string()),
-            BalanceError::WalletStorageError(storage) => HDWalletRpcError::WalletStorageError(storage),
-            BalanceError::Internal(internal) => HDWalletRpcError::Internal(internal),
+            BalanceError::UnexpectedDerivationMethod(der_path) => HDWalletRpcError::from(der_path),
+            BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
+                HDWalletRpcError::Internal(internal)
+            },
         }
     }
 }
@@ -300,8 +305,7 @@ impl HttpStatusCode for HDWalletRpcError {
         match self {
             HDWalletRpcError::CoinDoesntSupportTrezor
             | HDWalletRpcError::NoSuchCoin { .. }
-            | HDWalletRpcError::CoinIsActivatedNotWithHDWallet { .. }
-            | HDWalletRpcError::HDWalletUnavailable
+            | HDWalletRpcError::CoinIsActivatedNotWithHDWallet
             | HDWalletRpcError::UnknownAccount { .. }
             | HDWalletRpcError::InvalidBip44Chain { .. }
             | HDWalletRpcError::ErrorDerivingAddress(_)
@@ -489,7 +493,7 @@ pub async fn get_new_address(
     match coin {
         MmCoinEnum::UtxoCoin(utxo) => utxo.get_new_address_rpc(req.params).await,
         MmCoinEnum::QtumCoin(qtum) => qtum.get_new_address_rpc(req.params).await,
-        _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet { coin: req.coin }),
+        _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
 
@@ -516,12 +520,7 @@ pub mod common_impl {
         let account_id = params.account_id;
         let chain = params.chain;
 
-        let hd_wallet =
-            coin.derivation_method()
-                .hd_wallet()
-                .or_mm_err(|| HDWalletRpcError::CoinIsActivatedNotWithHDWallet {
-                    coin: coin.ticker().to_owned(),
-                })?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
         let mut hd_account = hd_wallet
             .get_account_mut(params.account_id)
             .await

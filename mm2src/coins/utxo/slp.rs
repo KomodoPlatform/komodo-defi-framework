@@ -10,11 +10,11 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, ValidateAddressResult,
-            ValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, SwapOps, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -107,7 +107,7 @@ enum ValidateHtlcError {
     InvalidSlpUtxo(ValidateSlpUtxosErr),
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
-    DerivationMethodNotSupported(DerivationMethodNotSupported),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
 impl From<NumConversError> for ValidateHtlcError {
@@ -122,8 +122,8 @@ impl From<ValidateSlpUtxosErr> for ValidateHtlcError {
     fn from(err: ValidateSlpUtxosErr) -> Self { ValidateHtlcError::InvalidSlpUtxo(err) }
 }
 
-impl From<DerivationMethodNotSupported> for ValidateHtlcError {
-    fn from(e: DerivationMethodNotSupported) -> Self { ValidateHtlcError::DerivationMethodNotSupported(e) }
+impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { ValidateHtlcError::UnexpectedDerivationMethod(e) }
 }
 
 #[derive(Debug, Display)]
@@ -151,7 +151,7 @@ pub enum SpendP2SHError {
     Rpc(UtxoRpcError),
     SignTxErr(UtxoSignWithKeyPairError),
     PrivKeyNotAllowed(PrivKeyNotAllowed),
-    DerivationMethodNotSupported(DerivationMethodNotSupported),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     String(String),
 }
 
@@ -171,8 +171,8 @@ impl From<PrivKeyNotAllowed> for SpendP2SHError {
     fn from(e: PrivKeyNotAllowed) -> Self { SpendP2SHError::PrivKeyNotAllowed(e) }
 }
 
-impl From<DerivationMethodNotSupported> for SpendP2SHError {
-    fn from(e: DerivationMethodNotSupported) -> Self { SpendP2SHError::DerivationMethodNotSupported(e) }
+impl From<UnexpectedDerivationMethod> for SpendP2SHError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { SpendP2SHError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<String> for SpendP2SHError {
@@ -192,11 +192,11 @@ pub enum SpendHtlcError {
     #[allow(clippy::upper_case_acronyms)]
     SpendP2SHErr(SpendP2SHError),
     OpReturnParseError(ParseSlpScriptError),
-    DerivationMethodNotSupported(DerivationMethodNotSupported),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
-impl From<DerivationMethodNotSupported> for SpendHtlcError {
-    fn from(e: DerivationMethodNotSupported) -> Self { SpendHtlcError::DerivationMethodNotSupported(e) }
+impl From<UnexpectedDerivationMethod> for SpendHtlcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { SpendHtlcError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<NumConversError> for SpendHtlcError {
@@ -999,8 +999,8 @@ impl From<ValidateSlpUtxosErr> for GenSlpSpendErr {
     fn from(err: ValidateSlpUtxosErr) -> GenSlpSpendErr { GenSlpSpendErr::InvalidSlpUtxos(err) }
 }
 
-impl From<DerivationMethodNotSupported> for GenSlpSpendErr {
-    fn from(e: DerivationMethodNotSupported) -> Self { GenSlpSpendErr::Internal(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for GenSlpSpendErr {
+    fn from(e: UnexpectedDerivationMethod) -> Self { GenSlpSpendErr::Internal(e.to_string()) }
 }
 
 impl From<GenSlpSpendErr> for WithdrawError {

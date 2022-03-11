@@ -8,7 +8,7 @@ use coins::utxo::bch_and_slp_tx_history::bch_and_slp_history_loop;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::utxo::UtxoCommonOps;
-use coins::{CoinBalance, CoinProtocol, DerivationMethodNotSupported, MarketCoinOps, MmCoin, PrivKeyNotAllowed};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyNotAllowed, UnexpectedDerivationMethod};
 use common::executor::spawn;
 use common::log::info;
 use common::mm_ctx::MmArc;
@@ -93,8 +93,8 @@ impl From<BchWithTokensActivationError> for EnablePlatformCoinWithTokensError {
             BchWithTokensActivationError::PrivKeyNotAllowed(e) => {
                 EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(e)
             },
-            BchWithTokensActivationError::DerivationMethodNotSupported(e) => {
-                EnablePlatformCoinWithTokensError::DerivationMethodNotSupported(e)
+            BchWithTokensActivationError::UnexpectedDerivationMethod(e) => {
+                EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e)
             },
             BchWithTokensActivationError::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
             BchWithTokensActivationError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
@@ -158,7 +158,7 @@ pub enum BchWithTokensActivationError {
         error: String,
     },
     PrivKeyNotAllowed(String),
-    DerivationMethodNotSupported(String),
+    UnexpectedDerivationMethod(String),
     Transport(String),
     Internal(String),
 }
@@ -167,9 +167,9 @@ impl From<UtxoRpcError> for BchWithTokensActivationError {
     fn from(err: UtxoRpcError) -> Self { BchWithTokensActivationError::Transport(err.to_string()) }
 }
 
-impl From<DerivationMethodNotSupported> for BchWithTokensActivationError {
-    fn from(e: DerivationMethodNotSupported) -> Self {
-        BchWithTokensActivationError::DerivationMethodNotSupported(e.to_string())
+impl From<UnexpectedDerivationMethod> for BchWithTokensActivationError {
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        BchWithTokensActivationError::UnexpectedDerivationMethod(e.to_string())
     }
 }
 

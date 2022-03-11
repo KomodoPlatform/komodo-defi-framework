@@ -117,7 +117,7 @@ impl RpcTask for InitCreateAccountTask {
             MmCoinEnum::QtumCoin(qtum) => {
                 create_new_account_helper(&self.ctx, qtum, self.req.params, task_handle).await
             },
-            _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet { coin: self.req.coin }),
+            _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
 }
@@ -179,12 +179,7 @@ pub(crate) mod common_impl {
             + MarketCoinOps,
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        let hd_wallet =
-            coin.derivation_method()
-                .hd_wallet()
-                .or_mm_err(|| HDWalletRpcError::CoinIsActivatedNotWithHDWallet {
-                    coin: coin.ticker().to_owned(),
-                })?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
         let mut new_account = coin.create_new_account(hd_wallet, xpub_extractor).await?;
         let address_scanner = coin.produce_hd_address_scanner().await?;

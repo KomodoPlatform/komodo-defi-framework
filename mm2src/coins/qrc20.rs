@@ -11,11 +11,11 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   HistoryUtxoTxMap, RecentlySpentOutPoints, UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields,
                   UtxoCommonOps, UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, DerivationMethodNotSupported, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, ValidateAddressResult,
-            ValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, SwapOps, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -74,7 +74,7 @@ pub enum Qrc20GenTxError {
     ErrorGeneratingUtxoTx(GenerateTxError),
     ErrorSigningTx(UtxoSignWithKeyPairError),
     PrivKeyNotAllowed(PrivKeyNotAllowed),
-    DerivationMethodNotSupported(DerivationMethodNotSupported),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
 impl From<GenerateTxError> for Qrc20GenTxError {
@@ -89,8 +89,8 @@ impl From<PrivKeyNotAllowed> for Qrc20GenTxError {
     fn from(e: PrivKeyNotAllowed) -> Self { Qrc20GenTxError::PrivKeyNotAllowed(e) }
 }
 
-impl From<DerivationMethodNotSupported> for Qrc20GenTxError {
-    fn from(e: DerivationMethodNotSupported) -> Self { Qrc20GenTxError::DerivationMethodNotSupported(e) }
+impl From<UnexpectedDerivationMethod> for Qrc20GenTxError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20GenTxError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<UtxoRpcError> for Qrc20GenTxError {
@@ -105,9 +105,7 @@ impl Qrc20GenTxError {
             },
             Qrc20GenTxError::ErrorSigningTx(sign_err) => WithdrawError::InternalError(sign_err.to_string()),
             Qrc20GenTxError::PrivKeyNotAllowed(priv_err) => WithdrawError::InternalError(priv_err.to_string()),
-            Qrc20GenTxError::DerivationMethodNotSupported(addr_err) => {
-                WithdrawError::InternalError(addr_err.to_string())
-            },
+            Qrc20GenTxError::UnexpectedDerivationMethod(addr_err) => WithdrawError::InternalError(addr_err.to_string()),
         }
     }
 }
@@ -584,7 +582,7 @@ impl UtxoCommonOps for Qrc20Coin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo, satoshi) }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 

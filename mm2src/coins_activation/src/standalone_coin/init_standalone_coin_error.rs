@@ -41,8 +41,8 @@ pub enum InitStandaloneCoinError {
     },
     #[display(fmt = "Private key is not allowed: {}", _0)]
     PrivKeyNotAllowed(String),
-    #[display(fmt = "Derivation method is not supported: {}", _0)]
-    DerivationMethodNotSupported(String),
+    #[display(fmt = "Unexpected derivation method: {}", _0)]
+    UnexpectedDerivationMethod(String),
     Transport(String),
     Internal(String),
 }
@@ -84,7 +84,7 @@ impl HttpStatusCode for InitStandaloneCoinError {
             | InitStandaloneCoinError::UnexpectedCoinProtocol { .. }
             | InitStandaloneCoinError::CoinCreationError { .. }
             | InitStandaloneCoinError::PrivKeyNotAllowed(_)
-            | InitStandaloneCoinError::DerivationMethodNotSupported(_) => StatusCode::BAD_REQUEST,
+            | InitStandaloneCoinError::UnexpectedDerivationMethod(_) => StatusCode::BAD_REQUEST,
             InitStandaloneCoinError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitStandaloneCoinError::Transport(_) | InitStandaloneCoinError::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR

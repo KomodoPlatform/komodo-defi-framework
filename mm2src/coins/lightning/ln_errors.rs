@@ -1,6 +1,6 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::GenerateTxError;
-use crate::{BalanceError, CoinFindError, DerivationMethodNotSupported, NumConversError, PrivKeyNotAllowed};
+use crate::{BalanceError, CoinFindError, NumConversError, PrivKeyNotAllowed, UnexpectedDerivationMethod};
 use common::mm_error::prelude::*;
 use common::HttpStatusCode;
 use derive_more::Display;
@@ -183,8 +183,8 @@ impl From<UtxoRpcError> for OpenChannelError {
     fn from(e: UtxoRpcError) -> Self { OpenChannelError::RpcError(e.to_string()) }
 }
 
-impl From<DerivationMethodNotSupported> for OpenChannelError {
-    fn from(e: DerivationMethodNotSupported) -> Self { OpenChannelError::InternalError(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for OpenChannelError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { OpenChannelError::InternalError(e.to_string()) }
 }
 
 impl From<UtxoSignWithKeyPairError> for OpenChannelError {

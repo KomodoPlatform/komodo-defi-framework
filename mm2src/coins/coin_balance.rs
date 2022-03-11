@@ -1,7 +1,7 @@
 use crate::hd_pubkey::HDXPubExtractor;
 use crate::hd_wallet::{AddressDerivingError, HDWalletCoinOps, InvalidBip44ChainError, NewAccountCreatingError};
 use crate::{lp_coinfind_or_err, BalanceError, BalanceResult, CoinBalance, CoinFindError, CoinWithDerivationMethod,
-            DerivationMethod, HDAddress, MarketCoinOps, MmCoinEnum};
+            DerivationMethod, HDAddress, MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::log::{debug, info};
 use common::mm_ctx::MmArc;
@@ -21,11 +21,8 @@ pub type AddressIdRange = Range<u32>;
 pub enum HDAccountBalanceRpcError {
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
-    #[display(
-        fmt = "'{}' coin is expected to be activated with the HD wallet derivation method",
-        coin
-    )]
-    CoinIsActivatedNotWithHDWallet { coin: String },
+    #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
+    CoinIsActivatedNotWithHDWallet,
     #[display(fmt = "HD account '{}' is not activated", account_id)]
     UnknownAccount { account_id: u32 },
     #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
@@ -46,7 +43,7 @@ impl HttpStatusCode for HDAccountBalanceRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
             HDAccountBalanceRpcError::NoSuchCoin { .. }
-            | HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet { .. }
+            | HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet
             | HDAccountBalanceRpcError::UnknownAccount { .. }
             | HDAccountBalanceRpcError::InvalidBip44Chain { .. }
             | HDAccountBalanceRpcError::ErrorDerivingAddress(_) => StatusCode::BAD_REQUEST,
@@ -66,13 +63,21 @@ impl From<CoinFindError> for HDAccountBalanceRpcError {
     }
 }
 
+impl From<UnexpectedDerivationMethod> for HDAccountBalanceRpcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        match e {
+            UnexpectedDerivationMethod::HDWalletUnavailable => HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet,
+            unexpected_error => HDAccountBalanceRpcError::Internal(unexpected_error.to_string()),
+        }
+    }
+}
+
 impl From<BalanceError> for HDAccountBalanceRpcError {
     fn from(e: BalanceError) -> Self {
         match e {
             BalanceError::Transport(transport) => HDAccountBalanceRpcError::Transport(transport),
             BalanceError::InvalidResponse(rpc) => HDAccountBalanceRpcError::RpcInvalidResponse(rpc),
-            // TODO refactor
-            BalanceError::DerivationMethodNotSupported(error) => HDAccountBalanceRpcError::Internal(error.to_string()),
+            BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
             BalanceError::WalletStorageError(e) => HDAccountBalanceRpcError::Internal(e),
             BalanceError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
         }
@@ -373,9 +378,7 @@ pub async fn account_balance(
     match coin {
         MmCoinEnum::UtxoCoin(utxo) => utxo.account_balance_rpc(req.params).await,
         MmCoinEnum::QtumCoin(qtum) => qtum.account_balance_rpc(req.params).await,
-        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet {
-            coin: coin.ticker().to_owned(),
-        }),
+        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
 
@@ -387,9 +390,7 @@ pub async fn scan_for_new_addresses(
     match coin {
         MmCoinEnum::UtxoCoin(utxo) => utxo.scan_for_new_addresses_rpc(req.params).await,
         MmCoinEnum::QtumCoin(qtum) => qtum.scan_for_new_addresses_rpc(req.params).await,
-        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet {
-            coin: coin.ticker().to_owned(),
-        }),
+        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
 
@@ -489,17 +490,10 @@ pub mod common_impl {
         params: AccountBalanceParams,
     ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>
     where
-        Coin: HDWalletBalanceOps
-            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
-            + MarketCoinOps
-            + Sync,
+        Coin: HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet().or_mm_err(|| {
-            HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet {
-                coin: coin.ticker().to_owned(),
-            }
-        })?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
         let account_id = params.account_index;
         let chain = params.chain;
@@ -542,23 +536,16 @@ pub mod common_impl {
         params: CheckHDAccountBalanceParams,
     ) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError>
     where
-        Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
-            + HDWalletBalanceOps
-            + MarketCoinOps
-            + Sync,
+        Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + HDWalletBalanceOps + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet().or_mm_err(|| {
-            HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet {
-                coin: coin.ticker().to_owned(),
-            }
-        })?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
         let account_id = params.account_index;
         let mut hd_account = hd_wallet
             .get_account_mut(account_id)
             .await
-            .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
+            .or_mm_err(|| HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet)?;
         let account_derivation_path = hd_account.account_derivation_path();
         let address_scanner = coin.produce_hd_address_scanner().await?;
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());

@@ -60,8 +60,8 @@ pub enum UtxoCoinBuildError {
     ElectrumProtocolVersionCheckError(String),
     #[display(fmt = "Can not detect the user home directory")]
     CantDetectUserHome,
-    #[display(fmt = "Derivation method not supported: {}", _0)]
-    DerivationMethodNotSupported(String),
+    #[display(fmt = "Unexpected derivation method: {}", _0)]
+    UnexpectedDerivationMethod(String),
     HardwareWalletError(HwError),
     HDWalletStorageError(HDWalletStorageError),
     #[display(fmt = "Error processing Hardware Wallet request: {}", _0)]

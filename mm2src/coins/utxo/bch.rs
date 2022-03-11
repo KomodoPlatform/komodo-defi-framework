@@ -146,7 +146,7 @@ pub enum GetTxDetailsError<E: TxHistoryStorageError> {
     ParseSlpScriptError(ParseSlpScriptError),
     ToSlpAddressError(String),
     InvalidSlpTransaction(H256),
-    AddressDerivationError(DerivationMethodNotSupported),
+    AddressDerivationError(UnexpectedDerivationMethod),
 }
 
 impl<E: TxHistoryStorageError> From<UtxoRpcError> for GetTxDetailsError<E> {
@@ -165,8 +165,8 @@ impl<E: TxHistoryStorageError> From<ParseSlpScriptError> for GetTxDetailsError<E
     fn from(err: ParseSlpScriptError) -> Self { GetTxDetailsError::ParseSlpScriptError(err) }
 }
 
-impl<E: TxHistoryStorageError> From<DerivationMethodNotSupported> for GetTxDetailsError<E> {
-    fn from(err: DerivationMethodNotSupported) -> Self { GetTxDetailsError::AddressDerivationError(err) }
+impl<E: TxHistoryStorageError> From<UnexpectedDerivationMethod> for GetTxDetailsError<E> {
+    fn from(err: UnexpectedDerivationMethod) -> Self { GetTxDetailsError::AddressDerivationError(err) }
 }
 
 impl BchCoin {
@@ -707,7 +707,7 @@ impl UtxoCommonOps for BchCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 

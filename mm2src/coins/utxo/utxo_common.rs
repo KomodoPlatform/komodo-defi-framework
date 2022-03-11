@@ -518,11 +518,11 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Resul
     return ERR!("Invalid address: {}", address);
 }
 
-pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.public()),
-        // As of now, Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key
-        PrivKeyPolicy::HardwareWallet => MmError::err(DerivationMethodNotSupported::HdWalletNotSupported),
+        // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
+        PrivKeyPolicy::HardwareWallet => MmError::err(UnexpectedDerivationMethod::IguanaPrivKeyUnavailable),
     }
 }
 
