@@ -1959,7 +1959,7 @@ mod slp_tests {
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
         let amount = "0.1".parse().unwrap();
 
-        block_on(fusd.validate_htlc(&tx, &other_pub, &my_pub, lock_time, &secret_hash, amount)).unwrap();
+        block_on(fusd.validate_htlc(&tx, &other_pub, &my_pub, lock_time, &secret_hash, amount, 1)).unwrap();
     }
 
     #[test]
@@ -2060,7 +2060,7 @@ mod slp_tests {
         .unwrap();
 
         let validity_err =
-            block_on(fusd.validate_htlc(&tx, &other_pub, my_pub, lock_time, &secret_hash, amount)).unwrap_err();
+            block_on(fusd.validate_htlc(&tx, &other_pub, my_pub, lock_time, &secret_hash, amount, 1)).unwrap_err();
         match validity_err.into_inner() {
             ValidateHtlcError::InvalidSlpUtxo(e) => println!("{:?}", e),
             err @ _ => panic!("Unexpected err {:?}", err),
