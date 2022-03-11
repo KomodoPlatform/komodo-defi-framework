@@ -1190,6 +1190,7 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
 }
 
 #[test]
+#[ignore]
 fn polygon_check_if_my_payment_sent() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({
