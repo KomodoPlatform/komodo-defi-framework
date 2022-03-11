@@ -16,7 +16,7 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_staking_infos, remove_delegation, withdraw};
+use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, withdraw};
 use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token, init_standalone_coin,
                        init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
@@ -123,6 +123,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
+        "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
         "init_create_new_account" => handle_mmrpc(ctx, request, init_create_new_account).await,
         "init_create_new_account_status" => handle_mmrpc(ctx, request, init_create_new_account_status).await,
