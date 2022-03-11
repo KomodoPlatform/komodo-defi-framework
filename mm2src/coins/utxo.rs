@@ -89,7 +89,8 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
                         NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMethod, DerivationMethodNotSupported,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin,
-            NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler,
+            NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RawTransactionError,
+            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
 use crate::coin_balance::HDAddressBalanceChecker;
