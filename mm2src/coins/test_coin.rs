@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, WithdrawFut,
-            WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
+            RawTransactionRequest, TradePreimageFut, TradePreimageResult, TradePreimageValue, ValidateAddressResult,
+            ValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
@@ -233,6 +233,8 @@ impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
+
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 
     fn decimals(&self) -> u8 { unimplemented!() }
 
