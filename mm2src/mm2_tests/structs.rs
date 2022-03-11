@@ -521,6 +521,13 @@ pub struct MaxTakerVolResponse {
     pub coin: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTransactionResult {
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    pub tx_hex: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
