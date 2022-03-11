@@ -433,6 +433,7 @@ impl SlpToken {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn validate_htlc(
         &self,
         tx: &[u8],
@@ -441,6 +442,7 @@ impl SlpToken {
         time_lock: u32,
         secret_hash: &[u8],
         amount: BigDecimal,
+        confirmations: u64,
     ) -> Result<(), MmError<ValidateHtlcError>> {
         let mut tx: UtxoTx = deserialize(tx).map_to_mm(ValidateHtlcError::TxParseError)?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
@@ -491,6 +493,7 @@ impl SlpToken {
             secret_hash,
             self.platform_dust_dec(),
             time_lock,
+            confirmations,
         );
 
         validate_fut
@@ -1342,12 +1345,21 @@ impl SwapOps for SlpToken {
         let secret_hash = input.secret_hash.to_owned();
         let time_lock = input.time_lock;
         let amount = input.amount;
+        let confirmations = input.confirmations;
 
         let coin = self.clone();
         let fut = async move {
             try_s!(
-                coin.validate_htlc(&tx, &maker_pub, &taker_pub, time_lock, &secret_hash, amount)
-                    .await
+                coin.validate_htlc(
+                    &tx,
+                    &maker_pub,
+                    &taker_pub,
+                    time_lock,
+                    &secret_hash,
+                    amount,
+                    confirmations
+                )
+                .await
             );
             Ok(())
         };
@@ -1357,6 +1369,7 @@ impl SwapOps for SlpToken {
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let taker_pub = try_fus!(Public::from_slice(&input.taker_pub));
         let maker_pub = try_fus!(Public::from_slice(&input.maker_pub));
+        let confirmations = input.confirmations;
 
         let coin = self.clone();
         let fut = async move {
@@ -1367,7 +1380,8 @@ impl SwapOps for SlpToken {
                     &maker_pub,
                     input.time_lock,
                     &input.secret_hash,
-                    input.amount
+                    input.amount,
+                    confirmations
                 )
                 .await
             );
@@ -2040,6 +2054,7 @@ mod slp_tests {
             &secret_hash,
             fusd.platform_dust_dec(),
             lock_time,
+            1,
         )
         .wait()
         .unwrap();

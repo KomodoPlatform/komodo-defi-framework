@@ -207,6 +207,7 @@ fn test_taker_spends_maker_payment() {
         secret_hash,
         amount: amount.clone(),
         swap_contract_address: taker_coin.swap_contract_address(),
+        confirmations,
     };
     taker_coin.validate_maker_payment(input).wait().unwrap();
 
@@ -297,6 +298,7 @@ fn test_maker_spends_taker_payment() {
         secret_hash: secret_hash.clone(),
         amount: amount.clone(),
         swap_contract_address: maker_coin.swap_contract_address(),
+        confirmations,
     };
     maker_coin.validate_taker_payment(input).wait().unwrap();
 

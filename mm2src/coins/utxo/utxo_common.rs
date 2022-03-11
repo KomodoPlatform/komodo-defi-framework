@@ -1383,6 +1383,7 @@ where
         &input.secret_hash,
         input.amount,
         input.time_lock,
+        input.confirmations,
     )
 }
 
@@ -1406,6 +1407,7 @@ where
         &input.secret_hash,
         input.amount,
         input.time_lock,
+        input.confirmations,
     )
 }
 
@@ -2963,6 +2965,7 @@ pub fn validate_payment<T>(
     priv_bn_hash: &[u8],
     amount: BigDecimal,
     time_lock: u32,
+    confirmations: u64,
 ) -> Box<dyn Future<Item = (), Error = String> + Send>
 where
     T: AsRef<UtxoCoinFields> + Send + Sync + 'static,
@@ -3018,7 +3021,10 @@ where
                     expected_output
                 );
             }
-            return validate_spv_proof(coin, tx).await.map_err(|e| format!("{:?}", e));
+            return match confirmations {
+                0 => Ok(()),
+                _ => validate_spv_proof(coin, tx).await.map_err(|e| format!("{:?}", e)),
+            };
         }
     };
     Box::new(fut.boxed().compat())

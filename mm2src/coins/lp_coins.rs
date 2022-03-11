@@ -244,6 +244,7 @@ pub struct ValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub swap_contract_address: Option<BytesJson>,
+    pub confirmations: u64,
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
