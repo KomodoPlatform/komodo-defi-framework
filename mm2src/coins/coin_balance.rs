@@ -258,10 +258,9 @@ where
 
 #[async_trait]
 pub trait HDWalletBalanceOps: HDWalletCoinOps {
-    type HDAddressChecker: HDAddressBalanceChecker<Address = Self::Address>;
+    type HDAddressScanner: HDAddressBalanceScanner<Address = Self::Address>;
 
-    /// TODO rename to `produce_hd_address_scanner`.
-    async fn produce_hd_address_checker(&self) -> BalanceResult<Self::HDAddressChecker>;
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner>;
 
     /// Requests balances of already known addresses, and if it's prescribed by [`EnableCoinParams::scan_policy`],
     /// scans for new addresses of every HD account by using [`HDWalletBalanceOps::scan_for_new_addresses`].
@@ -275,13 +274,13 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     where
         XPubExtractor: HDXPubExtractor + Sync;
 
-    /// Scans for the new addresses of the specified `hd_account` using the given `address_checker`.
+    /// Scans for the new addresses of the specified `hd_account` using the given `address_scanner`.
     /// Returns balances of the new addresses.
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
         hd_account: &mut Self::HDAccount,
-        address_checker: &Self::HDAddressChecker,
+        address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance>>;
 
@@ -330,9 +329,9 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     async fn is_address_used(
         &self,
         address: &Self::Address,
-        checker: &Self::HDAddressChecker,
+        address_scanner: &Self::HDAddressScanner,
     ) -> BalanceResult<AddressBalanceStatus<CoinBalance>> {
-        if !checker.is_address_used(address).await? {
+        if !address_scanner.is_address_used(address).await? {
             return Ok(AddressBalanceStatus::NotUsed);
         }
         // Now we know that the address has been used.
@@ -342,7 +341,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
 }
 
 #[async_trait]
-pub trait HDAddressBalanceChecker: Sync {
+pub trait HDAddressBalanceScanner: Sync {
     type Address;
 
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool>;
@@ -404,7 +403,7 @@ pub mod common_impl {
         coin: &Coin,
         hd_wallet: &Coin::HDWallet,
         hd_account: &mut Coin::HDAccount,
-        address_checker: &Coin::HDAddressChecker,
+        address_scanner: &Coin::HDAddressScanner,
         scan_new_addresses: bool,
     ) -> MmResult<HDAccountBalance, EnableCoinBalanceError>
     where
@@ -414,7 +413,7 @@ pub mod common_impl {
         let mut addresses = coin.all_known_addresses_balances(hd_account).await?;
         if scan_new_addresses {
             addresses.extend(
-                coin.scan_for_new_addresses(hd_wallet, hd_account, address_checker, gap_limit)
+                coin.scan_for_new_addresses(hd_wallet, hd_account, address_scanner, gap_limit)
                     .await?,
             );
         }
@@ -443,7 +442,7 @@ pub mod common_impl {
         XPubExtractor: HDXPubExtractor + Sync,
     {
         let mut accounts = hd_wallet.get_accounts_mut().await;
-        let address_checker = coin.produce_hd_address_checker().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await?;
 
         let mut result = HDWalletBalance {
             accounts: Vec::with_capacity(accounts.len() + 1),
@@ -465,7 +464,7 @@ pub mod common_impl {
             );
 
             let account_balance =
-                enable_hd_account(coin, hd_wallet, &mut new_account, &address_checker, scan_new_addresses).await?;
+                enable_hd_account(coin, hd_wallet, &mut new_account, &address_scanner, scan_new_addresses).await?;
             result.accounts.push(account_balance);
             return Ok(result);
         }
@@ -478,7 +477,7 @@ pub mod common_impl {
         let scan_new_addresses = matches!(scan_policy, EnableCoinScanPolicy::Scan);
         for (_account_id, hd_account) in accounts.iter_mut() {
             let account_balance =
-                enable_hd_account(coin, hd_wallet, hd_account, &address_checker, scan_new_addresses).await?;
+                enable_hd_account(coin, hd_wallet, hd_account, &address_scanner, scan_new_addresses).await?;
             result.accounts.push(account_balance);
         }
 
@@ -523,7 +522,7 @@ pub mod common_impl {
             total + addr_balance.balance.clone()
         });
 
-        let mut result = HDAccountBalanceResponse {
+        let result = HDAccountBalanceResponse {
             account_index: params.account_index,
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
             addresses,
@@ -534,10 +533,6 @@ pub mod common_impl {
             total_pages: calc_total_pages(total_addresses_number as usize, params.limit),
             paging_options: params.paging_options,
         };
-
-        result.addresses = coin
-            .known_addresses_balances_with_ids(&hd_account, chain, from_address_id..to_address_id)
-            .await?;
 
         Ok(result)
     }
@@ -565,11 +560,11 @@ pub mod common_impl {
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
         let account_derivation_path = hd_account.account_derivation_path();
-        let address_checker = coin.produce_hd_address_checker().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await?;
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         let new_addresses = coin
-            .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_checker, gap_limit)
+            .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_scanner, gap_limit)
             .await?;
 
         Ok(CheckHDAccountBalanceResponse {

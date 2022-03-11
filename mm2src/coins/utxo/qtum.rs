@@ -908,10 +908,10 @@ impl HDWalletCoinOps for QtumCoin {
 
 #[async_trait]
 impl HDWalletBalanceOps for QtumCoin {
-    type HDAddressChecker = UtxoAddressBalanceChecker;
+    type HDAddressScanner = UtxoAddressScanner;
 
-    async fn produce_hd_address_checker(&self) -> BalanceResult<Self::HDAddressChecker> {
-        utxo_common::produce_hd_address_checker(self).await
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
+        utxo_common::produce_hd_address_scanner(self).await
     }
 
     async fn enable_hd_wallet<XPubExtractor>(
@@ -930,10 +930,10 @@ impl HDWalletBalanceOps for QtumCoin {
         &self,
         hd_wallet: &Self::HDWallet,
         hd_account: &mut Self::HDAccount,
-        address_checker: &Self::HDAddressChecker,
+        address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance>> {
-        utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_checker, gap_limit).await
+        utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
     }
 
     async fn all_known_addresses_balances(&self, hd_account: &Self::HDAccount) -> BalanceResult<Vec<HDAddressBalance>> {

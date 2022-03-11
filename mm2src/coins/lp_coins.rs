@@ -2513,8 +2513,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    // TODO
-    let my_address = coin.my_address().unwrap_or_default();
+    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -2588,7 +2587,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = coin.my_address().unwrap_or_default();
+    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

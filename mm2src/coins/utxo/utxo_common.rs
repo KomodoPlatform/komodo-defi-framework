@@ -206,18 +206,18 @@ where
     Ok(())
 }
 
-pub async fn produce_hd_address_checker<T>(coin: &T) -> BalanceResult<UtxoAddressBalanceChecker>
+pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddressScanner>
 where
     T: AsRef<UtxoCoinFields>,
 {
-    Ok(UtxoAddressBalanceChecker::init(coin.as_ref().rpc_client.clone()).await?)
+    Ok(UtxoAddressScanner::init(coin.as_ref().rpc_client.clone()).await?)
 }
 
 pub async fn scan_for_new_addresses<T>(
     coin: &T,
     hd_wallet: &T::HDWallet,
     hd_account: &mut T::HDAccount,
-    address_checker: &T::HDAddressChecker,
+    address_scanner: &T::HDAddressScanner,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
@@ -228,7 +228,7 @@ where
         coin,
         hd_wallet,
         hd_account,
-        address_checker,
+        address_scanner,
         Bip44Chain::External,
         gap_limit,
     )
@@ -238,7 +238,7 @@ where
             coin,
             hd_wallet,
             hd_account,
-            address_checker,
+            address_scanner,
             Bip44Chain::Internal,
             gap_limit,
         )
@@ -254,7 +254,7 @@ pub async fn scan_for_new_addresses_impl<T>(
     coin: &T,
     hd_wallet: &T::HDWallet,
     hd_account: &mut T::HDAccount,
-    address_checker: &T::HDAddressChecker,
+    address_scanner: &T::HDAddressScanner,
     chain: Bip44Chain,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
@@ -278,7 +278,7 @@ where
             ..
         } = coin.derive_address(hd_account, chain, checking_address_id)?;
 
-        match coin.is_address_used(&checking_address, address_checker).await? {
+        match coin.is_address_used(&checking_address, address_scanner).await? {
             // We found a non-empty address, so we have to fill up the balance list
             // with zeros starting from `last_non_empty_address_id = checking_address_id - unused_addresses_counter`.
             AddressBalanceStatus::Used(non_empty_balance) => {

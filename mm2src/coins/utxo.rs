@@ -92,7 +92,7 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
             NumConversError, NumConversResult, PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             Transaction, TransactionDetails, TransactionEnum, TransactionFut, WithdrawError, WithdrawRequest};
-use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceChecker};
+use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 
@@ -621,25 +621,25 @@ pub trait UtxoTxGenerationOps {
     ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
 }
 
-/// The UTXO address balance checker.
+/// The UTXO address balance scanner.
 /// If the coin is initialized with a native RPC client, it's better to request the list of used addresses
-/// right on `UtxoAddressBalanceChecker` initialization.
+/// right on `UtxoAddressBalanceScanner` initialization.
 /// See [`NativeClientImpl::list_transactions`].
-pub enum UtxoAddressBalanceChecker {
+pub enum UtxoAddressScanner {
     Native { non_empty_addresses: HashSet<String> },
     Electrum(ElectrumClient),
 }
 
 #[async_trait]
-impl HDAddressBalanceChecker for UtxoAddressBalanceChecker {
+impl HDAddressBalanceScanner for UtxoAddressScanner {
     type Address = Address;
 
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
         let is_used = match self {
-            UtxoAddressBalanceChecker::Native { non_empty_addresses } => {
+            UtxoAddressScanner::Native { non_empty_addresses } => {
                 non_empty_addresses.contains(&address.to_string())
             },
-            UtxoAddressBalanceChecker::Electrum(electrum_client) => {
+            UtxoAddressScanner::Electrum(electrum_client) => {
                 let script = output_script(address, ScriptType::P2PKH);
                 let script_hash = electrum_script_hash(&script);
 
@@ -655,15 +655,15 @@ impl HDAddressBalanceChecker for UtxoAddressBalanceChecker {
     }
 }
 
-impl UtxoAddressBalanceChecker {
-    pub async fn init(rpc_client: UtxoRpcClientEnum) -> UtxoRpcResult<UtxoAddressBalanceChecker> {
+impl UtxoAddressScanner {
+    pub async fn init(rpc_client: UtxoRpcClientEnum) -> UtxoRpcResult<UtxoAddressScanner> {
         match rpc_client {
-            UtxoRpcClientEnum::Native(native) => UtxoAddressBalanceChecker::init_with_native_client(&native).await,
-            UtxoRpcClientEnum::Electrum(electrum) => Ok(UtxoAddressBalanceChecker::Electrum(electrum)),
+            UtxoRpcClientEnum::Native(native) => UtxoAddressScanner::init_with_native_client(&native).await,
+            UtxoRpcClientEnum::Electrum(electrum) => Ok(UtxoAddressScanner::Electrum(electrum)),
         }
     }
 
-    pub async fn init_with_native_client(native: &NativeClient) -> UtxoRpcResult<UtxoAddressBalanceChecker> {
+    pub async fn init_with_native_client(native: &NativeClient) -> UtxoRpcResult<UtxoAddressScanner> {
         const STEP: u64 = 100;
 
         let non_empty_addresses = native
@@ -673,7 +673,7 @@ impl UtxoAddressBalanceChecker {
             .into_iter()
             .map(|tx_item| tx_item.address)
             .collect();
-        Ok(UtxoAddressBalanceChecker::Native { non_empty_addresses })
+        Ok(UtxoAddressScanner::Native { non_empty_addresses })
     }
 }
 

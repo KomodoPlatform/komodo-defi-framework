@@ -187,7 +187,7 @@ pub(crate) mod common_impl {
                 })?;
 
         let mut new_account = coin.create_new_account(hd_wallet, xpub_extractor).await?;
-        let address_checker = coin.produce_hd_address_checker().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await?;
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
@@ -195,7 +195,7 @@ pub(crate) mod common_impl {
             CreateAccountScanPolicy::DoNotScan => Vec::new(),
             CreateAccountScanPolicy::Scan => {
                 let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-                coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_checker, gap_limit)
+                coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
                     .await?
             },
         };

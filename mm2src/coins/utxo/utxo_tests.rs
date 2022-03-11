@@ -3641,6 +3641,26 @@ fn test_account_balance_rpc() {
 
 #[test]
 fn test_scan_for_new_addresses() {
+    static mut ACCOUNT_ID: u32 = 0;
+    static mut NEW_EXTERNAL_ADDRESSES_NUMBER: u32 = 0;
+    static mut NEW_INTERNAL_ADDRESSES_NUMBER: u32 = 0;
+
+    HDWalletMockStorage::update_external_addresses_number.mock_safe(
+        |_, _, account_id, new_external_addresses_number| {
+            assert_eq!(account_id, unsafe { ACCOUNT_ID });
+            assert_eq!(new_external_addresses_number, unsafe { NEW_EXTERNAL_ADDRESSES_NUMBER });
+            MockResult::Return(Box::pin(futures::future::ok(())))
+        },
+    );
+
+    HDWalletMockStorage::update_internal_addresses_number.mock_safe(
+        |_, _, account_id, new_internal_addresses_number| {
+            assert_eq!(account_id, unsafe { ACCOUNT_ID });
+            assert_eq!(new_internal_addresses_number, unsafe { NEW_INTERNAL_ADDRESSES_NUMBER });
+            MockResult::Return(Box::pin(futures::future::ok(())))
+        },
+    );
+
     let mut checking_addresses: HashMap<String, Option<u64>> = HashMap::new();
     let mut non_empty_addresses: Vec<String> = Vec::new();
     let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
@@ -3758,6 +3778,12 @@ fn test_scan_for_new_addresses() {
 
     // Check balance of Account#0
 
+    unsafe {
+        ACCOUNT_ID = 0;
+        NEW_EXTERNAL_ADDRESSES_NUMBER = 4;
+        NEW_INTERNAL_ADDRESSES_NUMBER = 4;
+    }
+
     let params = CheckHDAccountBalanceParams {
         account_index: 0,
         gap_limit: Some(3),
@@ -3776,6 +3802,12 @@ fn test_scan_for_new_addresses() {
     assert_eq!(actual, expected);
 
     // Check balance of Account#1
+
+    unsafe {
+        ACCOUNT_ID = 1;
+        NEW_EXTERNAL_ADDRESSES_NUMBER = 5;
+        NEW_INTERNAL_ADDRESSES_NUMBER = 2;
+    }
 
     let params = CheckHDAccountBalanceParams {
         account_index: 1,
