@@ -528,6 +528,14 @@ pub struct RawTransactionResult {
     pub tx_hex: String,
 }
 
+pub mod raw_transaction_error {
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct InvalidCoin {
+        pub coin: String,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
