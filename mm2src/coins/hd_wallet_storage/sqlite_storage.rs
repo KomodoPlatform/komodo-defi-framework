@@ -35,6 +35,9 @@ const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     FROM hd_account
     WHERE coin=?1 AND mm2_rmd160=?2 AND hd_wallet_rmd160=?3;";
 
+/// The max number of SQL query params.
+const PARAMS_CAPACITY: usize = 7;
+
 impl From<SqlError> for HDWalletStorageError {
     fn from(e: SqlError) -> Self {
         let error = e.to_string();
@@ -66,7 +69,7 @@ impl TryFrom<&Row<'_>> for HDAccountStorageItem {
 
 impl HDAccountStorageItem {
     fn to_sql_params_with_wallet_id(&self, wallet_id: HDWalletId) -> Vec<String> {
-        let mut params = Vec::with_capacity(7);
+        let mut params = Vec::with_capacity(PARAMS_CAPACITY);
         wallet_id.fill_sql_params(&mut params);
         self.fill_sql_params(&mut params);
         params
@@ -82,7 +85,7 @@ impl HDAccountStorageItem {
 
 impl HDWalletId {
     fn to_sql_params(&self) -> Vec<String> {
-        let mut params = Vec::with_capacity(3);
+        let mut params = Vec::with_capacity(PARAMS_CAPACITY);
         self.fill_sql_params(&mut params);
         params
     }

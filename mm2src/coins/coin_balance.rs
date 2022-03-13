@@ -202,8 +202,7 @@ pub enum EnableCoinScanPolicy {
     /// Don't scan for new addresses.
     DoNotScan,
     /// Scan for new addresses if the coin HD wallet hasn't been enabled *only*.
-    /// In other words, scan for new addresses if there were no HD accounts in the HD wallet storage,
-    /// and we need to
+    /// In other words, scan for new addresses if there were no HD accounts in the HD wallet storage.
     ScanIfNewWallet,
     /// Scan for new addresses even if the coin HD wallet has been enabled before.
     Scan,
@@ -300,8 +299,8 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         address_ids: Ids,
     ) -> BalanceResult<Vec<HDAddressBalance>>
     where
-        Ids: Iterator<Item = u32> + Send,
         Self::Address: fmt::Display,
+        Ids: Iterator<Item = u32> + Send,
     {
         let (lower, upper) = address_ids.size_hint();
         let max_addresses = upper.unwrap_or(lower);
