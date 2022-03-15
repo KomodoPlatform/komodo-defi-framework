@@ -182,7 +182,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
-        let block_headers_storage = self.block_headers_storage();
+        let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
             conf,
@@ -238,7 +238,7 @@ where
         let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
-        let block_headers_storage = self.block_headers_storage();
+        let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
             conf,
@@ -320,9 +320,13 @@ pub trait UtxoCoinBuilderCommonOps {
 
     fn ticker(&self) -> &str;
 
-    fn block_headers_storage(&self) -> Option<BlockHeaderStorage> {
-        let params = json::from_value(self.conf()["block_header_params"].clone()).ok()?;
-        BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)
+    fn block_headers_storage(&self) -> UtxoCoinBuildResult<Option<BlockHeaderStorage>> {
+        let params: Option<_> = json::from_value(self.conf()["block_header_params"].clone())
+            .map_to_mm(|e| UtxoConfError::InvalidBlockHeaderParams(e.to_string()))?;
+        match params {
+            None => Ok(None),
+            Some(params) => Ok(BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)),
+        }
     }
 
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {

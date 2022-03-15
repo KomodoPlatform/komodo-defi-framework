@@ -40,6 +40,7 @@ pub enum UtxoConfError {
     InvalidConsensusBranchId(String),
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
+    InvalidBlockHeaderParams(String),
     InvalidDecimals(String),
 }
 
