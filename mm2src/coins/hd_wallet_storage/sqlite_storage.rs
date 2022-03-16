@@ -6,6 +6,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::{SqliteConnShared, SqliteConnWeak};
+use derive_more::Display;
 use std::convert::TryFrom;
 use std::sync::MutexGuard;
 
@@ -163,7 +164,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         self.update_addresses_number(
-            "external_addresses_number",
+            UpdatingProperty::ExternalAddressesNumber,
             wallet_id,
             account_id,
             new_external_addresses_number,
@@ -178,7 +179,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         self.update_addresses_number(
-            "internal_addresses_number",
+            UpdatingProperty::InternalAddressesNumber,
             wallet_id,
             account_id,
             new_internal_addresses_number,
@@ -241,14 +242,14 @@ impl HDWalletSqliteStorage {
 
     async fn update_addresses_number(
         &self,
-        updating_field: &str,
+        updating_property: UpdatingProperty,
         wallet_id: HDWalletId,
         account_id: u32,
         new_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let sql = format!(
             "UPDATE hd_account SET {}=?1 WHERE coin=?2 AND mm2_rmd160=?3 AND hd_wallet_rmd160=?4 AND account_id=?5;",
-            updating_field
+            updating_property
         );
 
         let selfi = self.clone();
@@ -266,6 +267,14 @@ impl HDWalletSqliteStorage {
         })
         .await
     }
+}
+
+#[derive(Display)]
+enum UpdatingProperty {
+    #[display(fmt = "external_addresses_number")]
+    ExternalAddressesNumber,
+    #[display(fmt = "internal_addresses_number")]
+    InternalAddressesNumber,
 }
 
 /// TODO remove this when `db_common::query_single_row` is merged into `dev`.

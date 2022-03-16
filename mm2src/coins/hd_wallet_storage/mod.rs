@@ -524,6 +524,55 @@ mod tests {
         assert_eq!(all_accounts, vec![wallet1_account0, wallet2_account0]);
     }
 
+    async fn test_update_account_impl() {
+        let mut account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let mut account1 = HDAccountStorageItem {
+            account_id: 1,
+            account_xpub: "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p".to_owned(),
+            external_addresses_number: 3,
+            internal_addresses_number: 4,
+        };
+
+        let ctx = mm_ctx_with_custom_db();
+        let user_rmd160 = H160::from("0000000000000000000000000000000000000000");
+        let device_rmd160 = H160::from("0000000000000000000000000000000000000010");
+
+        let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), user_rmd160, device_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+
+        db.upload_new_account(account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=0");
+        db.upload_new_account(account1.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=1");
+
+        db.update_internal_addresses_number(0, 5)
+            .await
+            .expect("!HDWalletCoinStorage::update_internal_addresses_number");
+        db.update_external_addresses_number(1, 10)
+            .await
+            .expect("!HDWalletCoinStorage::update_external_addresses_number");
+
+        let actual: Vec<_> = db
+            .load_all_accounts()
+            .await
+            .expect("!HDWalletCoinStorage::load_all_accounts")
+            .into_iter()
+            .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
+            .collect();
+
+        account0.internal_addresses_number = 5;
+        account1.external_addresses_number = 10;
+        assert_eq!(actual, vec![account0, account1]);
+    }
+
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     async fn test_unique_wallets() { test_unique_wallets_impl().await }
@@ -539,4 +588,12 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_delete_accounts() { block_on(test_delete_accounts_impl()) }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    async fn test_update_account() { test_update_account_impl().await }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_update_account() { block_on(test_update_account_impl()) }
 }
