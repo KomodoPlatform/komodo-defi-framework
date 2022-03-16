@@ -15,9 +15,8 @@ use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
 
-#[cfg(any(test, target_arch = "wasm32"))] mod mock_storage;
-#[cfg(any(test, target_arch = "wasm32"))]
-pub use mock_storage::HDWalletMockStorage;
+#[cfg(test)] mod mock_storage;
+#[cfg(test)] pub use mock_storage::HDWalletMockStorage;
 
 cfg_wasm32! {
     use wasm_storage::HDWalletIndexedDbStorage as HDWalletStorageInstance;
@@ -210,7 +209,7 @@ impl fmt::Debug for HDWalletCoinStorage {
     }
 }
 
-#[cfg(any(test, target_arch = "wasm32"))]
+#[cfg(test)]
 impl Default for HDWalletCoinStorage {
     fn default() -> Self {
         HDWalletCoinStorage {
