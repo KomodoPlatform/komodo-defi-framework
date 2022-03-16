@@ -1,5 +1,5 @@
 use crate::{RpcTaskError, TaskId};
-use common::{HttpStatusCode, StatusCode};
+use common::{true_f, HttpStatusCode, StatusCode};
 use derive_more::Display;
 
 /// In most cases, the RPC task status request may fail with either [`RpcTaskStatusError::NoSuchTask`] or [`RpcTaskStatusError::Internal`].
@@ -69,5 +69,3 @@ pub struct RpcTaskUserActionRequest<UserAction> {
 pub struct InitRpcTaskResponse {
     pub task_id: TaskId,
 }
-
-pub fn true_f() -> bool { true }

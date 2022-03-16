@@ -1382,6 +1382,8 @@ fn test_round_to() {
     assert_eq!(round_to(&BigDecimal::from(-0), 0), "0");
 }
 
+pub const fn true_f() -> bool { true }
+
 pub const fn ten() -> usize { 10 }
 
 pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }

@@ -5,7 +5,7 @@ use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, CoinsCont
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::SuccessResponse;
+use common::{true_f, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
 use crypto::RpcDerivationPath;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
@@ -43,8 +43,8 @@ impl Default for CreateAccountScanPolicy {
 
 #[derive(Deserialize)]
 pub struct CreateNewAccountParams {
-    #[serde(default)]
-    scan_policy: CreateAccountScanPolicy,
+    #[serde(default = "true_f")]
+    scan: bool,
     gap_limit: Option<u32>,
 }
 
@@ -186,13 +186,12 @@ pub(crate) mod common_impl {
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
-        let addresses = match params.scan_policy {
-            CreateAccountScanPolicy::DoNotScan => Vec::new(),
-            CreateAccountScanPolicy::Scan => {
-                let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-                coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
-                    .await?
-            },
+        let addresses = if params.scan {
+            let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+            coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
+                .await?
+        } else {
+            Vec::new()
         };
 
         let total_balance = addresses
