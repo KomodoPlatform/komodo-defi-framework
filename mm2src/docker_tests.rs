@@ -1432,7 +1432,7 @@ mod docker_tests {
             .unwrap();
         // TODO when buy call is made immediately swap might be not put into swap ctx yet so locked
         // amount returns 0
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(6));
 
         let rc = block_on(mm_alice.rpc(json! ({
             "userpass": mm_alice.userpass,
