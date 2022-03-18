@@ -478,7 +478,6 @@ pub struct UtxoCoinConf {
     /// Block count for median time past calculation
     pub mtp_block_count: NonZeroU64,
     pub estimate_fee_mode: Option<EstimateFeeMode>,
-    pub block_header_storage_params: Option<UtxoBlockHeaderVerificationParams>,
     /// The minimum number of confirmations at which a transaction is considered mature
     pub mature_confirmations: u32,
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls

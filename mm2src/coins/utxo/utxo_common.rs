@@ -3282,7 +3282,7 @@ where
         None => {
             let bytes = client.blockchain_block_header(height).compat().await?;
             let header: BlockHeader = deserialize(bytes.0.as_slice())?;
-            let params = storage.params.clone();
+            let params = &storage.params;
             let blocks_limit = NonZeroU64::new(params.blocks_limit_to_check)
                 .ok_or_else(|| GetBlockHeaderError::Internal("invalid block limit to check".to_string()))?;
             let (headers_registry, headers) = client.retrieve_last_headers(blocks_limit, height).compat().await?;

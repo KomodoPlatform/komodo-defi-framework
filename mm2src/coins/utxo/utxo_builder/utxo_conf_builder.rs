@@ -93,7 +93,6 @@ impl<'a> UtxoConfBuilder<'a> {
         let is_pos = self.is_pos();
         let segwit = self.segwit();
         let force_min_relay_fee = self.conf["force_min_relay_fee"].as_bool().unwrap_or(false);
-        let block_header_storage_params = json::from_value(self.conf["block_header_params"].clone()).unwrap_or(None);
         let mtp_block_count = self.mtp_block_count();
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
@@ -125,7 +124,6 @@ impl<'a> UtxoConfBuilder<'a> {
             force_min_relay_fee,
             mtp_block_count,
             estimate_fee_mode,
-            block_header_storage_params,
             mature_confirmations,
             estimate_fee_blocks,
             trezor_coin,

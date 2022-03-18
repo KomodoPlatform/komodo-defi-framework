@@ -12,8 +12,7 @@ use derive_more::Display;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
+#[derive(Debug, Display)]
 pub enum BlockHeaderStorageError {
     #[display(fmt = "The storage cannot be initialized for {}", _0)]
     InitializationError(String),

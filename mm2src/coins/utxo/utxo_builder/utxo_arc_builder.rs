@@ -12,6 +12,7 @@ use common::executor::spawn;
 use common::log::info;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
+use futures::future::{abortable, AbortHandle};
 use serde_json::Value as Json;
 
 pub struct UtxoArcBuilder<'a, F, T, XPubExtractor>
@@ -105,11 +106,13 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(
+        if let Some(abort_handler) = self.spawn_block_header_utxo_loop_if_required(
             utxo_weak,
             &result_coin.as_ref().block_headers_storage,
             self.constructor.clone(),
-        );
+        ) {
+            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+        }
         Ok(result_coin)
     }
 }
@@ -192,11 +195,13 @@ where
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        self.spawn_block_header_utxo_loop_if_required(
+        if let Some(abort_handler) = self.spawn_block_header_utxo_loop_if_required(
             utxo_weak,
             &result_coin.as_ref().block_headers_storage,
             self.constructor.clone(),
-        );
+        ) {
+            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+        }
         Ok(result_coin)
     }
 }
@@ -256,13 +261,24 @@ where
         weak: UtxoWeak,
         maybe_storage: &Option<BlockHeaderStorage>,
         constructor: F,
-    ) where
+    ) -> Option<AbortHandle>
+    where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
         if maybe_storage.is_some() {
-            let fut = block_header_utxo_loop(weak, constructor);
+            let ticker = self.ticker().to_owned();
+            let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
             info!("Starting UTXO block header loop for coin {}", self.ticker());
-            spawn(fut);
+            spawn(async move {
+                if let Err(e) = fut.await {
+                    info!(
+                        "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
+                        ticker, e
+                    );
+                }
+            });
+            return Some(abort_handle);
         }
+        None
     }
 }

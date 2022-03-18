@@ -293,6 +293,17 @@ pub struct SlpProtocolConf {
     pub required_confirmations: Option<u64>,
 }
 
+#[derive(Debug)]
+pub struct ValidateHtlcInput {
+    tx: Vec<u8>,
+    other_pub: Public,
+    my_pub: Public,
+    time_lock: u32,
+    secret_hash: Vec<u8>,
+    amount: BigDecimal,
+    confirmations: u64,
+}
+
 impl SlpToken {
     pub fn new(
         decimals: u8,
@@ -433,24 +444,14 @@ impl SlpToken {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn validate_htlc(
-        &self,
-        tx: &[u8],
-        other_pub: &Public,
-        my_pub: &Public,
-        time_lock: u32,
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        confirmations: u64,
-    ) -> Result<(), MmError<ValidateHtlcError>> {
-        let mut tx: UtxoTx = deserialize(tx).map_to_mm(ValidateHtlcError::TxParseError)?;
+    async fn validate_htlc(&self, input: ValidateHtlcInput) -> Result<(), MmError<ValidateHtlcError>> {
+        let mut tx: UtxoTx = deserialize(input.tx.as_slice()).map_to_mm(ValidateHtlcError::TxParseError)?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
             return MmError::err(ValidateHtlcError::TxLackOfOutputs);
         }
 
-        let slp_satoshis = sat_from_big_decimal(&amount, self.decimals())?;
+        let slp_satoshis = sat_from_big_decimal(&input.amount, self.decimals())?;
 
         let slp_unspent = SlpUnspent {
             bch_unspent: UnspentInfo {
@@ -488,12 +489,12 @@ impl SlpToken {
             self.platform_coin.clone(),
             tx,
             SLP_SWAP_VOUT,
-            other_pub,
-            my_pub,
-            secret_hash,
+            &input.other_pub,
+            &input.my_pub,
+            &input.secret_hash,
             self.platform_dust_dec(),
-            time_lock,
-            confirmations,
+            input.time_lock,
+            input.confirmations,
         );
 
         validate_fut
@@ -1348,19 +1349,17 @@ impl SwapOps for SlpToken {
         let confirmations = input.confirmations;
 
         let coin = self.clone();
+        let input = ValidateHtlcInput {
+            tx,
+            other_pub: maker_pub,
+            my_pub: taker_pub,
+            time_lock,
+            secret_hash,
+            amount,
+            confirmations,
+        };
         let fut = async move {
-            try_s!(
-                coin.validate_htlc(
-                    &tx,
-                    &maker_pub,
-                    &taker_pub,
-                    time_lock,
-                    &secret_hash,
-                    amount,
-                    confirmations
-                )
-                .await
-            );
+            try_s!(coin.validate_htlc(input).await);
             Ok(())
         };
         Box::new(fut.boxed().compat())
@@ -1372,19 +1371,17 @@ impl SwapOps for SlpToken {
         let confirmations = input.confirmations;
 
         let coin = self.clone();
+        let input = ValidateHtlcInput {
+            tx: input.payment_tx,
+            other_pub: taker_pub,
+            my_pub: maker_pub,
+            time_lock: input.time_lock,
+            secret_hash: input.secret_hash,
+            amount: input.amount,
+            confirmations,
+        };
         let fut = async move {
-            try_s!(
-                coin.validate_htlc(
-                    &input.payment_tx,
-                    &taker_pub,
-                    &maker_pub,
-                    input.time_lock,
-                    &input.secret_hash,
-                    input.amount,
-                    confirmations
-                )
-                .await
-            );
+            try_s!(coin.validate_htlc(input).await);
             Ok(())
         };
         Box::new(fut.boxed().compat())
@@ -1957,9 +1954,17 @@ mod slp_tests {
 
         let lock_time = 1624547837;
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
-        let amount = "0.1".parse().unwrap();
-
-        block_on(fusd.validate_htlc(&tx, &other_pub, &my_pub, lock_time, &secret_hash, amount, 1)).unwrap();
+        let amount: BigDecimal = "0.1".parse().unwrap();
+        let input = ValidateHtlcInput {
+            tx,
+            other_pub,
+            my_pub,
+            time_lock: lock_time,
+            secret_hash,
+            amount,
+            confirmations: 1,
+        };
+        block_on(fusd.validate_htlc(input)).unwrap();
     }
 
     #[test]
@@ -2059,8 +2064,16 @@ mod slp_tests {
         .wait()
         .unwrap();
 
-        let validity_err =
-            block_on(fusd.validate_htlc(&tx, &other_pub, my_pub, lock_time, &secret_hash, amount, 1)).unwrap_err();
+        let input = ValidateHtlcInput {
+            tx,
+            other_pub,
+            my_pub: my_pub.clone(),
+            time_lock: lock_time,
+            secret_hash,
+            amount,
+            confirmations: 1,
+        };
+        let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
             ValidateHtlcError::InvalidSlpUtxo(e) => println!("{:?}", e),
             err @ _ => panic!("Unexpected err {:?}", err),

@@ -126,7 +126,6 @@ fn utxo_coin_fields_for_test(
             force_min_relay_fee: false,
             mtp_block_count: NonZeroU64::new(11).unwrap(),
             estimate_fee_mode: None,
-            block_header_storage_params: None,
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
             trezor_coin: None,
