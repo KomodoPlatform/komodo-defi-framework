@@ -4,8 +4,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::{CryptoCtx, CryptoInitError, XPub};
 use derive_more::Display;
-#[cfg(any(test, target_arch = "wasm32"))]
-use mocktopus::macros::*;
+#[cfg(test)] use mocktopus::macros::*;
 use primitives::hash::H160;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -90,7 +89,7 @@ pub struct HDAccountStorageItem {
 }
 
 #[async_trait]
-#[cfg_attr(any(test, target_arch = "wasm32"), mockable)]
+#[cfg_attr(test, mockable)]
 pub trait HDWalletStorageInternalOps {
     async fn init(ctx: &MmArc) -> HDWalletStorageResult<Self>
     where
