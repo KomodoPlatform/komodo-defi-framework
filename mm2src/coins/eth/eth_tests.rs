@@ -1190,7 +1190,6 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
 }
 
 #[test]
-#[ignore]
 fn polygon_check_if_my_payment_sent() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({
@@ -1210,7 +1209,7 @@ fn polygon_check_if_my_payment_sent() {
     let request = json!({
         "method": "enable",
         "coin": "MATIC",
-        "urls": ["https://polygon-rpc.com"],
+        "urls": ["https://polygon-mainnet.g.alchemy.com/v2/9YYl6iMLmXXLoflMPHnMTC4Dcm2L2tFH"],
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
@@ -1228,19 +1227,25 @@ fn polygon_check_if_my_payment_sent() {
     println!("{:02x}", coin.my_address);
 
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
-    let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
-    let my_payment = coin
-        .check_if_my_payment_sent(
-            1638764369,
-            &[],
-            &[],
-            &secret_hash,
-            22185109,
-            &Some(swap_contract_address),
-        )
-        .wait()
-        .unwrap()
-        .unwrap();
-    let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");
-    assert_eq!(expected_hash, my_payment.tx_hash());
+
+    let mut i = 0;
+    while i < 10 {
+        let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
+        let my_payment = coin
+            .check_if_my_payment_sent(
+                1638764369,
+                &[],
+                &[],
+                &secret_hash,
+                22185109,
+                &Some(swap_contract_address),
+            )
+            .wait()
+            .unwrap()
+            .unwrap();
+        let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");
+        assert_eq!(expected_hash, my_payment.tx_hash());
+        Timer::sleep(5.0);
+        i = i + 1;
+    }
 }

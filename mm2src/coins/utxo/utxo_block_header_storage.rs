@@ -30,14 +30,8 @@ pub enum BlockHeaderStorageError {
     CantRetrieveTableError { ticker: String, reason: String },
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
     QueryError { query: String, reason: String },
-    #[display(fmt = "Can't retrieve string from row - reason: {}", reason)]
-    StringRowError { reason: String },
-    #[display(fmt = "Can't execute query from storage for {} - reason: {}", ticker, reason)]
-    ExecutionError { ticker: String, reason: String },
-    #[display(fmt = "Can't start a transaction from storage for {} - reason: {}", ticker, reason)]
-    TransactionError { ticker: String, reason: String },
-    #[display(fmt = "Can't commit a transaction from storage for {} - reason: {}", ticker, reason)]
-    CommitError { ticker: String, reason: String },
+    #[display(fmt = "Can't init from the storage - ticker: {} - reason: {}", ticker, reason)]
+    InitError { ticker: String, reason: String },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", ticker, reason)]
     DecodeError { ticker: String, reason: String },
 }

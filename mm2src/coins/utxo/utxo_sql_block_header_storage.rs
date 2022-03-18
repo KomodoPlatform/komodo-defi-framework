@@ -108,7 +108,7 @@ async fn common_headers_insert(
     let mut conn = storage.0.lock().unwrap();
     let sql_transaction = conn
         .transaction()
-        .map_err(|e| BlockHeaderStorageError::TransactionError {
+        .map_err(|e| BlockHeaderStorageError::AddToStorageError {
             ticker: for_coin.to_string(),
             reason: e.to_string(),
         })?;
@@ -116,14 +116,14 @@ async fn common_headers_insert(
         let block_cache_params = [&header.block_height, &header.block_hex];
         sql_transaction
             .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
-            .map_err(|e| BlockHeaderStorageError::ExecutionError {
+            .map_err(|e| BlockHeaderStorageError::AddToStorageError {
                 ticker: for_coin.to_string(),
                 reason: e.to_string(),
             })?;
     }
     sql_transaction
         .commit()
-        .map_err(|e| BlockHeaderStorageError::CommitError {
+        .map_err(|e| BlockHeaderStorageError::AddToStorageError {
             ticker: for_coin.to_string(),
             reason: e.to_string(),
         })?;
@@ -140,7 +140,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             let conn = selfi.0.lock().unwrap();
             conn.execute(&sql_cache, NO_PARAMS)
                 .map(|_| ())
-                .map_err(|e| BlockHeaderStorageError::ExecutionError {
+                .map_err(|e| BlockHeaderStorageError::InitError {
                     ticker,
                     reason: e.to_string(),
                 })?;

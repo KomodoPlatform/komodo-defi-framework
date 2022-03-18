@@ -3283,8 +3283,7 @@ where
             let bytes = client.blockchain_block_header(height).compat().await?;
             let header: BlockHeader = deserialize(bytes.0.as_slice())?;
             let params = &storage.params;
-            let blocks_limit = NonZeroU64::new(params.blocks_limit_to_check)
-                .ok_or_else(|| GetBlockHeaderError::Internal("invalid block limit to check".to_string()))?;
+            let blocks_limit = params.blocks_limit_to_check;
             let (headers_registry, headers) = client.retrieve_last_headers(blocks_limit, height).compat().await?;
             match spv_validation::helpers_validation::validate_headers(
                 headers,
@@ -3378,16 +3377,12 @@ where
             Some(storage) => storage,
         };
         let params = storage.params.clone();
-        let (check_every, maybe_blocks_limit_to_check, difficulty_check, constant_difficulty) = (
+        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (
             params.check_every,
-            NonZeroU64::new(params.blocks_limit_to_check),
+            params.blocks_limit_to_check,
             params.difficulty_check,
             params.constant_difficulty,
         );
-        let blocks_limit_to_check = match maybe_blocks_limit_to_check {
-            None => break,
-            Some(blocks_limit_to_check) => blocks_limit_to_check,
-        };
         let height = try_loop_with_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
