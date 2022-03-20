@@ -29,19 +29,6 @@ pub struct CreateNewAccountRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CreateAccountScanPolicy {
-    /// Don't scan for new addresses.
-    DoNotScan,
-    /// Scan for new addresses of the created HD account.
-    Scan,
-}
-
-impl Default for CreateAccountScanPolicy {
-    fn default() -> Self { CreateAccountScanPolicy::Scan }
-}
-
-#[derive(Deserialize)]
 pub struct CreateNewAccountParams {
     #[serde(default = "true_f")]
     scan: bool,

@@ -36,9 +36,9 @@ pub enum HDWalletStorageError {
     HDWalletUnavailable,
     #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_id)]
     HDAccountNotFound { wallet_id: HDWalletId, account_id: u32 },
-    #[display(fmt = "Error saving the a swap: {}", _0)]
+    #[display(fmt = "Error saving changes in HD wallet storage: {}", _0)]
     ErrorSaving(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error loading from HD wallet storage: {}", _0)]
     ErrorLoading(String),
     #[display(fmt = "Error deserializing a swap: {}", _0)]
     ErrorDeserializing(String),
