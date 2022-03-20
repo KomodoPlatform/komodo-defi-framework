@@ -437,7 +437,9 @@ impl MarketCoinOps for LightningCoin {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { todo!() }
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(self.platform_coin().get_raw_transaction(req))
+    }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
         let fut = async move {
