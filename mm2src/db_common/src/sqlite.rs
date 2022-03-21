@@ -4,7 +4,11 @@ pub use sql_builder;
 use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
+use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
+
+pub type SqliteConnShared = Arc<Mutex<Connection>>;
+pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 
 pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
 

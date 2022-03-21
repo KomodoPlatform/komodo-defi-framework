@@ -49,10 +49,10 @@
 //! because ['RICK', 'MORTY', 13] < ['RICK', 'MORTY', 13, 1000000030],
 //! although it is expected to be within the specified bounds.
 
-use super::TableSignature;
 use crate::indexed_db::db_driver::cursor::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorOps,
                                            DbFilter, IdbCursorBuilder};
 pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
+use crate::indexed_db::{ItemId, TableSignature};
 use crate::mm_error::prelude::*;
 use crate::serde::de::DeserializeOwned;
 use async_trait::async_trait;
@@ -69,7 +69,7 @@ pub(super) type DbCursorEventRx = mpsc::UnboundedReceiver<DbCursorEvent>;
 pub enum DbCursorEvent {
     Collect {
         options: CursorCollectOptions,
-        result_tx: oneshot::Sender<CursorResult<Vec<Json>>>,
+        result_tx: oneshot::Sender<CursorResult<Vec<(ItemId, Json)>>>,
     },
 }
 
@@ -108,14 +108,14 @@ pub async fn cursor_event_loop(mut rx: DbCursorEventRx, cursor_builder: IdbCurso
 }
 
 async fn on_collect_cursor_event(
-    result_tx: oneshot::Sender<CursorResult<Vec<Json>>>,
+    result_tx: oneshot::Sender<CursorResult<Vec<(ItemId, Json)>>>,
     options: CursorCollectOptions,
     cursor_builder: IdbCursorBuilder,
 ) {
     async fn on_collect_cursor_event_impl(
         options: CursorCollectOptions,
         cursor_builder: IdbCursorBuilder,
-    ) -> CursorResult<Vec<Json>> {
+    ) -> CursorResult<Vec<(ItemId, Json)>> {
         match options {
             CursorCollectOptions::SingleKey {
                 field_name,
@@ -211,12 +211,12 @@ pub trait WithFilter: Sized {
 
 #[async_trait]
 pub trait CollectCursor<Table: DeserializeOwned> {
-    async fn collect(self) -> CursorResult<Vec<Table>>;
+    async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>>;
 }
 
 #[async_trait]
 impl<Table: DeserializeOwned + 'static, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
-    async fn collect(self) -> CursorResult<Vec<Table>> { self.collect_impl().await }
+    async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>> { self.collect_impl().await }
 }
 
 #[async_trait]
@@ -225,19 +225,19 @@ pub trait CollectCursorImpl<Table: DeserializeOwned + 'static>: Sized {
 
     fn event_tx(&self) -> DbCursorEventTx;
 
-    async fn collect_impl(self) -> CursorResult<Vec<Table>> {
+    async fn collect_impl(self) -> CursorResult<Vec<(ItemId, Table)>> {
         let event_tx = self.event_tx();
         let options = self.into_collect_options();
 
         let (result_tx, result_rx) = oneshot::channel();
         let event = DbCursorEvent::Collect { result_tx, options };
-        let items: Vec<Json> = send_event_recv_response(&event_tx, event, result_rx).await?;
+        let items: Vec<(ItemId, Json)> = send_event_recv_response(&event_tx, event, result_rx).await?;
 
         items
             .into_iter()
-            .map(json::from_value)
+            .map(|(item_id, item)| json::from_value(item).map(|item| (item_id, item)))
             .map(|res| res.map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string())))
-            // Item = CursorResult<Table>
+            // Item = CursorResult<(ItemId, Table)>
             .collect()
     }
 }
@@ -642,7 +642,10 @@ mod tests {
             .expect("!DbEmptyCursor::only")
             .collect()
             .await
-            .expect("!DbSingleKeyCursor::collect");
+            .expect("!DbSingleKeyCursor::collect")
+            .into_iter()
+            .map(|(_item_id, item)| item)
+            .collect::<Vec<_>>();
         actual_items.sort();
 
         let mut expected_items = vec![
@@ -691,7 +694,10 @@ mod tests {
             .bound("rel_coin_value", 5u32, u32::MAX)
             .collect()
             .await
-            .expect("!DbSingleKeyCursor::collect");
+            .expect("!DbSingleKeyCursor::collect")
+            .into_iter()
+            .map(|(_item_id, item)| item)
+            .collect::<Vec<_>>();
         actual_items.sort();
 
         let mut expected_items = vec![
@@ -751,7 +757,10 @@ mod tests {
             .expect("!DbMultiKeyCursor::only")
             .collect()
             .await
-            .expect("!DbMultiKeyCursor::collect");
+            .expect("!DbMultiKeyCursor::collect")
+            .into_iter()
+            .map(|(_item_id, item)| item)
+            .collect::<Vec<_>>();
         actual_items.sort();
 
         let mut expected_items = vec![
@@ -825,7 +834,10 @@ mod tests {
             .bound("started_at", 600i32, 800i32)
             .collect()
             .await
-            .expect("!DbMultiKeyCursor::collect");
+            .expect("!DbMultiKeyCursor::collect")
+            .into_iter()
+            .map(|(_item_id, item)| item)
+            .collect::<Vec<_>>();
 
         // Items are expected to be sorted in the following order.
         let expected_items = vec![

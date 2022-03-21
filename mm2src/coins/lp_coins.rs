@@ -71,7 +71,8 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
+    use hd_wallet_storage::HDWalletDb;
     use tx_history_db::TxHistoryDb;
 
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
@@ -103,6 +104,7 @@ pub mod coins_tests;
 pub mod eth;
 pub mod hd_pubkey;
 pub mod hd_wallet;
+pub mod hd_wallet_storage;
 pub mod init_create_account;
 pub mod init_withdraw;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
@@ -175,9 +177,11 @@ pub enum PrivKeyNotAllowed {
 }
 
 #[derive(Debug, Display, PartialEq)]
-pub enum DerivationMethodNotSupported {
-    #[display(fmt = "HD wallets are not supported")]
-    HdWalletNotSupported,
+pub enum UnexpectedDerivationMethod {
+    #[display(fmt = "Iguana private key is unavailable")]
+    IguanaPrivKeyUnavailable,
+    #[display(fmt = "HD wallet is unavailable")]
+    HDWalletUnavailable,
 }
 
 pub trait Transaction: fmt::Debug + 'static {
@@ -814,8 +818,8 @@ impl From<NumConversError> for TradePreimageError {
     fn from(e: NumConversError) -> Self { TradePreimageError::InternalError(e.to_string()) }
 }
 
-impl From<DerivationMethodNotSupported> for TradePreimageError {
-    fn from(e: DerivationMethodNotSupported) -> Self { TradePreimageError::InternalError(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for TradePreimageError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { TradePreimageError::InternalError(e.to_string()) }
 }
 
 impl TradePreimageError {
@@ -905,8 +909,9 @@ pub enum BalanceError {
     Transport(String),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
-    #[display(fmt = "{}", _0)]
-    DerivationMethodNotSupported(DerivationMethodNotSupported),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    #[display(fmt = "Wallet storage error: {}", _0)]
+    WalletStorageError(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -927,8 +932,8 @@ impl From<NumConversError> for BalanceError {
     fn from(e: NumConversError) -> Self { BalanceError::Internal(e.to_string()) }
 }
 
-impl From<DerivationMethodNotSupported> for BalanceError {
-    fn from(e: DerivationMethodNotSupported) -> Self { BalanceError::DerivationMethodNotSupported(e) }
+impl From<UnexpectedDerivationMethod> for BalanceError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { BalanceError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<Bip32Error> for BalanceError {
@@ -943,7 +948,7 @@ pub enum StakingInfosError {
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[display(fmt = "Derivation method is not supported: {}", _0)]
-    DerivationMethodNotSupported(String),
+    UnexpectedDerivationMethod(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -962,14 +967,14 @@ impl From<UtxoRpcError> for StakingInfosError {
     }
 }
 
-impl From<DerivationMethodNotSupported> for StakingInfosError {
-    fn from(e: DerivationMethodNotSupported) -> Self { StakingInfosError::DerivationMethodNotSupported(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for StakingInfosError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { StakingInfosError::UnexpectedDerivationMethod(e.to_string()) }
 }
 
 impl From<Qrc20AddressError> for StakingInfosError {
     fn from(e: Qrc20AddressError) -> Self {
         match e {
-            Qrc20AddressError::DerivationMethodNotSupported(e) => StakingInfosError::DerivationMethodNotSupported(e),
+            Qrc20AddressError::UnexpectedDerivationMethod(e) => StakingInfosError::UnexpectedDerivationMethod(e),
             Qrc20AddressError::ScriptHashTypeNotSupported { script_hash_type } => {
                 StakingInfosError::Internal(format!("Script hash type '{}' is not supported", script_hash_type))
             },
@@ -982,7 +987,7 @@ impl HttpStatusCode for StakingInfosError {
         match self {
             StakingInfosError::NoSuchCoin { .. }
             | StakingInfosError::CoinDoesntSupportStakingInfos { .. }
-            | StakingInfosError::DerivationMethodNotSupported(_) => StatusCode::BAD_REQUEST,
+            | StakingInfosError::UnexpectedDerivationMethod(_) => StatusCode::BAD_REQUEST,
             StakingInfosError::Transport(_) | StakingInfosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -1050,7 +1055,7 @@ impl From<StakingInfosError> for DelegationError {
             },
             StakingInfosError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
             StakingInfosError::Transport(e) => DelegationError::Transport(e),
-            StakingInfosError::DerivationMethodNotSupported(reason) => {
+            StakingInfosError::UnexpectedDerivationMethod(reason) => {
                 DelegationError::DelegationOpsNotSupported { reason }
             },
             StakingInfosError::Internal(e) => DelegationError::InternalError(e),
@@ -1070,9 +1075,10 @@ impl From<BalanceError> for DelegationError {
     fn from(e: BalanceError) -> Self {
         match e {
             BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => DelegationError::Transport(error),
-            BalanceError::DerivationMethodNotSupported(e) => {
+            BalanceError::UnexpectedDerivationMethod(e) => {
                 DelegationError::DelegationOpsNotSupported { reason: e.to_string() }
             },
+            e @ BalanceError::WalletStorageError(_) => DelegationError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
         }
     }
@@ -1089,8 +1095,8 @@ impl From<PrivKeyNotAllowed> for DelegationError {
     fn from(e: PrivKeyNotAllowed) -> Self { DelegationError::DelegationOpsNotSupported { reason: e.to_string() } }
 }
 
-impl From<DerivationMethodNotSupported> for DelegationError {
-    fn from(e: DerivationMethodNotSupported) -> Self {
+impl From<UnexpectedDerivationMethod> for DelegationError {
+    fn from(e: UnexpectedDerivationMethod) -> Self {
         DelegationError::DelegationOpsNotSupported { reason: e.to_string() }
     }
 }
@@ -1243,7 +1249,8 @@ impl From<BalanceError> for WithdrawError {
     fn from(e: BalanceError) -> Self {
         match e {
             BalanceError::Transport(error) | BalanceError::InvalidResponse(error) => WithdrawError::Transport(error),
-            BalanceError::DerivationMethodNotSupported(e) => WithdrawError::from(e),
+            BalanceError::UnexpectedDerivationMethod(e) => WithdrawError::from(e),
+            e @ BalanceError::WalletStorageError(_) => WithdrawError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
         }
     }
@@ -1264,8 +1271,8 @@ impl From<UtxoSignWithKeyPairError> for WithdrawError {
     }
 }
 
-impl From<DerivationMethodNotSupported> for WithdrawError {
-    fn from(e: DerivationMethodNotSupported) -> Self { WithdrawError::InternalError(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for WithdrawError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
 impl From<PrivKeyNotAllowed> for WithdrawError {
@@ -1501,8 +1508,9 @@ pub struct CoinsContext {
     withdraw_task_manager: WithdrawTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
-    /// The database has to be initialized only once!
-    tx_history_db: ConstructibleDb<TxHistoryDb>,
+    tx_history_db: SharedDb<TxHistoryDb>,
+    #[cfg(target_arch = "wasm32")]
+    hd_wallet_db: SharedDb<HDWalletDb>,
 }
 
 #[derive(Debug)]
@@ -1525,7 +1533,9 @@ impl CoinsContext {
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
-                tx_history_db: ConstructibleDb::from_ctx(ctx),
+                tx_history_db: ConstructibleDb::new_shared(ctx),
+                #[cfg(target_arch = "wasm32")]
+                hd_wallet_db: ConstructibleDb::new_shared(ctx),
             })
         })))
     }
@@ -1620,9 +1630,9 @@ impl<Address, HDWallet> DerivationMethod<Address, HDWallet> {
         }
     }
 
-    pub fn iguana_or_err(&self) -> Result<&Address, MmError<DerivationMethodNotSupported>> {
+    pub fn iguana_or_err(&self) -> MmResult<&Address, UnexpectedDerivationMethod> {
         self.iguana()
-            .or_mm_err(|| DerivationMethodNotSupported::HdWalletNotSupported)
+            .or_mm_err(|| UnexpectedDerivationMethod::IguanaPrivKeyUnavailable)
     }
 
     pub fn hd_wallet(&self) -> Option<&HDWallet> {
@@ -1630,6 +1640,11 @@ impl<Address, HDWallet> DerivationMethod<Address, HDWallet> {
             DerivationMethod::Iguana(_) => None,
             DerivationMethod::HDWallet(hd_wallet) => Some(hd_wallet),
         }
+    }
+
+    pub fn hd_wallet_or_err(&self) -> MmResult<&HDWallet, UnexpectedDerivationMethod> {
+        self.hd_wallet()
+            .or_mm_err(|| UnexpectedDerivationMethod::HDWalletUnavailable)
     }
 
     /// # Panic
@@ -2505,7 +2520,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = coin.my_address().unwrap_or_default();
+    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -2579,7 +2594,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = coin.my_address().unwrap_or_default();
+    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

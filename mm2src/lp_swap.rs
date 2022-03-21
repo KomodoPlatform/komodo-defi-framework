@@ -357,7 +357,7 @@ impl SwapsContext {
                 shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
                 #[cfg(target_arch = "wasm32")]
-                swap_db: ConstructibleDb::from_ctx(ctx),
+                swap_db: ConstructibleDb::new(ctx),
             })
         })))
     }

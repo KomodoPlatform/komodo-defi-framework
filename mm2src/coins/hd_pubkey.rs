@@ -13,7 +13,7 @@ use std::convert::TryInto;
 
 #[derive(Clone)]
 pub enum HDExtractPubkeyError {
-    IguanaPrivKeyNotAllowed,
+    HDWalletUnavailable,
     CoinDoesntSupportTrezor,
     RpcTaskError(RpcTaskError),
     HardwareWalletError(HwError),
@@ -54,7 +54,7 @@ impl From<HwProcessingError<RpcTaskError>> for HDExtractPubkeyError {
 impl From<HDExtractPubkeyError> for NewAccountCreatingError {
     fn from(e: HDExtractPubkeyError) -> Self {
         match e {
-            HDExtractPubkeyError::IguanaPrivKeyNotAllowed => NewAccountCreatingError::IguanaPrivKeyNotAllowed,
+            HDExtractPubkeyError::HDWalletUnavailable => NewAccountCreatingError::HDWalletUnavailable,
             HDExtractPubkeyError::CoinDoesntSupportTrezor => NewAccountCreatingError::CoinDoesntSupportTrezor,
             HDExtractPubkeyError::RpcTaskError(rpc) => NewAccountCreatingError::RpcTaskError(rpc),
             HDExtractPubkeyError::HardwareWalletError(hw) => NewAccountCreatingError::HardwareWalletError(hw),
@@ -69,7 +69,7 @@ impl From<HDExtractPubkeyError> for NewAccountCreatingError {
 impl From<HDExtractPubkeyError> for HDWalletRpcError {
     fn from(e: HDExtractPubkeyError) -> Self {
         match e {
-            HDExtractPubkeyError::IguanaPrivKeyNotAllowed => HDWalletRpcError::IguanaPrivKeyNotAllowed,
+            HDExtractPubkeyError::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
             HDExtractPubkeyError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
             HDExtractPubkeyError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
             HDExtractPubkeyError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),
@@ -151,7 +151,7 @@ where
                 task_handle,
                 statuses,
             }),
-            CryptoCtx::KeyPair(_) => MmError::err(HDExtractPubkeyError::IguanaPrivKeyNotAllowed),
+            CryptoCtx::KeyPair(_) => MmError::err(HDExtractPubkeyError::HDWalletUnavailable),
         }
     }
 

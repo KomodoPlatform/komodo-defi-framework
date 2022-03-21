@@ -2,10 +2,13 @@ use super::{DbIdentifier, DbInstance, DbNamespaceId, InitDbResult};
 use crate::mm_ctx::MmArc;
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use primitives::hash::H160;
+use std::sync::{Arc, Weak};
 
 /// The mapped mutex guard.
 /// This implements `Deref<Db>`.
 pub type DbLocked<'a, Db> = AsyncMappedMutexGuard<'a, Option<Db>, Db>;
+pub type SharedDb<Db> = Arc<ConstructibleDb<Db>>;
+pub type WeakDb<Db> = Weak<ConstructibleDb<Db>>;
 
 pub struct ConstructibleDb<Db> {
     /// It's better to use something like [`Constructible`], but it doesn't provide a method to get the inner value by the mutable reference.
@@ -15,7 +18,9 @@ pub struct ConstructibleDb<Db> {
 }
 
 impl<Db: DbInstance> ConstructibleDb<Db> {
-    pub fn from_ctx(ctx: &MmArc) -> Self {
+    pub fn new_shared(ctx: &MmArc) -> SharedDb<Db> { Arc::new(Self::new(ctx)) }
+
+    pub fn new(ctx: &MmArc) -> Self {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,

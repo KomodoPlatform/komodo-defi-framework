@@ -3,11 +3,11 @@ use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStora
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
-use crate::utxo::utxo_builder::{UtxoArcWithIguanaPrivKeyBuilder, UtxoCoinWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr, SwapOps,
-            TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
-            WithdrawFut};
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, SwapOps, TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult,
+            ValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -146,7 +146,7 @@ pub enum GetTxDetailsError<E: TxHistoryStorageError> {
     ParseSlpScriptError(ParseSlpScriptError),
     ToSlpAddressError(String),
     InvalidSlpTransaction(H256),
-    AddressDerivationError(DerivationMethodNotSupported),
+    AddressDerivationError(UnexpectedDerivationMethod),
 }
 
 impl<E: TxHistoryStorageError> From<UtxoRpcError> for GetTxDetailsError<E> {
@@ -165,8 +165,8 @@ impl<E: TxHistoryStorageError> From<ParseSlpScriptError> for GetTxDetailsError<E
     fn from(err: ParseSlpScriptError) -> Self { GetTxDetailsError::ParseSlpScriptError(err) }
 }
 
-impl<E: TxHistoryStorageError> From<DerivationMethodNotSupported> for GetTxDetailsError<E> {
-    fn from(err: DerivationMethodNotSupported) -> Self { GetTxDetailsError::AddressDerivationError(err) }
+impl<E: TxHistoryStorageError> From<UnexpectedDerivationMethod> for GetTxDetailsError<E> {
+    fn from(err: UnexpectedDerivationMethod) -> Self { GetTxDetailsError::AddressDerivationError(err) }
 }
 
 impl BchCoin {
@@ -632,8 +632,9 @@ pub async fn bch_coin_from_conf_and_params(
         }
     };
 
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
-        UtxoArcWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key, constructor)
+        UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
             .build()
             .await
     );
@@ -706,7 +707,7 @@ impl UtxoCommonOps for BchCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 

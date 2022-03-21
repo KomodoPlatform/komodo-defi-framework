@@ -29,7 +29,7 @@ mod indexed_cursor;
 
 pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
                     OnUpgradeError, OnUpgradeResult};
-pub use db_lock::{ConstructibleDb, DbLocked};
+pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
 use indexed_cursor::{cursor_event_loop, DbCursorEventTx, DbEmptyCursor};
@@ -441,6 +441,21 @@ impl<Table: TableSignature> DbTable<'_, Table> {
                 got_items,
             }),
         }
+    }
+
+    pub async fn delete_items_by_index<Value>(
+        &self,
+        index: &str,
+        index_value: Value,
+    ) -> DbTransactionResult<Vec<ItemId>>
+    where
+        Value: Serialize,
+    {
+        let ids = self.get_item_ids(index, index_value).await?;
+        for item_id in ids.iter() {
+            self.delete_item(*item_id).await?;
+        }
+        Ok(ids)
     }
 
     pub async fn clear(&self) -> DbTransactionResult<()> {

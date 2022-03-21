@@ -2,13 +2,12 @@ use crate::context::CoinsActivationContext;
 use crate::prelude::TryFromCoinProtocol;
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle,
                              InitStandaloneCoinTaskManagerShared};
-use crate::utxo_activation::common_impl::{get_activation_result, xpub_extractor_rpc_statuses};
+use crate::utxo_activation::common_impl::get_activation_result;
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
 use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
                                                           UtxoStandardUserAction};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use async_trait::async_trait;
-use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoActivationParams;
@@ -52,23 +51,18 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         ctx: MmArc,
         ticker: String,
         coin_conf: Json,
-        activation_request: Self::ActivationRequest,
+        activation_request: &Self::ActivationRequest,
         _protocol_info: Self::StandaloneProtocol,
         priv_key_policy: PrivKeyBuildPolicy<'_>,
-        task_handle: &UtxoStandardRpcTaskHandle,
+        _task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
-        // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
-        // If the coin builder tries to extract an extended public key despite HD wallet is not supported,
-        // [`UtxoCoinBuilder::build`] fails with the [`UtxoCoinBuildError::IguanaPrivKeyNotAllowed`] error.
-        let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(&ctx, task_handle, xpub_extractor_rpc_statuses());
         let tx_history = activation_request.tx_history;
         let coin = UtxoArcBuilder::new(
             &ctx,
             &ticker,
             &coin_conf,
-            &activation_request,
+            activation_request,
             priv_key_policy,
-            xpub_extractor,
             UtxoStandardCoin::from,
         )
         .build()
@@ -85,8 +79,10 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
 
     async fn get_activation_result(
         &self,
+        ctx: MmArc,
         task_handle: &UtxoStandardRpcTaskHandle,
+        activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, InitUtxoStandardError> {
-        get_activation_result(self, task_handle).await
+        get_activation_result(&ctx, self, task_handle, activation_request).await
     }
 }

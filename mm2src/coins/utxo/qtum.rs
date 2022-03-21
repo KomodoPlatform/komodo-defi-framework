@@ -1,15 +1,17 @@
 use super::*;
 use crate::coin_balance::{self, AccountBalanceParams, CheckHDAccountBalanceParams, CheckHDAccountBalanceResponse,
-                          HDAccountBalance, HDAccountBalanceResponse, HDAccountBalanceRpcError, HDAddressBalance,
-                          HDWalletBalance, HDWalletBalanceOps, HDWalletBalanceRpcOps};
+                          EnableCoinBalanceError, HDAccountBalance, HDAccountBalanceResponse,
+                          HDAccountBalanceRpcError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps,
+                          HDWalletBalanceRpcOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{self, AddressDerivingError, GetNewHDAddressParams, GetNewHDAddressResponse, HDAccountMut,
-                       HDWalletRpcError, HDWalletRpcOps, NewAccountCreatingError};
+use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
+                       GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
+                       NewAccountCreatingError};
+use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder};
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, StakingInfosFut, SwapOps,
             TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
@@ -26,12 +28,12 @@ use utxo_signer::UtxoSignerOps;
 
 #[derive(Debug, Display)]
 pub enum Qrc20AddressError {
-    DerivationMethodNotSupported(String),
+    UnexpectedDerivationMethod(String),
     ScriptHashTypeNotSupported { script_hash_type: String },
 }
 
-impl From<DerivationMethodNotSupported> for Qrc20AddressError {
-    fn from(e: DerivationMethodNotSupported) -> Self { Qrc20AddressError::DerivationMethodNotSupported(e.to_string()) }
+impl From<UnexpectedDerivationMethod> for Qrc20AddressError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20AddressError::UnexpectedDerivationMethod(e.to_string()) }
 }
 
 impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
@@ -177,23 +179,16 @@ pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
     }
 }
 
-pub struct QtumCoinBuilder<'a, XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
+pub struct QtumCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
     activation_params: &'a UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy<'a>,
-    xpub_extractor: XPubExtractor,
 }
 
 #[async_trait]
-impl<'a, XPubExtractor> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a, XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
+impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
@@ -205,27 +200,16 @@ where
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
 }
 
-impl<'a, XPubExtractor> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinBuilder<'a, XPubExtractor> where
-    XPubExtractor: HDXPubExtractor + Send + Sync
-{
-}
+impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinBuilder<'a> {}
 
-impl<'a, XPubExtractor> UtxoFieldsWithHardwareWalletBuilder<XPubExtractor> for QtumCoinBuilder<'a, XPubExtractor> where
-    XPubExtractor: HDXPubExtractor + Send + Sync
-{
-}
+impl<'a> UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'a> {}
 
 #[async_trait]
-impl<'a, XPubExtractor> UtxoCoinBuilder<XPubExtractor> for QtumCoinBuilder<'a, XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
+impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
     type ResultCoin = QtumCoin;
     type Error = UtxoCoinBuildError;
 
     fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
-
-    fn xpub_extractor(&self) -> &XPubExtractor { &self.xpub_extractor }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -238,22 +222,15 @@ where
     }
 }
 
-impl<'a, XPubExtractor> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a, XPubExtractor> where
-    XPubExtractor: HDXPubExtractor + Send + Sync
-{
-}
+impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a> {}
 
-impl<'a, XPubExtractor> QtumCoinBuilder<'a, XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
+impl<'a> QtumCoinBuilder<'a> {
     pub fn new(
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
         activation_params: &'a UtxoActivationParams,
         priv_key_policy: PrivKeyBuildPolicy<'a>,
-        xpub_extractor: XPubExtractor,
     ) -> Self {
         QtumCoinBuilder {
             ctx,
@@ -261,67 +238,6 @@ where
             conf,
             activation_params,
             priv_key_policy,
-            xpub_extractor,
-        }
-    }
-}
-
-pub struct QtumCoinWithIguanaPrivKeyBuilder<'a> {
-    ctx: &'a MmArc,
-    ticker: &'a str,
-    conf: &'a Json,
-    activation_params: &'a UtxoActivationParams,
-    priv_key: &'a [u8],
-}
-
-impl<'a> UtxoCoinBuilderCommonOps for QtumCoinWithIguanaPrivKeyBuilder<'a> {
-    fn ctx(&self) -> &MmArc { self.ctx }
-
-    fn conf(&self) -> &Json { self.conf }
-
-    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
-
-    fn ticker(&self) -> &str { self.ticker }
-
-    fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
-}
-
-impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinWithIguanaPrivKeyBuilder<'a> {}
-
-impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinWithIguanaPrivKeyBuilder<'a> {}
-
-#[async_trait]
-impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for QtumCoinWithIguanaPrivKeyBuilder<'a> {
-    type ResultCoin = QtumCoin;
-    type Error = UtxoCoinBuildError;
-
-    fn priv_key(&self) -> &[u8] { self.priv_key }
-
-    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
-        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
-        let utxo_arc = UtxoArc::new(utxo);
-        let utxo_weak = utxo_arc.downgrade();
-        let result_coin = QtumCoin::from(utxo_arc);
-
-        self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from);
-        Ok(result_coin)
-    }
-}
-
-impl<'a> QtumCoinWithIguanaPrivKeyBuilder<'a> {
-    pub fn new(
-        ctx: &'a MmArc,
-        ticker: &'a str,
-        conf: &'a Json,
-        activation_params: &'a UtxoActivationParams,
-        priv_key: &'a [u8],
-    ) -> Self {
-        QtumCoinWithIguanaPrivKeyBuilder {
-            ctx,
-            ticker,
-            conf,
-            activation_params,
-            priv_key,
         }
     }
 }
@@ -350,8 +266,9 @@ pub async fn qtum_coin_with_priv_key(
     activation_params: &UtxoActivationParams,
     priv_key: &[u8],
 ) -> Result<QtumCoin, String> {
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
-        QtumCoinWithIguanaPrivKeyBuilder::new(ctx, ticker, conf, activation_params, priv_key)
+        QtumCoinBuilder::new(ctx, ticker, conf, activation_params, priv_key_policy)
             .build()
             .await
     );
@@ -411,7 +328,7 @@ impl UtxoCommonOps for QtumCoin {
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -977,31 +894,60 @@ impl HDWalletCoinOps for QtumCoin {
     {
         utxo_common::create_new_account(self, hd_wallet, xpub_extractor).await
     }
+
+    async fn set_known_addresses_number(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        hd_account: &mut Self::HDAccount,
+        chain: Bip44Chain,
+        new_known_addresses_number: u32,
+    ) -> MmResult<(), AccountUpdatingError> {
+        utxo_common::set_known_addresses_number(self, hd_wallet, hd_account, chain, new_known_addresses_number).await
+    }
 }
 
 #[async_trait]
 impl HDWalletBalanceOps for QtumCoin {
-    type HDAddressChecker = UtxoAddressBalanceChecker;
+    type HDAddressScanner = UtxoAddressScanner;
 
-    async fn produce_hd_address_checker(&self) -> BalanceResult<Self::HDAddressChecker> {
-        utxo_common::produce_hd_address_checker(self).await
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
+        utxo_common::produce_hd_address_scanner(self).await
     }
 
-    async fn enable_hd_wallet(&self, hd_wallet: &Self::HDWallet) -> BalanceResult<HDWalletBalance> {
-        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet).await
+    async fn enable_hd_wallet<XPubExtractor>(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        xpub_extractor: &XPubExtractor,
+        scan_policy: EnableCoinScanPolicy,
+    ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
+    where
+        XPubExtractor: HDXPubExtractor + Sync,
+    {
+        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, scan_policy).await
     }
 
     async fn scan_for_new_addresses(
         &self,
+        hd_wallet: &Self::HDWallet,
         hd_account: &mut Self::HDAccount,
-        address_checker: &Self::HDAddressChecker,
+        address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance>> {
-        utxo_common::scan_for_new_addresses(self, hd_account, address_checker, gap_limit).await
+        utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
+    }
+
+    async fn all_known_addresses_balances(&self, hd_account: &Self::HDAccount) -> BalanceResult<Vec<HDAddressBalance>> {
+        utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
     async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
         utxo_common::address_balance(self, address).await
+    }
+}
+
+impl HDWalletCoinWithStorageOps for QtumCoin {
+    fn hd_wallet_storage<'a>(&self, hd_wallet: &'a Self::HDWallet) -> &'a HDWalletCoinStorage {
+        &hd_wallet.hd_wallet_storage
     }
 }
 

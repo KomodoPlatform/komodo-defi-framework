@@ -10,7 +10,7 @@ use derive_more::Display;
 use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::H264;
+use primitives::hash::{H160, H264};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -77,6 +77,16 @@ impl CryptoCtx {
         }
     }
 
+    /// Returns an `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey that identifies a Hardware Wallet device or an HD master private key.
+    /// We're planning to allow the user to launch mm2 with Iguana private key and enable coin with a Hardware Wallet device,
+    /// so the `hd_wallet_rmd160` may be different from [`MmCtx::rmd160`] soon.
+    pub fn hd_wallet_rmd160(&self) -> Option<H160> {
+        match self {
+            CryptoCtx::HardwareWallet(hw_ctx) => Some(hw_ctx.rmd160()),
+            CryptoCtx::KeyPair(_) => None,
+        }
+    }
+
     pub fn init_with_passphrase(ctx: MmArc, passphrase: &str) -> CryptoInitResult<()> {
         let mut ctx_field = ctx
             .crypto_ctx
@@ -115,7 +125,7 @@ impl CryptoCtx {
         Processor: TrezorConnectProcessor + Sync,
     {
         let trezor = HwClient::trezor(processor).await?;
-        let mm_internal_pubkey = {
+        let hw_internal_pubkey = {
             let mut session = trezor.session().await?;
             HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?
         };
@@ -123,14 +133,14 @@ impl CryptoCtx {
         Ok(CryptoCtx::init_with_hw_wallet_internal_xpub(
             ctx_weak,
             HwClient::from(trezor),
-            mm_internal_pubkey,
+            hw_internal_pubkey,
         )?)
     }
 
     fn init_with_hw_wallet_internal_xpub(
         ctx_weak: MmWeak,
         hw_client: HwClient,
-        mm2_internal_pubkey: H264,
+        hw_internal_pubkey: H264,
     ) -> HwResult<()> {
         let ctx = match MmArc::from_weak(&ctx_weak) {
             Some(ctx) => ctx,
@@ -146,11 +156,11 @@ impl CryptoCtx {
         }
 
         // TODO remove initializing legacy fields when lp_swap and lp_ordermatch support CryptoCtx.
-        let rmd160 = dhash160(mm2_internal_pubkey.as_slice());
+        let rmd160 = dhash160(hw_internal_pubkey.as_slice());
         ctx.rmd160.pin(rmd160).map_to_mm(HwError::Internal)?;
 
         let crypto_ctx = CryptoCtx::HardwareWallet(HardwareWalletArc::new(HardwareWalletCtx {
-            mm2_internal_pubkey,
+            hw_internal_pubkey,
             hw_wallet_type: hw_client.hw_wallet_type(),
             hw_wallet: PaMutex::new(Some(hw_client)),
         }));

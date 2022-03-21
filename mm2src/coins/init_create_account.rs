@@ -5,7 +5,7 @@ use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, CoinsCont
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::SuccessResponse;
+use common::{true_f, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
 use crypto::RpcDerivationPath;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
@@ -30,6 +30,8 @@ pub struct CreateNewAccountRequest {
 
 #[derive(Deserialize)]
 pub struct CreateNewAccountParams {
+    #[serde(default = "true_f")]
+    scan: bool,
     gap_limit: Option<u32>,
 }
 
@@ -102,7 +104,7 @@ impl RpcTask for InitCreateAccountTask {
             MmCoinEnum::QtumCoin(qtum) => {
                 create_new_account_helper(&self.ctx, qtum, self.req.params, task_handle).await
             },
-            _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet { coin: self.req.coin }),
+            _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
 }
@@ -164,22 +166,20 @@ pub(crate) mod common_impl {
             + MarketCoinOps,
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        let hd_wallet =
-            coin.derivation_method()
-                .hd_wallet()
-                .or_mm_err(|| HDWalletRpcError::CoinIsActivatedNotWithHDWallet {
-                    coin: coin.ticker().to_owned(),
-                })?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
         let mut new_account = coin.create_new_account(hd_wallet, xpub_extractor).await?;
-        let address_checker = coin.produce_hd_address_checker().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await?;
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
-        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-        let addresses = coin
-            .scan_for_new_addresses(&mut new_account, &address_checker, gap_limit)
-            .await?;
+        let addresses = if params.scan {
+            let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+            coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
+                .await?
+        } else {
+            Vec::new()
+        };
 
         let total_balance = addresses
             .iter()

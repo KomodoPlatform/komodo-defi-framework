@@ -1,7 +1,9 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AddressDerivingError, HDAccountMut, NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
+                       NewAccountCreatingError};
+use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult};
 use crate::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
@@ -12,7 +14,6 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
-pub use chain::Transaction as UtxoTx;
 use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
@@ -46,6 +47,8 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_block_header_storage::BlockHeaderStorageOps;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
+
+pub use chain::Transaction as UtxoTx;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
@@ -132,7 +135,9 @@ pub async fn create_new_account<'a, Coin, XPubExtractor>(
     xpub_extractor: &XPubExtractor,
 ) -> MmResult<HDAccountMut<'a, UtxoHDAccount>, NewAccountCreatingError>
 where
-    Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>,
+    Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
+        + HDWalletCoinWithStorageOps<HDWallet = UtxoHDWallet, HDAccount = UtxoHDAccount>
+        + Sync,
     XPubExtractor: HDXPubExtractor + Sync,
 {
     const INIT_ACCOUNT_ID: u32 = 0;
@@ -177,6 +182,10 @@ where
         );
         return MmError::err(NewAccountCreatingError::Internal(error));
     }
+
+    coin.upload_new_account(hd_wallet, new_account.to_storage_item())
+        .await?;
+
     Ok(AsyncMutexGuard::map(accounts, |accounts| {
         accounts
             .entry(new_account_id)
@@ -185,27 +194,74 @@ where
     }))
 }
 
-pub async fn produce_hd_address_checker<T>(coin: &T) -> BalanceResult<UtxoAddressBalanceChecker>
+pub async fn set_known_addresses_number<T>(
+    coin: &T,
+    hd_wallet: &UtxoHDWallet,
+    hd_account: &mut UtxoHDAccount,
+    chain: Bip44Chain,
+    new_known_addresses_number: u32,
+) -> MmResult<(), AccountUpdatingError>
+where
+    T: HDWalletCoinWithStorageOps<HDWallet = UtxoHDWallet, HDAccount = UtxoHDAccount> + Sync,
+{
+    if new_known_addresses_number >= ChildNumber::HARDENED_FLAG {
+        return MmError::err(AccountUpdatingError::AddressLimitReached {
+            max_addresses_number: ChildNumber::HARDENED_FLAG,
+        });
+    }
+    match chain {
+        Bip44Chain::External => {
+            coin.update_external_addresses_number(hd_wallet, hd_account.account_id, new_known_addresses_number)
+                .await?;
+            hd_account.external_addresses_number = new_known_addresses_number;
+        },
+        Bip44Chain::Internal => {
+            coin.update_internal_addresses_number(hd_wallet, hd_account.account_id, new_known_addresses_number)
+                .await?;
+            hd_account.internal_addresses_number = new_known_addresses_number;
+        },
+    }
+    Ok(())
+}
+
+pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddressScanner>
 where
     T: AsRef<UtxoCoinFields>,
 {
-    Ok(UtxoAddressBalanceChecker::init(coin.as_ref().rpc_client.clone()).await?)
+    Ok(UtxoAddressScanner::init(coin.as_ref().rpc_client.clone()).await?)
 }
 
 pub async fn scan_for_new_addresses<T>(
     coin: &T,
+    hd_wallet: &T::HDWallet,
     hd_account: &mut T::HDAccount,
-    address_checker: &T::HDAddressChecker,
+    address_scanner: &T::HDAddressScanner,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
 where
     T: HDWalletBalanceOps + Sync,
     T::Address: std::fmt::Display,
 {
-    let mut addresses =
-        scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::External, gap_limit).await?;
-    addresses
-        .extend(scan_for_new_addresses_impl(coin, hd_account, address_checker, Bip44Chain::Internal, gap_limit).await?);
+    let mut addresses = scan_for_new_addresses_impl(
+        coin,
+        hd_wallet,
+        hd_account,
+        address_scanner,
+        Bip44Chain::External,
+        gap_limit,
+    )
+    .await?;
+    addresses.extend(
+        scan_for_new_addresses_impl(
+            coin,
+            hd_wallet,
+            hd_account,
+            address_scanner,
+            Bip44Chain::Internal,
+            gap_limit,
+        )
+        .await?,
+    );
 
     Ok(addresses)
 }
@@ -214,8 +270,9 @@ where
 /// The checking stops at the moment when we find `gap_limit` consecutive empty addresses.
 pub async fn scan_for_new_addresses_impl<T>(
     coin: &T,
+    hd_wallet: &T::HDWallet,
     hd_account: &mut T::HDAccount,
-    address_checker: &T::HDAddressChecker,
+    address_scanner: &T::HDAddressScanner,
     chain: Bip44Chain,
     gap_limit: u32,
 ) -> BalanceResult<Vec<HDAddressBalance>>
@@ -239,7 +296,7 @@ where
             ..
         } = coin.derive_address(hd_account, chain, checking_address_id)?;
 
-        match coin.is_address_used(&checking_address, address_checker).await? {
+        match coin.is_address_used(&checking_address, address_scanner).await? {
             // We found a non-empty address, so we have to fill up the balance list
             // with zeros starting from `last_non_empty_address_id = checking_address_id - unused_addresses_counter`.
             AddressBalanceStatus::Used(non_empty_balance) => {
@@ -270,13 +327,66 @@ where
         checking_address_id += 1;
     }
 
-    let known_addresses_number_mut = hd_account
-        .known_addresses_number_mut(chain)
-        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
-        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
-    *known_addresses_number_mut = checking_address_id - unused_addresses_counter;
+    coin.set_known_addresses_number(
+        hd_wallet,
+        hd_account,
+        chain,
+        checking_address_id - unused_addresses_counter,
+    )
+    .await?;
 
     Ok(balances)
+}
+
+pub async fn all_known_addresses_balances<T>(
+    coin: &T,
+    hd_account: &T::HDAccount,
+) -> BalanceResult<Vec<HDAddressBalance>>
+where
+    T: HDWalletBalanceOps + Sync,
+    T::Address: std::fmt::Display,
+{
+    let external_addresses = hd_account
+        .known_addresses_number(Bip44Chain::External)
+        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
+        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+    let internal_addresses = hd_account
+        .known_addresses_number(Bip44Chain::Internal)
+        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
+        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+
+    let mut balances = coin
+        .known_addresses_balances_with_ids(hd_account, Bip44Chain::External, 0..external_addresses)
+        .await?;
+    balances.extend(
+        coin.known_addresses_balances_with_ids(hd_account, Bip44Chain::Internal, 0..internal_addresses)
+            .await?,
+    );
+
+    Ok(balances)
+}
+
+pub async fn load_hd_accounts_from_storage(
+    hd_wallet_storage: &HDWalletCoinStorage,
+    derivation_path: &Bip44PathToCoin,
+) -> HDWalletStorageResult<HDAccountsMap<UtxoHDAccount>> {
+    let accounts = hd_wallet_storage.load_all_accounts().await?;
+    let res: HDWalletStorageResult<HDAccountsMap<UtxoHDAccount>> = accounts
+        .iter()
+        .map(|account_info| {
+            let account = UtxoHDAccount::try_from_storage_item(derivation_path, account_info)?;
+            Ok((account.account_id, account))
+        })
+        .collect();
+    match res {
+        Ok(accounts) => Ok(accounts),
+        Err(e) if e.get_inner().is_deserializing_err() => {
+            warn!("Error loading HD accounts from the storage: '{}'. Clear accounts", e);
+            hd_wallet_storage.clear_accounts().await?;
+            Ok(HDAccountsMap::new())
+        },
+        Err(e) => Err(e),
+    }
 }
 
 pub async fn address_balance<T>(coin: &T, address: &Address) -> BalanceResult<CoinBalance>
@@ -426,11 +536,11 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Resul
     return ERR!("Invalid address: {}", address);
 }
 
-pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<DerivationMethodNotSupported>> {
+pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
         PrivKeyPolicy::KeyPair(ref key_pair) => Ok(key_pair.public()),
-        // As of now, Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key
-        PrivKeyPolicy::HardwareWallet => MmError::err(DerivationMethodNotSupported::HdWalletNotSupported),
+        // Hardware Wallets requires BIP39/BIP44 derivation path to extract a public key.
+        PrivKeyPolicy::HardwareWallet => MmError::err(UnexpectedDerivationMethod::IguanaPrivKeyUnavailable),
     }
 }
 

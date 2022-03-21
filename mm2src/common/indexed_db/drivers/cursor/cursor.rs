@@ -1,5 +1,5 @@
 use super::construct_event_closure;
-use crate::indexed_db::db_driver::InternalItem;
+use crate::indexed_db::db_driver::{InternalItem, ItemId};
 use crate::mm_error::prelude::*;
 use crate::stringify_js_error;
 use async_trait::async_trait;
@@ -146,7 +146,7 @@ pub trait CursorOps: Sized {
         -> CursorResult<(CollectItemAction, CollectCursorAction)>;
 
     /// Collect items that match the specified bounds.
-    async fn collect(mut self) -> CursorResult<Vec<Json>> {
+    async fn collect(mut self) -> CursorResult<Vec<(ItemId, Json)>> {
         let (tx, mut rx) = mpsc::channel(1);
 
         let db_index = self.db_index();
@@ -189,7 +189,7 @@ pub trait CursorOps: Sized {
 
             let (item_action, cursor_action) = self.on_collect_iter(key, &item.item)?;
             match item_action {
-                CollectItemAction::Include => collected_items.push(item.item),
+                CollectItemAction::Include => collected_items.push(item.into_pair()),
                 CollectItemAction::Skip => (),
             }
 
