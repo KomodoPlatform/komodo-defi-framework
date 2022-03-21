@@ -14,10 +14,6 @@ use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Display)]
 pub enum BlockHeaderStorageError {
-    #[display(fmt = "The storage cannot be initialized for {}", _0)]
-    InitializationError(String),
-    #[display(fmt = "The storage is not initialized for {} - reason: {}", ticker, reason)]
-    NotInitializedError { ticker: String, reason: String },
     #[display(fmt = "Can't add to the storage for {} - reason: {}", ticker, reason)]
     AddToStorageError { ticker: String, reason: String },
     #[display(fmt = "Can't add to the storage for {} - reason: {}", ticker, reason)]
@@ -31,7 +27,7 @@ pub enum BlockHeaderStorageError {
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
     QueryError { query: String, reason: String },
     #[display(fmt = "Can't init from the storage - ticker: {} - reason: {}", ticker, reason)]
-    InitError { ticker: String, reason: String },
+    InitializationError { ticker: String, reason: String },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", ticker, reason)]
     DecodeError { ticker: String, reason: String },
 }

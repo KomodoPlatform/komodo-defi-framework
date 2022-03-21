@@ -268,7 +268,7 @@ where
         if maybe_storage.is_some() {
             let ticker = self.ticker().to_owned();
             let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
-            info!("Starting UTXO block header loop for coin {}", self.ticker());
+            info!("Starting UTXO block header loop for coin {}", ticker);
             spawn(async move {
                 if let Err(e) = fut.await {
                     info!(

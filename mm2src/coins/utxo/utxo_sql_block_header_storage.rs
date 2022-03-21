@@ -138,12 +138,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         let ticker = for_coin.to_owned();
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            conn.execute(&sql_cache, NO_PARAMS)
-                .map(|_| ())
-                .map_err(|e| BlockHeaderStorageError::InitError {
+            conn.execute(&sql_cache, NO_PARAMS).map(|_| ()).map_err(|e| {
+                BlockHeaderStorageError::InitializationError {
                     ticker,
                     reason: e.to_string(),
-                })?;
+                }
+            })?;
             Ok(())
         })
         .await
