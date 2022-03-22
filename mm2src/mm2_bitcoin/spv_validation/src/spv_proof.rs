@@ -88,6 +88,6 @@ mod spv_proof_tests {
             raw_header: RawBlockHeader::new(header_bytes).unwrap(),
             intermediate_nodes: vec![],
         };
-        assert!(spv_proof.validate_block_header().is_ok())
+        spv_proof.validate_block_header().unwrap()
     }
 }
