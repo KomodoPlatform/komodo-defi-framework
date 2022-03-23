@@ -9,8 +9,8 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
                                UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            TradePreimageValue, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress};
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, TradePreimageValue, TxFeeDetails,
+            ValidateAddressResult, ValidatePaymentInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bigdecimal::{BigDecimal, Zero};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1804,6 +1804,21 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
 }
 
 pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
+
+pub async fn get_raw_transaction<T>(coin: T, req: RawTransactionRequest) -> RawTransactionResult
+where
+    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
+{
+    let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
+    let hex = coin
+        .as_ref()
+        .rpc_client
+        .get_transaction_bytes(&hash)
+        .compat()
+        .await
+        .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
+    Ok(RawTransactionRes { tx_hex: hex })
+}
 
 pub async fn withdraw<T>(coin: T, req: WithdrawRequest) -> WithdrawResult
 where
