@@ -16,7 +16,7 @@ use std::fmt::{Debug, Formatter};
 pub enum BlockHeaderStorageError {
     #[display(fmt = "Can't add to the storage for {} - reason: {}", ticker, reason)]
     AddToStorageError { ticker: String, reason: String },
-    #[display(fmt = "Can't add to the storage for {} - reason: {}", ticker, reason)]
+    #[display(fmt = "Can't get from the storage for {} - reason: {}", ticker, reason)]
     GetFromStorageError { ticker: String, reason: String },
     #[display(
         fmt = "Can't retrieve the table from the storage for {} - reason: {}",
