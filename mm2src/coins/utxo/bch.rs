@@ -6,8 +6,8 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, SwapOps, TradePreimageValue, TransactionType, TxFeeDetails, ValidateAddressResult,
-            ValidatePaymentInput, WithdrawFut};
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SwapOps, TradePreimageValue,
+            TransactionType, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -1132,6 +1132,10 @@ impl UtxoStandardOps for BchCoin {
 #[async_trait]
 impl MmCoin for BchCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
+
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(utxo_common::get_raw_transaction(self.clone(), req).boxed().compat())
+    }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(utxo_common::withdraw(self.clone(), req).boxed().compat())
