@@ -11,10 +11,11 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
+            RawTransactionRequest, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest};
 
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -1489,6 +1490,8 @@ impl From<SlpFeeDetails> for TxFeeDetails {
 #[async_trait]
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
