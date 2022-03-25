@@ -5427,7 +5427,7 @@ fn test_get_raw_transaction() {
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
     assert_eq!(error.error_type, "InvalidHashError");
 
-    // valid hash but transport error
+    // valid hash but hash not exist
     let raw = block_on(mm.rpc(json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
@@ -5440,12 +5440,12 @@ fn test_get_raw_transaction() {
     })))
     .unwrap();
     assert!(
-        raw.0.is_server_error(),
+        raw.0.is_client_error(),
         "get_raw_transaction should have failed, but got: {}",
         raw.1
     );
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
-    assert_eq!(error.error_type, "Transport");
+    assert_eq!(error.error_type, "HashNotExist");
 }
 
 #[test]
