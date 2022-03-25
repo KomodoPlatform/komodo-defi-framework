@@ -1208,7 +1208,9 @@ impl MmCoin for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(utxo_common::get_raw_transaction(self.clone(), req).boxed().compat())
+    }
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
 
