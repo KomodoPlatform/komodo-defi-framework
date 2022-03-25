@@ -179,15 +179,21 @@ pub enum RawTransactionError {
     InvalidHashError(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Hash does not exist: {}", _0)]
+    HashNotExist(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
 }
 
 impl HttpStatusCode for RawTransactionError {
     fn status_code(&self) -> StatusCode {
         match self {
-            RawTransactionError::NoSuchCoin { .. } | RawTransactionError::InvalidHashError(_) => {
-                StatusCode::BAD_REQUEST
+            RawTransactionError::NoSuchCoin { .. }
+            | RawTransactionError::InvalidHashError(_)
+            | RawTransactionError::HashNotExist(_) => StatusCode::BAD_REQUEST,
+            RawTransactionError::Transport(_) | RawTransactionError::InternalError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
             },
-            RawTransactionError::Transport(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
