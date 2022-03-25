@@ -536,7 +536,7 @@ async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> 
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
     let web3_tx = web3_tx.or_mm_err(|| RawTransactionError::HashNotExist(req.tx_hash))?;
-    let raw = signed_tx_from_web3_tx(web3_tx).unwrap();
+    let raw = signed_tx_from_web3_tx(web3_tx).map_to_mm(|e| RawTransactionError::InternalError(e.to_string()))?;
     Ok(RawTransactionRes {
         tx_hex: BytesJson(rlp::encode(&raw)),
     })
