@@ -1491,7 +1491,13 @@ impl From<SlpFeeDetails> for TxFeeDetails {
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_raw_transaction(self.platform_coin.clone(), req)
+                .boxed()
+                .compat(),
+        )
+    }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
