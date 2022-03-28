@@ -287,7 +287,7 @@ impl Deserializable for BlockHeader {
 impl BlockHeader {
     pub fn hash(&self) -> H256 { dhash256(&serialize(self)) }
 
-    pub fn is_prog_pow(&self) -> bool { return self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME }
+    pub fn is_prog_pow(&self) -> bool { self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME }
 }
 
 impl From<&'static str> for BlockHeader {
