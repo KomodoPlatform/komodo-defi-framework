@@ -250,7 +250,6 @@ fn help() {
             "  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.\n"
             "  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.\n"
             "  vanity {substring}         ..  Tries to find an address with the given substring.\n"
-            "  nxt                        ..  Query the local NXT client (port 7876) regarding the SuperNET account in NXT.\n"
             "  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.\n"
             "  {JSON configuration}       ..  Run the MarketMaker daemon.\n"
             "\n"

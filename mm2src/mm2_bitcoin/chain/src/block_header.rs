@@ -40,6 +40,7 @@ impl Serializable for BlockHeaderBits {
 const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
+const PROG_POW_SWITCH_TIME: u32 = 1635228000;
 const QTUM_BLOCK_HEADER_VERSION: u32 = 536870912;
 // RVN
 const KAWPOW_VERSION: u32 = 805306368;
@@ -57,6 +58,13 @@ pub struct AuxPow {
     coinbase_branch: MerkleBranch,
     blockchain_branch: MerkleBranch,
     parent_block_header: Box<BlockHeader>,
+}
+
+#[derive(Clone, Debug, Deserializable, PartialEq, Serializable)]
+pub struct ProgPow {
+    n_height: u32,
+    n_nonce_64: u64,
+    mix_hash: H256,
 }
 
 #[derive(Clone, Debug, Deserializable, PartialEq, Serializable)]
@@ -89,6 +97,8 @@ pub struct BlockHeader {
     pub solution: Option<Vec<u8>>,
     /// https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
     pub aux_pow: Option<AuxPow>,
+    /// https://github.com/firoorg/firo/blob/904984eecdc15df5de19bd34c70fd989847a2f08/src/primitives/block.h#L197
+    pub prog_pow: Option<ProgPow>,
     /// https://github.com/firoorg/firo/blob/75f72d061eb793c39148c6d3f3eb5595159fdca0/src/primitives/block.h#L159
     pub mtp_pow: Option<MtpPow>,
     pub is_verus: bool,
@@ -125,7 +135,7 @@ impl Serializable for BlockHeader {
         };
         s.append(&self.time);
         s.append(&self.bits);
-        if self.version != KAWPOW_VERSION {
+        if !self.is_prog_pow() && self.version != KAWPOW_VERSION {
             s.append(&self.nonce);
         }
         if let Some(sol) = &self.solution {
@@ -134,6 +144,11 @@ impl Serializable for BlockHeader {
         if let Some(pow) = &self.aux_pow {
             s.append(pow);
         }
+
+        if let Some(pow) = &self.prog_pow {
+            s.append(pow);
+        }
+
         if let Some(pow) = &self.mtp_pow {
             s.append(pow);
         }
@@ -189,7 +204,7 @@ impl Deserializable for BlockHeader {
         };
         let nonce = if version == 4 {
             BlockHeaderNonce::H256(reader.read()?)
-        } else if version == KAWPOW_VERSION {
+        } else if version == KAWPOW_VERSION || version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME {
             BlockHeaderNonce::U32(0)
         } else {
             BlockHeaderNonce::U32(reader.read()?)
@@ -214,7 +229,13 @@ impl Deserializable for BlockHeader {
             None
         };
 
-        let mtp_pow = if version == MTP_POW_VERSION {
+        let prog_pow = if version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME {
+            Some(reader.read()?)
+        } else {
+            None
+        };
+
+        let mtp_pow = if version == MTP_POW_VERSION && time < PROG_POW_SWITCH_TIME && prog_pow.is_none() {
             Some(reader.read()?)
         } else {
             None
@@ -249,6 +270,7 @@ impl Deserializable for BlockHeader {
             nonce,
             solution,
             aux_pow,
+            prog_pow,
             mtp_pow,
             is_verus,
             hash_state_root,
@@ -264,6 +286,8 @@ impl Deserializable for BlockHeader {
 
 impl BlockHeader {
     pub fn hash(&self) -> H256 { dhash256(&serialize(self)) }
+
+    pub fn is_prog_pow(&self) -> bool { self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME }
 }
 
 impl From<&'static str> for BlockHeader {
@@ -273,7 +297,7 @@ impl From<&'static str> for BlockHeader {
 #[cfg(test)]
 mod tests {
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
-                       KAWPOW_VERSION, MTP_POW_VERSION, QTUM_BLOCK_HEADER_VERSION};
+                       KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME, QTUM_BLOCK_HEADER_VERSION};
     use hex::FromHex;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
 
@@ -289,6 +313,7 @@ mod tests {
             nonce: BlockHeaderNonce::U32(6),
             solution: None,
             aux_pow: None,
+            prog_pow: None,
             mtp_pow: None,
             is_verus: false,
             hash_state_root: None,
@@ -333,6 +358,7 @@ mod tests {
             nonce: BlockHeaderNonce::U32(6),
             solution: None,
             aux_pow: None,
+            prog_pow: None,
             mtp_pow: None,
             is_verus: false,
             hash_state_root: None,
@@ -364,6 +390,7 @@ mod tests {
             nonce: BlockHeaderNonce::H256("0400b9caaf41d4b63a6ab55bb4e6925d46fc3adea7be37b713d3a615e7cf0000".into()), 
             solution: Some("0001a80fa65b9a46fdb1506a7a4d26f43e7995d69902489b9f6c4599c88f9c169605cc135258953da0d6299ada4ff81a76ad63c943261078d5dd1918f91cea68b65b7fc362e9df49ba57c2ea5c6dba91591c85eb0d59a1905ac66e2295b7a291a1695301489a3cc7310fd45f2b94e3b8d94f3051e9bbaada1e0641fcec6e0d6230e76753aa9574a3f3e28eaa085959beffd3231dbe1aeea3955328f3a973650a38e31632a4ffc7ec007a3345124c0b99114e2444b3ef0ada75adbd077b247bbf3229adcffbe95bc62daac88f96317d5768540b5db636f8c39a8529a736465ed830ab2c1bbddf523587abe14397a6f1835d248092c4b5b691a955572607093177a5911e317739187b41f4aa662aa6bca0401f1a0a77915ebb6947db686cff549c5f4e7b9dd93123b00a1ae8d411cfb13fa7674de21cbee8e9fc74e12aa6753b261eab3d9256c7c32cc9b16219dad73c61014e7d88d74d5e218f12e11bc47557347ff49a9ab4490647418d2a5c2da1df24d16dfb611173608fe4b10a357b0fa7a1918b9f2d7836c84bf05f384e1e678b2fdd47af0d8e66e739fe45209ede151a180aba1188058a0db093e30bc9851980cf6fbfa5adb612d1146905da662c3347d7e7e569a1041641049d951ab867bc0c6a3863c7667d43f596a849434958cee2b63dc8fa11bd0f38aa96df86ed66461993f64736345313053508c4e939506c08a766f5b6ed0950759f3901bbc4db3dc97e05bf20b9dda4ff242083db304a4e487ac2101b823998371542354e5d534b5b6ae6420cc19b11512108b61208f4d9a5a97263d2c060da893544dea6251bcadc682d2238af35f2b1c2f65a73b89a4e194f9e1eef6f0e5948ef8d0d2862f48fd3356126b00c6a2d3770ecd0d1a78fa34974b454f270b23d461e357c9356c19496522b59ff9d5b4608c542ff89e558798324021704b2cfe9f6c1a70906c43c7a690f16615f198d29fa647d84ce8461fa570b33e3eada2ed7d77e1f280a0d2e9f03c2e1db535d922b1759a191b417595f3c15d8e8b7f810527ff942e18443a3860e67ccba356809ecedc31c5d8db59c7e039dae4b53d126679e8ffa20cc26e8b9d229c8f6ee434ad053f5f4f5a94e249a13afb995aad82b4d90890187e516e114b168fc7c7e291b9738ea578a7bab0ba31030b14ba90b772b577806ea2d17856b0cb9e74254ba582a9f2638ea7ed2ca23be898c6108ff8f466b443537ed9ec56b8771bfbf0f2f6e1092a28a7fd182f111e1dbdd155ea82c6cb72d5f9e6518cc667b8226b5f5c6646125fc851e97cf125f48949f988ed37c4283072fc03dd1da3e35161e17f44c0e22c76f708bb66405737ef24176e291b4fc2eadab876115dc62d48e053a85f0ad132ef07ad5175b036fe39e1ad14fcdcdc6ac5b3daabe05161a72a50545dd812e0f9af133d061b726f491e904d89ee57811ef58d3bda151f577aed381963a30d91fb98dc49413300d132a7021a5e834e266b4ac982d76e00f43f5336b8e8028a0cacfa11813b01e50f71236a73a4c0d0757c1832b0680ada56c80edf070f438ab2bc587542f926ff8d3644b8b8a56c78576f127dec7aed9cb3e1bc2442f978a9df1dc3056a63e653132d0f419213d3cb86e7b61720de1aa3af4b3757a58156970da27560c6629257158452b9d5e4283dc6fe7df42d2fda3352d5b62ce5a984d912777c3b01837df8968a4d494db1b663e0e68197dbf196f21ea11a77095263dec548e2010460840231329d83978885ee2423e8b327785970e27c6c6d436157fb5b56119b19239edbb730ebae013d82c35df4a6e70818a74d1ef7a2e87c090ff90e32939f58ed24e85b492b5750fd2cd14b9b8517136b76b1cc6ccc6f6f027f65f1967a0eb4f32cd6e5d5315".from_hex().unwrap()), 
             aux_pow: None,
+            prog_pow: None,
             mtp_pow: None,
             is_verus: false,
             hash_state_root: None,
@@ -766,6 +793,16 @@ mod tests {
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_firo_block_headers_prog_pow() {
+        let header_hex = "0010002000a0f9fd846c553ab0f42da219319846c24946306d83153f9232578375ef0d786a30257842bd435908bb8392e27caee825dc6af229d3fd117f422972e8191642cff13e624011081b760f0700de2da2e90000004795c4b220117e6b0d326188de71879e14ad9887838ff3cb1d0c146da2805d7361";
+        let header_bytes: Vec<u8> = header_hex.from_hex().unwrap();
+        let header: BlockHeader = deserialize(header_bytes.as_slice()).unwrap();
+        assert!(header.time >= PROG_POW_SWITCH_TIME);
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
     }
 
     #[test]
