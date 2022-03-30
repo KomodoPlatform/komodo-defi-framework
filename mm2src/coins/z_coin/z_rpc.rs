@@ -150,10 +150,9 @@ mod z_coin_grpc {
 
 #[test]
 // This is a temporary test used to experiment with librustzcash and lightwalletd
-#[ignore]
 fn try_grpc() {
     use common::block_on;
-    use db_common::sqlite::rusqlite::Connection;
+    use db_common::sqlite::rusqlite::{self, Connection, NO_PARAMS};
     use prost::Message;
     use rustls::ClientConfig;
     use tonic::transport::{Channel, ClientTlsConfig};
@@ -162,9 +161,20 @@ fn try_grpc() {
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
                                          BlockSource, WalletRead, WalletWrite};
-    use zcash_client_sqlite::{chain::init::init_cache_database, error::SqliteClientError,
-                              wallet::init::init_wallet_db, wallet::rewind_to_height, BlockDb, WalletDb};
+    use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
+                              BlockDb, WalletDb};
     use zcash_primitives::consensus::{BlockHeight, Network, Parameters};
+
+    pub fn init_cache_database(db_cache: &Connection) -> Result<(), rusqlite::Error> {
+        db_cache.execute(
+            "CREATE TABLE IF NOT EXISTS compactblocks (
+            height INTEGER PRIMARY KEY,
+            data BLOB NOT NULL
+        )",
+            NO_PARAMS,
+        )?;
+        Ok(())
+    }
 
     fn insert_into_cache(db_cache: &Connection, height: u32, cb_bytes: Vec<u8>) {
         db_cache
@@ -182,7 +192,7 @@ fn try_grpc() {
     let tls = ClientTlsConfig::new().rustls_client_config(config);
 
     let channel = block_on(
-        Channel::from_static("http://testnet.lightwalletd.com:9067")
+        Channel::from_static("http://zombie.sirseven.me:443")
             .tls_config(tls)
             .unwrap()
             .connect(),
@@ -192,20 +202,20 @@ fn try_grpc() {
 
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
-            height: 280000,
+            height: 1,
             hash: Vec::new(),
         }),
         end: Some(BlockId {
-            height: 1788302,
+            height: 31598,
             hash: Vec::new(),
         }),
     });
 
     let mut response = block_on(client.get_block_range(request)).unwrap();
-    println!("RESPONSE={:?}", response);
 
-    let cache_file = "test_cache.db";
+    let cache_file = "test_cache_zombie.db";
     let cache_sql = Connection::open(cache_file).unwrap();
+    init_cache_database(&cache_sql).unwrap();
 
     while let Ok(Some(block)) = block_on(response.get_mut().message()) {
         insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
@@ -214,10 +224,9 @@ fn try_grpc() {
 
     let network = Network::TestNetwork;
     let db_cache = BlockDb::for_path(cache_file).unwrap();
-    let db_file = "test_wallet.db";
+    let db_file = "test_wallet_zombie.db";
     let db_read = WalletDb::for_path(db_file, network).unwrap();
     init_wallet_db(&db_read).unwrap();
-    init_cache_database(&db_cache).unwrap();
 
     let mut db_data = db_read.get_update_ops().unwrap();
 
