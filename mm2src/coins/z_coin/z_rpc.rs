@@ -5,6 +5,8 @@ use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
+use zcash_client_sqlite::wallet::init::init_accounts_table;
+use zcash_primitives::consensus::NetworkUpgrade;
 
 #[derive(Debug, Serialize)]
 pub struct ZSendManyItem {
@@ -161,9 +163,11 @@ fn try_grpc() {
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
                                          BlockSource, WalletRead, WalletWrite};
+    use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
                               BlockDb, WalletDb};
     use zcash_primitives::consensus::{BlockHeight, Network, Parameters};
+    use zcash_primitives::constants::mainnet as z_mainnet_constants;
 
     pub fn init_cache_database(db_cache: &Connection) -> Result<(), rusqlite::Error> {
         db_cache.execute(
@@ -184,6 +188,8 @@ fn try_grpc() {
             .unwrap();
     }
 
+    let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
+
     let mut config = ClientConfig::new();
     config
         .root_store
@@ -202,11 +208,11 @@ fn try_grpc() {
 
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
-            height: 1,
+            height: 31599,
             hash: Vec::new(),
         }),
         end: Some(BlockId {
-            height: 31598,
+            height: 32250,
             hash: Vec::new(),
         }),
     });
@@ -218,16 +224,44 @@ fn try_grpc() {
     init_cache_database(&cache_sql).unwrap();
 
     while let Ok(Some(block)) = block_on(response.get_mut().message()) {
-        insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
+        println!("Got block {:?}", block);
+        // insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
     }
     drop(cache_sql);
 
-    let network = Network::TestNetwork;
+    #[derive(Copy, Clone)]
+    struct ZombieNetwork;
+
+    impl Parameters for ZombieNetwork {
+        fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+            match nu {
+                NetworkUpgrade::Sapling => Some(BlockHeight::from(101)),
+                _ => None,
+            }
+        }
+
+        fn coin_type(&self) -> u32 { z_mainnet_constants::COIN_TYPE }
+
+        fn hrp_sapling_extended_spending_key(&self) -> &str { z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY }
+
+        fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+            z_mainnet_constants::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
+        }
+
+        fn hrp_sapling_payment_address(&self) -> &str { z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS }
+
+        fn b58_pubkey_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_PUBKEY_ADDRESS_PREFIX }
+
+        fn b58_script_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_SCRIPT_ADDRESS_PREFIX }
+    }
+
+    let network = ZombieNetwork {};
     let db_cache = BlockDb::for_path(cache_file).unwrap();
     let db_file = "test_wallet_zombie.db";
     let db_read = WalletDb::for_path(db_file, network).unwrap();
     init_wallet_db(&db_read).unwrap();
 
+    // init_accounts_table(&db_read, &[(&z_key).into()]).unwrap();
     let mut db_data = db_read.get_update_ops().unwrap();
 
     // 1) Download new CompactBlocks into db_cache.
