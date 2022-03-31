@@ -5,6 +5,8 @@ use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
+use zcash_client_backend::data_api::WalletRead;
+use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::wallet::init::init_accounts_table;
 use zcash_primitives::consensus::NetworkUpgrade;
 
@@ -305,4 +307,9 @@ fn try_grpc() {
     // necessarily consistent with the latest chain tip - this would be discovered the
     // next time this codepath is executed after new blocks are received).
     scan_cached_blocks(&network, &db_cache, &mut db_data, None).unwrap();
+
+    let balance = db_read
+        .get_balance_at(AccountId(0), BlockHeight::from_u32(31598))
+        .unwrap();
+    println!("{:?}", balance);
 }
