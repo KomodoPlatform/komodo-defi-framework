@@ -27,7 +27,7 @@ sudo usermod -aG docker $USER
 ```
 - for Podman users:
 ```
-sudo echo $'#!/bin/bash\npodman $@' | sudo tee "/usr/bin/docker"
+echo $'#!/bin/bash\npodman $@' | sudo tee "/usr/bin/docker"
 sudo chmod +x /usr/bin/docker
 ```
 
