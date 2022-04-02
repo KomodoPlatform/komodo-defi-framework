@@ -27,8 +27,7 @@ sudo usermod -aG docker $USER
 ```
 - for Podman users:
 ```
-echo $'#!/bin/bash\npodman $@' | sudo tee "/usr/bin/docker"
-sudo chmod +x /usr/bin/docker
+sudo ln -s $(which podman) /usr/bin/docker
 ```
 
 7. Try `cargo test --features native --all -- --test-threads=16`.
