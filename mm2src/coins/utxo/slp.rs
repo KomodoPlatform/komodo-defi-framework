@@ -1493,7 +1493,7 @@ impl MmCoin for SlpToken {
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(
-            utxo_common::get_raw_transaction(self.platform_coin.clone(), req)
+            utxo_common::get_raw_transaction(self.platform_coin.as_ref(), req)
                 .boxed()
                 .compat(),
         )

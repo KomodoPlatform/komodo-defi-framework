@@ -1805,13 +1805,9 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
 
 pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
 
-pub async fn get_raw_transaction<T>(coin: T, req: RawTransactionRequest) -> RawTransactionResult
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps,
-{
+pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
     let hex = coin
-        .as_ref()
         .rpc_client
         .get_transaction_bytes(&hash)
         .compat()
