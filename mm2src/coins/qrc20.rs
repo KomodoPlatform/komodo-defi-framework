@@ -1117,7 +1117,7 @@ impl MmCoin for Qrc20Coin {
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
-        Box::new(utxo_common::get_raw_transaction(self.clone(), req).boxed().compat())
+        Box::new(utxo_common::get_raw_transaction(&self.utxo, req).boxed().compat())
     }
 
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo) }

@@ -168,7 +168,8 @@ pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
 pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
-pub type RawTransactionFut = Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send>;
+pub type RawTransactionFut<'a> =
+    Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
