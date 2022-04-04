@@ -7,11 +7,11 @@ use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
-use bitcoin::consensus::encode::{deserialize, serialize_hex};
+use bitcoin::consensus::encode::{deserialize, serialize_hex, Error as EncodeError};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::JsonRpcErrorType;
+use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::log;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -25,49 +25,65 @@ use std::convert::{TryFrom, TryInto};
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 
-#[derive(Debug, Display)]
+struct TxWithBlockInfo {
+    tx: Transaction,
+    block_header: BlockHeader,
+    block_height: u64,
+}
+
+#[derive(Display)]
 pub enum FindWatchedOutputSpendError {
-    #[display(fmt = "Can't convert transaction: {}", _0)]
-    TransactionConvertionErr(String),
-    #[display(fmt = "Can't deserialize block header: {}", _0)]
-    BlockHeaderDeserializeErr(String),
+    #[display(fmt = "Spent output info has blockhash not height")]
+    HashNotHeight,
+    #[display(fmt = "Deserialization error: {}", _0)]
+    DeserializationErr(String),
+    #[display(fmt = "RPC error {}", _0)]
+    RpcError(String),
+}
+
+impl From<JsonRpcError> for FindWatchedOutputSpendError {
+    fn from(e: JsonRpcError) -> Self { FindWatchedOutputSpendError::RpcError(e.to_string()) }
+}
+
+impl From<EncodeError> for FindWatchedOutputSpendError {
+    fn from(e: EncodeError) -> Self { FindWatchedOutputSpendError::DeserializationErr(e.to_string()) }
 }
 
 async fn find_watched_output_spend_with_header(
     electrum_client: &ElectrumClient,
     output: &WatchedOutput,
-) -> Result<Option<(BlockHeader, usize, Transaction, u64)>, FindWatchedOutputSpendError> {
+) -> Result<Option<TxWithBlockInfo>, FindWatchedOutputSpendError> {
     // from_block parameter is not used in find_output_spend for electrum clients
     let utxo_client: UtxoRpcClientEnum = electrum_client.clone().into();
+    let tx_hash = H256::from(output.outpoint.txid.as_hash().into_inner());
     let output_spend = match utxo_client
         .find_output_spend(
-            H256::from(output.outpoint.txid.as_hash().into_inner()),
+            tx_hash,
             output.script_pubkey.as_ref(),
             output.outpoint.index.into(),
             BlockHashOrHeight::Hash(Default::default()),
         )
         .compat()
         .await
+        .map_err(FindWatchedOutputSpendError::RpcError)?
     {
-        Ok(Some(output)) => output,
-        _ => return Ok(None),
+        Some(output) => output,
+        None => return Ok(None),
     };
 
-    if let BlockHashOrHeight::Height(height) = output_spend.spent_in_block {
-        if let Ok(header) = electrum_client.blockchain_block_header(height as u64).compat().await {
-            match deserialize(&header) {
-                Ok(h) => {
-                    let spending_tx = match Transaction::try_from(output_spend.spending_tx) {
-                        Ok(tx) => tx,
-                        Err(e) => return Err(FindWatchedOutputSpendError::TransactionConvertionErr(e.to_string())),
-                    };
-                    return Ok(Some((h, output_spend.input_index, spending_tx, height as u64)));
-                },
-                Err(e) => return Err(FindWatchedOutputSpendError::BlockHeaderDeserializeErr(e.to_string())),
-            }
-        }
-    }
-    Ok(None)
+    let height = match output_spend.spent_in_block {
+        BlockHashOrHeight::Height(h) => h,
+        _ => return Err(FindWatchedOutputSpendError::HashNotHeight),
+    };
+    let header = electrum_client.blockchain_block_header(height as u64).compat().await?;
+    let block_header = deserialize(&header)?;
+    let spending_tx = Transaction::try_from(output_spend.spending_tx)?;
+
+    Ok(Some(TxWithBlockInfo {
+        tx: spending_tx,
+        block_header,
+        block_height: height as u64,
+    }))
 }
 
 pub async fn get_best_header(best_header_listener: &ElectrumClient) -> EnableLightningResult<ElectrumBlockHeader> {
@@ -407,36 +423,41 @@ impl Platform {
         let mut outputs_to_remove = Vec::new();
         let registered_outputs = self.registered_outputs.lock().clone();
         for output in registered_outputs {
-            let result = match find_watched_output_spend_with_header(client, &output).await {
-                Ok(res) => res,
-                Err(e) => {
-                    log::error!(
-                        "Error while trying to find if the registered output {:?} is spent: {}",
-                        output.outpoint,
-                        e
-                    );
-                    continue;
-                },
-            };
-            if let Some((header, _, tx, height)) = result {
-                if !transactions_to_confirm.iter().any(|info| info.txid == tx.txid()) {
-                    let rpc_txid = H256Json::from(tx.txid().as_hash().into_inner()).reversed();
-                    let index = match client
-                        .blockchain_transaction_get_merkle(rpc_txid, height)
-                        .compat()
-                        .await
+            match find_watched_output_spend_with_header(client, &output).await {
+                Ok(Some(tx_info)) => {
+                    if !transactions_to_confirm
+                        .iter()
+                        .any(|info| info.txid == tx_info.tx.txid())
                     {
-                        Ok(merkle_branch) => merkle_branch.pos,
-                        Err(e) => {
-                            log::error!("Error getting transaction position in the block: {}", e.to_string());
-                            continue;
-                        },
-                    };
-                    let confirmed_transaction_info =
-                        ConfirmedTransactionInfo::new(tx.txid(), header, index, tx, height as u32);
-                    transactions_to_confirm.push(confirmed_transaction_info);
-                }
-                outputs_to_remove.push(output);
+                        let rpc_txid = H256Json::from(tx_info.tx.txid().as_hash().into_inner()).reversed();
+                        let index = match client
+                            .blockchain_transaction_get_merkle(rpc_txid, tx_info.block_height)
+                            .compat()
+                            .await
+                        {
+                            Ok(merkle_branch) => merkle_branch.pos,
+                            Err(e) => {
+                                log::error!("Error getting transaction position in the block: {}", e.to_string());
+                                continue;
+                            },
+                        };
+                        let confirmed_transaction_info = ConfirmedTransactionInfo::new(
+                            tx_info.tx.txid(),
+                            tx_info.block_header,
+                            index,
+                            tx_info.tx,
+                            tx_info.block_height as u32,
+                        );
+                        transactions_to_confirm.push(confirmed_transaction_info);
+                    }
+                    outputs_to_remove.push(output);
+                },
+                Ok(None) => (),
+                Err(e) => log::error!(
+                    "Error while trying to find if the registered output {:?} is spent: {}",
+                    output.outpoint,
+                    e
+                ),
             }
         }
         self.registered_outputs
