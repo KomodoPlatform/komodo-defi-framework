@@ -505,8 +505,6 @@ pub enum SaveChannelClosingError {
     RpcError(String),
     #[display(fmt = "Error while waiting for the funding transaction to be spent: {}", _0)]
     WaitForFundingTxSpendError(String),
-    #[display(fmt = "Wrong closing transaction type: {}", _0)]
-    WrongClosingTxType(String),
 }
 
 impl From<SqlError> for SaveChannelClosingError {

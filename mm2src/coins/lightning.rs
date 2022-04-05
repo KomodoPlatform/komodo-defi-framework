@@ -830,99 +830,43 @@ pub struct OpenChannelsFilter {
 }
 
 fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
-    let is_channel_id = if let Some(channel_id) = filter.channel_id {
-        channel_details.channel_id == channel_id
-    } else {
-        true
-    };
+    let is_channel_id = filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
 
-    let is_counterparty_node_id = if let Some(counterparty_node_id) = &filter.counterparty_node_id {
-        &channel_details.counterparty_node_id == counterparty_node_id
-    } else {
-        true
-    };
+    let is_counterparty_node_id = filter.counterparty_node_id.is_none()
+        || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
 
-    let is_funding_tx = if let Some(funding_tx) = filter.funding_tx {
-        if let Some(channel_details_funding_tx) = channel_details.funding_tx {
-            channel_details_funding_tx == funding_tx
-        } else {
-            false
-        }
-    } else {
-        true
-    };
+    let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
 
-    let is_from_funding_value_sats = if let Some(from_funding_value_sats) = filter.from_funding_value_sats {
-        channel_details.funding_tx_value_sats >= from_funding_value_sats
-    } else {
-        true
-    };
+    let is_from_funding_value_sats =
+        Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
 
-    let is_to_funding_value_sats = if let Some(to_funding_value_sats) = filter.to_funding_value_sats {
-        channel_details.funding_tx_value_sats <= to_funding_value_sats
-    } else {
-        true
-    };
+    let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
+        || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
 
-    let is_outbound = if let Some(is_outbound) = filter.is_outbound {
-        channel_details.is_outbound == is_outbound
-    } else {
-        true
-    };
+    let is_outbound = filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
 
-    let is_from_balance_msat = if let Some(from_balance_msat) = filter.from_balance_msat {
-        channel_details.balance_msat >= from_balance_msat
-    } else {
-        true
-    };
+    let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
 
-    let is_to_balance_msat = if let Some(to_balance_msat) = filter.to_balance_msat {
-        channel_details.balance_msat <= to_balance_msat
-    } else {
-        true
-    };
+    let is_to_balance_msat =
+        filter.to_balance_msat.is_none() || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
 
-    let is_from_outbound_capacity_msat = if let Some(from_outbound_capacity_msat) = filter.from_outbound_capacity_msat {
-        channel_details.outbound_capacity_msat >= from_outbound_capacity_msat
-    } else {
-        true
-    };
+    let is_from_outbound_capacity_msat =
+        Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
 
-    let is_to_outbound_capacity_msat = if let Some(to_outbound_capacity_msat) = filter.to_outbound_capacity_msat {
-        channel_details.outbound_capacity_msat <= to_outbound_capacity_msat
-    } else {
-        true
-    };
+    let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
+        || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
 
-    let is_from_inbound_capacity_msat = if let Some(from_inbound_capacity_msat) = filter.from_inbound_capacity_msat {
-        channel_details.inbound_capacity_msat >= from_inbound_capacity_msat
-    } else {
-        true
-    };
+    let is_from_inbound_capacity_msat =
+        Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
 
-    let is_to_inbound_capacity_msat = if let Some(to_inbound_capacity_msat) = filter.to_inbound_capacity_msat {
-        channel_details.inbound_capacity_msat <= to_inbound_capacity_msat
-    } else {
-        true
-    };
+    let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
+        || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
 
-    let is_confirmed = if let Some(confirmed) = filter.confirmed {
-        channel_details.confirmed == confirmed
-    } else {
-        true
-    };
+    let is_confirmed = filter.confirmed.is_none() || Some(&channel_details.confirmed) == filter.confirmed.as_ref();
 
-    let is_usable = if let Some(is_usable) = filter.is_usable {
-        channel_details.is_usable == is_usable
-    } else {
-        true
-    };
+    let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
 
-    let is_public = if let Some(is_public) = filter.is_public {
-        channel_details.is_public == is_public
-    } else {
-        true
-    };
+    let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
 
     is_channel_id
         && is_counterparty_node_id
@@ -1024,17 +968,6 @@ pub async fn list_open_channels_by_filter(
 
     total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
 
-    let total = total_open_channels.len();
-
-    let offset = match req.paging_options {
-        PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * req.limit,
-        PagingOptionsEnum::FromId(rpc_id) => total_open_channels
-            .iter()
-            .position(|x| x.rpc_channel_id == rpc_id)
-            .map(|pos| pos + 1)
-            .unwrap_or_default(),
-    };
-
     let open_channels_filtered = if let Some(ref filter) = req.filter {
         total_open_channels
             .into_iter()
@@ -1044,7 +977,18 @@ pub async fn list_open_channels_by_filter(
         total_open_channels
     };
 
-    let open_channels = if offset + req.limit <= open_channels_filtered.len() {
+    let offset = match req.paging_options {
+        PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * req.limit,
+        PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
+            .iter()
+            .position(|x| x.rpc_channel_id == rpc_id)
+            .map(|pos| pos + 1)
+            .unwrap_or_default(),
+    };
+
+    let total = open_channels_filtered.len();
+
+    let open_channels = if offset + req.limit <= total {
         open_channels_filtered[offset..offset + req.limit].to_vec()
     } else {
         open_channels_filtered[offset..].to_vec()

@@ -216,7 +216,7 @@ pub trait SqlStorage {
 
     async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error>;
 
-    async fn add_closing_tx_to_sql(&self, rpc_id: u64, closing_tx_: String) -> Result<(), Self::Error>;
+    async fn add_closing_tx_to_sql(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error>;
 
     async fn get_closed_channels_by_filter(
         &self,

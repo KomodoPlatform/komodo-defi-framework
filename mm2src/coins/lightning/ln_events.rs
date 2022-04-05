@@ -191,7 +191,7 @@ async fn save_channel_closing_details(
         .compat()
         .await?;
 
-    let closing_tx_enum = platform
+    let closing_tx = platform
         .coin
         .wait_for_tx_spend(
             &funding_tx_bytes.into_vec(),
@@ -203,18 +203,10 @@ async fn save_channel_closing_details(
         .await
         .map_to_mm(SaveChannelClosingError::WaitForFundingTxSpendError)?;
 
-    let closing_tx = match closing_tx_enum {
-        TransactionEnum::UtxoTx(tx) => tx,
-        e => {
-            return Err(MmError::new(SaveChannelClosingError::WrongClosingTxType(format!(
-                "{:?}",
-                e
-            ))))
-        },
-    };
+    let closing_tx_hash = format!("{:02x}", closing_tx.tx_hash());
 
     persister
-        .add_closing_tx_to_sql(user_channel_id, closing_tx.hash().reversed().to_string())
+        .add_closing_tx_to_sql(user_channel_id, closing_tx_hash)
         .await?;
 
     Ok(())
