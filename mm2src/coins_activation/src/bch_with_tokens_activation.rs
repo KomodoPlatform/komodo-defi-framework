@@ -146,6 +146,10 @@ impl GetPlatformBalance for BchWithTokensActivationResult {
     }
 }
 
+impl GetCurrentBlock for BchWithTokensActivationResult {
+    fn get_current_block(&self) -> u64 { self.current_block }
+}
+
 #[derive(Debug)]
 pub enum BchWithTokensActivationError {
     PlatformCoinCreationError {

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, PrivKeyBuildPolicy, RegisterCoinError, RegisterCoinParams};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::{NotSame, SuccessResponse};
+use common::{log, NotSame, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use crypto::CryptoCtx;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
@@ -32,7 +32,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
     type ActivationRequest: TxHistoryEnabled + Sync + Send;
     type StandaloneProtocol: TryFromCoinProtocol + Send;
     // The following types are related to `RpcTask` management.
-    type ActivationResult: serde::Serialize + Clone + Send + Sync + 'static;
+    type ActivationResult: serde::Serialize + Clone + Send + Sync + 'static + GetCurrentBlock;
     type ActivationError: From<RegisterCoinError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
@@ -181,6 +181,7 @@ where
         let result = coin
             .get_activation_result(self.ctx.clone(), task_handle, &self.request.activation_params)
             .await?;
+        log::info!("{} current block {}", ticker, result.get_current_block());
 
         let tx_history = self.request.activation_params.tx_history_enabled();
 

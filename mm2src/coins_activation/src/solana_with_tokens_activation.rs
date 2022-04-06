@@ -95,6 +95,10 @@ impl GetPlatformBalance for SolanaWithTokensActivationResult {
     }
 }
 
+impl GetCurrentBlock for SolanaWithTokensActivationResult {
+    fn get_current_block(&self) -> u64 { self.current_block }
+}
+
 #[derive(Debug)]
 pub enum SolanaWithTokensActivationError {
     PlatformCoinCreationError { ticker: String, error: String },

@@ -32,6 +32,10 @@ pub struct ZcoinActivationResult {
     pub wallet_balance: EnableCoinBalance,
 }
 
+impl GetCurrentBlock for ZcoinActivationResult {
+    fn get_current_block(&self) -> u64 { self.current_block }
+}
+
 #[derive(Clone, Serialize)]
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,

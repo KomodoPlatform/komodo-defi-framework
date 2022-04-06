@@ -6,6 +6,10 @@ use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 
+pub trait GetCurrentBlock {
+    fn get_current_block(&self) -> u64;
+}
+
 pub trait TxHistoryEnabled {
     fn tx_history_enabled(&self) -> bool;
 }
