@@ -54,7 +54,7 @@ use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
-                       zip32::ExtendedSpendingKey};
+                       zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -213,8 +213,8 @@ impl ZCoin {
 
         let z_unspents = self.my_spendable_z_unspents_ordered().await?;
         let mut selected_unspents = Vec::new();
-        let mut total_input_amount = BigDecimal::from(0);
-        let mut change = BigDecimal::from(0);
+        let mut total_input_amount = BigDecimal::from(0u8);
+        let mut change = BigDecimal::from(0u8);
 
         let mut received_by_me = 0u64;
 
@@ -240,7 +240,10 @@ impl ZCoin {
         let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
 
         let mut ext = HashMap::new();
-        ext.insert(AccountId::default(), (&self.z_fields.z_spending_key).into());
+        ext.insert(
+            AccountId::default(),
+            ExtendedFullViewingKey::from(&self.z_fields.z_spending_key),
+        );
         let mut selected_notes_with_witness: Vec<(_, IncrementalWitness<Node>)> =
             Vec::with_capacity(selected_unspents.len());
 
@@ -287,7 +290,7 @@ impl ZCoin {
             tx_builder.add_sapling_output(z_out.viewing_key, z_out.to_addr, z_out.amount, z_out.memo)?;
         }
 
-        if change > BigDecimal::from(0) {
+        if change > BigDecimal::from(0u8) {
             let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
             received_by_me += change_sat;
 
@@ -1208,8 +1211,8 @@ impl MmCoin for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
-        Box::new(utxo_common::get_raw_transaction(self.clone(), req).boxed().compat())
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
