@@ -56,7 +56,7 @@ pub struct SqlChannelDetails {
     pub claiming_tx: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claimed_balance: Option<f64>,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub funding_generated_in_block: Option<u64>,
     pub is_outbound: bool,
     pub is_public: bool,
@@ -213,6 +213,8 @@ pub trait SqlStorage {
         funding_value: u64,
         funding_generated_in_block: u64,
     ) -> Result<(), Self::Error>;
+
+    async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error>;
 
     async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error>;
 

@@ -21,6 +21,7 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
 use rpc::v1::types::H256 as H256Json;
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
@@ -152,6 +153,7 @@ pub async fn update_best_block(
 
 pub async fn ln_best_block_update_loop(
     platform: Arc<Platform>,
+    persister: Arc<LightningPersister>,
     chain_monitor: Arc<ChainMonitor>,
     channel_manager: Arc<ChannelManager>,
     best_header_listener: ElectrumClient,
@@ -168,12 +170,14 @@ pub async fn ln_best_block_update_loop(
             },
         };
         if current_best_block != best_header.clone().into() {
+            platform.update_best_block_height(best_header.block_height());
             platform
                 .process_txs_unconfirmations(chain_monitor.clone(), channel_manager.clone())
                 .await;
             platform
                 .process_txs_confirmations(
                     best_header_listener.clone(),
+                    persister.clone(),
                     chain_monitor.clone(),
                     channel_manager.clone(),
                     best_header.block_height(),
@@ -210,14 +214,16 @@ pub struct Platform {
     pub coin: UtxoStandardCoin,
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: BlockchainNetwork,
-    // Default fees to and confirmation targets to be used for FeeEstimator. Default fees are used when the call for
-    // estimate_fee_sat fails.
+    /// The best block height.
+    pub best_block_height: AtomicU64,
+    /// Default fees to and confirmation targets to be used for FeeEstimator. Default fees are used when the call for
+    /// estimate_fee_sat fails.
     pub default_fees_and_confirmations: PlatformCoinConfirmations,
-    // This cache stores the transactions that the LN node has interest in.
+    /// This cache stores the transactions that the LN node has interest in.
     pub registered_txs: PaMutex<HashMap<Txid, HashSet<Script>>>,
-    // This cache stores the outputs that the LN node has interest in.
+    /// This cache stores the outputs that the LN node has interest in.
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
-    // This cache stores transactions to be broadcasted once the other node accepts the channel
+    /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
 }
 
@@ -230,12 +236,19 @@ impl Platform {
         Platform {
             coin,
             network,
+            best_block_height: AtomicU64::new(0),
             default_fees_and_confirmations,
             registered_txs: PaMutex::new(HashMap::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
         }
     }
+
+    pub fn update_best_block_height(&self, new_height: u64) {
+        self.best_block_height.store(new_height, AtomicOrdering::Relaxed);
+    }
+
+    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
 
     pub fn add_tx(&self, txid: &Txid, script_pubkey: &Script) {
         let mut registered_txs = self.registered_txs.lock();
@@ -468,6 +481,7 @@ impl Platform {
     pub async fn process_txs_confirmations(
         &self,
         client: ElectrumClient,
+        persister: Arc<LightningPersister>,
         chain_monitor: Arc<ChainMonitor>,
         channel_manager: Arc<ChannelManager>,
         current_height: u64,
@@ -485,6 +499,16 @@ impl Platform {
         });
 
         for confirmed_transaction_info in transactions_to_confirm {
+            let best_block_height = self.best_block_height();
+            if let Err(e) = persister
+                .update_funding_tx_block_height(
+                    confirmed_transaction_info.transaction.txid().to_string(),
+                    best_block_height,
+                )
+                .await
+            {
+                log::error!("Unable to update the funding tx block height in DB: {}", e);
+            }
             channel_manager.transactions_confirmed(
                 &confirmed_transaction_info.header,
                 &[(

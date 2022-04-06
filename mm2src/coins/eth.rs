@@ -48,7 +48,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrderding};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
@@ -3077,13 +3077,13 @@ impl MmCoin for EthCoin {
         })
     }
 
-    fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrderding::Relaxed) }
+    fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrdering::Relaxed) }
 
     fn requires_notarization(&self) -> bool { false }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         self.required_confirmations
-            .store(confirmations, AtomicOrderding::Relaxed);
+            .store(confirmations, AtomicOrdering::Relaxed);
     }
 
     fn set_requires_notarization(&self, _requires_nota: bool) {

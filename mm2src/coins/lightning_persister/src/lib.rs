@@ -274,6 +274,15 @@ fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
+fn update_funding_tx_block_height_sql(for_coin: &str) -> Result<String, SqlError> {
+    let table_name = channels_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = "UPDATE ".to_owned() + &table_name + " SET funding_generated_in_block = ?2 WHERE funding_tx = ?1;";
+
+    Ok(sql)
+}
+
 fn update_channel_to_closed_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
@@ -1024,6 +1033,22 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
+    async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error> {
+        let for_coin = self.storage_ticker.clone();
+        let generated_in_block = block_height as u32;
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            let params = [&funding_tx as &dyn ToSql, &generated_in_block as &dyn ToSql];
+            sql_transaction.execute(&update_funding_tx_block_height_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let rpc_id = rpc_id.to_string();
@@ -1623,6 +1648,16 @@ mod tests {
             Some("9cdafd6d42dcbdc06b0b5bce1866deb82630581285bbfb56870577300c0a8c6e".into());
         expected_channel_details.funding_value = Some(3000);
         expected_channel_details.funding_generated_in_block = Some(50000);
+
+        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        assert_eq!(expected_channel_details, actual_channel_details);
+
+        block_on(persister.update_funding_tx_block_height(
+            "9cdafd6d42dcbdc06b0b5bce1866deb82630581285bbfb56870577300c0a8c6e".into(),
+            50001,
+        ))
+        .unwrap();
+        expected_channel_details.funding_generated_in_block = Some(50001);
 
         let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);

@@ -127,6 +127,7 @@ pub async fn init_channel_manager(
         },
     };
     let best_header = get_best_header(&rpc_client).await?;
+    platform.update_best_block_height(best_header.block_height());
     let best_block = RpcBestBlock::from(best_header.clone());
     let best_block_hash = BlockHash::from_hash(
         sha256d::Hash::from_slice(&best_block.hash.0).map_to_mm(|e| EnableLightningError::HashError(e.to_string()))?,
@@ -179,6 +180,7 @@ pub async fn init_channel_manager(
             .process_txs_confirmations(
                 // It's safe to use unwrap here for now until implementing Native Client for Lightning
                 rpc_client.clone(),
+                persister.clone(),
                 chain_monitor.clone(),
                 channel_manager.clone(),
                 best_header.block_height(),
@@ -199,6 +201,7 @@ pub async fn init_channel_manager(
     spawn(ln_best_block_update_loop(
         // It's safe to use unwrap here for now until implementing Native Client for Lightning
         platform,
+        persister.clone(),
         chain_monitor.clone(),
         channel_manager.clone(),
         rpc_client.clone(),

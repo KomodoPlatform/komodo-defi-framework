@@ -176,6 +176,10 @@ async fn save_channel_closing_details(
         .await?
         .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
 
+    let from_block = channel_details
+        .funding_generated_in_block
+        .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;
+
     let tx_id = channel_details
         .funding_tx
         .ok_or_else(|| MmError::new(SaveChannelClosingError::FundingTxNull))?;
@@ -196,7 +200,7 @@ async fn save_channel_closing_details(
         .wait_for_tx_spend(
             &funding_tx_bytes.into_vec(),
             (now_ms() / 1000) + 3600,
-            channel_details.funding_generated_in_block.unwrap_or_default(),
+            from_block,
             &None,
         )
         .compat()
@@ -261,13 +265,13 @@ impl LightningEventHandler {
         let platform = self.platform.clone();
         let persister = self.persister.clone();
         spawn(async move {
-            let current_block = platform.coin.current_block().compat().await.unwrap_or_default();
+            let best_block_height = platform.best_block_height();
             persister
                 .add_funding_tx_to_sql(
                     user_channel_id,
                     funding_txid.to_string(),
                     channel_value_satoshis,
-                    current_block,
+                    best_block_height,
                 )
                 .await
                 .error_log();
