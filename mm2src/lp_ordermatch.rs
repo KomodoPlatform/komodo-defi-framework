@@ -926,7 +926,13 @@ fn maker_order_created_p2p_notify(
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
     let (secret, public, peer_id) = match &order.p2p_privkey {
         Some(priv_key) => {
-            let key_pair = key_pair_from_secret(&priv_key.0).expect("valid priv key");
+            let key_pair = match key_pair_from_secret(&priv_key.0) {
+                Ok(k) => k,
+                Err(_) => {
+                    error!("Order {} has invalid p2p_privkey, skip P2P broadcast", order.uuid);
+                    return;
+                },
+            };
             let peer_id = peer_id_from_secp_public(key_pair.public_slice()).expect("valid public key");
             (priv_key.0, *key_pair.public(), Some(peer_id))
         },
@@ -961,10 +967,16 @@ fn maker_order_updated_p2p_notify(
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
     let (secret, peer_id) = match p2p_privkey {
-        Some(priv_key) => (
-            priv_key.0,
-            Some(peer_id_from_secp_secret(&priv_key.0).expect("valid secret")),
-        ),
+        Some(priv_key) => {
+            let peer_id = match peer_id_from_secp_secret(&priv_key.0) {
+                Ok(p) => p,
+                Err(_) => {
+                    error!("Order {} has invalid p2p_privkey, skip P2P broadcast", message.uuid());
+                    return;
+                },
+            };
+            (priv_key.0, Some(peer_id))
+        },
         None => {
             let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
             (key_pair.private().secret.take(), None)
@@ -2199,7 +2211,13 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
         for (_, order_mutex) in my_orders {
             let order = order_mutex.lock().await;
             if let Some(p2p_privkey) = order.p2p_privkey {
-                let key_pair = key_pair_from_secret(&p2p_privkey.0).expect("valid privkey");
+                let key_pair = match key_pair_from_secret(&p2p_privkey.0) {
+                    Ok(k) => k,
+                    Err(_) => {
+                        error!("Order {} has invalid p2p_privkey, skip P2P broadcast", order.uuid);
+                        continue;
+                    },
+                };
                 let pubsecp = hex::encode(key_pair.public_slice());
 
                 let orderbook = ordermatch_ctx.orderbook.lock();
@@ -2219,10 +2237,16 @@ fn broadcast_ordermatch_message(
     p2p_privkey: &Option<H256Json>,
 ) {
     let (secret, peer_id) = match p2p_privkey {
-        Some(priv_key) => (
-            priv_key.0,
-            Some(peer_id_from_secp_secret(&priv_key.0).expect("valid secret")),
-        ),
+        Some(priv_key) => {
+            let peer_id = match peer_id_from_secp_secret(&priv_key.0) {
+                Ok(p) => p,
+                Err(_) => {
+                    error!("Message {:?} has invalid p2p_privkey, skip P2P broadcast", msg);
+                    return;
+                },
+            };
+            (priv_key.0, Some(peer_id))
+        },
         None => {
             let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
             (key_pair.private().secret.take(), None)
