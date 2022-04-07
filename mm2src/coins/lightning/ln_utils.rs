@@ -48,6 +48,7 @@ fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option
 
 pub async fn init_persister(
     ctx: &MmArc,
+    platform: Arc<Platform>,
     ticker: String,
     backup_path: Option<String>,
 ) -> EnableLightningResult<Arc<LightningPersister>> {
@@ -71,6 +72,29 @@ pub async fn init_persister(
     if !is_sql_initialized {
         persister.init_sql().await?;
     }
+
+    let closed_channels_without_closing_tx = persister.get_closed_channels_with_no_closing_tx().await?;
+    for channel_details in closed_channels_without_closing_tx {
+        let platform = platform.clone();
+        let persister = persister.clone();
+        let user_channel_id = channel_details.rpc_id;
+        spawn(async move {
+            if let Ok(closing_tx_hash) = platform
+                .get_channel_closing_tx(channel_details)
+                .await
+                .error_log_passthrough()
+            {
+                if let Err(e) = persister.add_closing_tx_to_sql(user_channel_id, closing_tx_hash).await {
+                    log::error!(
+                        "Unable to update channel {} closing details in DB: {}",
+                        user_channel_id,
+                        e
+                    );
+                }
+            }
+        });
+    }
+
     Ok(persister)
 }
 

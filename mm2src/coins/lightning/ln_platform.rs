@@ -1,4 +1,5 @@
 use super::*;
+use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{electrum_script_hash, BestBlock as RpcBestBlock, BlockHashOrHeight,
                                ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
                                UtxoRpcClientEnum, UtxoRpcError};
@@ -25,6 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
+const GET_FUNDING_TX_INTERVAL: f64 = 60.;
 
 struct TxWithBlockInfo {
     tx: Transaction,
@@ -526,6 +528,52 @@ impl Platform {
                 confirmed_transaction_info.height,
             );
         }
+    }
+
+    pub async fn get_channel_closing_tx(&self, channel_details: SqlChannelDetails) -> SaveChannelClosingResult<String> {
+        let from_block = channel_details
+            .funding_generated_in_block
+            .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;
+
+        let tx_id = channel_details
+            .funding_tx
+            .ok_or_else(|| MmError::new(SaveChannelClosingError::FundingTxNull))?;
+
+        let tx_hash =
+            H256Json::from_str(&tx_id).map_to_mm(|e| SaveChannelClosingError::FundingTxParseError(e.to_string()))?;
+
+        let funding_tx_bytes = loop {
+            match self
+                .coin
+                .as_ref()
+                .rpc_client
+                .get_transaction_bytes(&tx_hash)
+                .compat()
+                .await
+            {
+                Ok(tx) => break tx,
+                Err(e) => {
+                    log::error!("Error getting funding tx bytes: {}", e);
+                    Timer::sleep(GET_FUNDING_TX_INTERVAL).await;
+                },
+            }
+        };
+
+        let closing_tx = self
+            .coin
+            .wait_for_tx_spend(
+                &funding_tx_bytes.into_vec(),
+                (now_ms() / 1000) + 3600,
+                from_block,
+                &None,
+            )
+            .compat()
+            .await
+            .map_to_mm(SaveChannelClosingError::WaitForFundingTxSpendError)?;
+
+        let closing_tx_hash = format!("{:02x}", closing_tx.tx_hash());
+
+        Ok(closing_tx_hash)
     }
 }
 

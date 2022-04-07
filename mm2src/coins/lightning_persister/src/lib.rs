@@ -312,7 +312,7 @@ fn get_channels_builder_preimage(for_coin: &str) -> Result<SqlBuilder, SqlError>
     Ok(sql_builder)
 }
 
-fn finalize_get_channels_sql_builder(sql_builder: &mut SqlBuilder, offset: usize, limit: usize) {
+fn add_fields_to_get_channels_sql_builder(sql_builder: &mut SqlBuilder) {
     sql_builder
         .field("rpc_id")
         .field("channel_id")
@@ -329,6 +329,9 @@ fn finalize_get_channels_sql_builder(sql_builder: &mut SqlBuilder, offset: usize
         .field("is_closed")
         .field("created_at")
         .field("last_updated");
+}
+
+fn finalize_get_channels_sql_builder(sql_builder: &mut SqlBuilder, offset: usize, limit: usize) {
     sql_builder.offset(offset);
     sql_builder.limit(limit);
     sql_builder.order_desc("last_updated");
@@ -1134,6 +1137,7 @@ impl SqlStorage for LightningPersister {
                 apply_get_channels_filter(&mut sql_builder, &mut params, f);
             }
             let params_as_trait: Vec<_> = params.iter().map(|(key, value)| (*key, value as &dyn ToSql)).collect();
+            add_fields_to_get_channels_sql_builder(&mut sql_builder);
             finalize_get_channels_sql_builder(&mut sql_builder, offset, limit);
 
             let sql = sql_builder.sql().expect("valid sql");
@@ -1146,6 +1150,25 @@ impl SqlStorage for LightningPersister {
                 skipped: offset,
                 total,
             };
+            Ok(result)
+        })
+        .await
+    }
+
+    async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error> {
+        let mut builder = get_channels_builder_preimage(self.storage_ticker.as_str())?;
+        builder.and_where("closing_tx IS NULL");
+        add_fields_to_get_channels_sql_builder(&mut builder);
+        let sql = builder.sql().expect("valid sql");
+        let sqlite_connection = self.sqlite_connection.clone();
+
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+
+            let mut stmt = conn.prepare(&sql)?;
+            let result = stmt
+                .query_map_named(&[], channel_details_from_row)?
+                .collect::<Result<_, _>>()?;
             Ok(result)
         })
         .await
@@ -1669,6 +1692,9 @@ mod tests {
         let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
+        let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
+        assert_eq!(actual_channels.len(), 1);
+
         let closed_channels =
             block_on(persister.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 1);
@@ -1679,6 +1705,9 @@ mod tests {
             block_on(persister.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 2);
 
+        let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
+        assert_eq!(actual_channels.len(), 2);
+
         block_on(persister.add_closing_tx_to_sql(
             2,
             "5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into(),
@@ -1686,6 +1715,9 @@ mod tests {
         .unwrap();
         expected_channel_details.closing_tx =
             Some("5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into());
+
+        let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
+        assert_eq!(actual_channels.len(), 1);
 
         let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);

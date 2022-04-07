@@ -503,16 +503,10 @@ pub enum SaveChannelClosingError {
     FundingTxNull,
     #[display(fmt = "Error parsing funding transaction hash: {}", _0)]
     FundingTxParseError(String),
-    #[display(fmt = "Error getting funding transaction bytes through RPC: {}", _0)]
-    RpcError(String),
     #[display(fmt = "Error while waiting for the funding transaction to be spent: {}", _0)]
     WaitForFundingTxSpendError(String),
 }
 
 impl From<SqlError> for SaveChannelClosingError {
     fn from(err: SqlError) -> SaveChannelClosingError { SaveChannelClosingError::DbError(err.to_string()) }
-}
-
-impl From<UtxoRpcError> for SaveChannelClosingError {
-    fn from(e: UtxoRpcError) -> Self { SaveChannelClosingError::RpcError(e.to_string()) }
 }

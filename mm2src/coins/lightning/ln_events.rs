@@ -5,7 +5,6 @@ use bitcoin::blockdata::transaction::Transaction;
 use common::executor::{spawn, Timer};
 use common::{log, now_ms};
 use core::time::Duration;
-use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
@@ -176,38 +175,7 @@ async fn save_channel_closing_details(
         .await?
         .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
 
-    let from_block = channel_details
-        .funding_generated_in_block
-        .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;
-
-    let tx_id = channel_details
-        .funding_tx
-        .ok_or_else(|| MmError::new(SaveChannelClosingError::FundingTxNull))?;
-
-    let tx_hash =
-        H256Json::from_str(&tx_id).map_to_mm(|e| SaveChannelClosingError::FundingTxParseError(e.to_string()))?;
-
-    let funding_tx_bytes = platform
-        .coin
-        .as_ref()
-        .rpc_client
-        .get_transaction_bytes(&tx_hash)
-        .compat()
-        .await?;
-
-    let closing_tx = platform
-        .coin
-        .wait_for_tx_spend(
-            &funding_tx_bytes.into_vec(),
-            (now_ms() / 1000) + 3600,
-            from_block,
-            &None,
-        )
-        .compat()
-        .await
-        .map_to_mm(SaveChannelClosingError::WaitForFundingTxSpendError)?;
-
-    let closing_tx_hash = format!("{:02x}", closing_tx.tx_hash());
+    let closing_tx_hash = platform.get_channel_closing_tx(channel_details).await?;
 
     persister
         .add_closing_tx_to_sql(user_channel_id, closing_tx_hash)
@@ -391,7 +359,11 @@ impl LightningEventHandler {
         if user_channel_id != 0 {
             spawn(async move {
                 if let Err(e) = save_channel_closing_details(persister, platform, user_channel_id, reason).await {
-                    log::error!("Unable to update channel closing details in DB: {}", e);
+                    log::error!(
+                        "Unable to update channel {} closing details in DB: {}",
+                        user_channel_id,
+                        e
+                    );
                 }
             });
         }

@@ -227,6 +227,8 @@ pub trait SqlStorage {
         limit: usize,
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
+    async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error>;
+
     async fn get_payments_by_filter(
         &self,
         filter: Option<PaymentsFilter>,

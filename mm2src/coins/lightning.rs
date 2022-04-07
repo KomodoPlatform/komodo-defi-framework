@@ -531,7 +531,7 @@ pub async fn start_lightning(
     let logger = ctx.log.0.clone();
 
     // Initialize Persister
-    let persister = ln_utils::init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
+    let persister = ln_utils::init_persister(ctx, platform.clone(), conf.ticker.clone(), params.backup_path).await?;
 
     // Initialize the KeysManager
     let keys_manager = ln_utils::init_keys_manager(ctx)?;
