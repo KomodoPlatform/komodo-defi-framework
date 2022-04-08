@@ -40,8 +40,9 @@ use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use lightning_persister::storage::{ClosedChannelsFilter, FileSystemStorage, HTLCStatus, NodesAddressesMapShared,
-                                   PaymentInfo, PaymentType, PaymentsFilter, Scorer, SqlChannelDetails, SqlStorage};
+use lightning_persister::storage::{ClosedChannelsFilter, DbStorage, FileSystemStorage, HTLCStatus,
+                                   NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer,
+                                   SqlChannelDetails};
 use lightning_persister::LightningPersister;
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
@@ -179,6 +180,54 @@ impl LightningCoin {
             status: HTLCStatus::Pending,
             created_at: now_ms() / 1000,
             last_updated: now_ms() / 1000,
+        })
+    }
+
+    async fn get_open_channels_by_filter(
+        &self,
+        filter: Option<OpenChannelsFilter>,
+        paging: PagingOptionsEnum<u64>,
+        limit: usize,
+    ) -> ListChannelsResult<GetOpenChannelsResult> {
+        let mut total_open_channels: Vec<ChannelDetailsForRPC> = self
+            .channel_manager
+            .list_channels()
+            .into_iter()
+            .map(From::from)
+            .collect();
+
+        total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
+
+        let open_channels_filtered = if let Some(ref f) = filter {
+            total_open_channels
+                .into_iter()
+                .filter(|chan| apply_open_channel_filter(chan, f))
+                .collect()
+        } else {
+            total_open_channels
+        };
+
+        let offset = match paging {
+            PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+            PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
+                .iter()
+                .position(|x| x.rpc_channel_id == rpc_id)
+                .map(|pos| pos + 1)
+                .unwrap_or_default(),
+        };
+
+        let total = open_channels_filtered.len();
+
+        let channels = if offset + limit <= total {
+            open_channels_filtered[offset..offset + limit].to_vec()
+        } else {
+            open_channels_filtered[offset..].to_vec()
+        };
+
+        Ok(GetOpenChannelsResult {
+            channels,
+            skipped: offset,
+            total,
         })
     }
 }
@@ -802,7 +851,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .save_nodes_addresses(ln_coin.open_channels_nodes)
         .await?;
 
-    ln_coin.persister.add_channel_to_sql(pending_channel_details).await?;
+    ln_coin.persister.add_channel_to_db(pending_channel_details).await?;
 
     Ok(OpenChannelResponse {
         rpc_channel_id,
@@ -940,6 +989,12 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
     }
 }
 
+struct GetOpenChannelsResult {
+    pub channels: Vec<ChannelDetailsForRPC>,
+    pub skipped: usize,
+    pub total: usize,
+}
+
 #[derive(Serialize)]
 pub struct ListOpenChannelsResponse {
     open_channels: Vec<ChannelDetailsForRPC>,
@@ -959,47 +1014,17 @@ pub async fn list_open_channels_by_filter(
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(ListChannelsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let mut total_open_channels: Vec<ChannelDetailsForRPC> = ln_coin
-        .channel_manager
-        .list_channels()
-        .into_iter()
-        .map(From::from)
-        .collect();
 
-    total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
-
-    let open_channels_filtered = if let Some(ref filter) = req.filter {
-        total_open_channels
-            .into_iter()
-            .filter(|chan| apply_open_channel_filter(chan, filter))
-            .collect()
-    } else {
-        total_open_channels
-    };
-
-    let offset = match req.paging_options {
-        PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * req.limit,
-        PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
-            .iter()
-            .position(|x| x.rpc_channel_id == rpc_id)
-            .map(|pos| pos + 1)
-            .unwrap_or_default(),
-    };
-
-    let total = open_channels_filtered.len();
-
-    let open_channels = if offset + req.limit <= total {
-        open_channels_filtered[offset..offset + req.limit].to_vec()
-    } else {
-        open_channels_filtered[offset..].to_vec()
-    };
+    let result = ln_coin
+        .get_open_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
+        .await?;
 
     Ok(ListOpenChannelsResponse {
-        open_channels,
+        open_channels: result.channels,
         limit: req.limit,
-        skipped: offset,
-        total,
-        total_pages: calc_total_pages(total, req.limit),
+        skipped: result.skipped,
+        total: result.total,
+        total_pages: calc_total_pages(result.total, req.limit),
         paging_options: req.paging_options,
     })
 }
@@ -1080,7 +1105,7 @@ pub async fn get_channel_details(
         None => GetChannelDetailsResponse::Closed(
             ln_coin
                 .persister
-                .get_channel_from_sql(req.rpc_channel_id)
+                .get_channel_from_db(req.rpc_channel_id)
                 .await?
                 .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
         ),
@@ -1142,7 +1167,7 @@ pub async fn generate_invoice(
         created_at: now_ms() / 1000,
         last_updated: now_ms() / 1000,
     };
-    ln_coin.persister.add_or_update_payment_in_sql(payment_info).await?;
+    ln_coin.persister.add_or_update_payment_in_db(payment_info).await?;
     Ok(GenerateInvoiceResponse {
         payment_hash: payment_hash.into(),
         invoice: invoice.into(),
@@ -1203,7 +1228,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
     };
     ln_coin
         .persister
-        .add_or_update_payment_in_sql(payment_info.clone())
+        .add_or_update_payment_in_db(payment_info.clone())
         .await?;
     Ok(SendPaymentResponse {
         payment_hash: payment_info.payment_hash.0.into(),
@@ -1371,7 +1396,7 @@ pub async fn get_payment_details(
 
     if let Some(payment_info) = ln_coin
         .persister
-        .get_payment_from_sql(PaymentHash(req.payment_hash.0))
+        .get_payment_from_db(PaymentHash(req.payment_hash.0))
         .await?
     {
         return Ok(GetPaymentDetailsResponse {

@@ -13,9 +13,9 @@ extern crate lightning;
 extern crate secp256k1;
 extern crate serde_json;
 
-use crate::storage::{ChannelType, ChannelVisibility, ClosedChannelsFilter, FileSystemStorage, GetClosedChannelsResult,
-                     GetPaymentsResult, HTLCStatus, NodesAddressesMap, NodesAddressesMapShared, PaymentInfo,
-                     PaymentType, PaymentsFilter, Scorer, SqlChannelDetails, SqlStorage};
+use crate::storage::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DbStorage, FileSystemStorage,
+                     GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, NodesAddressesMap,
+                     NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer, SqlChannelDetails};
 use crate::util::DiskWriteable;
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
@@ -861,10 +861,10 @@ impl FileSystemStorage for LightningPersister {
 }
 
 #[async_trait]
-impl SqlStorage for LightningPersister {
+impl DbStorage for LightningPersister {
     type Error = SqlError;
 
-    async fn init_sql(&self) -> Result<(), Self::Error> {
+    async fn init_db(&self) -> Result<(), Self::Error> {
         let sqlite_connection = self.sqlite_connection.clone();
         let sql_channels_history = create_channels_history_table_sql(self.storage_ticker.as_str())?;
         let sql_payments_history = create_payments_history_table_sql(self.storage_ticker.as_str())?;
@@ -877,7 +877,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn is_sql_initialized(&self) -> Result<bool, Self::Error> {
+    async fn is_db_initialized(&self) -> Result<bool, Self::Error> {
         let channels_history_table = channels_history_table(self.storage_ticker.as_str());
         validate_table_name(&channels_history_table)?;
         let payments_history_table = payments_history_table(self.storage_ticker.as_str());
@@ -907,7 +907,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn add_channel_to_sql(&self, details: SqlChannelDetails) -> Result<(), Self::Error> {
+    async fn add_channel_to_db(&self, details: SqlChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let rpc_id = details.rpc_id.to_string();
         let channel_id = details.channel_id;
@@ -940,7 +940,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn add_funding_tx_to_sql(
+    async fn add_funding_tx_to_db(
         &self,
         rpc_id: u64,
         funding_tx: String,
@@ -1026,7 +1026,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn add_closing_tx_to_sql(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
+    async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let rpc_id = rpc_id.to_string();
         let last_updated = (now_ms() / 1000).to_string();
@@ -1044,7 +1044,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn add_claiming_tx_to_sql(
+    async fn add_claiming_tx_to_db(
         &self,
         closing_tx: String,
         claiming_tx: String,
@@ -1067,7 +1067,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn get_channel_from_sql(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error> {
+    async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error> {
         let params = [rpc_id.to_string()];
         let sql = select_channel_from_table_by_rpc_id_sql(self.storage_ticker.as_str())?;
         let sqlite_connection = self.sqlite_connection.clone();
@@ -1145,7 +1145,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn add_or_update_payment_in_sql(&self, info: PaymentInfo) -> Result<(), Self::Error> {
+    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let payment_hash = hex::encode(info.payment_hash.0);
         let (is_outbound, destination) = match info.payment_type {
@@ -1185,7 +1185,7 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn get_payment_from_sql(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
         let sql = select_payment_from_table_by_hash_sql(self.storage_ticker.as_str())?;
         let sqlite_connection = self.sqlite_connection.clone();
@@ -1609,14 +1609,14 @@ mod tests {
             None,
             Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         );
-        let initialized = block_on(persister.is_sql_initialized()).unwrap();
+        let initialized = block_on(persister.is_db_initialized()).unwrap();
         assert!(!initialized);
 
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
         // repetitive init must not fail
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
 
-        let initialized = block_on(persister.is_sql_initialized()).unwrap();
+        let initialized = block_on(persister.is_db_initialized()).unwrap();
         assert!(initialized);
     }
 
@@ -1629,12 +1629,12 @@ mod tests {
             Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         );
 
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
 
         let last_channel_rpc_id = block_on(persister.get_last_channel_rpc_id()).unwrap();
         assert_eq!(last_channel_rpc_id, 0);
 
-        let channel = block_on(persister.get_channel_from_sql(1)).unwrap();
+        let channel = block_on(persister.get_channel_from_db(1)).unwrap();
         assert!(channel.is_none());
 
         let mut expected_channel_details = SqlChannelDetails::new(
@@ -1644,23 +1644,23 @@ mod tests {
             true,
             true,
         );
-        block_on(persister.add_channel_to_sql(expected_channel_details.clone())).unwrap();
+        block_on(persister.add_channel_to_db(expected_channel_details.clone())).unwrap();
         let last_channel_rpc_id = block_on(persister.get_last_channel_rpc_id()).unwrap();
         assert_eq!(last_channel_rpc_id, 1);
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(1)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(1)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         // must fail because we are adding channel with the same rpc_id
-        block_on(persister.add_channel_to_sql(expected_channel_details.clone())).unwrap_err();
+        block_on(persister.add_channel_to_db(expected_channel_details.clone())).unwrap_err();
         assert_eq!(last_channel_rpc_id, 1);
 
         expected_channel_details.rpc_id = 2;
-        block_on(persister.add_channel_to_sql(expected_channel_details.clone())).unwrap();
+        block_on(persister.add_channel_to_db(expected_channel_details.clone())).unwrap();
         let last_channel_rpc_id = block_on(persister.get_last_channel_rpc_id()).unwrap();
         assert_eq!(last_channel_rpc_id, 2);
 
-        block_on(persister.add_funding_tx_to_sql(
+        block_on(persister.add_funding_tx_to_db(
             2,
             "9cdafd6d42dcbdc06b0b5bce1866deb82630581285bbfb56870577300c0a8c6e".into(),
             3000,
@@ -1672,7 +1672,7 @@ mod tests {
         expected_channel_details.funding_value = Some(3000);
         expected_channel_details.funding_generated_in_block = Some(50000);
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         block_on(persister.update_funding_tx_block_height(
@@ -1682,14 +1682,14 @@ mod tests {
         .unwrap();
         expected_channel_details.funding_generated_in_block = Some(50001);
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         block_on(persister.update_channel_to_closed(2, "the channel was cooperatively closed".into())).unwrap();
         expected_channel_details.closure_reason = Some("the channel was cooperatively closed".into());
         expected_channel_details.is_closed = true;
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
         let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
@@ -1708,7 +1708,7 @@ mod tests {
         let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
         assert_eq!(actual_channels.len(), 2);
 
-        block_on(persister.add_closing_tx_to_sql(
+        block_on(persister.add_closing_tx_to_db(
             2,
             "5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into(),
         ))
@@ -1719,10 +1719,10 @@ mod tests {
         let actual_channels = block_on(persister.get_closed_channels_with_no_closing_tx()).unwrap();
         assert_eq!(actual_channels.len(), 1);
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        block_on(persister.add_claiming_tx_to_sql(
+        block_on(persister.add_claiming_tx_to_db(
             "5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into(),
             "97f061634a4a7b0b0c2b95648f86b1c39b95e0cf5073f07725b7143c095b612a".into(),
             2000.333333,
@@ -1732,7 +1732,7 @@ mod tests {
             Some("97f061634a4a7b0b0c2b95648f86b1c39b95e0cf5073f07725b7143c095b612a".into());
         expected_channel_details.claimed_balance = Some(2000.333333);
 
-        let actual_channel_details = block_on(persister.get_channel_from_sql(2)).unwrap().unwrap();
+        let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
     }
 
@@ -1745,9 +1745,9 @@ mod tests {
             Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         );
 
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
 
-        let payment = block_on(persister.get_payment_from_sql(PaymentHash([0; 32]))).unwrap();
+        let payment = block_on(persister.get_payment_from_db(PaymentHash([0; 32]))).unwrap();
         assert!(payment.is_none());
 
         let mut expected_payment_info = PaymentInfo {
@@ -1762,9 +1762,9 @@ mod tests {
             created_at: now_ms() / 1000,
             last_updated: now_ms() / 1000,
         };
-        block_on(persister.add_or_update_payment_in_sql(expected_payment_info.clone())).unwrap();
+        block_on(persister.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
 
-        let actual_payment_info = block_on(persister.get_payment_from_sql(PaymentHash([0; 32])))
+        let actual_payment_info = block_on(persister.get_payment_from_db(PaymentHash([0; 32])))
             .unwrap()
             .unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1779,9 +1779,9 @@ mod tests {
         expected_payment_info.amt_msat = None;
         expected_payment_info.status = HTLCStatus::Succeeded;
         expected_payment_info.last_updated = now_ms() / 1000;
-        block_on(persister.add_or_update_payment_in_sql(expected_payment_info.clone())).unwrap();
+        block_on(persister.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
 
-        let actual_payment_info = block_on(persister.get_payment_from_sql(PaymentHash([1; 32])))
+        let actual_payment_info = block_on(persister.get_payment_from_db(PaymentHash([1; 32])))
             .unwrap()
             .unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1796,12 +1796,12 @@ mod tests {
             Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         );
 
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
 
         let mut payments = generate_random_payments(100);
 
         for payment in payments.clone() {
-            block_on(persister.add_or_update_payment_in_sql(payment)).unwrap();
+            block_on(persister.add_or_update_payment_in_db(payment)).unwrap();
         }
 
         let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
@@ -1920,13 +1920,13 @@ mod tests {
             Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         );
 
-        block_on(persister.init_sql()).unwrap();
+        block_on(persister.init_db()).unwrap();
 
         let mut channels = generate_random_channels(100);
 
         for channel in channels.clone() {
-            block_on(persister.add_channel_to_sql(channel.clone())).unwrap();
-            block_on(persister.add_funding_tx_to_sql(
+            block_on(persister.add_channel_to_db(channel.clone())).unwrap();
+            block_on(persister.add_funding_tx_to_db(
                 channel.rpc_id,
                 channel.funding_tx.unwrap(),
                 channel.funding_value.unwrap(),
@@ -1934,8 +1934,8 @@ mod tests {
             ))
             .unwrap();
             block_on(persister.update_channel_to_closed(channel.rpc_id, channel.closure_reason.unwrap())).unwrap();
-            block_on(persister.add_closing_tx_to_sql(channel.rpc_id, channel.closing_tx.clone().unwrap())).unwrap();
-            block_on(persister.add_claiming_tx_to_sql(
+            block_on(persister.add_closing_tx_to_db(channel.rpc_id, channel.closing_tx.clone().unwrap())).unwrap();
+            block_on(persister.add_claiming_tx_to_db(
                 channel.closing_tx.unwrap(),
                 channel.claiming_tx.unwrap(),
                 channel.claimed_balance.unwrap(),

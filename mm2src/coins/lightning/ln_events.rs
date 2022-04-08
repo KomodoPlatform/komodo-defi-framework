@@ -171,15 +171,13 @@ async fn save_channel_closing_details(
     persister.update_channel_to_closed(user_channel_id, reason).await?;
 
     let channel_details = persister
-        .get_channel_from_sql(user_channel_id)
+        .get_channel_from_db(user_channel_id)
         .await?
         .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
 
     let closing_tx_hash = platform.get_channel_closing_tx(channel_details).await?;
 
-    persister
-        .add_closing_tx_to_sql(user_channel_id, closing_tx_hash)
-        .await?;
+    persister.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await?;
 
     Ok(())
 }
@@ -235,7 +233,7 @@ impl LightningEventHandler {
         spawn(async move {
             let best_block_height = platform.best_block_height();
             persister
-                .add_funding_tx_to_sql(
+                .add_funding_tx_to_db(
                     user_channel_id,
                     funding_txid.to_string(),
                     channel_value_satoshis,
@@ -276,7 +274,7 @@ impl LightningEventHandler {
         match purpose {
             PaymentPurpose::InvoicePayment { .. } => spawn(async move {
                 if let Ok(Some(mut payment_info)) = persister
-                    .get_payment_from_sql(payment_hash)
+                    .get_payment_from_db(payment_hash)
                     .await
                     .error_log_passthrough()
                 {
@@ -284,7 +282,7 @@ impl LightningEventHandler {
                     payment_info.status = HTLCStatus::Succeeded;
                     payment_info.amt_msat = Some(amt);
                     payment_info.last_updated = now_ms() / 1000;
-                    if let Err(e) = persister.add_or_update_payment_in_sql(payment_info).await {
+                    if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
                         log::error!("Unable to update payment information in DB: {}", e);
                     }
                 }
@@ -303,7 +301,7 @@ impl LightningEventHandler {
                     last_updated: now_ms() / 1000,
                 };
                 spawn(async move {
-                    if let Err(e) = persister.add_or_update_payment_in_sql(payment_info).await {
+                    if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
                         log::error!("Unable to update payment information in DB: {}", e);
                     }
                 });
@@ -324,7 +322,7 @@ impl LightningEventHandler {
         let persister = self.persister.clone();
         spawn(async move {
             if let Ok(Some(mut payment_info)) = persister
-                .get_payment_from_sql(payment_hash)
+                .get_payment_from_db(payment_hash)
                 .await
                 .error_log_passthrough()
             {
@@ -333,7 +331,7 @@ impl LightningEventHandler {
                 payment_info.fee_paid_msat = fee_paid_msat;
                 payment_info.last_updated = now_ms() / 1000;
                 let amt_msat = payment_info.amt_msat;
-                if let Err(e) = persister.add_or_update_payment_in_sql(payment_info).await {
+                if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
                     log::error!("Unable to update payment information in DB: {}", e);
                 }
                 log::info!(
@@ -377,13 +375,13 @@ impl LightningEventHandler {
         let persister = self.persister.clone();
         spawn(async move {
             if let Ok(Some(mut payment_info)) = persister
-                .get_payment_from_sql(payment_hash)
+                .get_payment_from_db(payment_hash)
                 .await
                 .error_log_passthrough()
             {
                 payment_info.status = HTLCStatus::Failed;
                 payment_info.last_updated = now_ms() / 1000;
-                if let Err(e) = persister.add_or_update_payment_in_sql(payment_info).await {
+                if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
                     log::error!("Unable to update payment information in DB: {}", e);
                 }
             }
@@ -464,7 +462,7 @@ impl LightningEventHandler {
             let persister = self.persister.clone();
             spawn(async move {
                 persister
-                    .add_claiming_tx_to_sql(
+                    .add_claiming_tx_to_db(
                         closing_txid,
                         claiming_txid,
                         (claimed_balance as f64) - claiming_tx_fee_per_channel,

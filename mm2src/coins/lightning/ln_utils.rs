@@ -14,7 +14,7 @@ use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, Sim
 use lightning::routing::network_graph::NetworkGraph;
 use lightning::util::config::UserConfig;
 use lightning::util::ser::ReadableArgs;
-use lightning_persister::storage::{FileSystemStorage, NodesAddressesMap, Scorer, SqlStorage};
+use lightning_persister::storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
 use lightning_persister::LightningPersister;
 use std::fs::File;
 use std::path::PathBuf;
@@ -68,9 +68,9 @@ pub async fn init_persister(
     if !is_initialized {
         persister.init_fs().await?;
     }
-    let is_sql_initialized = persister.is_sql_initialized().await?;
-    if !is_sql_initialized {
-        persister.init_sql().await?;
+    let is_db_initialized = persister.is_db_initialized().await?;
+    if !is_db_initialized {
+        persister.init_db().await?;
     }
 
     let closed_channels_without_closing_tx = persister.get_closed_channels_with_no_closing_tx().await?;
@@ -84,7 +84,7 @@ pub async fn init_persister(
                 .await
                 .error_log_passthrough()
             {
-                if let Err(e) = persister.add_closing_tx_to_sql(user_channel_id, closing_tx_hash).await {
+                if let Err(e) = persister.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
                     log::error!(
                         "Unable to update channel {} closing details in DB: {}",
                         user_channel_id,

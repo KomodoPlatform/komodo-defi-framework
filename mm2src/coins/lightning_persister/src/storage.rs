@@ -188,24 +188,24 @@ pub struct GetPaymentsResult {
 }
 
 #[async_trait]
-pub trait SqlStorage {
+pub trait DbStorage {
     type Error;
 
     /// Initializes tables in DB.
-    async fn init_sql(&self) -> Result<(), Self::Error>;
+    async fn init_db(&self) -> Result<(), Self::Error>;
 
     /// Checks if tables have been initialized or not in DB.
-    async fn is_sql_initialized(&self) -> Result<bool, Self::Error>;
+    async fn is_db_initialized(&self) -> Result<bool, Self::Error>;
 
     /// Gets the last added channel rpc_id. Can be used to deduce the rpc_id for a new channel to be added to DB.
     async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error>;
 
-    /// Inserts a new channel record in the DB. The record's data is completed using add_funding_tx_to_sql,
-    /// add_closing_tx_to_sql, add_claiming_tx_to_sql when this information is available.
-    async fn add_channel_to_sql(&self, details: SqlChannelDetails) -> Result<(), Self::Error>;
+    /// Inserts a new channel record in the DB. The record's data is completed using add_funding_tx_to_db,
+    /// add_closing_tx_to_db, add_claiming_tx_to_db when this information is available.
+    async fn add_channel_to_db(&self, details: SqlChannelDetails) -> Result<(), Self::Error>;
 
     /// Updates a channel's DB record with the channel's funding transaction information.
-    async fn add_funding_tx_to_sql(
+    async fn add_funding_tx_to_db(
         &self,
         rpc_id: u64,
         funding_tx: String,
@@ -225,11 +225,11 @@ pub trait SqlStorage {
     async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error>;
 
     /// Updates a channel's DB record with the channel's closing transaction hash.
-    async fn add_closing_tx_to_sql(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error>;
+    async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error>;
 
     /// Updates a channel's DB record with information about the transaction responsible for claiming the channel's
     /// closing balance back to the user's address.
-    async fn add_claiming_tx_to_sql(
+    async fn add_claiming_tx_to_db(
         &self,
         closing_tx: String,
         claiming_tx: String,
@@ -237,7 +237,7 @@ pub trait SqlStorage {
     ) -> Result<(), Self::Error>;
 
     /// Gets a channel record from DB by the channel's rpc_id.
-    async fn get_channel_from_sql(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error>;
+    async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error>;
 
     /// Gets the list of closed channels that match the provided filter criteria. The number of requested records is
     /// specified by the limit parameter, the starting record to list from is specified by the paging parameter. The
@@ -250,10 +250,10 @@ pub trait SqlStorage {
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
     /// Inserts or updates a new payment record in the DB.
-    async fn add_or_update_payment_in_sql(&self, info: PaymentInfo) -> Result<(), Self::Error>;
+    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
 
     /// Gets a payment's record from DB by the payment's hash.
-    async fn get_payment_from_sql(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
 
     /// Gets the list of payments that match the provided filter criteria. The number of requested records is specified
     /// by the limit parameter, the starting record to list from is specified by the paging parameter. The total number
