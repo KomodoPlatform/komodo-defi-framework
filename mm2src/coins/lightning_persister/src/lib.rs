@@ -895,6 +895,18 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
+    async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error> {
+        let sql = get_last_channel_rpc_id_sql(self.storage_ticker.as_str())?;
+        let sqlite_connection = self.sqlite_connection.clone();
+
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+            let count: u32 = conn.query_row(&sql, NO_PARAMS, |r| r.get(0))?;
+            Ok(count)
+        })
+        .await
+    }
+
     async fn add_channel_to_sql(&self, details: SqlChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let rpc_id = details.rpc_id.to_string();
@@ -924,82 +936,6 @@ impl SqlStorage for LightningPersister {
             sql_transaction.execute(&insert_channel_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
-        })
-        .await
-    }
-
-    async fn add_or_update_payment_in_sql(&self, info: PaymentInfo) -> Result<(), Self::Error> {
-        let for_coin = self.storage_ticker.clone();
-        let payment_hash = hex::encode(info.payment_hash.0);
-        let (is_outbound, destination) = match info.payment_type {
-            PaymentType::OutboundPayment { destination } => (true as i32, destination.map(|d| d.to_string())),
-            PaymentType::InboundPayment => (false as i32, None),
-        };
-        let description = info.description;
-        let preimage = info.preimage.map(|p| hex::encode(p.0));
-        let secret = info.secret.map(|s| hex::encode(s.0));
-        let amount_msat = info.amt_msat.map(|a| a as u32);
-        let fee_paid_msat = info.fee_paid_msat.map(|f| f as u32);
-        let status = info.status.to_string();
-        let created_at = info.created_at as u32;
-        let last_updated = info.last_updated as u32;
-
-        let sqlite_connection = self.sqlite_connection.clone();
-        async_blocking(move || {
-            let params = [
-                &payment_hash as &dyn ToSql,
-                &destination as &dyn ToSql,
-                &description as &dyn ToSql,
-                &preimage as &dyn ToSql,
-                &secret as &dyn ToSql,
-                &amount_msat as &dyn ToSql,
-                &fee_paid_msat as &dyn ToSql,
-                &is_outbound as &dyn ToSql,
-                &status as &dyn ToSql,
-                &created_at as &dyn ToSql,
-                &last_updated as &dyn ToSql,
-            ];
-            let mut conn = sqlite_connection.lock().unwrap();
-            let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&insert_or_update_payment_sql(&for_coin)?, &params)?;
-            sql_transaction.commit()?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn get_channel_from_sql(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error> {
-        let params = [rpc_id.to_string()];
-        let sql = select_channel_from_table_by_rpc_id_sql(self.storage_ticker.as_str())?;
-        let sqlite_connection = self.sqlite_connection.clone();
-
-        async_blocking(move || {
-            let conn = sqlite_connection.lock().unwrap();
-            query_single_row(&conn, &sql, params, channel_details_from_row)
-        })
-        .await
-    }
-
-    async fn get_payment_from_sql(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
-        let params = [hex::encode(hash.0)];
-        let sql = select_payment_from_table_by_hash_sql(self.storage_ticker.as_str())?;
-        let sqlite_connection = self.sqlite_connection.clone();
-
-        async_blocking(move || {
-            let conn = sqlite_connection.lock().unwrap();
-            query_single_row(&conn, &sql, params, payment_info_from_row)
-        })
-        .await
-    }
-
-    async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error> {
-        let sql = get_last_channel_rpc_id_sql(self.storage_ticker.as_str())?;
-        let sqlite_connection = self.sqlite_connection.clone();
-
-        async_blocking(move || {
-            let conn = sqlite_connection.lock().unwrap();
-            let count: u32 = conn.query_row(&sql, NO_PARAMS, |r| r.get(0))?;
-            Ok(count)
         })
         .await
     }
@@ -1071,6 +1007,25 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
+    async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error> {
+        let mut builder = get_channels_builder_preimage(self.storage_ticker.as_str())?;
+        builder.and_where("closing_tx IS NULL");
+        add_fields_to_get_channels_sql_builder(&mut builder);
+        let sql = builder.sql().expect("valid sql");
+        let sqlite_connection = self.sqlite_connection.clone();
+
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+
+            let mut stmt = conn.prepare(&sql)?;
+            let result = stmt
+                .query_map_named(&[], channel_details_from_row)?
+                .collect::<Result<_, _>>()?;
+            Ok(result)
+        })
+        .await
+    }
+
     async fn add_closing_tx_to_sql(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let rpc_id = rpc_id.to_string();
@@ -1085,6 +1040,41 @@ impl SqlStorage for LightningPersister {
             sql_transaction.execute(&update_closing_tx_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
+        })
+        .await
+    }
+
+    async fn add_claiming_tx_to_sql(
+        &self,
+        closing_tx: String,
+        claiming_tx: String,
+        claimed_balance: f64,
+    ) -> Result<(), Self::Error> {
+        let for_coin = self.storage_ticker.clone();
+        let claimed_balance = claimed_balance.to_string();
+        let last_updated = (now_ms() / 1000).to_string();
+
+        let params = [closing_tx, claiming_tx, claimed_balance, last_updated];
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&update_claiming_tx_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn get_channel_from_sql(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error> {
+        let params = [rpc_id.to_string()];
+        let sql = select_channel_from_table_by_rpc_id_sql(self.storage_ticker.as_str())?;
+        let sqlite_connection = self.sqlite_connection.clone();
+
+        async_blocking(move || {
+            let conn = sqlite_connection.lock().unwrap();
+            query_single_row(&conn, &sql, params, channel_details_from_row)
         })
         .await
     }
@@ -1155,21 +1145,54 @@ impl SqlStorage for LightningPersister {
         .await
     }
 
-    async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error> {
-        let mut builder = get_channels_builder_preimage(self.storage_ticker.as_str())?;
-        builder.and_where("closing_tx IS NULL");
-        add_fields_to_get_channels_sql_builder(&mut builder);
-        let sql = builder.sql().expect("valid sql");
+    async fn add_or_update_payment_in_sql(&self, info: PaymentInfo) -> Result<(), Self::Error> {
+        let for_coin = self.storage_ticker.clone();
+        let payment_hash = hex::encode(info.payment_hash.0);
+        let (is_outbound, destination) = match info.payment_type {
+            PaymentType::OutboundPayment { destination } => (true as i32, destination.map(|d| d.to_string())),
+            PaymentType::InboundPayment => (false as i32, None),
+        };
+        let description = info.description;
+        let preimage = info.preimage.map(|p| hex::encode(p.0));
+        let secret = info.secret.map(|s| hex::encode(s.0));
+        let amount_msat = info.amt_msat.map(|a| a as u32);
+        let fee_paid_msat = info.fee_paid_msat.map(|f| f as u32);
+        let status = info.status.to_string();
+        let created_at = info.created_at as u32;
+        let last_updated = info.last_updated as u32;
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let params = [
+                &payment_hash as &dyn ToSql,
+                &destination as &dyn ToSql,
+                &description as &dyn ToSql,
+                &preimage as &dyn ToSql,
+                &secret as &dyn ToSql,
+                &amount_msat as &dyn ToSql,
+                &fee_paid_msat as &dyn ToSql,
+                &is_outbound as &dyn ToSql,
+                &status as &dyn ToSql,
+                &created_at as &dyn ToSql,
+                &last_updated as &dyn ToSql,
+            ];
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&insert_or_update_payment_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn get_payment_from_sql(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
+        let params = [hex::encode(hash.0)];
+        let sql = select_payment_from_table_by_hash_sql(self.storage_ticker.as_str())?;
         let sqlite_connection = self.sqlite_connection.clone();
 
         async_blocking(move || {
             let conn = sqlite_connection.lock().unwrap();
-
-            let mut stmt = conn.prepare(&sql)?;
-            let result = stmt
-                .query_map_named(&[], channel_details_from_row)?
-                .collect::<Result<_, _>>()?;
-            Ok(result)
+            query_single_row(&conn, &sql, params, payment_info_from_row)
         })
         .await
     }
@@ -1236,29 +1259,6 @@ impl SqlStorage for LightningPersister {
                 total,
             };
             Ok(result)
-        })
-        .await
-    }
-
-    async fn add_claiming_tx_to_sql(
-        &self,
-        closing_tx: String,
-        claiming_tx: String,
-        claimed_balance: f64,
-    ) -> Result<(), Self::Error> {
-        let for_coin = self.storage_ticker.clone();
-        let claimed_balance = claimed_balance.to_string();
-        let last_updated = (now_ms() / 1000).to_string();
-
-        let params = [closing_tx, claiming_tx, claimed_balance, last_updated];
-
-        let sqlite_connection = self.sqlite_connection.clone();
-        async_blocking(move || {
-            let mut conn = sqlite_connection.lock().unwrap();
-            let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&update_claiming_tx_sql(&for_coin)?, &params)?;
-            sql_transaction.commit()?;
-            Ok(())
         })
         .await
     }

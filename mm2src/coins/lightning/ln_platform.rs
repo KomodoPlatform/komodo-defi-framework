@@ -230,6 +230,7 @@ pub struct Platform {
 }
 
 impl Platform {
+    #[inline]
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
