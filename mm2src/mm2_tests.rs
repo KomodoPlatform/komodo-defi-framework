@@ -5407,6 +5407,44 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_type, "NoSuchCoin");
     assert_eq!(error.error_data, Some(expected_error));
 
+    // empty hash
+    let raw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
+        "userpass": mm.userpass,
+        "method": "get_raw_transaction",
+        "params": {
+            "coin": "ETH",
+            "tx_hash": "",
+        },
+        "id": 2,
+    })))
+    .unwrap();
+    assert!(
+        raw.0.is_client_error(),
+        "get_raw_transaction should have failed, but got: {}",
+        raw.1
+    );
+    let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
+    assert_eq!(error.error_type, "InvalidHashError");
+    // invalid hash without 0x prefix
+    let raw = block_on(mm.rpc(json! ({
+        "mmrpc": "2.0",
+        "userpass": mm.userpass,
+        "method": "get_raw_transaction",
+        "params": {
+            "coin": "ETH",
+            "tx_hash": "bdef3970c00752b0dc811cd93faadfd75a7a52e6b8e0b608c000000000000000",
+        },
+        "id": 2,
+    })))
+    .unwrap();
+    assert!(
+        raw.0.is_client_error(),
+        "get_raw_transaction should have failed, but got: {}",
+        raw.1
+    );
+    let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
+    assert_eq!(error.error_type, "InvalidHashError");
     // invalid hash
     let raw = block_on(mm.rpc(json! ({
         "mmrpc": "2.0",
@@ -5414,7 +5452,7 @@ fn test_get_raw_transaction() {
         "method": "get_raw_transaction",
         "params": {
             "coin": "ETH",
-            "tx_hash": "xxx",
+            "tx_hash": "xx",
         },
         "id": 2,
     })))
