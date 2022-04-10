@@ -6,7 +6,8 @@ use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
-            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
+            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash},
+            mm2::rpc::signature::{sign_message, verify_message}};
 use coins::coin_balance::{account_balance, scan_for_new_addresses};
 use coins::hd_wallet::get_new_address;
 use coins::init_create_account::{init_create_new_account, init_create_new_account_status,
@@ -149,12 +150,14 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "scan_for_new_addresses" => handle_mmrpc(ctx, request, scan_for_new_addresses).await,
+        "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,
         "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
+        "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         "withdraw_status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw_user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,

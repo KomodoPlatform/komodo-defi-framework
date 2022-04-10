@@ -1,3 +1,5 @@
+extern crate bitcoin;
+extern crate bitcoin_hashes;
 extern crate groestl;
 extern crate primitives;
 extern crate ripemd160;
@@ -6,6 +8,8 @@ extern crate sha2;
 extern crate sha3;
 extern crate siphasher;
 
+use bitcoin::consensus::{encode::VarInt, Encodable};
+use bitcoin_hashes::{sha256d, Hash as BitcoinHash, HashEngine};
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::Ripemd160;
@@ -107,9 +111,31 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
     result
 }
 
+// Hash message for signature using Bitcoin's message signing format.
+// pub fn signed_msg_hash(msg: &str) -> H256 {
+//     pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
+//     let mut engine = sha256d::Hash::engine();
+//     engine.input(KOMODO_SIGNED_MSG_PREFIX);
+//     let msg_len = VarInt(msg.len() as u64);
+//     msg_len.consensus_encode(&mut engine).expect("engines don't error");
+//     engine.input(msg.as_bytes());
+//     H256::from(sha256d::Hash::from_engine(engine).into_inner())
+// }
+
+// Hash message for signature using Bitcoin's message signing format.
+pub fn message_hash(msg: &str) -> H256 {
+    pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
+    let mut engine = sha256d::Hash::engine();
+    engine.input(KOMODO_SIGNED_MSG_PREFIX);
+    let msg_len = VarInt(msg.len() as u64);
+    msg_len.consensus_encode(&mut engine).expect("engines don't error");
+    engine.input(msg.as_bytes());
+    H256::from(sha256d::Hash::from_engine(engine).into_inner())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{checksum, dhash160, dhash256, ripemd160, sha1, sha256, siphash24};
+    use super::{checksum, dhash160, dhash256, message_hash, ripemd160, sha1, sha256, siphash24};
     use primitives::bytes::Bytes;
     use primitives::hash::{H160, H256, H32};
     use ChecksumType;

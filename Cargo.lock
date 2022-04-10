@@ -543,6 +543,8 @@ dependencies = [
 name = "bitcrypto"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
+ "bitcoin_hashes",
  "groestl",
  "primitives",
  "ripemd160 0.8.0",

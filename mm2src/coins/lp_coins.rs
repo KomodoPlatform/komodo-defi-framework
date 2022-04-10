@@ -46,6 +46,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
+use keys::Signature;
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -492,6 +493,18 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> Result<String, String>;
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        unimplemented!();
+    }
+
+    fn sign_message(&self, _message: &str) -> Result<String, String> {
+        unimplemented!();
+    }
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+        unimplemented!();
+    }
 
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
         let closure = |spendable: BigDecimal| {
@@ -2251,9 +2264,9 @@ struct ValidateAddressReq {
 
 #[derive(Serialize)]
 pub struct ValidateAddressResult {
-    is_valid: bool,
+    pub is_valid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub reason: Option<String>,
 }
 
 pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {

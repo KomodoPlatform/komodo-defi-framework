@@ -11,3 +11,5 @@ sha-1 = "0.8.1"
 sha2 = "0.8.0"
 sha3 = "0.8.1"
 siphasher = "0.1.1"
+bitcoin = "0.27.1"
+bitcoin_hashes = { version = "0.10.0", default-features = false }
