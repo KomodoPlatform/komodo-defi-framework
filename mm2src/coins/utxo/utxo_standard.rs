@@ -14,7 +14,6 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SwapOps, TradePreimageValue, ValidateAddressResult,
             ValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
-use bitcoin_hashes::hex::ToHex;
 use bitcrypto::message_hash;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -452,25 +451,23 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
     fn sign_message(&self, message: &str) -> Result<String, String> {
-        let message_hash = message_hash(&message);
-        let keypair = &self
+        let message_hash = message_hash(message);
+        let private_key = &self
             .utxo_arc
             .priv_key_policy
             .key_pair_or_err()
-            .map_err(|e| e.to_string())?;
-        let private_key = keypair.private();
+            .map_err(|e| e.to_string())?
+            .private();
         let signature = private_key.sign_compact(&message_hash).map_err(|e| e.to_string())?;
         Ok(base64::encode(&*signature))
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> Result<bool, String> {
-        let message_hash = message_hash(&message);
-        let signature_bytes = base64::decode(signature_base64).map_err(|e| e.to_string())?;
-        let signature = CompactSignature::from_str(&signature_bytes.to_hex()).map_err(|e| e.to_string())?;
+        let message_hash = message_hash(message);
+        let signature = CompactSignature::from(base64::decode(signature_base64).map_err(|e| e.to_string())?);
         let pubkey = Public::recover_compact(&message_hash, &signature).map_err(|e| e.to_string())?;
         let address_from_pubkey = self.address_from_pubkey(&pubkey).display_address()?;
-
-        return Ok(&address_from_pubkey == address);
+        Ok(address_from_pubkey == address)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }

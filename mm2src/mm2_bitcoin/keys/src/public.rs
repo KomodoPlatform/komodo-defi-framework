@@ -57,13 +57,14 @@ impl Public {
         let signature = RecoverableSignature::from_compact(&signature[1..65], recovery_id)?;
         let message = SecpMessage::from_slice(&**message)?;
         let pubkey = SECP_VERIFY.recover(&message, &signature)?;
-        let serialized = pubkey.serialize();
 
         let public = if compressed {
+            let serialized = pubkey.serialize();
             let mut public = H264::default();
             public.copy_from_slice(&serialized[0..33]);
             Public::Compressed(public)
         } else {
+            let serialized = pubkey.serialize_uncompressed();
             let mut public = H520::default();
             public.copy_from_slice(&serialized[0..65]);
             Public::Normal(public)

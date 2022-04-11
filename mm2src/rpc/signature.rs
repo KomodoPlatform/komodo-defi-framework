@@ -66,9 +66,7 @@ pub async fn sign_message(ctx: MmArc, req: Json) -> SignatureResult<SignatureRes
     let coin = lp_coinfind_or_err(&ctx, &coin_name)
         .await
         .map_err(|_| SignatureError::InvalidRequest(String::from("No such coin")))?;
-    let signature = coin
-        .sign_message(&message)
-        .map_err(|e| SignatureError::WalletError(String::from(e)))?;
+    let signature = coin.sign_message(&message).map_err(SignatureError::WalletError)?;
     Ok(SignatureResponse { signature })
 }
 
@@ -93,10 +91,10 @@ pub async fn verify_message(ctx: MmArc, req: Json) -> VerificationResult<Verific
         ));
     }
 
-    let address = coin.my_address().map_err(|e| VerificationError::WalletError(e))?;
+    let address = coin.my_address().map_err(VerificationError::WalletError)?;
     let is_valid = coin
         .verify_message(&signature, &message, &address)
-        .map_err(|e| VerificationError::InvalidRequest(e))?;
+        .map_err(VerificationError::InvalidRequest)?;
     let pubkey = coin
         .get_public_key()
         .map_err(|e| VerificationError::WalletError(e.to_string()))?;

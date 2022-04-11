@@ -3869,3 +3869,36 @@ fn test_electrum_balance_deserializing() {
     assert_eq!(actual.confirmed, i128::MIN);
     assert_eq!(actual.unconfirmed, i128::MAX);
 }
+
+#[test]
+fn test_sign_message() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+    let signature = coin.sign_message("test").unwrap();
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+}
+
+#[test]
+fn test_verify_message() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+
+    let message = "test";
+    let signature = coin.sign_message("test").unwrap();
+    let address = "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW";
+
+    let is_valid = coin.verify_message(&signature, message, address).unwrap();
+
+    assert_eq!(is_valid, true);
+}

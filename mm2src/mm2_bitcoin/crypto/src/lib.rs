@@ -111,18 +111,10 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
     result
 }
 
-// Hash message for signature using Bitcoin's message signing format.
-// pub fn signed_msg_hash(msg: &str) -> H256 {
-//     pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
-//     let mut engine = sha256d::Hash::engine();
-//     engine.input(KOMODO_SIGNED_MSG_PREFIX);
-//     let msg_len = VarInt(msg.len() as u64);
-//     msg_len.consensus_encode(&mut engine).expect("engines don't error");
-//     engine.input(msg.as_bytes());
-//     H256::from(sha256d::Hash::from_engine(engine).into_inner())
-// }
-
-// Hash message for signature using Bitcoin's message signing format.
+/// Hash message for signature using Bitcoin's message signing format.
+/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
+/// Message length is concatenated according to Bitcoin's variable length integer format
+/// See: https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
 pub fn message_hash(msg: &str) -> H256 {
     pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
     let mut engine = sha256d::Hash::engine();
@@ -191,5 +183,12 @@ mod tests {
     #[test]
     fn test_checksum() {
         assert_eq!(checksum(b"hello", &ChecksumType::DSHA256), H32::from("9595c9df"));
+    }
+
+    #[test]
+    fn test_message_hash() {
+        let expected = H256::from_reversed_str("5aef9b67485adba55a2cd935269e73f2f9876382f1eada02418797ae76c07e18");
+        let result = message_hash("test");
+        assert_eq!(result, expected);
     }
 }
