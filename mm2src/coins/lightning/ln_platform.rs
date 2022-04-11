@@ -486,13 +486,7 @@ impl Platform {
         self.append_spent_registered_output_txs(&mut transactions_to_confirm, &client)
             .await;
 
-        transactions_to_confirm.sort_by(|a, b| {
-            let block_order = a.height.cmp(&b.height);
-            match block_order {
-                cmp::Ordering::Equal => a.index.cmp(&b.index),
-                _ => block_order,
-            }
-        });
+        transactions_to_confirm.sort_by(|a, b| (a.height, a.index).cmp(&(b.height, b.index)));
 
         for confirmed_transaction_info in transactions_to_confirm {
             let best_block_height = self.best_block_height();
@@ -577,10 +571,10 @@ impl FeeEstimator for Platform {
         let platform_coin = &self.coin;
 
         let default_fee = match confirmation_target {
-            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.default_feerate,
-            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.default_feerate,
-            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.default_feerate,
-        } * 4;
+            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.default_fee_per_kb,
+            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.default_fee_per_kb,
+            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.default_fee_per_kb,
+        };
 
         let conf = &platform_coin.as_ref().conf;
         let n_blocks = match confirmation_target {
@@ -612,14 +606,6 @@ impl FeeEstimator for Platform {
 impl BroadcasterInterface for Platform {
     fn broadcast_transaction(&self, tx: &Transaction) {
         let txid = tx.txid();
-        let fut = Box::new(async move { self.check_if_tx_is_onchain(txid).await }.boxed().compat());
-        let is_tx_onchain = tokio::task::block_in_place(move || fut.wait());
-
-        if let Ok(true) = is_tx_onchain {
-            log::debug!("Transaction {} is found onchain!", txid);
-            return;
-        }
-
         let tx_hex = serialize_hex(tx);
         log::debug!("Trying to broadcast transaction: {}", tx_hex);
         let fut = self.coin.send_raw_tx(&tx_hex);

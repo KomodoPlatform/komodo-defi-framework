@@ -3,7 +3,7 @@ use lightning::util::config::{ChannelConfig, ChannelHandshakeConfig, ChannelHand
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DefaultFeesAndConfirmations {
-    pub default_feerate: u64,
+    pub default_fee_per_kb: u64,
     pub n_blocks: u32,
 }
 

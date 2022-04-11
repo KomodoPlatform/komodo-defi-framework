@@ -49,15 +49,15 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
                 "network": "testnet",
                 "confirmations": {
                   "background": {
-                    "default_feerate": 253,
+                    "default_fee_per_kb": 1012,
                     "n_blocks": 12
                   },
                   "normal": {
-                    "default_feerate": 2000,
+                    "default_fee_per_kb": 8000,
                     "n_blocks": 6
                   },
                   "high_priority": {
-                    "default_feerate": 5000,
+                    "default_fee_per_kb": 20000,
                     "n_blocks": 1
                   }
                 }
@@ -150,15 +150,15 @@ fn test_enable_lightning() {
                 "network": "testnet",
                 "confirmations": {
                   "background": {
-                    "default_feerate": 253,
+                    "default_fee_per_kb": 1012,
                     "n_blocks": 12
                   },
                   "normal": {
-                    "default_feerate": 2000,
+                    "default_fee_per_kb": 8000,
                     "n_blocks": 6
                   },
                   "high_priority": {
-                    "default_feerate": 5000,
+                    "default_fee_per_kb": 20000,
                     "n_blocks": 1
                   }
                 }
