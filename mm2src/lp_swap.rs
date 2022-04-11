@@ -81,6 +81,9 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
+#[cfg(feature = "custom-swap-locktime")]
+use std::{env, ffi::OsString};
+
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
@@ -274,7 +277,9 @@ const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 /// Reads `payment_locktime` from cli or MM2.json configuration and returns it.
 /// Returns 900 when `payment_locktime` is invalid or not provided.
 pub fn get_payment_locktime_from_mm2config() -> u64 {
-    let conf = super::get_mm2config(None).unwrap();
+    let args: Vec<OsString> = env::args_os().collect();
+    let first_arg = args.get(1).and_then(|arg| arg.to_str());
+    let conf = super::get_mm2config(first_arg).unwrap();
 
     match conf["payment_locktime"].as_u64() {
         Some(lt) => lt,
