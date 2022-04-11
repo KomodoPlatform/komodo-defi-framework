@@ -3438,19 +3438,6 @@ where
     }
 }
 
-macro_rules! try_loop_with_sleep {
-    ($e:expr, $delay: ident) => {
-        match $e {
-            Ok(res) => res,
-            Err(e) => {
-                error!("error {:?}", e);
-                Timer::sleep($delay).await;
-                continue;
-            },
-        }
-    };
-}
-
 pub async fn block_header_utxo_loop<T>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T)
 where
     T: AsRef<UtxoCoinFields> + UtxoCommonOps,

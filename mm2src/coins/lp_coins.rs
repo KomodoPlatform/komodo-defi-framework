@@ -97,6 +97,19 @@ macro_rules! try_f {
     };
 }
 
+macro_rules! try_loop_with_sleep {
+    ($e:expr, $delay: ident) => {
+        match $e {
+            Ok(res) => res,
+            Err(e) => {
+                error!("error {:?}", e);
+                Timer::sleep($delay).await;
+                continue;
+            },
+        }
+    };
+}
+
 pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]

@@ -13,7 +13,7 @@ use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
-use common::log;
+use common::log::{debug, error, info};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::hash::H256;
@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: u64 = 60;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const GET_FUNDING_TX_INTERVAL: f64 = 60.;
+const TRY_LOOP_INTERVAL: f64 = 60.;
 
 struct TxWithBlockInfo {
     tx: Transaction,
@@ -114,14 +115,14 @@ pub async fn update_best_block(
                 let prev_blockhash = match sha256d::Hash::from_slice(&h.prev_block_hash.0) {
                     Ok(h) => h,
                     Err(e) => {
-                        log::error!("Error while parsing previous block hash for lightning node: {}", e);
+                        error!("Error while parsing previous block hash for lightning node: {}", e);
                         return;
                     },
                 };
                 let merkle_root = match sha256d::Hash::from_slice(&h.merkle_root.0) {
                     Ok(h) => h,
                     Err(e) => {
-                        log::error!("Error while parsing merkle root for lightning node: {}", e);
+                        error!("Error while parsing merkle root for lightning node: {}", e);
                         return;
                     },
                 };
@@ -141,7 +142,7 @@ pub async fn update_best_block(
                 let block_header = match deserialize(&h.hex.into_vec()) {
                     Ok(header) => header,
                     Err(e) => {
-                        log::error!("Block header deserialization error: {}", e.to_string());
+                        error!("Block header deserialization error: {}", e.to_string());
                         return;
                     },
                 };
@@ -166,7 +167,7 @@ pub async fn ln_best_block_update_loop(
         let best_header = match get_best_header(&best_header_listener).await {
             Ok(h) => h,
             Err(e) => {
-                log::error!("Error while requesting best header for lightning node: {}", e);
+                error!("Error while requesting best header for lightning node: {}", e);
                 Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL as f64).await;
                 continue;
             },
@@ -297,16 +298,15 @@ impl Platform {
         match self.check_if_tx_is_onchain(txid).await {
             Ok(true) => {},
             Ok(false) => {
-                log::info!(
+                info!(
                     "Transaction {} is not found on chain. The transaction will be re-broadcasted.",
                     txid,
                 );
                 monitor.transaction_unconfirmed(&txid);
             },
-            Err(e) => log::error!(
+            Err(e) => error!(
                 "Error while trying to check if the transaction {} is discarded or not :{}",
-                txid,
-                e
+                txid, e
             ),
         }
     }
@@ -338,88 +338,73 @@ impl Platform {
         let mut confirmed_registered_txs = Vec::new();
         for (txid, scripts) in registered_txs {
             let rpc_txid = H256Json::from(txid.as_hash().into_inner()).reversed();
-            match self
-                .coin
-                .as_ref()
-                .rpc_client
-                .get_transaction_bytes(&rpc_txid)
-                .compat()
-                .await
-            {
-                Ok(bytes) => {
-                    let transaction: Transaction = match deserialize(&bytes.into_vec()) {
-                        Ok(tx) => tx,
-                        Err(e) => {
-                            log::error!("Transaction deserialization error: {}", e.to_string());
-                            continue;
-                        },
-                    };
-                    for (_, vout) in transaction.output.iter().enumerate() {
-                        if scripts.contains(&vout.script_pubkey) {
-                            let script_hash = hex::encode(electrum_script_hash(vout.script_pubkey.as_ref()));
-                            let history = client
-                                .scripthash_get_history(&script_hash)
-                                .compat()
-                                .await
-                                .unwrap_or_default();
-                            for item in history {
-                                if item.tx_hash == rpc_txid {
-                                    // If a new block mined the transaction while running process_txs_confirmations it will be confirmed later in ln_best_block_update_loop
-                                    if item.height > 0 && item.height <= current_height as i64 {
-                                        let height: u64 = match item.height.try_into() {
-                                            Ok(h) => h,
-                                            Err(e) => {
-                                                log::error!("Block height convertion to u64 error: {}", e.to_string());
-                                                continue;
-                                            },
-                                        };
-                                        let header = match client.blockchain_block_header(height).compat().await {
-                                            Ok(block_header) => match deserialize(&block_header) {
-                                                Ok(h) => h,
-                                                Err(e) => {
-                                                    log::error!(
-                                                        "Block header deserialization error: {}",
-                                                        e.to_string()
-                                                    );
-                                                    continue;
-                                                },
-                                            },
-                                            Err(_) => continue,
-                                        };
-                                        let index = match client
-                                            .blockchain_transaction_get_merkle(rpc_txid, height)
-                                            .compat()
-                                            .await
-                                        {
-                                            Ok(merkle_branch) => merkle_branch.pos,
-                                            Err(e) => {
-                                                log::error!(
-                                                    "Error getting transaction position in the block: {}",
-                                                    e.to_string()
-                                                );
-                                                continue;
-                                            },
-                                        };
-                                        let confirmed_transaction_info = ConfirmedTransactionInfo::new(
-                                            txid,
-                                            header,
-                                            index,
-                                            transaction.clone(),
-                                            height as u32,
-                                        );
-                                        confirmed_registered_txs.push(confirmed_transaction_info);
-                                        self.registered_txs.lock().remove(&txid);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
+            let bytes = try_loop_with_sleep!(
+                self.coin
+                    .as_ref()
+                    .rpc_client
+                    .get_transaction_bytes(&rpc_txid)
+                    .compat()
+                    .await,
+                TRY_LOOP_INTERVAL
+            );
+            let transaction: Transaction = match deserialize(&bytes.into_vec()) {
+                Ok(tx) => tx,
                 Err(e) => {
-                    log::error!("Error getting transaction {} from chain: {}", txid, e);
+                    error!("Transaction deserialization error: {}", e.to_string());
                     continue;
                 },
             };
+            for (_, vout) in transaction.output.iter().enumerate() {
+                if scripts.contains(&vout.script_pubkey) {
+                    let script_hash = hex::encode(electrum_script_hash(vout.script_pubkey.as_ref()));
+                    let history = try_loop_with_sleep!(
+                        client.scripthash_get_history(&script_hash).compat().await,
+                        TRY_LOOP_INTERVAL
+                    );
+                    for item in history {
+                        if item.tx_hash == rpc_txid {
+                            // If a new block mined the transaction while running process_txs_confirmations it will be confirmed later in ln_best_block_update_loop
+                            if item.height > 0 && item.height <= current_height as i64 {
+                                let height: u64 = match item.height.try_into() {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        error!("Block height convertion to u64 error: {}", e.to_string());
+                                        continue;
+                                    },
+                                };
+                                let block_header = try_loop_with_sleep!(
+                                    client.blockchain_block_header(height).compat().await,
+                                    TRY_LOOP_INTERVAL
+                                );
+                                let header = match deserialize(&block_header) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        error!("Block header deserialization error: {}", e.to_string());
+                                        continue;
+                                    },
+                                };
+                                let index = try_loop_with_sleep!(
+                                    client
+                                        .blockchain_transaction_get_merkle(rpc_txid, height)
+                                        .compat()
+                                        .await,
+                                    TRY_LOOP_INTERVAL
+                                )
+                                .pos;
+                                let confirmed_transaction_info = ConfirmedTransactionInfo::new(
+                                    txid,
+                                    header,
+                                    index,
+                                    transaction.clone(),
+                                    height as u32,
+                                );
+                                confirmed_registered_txs.push(confirmed_transaction_info);
+                                self.registered_txs.lock().remove(&txid);
+                            }
+                        }
+                    }
+                }
+            }
         }
         confirmed_registered_txs
     }
@@ -439,17 +424,14 @@ impl Platform {
                         .any(|info| info.txid == tx_info.tx.txid())
                     {
                         let rpc_txid = H256Json::from(tx_info.tx.txid().as_hash().into_inner()).reversed();
-                        let index = match client
-                            .blockchain_transaction_get_merkle(rpc_txid, tx_info.block_height)
-                            .compat()
-                            .await
-                        {
-                            Ok(merkle_branch) => merkle_branch.pos,
-                            Err(e) => {
-                                log::error!("Error getting transaction position in the block: {}", e.to_string());
-                                continue;
-                            },
-                        };
+                        let index = try_loop_with_sleep!(
+                            client
+                                .blockchain_transaction_get_merkle(rpc_txid, tx_info.block_height)
+                                .compat()
+                                .await,
+                            TRY_LOOP_INTERVAL
+                        )
+                        .pos;
                         let confirmed_transaction_info = ConfirmedTransactionInfo::new(
                             tx_info.tx.txid(),
                             tx_info.block_header,
@@ -462,10 +444,9 @@ impl Platform {
                     outputs_to_remove.push(output);
                 },
                 Ok(None) => (),
-                Err(e) => log::error!(
+                Err(e) => error!(
                     "Error while trying to find if the registered output {:?} is spent: {}",
-                    output.outpoint,
-                    e
+                    output.outpoint, e
                 ),
             }
         }
@@ -497,7 +478,7 @@ impl Platform {
                 )
                 .await
             {
-                log::error!("Unable to update the funding tx block height in DB: {}", e);
+                error!("Unable to update the funding tx block height in DB: {}", e);
             }
             channel_manager.transactions_confirmed(
                 &confirmed_transaction_info.header,
@@ -541,7 +522,7 @@ impl Platform {
             {
                 Ok(tx) => break tx,
                 Err(e) => {
-                    log::error!("Error getting funding tx bytes: {}", e);
+                    error!("Error getting funding tx bytes: {}", e);
                     Timer::sleep(GET_FUNDING_TX_INTERVAL).await;
                 },
             }
@@ -607,12 +588,12 @@ impl BroadcasterInterface for Platform {
     fn broadcast_transaction(&self, tx: &Transaction) {
         let txid = tx.txid();
         let tx_hex = serialize_hex(tx);
-        log::debug!("Trying to broadcast transaction: {}", tx_hex);
+        debug!("Trying to broadcast transaction: {}", tx_hex);
         let fut = self.coin.send_raw_tx(&tx_hex);
         spawn(async move {
             match fut.compat().await {
-                Ok(id) => log::info!("Transaction broadcasted successfully: {:?} ", id),
-                Err(e) => log::error!("Broadcast transaction {} failed: {}", txid, e),
+                Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
+                Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
         });
     }
@@ -652,7 +633,7 @@ impl Filter for Platform {
                 let spending_tx = match Transaction::try_from(spent_output_info.spending_tx) {
                     Ok(tx) => tx,
                     Err(e) => {
-                        log::error!("Can't convert transaction error: {}", e.to_string());
+                        error!("Can't convert transaction error: {}", e.to_string());
                         return None;
                     },
                 };
@@ -660,7 +641,7 @@ impl Filter for Platform {
             },
             Ok(None) => None,
             Err(e) => {
-                log::error!("Error when calling register_output: {}", e);
+                error!("Error when calling register_output: {}", e);
                 None
             },
         }
