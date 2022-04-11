@@ -14,6 +14,7 @@ default-run = "mm2"
 native = []
 zhtlc = ["coins/zhtlc"]
 track-ctx-pointer = ["common/track-ctx-pointer"]
+custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 
 [[bin]]
 name = "mm2"

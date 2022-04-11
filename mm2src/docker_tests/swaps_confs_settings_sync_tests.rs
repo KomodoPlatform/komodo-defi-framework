@@ -1,6 +1,6 @@
 use super::*;
 use crate::mm2::lp_ordermatch::OrderConfirmationsSettings;
-use crate::mm2::lp_swap::PAYMENT_LOCKTIME;
+use crate::mm2::lp_swap::get_payment_locktime;
 
 struct SwapConfirmationsSettings {
     maker_coin_confs: u64,
@@ -374,7 +374,7 @@ fn test_buy_maker_should_use_taker_confs_and_notas_for_maker_payment_if_taker_re
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -413,7 +413,7 @@ fn test_buy_maker_should_not_use_taker_confs_and_notas_for_maker_payment_if_take
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -452,7 +452,7 @@ fn test_buy_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_re
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -491,7 +491,7 @@ fn test_buy_taker_should_not_use_maker_confs_and_notas_for_taker_payment_if_make
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -530,7 +530,7 @@ fn test_buy_nodes_should_properly_sync_locktime_if_conf_sync_ends_up_without_not
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME,
+        get_payment_locktime(),
     );
 }
 
@@ -569,7 +569,7 @@ fn test_sell_maker_should_use_taker_confs_and_notas_for_maker_payment_if_taker_r
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -608,7 +608,7 @@ fn test_sell_maker_should_not_use_taker_confs_and_notas_for_maker_payment_if_tak
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -647,7 +647,7 @@ fn test_sell_taker_should_use_maker_confs_and_notas_for_taker_payment_if_maker_r
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -686,7 +686,7 @@ fn test_sell_taker_should_not_use_maker_confs_and_notas_for_taker_payment_if_mak
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME * 4,
+        get_payment_locktime() * 4,
     );
 }
 
@@ -725,6 +725,6 @@ fn test_sell_nodes_should_properly_sync_locktime_if_conf_sync_ends_up_without_no
         taker_settings,
         expected_maker,
         expected_taker,
-        PAYMENT_LOCKTIME,
+        get_payment_locktime(),
     );
 }

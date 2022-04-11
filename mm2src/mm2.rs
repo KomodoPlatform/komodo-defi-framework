@@ -377,13 +377,10 @@ pub fn mm2_main() {
     }
 }
 
-/// Parses the `first_arg` as JSON and runs LP_main.
-/// Attempts to load the config from `MM2.json` file if `first_arg` is None
-///
-/// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+/// Parses and returns the `first_arg` as JSON.
+/// Attempts to load the config from `MM2.json` file if `first_arg` is None
+pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     let conf_path = env::var("MM_CONF_PATH").unwrap_or_else(|_| "MM2.json".into());
     let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
@@ -423,6 +420,17 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
             },
         }
     }
+
+    Ok(conf)
+}
+
+/// Runs LP_main with result of `get_mm2config()`.
+///
+/// * `ctx_cb` - Invoked with the MM context handle,
+///              allowing the `run_lp_main` caller to communicate with MM.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+    let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
 
