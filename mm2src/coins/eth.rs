@@ -182,6 +182,10 @@ impl From<web3::Error> for Web3RpcError {
     }
 }
 
+impl From<web3::Error> for RawTransactionError {
+    fn from(e: web3::Error) -> Self { RawTransactionError::Transport(e.to_string()) }
+}
+
 impl From<ethabi::Error> for Web3RpcError {
     fn from(e: ethabi::Error) -> Web3RpcError {
         // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
@@ -534,13 +538,7 @@ async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> 
         tx = (tx[2..]).to_string();
     }
     let hash = H256::from_str(&tx).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
-    let web3_tx = coin
-        .web3
-        .eth()
-        .transaction(TransactionId::Hash(hash))
-        .compat()
-        .await
-        .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
+    let web3_tx = coin.web3.eth().transaction(TransactionId::Hash(hash)).compat().await?;
     let web3_tx = web3_tx.or_mm_err(|| RawTransactionError::HashNotExist(tx))?;
     let raw = signed_tx_from_web3_tx(web3_tx).map_to_mm(RawTransactionError::InternalError)?;
     Ok(RawTransactionRes {
