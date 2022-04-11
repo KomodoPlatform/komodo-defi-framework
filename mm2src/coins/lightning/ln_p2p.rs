@@ -24,10 +24,10 @@ pub type PeerManager =
 
 #[derive(Display)]
 pub enum ConnectToNodeRes {
-    #[display(fmt = "Already connected to node: {}@{}", _0, _1)]
-    AlreadyConnected(String, String),
-    #[display(fmt = "Connected successfully to node : {}@{}", _0, _1)]
-    ConnectedSuccessfully(String, String),
+    #[display(fmt = "Already connected to node: {}@{}", pubkey, node_addr)]
+    AlreadyConnected { pubkey: PublicKey, node_addr: SocketAddr },
+    #[display(fmt = "Connected successfully to node : {}@{}", pubkey, node_addr)]
+    ConnectedSuccessfully { pubkey: PublicKey, node_addr: SocketAddr },
 }
 
 pub async fn connect_to_node(
@@ -36,46 +36,40 @@ pub async fn connect_to_node(
     peer_manager: Arc<PeerManager>,
 ) -> ConnectToNodeResult<ConnectToNodeRes> {
     if peer_manager.get_peer_node_ids().contains(&pubkey) {
-        return Ok(ConnectToNodeRes::AlreadyConnected(
-            pubkey.to_string(),
-            node_addr.to_string(),
-        ));
+        return Ok(ConnectToNodeRes::AlreadyConnected { pubkey, node_addr });
     }
 
-    match lightning_net_tokio::connect_outbound(Arc::clone(&peer_manager), pubkey, node_addr).await {
-        Some(connection_closed_future) => {
-            let mut connection_closed_future = Box::pin(connection_closed_future);
-            loop {
-                // Make sure the connection is still established.
-                match futures::poll!(&mut connection_closed_future) {
-                    std::task::Poll::Ready(_) => {
-                        return MmError::err(ConnectToNodeError::ConnectionError(format!(
-                            "Node {} disconnected before finishing the handshake",
-                            pubkey
-                        )));
-                    },
-                    std::task::Poll::Pending => {},
-                }
+    let mut connection_closed_future =
+        match lightning_net_tokio::connect_outbound(Arc::clone(&peer_manager), pubkey, node_addr).await {
+            Some(fut) => Box::pin(fut),
+            None => {
+                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                    "Failed to connect to node: {}",
+                    pubkey
+                )))
+            },
+        };
 
-                match peer_manager.get_peer_node_ids().contains(&pubkey) {
-                    true => break,
-                    // Wait for the handshake to complete if false.
-                    false => Timer::sleep_ms(10).await,
-                }
-            }
-        },
-        None => {
-            return MmError::err(ConnectToNodeError::ConnectionError(format!(
-                "Failed to connect to node: {}",
-                pubkey
-            )))
-        },
+    loop {
+        // Make sure the connection is still established.
+        match futures::poll!(&mut connection_closed_future) {
+            std::task::Poll::Ready(_) => {
+                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                    "Node {} disconnected before finishing the handshake",
+                    pubkey
+                )));
+            },
+            std::task::Poll::Pending => {},
+        }
+
+        match peer_manager.get_peer_node_ids().contains(&pubkey) {
+            true => break,
+            // Wait for the handshake to complete if false.
+            false => Timer::sleep_ms(10).await,
+        }
     }
 
-    Ok(ConnectToNodeRes::ConnectedSuccessfully(
-        pubkey.to_string(),
-        node_addr.to_string(),
-    ))
+    Ok(ConnectToNodeRes::ConnectedSuccessfully { pubkey, node_addr })
 }
 
 pub async fn connect_to_nodes_loop(open_channels_nodes: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
@@ -85,7 +79,7 @@ pub async fn connect_to_nodes_loop(open_channels_nodes: NodesAddressesMapShared,
             let peer_manager = peer_manager.clone();
             match connect_to_node(pubkey, node_addr, peer_manager.clone()).await {
                 Ok(res) => {
-                    if let ConnectToNodeRes::ConnectedSuccessfully(_, _) = res {
+                    if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
                         log::info!("{}", res.to_string());
                     }
                 },

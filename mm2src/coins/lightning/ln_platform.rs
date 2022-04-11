@@ -253,18 +253,12 @@ impl Platform {
 
     pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
 
-    pub fn add_tx(&self, txid: &Txid, script_pubkey: &Script) {
+    pub fn add_tx(&self, txid: Txid, script_pubkey: Script) {
         let mut registered_txs = self.registered_txs.lock();
-        match registered_txs.get_mut(txid) {
-            Some(h) => {
-                h.insert(script_pubkey.clone());
-            },
-            None => {
-                let mut script_pubkeys = HashSet::new();
-                script_pubkeys.insert(script_pubkey.clone());
-                registered_txs.insert(*txid, script_pubkeys);
-            },
-        }
+        registered_txs
+            .entry(txid)
+            .or_insert_with(HashSet::new)
+            .insert(script_pubkey);
     }
 
     pub fn add_output(&self, output: WatchedOutput) {
@@ -301,14 +295,13 @@ impl Platform {
         T: Confirm,
     {
         match self.check_if_tx_is_onchain(txid).await {
-            Ok(tx_is_onchain) => {
-                if !tx_is_onchain {
-                    log::info!(
-                        "Transaction {} is not found on chain. The transaction will be re-broadcasted.",
-                        txid,
-                    );
-                    monitor.transaction_unconfirmed(&txid);
-                }
+            Ok(true) => {},
+            Ok(false) => {
+                log::info!(
+                    "Transaction {} is not found on chain. The transaction will be re-broadcasted.",
+                    txid,
+                );
+                monitor.transaction_unconfirmed(&txid);
             },
             Err(e) => log::error!(
                 "Error while trying to check if the transaction {} is discarded or not :{}",
@@ -641,7 +634,7 @@ impl BroadcasterInterface for Platform {
 
 impl Filter for Platform {
     // Watches for this transaction on-chain
-    fn register_tx(&self, txid: &Txid, script_pubkey: &Script) { self.add_tx(txid, script_pubkey); }
+    fn register_tx(&self, txid: &Txid, script_pubkey: &Script) { self.add_tx(*txid, script_pubkey.clone()); }
 
     // Watches for any transactions that spend this output on-chain
     fn register_output(&self, output: WatchedOutput) -> Option<(usize, Transaction)> {

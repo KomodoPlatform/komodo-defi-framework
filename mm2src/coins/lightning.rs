@@ -714,7 +714,7 @@ pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) ->
 
     // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
     // can be used to reconnect to the new address while saving this new address for reconnections.
-    if let ConnectToNodeRes::ConnectedSuccessfully(_, _) = res {
+    if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
         if let Entry::Occupied(mut entry) = ln_coin.open_channels_nodes.lock().entry(node_pubkey) {
             entry.insert(node_addr);
         }

@@ -427,8 +427,6 @@ impl LightningEventHandler {
             },
         };
 
-        self.platform.broadcast_transaction(&spending_tx);
-
         let claiming_tx_inputs_value = outputs.iter().fold(0, |sum, output| match output {
             SpendableOutputDescriptor::StaticOutput { output, .. } => sum + output.value,
             SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => sum + descriptor.output.value,
@@ -470,6 +468,8 @@ impl LightningEventHandler {
                     .await
                     .error_log();
             });
+
+            self.platform.broadcast_transaction(&spending_tx);
         }
     }
 }
