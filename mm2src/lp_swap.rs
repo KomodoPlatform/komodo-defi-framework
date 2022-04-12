@@ -282,8 +282,7 @@ lazy_static! {
 }
 
 #[inline]
-/// Returns `PAYMENT_LOCKTIME` or result of `get_payment_locktime_from_mm2config()`
-/// depended on the activation of `custom-swap-locktime` feature.
+/// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
     #[cfg(not(feature = "custom-swap-locktime"))]
     return PAYMENT_LOCKTIME;
