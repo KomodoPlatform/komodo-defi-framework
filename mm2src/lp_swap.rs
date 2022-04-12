@@ -82,6 +82,8 @@ use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
+use lazy_static::lazy_static;
+#[cfg(feature = "custom-swap-locktime")]
 use std::{env, ffi::OsString};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
@@ -274,9 +276,17 @@ const BASIC_COMM_TIMEOUT: u64 = 90;
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
 #[cfg(feature = "custom-swap-locktime")]
+lazy_static! {
+    /// Default atomic swap payment locktime, in seconds.
+    /// Maker sends payment with LOCKTIME * 2
+    /// Taker sends payment with LOCKTIME
+    static ref PAYMENT_LOCKTIME: u64 = get_payment_locktime_from_mm2config();
+}
+
+#[cfg(feature = "custom-swap-locktime")]
 /// Reads `payment_locktime` from cli or MM2.json configuration and returns it.
 /// Returns 900 when `payment_locktime` is invalid or not provided.
-pub fn get_payment_locktime_from_mm2config() -> u64 {
+fn get_payment_locktime_from_mm2config() -> u64 {
     let args: Vec<OsString> = env::args_os().collect();
     let first_arg = args.get(1).and_then(|arg| arg.to_str());
     let conf = super::get_mm2config(first_arg).unwrap();
@@ -302,7 +312,7 @@ pub fn get_payment_locktime() -> u64 {
     #[cfg(not(feature = "custom-swap-locktime"))]
     return PAYMENT_LOCKTIME;
     #[cfg(feature = "custom-swap-locktime")]
-    get_payment_locktime_from_mm2config()
+    *PAYMENT_LOCKTIME
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
