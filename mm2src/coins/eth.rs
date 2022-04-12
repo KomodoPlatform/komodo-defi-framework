@@ -530,9 +530,6 @@ impl EthCoinImpl {
 }
 
 async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> RawTransactionResult {
-    if req.tx_hash.len() < 2 {
-        return MmError::err(RawTransactionError::InvalidHashError(req.tx_hash));
-    }
     let tx = match req.tx_hash.strip_prefix("0x") {
         Some(tx) => tx,
         None => &req.tx_hash,
