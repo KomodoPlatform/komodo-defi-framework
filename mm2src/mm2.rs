@@ -28,6 +28,10 @@ use common::double_panic_crash;
 use common::log::LogLevel;
 use common::mm_ctx::MmCtxBuilder;
 
+#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
+#[cfg(feature = "custom-swap-locktime")]
+use lp_swap::PAYMENT_LOCKTIME;
+
 use derive_more::Display;
 use gstuff::slurp;
 use lazy_static::lazy_static;
@@ -204,6 +208,22 @@ fn check_password_policy() {
     password_policy("StrongPass123£StrongPass123£Pass").unwrap();
 }
 
+#[cfg(feature = "custom-swap-locktime")]
+fn initialize_payment_locktime(conf: &Json) {
+    *PAYMENT_LOCKTIME.lock().unwrap() = match conf["payment_locktime"].as_u64() {
+        Some(lt) => lt,
+        None => {
+            let def = 900;
+            warn!(
+                "payment_locktime is either invalid type or not provided in the configuration or
+                MM2.json file. payment_locktime will be proceeded as {} seconds.",
+                def
+            );
+            def
+        },
+    };
+}
+
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
@@ -230,6 +250,9 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
             }
         }
     }
+
+    #[cfg(feature = "custom-swap-locktime")]
+    initialize_payment_locktime(&conf);
 
     let ctx = MmCtxBuilder::new()
         .with_conf(conf)
