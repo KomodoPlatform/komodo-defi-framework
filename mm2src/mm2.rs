@@ -209,6 +209,8 @@ fn check_password_policy() {
 }
 
 #[cfg(feature = "custom-swap-locktime")]
+/// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
+/// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
     *PAYMENT_LOCKTIME.lock().unwrap() = match conf["payment_locktime"].as_u64() {
         Some(lt) => lt,
