@@ -1386,6 +1386,10 @@ pub const fn true_f() -> bool { true }
 
 pub const fn ten() -> usize { 10 }
 
+pub const fn ten_f64() -> f64 { 10. }
+
+pub const fn one_hundred() -> usize { 100 }
+
 pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
 
 #[derive(Debug, Deserialize)]

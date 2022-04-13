@@ -5,7 +5,8 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRe
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
-                  TxFee, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
+                  TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
+                  UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, PrivKeyBuildPolicy,
             PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
@@ -14,8 +15,7 @@ use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::small_rng;
-use crypto::trezor::TrezorError;
-use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoInitError, HwError};
+use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
@@ -63,12 +63,13 @@ pub enum UtxoCoinBuildError {
     CantDetectUserHome,
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
-    HardwareWalletError(HwError),
+    #[display(fmt = "Hardware Wallet context is not initialized")]
+    HwContextNotInitialized,
     HDWalletStorageError(HDWalletStorageError),
-    #[display(fmt = "Error processing Hardware Wallet request: {}", _0)]
-    ErrorProcessingHwRequest(String),
-    #[display(fmt = "Cannot extract an extended public key from an Iguana key pair")]
-    HDWalletUnavailable,
+    #[display(
+        fmt = "Coin should be activated with Hardware Wallet. Please consider using `\"priv_key_policy\": \"Trezor\"` in the activation request"
+    )]
+    CoinShouldBeActivatedWithHw,
     #[display(
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
@@ -79,14 +80,6 @@ pub enum UtxoCoinBuildError {
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
     fn from(e: UtxoConfError) -> Self { UtxoCoinBuildError::ConfError(e) }
-}
-
-impl From<HwError> for UtxoCoinBuildError {
-    fn from(hw_err: HwError) -> Self { UtxoCoinBuildError::HardwareWalletError(hw_err) }
-}
-
-impl From<TrezorError> for UtxoCoinBuildError {
-    fn from(trezor_err: TrezorError) -> Self { UtxoCoinBuildError::HardwareWalletError(HwError::from(trezor_err)) }
 }
 
 impl From<CryptoInitError> for UtxoCoinBuildError {
@@ -114,7 +107,7 @@ pub trait UtxoCoinBuilder: UtxoFieldsWithIguanaPrivKeyBuilder + UtxoFieldsWithHa
     async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         match self.priv_key_policy() {
             PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_priv_key(priv_key).await,
-            PrivKeyBuildPolicy::HardwareWallet => self.build_utxo_fields_with_xpub().await,
+            PrivKeyBuildPolicy::Trezor => self.build_utxo_fields_with_trezor().await,
         }
     }
 }
@@ -133,6 +126,10 @@ pub trait UtxoCoinWithIguanaPrivKeyBuilder: UtxoFieldsWithIguanaPrivKeyBuilder {
 pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
     async fn build_utxo_fields_with_iguana_priv_key(&self, priv_key: &[u8]) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+
+        if self.is_hw_coin(&conf) {
+            return MmError::err(UtxoCoinBuildError::CoinShouldBeActivatedWithHw);
+        }
 
         let private = Private {
             prefix: conf.wif_prefix,
@@ -187,9 +184,14 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
 
 #[async_trait]
 pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
-    async fn build_utxo_fields_with_xpub(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
+    async fn build_utxo_fields_with_trezor(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let ticker = self.ticker().to_owned();
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
+
+        if !self.supports_trezor(&conf) {
+            return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
+        }
+        self.check_if_trezor_is_initialized()?;
 
         // For now, use a default script pubkey.
         // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
@@ -229,7 +231,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             decimals,
             dust_amount,
             rpc_client,
-            priv_key_policy: PrivKeyPolicy::HardwareWallet,
+            priv_key_policy: PrivKeyPolicy::Trezor,
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
             block_headers_storage,
@@ -261,6 +263,18 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     }
 
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
+
+    fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
+
+    fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let hw_ctx = crypto_ctx
+            .hw_ctx()
+            .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
+        match hw_ctx.hw_wallet_type() {
+            HwWalletType::Trezor => Ok(()),
+        }
+    }
 }
 
 #[async_trait]
@@ -544,6 +558,8 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
+
+    fn is_hw_coin(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword

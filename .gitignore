@@ -59,3 +59,10 @@ iguana/exchanges/manychains
 /coins
 # MM2 conf to avoid occasional adding to git by someone
 MM2.json
+
+# vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]

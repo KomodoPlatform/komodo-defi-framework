@@ -5,9 +5,9 @@ use crate::HwWalletType;
 use bitcrypto::dhash160;
 use common::log::warn;
 use common::mm_error::prelude::*;
+use futures::lock::Mutex as AsyncMutex;
 use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
-use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H160, H264};
 use std::ops::Deref;
 use std::str::FromStr;
@@ -36,13 +36,32 @@ pub struct HardwareWalletCtx {
     pub(crate) hw_internal_pubkey: H264,
     pub(crate) hw_wallet_type: HwWalletType,
     /// Please avoid locking multiple mutexes.
-    /// The mutex hasn't be locked while the wallet is used
-    /// because every variant of the Hardware Wallet client uses an internal mutex to operate with the device.
-    /// Clone the `Option<HwClient>` instance instead.
-    pub(crate) hw_wallet: PaMutex<Option<HwClient>>,
+    /// The mutex hasn't to be locked while the client is used
+    /// because every variant of `HwClient` uses an internal mutex to operate with the device.
+    /// But it has to be locked while the client is initialized.
+    pub(crate) hw_wallet: AsyncMutex<Option<HwClient>>,
 }
 
 impl HardwareWalletCtx {
+    pub(crate) async fn init_with_trezor<Processor>(
+        processor: &Processor,
+    ) -> MmResult<HardwareWalletArc, HwProcessingError<Processor::Error>>
+    where
+        Processor: TrezorConnectProcessor + Sync,
+    {
+        let trezor = HwClient::trezor(processor).await?;
+        let hw_internal_pubkey = {
+            let mut session = trezor.session().await?;
+            HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?
+        };
+        let hw_client = HwClient::Trezor(trezor);
+        Ok(HardwareWalletArc::new(HardwareWalletCtx {
+            hw_internal_pubkey,
+            hw_wallet_type: hw_client.hw_wallet_type(),
+            hw_wallet: AsyncMutex::new(Some(hw_client)),
+        }))
+    }
+
     pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }
 
     /// Connects to a Trezor device and checks if MM was initialized from this particular device.
@@ -54,12 +73,12 @@ impl HardwareWalletCtx {
         Processor: TrezorConnectProcessor + Sync,
         Processor::Error: std::fmt::Display,
     {
-        let hw_wallet = self.hw_wallet.lock().clone();
-        if let Some(HwClient::Trezor(connected_trezor)) = hw_wallet {
-            match self.check_trezor(&connected_trezor, processor).await {
-                Ok(()) => return Ok(connected_trezor),
+        let mut hw_client = self.hw_wallet.lock().await;
+        if let Some(HwClient::Trezor(connected_trezor)) = hw_client.deref() {
+            match self.check_trezor(connected_trezor, processor).await {
+                Ok(()) => return Ok(connected_trezor.clone()),
                 // The device could be unplugged. We should try to reconnect to the device.
-                Err(e) => warn!("Error checking a connected device: '{}'. Trying to reconnect...", e),
+                Err(e) => warn!("Error checking hardware wallet device: '{}'. Trying to reconnect...", e),
             }
         }
         // Connect to a device.
@@ -68,7 +87,7 @@ impl HardwareWalletCtx {
         self.check_trezor(&trezor, processor).await?;
 
         // Reinitialize the field to avoid reconnecting next time.
-        *self.hw_wallet.lock() = Some(HwClient::Trezor(trezor.clone()));
+        *hw_client = Some(HwClient::Trezor(trezor.clone()));
 
         Ok(trezor)
     }
@@ -88,8 +107,7 @@ impl HardwareWalletCtx {
             .expect("'MM2_INTERNAL_DERIVATION_PATH' is expected to be valid derivation path");
         let mm2_internal_xpub = trezor
             .get_public_key(path, MM2_TREZOR_INTERNAL_COIN, MM2_INTERNAL_ECDSA_CURVE)
-            .await
-            .mm_err(HwError::from)?
+            .await?
             .process(processor)
             .await?;
         let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&mm2_internal_xpub).map_to_mm(HwError::from)?;

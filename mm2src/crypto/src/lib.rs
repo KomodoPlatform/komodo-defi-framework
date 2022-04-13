@@ -11,13 +11,13 @@ mod key_pair_ctx;
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use bip44::{Bip44Chain, Bip44DerPathError, Bip44DerivationPath, Bip44PathToAccount, Bip44PathToCoin,
                 UnkownBip44ChainError, BIP44_PURPOSE};
-pub use crypto_ctx::{CryptoCtx, CryptoInitError, CryptoInitResult};
+pub use crypto_ctx::{CryptoCtx, CryptoInitError, CryptoInitResult, HwCtxInitError};
 pub use hw_client::TrezorConnectProcessor;
 pub use hw_client::{HwClient, HwError, HwProcessingError, HwResult, HwWalletType};
 pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,
                                 Secp256k1ExtendedPublicKey, XPub};
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
-pub use key_pair_ctx::{KeyPairArc, KeyPairCtx};
+pub use key_pair_ctx::{IguanaArc, IguanaCtx};
 pub use trezor;
 
 use serde::de::Error;

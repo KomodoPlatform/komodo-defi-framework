@@ -78,7 +78,7 @@ async fn test_init_eth_coin() {
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-    CryptoCtx::init_with_passphrase(
+    CryptoCtx::init_with_iguana_passphrase(
         ctx.clone(),
         "spice describe gravity federal blast come thank unfair canal monkey style afraid",
     )

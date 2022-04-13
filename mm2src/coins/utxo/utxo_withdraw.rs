@@ -2,8 +2,8 @@ use crate::init_withdraw::{WithdrawAwaitingStatus, WithdrawInProgressStatus, Wit
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, PrivKeyPolicy,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
-use crate::{GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError, WithdrawFee, WithdrawRequest,
-            WithdrawResult};
+use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
+            WithdrawFee, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -13,8 +13,7 @@ use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HardwareWalletArc, HwError, HwProcessingError,
-             HwWalletType};
+use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
@@ -101,7 +100,7 @@ impl From<Bip32Error> for WithdrawError {
 pub trait UtxoWithdraw<Coin>
 where
     Self: Sized + Sync,
-    Coin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    Coin: UtxoCommonOps,
 {
     fn coin(&self) -> &Coin;
 
@@ -128,6 +127,7 @@ where
 
     async fn build(self) -> WithdrawResult {
         let coin = self.coin();
+        let ticker = coin.as_ref().conf.ticker.clone();
         let decimals = coin.as_ref().decimals;
         let conf = &self.coin().as_ref().conf;
         let req = self.request();
@@ -189,9 +189,10 @@ where
             },
             None => (),
         };
-        let (unsigned, data) = tx_builder.build().await.mm_err(|gen_tx_error| {
-            WithdrawError::from_generate_tx_error(gen_tx_error, coin.ticker().to_owned(), decimals)
-        })?;
+        let (unsigned, data) = tx_builder
+            .build()
+            .await
+            .mm_err(|gen_tx_error| WithdrawError::from_generate_tx_error(gen_tx_error, ticker.clone(), decimals))?;
 
         // Sign the `unsigned` transaction.
         let signed = self.sign_tx(unsigned).await?;
@@ -201,7 +202,7 @@ where
 
         let fee_amount = data.fee_amount + data.unused_change.unwrap_or_default();
         let fee_details = UtxoFeeDetails {
-            coin: Some(self.coin().as_ref().conf.ticker.clone()),
+            coin: Some(ticker.clone()),
             amount: big_decimal_from_sat(fee_amount as i64, decimals),
         };
         let tx_hex = match coin.addr_format() {
@@ -219,7 +220,7 @@ where
             tx_hex,
             fee_details: Some(fee_details.into()),
             block_height: 0,
-            coin: coin.as_ref().conf.ticker.clone(),
+            coin: ticker,
             internal_id: vec![].into(),
             timestamp: now_ms() / 1000,
             kmd_rewards: data.kmd_rewards,
@@ -229,6 +230,7 @@ where
 }
 
 pub struct InitUtxoWithdraw<'a, Coin> {
+    ctx: MmArc,
     coin: Coin,
     task_handle: &'a WithdrawTaskHandle,
     req: WithdrawRequest,
@@ -239,13 +241,12 @@ pub struct InitUtxoWithdraw<'a, Coin> {
     from_derivation_path: DerivationPath,
     /// Public key corresponding to [`InitUtxoWithdraw::from_address`].
     from_pubkey: PublicKey,
-    trezor: Option<TrezorClient>,
 }
 
 #[async_trait]
 impl<'a, Coin> UtxoWithdraw<Coin> for InitUtxoWithdraw<'a, Coin>
 where
-    Coin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + UtxoSignerOps + Send + Sync + 'static,
+    Coin: UtxoCommonOps + UtxoSignerOps,
 {
     fn coin(&self) -> &Coin { &self.coin }
 
@@ -316,16 +317,12 @@ where
 
         let sign_policy = match self.coin.as_ref().priv_key_policy {
             PrivKeyPolicy::KeyPair(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
-            PrivKeyPolicy::HardwareWallet => match self.trezor {
-                Some(ref trezor) => SignPolicy::WithTrezor(trezor.clone()),
-                None => {
-                    let error = "'InitUtxoWithdraw::trezor' is expected to be set".to_owned();
-                    return MmError::err(WithdrawError::InternalError(error));
-                },
+            PrivKeyPolicy::Trezor => {
+                let trezor_client = self.trezor_client().await?;
+                SignPolicy::WithTrezor(trezor_client)
             },
         };
 
-        // TODO refactor [`UtxoSignerOps::sign_tx`] to use [`TrezorInteractWithUser::interact_with_user_if_required`].
         self.task_handle
             .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)?;
         let signed = self.coin.sign_tx(sign_params, sign_policy).await?;
@@ -334,42 +331,32 @@ where
     }
 }
 
-impl<'a, Coin> InitUtxoWithdraw<'a, Coin>
-where
-    Coin: AsRef<UtxoCoinFields>
-        + UtxoCommonOps
-        + MarketCoinOps
-        + UtxoSignerOps
-        + GetWithdrawSenderAddress<Address = Address, Pubkey = PublicKey>,
-{
+impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
     pub async fn new(
         ctx: MmArc,
         coin: Coin,
         req: WithdrawRequest,
         task_handle: &'a WithdrawTaskHandle,
-    ) -> Result<InitUtxoWithdraw<'a, Coin>, MmError<WithdrawError>> {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-        match *crypto_ctx {
-            CryptoCtx::KeyPair(_) => Self::new_with_key_pair(coin, req, task_handle).await,
-            CryptoCtx::HardwareWallet(ref hw_ctx) => match hw_ctx.hw_wallet_type() {
-                HwWalletType::Trezor => Self::new_with_trezor(hw_ctx, coin, req, task_handle).await,
-            },
-        }
-    }
-
-    async fn new_with_key_pair(
-        coin: Coin,
-        req: WithdrawRequest,
-        task_handle: &'a WithdrawTaskHandle,
-    ) -> Result<InitUtxoWithdraw<'a, Coin>, MmError<WithdrawError>> {
+    ) -> Result<InitUtxoWithdraw<'a, Coin>, MmError<WithdrawError>>
+    where
+        Coin: CoinWithDerivationMethod + GetWithdrawSenderAddress<Address = Address, Pubkey = PublicKey>,
+    {
         let from = coin.get_withdraw_sender_address(&req).await?;
         let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
+
         let from_derivation_path = match from.derivation_path {
             Some(der_path) => der_path,
+            // [`WithdrawSenderAddress::derivation_path`] is not set, but the coin is initialized with an HD wallet derivation method.
+            None if coin.has_hd_wallet_derivation_method() => {
+                let error = "Cannot determine 'from' address derivation path".to_owned();
+                return MmError::err(WithdrawError::UnexpectedFromAddress(error));
+            },
             // Temporary initialize the derivation path by default since this field is not used without Trezor.
             None => DerivationPath::default(),
         };
+
         Ok(InitUtxoWithdraw {
+            ctx,
             coin,
             task_handle,
             req,
@@ -377,27 +364,19 @@ where
             from_address_string,
             from_derivation_path,
             from_pubkey: from.pubkey,
-            trezor: None,
         })
     }
 
-    async fn new_with_trezor(
-        hw_ctx: &HardwareWalletArc,
-        coin: Coin,
-        req: WithdrawRequest,
-        task_handle: &'a WithdrawTaskHandle,
-    ) -> Result<InitUtxoWithdraw<'a, Coin>, MmError<WithdrawError>> {
-        let from = coin.get_withdraw_sender_address(&req).await?;
-        let from_derivation_path = match from.derivation_path {
-            Some(der_path) => der_path,
-            None => {
-                let error = "Cannot determine 'from' address derivation path".to_owned();
-                return MmError::err(WithdrawError::UnexpectedFromAddress(error));
-            },
-        };
-        let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
+    /// # Fail
+    ///
+    /// The method fails if [`CryptoCtx::hw_ctx`] is not initialized yet.
+    async fn trezor_client(&self) -> MmResult<TrezorClient, WithdrawError> {
+        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        let hw_ctx = crypto_ctx
+            .hw_ctx()
+            .or_mm_err(|| WithdrawError::NoTrezorDeviceAvailable)?;
 
-        let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, HwConnectStatuses {
+        let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(self.task_handle, HwConnectStatuses {
             on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,
             on_connected: WithdrawInProgressStatus::Preparing,
             on_connection_failed: WithdrawInProgressStatus::Finishing,
@@ -408,18 +387,10 @@ where
         .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
         .with_pin_timeout(TREZOR_PIN_TIMEOUT);
 
-        let trezor_client = hw_ctx.trezor(&trezor_connect_processor).await?;
-
-        Ok(InitUtxoWithdraw {
-            coin,
-            task_handle,
-            req,
-            from_address: from.address,
-            from_address_string,
-            from_derivation_path,
-            from_pubkey: from.pubkey,
-            trezor: Some(trezor_client),
-        })
+        hw_ctx
+            .trezor(&trezor_connect_processor)
+            .await
+            .mm_err(WithdrawError::from)
     }
 }
 
@@ -433,7 +404,7 @@ pub struct StandardUtxoWithdraw<Coin> {
 #[async_trait]
 impl<Coin> UtxoWithdraw<Coin> for StandardUtxoWithdraw<Coin>
 where
-    Coin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps + Send + Sync + 'static,
+    Coin: UtxoCommonOps,
 {
     fn coin(&self) -> &Coin { &self.coin }
 

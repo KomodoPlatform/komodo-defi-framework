@@ -1,6 +1,6 @@
 # Setting up the dev environment for AtomicDEX-API to run full tests suite
 
-1. Install docker.
+1. Install Docker or Podman.
 2. Download ZCash params files: [Windows](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.bat), [Unix/Linux](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh)
 3. Create `.env.client` file with the following content
 ```
@@ -20,10 +20,16 @@ done
 ```
 Please note that you have to run it again after each reboot  
 6. Linux specific:
+- for Docker users:
 ```
 sudo groupadd docker
 sudo usermod -aG docker $USER
 ```
+- for Podman users:
+```
+sudo ln -s $(which podman) /usr/bin/docker
+```
+
 7. Try `cargo test --features native --all -- --test-threads=16`.
 
 PS If you notice that this guide is outdated, please submit a PR.

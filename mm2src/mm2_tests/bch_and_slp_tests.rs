@@ -419,10 +419,10 @@ fn test_bch_and_slp_testnet_history() {
     log!({ "bch history: {:?}", history });
 
     let expected_internal_ids = vec![
+        "eefb21290909cb7f2864ef066836bd98f8963731576f65a8c0ff590c3e91d439",
         "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69",
         "c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce",
         "091877294268b2b1734255067146f15c3ac5e6199e72cd4f68a8d9dec32bb0c0",
-        "d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7",
     ];
 
     let actual_ids: Vec<_> = history

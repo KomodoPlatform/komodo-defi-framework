@@ -77,7 +77,7 @@ pub trait QtumDelegationOps {
 }
 
 #[async_trait]
-pub trait QtumBasedCoin: AsRef<UtxoCoinFields> + UtxoCommonOps + MarketCoinOps {
+pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         let to_address_format: QtumAddressFormat =
             json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse Qtum address format {:?}", e))?;

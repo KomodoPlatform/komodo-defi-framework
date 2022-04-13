@@ -52,10 +52,7 @@ cfg_native! {
 }
 
 #[path = "lp_init/init_context.rs"] mod init_context;
-#[path = "lp_init/mm_init_task.rs"] mod mm_init_task;
-#[path = "lp_init/rpc_command.rs"] pub mod rpc_command;
-
-use mm_init_task::MmInitTask;
+#[path = "lp_init/init_hw.rs"] pub mod init_hw;
 
 const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
 
@@ -394,24 +391,13 @@ pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
         });
     }
 
-    if ctx.conf["passphrase"].is_null() {
-        // TODO
-        // Currently, `MmInitTask` initializes `CryptoCtx` with Hardware Wallet only.
-        // Later I'm going to change it.
-        // The main blocker is that if an error occurs while MarketMaker initializing,
-        // we should exit with an error since our users are used to this behaviour.
-        // But `MmInitTask` inserts the error into [`MmCtx::rpc_task_manager`] and doesn't stop anything.
-        let task = MmInitTask::new(ctx.clone());
-        task.spawn()?;
-    } else {
-        let passphrase: String =
-            json::from_value(ctx.conf["passphrase"].clone()).map_to_mm(|e| MmInitError::ErrorDeserializingConfig {
-                field: "passphrase".to_owned(),
-                error: e.to_string(),
-            })?;
-        CryptoCtx::init_with_passphrase(ctx.clone(), &passphrase)?;
-        lp_init_continue(ctx.clone()).await?;
-    }
+    let passphrase: String =
+        json::from_value(ctx.conf["passphrase"].clone()).map_to_mm(|e| MmInitError::ErrorDeserializingConfig {
+            field: "passphrase".to_owned(),
+            error: e.to_string(),
+        })?;
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?;
+    lp_init_continue(ctx.clone()).await?;
 
     let ctx_id = ctx.ffi_handle().map_to_mm(MmInitError::Internal)?;
 

@@ -89,9 +89,10 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
                         NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin, NumConversError, NumConversResult,
-            PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, TransactionFut, UnexpectedDerivationMethod, WithdrawError, WithdrawRequest};
+            PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            Transaction, TransactionDetails, TransactionEnum, TransactionFut, UnexpectedDerivationMethod,
+            WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
@@ -735,7 +736,9 @@ impl UtxoAddressScanner {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
-pub trait UtxoCommonOps: UtxoTxGenerationOps + UtxoTxBroadcastOps {
+pub trait UtxoCommonOps:
+    AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps + Clone + Send + Sync + 'static
+{
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
@@ -1109,6 +1112,8 @@ pub struct UtxoActivationParams {
     pub gap_limit: Option<u32>,
     #[serde(default)]
     pub scan_policy: EnableCoinScanPolicy,
+    #[serde(default = "PrivKeyActivationPolicy::iguana_priv_key")]
+    pub priv_key_policy: PrivKeyActivationPolicy,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: Option<bool>,
@@ -1124,6 +1129,8 @@ pub enum UtxoFromLegacyReqErr {
     InvalidRequiresNota(json::Error),
     InvalidAddressFormat(json::Error),
     InvalidCheckUtxoMaturity(json::Error),
+    InvalidScanPolicy(json::Error),
+    InvalidPrivKeyPolicy(json::Error),
 }
 
 impl UtxoActivationParams {
@@ -1149,7 +1156,12 @@ impl UtxoActivationParams {
             json::from_value(req["address_format"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidAddressFormat)?;
         let check_utxo_maturity = json::from_value(req["check_utxo_maturity"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidCheckUtxoMaturity)?;
-        let scan_policy = EnableCoinScanPolicy::default();
+        let scan_policy = json::from_value::<Option<EnableCoinScanPolicy>>(req["scan_policy"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidScanPolicy)?
+            .unwrap_or_default();
+        let priv_key_policy = json::from_value::<Option<PrivKeyActivationPolicy>>(req["priv_key_policy"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidPrivKeyPolicy)?
+            .unwrap_or(PrivKeyActivationPolicy::IguanaPrivKey);
 
         Ok(UtxoActivationParams {
             mode,
@@ -1160,6 +1172,7 @@ impl UtxoActivationParams {
             address_format,
             gap_limit: None,
             scan_policy,
+            priv_key_policy,
             check_utxo_maturity,
         })
     }
@@ -1387,10 +1400,7 @@ pub struct KmdRewardsInfoElement {
 
 /// Get rewards info of unspent outputs.
 /// The list is ordered by the output value.
-pub async fn kmd_rewards_info<T>(coin: &T) -> Result<Vec<KmdRewardsInfoElement>, String>
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
-{
+pub async fn kmd_rewards_info<T: UtxoCommonOps>(coin: &T) -> Result<Vec<KmdRewardsInfoElement>, String> {
     if coin.as_ref().conf.ticker != "KMD" {
         return ERR!("rewards info can be obtained for KMD only");
     }
@@ -1459,7 +1469,7 @@ pub fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 
 async fn send_outputs_from_my_address_impl<T>(coin: T, outputs: Vec<TransactionOutput>) -> Result<UtxoTx, String>
 where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps,
+    T: UtxoCommonOps,
 {
     let my_address = try_s!(coin.as_ref().derivation_method.iguana_or_err());
     let (unspents, recently_sent_txs) = try_s!(coin.list_unspent_ordered(my_address).await);
@@ -1549,6 +1559,7 @@ pub fn address_by_conf_and_pubkey_str(
         address_format: None,
         gap_limit: None,
         scan_policy: EnableCoinScanPolicy::default(),
+        priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
         check_utxo_maturity: None,
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);

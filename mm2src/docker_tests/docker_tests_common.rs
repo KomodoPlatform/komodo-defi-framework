@@ -49,7 +49,7 @@ pub static mut QORTY_TOKEN_ADDRESS: Option<H160Eth> = None;
 pub static mut QRC20_SWAP_CONTRACT_ADDRESS: Option<H160Eth> = None;
 pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
-pub const UTXO_ASSET_DOCKER_IMAGE: &str = "artempikulin/testblockchain:multiarch";
+pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
