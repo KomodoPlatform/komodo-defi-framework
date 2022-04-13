@@ -14,7 +14,8 @@ use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBui
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, StakingInfosFut, SwapOps,
-            TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
+            TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawFut,
+            WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -666,6 +667,14 @@ impl MarketCoinOps for QtumCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message(&self, _message: &str) -> Result<String, String> { unimplemented!() }
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+        unimplemented!()
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }
 

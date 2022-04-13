@@ -1016,6 +1016,14 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message(&self, _message: &str) -> Result<String, String> { unimplemented!() }
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+        unimplemented!()
+    }
+
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.utxo.decimals;
 

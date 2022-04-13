@@ -493,17 +493,11 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> Result<String, String>;
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        unimplemented!();
-    }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
-    fn sign_message(&self, _message: &str) -> Result<String, String> {
-        unimplemented!();
-    }
+    fn sign_message(&self, _message: &str) -> Result<String, String>;
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
-        unimplemented!();
-    }
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String>;
 
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
         let closure = |spendable: BigDecimal| {

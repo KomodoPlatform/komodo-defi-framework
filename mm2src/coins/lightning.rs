@@ -13,7 +13,8 @@ use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, UtxoCommon
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::hashes::Hash;
@@ -386,6 +387,14 @@ impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { Ok(self.my_node_id()) }
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message(&self, _message: &str) -> Result<String, String> { unimplemented!() }
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+        unimplemented!()
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals();
