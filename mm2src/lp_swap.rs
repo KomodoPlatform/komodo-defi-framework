@@ -82,7 +82,7 @@ use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
-use lazy_static::lazy_static;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
@@ -274,12 +274,10 @@ const BASIC_COMM_TIMEOUT: u64 = 90;
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
 #[cfg(feature = "custom-swap-locktime")]
-lazy_static! {
-    /// Default atomic swap payment locktime, in seconds.
-    /// Maker sends payment with LOCKTIME * 2
-    /// Taker sends payment with LOCKTIME
-    pub(crate) static ref PAYMENT_LOCKTIME: Mutex<u64> = Mutex::new(0);
-}
+/// Default atomic swap payment locktime, in seconds.
+/// Maker sends payment with LOCKTIME * 2
+/// Taker sends payment with LOCKTIME
+pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(900);
 
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
@@ -287,7 +285,7 @@ pub fn get_payment_locktime() -> u64 {
     #[cfg(not(feature = "custom-swap-locktime"))]
     return PAYMENT_LOCKTIME;
     #[cfg(feature = "custom-swap-locktime")]
-    *PAYMENT_LOCKTIME.lock().unwrap()
+    PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;

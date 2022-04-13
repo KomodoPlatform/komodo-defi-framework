@@ -31,6 +31,8 @@ use common::mm_ctx::MmCtxBuilder;
 #[cfg(feature = "custom-swap-locktime")] use common::log::warn;
 #[cfg(feature = "custom-swap-locktime")]
 use lp_swap::PAYMENT_LOCKTIME;
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::Ordering;
 
 use derive_more::Display;
 use gstuff::slurp;
@@ -212,7 +214,7 @@ fn check_password_policy() {
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
-    *PAYMENT_LOCKTIME.lock().unwrap() = match conf["payment_locktime"].as_u64() {
+    let val = match conf["payment_locktime"].as_u64() {
         Some(lt) => lt,
         None => {
             let def = 900;
@@ -224,6 +226,8 @@ fn initialize_payment_locktime(conf: &Json) {
             def
         },
     };
+
+    PAYMENT_LOCKTIME.store(val, Ordering::Relaxed);
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
