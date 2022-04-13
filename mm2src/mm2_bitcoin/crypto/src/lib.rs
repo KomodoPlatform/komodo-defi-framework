@@ -9,7 +9,6 @@ extern crate sha3;
 extern crate siphasher;
 
 use bitcoin::consensus::{encode::VarInt, Encodable};
-use bitcoin_hashes::{sha256d, Hash as BitcoinHash, HashEngine};
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::Ripemd160;
@@ -117,12 +116,12 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
 /// See: https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
 pub fn message_hash(msg: &str) -> H256 {
     pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
-    let mut engine = sha256d::Hash::engine();
-    engine.input(KOMODO_SIGNED_MSG_PREFIX);
+    let mut hasher = Sha256::new();
+    hasher.input(KOMODO_SIGNED_MSG_PREFIX);
     let msg_len = VarInt(msg.len() as u64);
-    msg_len.consensus_encode(&mut engine).expect("engines don't error");
-    engine.input(msg.as_bytes());
-    H256::from(sha256d::Hash::from_engine(engine).into_inner())
+    msg_len.consensus_encode(&mut hasher).expect("engines don't error");
+    hasher.input(msg.as_bytes());
+    sha256(&(*hasher.result())[..])
 }
 
 #[cfg(test)]
