@@ -2,7 +2,7 @@ use crate::context::CoinsActivationContext;
 use crate::prelude::TryFromCoinProtocol;
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandle,
                              InitStandaloneCoinTaskManagerShared};
-use crate::utxo_activation::common_impl::get_activation_result;
+use crate::utxo_activation::common_impl::{get_activation_result, priv_key_build_policy};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
 use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
                                                           UtxoStandardUserAction};
@@ -11,9 +11,10 @@ use async_trait::async_trait;
 use coins::utxo::qtum::{QtumCoin, QtumCoinBuilder};
 use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
-use coins::{lp_register_coin, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy, RegisterCoinParams};
+use coins::{lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
+use crypto::CryptoCtx;
 use serde_json::Value as Json;
 
 pub type QtumTaskManagerShared = InitStandaloneCoinTaskManagerShared<QtumCoin>;
@@ -53,10 +54,13 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         coin_conf: Json,
         activation_request: &Self::ActivationRequest,
         _protocol_info: Self::StandaloneProtocol,
-        priv_key_policy: PrivKeyBuildPolicy<'_>,
         _task_handle: &QtumRpcTaskHandle,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+
         let tx_history = activation_request.tx_history;
+        let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
+
         let coin = QtumCoinBuilder::new(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
             .build()
             .await

@@ -3,17 +3,15 @@ use crate::prelude::{coin_conf_with_protocol, TryFromCoinProtocol};
 use crate::standalone_coin::init_standalone_coin_error::{InitStandaloneCoinError, InitStandaloneCoinStatusError,
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
-use coins::{lp_coinfind, MmCoinEnum, PrivKeyBuildPolicy};
+use coins::{lp_coinfind, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{NotSame, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
-use crypto::CryptoCtx;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
-use std::sync::Arc;
 
 pub type InitStandaloneCoinResponse = InitRpcTaskResponse;
 pub type InitStandaloneCoinStatusRequest = RpcTaskStatusRequest;
@@ -47,7 +45,6 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         coin_conf: Json,
         activation_request: &Self::ActivationRequest,
         protocol_info: Self::StandaloneProtocol,
-        priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &InitStandaloneCoinTaskHandle<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
@@ -69,8 +66,6 @@ where
     InitStandaloneCoinError: From<Standalone::ActivationError>,
     (Standalone::ActivationError, InitStandaloneCoinError): NotSame,
 {
-    let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|e| InitStandaloneCoinError::Internal(e.to_string()))?;
-
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitStandaloneCoinError::CoinIsAlreadyActivated { ticker: request.ticker });
     }
@@ -80,7 +75,6 @@ where
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitStandaloneCoinError::Internal)?;
     let task = InitStandaloneCoinTask::<Standalone> {
         ctx,
-        crypto_ctx,
         request,
         coin_conf,
         protocol_info,
@@ -133,7 +127,6 @@ pub async fn init_standalone_coin_user_action<Standalone: InitStandaloneCoinActi
 
 pub struct InitStandaloneCoinTask<Standalone: InitStandaloneCoinActivationOps> {
     ctx: MmArc,
-    crypto_ctx: Arc<CryptoCtx>,
     request: InitStandaloneCoinReq<Standalone::ActivationRequest>,
     coin_conf: Json,
     protocol_info: Standalone::StandaloneProtocol,
@@ -157,14 +150,12 @@ where
     }
 
     async fn run(self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
-        let priv_key_policy = PrivKeyBuildPolicy::from_crypto_ctx(&self.crypto_ctx);
         let coin = Standalone::init_standalone_coin(
             self.ctx.clone(),
             self.request.ticker,
             self.coin_conf,
             &self.request.activation_params,
             self.protocol_info,
-            priv_key_policy,
             task_handle,
         )
         .await?;

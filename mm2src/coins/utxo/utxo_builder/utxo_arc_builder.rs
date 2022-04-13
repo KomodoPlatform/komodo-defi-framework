@@ -2,7 +2,7 @@ use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{block_header_utxo_loop, merge_utxo_loop};
-use crate::utxo::{UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoWeak};
+use crate::utxo::{UtxoArc, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
@@ -75,7 +75,7 @@ impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> 
 impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: UtxoCommonOps,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -103,21 +103,18 @@ where
 impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: UtxoCommonOps,
 {
 }
 
 impl<'a, F, T> BlockHeaderUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
+    T: UtxoCommonOps,
 {
 }
 
-pub trait MergeUtxoArcOps<T>: UtxoCoinBuilderCommonOps
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
-{
+pub trait MergeUtxoArcOps<T: UtxoCommonOps>: UtxoCoinBuilderCommonOps {
     fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F)
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
@@ -136,10 +133,7 @@ where
     }
 }
 
-pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps
-where
-    T: AsRef<UtxoCoinFields> + UtxoCommonOps + Send + Sync + 'static,
-{
+pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,
         weak: UtxoWeak,
@@ -148,6 +142,7 @@ where
     ) -> Option<AbortHandle>
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
+        T: UtxoCommonOps,
     {
         if maybe_storage.is_some() {
             let ticker = self.ticker().to_owned();

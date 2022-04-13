@@ -210,6 +210,57 @@ pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePre
 pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
 pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
+pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
+pub type RawTransactionFut<'a> =
+    Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum RawTransactionError {
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "Invalid  hash: {}", _0)]
+    InvalidHashError(String),
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Hash does not exist: {}", _0)]
+    HashNotExist(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl HttpStatusCode for RawTransactionError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            RawTransactionError::NoSuchCoin { .. }
+            | RawTransactionError::InvalidHashError(_)
+            | RawTransactionError::HashNotExist(_) => StatusCode::BAD_REQUEST,
+            RawTransactionError::Transport(_) | RawTransactionError::InternalError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
+        }
+    }
+}
+
+impl From<CoinFindError> for RawTransactionError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => RawTransactionError::NoSuchCoin { coin },
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RawTransactionRequest {
+    pub coin: String,
+    pub tx_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RawTransactionRes {
+    /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
+    pub tx_hex: BytesJson,
+}
 
 #[derive(Debug, Display)]
 pub enum TxHistoryError {
@@ -1406,6 +1457,8 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
+
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 
@@ -1662,17 +1715,34 @@ impl CoinsContext {
     }
 }
 
+/// This enum is used in coin activation requests.
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+pub enum PrivKeyActivationPolicy {
+    IguanaPrivKey,
+    Trezor,
+}
+
+impl PrivKeyActivationPolicy {
+    /// The function can be used as a default deserialization constructor:
+    /// `#[serde(default = "PrivKeyActivationPolicy::iguana_priv_key")]`
+    pub fn iguana_priv_key() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::IguanaPrivKey }
+
+    /// The function can be used as a default deserialization constructor:
+    /// `#[serde(default = "PrivKeyActivationPolicy::trezor")]`
+    pub fn trezor() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::Trezor }
+}
+
 #[derive(Debug)]
 pub enum PrivKeyPolicy<T> {
     KeyPair(T),
-    HardwareWallet,
+    Trezor,
 }
 
 impl<T> PrivKeyPolicy<T> {
     pub fn key_pair(&self) -> Option<&T> {
         match self {
             PrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
-            PrivKeyPolicy::HardwareWallet => None,
+            PrivKeyPolicy::Trezor => None,
         }
     }
 
@@ -1685,17 +1755,12 @@ impl<T> PrivKeyPolicy<T> {
 #[derive(Clone)]
 pub enum PrivKeyBuildPolicy<'a> {
     IguanaPrivKey(&'a [u8]),
-    HardwareWallet,
+    Trezor,
 }
 
 impl<'a> PrivKeyBuildPolicy<'a> {
-    pub fn from_crypto_ctx(crypto_ctx: &'a CryptoCtx) -> PrivKeyBuildPolicy<'a> {
-        match crypto_ctx {
-            CryptoCtx::KeyPair(key_pair_ctx) => {
-                PrivKeyBuildPolicy::IguanaPrivKey(key_pair_ctx.secp256k1_privkey_bytes())
-            },
-            CryptoCtx::HardwareWallet(_) => PrivKeyBuildPolicy::HardwareWallet,
-        }
+    pub fn iguana_priv_key(crypto_ctx: &'a CryptoCtx) -> Self {
+        PrivKeyBuildPolicy::IguanaPrivKey(crypto_ctx.iguana_ctx().secp256k1_privkey_bytes())
     }
 }
 
@@ -1742,6 +1807,10 @@ pub trait CoinWithDerivationMethod {
     type HDWallet;
 
     fn derivation_method(&self) -> &DerivationMethod<Self::Address, Self::HDWallet>;
+
+    fn has_hd_wallet_derivation_method(&self) -> bool {
+        matches!(self.derivation_method(), DerivationMethod::HDWallet(_))
+    }
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -1961,12 +2030,10 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             "assuming that coin is not supported"
         ));
     }
-    let secret = match *try_s!(CryptoCtx::from_ctx(ctx)) {
-        CryptoCtx::KeyPair(ref key_pair_ctx) => key_pair_ctx.secp256k1_privkey_bytes().to_vec(),
-        CryptoCtx::HardwareWallet(_) => {
-            return ERR!("'enable' and 'electrum' RPC calls don't support coins activation with a Hardware Wallet")
-        },
-    };
+    let secret = try_s!(CryptoCtx::from_ctx(ctx))
+        .iguana_ctx()
+        .secp256k1_privkey_bytes()
+        .to_vec();
 
     if coins_en["protocol"].is_null() {
         return ERR!(
@@ -2219,6 +2286,11 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.withdraw(req).compat().await
+}
+
+pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    coin.get_raw_transaction(req).compat().await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {

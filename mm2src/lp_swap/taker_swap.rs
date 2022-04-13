@@ -1605,7 +1605,7 @@ impl TakerSwap {
 
                 Ok(RecoveredSwap {
                     action: RecoveredSwapAction::RefundedMyPayment,
-                    coin: self.maker_coin.ticker().to_string(),
+                    coin: self.taker_coin.ticker().to_string(),
                     transaction,
                 })
             },
