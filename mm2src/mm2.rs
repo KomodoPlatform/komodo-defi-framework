@@ -73,6 +73,9 @@ pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
+#[cfg(feature = "custom-swap-locktime")]
+const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
+
 #[derive(Serialize)]
 pub struct MmVersionResult {
     result: &'static str,
@@ -214,20 +217,16 @@ fn check_password_policy() {
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
-    let val = match conf["payment_locktime"].as_u64() {
-        Some(lt) => lt,
+    match conf["payment_locktime"].as_u64() {
+        Some(lt) => PAYMENT_LOCKTIME.store(lt, Ordering::Relaxed),
         None => {
-            let def = 900;
             warn!(
                 "payment_locktime is either invalid type or not provided in the configuration or
                 MM2.json file. payment_locktime will be proceeded as {} seconds.",
-                def
+                CUSTOM_PAYMENT_LOCKTIME_DEFAULT
             );
-            def
         },
     };
-
-    PAYMENT_LOCKTIME.store(val, Ordering::Relaxed);
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
