@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoActivationParams;
-use coins::{CoinProtocol, PrivKeyBuildPolicy};
+use coins::CoinProtocol;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::CryptoCtx;
@@ -57,8 +57,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         _task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-
-        let tx_history = activation_request.tx_history;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
 
         let coin = UtxoArcBuilder::new(

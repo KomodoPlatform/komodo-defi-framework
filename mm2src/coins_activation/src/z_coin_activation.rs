@@ -8,11 +8,12 @@ use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
 use coins::utxo::rpc_clients::ElectrumRpcRequest;
 use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
 use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
 use common::executor::Timer;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
+use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use rpc_task::RpcTaskError;
@@ -127,6 +128,10 @@ impl From<RpcTaskError> for ZcoinInitError {
     }
 }
 
+impl From<CryptoInitError> for ZcoinInitError {
+    fn from(err: CryptoInitError) -> Self { ZcoinInitError::Internal(err.to_string()) }
+}
+
 impl From<ZcoinInitError> for InitStandaloneCoinError {
     fn from(_: ZcoinInitError) -> Self { todo!() }
 }
@@ -165,15 +170,8 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
         _protocol_info: ZcoinProtocolInfo,
-        priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let priv_key = match priv_key_policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(key) => key,
-            PrivKeyBuildPolicy::HardwareWallet => {
-                return MmError::err(ZcoinInitError::HardwareWalletsAreNotSupportedYet)
-            },
-        };
         let utxo_mode = match &activation_request.mode {
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
             ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
@@ -189,9 +187,12 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             address_format: None,
             gap_limit: None,
             scan_policy: Default::default(),
+            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
             check_utxo_maturity: None,
         };
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &utxo_params, priv_key)
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+        let priv_key = crypto_ctx.iguana_ctx().secp256k1_privkey().secret;
+        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &utxo_params, priv_key.as_slice())
             .await
             .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
