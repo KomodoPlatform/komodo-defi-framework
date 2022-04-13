@@ -23,6 +23,7 @@ use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private};
 use primitives::hash::H256;
 use rustc_hex::FromHexError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub type PrivKeyResult<T> = Result<T, MmError<PrivKeyError>>;
 
@@ -106,3 +107,63 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
     };
     Ok(KeyPair::from_private(private)?)
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct SerializableSecp256k1Keypair {
+    inner: KeyPair,
+}
+
+impl PartialEq for SerializableSecp256k1Keypair {
+    fn eq(&self, other: &Self) -> bool { self.public_slice() == other.public_slice() }
+}
+
+impl Eq for SerializableSecp256k1Keypair {}
+
+impl SerializableSecp256k1Keypair {
+    fn new(key: [u8; 32]) -> PrivKeyResult<Self> {
+        Ok(SerializableSecp256k1Keypair {
+            inner: key_pair_from_secret(&key)?,
+        })
+    }
+
+    pub fn key_pair(&self) -> &KeyPair { &self.inner }
+
+    pub fn public_slice(&self) -> &[u8] { self.inner.public_slice() }
+
+    fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
+
+    pub fn random() -> Self {
+        SerializableSecp256k1Keypair {
+            inner: KeyPair::random_compressed(),
+        }
+    }
+
+    pub fn into_inner(self) -> KeyPair { self.inner }
+}
+
+impl From<KeyPair> for SerializableSecp256k1Keypair {
+    fn from(inner: KeyPair) -> Self { SerializableSecp256k1Keypair { inner } }
+}
+
+impl Serialize for SerializableSecp256k1Keypair {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.priv_key().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SerializableSecp256k1Keypair {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let priv_key = <[u8; 32]>::deserialize(deserializer)?;
+        SerializableSecp256k1Keypair::new(priv_key).map_err(serde::de::Error::custom)
+    }
+}
+
+#[test]
+// failing test to add serde tests for SerializableSecp256k1Keypair
+fn serializable_secp256k1_keypair_test() { assert!(false) }

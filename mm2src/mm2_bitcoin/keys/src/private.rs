@@ -11,7 +11,7 @@ use std::str::FromStr;
 use {DisplayLayout, Error, Message, Secret, Signature};
 
 /// Secret with additional network prefix and format type
-#[derive(Default, PartialEq, Clone)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub struct Private {
     /// The network prefix on which this key should be used.
     pub prefix: u8,

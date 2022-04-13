@@ -29,7 +29,7 @@ use common::log::{error, LogOnError};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
-use common::privkey::key_pair_from_secret;
+use common::privkey::SerializableSecp256k1Keypair;
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
 use crypto::CryptoCtx;
@@ -38,13 +38,12 @@ use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::Hasher;
 use http::Response;
-use keys::AddressFormat;
+use keys::{AddressFormat, KeyPair};
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::identities::Zero;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::H256 as H256Json;
-use secp256k1::SecretKey;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
 use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
@@ -57,8 +56,8 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, peer_id_from_secp_public, peer_id_from_secp_secret, request_any_relay,
-                             request_one_peer, subscribe_to_topic, P2PRequest};
+use crate::mm2::lp_network::{broadcast_p2p_msg, peer_id_from_secp_public, request_any_relay, request_one_peer,
+                             subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
                           lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
@@ -924,26 +923,16 @@ fn maker_order_created_p2p_notify(
     };
 
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
-    let (secret, public, peer_id) = match &order.p2p_privkey {
-        Some(priv_key) => {
-            let key_pair = match key_pair_from_secret(&priv_key.0) {
-                Ok(k) => k,
-                Err(_) => {
-                    error!("Order {} has invalid p2p_privkey, skip P2P broadcast", order.uuid);
-                    return;
-                },
-            };
-            let peer_id = peer_id_from_secp_public(key_pair.public_slice()).expect("valid public key");
-            (priv_key.0, *key_pair.public(), Some(peer_id))
+    let (key_pair, peer_id) = match order.p2p_keypair() {
+        Some(k) => {
+            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
+            (k, peer_id)
         },
-        None => {
-            let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-            (key_pair.private().secret.take(), *key_pair.public(), None)
-        },
+        None => (ctx.secp256k1_key_pair(), None),
     };
 
-    let encoded_msg = encode_and_sign(&to_broadcast, &secret).unwrap();
-    let order: OrderbookItem = (message, hex::encode(&*public)).into();
+    let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
+    let order: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
     insert_or_update_order(&ctx, order);
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
 }
@@ -963,24 +952,15 @@ fn maker_order_updated_p2p_notify(
     ctx: MmArc,
     topic: String,
     message: new_protocol::MakerOrderUpdated,
-    p2p_privkey: &Option<H256Json>,
+    p2p_privkey: Option<&KeyPair>,
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
     let (secret, peer_id) = match p2p_privkey {
-        Some(priv_key) => {
-            let peer_id = match peer_id_from_secp_secret(&priv_key.0) {
-                Ok(p) => p,
-                Err(_) => {
-                    error!("Order {} has invalid p2p_privkey, skip P2P broadcast", message.uuid());
-                    return;
-                },
-            };
-            (priv_key.0, Some(peer_id))
+        Some(k) => {
+            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
+            (k.private_bytes(), peer_id)
         },
-        None => {
-            let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-            (key_pair.private().secret.take(), None)
-        },
+        None => (ctx.secp256k1_key_pair().private_bytes(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     process_my_maker_order_updated(&ctx, &message);
@@ -995,7 +975,7 @@ fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
     });
     delete_my_order(&ctx, order.uuid);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, &order.p2p_privkey);
+    broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, order.p2p_keypair());
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -1062,7 +1042,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                 order.max_base_vol = &order.reserved_amount() + &new_volume;
                 let mut update_msg = new_protocol::MakerOrderUpdated::new(order.uuid);
                 update_msg.with_new_max_volume(order.available_amount().into());
-                maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg, &order.p2p_privkey);
+                maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg, order.p2p_keypair());
             }
         }
     }
@@ -1402,9 +1382,7 @@ impl<'a> TakerOrderBuilder<'a> {
         };
 
         let p2p_privkey = if my_coin.is_privacy() {
-            let mut rng = rand6::thread_rng();
-            let priv_key = SecretKey::new(&mut rng);
-            Some((*priv_key.as_ref()).into())
+            Some(SerializableSecp256k1Keypair::random())
         } else {
             None
         };
@@ -1506,7 +1484,7 @@ pub struct TakerOrder {
     rel_orderbook_ticker: Option<String>,
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
-    p2p_privkey: Option<H256Json>,
+    p2p_privkey: Option<SerializableSecp256k1Keypair>,
 }
 
 /// Result of match_reserved function
@@ -1589,6 +1567,8 @@ impl TakerOrder {
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
+
+    fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1619,7 +1599,7 @@ pub struct MakerOrder {
     rel_orderbook_ticker: Option<String>,
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
-    p2p_privkey: Option<H256Json>,
+    p2p_privkey: Option<SerializableSecp256k1Keypair>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1849,9 +1829,7 @@ impl<'a> MakerOrderBuilder<'a> {
         let created_at = now_ms();
 
         let p2p_privkey = if self.base_coin.is_privacy() {
-            let mut rng = rand6::thread_rng();
-            let priv_key = SecretKey::new(&mut rng);
-            Some((*priv_key.as_ref()).into())
+            Some(SerializableSecp256k1Keypair::random())
         } else {
             None
         };
@@ -2001,6 +1979,8 @@ impl MakerOrder {
     }
 
     fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
+
+    fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -2175,7 +2155,7 @@ impl From<MakerConnected> for new_protocol::OrdermatchMessage {
     }
 }
 
-fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook, p2p_privkey: &Option<H256Json>) {
+fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook, p2p_privkey: Option<&KeyPair>) {
     let state = match orderbook.pubkeys_state.get(pubkey) {
         Some(s) => s,
         None => return,
@@ -2210,23 +2190,15 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
         let my_orders = ordermatch_ctx.my_maker_orders.lock().clone();
         for (_, order_mutex) in my_orders {
             let order = order_mutex.lock().await;
-            if let Some(p2p_privkey) = order.p2p_privkey {
-                let key_pair = match key_pair_from_secret(&p2p_privkey.0) {
-                    Ok(k) => k,
-                    Err(_) => {
-                        error!("Order {} has invalid p2p_privkey, skip P2P broadcast", order.uuid);
-                        continue;
-                    },
-                };
-                let pubsecp = hex::encode(key_pair.public_slice());
-
+            if let Some(ref p2p_privkey) = order.p2p_privkey {
+                let pubsecp = hex::encode(p2p_privkey.public_slice());
                 let orderbook = ordermatch_ctx.orderbook.lock();
-                broadcast_keep_alive_for_pub(&ctx, &pubsecp, &orderbook, &order.p2p_privkey);
+                broadcast_keep_alive_for_pub(&ctx, &pubsecp, &orderbook, Some(p2p_privkey.key_pair()));
             }
         }
 
         let orderbook = ordermatch_ctx.orderbook.lock();
-        broadcast_keep_alive_for_pub(&ctx, &persistent_pubsecp, &orderbook, &None);
+        broadcast_keep_alive_for_pub(&ctx, &persistent_pubsecp, &orderbook, None);
     }
 }
 
@@ -2234,23 +2206,14 @@ fn broadcast_ordermatch_message(
     ctx: &MmArc,
     topics: impl IntoIterator<Item = String>,
     msg: new_protocol::OrdermatchMessage,
-    p2p_privkey: &Option<H256Json>,
+    p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = match p2p_privkey {
-        Some(priv_key) => {
-            let peer_id = match peer_id_from_secp_secret(&priv_key.0) {
-                Ok(p) => p,
-                Err(_) => {
-                    error!("Message {:?} has invalid p2p_privkey, skip P2P broadcast", msg);
-                    return;
-                },
-            };
-            (priv_key.0, Some(peer_id))
+        Some(k) => {
+            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
+            (k.private_bytes(), peer_id)
         },
-        None => {
-            let key_pair = ctx.secp256k1_key_pair.or(&&|| panic!());
-            (key_pair.private().secret.take(), None)
-        },
+        None => (ctx.secp256k1_key_pair().private_bytes(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     broadcast_p2p_msg(ctx, topics.into_iter().collect(), encoded_msg, peer_id);
@@ -2833,7 +2796,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             maker_coin,
             taker_coin,
             lock_time,
-            maker_order.p2p_privkey,
+            maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
     });
@@ -2918,7 +2881,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             maker_coin,
             taker_coin,
             locktime,
-            taker_order.p2p_privkey,
+            taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
     });
@@ -3246,7 +3209,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     maker_order_uuid: reserved_msg.maker_order_uuid,
                 };
                 let topic = my_order.orderbook_topic();
-                broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into(), &my_order.p2p_privkey);
+                broadcast_ordermatch_message(&ctx, vec![topic], connect.clone().into(), my_order.p2p_keypair());
                 let taker_match = TakerMatch {
                     reserved: reserved_msg,
                     connect,
@@ -3358,7 +3321,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
-                broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into(), &order.p2p_privkey);
+                broadcast_ordermatch_message(&ctx, vec![topic], reserved.clone().into(), order.p2p_keypair());
                 let maker_match = MakerMatch {
                     request: taker_request,
                     reserved,
@@ -3423,13 +3386,13 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match, my_order.clone());
         let topic = my_order.orderbook_topic();
-        broadcast_ordermatch_message(&ctx, vec![topic.clone()], connected.into(), &my_order.p2p_privkey);
+        broadcast_ordermatch_message(&ctx, vec![topic.clone()], connected.into(), my_order.p2p_keypair());
 
         // If volume is less order will be cancelled a bit later
         if my_order.available_amount() >= my_order.min_base_vol {
             let mut updated_msg = new_protocol::MakerOrderUpdated::new(my_order.uuid);
             updated_msg.with_new_max_volume(my_order.available_amount().into());
-            maker_order_updated_p2p_notify(ctx.clone(), topic, updated_msg, &my_order.p2p_privkey);
+            maker_order_updated_p2p_notify(ctx.clone(), topic, updated_msg, my_order.p2p_keypair());
         }
         MyOrdersStorage::new(ctx)
             .update_active_maker_order(&my_order)
@@ -3658,7 +3621,7 @@ pub async fn lp_auto_buy(
         ctx,
         vec![order.orderbook_topic()],
         order.clone().into(),
-        &order.p2p_privkey,
+        order.p2p_keypair(),
     );
 
     let result = json!({ "result": LpautobuyResult {
@@ -4561,7 +4524,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
         return ERR!("Error on saving updated order state to database:{}", e);
     }
     update_msg.with_new_max_volume((new_volume - reserved_amount).into());
-    maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg, &order.p2p_privkey);
+    maker_order_updated_p2p_notify(ctx.clone(), order.orderbook_topic(), update_msg, order.p2p_keypair());
     Ok(order.clone())
 }
 
