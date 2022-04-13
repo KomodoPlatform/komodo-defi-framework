@@ -3,7 +3,8 @@ use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingRes
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use common::executor::{spawn, Timer};
-use common::{log, now_ms};
+use common::log::{error, info};
+use common::now_ms;
 use core::time::Duration;
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
@@ -14,6 +15,8 @@ use secp256k1::Secp256k1;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
+
+const TRY_LOOP_INTERVAL: f64 = 60.;
 
 pub struct LightningEventHandler {
     platform: Arc<Platform>,
@@ -57,7 +60,7 @@ impl EventHandler for LightningEventHandler {
             Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs),
 
             // Todo: an RPC for total amount earned
-            Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => log::info!(
+            Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => info!(
                 "Received a fee of {} milli-satoshis for a successfully forwarded payment through our {} lightning node. Was the forwarded HTLC claimed by our counterparty via an on-chain transaction?: {}",
                 fee_earned_msat.unwrap_or_default(),
                 self.platform.coin.ticker(),
@@ -71,7 +74,7 @@ impl EventHandler for LightningEventHandler {
             } => self.handle_channel_closed(*channel_id, *user_channel_id, reason.to_string()),
 
             // Todo: Add spent UTXOs to RecentlySpentOutPoints if it's not discarded
-            Event::DiscardFunding { channel_id, transaction } => log::info!(
+            Event::DiscardFunding { channel_id, transaction } => info!(
                 "Discarding funding tx: {} for channel {}",
                 transaction.txid().to_string(),
                 hex::encode(channel_id),
@@ -82,7 +85,7 @@ impl EventHandler for LightningEventHandler {
                 payment_id,
                 payment_hash,
                 path,
-            } => log::info!(
+            } => info!(
                 "Payment path: {:?}, successful for payment hash: {}, payment id: {}",
                 path.iter().map(|hop| hop.pubkey.to_string()).collect::<Vec<_>>(),
                 payment_hash.map(|h| hex::encode(h.0)).unwrap_or_default(),
@@ -97,7 +100,7 @@ impl EventHandler for LightningEventHandler {
                 all_paths_failed,
                 path,
                 ..
-            } => log::info!(
+            } => info!(
                 "Payment path: {:?}, failed for payment hash: {}, Was rejected by destination?: {}, All paths failed?: {}",
                 path.iter().map(|hop| hop.pubkey.to_string()).collect::<Vec<_>>(),
                 hex::encode(payment_hash.0),
@@ -111,7 +114,7 @@ impl EventHandler for LightningEventHandler {
                 funding_satoshis,
                 push_msat,
             } => {
-                log::info!(
+                info!(
                     "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
                     counterparty_node_id,
                     funding_satoshis,
@@ -204,14 +207,14 @@ impl LightningEventHandler {
         output_script: &Script,
         user_channel_id: u64,
     ) {
-        log::info!(
+        info!(
             "Handling FundingGenerationReady event for internal channel id: {}",
             user_channel_id
         );
         let funding_tx = match sign_funding_transaction(user_channel_id, output_script, self.platform.clone()) {
             Ok(tx) => tx,
             Err(e) => {
-                log::error!(
+                error!(
                     "Error generating funding transaction for internal channel id {}: {}",
                     user_channel_id,
                     e.to_string()
@@ -225,7 +228,7 @@ impl LightningEventHandler {
             .channel_manager
             .funding_transaction_generated(&temporary_channel_id, funding_tx)
         {
-            log::error!("{:?}", e);
+            error!("{:?}", e);
             return;
         }
         let platform = self.platform.clone();
@@ -245,7 +248,7 @@ impl LightningEventHandler {
     }
 
     fn handle_payment_received(&self, payment_hash: PaymentHash, amt: u64, purpose: &PaymentPurpose) {
-        log::info!(
+        info!(
             "Handling PaymentReceived event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
@@ -261,7 +264,7 @@ impl LightningEventHandler {
         };
         let status = match self.channel_manager.claim_funds(payment_preimage) {
             true => {
-                log::info!(
+                info!(
                     "Received an amount of {} millisatoshis for payment hash {}",
                     amt,
                     hex::encode(payment_hash.0)
@@ -283,7 +286,7 @@ impl LightningEventHandler {
                     payment_info.amt_msat = Some(amt);
                     payment_info.last_updated = now_ms() / 1000;
                     if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
-                        log::error!("Unable to update payment information in DB: {}", e);
+                        error!("Unable to update payment information in DB: {}", e);
                     }
                 }
             }),
@@ -302,7 +305,7 @@ impl LightningEventHandler {
                 };
                 spawn(async move {
                     if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
-                        log::error!("Unable to update payment information in DB: {}", e);
+                        error!("Unable to update payment information in DB: {}", e);
                     }
                 });
             },
@@ -315,7 +318,7 @@ impl LightningEventHandler {
         payment_hash: PaymentHash,
         fee_paid_msat: Option<u64>,
     ) {
-        log::info!(
+        info!(
             "Handling PaymentSent event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
@@ -332,9 +335,9 @@ impl LightningEventHandler {
                 payment_info.last_updated = now_ms() / 1000;
                 let amt_msat = payment_info.amt_msat;
                 if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
-                    log::error!("Unable to update payment information in DB: {}", e);
+                    error!("Unable to update payment information in DB: {}", e);
                 }
-                log::info!(
+                info!(
                     "Successfully sent payment of {} millisatoshis with payment hash {}",
                     amt_msat.unwrap_or_default(),
                     hex::encode(payment_hash.0)
@@ -344,7 +347,7 @@ impl LightningEventHandler {
     }
 
     fn handle_channel_closed(&self, channel_id: [u8; 32], user_channel_id: u64, reason: String) {
-        log::info!(
+        info!(
             "Channel: {} closed for the following reason: {}",
             hex::encode(channel_id),
             reason
@@ -357,10 +360,9 @@ impl LightningEventHandler {
         if user_channel_id != 0 {
             spawn(async move {
                 if let Err(e) = save_channel_closing_details(persister, platform, user_channel_id, reason).await {
-                    log::error!(
+                    error!(
                         "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id,
-                        e
+                        user_channel_id, e
                     );
                 }
             });
@@ -368,7 +370,7 @@ impl LightningEventHandler {
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
-        log::info!(
+        info!(
             "Handling PaymentFailed event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
@@ -382,14 +384,14 @@ impl LightningEventHandler {
                 payment_info.status = HTLCStatus::Failed;
                 payment_info.last_updated = now_ms() / 1000;
                 if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
-                    log::error!("Unable to update payment information in DB: {}", e);
+                    error!("Unable to update payment information in DB: {}", e);
                 }
             }
         });
     }
 
     fn handle_pending_htlcs_forwards(&self, time_forwardable: Duration) {
-        log::info!("Handling PendingHTLCsForwardable event!");
+        info!("Handling PendingHTLCsForwardable event!");
         let min_wait_time = time_forwardable.as_millis() as u32;
         let channel_manager = self.channel_manager.clone();
         spawn(async move {
@@ -400,13 +402,13 @@ impl LightningEventHandler {
     }
 
     fn handle_spendable_outputs(&self, outputs: &[SpendableOutputDescriptor]) {
-        log::info!("Handling SpendableOutputs event!");
+        info!("Handling SpendableOutputs event!");
         let platform_coin = &self.platform.coin;
         // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
         let my_address = match platform_coin.as_ref().derivation_method.iguana_or_err() {
             Ok(addr) => addr,
             Err(e) => {
-                log::error!("{}", e);
+                error!("{}", e);
                 return;
             },
         };
@@ -422,7 +424,7 @@ impl LightningEventHandler {
         ) {
             Ok(tx) => tx,
             Err(_) => {
-                log::error!("Error spending spendable outputs");
+                error!("Error spending spendable outputs");
                 return;
             },
         };
@@ -434,10 +436,9 @@ impl LightningEventHandler {
         });
         let claiming_tx_outputs_value = spending_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
         if claiming_tx_inputs_value < claiming_tx_outputs_value {
-            log::error!(
+            error!(
                 "Claiming transaction input value {} can't be less than outputs value {}!",
-                claiming_tx_inputs_value,
-                claiming_tx_outputs_value
+                claiming_tx_inputs_value, claiming_tx_outputs_value
             );
             return;
         }
@@ -459,14 +460,16 @@ impl LightningEventHandler {
             let claiming_txid = spending_tx.txid().to_string();
             let persister = self.persister.clone();
             spawn(async move {
-                persister
-                    .add_claiming_tx_to_db(
-                        closing_txid,
-                        claiming_txid,
-                        (claimed_balance as f64) - claiming_tx_fee_per_channel,
-                    )
-                    .await
-                    .error_log();
+                ok_or_retry_after_sleep!(
+                    persister
+                        .add_claiming_tx_to_db(
+                            closing_txid.clone(),
+                            claiming_txid.clone(),
+                            (claimed_balance as f64) - claiming_tx_fee_per_channel,
+                        )
+                        .await,
+                    TRY_LOOP_INTERVAL
+                );
             });
 
             self.platform.broadcast_transaction(&spending_tx);

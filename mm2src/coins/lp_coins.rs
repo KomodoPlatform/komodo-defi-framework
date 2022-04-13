@@ -97,7 +97,7 @@ macro_rules! try_f {
     };
 }
 
-macro_rules! try_loop_with_sleep {
+macro_rules! ok_or_continue_after_sleep {
     ($e:expr, $delay: ident) => {
         match $e {
             Ok(res) => res,
@@ -106,6 +106,36 @@ macro_rules! try_loop_with_sleep {
                 Timer::sleep($delay).await;
                 continue;
             },
+        }
+    };
+}
+
+macro_rules! ok_or_retry_after_sleep {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    Timer::sleep($delay).await;
+                    continue;
+                },
+            }
+        }
+    };
+}
+
+macro_rules! ok_or_retry_after_sleep_sync {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    std::thread::sleep(core::time::Duration::from_secs($delay));
+                    continue;
+                },
+            }
         }
     };
 }

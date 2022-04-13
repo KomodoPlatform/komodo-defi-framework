@@ -3480,25 +3480,26 @@ where
             params.difficulty_check,
             params.constant_difficulty,
         );
-        let height = try_loop_with_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
+        let height =
+            ok_or_continue_after_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
         };
-        let (block_registry, block_headers) = try_loop_with_sleep!(
+        let (block_registry, block_headers) = ok_or_continue_after_sleep!(
             client
                 .retrieve_last_headers(blocks_limit_to_check, height)
                 .compat()
                 .await,
             check_every
         );
-        try_loop_with_sleep!(
+        ok_or_continue_after_sleep!(
             validate_headers(block_headers, difficulty_check, constant_difficulty),
             check_every
         );
 
         let ticker = coin.as_ref().conf.ticker.as_str();
-        try_loop_with_sleep!(
+        ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(ticker, block_registry).await,
             check_every
         );

@@ -207,7 +207,6 @@ pub async fn init_channel_manager(
                 persister.clone(),
                 chain_monitor.clone(),
                 channel_manager.clone(),
-                best_header.block_height(),
             )
             .await;
         update_best_block(chain_monitor.clone(), channel_manager.clone(), best_header).await;
