@@ -12,8 +12,9 @@ use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccou
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SwapOps, TradePreimageValue, ValidateAddressResult,
-            ValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
+            WithdrawSenderAddress};
 use bitcrypto::message_hash;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -450,23 +451,26 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
-    fn sign_message(&self, message: &str) -> Result<String, String> {
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = message_hash(message);
         let private_key = &self
             .utxo_arc
             .priv_key_policy
             .key_pair_or_err()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.into_inner())?
             .private();
-        let signature = private_key.sign_compact(&message_hash).map_err(|e| e.to_string())?;
+        let signature = private_key.sign_compact(&message_hash)?;
         Ok(base64::encode(&*signature))
     }
 
-    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> Result<bool, String> {
+    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
         let message_hash = message_hash(message);
-        let signature = CompactSignature::from(base64::decode(signature_base64).map_err(|e| e.to_string())?);
-        let pubkey = Public::recover_compact(&message_hash, &signature).map_err(|e| e.to_string())?;
-        let address_from_pubkey = self.address_from_pubkey(&pubkey).display_address()?;
+        let signature = CompactSignature::from(base64::decode(signature_base64)?);
+        let pubkey = Public::recover_compact(&message_hash, &signature)?;
+        let address_from_pubkey = self
+            .address_from_pubkey(&pubkey)
+            .display_address()
+            .map_err(VerificationError::InternalError)?;
         Ok(address_from_pubkey == address)
     }
 

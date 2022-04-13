@@ -18,7 +18,8 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, withdraw};
+use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, sign_message, verify_message,
+            withdraw};
 use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token, init_standalone_coin,
                        init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};

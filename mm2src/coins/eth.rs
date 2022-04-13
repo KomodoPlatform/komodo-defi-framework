@@ -57,11 +57,11 @@ use web3::{self, Web3};
 use super::{BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
             NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
-
+            RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionFut,
+            UnexpectedDerivationMethod, ValidateAddressResult, VerificationResult, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
@@ -1100,9 +1100,9 @@ impl MarketCoinOps for EthCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> Result<String, String> { unimplemented!() }
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
         unimplemented!()
     }
 

@@ -2,9 +2,10 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, SignatureResult, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionType, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bigdecimal::BigDecimal;
@@ -341,9 +342,9 @@ impl MarketCoinOps for SolanaCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> Result<String, String> { unimplemented!() }
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> Result<bool, String> {
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
         unimplemented!()
     }
 
