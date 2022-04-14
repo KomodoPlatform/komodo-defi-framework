@@ -1,17 +1,16 @@
-extern crate bitcoin;
-extern crate bitcoin_hashes;
 extern crate groestl;
 extern crate primitives;
 extern crate ripemd160;
+extern crate serialization;
 extern crate sha1;
 extern crate sha2;
 extern crate sha3;
 extern crate siphasher;
 
-use bitcoin::consensus::{encode::VarInt, Encodable};
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::Ripemd160;
+use serialization::{CompactInteger, Serializable, Stream};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
@@ -115,13 +114,13 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
 /// Message length is concatenated according to Bitcoin's variable length integer format
 /// See: https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
 pub fn message_hash(msg: &str) -> H256 {
-    pub const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
-    let mut hasher = Sha256::new();
-    hasher.input(KOMODO_SIGNED_MSG_PREFIX);
-    let msg_len = VarInt(msg.len() as u64);
-    msg_len.consensus_encode(&mut hasher).expect("engines don't error");
-    hasher.input(msg.as_bytes());
-    sha256(&(*hasher.result())[..])
+    const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
+    let mut stream = Stream::new();
+    stream.append_slice(KOMODO_SIGNED_MSG_PREFIX);
+    let msg_len = CompactInteger::from(msg.len());
+    msg_len.serialize(&mut stream);
+    stream.append_slice(msg.as_bytes());
+    dhash256(&stream.out())
 }
 
 #[cfg(test)]
