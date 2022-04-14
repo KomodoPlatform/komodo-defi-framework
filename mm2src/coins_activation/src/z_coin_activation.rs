@@ -33,11 +33,12 @@ pub struct ZcoinActivationResult {
     pub wallet_balance: EnableCoinBalance,
 }
 
-impl GetCurrentBlock for ZcoinActivationResult {
-    fn get_current_block(&self) -> u64 { self.current_block }
+impl CurrentBlock for ZcoinActivationResult {
+    fn current_block(&self) -> u64 { self.current_block }
 }
 
 #[derive(Clone, Serialize)]
+#[non_exhaustive]
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
     Scanning,
@@ -70,8 +71,8 @@ pub struct ZcoinActivationParams {
     pub requires_notarization: Option<bool>,
 }
 
-impl TxHistoryEnabled for ZcoinActivationParams {
-    fn tx_history_enabled(&self) -> bool { false }
+impl TxHistory for ZcoinActivationParams {
+    fn tx_history(&self) -> bool { false }
 }
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]

@@ -2190,7 +2190,11 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
         let my_orders = ordermatch_ctx.my_maker_orders.lock().clone();
         for (_, order_mutex) in my_orders {
             let order = order_mutex.lock().await;
-            if let Some(ref p2p_privkey) = order.p2p_privkey {
+            if let Some(p2p_privkey) = order.p2p_privkey {
+                // Artem Vitae
+                // I tried if let Some(p2p_privkey) = order_mutex.lock().await.p2p_privkey
+                // but it seems to keep holding the guard
+                drop(order);
                 let pubsecp = hex::encode(p2p_privkey.public_slice());
                 let orderbook = ordermatch_ctx.orderbook.lock();
                 broadcast_keep_alive_for_pub(&ctx, &pubsecp, &orderbook, Some(p2p_privkey.key_pair()));

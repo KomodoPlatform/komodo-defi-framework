@@ -109,8 +109,8 @@ pub struct BchWithTokensActivationRequest {
     slp_tokens_requests: Vec<TokenActivationRequest<SlpActivationRequest>>,
 }
 
-impl TxHistoryEnabled for BchWithTokensActivationRequest {
-    fn tx_history_enabled(&self) -> bool { self.platform_request.utxo_params.tx_history }
+impl TxHistory for BchWithTokensActivationRequest {
+    fn tx_history(&self) -> bool { self.platform_request.utxo_params.tx_history }
 }
 
 pub struct BchProtocolInfo {
@@ -146,8 +146,8 @@ impl GetPlatformBalance for BchWithTokensActivationResult {
     }
 }
 
-impl GetCurrentBlock for BchWithTokensActivationResult {
-    fn get_current_block(&self) -> u64 { self.current_block }
+impl CurrentBlock for BchWithTokensActivationResult {
+    fn current_block(&self) -> u64 { self.current_block }
 }
 
 #[derive(Debug)]

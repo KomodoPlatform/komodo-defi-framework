@@ -138,9 +138,9 @@ pub trait GetPlatformBalance {
 
 #[async_trait]
 pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
-    type ActivationRequest: Clone + Send + Sync + TxHistoryEnabled;
+    type ActivationRequest: Clone + Send + Sync + TxHistory;
     type PlatformProtocolInfo: TryFromCoinProtocol;
-    type ActivationResult: GetPlatformBalance + GetCurrentBlock;
+    type ActivationResult: GetPlatformBalance + CurrentBlock;
     type ActivationError: NotMmError;
 
     /// Initializes the platform coin itself
@@ -305,10 +305,10 @@ where
     }
 
     let activation_result = platform_coin.get_activation_result().await?;
-    log::info!("{} current block {}", req.ticker, activation_result.get_current_block());
+    log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     #[cfg(not(target_arch = "wasm32"))]
-    if req.request.tx_history_enabled() {
+    if req.request.tx_history() {
         let abort_handler = platform_coin.start_history_background_fetching(
             ctx.metrics.clone(),
             SqliteTxHistoryStorage(ctx.sqlite_connection.as_option().unwrap().clone()),

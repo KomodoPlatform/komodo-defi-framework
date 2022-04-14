@@ -4654,7 +4654,7 @@ fn test_get_raw_transaction() {
         "electrum2.cipig.net:10017",
         "electrum1.cipig.net:10017",
     ]));
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4672,7 +4672,7 @@ fn test_get_raw_transaction() {
     assert_eq!(res.result.tx_hex, expected_hex);
 
     // ETH
-    let eth = block_on(mm.rpc(json! ({
+    let eth = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
@@ -4683,7 +4683,7 @@ fn test_get_raw_transaction() {
     })))
     .unwrap();
     assert_eq!(eth.0, StatusCode::OK, "'enable' failed: {}", eth.1);
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4700,7 +4700,7 @@ fn test_get_raw_transaction() {
         json::from_str(&raw.1).expect("Expected 'RpcSuccessResponse<RawTransactionResult>'");
     let expected_hex = "f8a975843b9aca0083024f8394fab46e002bbf0b4509813474841e0716e673013680b84440c10f190000000000000000000000003ef8b4a81ab3444864377dde648268f00e3cd0700000000000000000000000000000000000000000000000004563918244f4000029a0ee799246e00354e173c2236aac52dca3d9e75ac98d2ac48ce67fdab42712c82ca06c42b9db9ebf22fa2aeb85927ba8275ea057f5bffdc2d4bd923606415a18b58a";
     assert_eq!(res.result.tx_hex, expected_hex);
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4720,7 +4720,7 @@ fn test_get_raw_transaction() {
 
     // invalid coin
     let zombi_coin = String::from("ZOMBI");
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4742,7 +4742,7 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_data, Some(expected_error));
 
     // empty hash
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4761,7 +4761,7 @@ fn test_get_raw_transaction() {
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
     assert_eq!(error.error_type, "InvalidHashError");
     // invalid hash
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4781,7 +4781,7 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_type, "InvalidHashError");
 
     // valid hash but hash not exist
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -4800,7 +4800,7 @@ fn test_get_raw_transaction() {
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
     assert_eq!(error.error_type, "HashNotExist");
     // valid hash but hash not exist without 0x prefix
-    let raw = block_on(mm.rpc(json! ({
+    let raw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",

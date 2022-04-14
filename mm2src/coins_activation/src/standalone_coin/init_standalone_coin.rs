@@ -27,15 +27,14 @@ pub struct InitStandaloneCoinReq<T> {
 
 #[async_trait]
 pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
-    type ActivationRequest: TxHistoryEnabled + Sync + Send;
+    type ActivationRequest: TxHistory + Sync + Send;
     type StandaloneProtocol: TryFromCoinProtocol + Send;
     // The following types are related to `RpcTask` management.
-    type ActivationResult: serde::Serialize + Clone + Send + Sync + 'static + GetCurrentBlock;
+    type ActivationResult: serde::Serialize + Clone + CurrentBlock + Send + Sync + 'static;
     type ActivationError: From<RegisterCoinError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
         + NotSame
-        + NotMmError
         + Clone
         + Send
         + Sync
@@ -172,9 +171,9 @@ where
         let result = coin
             .get_activation_result(self.ctx.clone(), task_handle, &self.request.activation_params)
             .await?;
-        log::info!("{} current block {}", ticker, result.get_current_block());
+        log::info!("{} current block {}", ticker, result.current_block());
 
-        let tx_history = self.request.activation_params.tx_history_enabled();
+        let tx_history = self.request.activation_params.tx_history();
 
         lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker, tx_history }).await?;
 

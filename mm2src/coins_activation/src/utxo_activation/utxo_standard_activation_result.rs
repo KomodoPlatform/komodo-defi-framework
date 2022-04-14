@@ -1,4 +1,4 @@
-use crate::prelude::GetCurrentBlock;
+use crate::prelude::CurrentBlock;
 use coins::coin_balance::EnableCoinBalance;
 use serde_derive::Serialize;
 
@@ -8,6 +8,6 @@ pub struct UtxoStandardActivationResult {
     pub wallet_balance: EnableCoinBalance,
 }
 
-impl GetCurrentBlock for UtxoStandardActivationResult {
-    fn get_current_block(&self) -> u64 { self.current_block }
+impl CurrentBlock for UtxoStandardActivationResult {
+    fn current_block(&self) -> u64 { self.current_block }
 }

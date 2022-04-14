@@ -114,7 +114,7 @@ pub struct SerializableSecp256k1Keypair {
 }
 
 impl PartialEq for SerializableSecp256k1Keypair {
-    fn eq(&self, other: &Self) -> bool { self.public_slice() == other.public_slice() }
+    fn eq(&self, other: &Self) -> bool { self.inner.public() == other.inner.public() }
 }
 
 impl Eq for SerializableSecp256k1Keypair {}
@@ -165,5 +165,21 @@ impl<'de> Deserialize<'de> for SerializableSecp256k1Keypair {
 }
 
 #[test]
-// failing test to add serde tests for SerializableSecp256k1Keypair
-fn serializable_secp256k1_keypair_test() { assert!(false) }
+fn serializable_secp256k1_keypair_test() {
+    use serde_json::{self as json};
+
+    let key_pair = KeyPair::random_compressed();
+    let serializable = SerializableSecp256k1Keypair { inner: key_pair };
+    let serialized = json::to_string(&serializable).unwrap();
+    println!("{}", serialized);
+    let deserialized = json::from_str(&serialized).unwrap();
+    assert_eq!(serializable, deserialized);
+
+    let invalid_privkey: [u8; 32] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xba, 0xae,
+        0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+    ];
+    let invalid_privkey_serialized = json::to_string(&invalid_privkey).unwrap();
+    let err = json::from_str::<SerializableSecp256k1Keypair>(&invalid_privkey_serialized).unwrap_err();
+    println!("{}", err);
+}

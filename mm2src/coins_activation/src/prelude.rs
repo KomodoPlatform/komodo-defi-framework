@@ -6,16 +6,16 @@ use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 
-pub trait GetCurrentBlock {
-    fn get_current_block(&self) -> u64;
+pub trait CurrentBlock {
+    fn current_block(&self) -> u64;
 }
 
-pub trait TxHistoryEnabled {
-    fn tx_history_enabled(&self) -> bool;
+pub trait TxHistory {
+    fn tx_history(&self) -> bool;
 }
 
-impl TxHistoryEnabled for UtxoActivationParams {
-    fn tx_history_enabled(&self) -> bool { self.tx_history }
+impl TxHistory for UtxoActivationParams {
+    fn tx_history(&self) -> bool { self.tx_history }
 }
 
 #[derive(Clone, Debug, Serialize)]
