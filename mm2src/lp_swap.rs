@@ -79,6 +79,9 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::{AtomicU64, Ordering};
+
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
 #[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
@@ -266,10 +269,27 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
+#[cfg(not(feature = "custom-swap-locktime"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
-pub const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
+const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
+
+#[cfg(feature = "custom-swap-locktime")]
+/// Default atomic swap payment locktime, in seconds.
+/// Maker sends payment with LOCKTIME * 2
+/// Taker sends payment with LOCKTIME
+pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+
+#[inline]
+/// Returns `PAYMENT_LOCKTIME`
+pub fn get_payment_locktime() -> u64 {
+    #[cfg(not(feature = "custom-swap-locktime"))]
+    return PAYMENT_LOCKTIME;
+    #[cfg(feature = "custom-swap-locktime")]
+    PAYMENT_LOCKTIME.load(Ordering::Relaxed)
+}
+
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
@@ -479,11 +499,11 @@ pub enum AtomicLocktimeVersion {
 
 pub fn lp_atomic_locktime_v1(maker_coin: &str, taker_coin: &str) -> u64 {
     if maker_coin == "BTC" || taker_coin == "BTC" {
-        PAYMENT_LOCKTIME * 10
+        get_payment_locktime() * 10
     } else if coin_with_4x_locktime(maker_coin) || coin_with_4x_locktime(taker_coin) {
-        PAYMENT_LOCKTIME * 4
+        get_payment_locktime() * 4
     } else {
-        PAYMENT_LOCKTIME
+        get_payment_locktime()
     }
 }
 
@@ -500,9 +520,9 @@ pub fn lp_atomic_locktime_v2(
         || my_conf_settings.requires_notarization()
         || other_conf_settings.requires_notarization()
     {
-        PAYMENT_LOCKTIME * 4
+        get_payment_locktime() * 4
     } else {
-        PAYMENT_LOCKTIME
+        get_payment_locktime()
     }
 }
 
@@ -1262,7 +1282,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1284,7 +1304,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1306,7 +1326,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1328,7 +1348,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1350,7 +1370,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1372,7 +1392,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1382,37 +1402,37 @@ mod lp_swap_tests {
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "BTC";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME * 10;
+        let expected = get_payment_locktime() * 10;
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "BTC";
-        let expected = PAYMENT_LOCKTIME * 10;
+        let expected = get_payment_locktime() * 10;
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
     }

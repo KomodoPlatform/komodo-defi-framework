@@ -8,9 +8,10 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoAddressFormat, UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps,
                   UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, NumConversError, RawTransactionFut, RawTransactionRequest, SwapOps,
+            TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -54,7 +55,7 @@ use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
-                       zip32::ExtendedSpendingKey};
+                       zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -218,8 +219,8 @@ impl ZCoin {
 
         let z_unspents = self.my_spendable_z_unspents_ordered().await?;
         let mut selected_unspents = Vec::new();
-        let mut total_input_amount = BigDecimal::from(0);
-        let mut change = BigDecimal::from(0);
+        let mut total_input_amount = BigDecimal::from(0u8);
+        let mut change = BigDecimal::from(0u8);
 
         let mut received_by_me = 0u64;
 
@@ -294,7 +295,7 @@ impl ZCoin {
             tx_builder.add_sapling_output(z_out.viewing_key, z_out.to_addr, z_out.amount, z_out.memo)?;
         }
 
-        if change > BigDecimal::from(0) {
+        if change > BigDecimal::from(0u8) {
             let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
             received_by_me += change_sat;
 
@@ -1221,6 +1222,10 @@ impl MmCoin for ZCoin {
             })
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
