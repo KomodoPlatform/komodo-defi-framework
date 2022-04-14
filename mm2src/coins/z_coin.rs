@@ -53,7 +53,6 @@ use zcash_primitives::sapling::{Node, Note};
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
-use zcash_primitives::zip32::ExtendedFullViewingKey;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
