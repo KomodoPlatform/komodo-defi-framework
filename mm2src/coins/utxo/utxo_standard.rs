@@ -453,12 +453,7 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = message_hash(message);
-        let private_key = &self
-            .utxo_arc
-            .priv_key_policy
-            .key_pair_or_err()
-            .map_err(|e| e.into_inner())?
-            .private();
+        let private_key = &self.utxo_arc.priv_key_policy.key_pair_or_err()?.private();
         let signature = private_key.sign_compact(&message_hash)?;
         Ok(base64::encode(&*signature))
     }

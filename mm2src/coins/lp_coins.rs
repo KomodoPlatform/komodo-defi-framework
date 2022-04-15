@@ -1478,12 +1478,15 @@ pub enum SignatureError {
     InvalidRequest(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
 }
 
 impl HttpStatusCode for SignatureError {
     fn status_code(&self) -> StatusCode {
         match self {
             SignatureError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            SignatureError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
             SignatureError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -1497,6 +1500,10 @@ impl From<PrivKeyNotAllowed> for SignatureError {
     fn from(e: PrivKeyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
 }
 
+impl From<CoinFindError> for SignatureError {
+    fn from(e: CoinFindError) -> Self { SignatureError::CoinIsNotFound(e.to_string()) }
+}
+
 #[derive(Serialize, Display, Debug, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum VerificationError {
@@ -1504,23 +1511,33 @@ pub enum VerificationError {
     InvalidRequest(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
+    #[display(fmt = "Signature decoding error: {}", _0)]
+    SignatureDecodingError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
 }
 
 impl HttpStatusCode for VerificationError {
     fn status_code(&self) -> StatusCode {
         match self {
             VerificationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            VerificationError::SignatureDecodingError(_) => StatusCode::BAD_REQUEST,
+            VerificationError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
             VerificationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
 impl From<base64::DecodeError> for VerificationError {
-    fn from(e: base64::DecodeError) -> Self { VerificationError::InternalError(e.to_string()) }
+    fn from(e: base64::DecodeError) -> Self { VerificationError::SignatureDecodingError(e.to_string()) }
 }
 
 impl From<keys::Error> for VerificationError {
     fn from(e: keys::Error) -> Self { VerificationError::InternalError(e.to_string()) }
+}
+
+impl From<CoinFindError> for VerificationError {
+    fn from(e: CoinFindError) -> Self { VerificationError::CoinIsNotFound(e.to_string()) }
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
@@ -2365,17 +2382,13 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin)
-        .await
-        .map_err(|_| SignatureError::InvalidRequest(String::from("No such coin")))?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let signature = coin.sign_message(&req.message)?;
     Ok(SignatureResponse { signature })
 }
 
 pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin)
-        .await
-        .map_err(|_| VerificationError::InvalidRequest(String::from("No such coin")))?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
 
     let validate_address_result = coin.validate_address(&req.address);
     if !validate_address_result.is_valid {
