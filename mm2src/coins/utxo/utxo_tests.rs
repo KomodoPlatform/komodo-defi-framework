@@ -120,6 +120,7 @@ fn utxo_coin_fields_for_test(
             p2sh_t_addr_prefix: 0,
             pub_addr_prefix: 60,
             pub_t_addr_prefix: 0,
+            sign_message_prefix: Some(String::from("Komodo Signed Message:\n")),
             bech32_hrp,
             ticker: TEST_COIN_NAME.into(),
             wif_prefix: 0,
@@ -3868,6 +3869,19 @@ fn test_electrum_balance_deserializing() {
     let actual: ElectrumBalance = json::from_str(serialized).unwrap();
     assert_eq!(actual.confirmed, i128::MIN);
     assert_eq!(actual.unconfirmed, i128::MAX);
+}
+
+#[test]
+fn test_message_hash() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+    let expected = H256::from_reversed_str("5aef9b67485adba55a2cd935269e73f2f9876382f1eada02418797ae76c07e18");
+    let result = coin.sign_message_hash("test");
+    assert_eq!(result, expected);
 }
 
 #[test]

@@ -15,14 +15,14 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
             ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
             WithdrawSenderAddress};
-use bitcrypto::message_hash;
+use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use keys::CompactSignature;
-use serialization::CoinVariant;
+use serialization::{CoinVariant, CompactInteger, Serializable, Stream};
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone, Debug)]
@@ -451,15 +451,29 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
+    /// Hash message for signature using Bitcoin's message signing format.
+    /// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
+    fn sign_message_hash(&self, message: &str) -> H256 {
+        let message_prefix = self.utxo_arc.conf.sign_message_prefix.as_ref().unwrap();
+        let mut stream = Stream::new();
+        let prefix_len = CompactInteger::from(message_prefix.len());
+        prefix_len.serialize(&mut stream);
+        stream.append_slice(message_prefix.as_bytes());
+        let msg_len = CompactInteger::from(message.len());
+        msg_len.serialize(&mut stream);
+        stream.append_slice(message.as_bytes());
+        dhash256(&stream.out())
+    }
+
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        let message_hash = message_hash(message);
+        let message_hash = self.sign_message_hash(message);
         let private_key = &self.utxo_arc.priv_key_policy.key_pair_or_err()?.private();
         let signature = private_key.sign_compact(&message_hash)?;
         Ok(base64::encode(&*signature))
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
-        let message_hash = message_hash(message);
+        let message_hash = self.sign_message_hash(message);
         let signature = CompactSignature::from(base64::decode(signature_base64)?);
         let pubkey = Public::recover_compact(&message_hash, &signature)?;
         let address_from_pubkey = self

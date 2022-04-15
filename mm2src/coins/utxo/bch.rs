@@ -15,6 +15,7 @@ use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use itertools::Either as EitherIter;
+use keys::hash::H256;
 use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
@@ -1041,6 +1042,8 @@ impl MarketCoinOps for BchCoin {
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, _message: &str) -> H256 { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

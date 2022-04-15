@@ -22,7 +22,7 @@ use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
-use keys::AddressHashEnum;
+use keys::{hash::H256, AddressHashEnum};
 use serde::Serialize;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
@@ -669,6 +669,8 @@ impl MarketCoinOps for QtumCoin {
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, _message: &str) -> H256 { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

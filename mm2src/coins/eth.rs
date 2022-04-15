@@ -69,6 +69,7 @@ mod web3_transport;
 use crate::ValidatePaymentInput;
 use common::mm_number::MmNumber;
 use common::privkey::key_pair_from_secret;
+use keys::hash::H256;
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
 #[cfg(test)] mod eth_tests;
@@ -1099,6 +1100,8 @@ impl MarketCoinOps for EthCoin {
     fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, _message: &str) -> H256 { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

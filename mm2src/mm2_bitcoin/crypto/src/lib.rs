@@ -10,7 +10,6 @@ extern crate siphasher;
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::Ripemd160;
-use serialization::{CompactInteger, Serializable, Stream};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
@@ -109,23 +108,9 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
     result
 }
 
-/// Hash message for signature using Bitcoin's message signing format.
-/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-/// Message length is concatenated according to Bitcoin's variable length integer format
-/// See: https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer
-pub fn message_hash(msg: &str) -> H256 {
-    const KOMODO_SIGNED_MSG_PREFIX: &[u8] = b"\x17Komodo Signed Message:\n";
-    let mut stream = Stream::new();
-    stream.append_slice(KOMODO_SIGNED_MSG_PREFIX);
-    let msg_len = CompactInteger::from(msg.len());
-    msg_len.serialize(&mut stream);
-    stream.append_slice(msg.as_bytes());
-    dhash256(&stream.out())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{checksum, dhash160, dhash256, message_hash, ripemd160, sha1, sha256, siphash24};
+    use super::{checksum, dhash160, dhash256, ripemd160, sha1, sha256, siphash24};
     use primitives::bytes::Bytes;
     use primitives::hash::{H160, H256, H32};
     use ChecksumType;
@@ -181,12 +166,5 @@ mod tests {
     #[test]
     fn test_checksum() {
         assert_eq!(checksum(b"hello", &ChecksumType::DSHA256), H32::from("9595c9df"));
-    }
-
-    #[test]
-    fn test_message_hash() {
-        let expected = H256::from_reversed_str("5aef9b67485adba55a2cd935269e73f2f9876382f1eada02418797ae76c07e18");
-        let result = message_hash("test");
-        assert_eq!(result, expected);
     }
 }
