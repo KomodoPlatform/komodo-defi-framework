@@ -12,9 +12,9 @@ use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccou
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
-            WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureError, SignatureResult, SwapOps,
+            TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
+            WithdrawFut, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -453,8 +453,8 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     /// Hash message for signature using Bitcoin's message signing format.
     /// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-    fn sign_message_hash(&self, message: &str) -> H256 {
-        let message_prefix = self.utxo_arc.conf.sign_message_prefix.as_ref().unwrap();
+    fn sign_message_hash(&self, message: &str) -> Option<H256> {
+        let message_prefix = self.utxo_arc.conf.sign_message_prefix.clone()?;
         let mut stream = Stream::new();
         let prefix_len = CompactInteger::from(message_prefix.len());
         prefix_len.serialize(&mut stream);
@@ -462,18 +462,20 @@ impl MarketCoinOps for UtxoStandardCoin {
         let msg_len = CompactInteger::from(message.len());
         msg_len.serialize(&mut stream);
         stream.append_slice(message.as_bytes());
-        dhash256(&stream.out())
+        Some(dhash256(&stream.out()))
     }
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        let message_hash = self.sign_message_hash(message);
+        let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let private_key = &self.utxo_arc.priv_key_policy.key_pair_or_err()?.private();
         let signature = private_key.sign_compact(&message_hash)?;
         Ok(base64::encode(&*signature))
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
-        let message_hash = self.sign_message_hash(message);
+        let message_hash = self
+            .sign_message_hash(message)
+            .ok_or(VerificationError::PrefixNotFound)?;
         let signature = CompactSignature::from(base64::decode(signature_base64)?);
         let pubkey = Public::recover_compact(&message_hash, &signature)?;
         let address_from_pubkey = self

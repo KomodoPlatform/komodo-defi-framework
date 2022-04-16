@@ -498,7 +498,7 @@ pub trait MarketCoinOps {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
-    fn sign_message_hash(&self, _message: &str) -> H256;
+    fn sign_message_hash(&self, _message: &str) -> Option<H256>;
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String>;
 
@@ -1482,6 +1482,8 @@ pub enum SignatureError {
     InternalError(String),
     #[display(fmt = "Coin is not found: {}", _0)]
     CoinIsNotFound(String),
+    #[display(fmt = "Message prefix not found")]
+    PrefixNotFound,
 }
 
 impl HttpStatusCode for SignatureError {
@@ -1490,6 +1492,7 @@ impl HttpStatusCode for SignatureError {
             SignatureError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             SignatureError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
             SignatureError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SignatureError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -1517,6 +1520,8 @@ pub enum VerificationError {
     SignatureDecodingError(String),
     #[display(fmt = "Coin is not found: {}", _0)]
     CoinIsNotFound(String),
+    #[display(fmt = "Message prefix not found")]
+    PrefixNotFound,
 }
 
 impl HttpStatusCode for VerificationError {
@@ -1526,6 +1531,7 @@ impl HttpStatusCode for VerificationError {
             VerificationError::SignatureDecodingError(_) => StatusCode::BAD_REQUEST,
             VerificationError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
             VerificationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            VerificationError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

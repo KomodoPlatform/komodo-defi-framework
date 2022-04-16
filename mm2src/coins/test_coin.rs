@@ -38,7 +38,7 @@ impl MarketCoinOps for TestCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> H256 { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<H256> { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 
