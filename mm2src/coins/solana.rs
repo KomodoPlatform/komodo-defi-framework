@@ -16,7 +16,7 @@ use derive_more::Display;
 use ed25519_dalek::SignatureError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{hash::H256, KeyPair};
+use keys::KeyPair;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;
@@ -342,7 +342,7 @@ impl MarketCoinOps for SolanaCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<H256> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

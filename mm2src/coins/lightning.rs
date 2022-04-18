@@ -29,7 +29,7 @@ use common::mm_number::MmNumber;
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{hash::H256, AddressHashEnum, KeyPair};
+use keys::{AddressHashEnum, KeyPair};
 use lightning::chain::channelmonitor::Balance;
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
@@ -390,7 +390,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<H256> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

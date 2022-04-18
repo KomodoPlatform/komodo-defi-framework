@@ -3882,7 +3882,7 @@ fn test_message_hash() {
     let expected = H256::from_reversed_str("5aef9b67485adba55a2cd935269e73f2f9876382f1eada02418797ae76c07e18");
     let result = coin.sign_message_hash("test");
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), expected);
+    assert_eq!(H256::from(result.unwrap()), expected);
 }
 
 #[test]

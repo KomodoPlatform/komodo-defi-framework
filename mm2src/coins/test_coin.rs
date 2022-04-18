@@ -9,7 +9,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::MmError;
 use common::mm_number::MmNumber;
 use futures01::Future;
-use keys::{hash::H256, KeyPair};
+use keys::KeyPair;
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -38,7 +38,7 @@ impl MarketCoinOps for TestCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<H256> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

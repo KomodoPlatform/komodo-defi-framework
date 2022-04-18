@@ -46,7 +46,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
-use keys::{hash::H256, AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
+use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -498,7 +498,7 @@ pub trait MarketCoinOps {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
-    fn sign_message_hash(&self, _message: &str) -> Option<H256>;
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String>;
 

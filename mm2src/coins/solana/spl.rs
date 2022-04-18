@@ -13,7 +13,7 @@ use common::mm_error::prelude::MapToMmResult;
 use common::{mm_ctx::MmArc, mm_error::MmError, mm_number::MmNumber, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{hash::H256, KeyPair};
+use keys::KeyPair;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::TokenAccountsFilter};
@@ -213,7 +213,7 @@ impl MarketCoinOps for SplToken {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<H256> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 

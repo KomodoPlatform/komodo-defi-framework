@@ -453,7 +453,7 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     /// Hash message for signature using Bitcoin's message signing format.
     /// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-    fn sign_message_hash(&self, message: &str) -> Option<H256> {
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let message_prefix = self.utxo_arc.conf.sign_message_prefix.clone()?;
         let mut stream = Stream::new();
         let prefix_len = CompactInteger::from(message_prefix.len());
@@ -462,13 +462,13 @@ impl MarketCoinOps for UtxoStandardCoin {
         let msg_len = CompactInteger::from(message.len());
         msg_len.serialize(&mut stream);
         stream.append_slice(message.as_bytes());
-        Some(dhash256(&stream.out()))
+        Some(dhash256(&stream.out()).take())
     }
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let private_key = &self.utxo_arc.priv_key_policy.key_pair_or_err()?.private();
-        let signature = private_key.sign_compact(&message_hash)?;
+        let signature = private_key.sign_compact(&H256::from(message_hash))?;
         Ok(base64::encode(&*signature))
     }
 
@@ -477,7 +477,7 @@ impl MarketCoinOps for UtxoStandardCoin {
             .sign_message_hash(message)
             .ok_or(VerificationError::PrefixNotFound)?;
         let signature = CompactSignature::from(base64::decode(signature_base64)?);
-        let pubkey = Public::recover_compact(&message_hash, &signature)?;
+        let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
         let address_from_pubkey = self
             .address_from_pubkey(&pubkey)
             .display_address()
