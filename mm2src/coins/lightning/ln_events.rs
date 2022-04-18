@@ -294,7 +294,7 @@ impl LightningEventHandler {
                 let payment_info = PaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
-                    description: None,
+                    description: "".into(),
                     preimage: Some(payment_preimage),
                     secret: payment_secret,
                     amt_msat: Some(amt),

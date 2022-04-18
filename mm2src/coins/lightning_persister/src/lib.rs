@@ -130,7 +130,7 @@ fn create_payments_history_table_sql(for_coin: &str) -> Result<String, SqlError>
         id INTEGER NOT NULL PRIMARY KEY,
         payment_hash VARCHAR(255) NOT NULL UNIQUE,
         destination VARCHAR(255),
-        description VARCHAR(641),
+        description VARCHAR(641) NOT NULL,
         preimage VARCHAR(255),
         secret VARCHAR(255),
         amount_msat INTEGER,
@@ -225,7 +225,7 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
                 .expect("String should be 64 characters!"),
         ),
         payment_type,
-        description: row.get(2).ok(),
+        description: row.get(2)?,
         preimage: row.get::<_, String>(3).ok().map(|p| {
             PaymentPreimage(
                 hex::decode(p)
@@ -1380,7 +1380,7 @@ mod tests {
                     PaymentHash(bytes)
                 },
                 payment_type,
-                description: Some(description),
+                description,
                 preimage: {
                     rng.fill_bytes(&mut bytes);
                     Some(PaymentPreimage(bytes))
@@ -1749,7 +1749,7 @@ mod tests {
         let mut expected_payment_info = PaymentInfo {
             payment_hash: PaymentHash([0; 32]),
             payment_type: PaymentType::InboundPayment,
-            description: Some("test payment".into()),
+            description: "test payment".into(),
             preimage: Some(PaymentPreimage([2; 32])),
             secret: Some(PaymentSecret([3; 32])),
             amt_msat: Some(2000),
@@ -1880,7 +1880,7 @@ mod tests {
 
         assert_eq!(expected_payments, actual_payments);
 
-        let description = payments[42].description.as_ref().unwrap();
+        let description = &payments[42].description;
         let substr = &description[5..10];
         filter.payment_type = None;
         filter.status = None;
@@ -1889,12 +1889,7 @@ mod tests {
         let expected_payments_vec: Vec<PaymentInfo> = payments
             .iter()
             .map(|p| p.clone())
-            .filter(|p| {
-                if let Some(desc) = &p.description {
-                    return desc.contains(&substr);
-                }
-                return false;
-            })
+            .filter(|p| p.description.contains(&substr))
             .collect();
         let expected_payments = if expected_payments_vec.len() > 10 {
             expected_payments_vec[..10].to_vec()

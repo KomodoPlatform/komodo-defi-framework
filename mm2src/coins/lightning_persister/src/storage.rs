@@ -158,7 +158,7 @@ pub enum PaymentType {
 pub struct PaymentInfo {
     pub payment_hash: PaymentHash,
     pub payment_type: PaymentType,
-    pub description: Option<String>,
+    pub description: String,
     pub preimage: Option<PaymentPreimage>,
     pub secret: Option<PaymentSecret>,
     pub amt_msat: Option<u64>,

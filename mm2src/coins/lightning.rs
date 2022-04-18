@@ -129,10 +129,10 @@ impl LightningCoin {
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
         };
-        let description = Some(match invoice.description() {
+        let description = match invoice.description() {
             InvoiceDescription::Direct(d) => d.to_string(),
             InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
-        });
+        };
         let payment_secret = Some(*invoice.payment_secret());
         Ok(PaymentInfo {
             payment_hash,
@@ -170,7 +170,7 @@ impl LightningCoin {
         Ok(PaymentInfo {
             payment_hash,
             payment_type,
-            description: None,
+            description: "".into(),
             preimage: Some(payment_preimage),
             secret: None,
             amt_msat: Some(amount_msat),
@@ -1160,7 +1160,7 @@ pub async fn generate_invoice(
     let payment_info = PaymentInfo {
         payment_hash: PaymentHash(payment_hash),
         payment_type: PaymentType::InboundPayment,
-        description: Some(req.description),
+        description: req.description,
         preimage: None,
         secret: Some(*invoice.payment_secret()),
         amt_msat: req.amount_in_msat,
@@ -1311,8 +1311,7 @@ impl From<PaymentTypeForRPC> for PaymentType {
 pub struct PaymentInfoForRPC {
     payment_hash: H256Json,
     payment_type: PaymentTypeForRPC,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
+    description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     amount_in_msat: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
