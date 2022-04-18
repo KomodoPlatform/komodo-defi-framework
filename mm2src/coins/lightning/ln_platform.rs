@@ -87,8 +87,8 @@ pub async fn get_best_header(best_header_listener: &ElectrumClient) -> EnableLig
 }
 
 pub async fn update_best_block(
-    chain_monitor: Arc<ChainMonitor>,
-    channel_manager: Arc<ChannelManager>,
+    chain_monitor: &ChainMonitor,
+    channel_manager: &ChannelManager,
     best_header: ElectrumBlockHeader,
 ) {
     {
@@ -156,18 +156,13 @@ pub async fn ln_best_block_update_loop(
         if current_best_block != best_header.clone().into() {
             platform.update_best_block_height(best_header.block_height());
             platform
-                .process_txs_unconfirmations(chain_monitor.clone(), channel_manager.clone())
+                .process_txs_unconfirmations(&chain_monitor, &channel_manager)
                 .await;
             platform
-                .process_txs_confirmations(
-                    best_header_listener.clone(),
-                    persister.clone(),
-                    chain_monitor.clone(),
-                    channel_manager.clone(),
-                )
+                .process_txs_confirmations(&best_header_listener, &persister, &chain_monitor, &channel_manager)
                 .await;
             current_best_block = best_header.clone().into();
-            update_best_block(chain_monitor.clone(), channel_manager.clone(), best_header).await;
+            update_best_block(&chain_monitor, &channel_manager, best_header).await;
         }
         Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL).await;
     }
@@ -228,6 +223,8 @@ impl Platform {
         }
     }
 
+    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+
     pub fn update_best_block_height(&self, new_height: u64) {
         self.best_block_height.store(new_height, AtomicOrdering::Relaxed);
     }
@@ -248,11 +245,10 @@ impl Platform {
     }
 
     async fn get_tx_if_onchain(&self, txid: Txid) -> Result<Option<Transaction>, GetTxError> {
+        let txid = H256Json::from(txid.as_hash().into_inner()).reversed();
         match self
-            .coin
-            .as_ref()
-            .rpc_client
-            .get_transaction_bytes(&H256Json::from(txid.as_hash().into_inner()).reversed())
+            .rpc_client()
+            .get_transaction_bytes(&txid)
             .compat()
             .await
             .map_err(|e| e.into_inner())
@@ -273,7 +269,7 @@ impl Platform {
         }
     }
 
-    async fn process_tx_for_unconfirmation<T>(&self, txid: Txid, monitor: Arc<T>)
+    async fn process_tx_for_unconfirmation<T>(&self, txid: Txid, monitor: &T)
     where
         T: Confirm,
     {
@@ -293,21 +289,17 @@ impl Platform {
         }
     }
 
-    pub async fn process_txs_unconfirmations(
-        &self,
-        chain_monitor: Arc<ChainMonitor>,
-        channel_manager: Arc<ChannelManager>,
-    ) {
+    pub async fn process_txs_unconfirmations(&self, chain_monitor: &ChainMonitor, channel_manager: &ChannelManager) {
         // Retrieve channel manager transaction IDs to check the chain for un-confirmations
         let channel_manager_relevant_txids = channel_manager.get_relevant_txids();
         for txid in channel_manager_relevant_txids {
-            self.process_tx_for_unconfirmation(txid, channel_manager.clone()).await;
+            self.process_tx_for_unconfirmation(txid, channel_manager).await;
         }
 
         // Retrieve chain monitor transaction IDs to check the chain for un-confirmations
         let chain_monitor_relevant_txids = chain_monitor.get_relevant_txids();
         for txid in chain_monitor_relevant_txids {
-            self.process_tx_for_unconfirmation(txid, chain_monitor.clone()).await;
+            self.process_tx_for_unconfirmation(txid, chain_monitor).await;
         }
     }
 
@@ -401,13 +393,13 @@ impl Platform {
 
     pub async fn process_txs_confirmations(
         &self,
-        client: ElectrumClient,
-        persister: Arc<LightningPersister>,
-        chain_monitor: Arc<ChainMonitor>,
-        channel_manager: Arc<ChannelManager>,
+        client: &ElectrumClient,
+        persister: &LightningPersister,
+        chain_monitor: &ChainMonitor,
+        channel_manager: &ChannelManager,
     ) {
-        let mut transactions_to_confirm = self.get_confirmed_registered_txs(&client).await;
-        self.append_spent_registered_output_txs(&mut transactions_to_confirm, &client)
+        let mut transactions_to_confirm = self.get_confirmed_registered_txs(client).await;
+        self.append_spent_registered_output_txs(&mut transactions_to_confirm, client)
             .await;
 
         transactions_to_confirm.sort_by(|a, b| (a.height, a.index).cmp(&(b.height, b.index)));
@@ -455,12 +447,7 @@ impl Platform {
             H256Json::from_str(&tx_id).map_to_mm(|e| SaveChannelClosingError::FundingTxParseError(e.to_string()))?;
 
         let funding_tx_bytes = ok_or_retry_after_sleep!(
-            self.coin
-                .as_ref()
-                .rpc_client
-                .get_transaction_bytes(&tx_hash)
-                .compat()
-                .await,
+            self.rpc_client().get_transaction_bytes(&tx_hash).compat().await,
             TRY_LOOP_INTERVAL
         );
 
@@ -500,9 +487,7 @@ impl FeeEstimator for Platform {
             ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.n_blocks,
         };
         let fee_per_kb = tokio::task::block_in_place(move || {
-            platform_coin
-                .as_ref()
-                .rpc_client
+            self.rpc_client()
                 .estimate_fee_sat(
                     platform_coin.decimals(),
                     // Todo: when implementing Native client detect_fee_method should be used for Native and
@@ -548,7 +533,6 @@ impl Filter for Platform {
             None => return None,
         };
 
-        let client = &self.coin.as_ref().rpc_client;
         // Although this works for both native and electrum clients as the block hash is available,
         // the filter interface which includes register_output and register_tx should be used for electrum clients only,
         // this is the reason for initializing the filter as an option in the start_lightning function as it will be None
@@ -556,7 +540,7 @@ impl Filter for Platform {
         let output_spend_info = tokio::task::block_in_place(move || {
             let delay = TRY_LOOP_INTERVAL as u64;
             ok_or_retry_after_sleep_sync!(
-                client
+                self.rpc_client()
                     .find_output_spend(
                         H256::from(output.outpoint.txid.as_hash().into_inner()),
                         output.script_pubkey.as_ref(),
