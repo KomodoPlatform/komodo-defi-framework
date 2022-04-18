@@ -150,7 +150,7 @@ impl FromStr for HTLCStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PaymentType {
-    OutboundPayment { destination: Option<PublicKey> },
+    OutboundPayment { destination: PublicKey },
     InboundPayment,
 }
 

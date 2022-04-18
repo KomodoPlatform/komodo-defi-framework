@@ -213,10 +213,7 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
     let payment_type = match is_outbound {
         true => PaymentType::OutboundPayment {
-            destination: row
-                .get::<_, String>(1)
-                .ok()
-                .map(|d| PublicKey::from_str(&d).expect("PublicKey from str should not fail!")),
+            destination: PublicKey::from_str(&row.get::<_, String>(1)?).expect("PublicKey from str should not fail!"),
         },
         false => PaymentType::InboundPayment,
     };
@@ -436,7 +433,7 @@ fn finalize_get_payments_sql_builder(sql_builder: &mut SqlBuilder, offset: usize
 fn apply_get_payments_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, String)>, filter: PaymentsFilter) {
     if let Some(payment_type) = filter.payment_type {
         let (is_outbound, destination) = match payment_type {
-            PaymentType::OutboundPayment { destination } => (true as i32, destination.map(|d| d.to_string())),
+            PaymentType::OutboundPayment { destination } => (true as i32, Some(destination.to_string())),
             PaymentType::InboundPayment => (false as i32, None),
         };
         if let Some(dest) = destination {
@@ -1149,7 +1146,7 @@ impl DbStorage for LightningPersister {
         let for_coin = self.storage_ticker.clone();
         let payment_hash = hex::encode(info.payment_hash.0);
         let (is_outbound, destination) = match info.payment_type {
-            PaymentType::OutboundPayment { destination } => (true as i32, destination.map(|d| d.to_string())),
+            PaymentType::OutboundPayment { destination } => (true as i32, Some(destination.to_string())),
             PaymentType::InboundPayment => (false as i32, None),
         };
         let description = info.description;
@@ -1364,9 +1361,8 @@ mod tests {
             } else {
                 rng.fill_bytes(&mut bytes);
                 let secret = SecretKey::from_slice(&bytes).unwrap();
-                let pubkey = PublicKey::from_secret_key(&s, &secret);
                 PaymentType::OutboundPayment {
-                    destination: Some(pubkey),
+                    destination: PublicKey::from_secret_key(&s, &secret),
                 }
             };
             let status_rng: u8 = rng.gen();
@@ -1771,9 +1767,8 @@ mod tests {
 
         expected_payment_info.payment_hash = PaymentHash([1; 32]);
         expected_payment_info.payment_type = PaymentType::OutboundPayment {
-            destination: Some(
-                PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9").unwrap(),
-            ),
+            destination: PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9")
+                .unwrap(),
         };
         expected_payment_info.secret = None;
         expected_payment_info.amt_msat = None;

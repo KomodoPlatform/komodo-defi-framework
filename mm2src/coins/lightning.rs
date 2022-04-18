@@ -127,7 +127,7 @@ impl LightningCoin {
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
         let payment_hash = PaymentHash((*invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
-            destination: invoice.payee_pub_key().cloned(),
+            destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
         };
         let description = Some(match invoice.description() {
             InvoiceDescription::Direct(d) => d.to_string(),
@@ -165,9 +165,7 @@ impl LightningCoin {
             .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
-        let payment_type = PaymentType::OutboundPayment {
-            destination: Some(destination),
-        };
+        let payment_type = PaymentType::OutboundPayment { destination };
 
         Ok(PaymentInfo {
             payment_hash,
@@ -1282,10 +1280,7 @@ pub struct ListPaymentsReq {
 #[serde(tag = "type")]
 pub enum PaymentTypeForRPC {
     #[serde(rename = "Outbound Payment")]
-    OutboundPayment {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        destination: Option<PublicKeyForRPC>,
-    },
+    OutboundPayment { destination: PublicKeyForRPC },
     #[serde(rename = "Inbound Payment")]
     InboundPayment,
 }
@@ -1294,7 +1289,7 @@ impl From<PaymentType> for PaymentTypeForRPC {
     fn from(payment_type: PaymentType) -> Self {
         match payment_type {
             PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
-                destination: destination.map(PublicKeyForRPC),
+                destination: PublicKeyForRPC(destination),
             },
             PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
         }
@@ -1305,7 +1300,7 @@ impl From<PaymentTypeForRPC> for PaymentType {
     fn from(payment_type: PaymentTypeForRPC) -> Self {
         match payment_type {
             PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
-                destination: destination.map(From::from),
+                destination: destination.into(),
             },
             PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
         }
