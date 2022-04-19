@@ -2124,7 +2124,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "ethereum-types 0.4.2",
  "ethkey",
@@ -2174,7 +2174,7 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "byteorder 1.4.3",
  "edit-distance",
@@ -3962,7 +3962,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "memchr"
@@ -8209,7 +8209,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "unicode-bidi"

@@ -20,7 +20,7 @@
 //
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use bitcrypto::sha256;
+use bitcrypto::{keccak256, sha256};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::log::error;
@@ -32,7 +32,7 @@ use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
 use ethereum_types::{Address, H160, H256, U256};
-use ethkey::{public_to_address, KeyPair, Public};
+use ethkey::{public_to_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
@@ -58,10 +58,10 @@ use super::{BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMe
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
             NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionFut,
-            UnexpectedDerivationMethod, ValidateAddressResult, VerificationResult, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionFut,
+            UnexpectedDerivationMethod, ValidateAddressResult, VerificationError, VerificationResult, WithdrawError,
+            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
@@ -69,6 +69,8 @@ mod web3_transport;
 use crate::ValidatePaymentInput;
 use common::mm_number::MmNumber;
 use common::privkey::key_pair_from_secret;
+use ethkey::{sign, verify_address};
+use serialization::{CompactInteger, Serializable, Stream};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
 #[cfg(test)] mod eth_tests;
@@ -284,6 +286,7 @@ pub struct EthCoinImpl {
     coin_type: EthCoinType,
     key_pair: KeyPair,
     my_address: Address,
+    sign_message_prefix: Option<String>,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
@@ -1100,12 +1103,40 @@ impl MarketCoinOps for EthCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    /// Hash message for signature using Ethereum's message signing format.
+    /// keccak256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE)
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        let message_prefix = self.sign_message_prefix.as_ref()?;
+        let mut stream = Stream::new();
+        let prefix_len = CompactInteger::from(message_prefix.len());
+        prefix_len.serialize(&mut stream);
+        stream.append_slice(message_prefix.as_bytes());
+        stream.append_slice(message.len().to_string().as_bytes());
+        stream.append_slice(message.as_bytes());
+        Some(keccak256(&stream.out()).take())
+    }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
+        let privkey = &self.key_pair.secret();
+        let signature = sign(privkey, &H256::from(message_hash))?;
+        Ok(signature.to_string())
+    }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+    fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        let message_hash = self
+            .sign_message_hash(message)
+            .ok_or(VerificationError::PrefixNotFound)?;
+        let address = self
+            .address_from_str(address)
+            .map_err(VerificationError::AddressDecodingError)?;
+        let signature = if &signature[..2] == "0x" {
+            Signature::from_str(&signature[2..])?
+        } else {
+            Signature::from_str(signature)?
+        };
+        let is_verified = verify_address(&address, &signature, &H256::from(message_hash))?;
+        Ok(is_verified)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
@@ -3402,6 +3433,8 @@ pub async fn eth_coin_from_conf_and_request(
         log!("Warning: requires_notarization doesn't take any effect on ETH/ERC20 coins");
     }
 
+    let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
+
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
     } else {
@@ -3416,6 +3449,7 @@ pub async fn eth_coin_from_conf_and_request(
         key_pair,
         my_address,
         coin_type,
+        sign_message_prefix,
         swap_contract_address,
         fallback_swap_contract,
         decimals,

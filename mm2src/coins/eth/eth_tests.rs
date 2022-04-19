@@ -48,6 +48,7 @@ fn eth_coin_for_test(
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract,
@@ -210,6 +211,7 @@ fn send_and_refund_erc20_payment() {
             token_addr: Address::from("0xc0eb7AeD740E1796992A08962c15661bDEB58003"),
         },
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
@@ -275,6 +277,7 @@ fn send_and_refund_eth_payment() {
         ticker: "ETH".into(),
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
@@ -349,6 +352,7 @@ fn test_nonce_several_urls() {
         ticker: "ETH".into(),
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
@@ -410,6 +414,7 @@ fn test_wait_for_payment_spend_timeout() {
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
@@ -470,6 +475,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address,
         fallback_swap_contract: None,
@@ -578,6 +584,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address,
         fallback_swap_contract: None,
@@ -1243,4 +1250,121 @@ fn polygon_check_if_my_payment_sent() {
         .unwrap();
     let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");
     assert_eq!(expected_hash, my_payment.tx_hash());
+}
+
+#[test]
+fn test_message_hash() {
+    let key_pair = KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Eth,
+        my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        fallback_swap_contract: None,
+        web3_instances: vec![Web3Instance {
+            web3: web3.clone(),
+            is_parity: true,
+        }],
+        web3,
+        decimals: 18,
+        gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
+        chain_id: None,
+        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+    }));
+
+    let message_hash = coin.sign_message_hash("test").unwrap();
+    assert_eq!(
+        hex::encode(message_hash),
+        "4a5c5d454721bbbb25540c3317521e71c373ae36458f960d2ad46ef088110e95"
+    );
+}
+
+#[test]
+fn test_sign_message() {
+    let key_pair = KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Eth,
+        my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        fallback_swap_contract: None,
+        web3_instances: vec![Web3Instance {
+            web3: web3.clone(),
+            is_parity: true,
+        }],
+        web3,
+        decimals: 18,
+        gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
+        chain_id: None,
+        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+    }));
+
+    let signature = coin.sign_message("test").unwrap();
+    assert_eq!(signature, "cdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600");
+}
+
+#[test]
+fn test_verify_message() {
+    let key_pair = KeyPair::from_secret_slice(
+        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
+    )
+    .unwrap();
+    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let web3 = Web3::new(transport);
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let coin = EthCoin(Arc::new(EthCoinImpl {
+        ticker: "ETH".into(),
+        coin_type: EthCoinType::Eth,
+        my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
+        key_pair,
+        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
+        fallback_swap_contract: None,
+        web3_instances: vec![Web3Instance {
+            web3: web3.clone(),
+            is_parity: true,
+        }],
+        web3,
+        decimals: 18,
+        gas_station_url: None,
+        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
+        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
+        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
+        ctx: ctx.weak(),
+        required_confirmations: 1.into(),
+        chain_id: None,
+        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+    }));
+
+    let signature = "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600";
+    let address = "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29";
+    let message = "test";
+    let is_valid = coin.verify_message(signature, message, address).unwrap();
+    assert!(is_valid);
 }
