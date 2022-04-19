@@ -210,11 +210,11 @@ fn try_grpc() {
 
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
-            height: 31599,
+            height: 31757,
             hash: Vec::new(),
         }),
         end: Some(BlockId {
-            height: 32250,
+            height: 60462,
             hash: Vec::new(),
         }),
     });
@@ -225,10 +225,13 @@ fn try_grpc() {
     let cache_sql = Connection::open(cache_file).unwrap();
     init_cache_database(&cache_sql).unwrap();
 
+    /*
     while let Ok(Some(block)) = block_on(response.get_mut().message()) {
         println!("Got block {:?}", block);
-        // insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
+        insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
     }
+
+     */
     drop(cache_sql);
 
     #[derive(Copy, Clone)]
@@ -237,7 +240,7 @@ fn try_grpc() {
     impl Parameters for ZombieNetwork {
         fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
             match nu {
-                NetworkUpgrade::Sapling => Some(BlockHeight::from(101)),
+                NetworkUpgrade::Sapling => Some(BlockHeight::from(1)),
                 _ => None,
             }
         }
@@ -309,7 +312,7 @@ fn try_grpc() {
     scan_cached_blocks(&network, &db_cache, &mut db_data, None).unwrap();
 
     let balance = db_read
-        .get_balance_at(AccountId(0), BlockHeight::from_u32(31598))
+        .get_balance_at(AccountId(0), BlockHeight::from_u32(60462))
         .unwrap();
     println!("{:?}", balance);
 }
