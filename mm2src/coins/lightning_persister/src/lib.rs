@@ -96,26 +96,27 @@ fn create_channels_history_table_sql(for_coin: &str) -> Result<String, SqlError>
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
-        + &table_name
-        + " (
-        id INTEGER NOT NULL PRIMARY KEY,
-        rpc_id INTEGER NOT NULL UNIQUE,
-        channel_id VARCHAR(255) NOT NULL,
-        counterparty_node_id VARCHAR(255) NOT NULL,
-        funding_tx VARCHAR(255),
-        funding_value INTEGER,
-        funding_generated_in_block Integer,
-        closing_tx VARCHAR(255),
-        closure_reason TEXT,
-        claiming_tx VARCHAR(255),
-        claimed_balance REAL,
-        is_outbound INTEGER NOT NULL,
-        is_public INTEGER NOT NULL,
-        is_closed INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        last_updated INTEGER NOT NULL
-    );";
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            id INTEGER NOT NULL PRIMARY KEY,
+            rpc_id INTEGER NOT NULL UNIQUE,
+            channel_id VARCHAR(255) NOT NULL,
+            counterparty_node_id VARCHAR(255) NOT NULL,
+            funding_tx VARCHAR(255),
+            funding_value INTEGER,
+            funding_generated_in_block Integer,
+            closing_tx VARCHAR(255),
+            closure_reason TEXT,
+            claiming_tx VARCHAR(255),
+            claimed_balance REAL,
+            is_outbound INTEGER NOT NULL,
+            is_public INTEGER NOT NULL,
+            is_closed INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_updated INTEGER NOT NULL
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -124,22 +125,23 @@ fn create_payments_history_table_sql(for_coin: &str) -> Result<String, SqlError>
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
-        + &table_name
-        + " (
-        id INTEGER NOT NULL PRIMARY KEY,
-        payment_hash VARCHAR(255) NOT NULL UNIQUE,
-        destination VARCHAR(255),
-        description VARCHAR(641) NOT NULL,
-        preimage VARCHAR(255),
-        secret VARCHAR(255),
-        amount_msat INTEGER,
-        fee_paid_msat INTEGER,
-        is_outbound INTEGER NOT NULL,
-        status VARCHAR(255) NOT NULL,
-        created_at INTEGER NOT NULL,
-        last_updated INTEGER NOT NULL
-    );";
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            id INTEGER NOT NULL PRIMARY KEY,
+            payment_hash VARCHAR(255) NOT NULL UNIQUE,
+            destination VARCHAR(255),
+            description VARCHAR(641) NOT NULL,
+            preimage VARCHAR(255),
+            secret VARCHAR(255),
+            amount_msat INTEGER,
+            fee_paid_msat INTEGER,
+            is_outbound INTEGER NOT NULL,
+            status VARCHAR(255) NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_updated INTEGER NOT NULL
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -148,9 +150,21 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "INSERT INTO ".to_owned()
-        + &table_name
-        + " (rpc_id, channel_id, counterparty_node_id, is_outbound, is_public, is_closed, created_at, last_updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);";
+    let sql = format!(
+        "INSERT INTO {} (
+            rpc_id,
+            channel_id,
+            counterparty_node_id,
+            is_outbound,
+            is_public,
+            is_closed,
+            created_at,
+            last_updated
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -159,9 +173,24 @@ fn insert_or_update_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "INSERT OR REPLACE INTO ".to_owned()
-        + &table_name
-        + " (payment_hash, destination, description, preimage, secret, amount_msat, fee_paid_msat, is_outbound, status, created_at, last_updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);";
+    let sql = format!(
+        "INSERT OR REPLACE INTO {} (
+            payment_hash,
+            destination,
+            description,
+            preimage,
+            secret,
+            amount_msat,
+            fee_paid_msat,
+            is_outbound,
+            status,
+            created_at,
+            last_updated
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -170,7 +199,29 @@ fn select_channel_from_table_by_rpc_id_sql(for_coin: &str) -> Result<String, Sql
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT rpc_id, channel_id, counterparty_node_id, funding_tx, funding_value, funding_generated_in_block, closing_tx, closure_reason, claiming_tx, claimed_balance, is_outbound, is_public, is_closed, created_at, last_updated FROM ".to_owned() + &table_name + " WHERE rpc_id=?1;";
+    let sql = format!(
+        "SELECT 
+            rpc_id,
+            channel_id,
+            counterparty_node_id,
+            funding_tx,
+            funding_value,
+            funding_generated_in_block,
+            closing_tx,
+            closure_reason,
+            claiming_tx,
+            claimed_balance,
+            is_outbound,
+            is_public,
+            is_closed,
+            created_at,
+            last_updated
+        FROM
+            {}
+        WHERE
+            rpc_id=?1",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -179,11 +230,25 @@ fn select_payment_from_table_by_hash_sql(for_coin: &str) -> Result<String, SqlEr
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql =
-        "SELECT payment_hash, destination, description, preimage, secret, amount_msat, fee_paid_msat, status, is_outbound, created_at, last_updated FROM "
-            .to_owned()
-            + &table_name
-            + " WHERE payment_hash=?1;";
+    let sql = format!(
+        "SELECT
+            payment_hash,
+            destination,
+            description,
+            preimage,
+            secret,
+            amount_msat,
+            fee_paid_msat,
+            status,
+            is_outbound,
+            created_at,
+            last_updated
+        FROM
+            {}
+        WHERE
+            payment_hash=?1;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -211,11 +276,12 @@ fn channel_details_from_row(row: &Row<'_>) -> Result<SqlChannelDetails, SqlError
 
 fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
-    let payment_type = match is_outbound {
-        true => PaymentType::OutboundPayment {
+    let payment_type = if is_outbound {
+        PaymentType::OutboundPayment {
             destination: PublicKey::from_str(&row.get::<_, String>(1)?).expect("PublicKey from str should not fail!"),
-        },
-        false => PaymentType::InboundPayment,
+        }
+    } else {
+        PaymentType::InboundPayment
     };
     let payment_info = PaymentInfo {
         payment_hash: PaymentHash(
@@ -255,7 +321,7 @@ fn get_last_channel_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT IFNULL(MAX(rpc_id), 0) FROM ".to_owned() + &table_name + ";";
+    let sql = format!("SELECT IFNULL(MAX(rpc_id), 0) FROM {};", table_name);
 
     Ok(sql)
 }
@@ -264,9 +330,16 @@ fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned()
-        + &table_name
-        + " SET funding_tx = ?2, funding_value = ?3, funding_generated_in_block = ?4, last_updated = ?5 WHERE rpc_id = ?1;";
+    let sql = format!(
+        "UPDATE {} SET
+            funding_tx = ?2,
+            funding_value = ?3,
+            funding_generated_in_block = ?4,
+            last_updated = ?5
+        WHERE
+            rpc_id = ?1;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -275,7 +348,10 @@ fn update_funding_tx_block_height_sql(for_coin: &str) -> Result<String, SqlError
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned() + &table_name + " SET funding_generated_in_block = ?2 WHERE funding_tx = ?1;";
+    let sql = format!(
+        "UPDATE {} SET funding_generated_in_block = ?2 WHERE funding_tx = ?1;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -284,9 +360,10 @@ fn update_channel_to_closed_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned()
-        + &table_name
-        + " SET closure_reason = ?2, is_closed = ?3, last_updated = ?4 WHERE rpc_id = ?1;";
+    let sql = format!(
+        "UPDATE {} SET closure_reason = ?2, is_closed = ?3, last_updated = ?4 WHERE rpc_id = ?1;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -295,7 +372,10 @@ fn update_closing_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned() + &table_name + " SET closing_tx = ?2, last_updated = ?3 WHERE rpc_id = ?1;";
+    let sql = format!(
+        "UPDATE {} SET closing_tx = ?2, last_updated = ?3 WHERE rpc_id = ?1;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -489,9 +569,10 @@ fn update_claiming_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned()
-        + &table_name
-        + " SET claiming_tx = ?2, claimed_balance = ?3, last_updated = ?4 WHERE closing_tx = ?1;";
+    let sql = format!(
+        "UPDATE {} SET claiming_tx = ?2, claimed_balance = ?3, last_updated = ?4 WHERE closing_tx = ?1;",
+        table_name
+    );
 
     Ok(sql)
 }

@@ -201,13 +201,7 @@ pub async fn init_channel_manager(
             .process_txs_unconfirmations(&chain_monitor, &channel_manager)
             .await;
         platform
-            .process_txs_confirmations(
-                // It's safe to use unwrap here for now until implementing Native Client for Lightning
-                &rpc_client,
-                &persister,
-                &chain_monitor,
-                &channel_manager,
-            )
+            .process_txs_confirmations(&rpc_client, &persister, &chain_monitor, &channel_manager)
             .await;
         update_best_block(&chain_monitor, &channel_manager, best_header).await;
     }

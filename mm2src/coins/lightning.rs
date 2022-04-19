@@ -53,7 +53,7 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
-use ln_platform::Platform;
+use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
 use ln_utils::{ChainMonitor, ChannelManager};
 use parking_lot::Mutex as PaMutex;
@@ -975,9 +975,7 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
             rpc_channel_id: details.user_channel_id,
             channel_id: details.channel_id.into(),
             counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
-            funding_tx: details
-                .funding_txo
-                .map(|tx| H256Json::from(tx.txid.as_hash().into_inner()).reversed()),
+            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
             funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
             funding_tx_value_sats: details.channel_value_satoshis,
             is_outbound: details.is_outbound,

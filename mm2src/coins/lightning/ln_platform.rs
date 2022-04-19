@@ -28,6 +28,8 @@ const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 
+pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
+
 struct TxWithBlockInfo {
     tx: Transaction,
     block_header: BlockHeader,
@@ -245,7 +247,7 @@ impl Platform {
     }
 
     async fn get_tx_if_onchain(&self, txid: Txid) -> Result<Option<Transaction>, GetTxError> {
-        let txid = H256Json::from(txid.as_hash().into_inner()).reversed();
+        let txid = h256_json_from_txid(txid);
         match self
             .rpc_client()
             .get_transaction_bytes(&txid)
@@ -318,7 +320,7 @@ impl Platform {
                             TRY_LOOP_INTERVAL
                         );
                         for item in history {
-                            let rpc_txid = H256Json::from(txid.as_hash().into_inner()).reversed();
+                            let rpc_txid = h256_json_from_txid(txid);
                             if item.tx_hash == rpc_txid && item.height > 0 {
                                 let height = item.height as u64;
                                 let header =
@@ -365,7 +367,7 @@ impl Platform {
                     .iter()
                     .any(|info| info.txid == tx_info.tx.txid())
                 {
-                    let rpc_txid = H256Json::from(tx_info.tx.txid().as_hash().into_inner()).reversed();
+                    let rpc_txid = h256_json_from_txid(tx_info.tx.txid());
                     let index = ok_or_retry_after_sleep!(
                         client
                             .blockchain_transaction_get_merkle(rpc_txid, tx_info.block_height)
