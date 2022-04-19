@@ -21,6 +21,7 @@ Cons:
 1. It's desired to have a separate issue for any bug report or feature request.
 2. Once the issue is created, add it to the MM2.0 Github project. Select an appropriate column.
 3. Decide whether you should base your feature branch from mm2.1 or dev. For hotfixes or minor useful features choose mm2.1. In other cases choose dev.
+5. PR titles must have a prefix that displays the current status of PR. Such as `[wip] X feat integration`, `[r2r] X feat integration`, where `[wip]` prefix stands for "Work in Progress", and `[r2r]` for Ready to Review.
 4. PRs to dev can be merged right after approval. Request the tests in the dev branch from Tony by assigning the issue to him and moving it to the `Testing` column. Provide a detailed explanation of what changed and what should be tested. Indicate the critical points.
 5. PRs to mm2.1 must be tested by QA *before* merging.
 6. If documentation update is required, prepare examples and notify smk762. Assign issue to him. Move the issue to the documentation column. Smk will then prepare PR in [developer-docs](https://github.com/KomodoPlatform/developer-docs) repo.
@@ -30,5 +31,5 @@ Cons:
 [@artemii235](https://github.com/artemii235)
 [@sergeyboyko0791](https://github.com/sergeyboyko0791)
 [@shamardy](https://github.com/shamardy)
-[@Milerius](https://github.com/Milerius)
+[@ozkanonur](https://github.com/ozkanonur)
 
