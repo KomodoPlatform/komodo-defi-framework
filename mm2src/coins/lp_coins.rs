@@ -1482,7 +1482,7 @@ pub enum SignatureError {
     InternalError(String),
     #[display(fmt = "Coin is not found: {}", _0)]
     CoinIsNotFound(String),
-    #[display(fmt = "Message prefix not found")]
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
     PrefixNotFound,
 }
 
@@ -1526,7 +1526,7 @@ pub enum VerificationError {
     AddressDecodingError(String),
     #[display(fmt = "Coin is not found: {}", _0)]
     CoinIsNotFound(String),
-    #[display(fmt = "Message prefix not found")]
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
     PrefixNotFound,
 }
 
