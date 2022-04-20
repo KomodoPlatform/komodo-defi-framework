@@ -9,6 +9,9 @@ use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::wallet::init::init_accounts_table;
 use zcash_primitives::consensus::NetworkUpgrade;
+use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::zip32::ExtendedFullViewingKey;
+use zcash_proofs::prover::LocalTxProver;
 
 #[derive(Debug, Serialize)]
 pub struct ZSendManyItem {
@@ -161,7 +164,7 @@ fn try_grpc() {
     use rustls::ClientConfig;
     use tonic::transport::{Channel, ClientTlsConfig};
     use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-    use z_coin_grpc::{BlockId, BlockRange};
+    use z_coin_grpc::{BlockId, BlockRange, RawTransaction};
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
                                          BlockSource, WalletRead, WalletWrite};
@@ -208,13 +211,15 @@ fn try_grpc() {
     .unwrap();
     let mut client = CompactTxStreamerClient::new(channel);
 
+    const FROM_BLOCK: u64 = 61973;
+    const CURRENT_BLOCK: u64 = 61975;
     let request = tonic::Request::new(BlockRange {
         start: Some(BlockId {
-            height: 31757,
+            height: FROM_BLOCK,
             hash: Vec::new(),
         }),
         end: Some(BlockId {
-            height: 60462,
+            height: CURRENT_BLOCK,
             hash: Vec::new(),
         }),
     });
@@ -225,13 +230,11 @@ fn try_grpc() {
     let cache_sql = Connection::open(cache_file).unwrap();
     init_cache_database(&cache_sql).unwrap();
 
-    /*
     while let Ok(Some(block)) = block_on(response.get_mut().message()) {
         println!("Got block {:?}", block);
         insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
     }
 
-     */
     drop(cache_sql);
 
     #[derive(Copy, Clone)]
@@ -312,15 +315,54 @@ fn try_grpc() {
     scan_cached_blocks(&network, &db_cache, &mut db_data, None).unwrap();
 
     let balance = db_read
-        .get_balance_at(AccountId(0), BlockHeight::from_u32(60462))
+        .get_balance_at(AccountId(0), BlockHeight::from_u32(CURRENT_BLOCK as u32))
         .unwrap();
 
     println!("balance {:?}", balance);
 
     let notes = db_read
-        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(60462))
+        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(CURRENT_BLOCK as u32))
         .unwrap();
-    for note in notes {
-        println!("{:?}", note.note_value);
+
+    use zcash_primitives::consensus;
+    use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
+
+    let mut tx_builder = ZTxBuilder::new(ZombieNetwork {}, BlockHeight::from_u32(CURRENT_BLOCK as u32));
+
+    let from_key = ExtendedFullViewingKey::from(&z_key);
+    let (_, from_addr) = from_key.default_address().unwrap();
+    let amount_to_send = notes[0].note_value - Amount::from_i64(1000).unwrap();
+    for spendable_note in notes.into_iter().take(1) {
+        let note = from_addr
+            .create_note(spendable_note.note_value.into(), spendable_note.rseed)
+            .unwrap();
+        tx_builder
+            .add_sapling_spend(
+                z_key.clone(),
+                spendable_note.diversifier,
+                note,
+                spendable_note.witness.path().unwrap(),
+            )
+            .unwrap();
     }
+
+    tx_builder
+        .add_sapling_output(None, from_addr, amount_to_send, None)
+        .unwrap();
+
+    let prover = LocalTxProver::with_default_location().unwrap();
+    let (transaction, meta) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();
+
+    println!("{:?}", transaction);
+
+    let mut tx_bytes = Vec::with_capacity(1024);
+    transaction.write(&mut tx_bytes).expect("Write should not fail");
+
+    let request = tonic::Request::new(RawTransaction {
+        data: tx_bytes,
+        height: 0,
+    });
+    let response = block_on(client.send_transaction(request)).unwrap();
+
+    println!("{:?}", response);
 }
