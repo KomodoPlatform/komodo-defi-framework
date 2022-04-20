@@ -139,10 +139,10 @@ impl FromStr for HTLCStatus {
     type Err = FromSqlError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "pending" => Ok(HTLCStatus::Pending),
-            "succeeded" => Ok(HTLCStatus::Succeeded),
-            "failed" => Ok(HTLCStatus::Failed),
+        match s {
+            "Pending" => Ok(HTLCStatus::Pending),
+            "Succeeded" => Ok(HTLCStatus::Succeeded),
+            "Failed" => Ok(HTLCStatus::Failed),
             _ => Err(FromSqlError::InvalidType),
         }
     }

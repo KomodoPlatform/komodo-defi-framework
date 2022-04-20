@@ -26,12 +26,13 @@ fn get_table_name_and_validate(for_coin: &str) -> Result<String, MmError<BlockHe
 
 fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
-        + &table_name
-        + " (
-        block_height INTEGER NOT NULL UNIQUE,
-        hex TEXT NOT NULL
-    );";
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            block_height INTEGER NOT NULL UNIQUE,
+            hex TEXT NOT NULL
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -39,13 +40,16 @@ fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError
 fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
     let table_name = get_table_name_and_validate(for_coin)?;
     // We can simply ignore the repetitive attempt to insert the same block_height
-    let sql = "INSERT OR IGNORE INTO ".to_owned() + &table_name + " (block_height, hex) VALUES (?1, ?2);";
+    let sql = format!(
+        "INSERT OR IGNORE INTO {} (block_height, hex) VALUES (?1, ?2);",
+        table_name
+    );
     Ok(sql)
 }
 
 fn get_block_header_by_height(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = "SELECT hex FROM ".to_owned() + &table_name + " WHERE block_height=?1;";
+    let sql = format!("SELECT hex FROM {} WHERE block_height=?1;", table_name);
 
     Ok(sql)
 }

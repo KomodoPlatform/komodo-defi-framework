@@ -24,6 +24,7 @@ use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::Network;
 use common::fs::check_dir_operations;
 use common::{async_blocking, now_ms, PagingOptionsEnum};
+use db_common::sqlite::rusqlite::types::Type as SqlType;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{offset_by_id, query_single_row, string_from_row, validate_table_name, SqliteConnShared,
@@ -258,13 +259,13 @@ fn channel_details_from_row(row: &Row<'_>) -> Result<SqlChannelDetails, SqlError
         rpc_id: row.get::<_, u32>(0)? as u64,
         channel_id: row.get(1)?,
         counterparty_node_id: row.get(2)?,
-        funding_tx: row.get(3).ok(),
-        funding_value: row.get::<_, u32>(4).ok().map(|v| v as u64),
-        funding_generated_in_block: row.get::<_, u32>(5).ok().map(|v| v as u64),
-        closing_tx: row.get(6).ok(),
-        closure_reason: row.get(7).ok(),
-        claiming_tx: row.get(8).ok(),
-        claimed_balance: row.get::<_, f64>(9).ok(),
+        funding_tx: row.get(3)?,
+        funding_value: row.get::<_, Option<u32>>(4)?.map(|v| v as u64),
+        funding_generated_in_block: row.get::<_, Option<u32>>(5)?.map(|v| v as u64),
+        closing_tx: row.get(6)?,
+        closure_reason: row.get(7)?,
+        claiming_tx: row.get(8)?,
+        claimed_balance: row.get::<_, Option<f64>>(9)?,
         is_outbound: row.get(10)?,
         is_public: row.get(11)?,
         is_closed: row.get(12)?,
@@ -278,38 +279,48 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
     let payment_type = if is_outbound {
         PaymentType::OutboundPayment {
-            destination: PublicKey::from_str(&row.get::<_, String>(1)?).expect("PublicKey from str should not fail!"),
+            destination: PublicKey::from_str(&row.get::<_, String>(1)?)
+                .map_err(|e| SqlError::FromSqlConversionFailure(1, SqlType::Text, Box::new(e)))?,
         }
     } else {
         PaymentType::InboundPayment
     };
+
+    let mut hash_slice = [0u8; 32];
+    hex::decode_to_slice(row.get::<_, String>(0)?, &mut hash_slice as &mut [u8])
+        .map_err(|e| SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e)))?;
+    let payment_hash = PaymentHash(hash_slice);
+
+    let maybe_preimage = row.get::<_, Option<String>>(3)?;
+    let preimage = match maybe_preimage {
+        Some(p) => {
+            let mut preimage_slice = [0u8; 32];
+            hex::decode_to_slice(p, &mut preimage_slice as &mut [u8])
+                .map_err(|e| SqlError::FromSqlConversionFailure(3, SqlType::Text, Box::new(e)))?;
+            Some(PaymentPreimage(preimage_slice))
+        },
+        None => None,
+    };
+
+    let maybe_secret = row.get::<_, Option<String>>(4)?;
+    let secret = match maybe_secret {
+        Some(s) => {
+            let mut secret_slice = [0u8; 32];
+            hex::decode_to_slice(s, &mut secret_slice as &mut [u8])
+                .map_err(|e| SqlError::FromSqlConversionFailure(4, SqlType::Text, Box::new(e)))?;
+            Some(PaymentSecret(secret_slice))
+        },
+        None => None,
+    };
+
     let payment_info = PaymentInfo {
-        payment_hash: PaymentHash(
-            hex::decode(row.get::<_, String>(0)?)
-                .expect("Payment hash decoding should not fail!")
-                .try_into()
-                .expect("String should be 64 characters!"),
-        ),
+        payment_hash,
         payment_type,
         description: row.get(2)?,
-        preimage: row.get::<_, String>(3).ok().map(|p| {
-            PaymentPreimage(
-                hex::decode(p)
-                    .expect("Preimage decoding should not fail!")
-                    .try_into()
-                    .expect("String should be 64 characters!"),
-            )
-        }),
-        secret: row.get::<_, String>(4).ok().map(|s| {
-            PaymentSecret(
-                hex::decode(s)
-                    .expect("Secret decoding should not fail!")
-                    .try_into()
-                    .expect("String should be 64 characters!"),
-            )
-        }),
-        amt_msat: row.get::<_, u32>(5).ok().map(|v| v as u64),
-        fee_paid_msat: row.get::<_, u32>(6).ok().map(|v| v as u64),
+        preimage,
+        secret,
+        amt_msat: row.get::<_, Option<u32>>(5)?.map(|v| v as u64),
+        fee_paid_msat: row.get::<_, Option<u32>>(6)?.map(|v| v as u64),
         status: HTLCStatus::from_str(&row.get::<_, String>(7)?)?,
         created_at: row.get::<_, u32>(9)? as u64,
         last_updated: row.get::<_, u32>(10)? as u64,
@@ -332,12 +343,12 @@ fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
 
     let sql = format!(
         "UPDATE {} SET
-            funding_tx = ?2,
-            funding_value = ?3,
-            funding_generated_in_block = ?4,
-            last_updated = ?5
+            funding_tx = ?1,
+            funding_value = ?2,
+            funding_generated_in_block = ?3,
+            last_updated = ?4
         WHERE
-            rpc_id = ?1;",
+            rpc_id = ?5;",
         table_name
     );
 
@@ -349,7 +360,7 @@ fn update_funding_tx_block_height_sql(for_coin: &str) -> Result<String, SqlError
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET funding_generated_in_block = ?2 WHERE funding_tx = ?1;",
+        "UPDATE {} SET funding_generated_in_block = ?1 WHERE funding_tx = ?2;",
         table_name
     );
 
@@ -361,7 +372,7 @@ fn update_channel_to_closed_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET closure_reason = ?2, is_closed = ?3, last_updated = ?4 WHERE rpc_id = ?1;",
+        "UPDATE {} SET closure_reason = ?1, is_closed = ?2, last_updated = ?3 WHERE rpc_id = ?4;",
         table_name
     );
 
@@ -373,7 +384,7 @@ fn update_closing_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET closing_tx = ?2, last_updated = ?3 WHERE rpc_id = ?1;",
+        "UPDATE {} SET closing_tx = ?1, last_updated = ?2 WHERE rpc_id = ?3;",
         table_name
     );
 
@@ -570,7 +581,7 @@ fn update_claiming_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET claiming_tx = ?2, claimed_balance = ?3, last_updated = ?4 WHERE closing_tx = ?1;",
+        "UPDATE {} SET claiming_tx = ?1, claimed_balance = ?2, last_updated = ?3 WHERE closing_tx = ?4;",
         table_name
     );
 
@@ -1026,17 +1037,17 @@ impl DbStorage for LightningPersister {
         funding_generated_in_block: u64,
     ) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
-        let rpc_id = rpc_id.to_string();
         let funding_value = funding_value.to_string();
         let funding_generated_in_block = funding_generated_in_block.to_string();
         let last_updated = (now_ms() / 1000).to_string();
+        let rpc_id = rpc_id.to_string();
 
         let params = [
-            rpc_id,
             funding_tx,
             funding_value,
             funding_generated_in_block,
             last_updated,
+            rpc_id,
         ];
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -1058,7 +1069,7 @@ impl DbStorage for LightningPersister {
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [&funding_tx as &dyn ToSql, &generated_in_block as &dyn ToSql];
+            let params = [&generated_in_block as &dyn ToSql, &funding_tx as &dyn ToSql];
             sql_transaction.execute(&update_funding_tx_block_height_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -1068,11 +1079,11 @@ impl DbStorage for LightningPersister {
 
     async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
-        let rpc_id = rpc_id.to_string();
         let is_closed = "1".to_string();
         let last_updated = (now_ms() / 1000).to_string();
+        let rpc_id = rpc_id.to_string();
 
-        let params = [rpc_id, closure_reason, is_closed, last_updated];
+        let params = [closure_reason, is_closed, last_updated, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1106,10 +1117,10 @@ impl DbStorage for LightningPersister {
 
     async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
-        let rpc_id = rpc_id.to_string();
         let last_updated = (now_ms() / 1000).to_string();
+        let rpc_id = rpc_id.to_string();
 
-        let params = [rpc_id, closing_tx, last_updated];
+        let params = [closing_tx, last_updated, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1132,7 +1143,7 @@ impl DbStorage for LightningPersister {
         let claimed_balance = claimed_balance.to_string();
         let last_updated = (now_ms() / 1000).to_string();
 
-        let params = [closing_tx, claiming_tx, claimed_balance, last_updated];
+        let params = [claiming_tx, claimed_balance, last_updated, closing_tx];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {

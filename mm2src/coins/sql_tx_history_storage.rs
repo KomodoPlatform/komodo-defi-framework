@@ -21,17 +21,18 @@ fn create_tx_history_table_sql(for_coin: &str) -> Result<String, MmError<SqlErro
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
-        + &table_name
-        + " (
-        id INTEGER NOT NULL PRIMARY KEY,
-        tx_hash VARCHAR(255) NOT NULL,
-        internal_id VARCHAR(255) NOT NULL UNIQUE,
-        block_height INTEGER NOT NULL,
-        confirmation_status INTEGER NOT NULL,
-        token_id VARCHAR(255) NOT NULL,
-        details_json TEXT
-    );";
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            id INTEGER NOT NULL PRIMARY KEY,
+            tx_hash VARCHAR(255) NOT NULL,
+            internal_id VARCHAR(255) NOT NULL UNIQUE,
+            block_height INTEGER NOT NULL,
+            confirmation_status INTEGER NOT NULL,
+            token_id VARCHAR(255) NOT NULL,
+            details_json TEXT
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -40,12 +41,13 @@ fn create_tx_cache_table_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     let table_name = tx_cache_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "CREATE TABLE IF NOT EXISTS ".to_owned()
-        + &table_name
-        + " (
-        tx_hash VARCHAR(255) NOT NULL UNIQUE,
-        tx_hex TEXT NOT NULL
-    );";
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            tx_hash VARCHAR(255) NOT NULL UNIQUE,
+            tx_hex TEXT NOT NULL
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -54,9 +56,19 @@ fn insert_tx_in_history_sql(for_coin: &str) -> Result<String, MmError<SqlError>>
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "INSERT INTO ".to_owned()
-        + &table_name
-        + " (tx_hash, internal_id, block_height, confirmation_status, token_id, details_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6);";
+    let sql = format!(
+        "INSERT INTO {} (
+            tx_hash,
+            internal_id,
+            block_height,
+            confirmation_status,
+            token_id,
+            details_json
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6
+        );",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -66,7 +78,10 @@ fn insert_tx_in_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     validate_table_name(&table_name)?;
 
     // We can simply ignore the repetitive attempt to insert the same tx_hash
-    let sql = "INSERT OR IGNORE INTO ".to_owned() + &table_name + " (tx_hash, tx_hex) VALUES (?1, ?2);";
+    let sql = format!(
+        "INSERT OR IGNORE INTO {} (tx_hash, tx_hex) VALUES (?1, ?2);",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -75,7 +90,7 @@ fn remove_tx_from_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmE
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "DELETE FROM ".to_owned() + &table_name + " WHERE internal_id=?1;";
+    let sql = format!("DELETE FROM {} WHERE internal_id=?1;", table_name);
 
     Ok(sql)
 }
@@ -84,7 +99,7 @@ fn select_tx_from_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmE
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT details_json FROM ".to_owned() + &table_name + " WHERE internal_id=?1;";
+    let sql = format!("SELECT details_json FROM {} WHERE internal_id=?1;", table_name);
 
     Ok(sql)
 }
@@ -93,9 +108,15 @@ fn update_tx_in_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmErr
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "UPDATE ".to_owned()
-        + &table_name
-        + " SET block_height = ?1, confirmation_status = ?2, details_json = ?3 WHERE internal_id=?4;";
+    let sql = format!(
+        "UPDATE {} SET
+            block_height = ?1,
+            confirmation_status = ?2,
+            details_json = ?3
+        WHERE
+            internal_id=?4;",
+        table_name
+    );
 
     Ok(sql)
 }
@@ -104,7 +125,7 @@ fn contains_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmErr
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT COUNT(id) FROM ".to_owned() + &table_name + " WHERE confirmation_status = 0;";
+    let sql = format!("SELECT COUNT(id) FROM {} WHERE confirmation_status = 0;", table_name);
 
     Ok(sql)
 }
@@ -113,7 +134,7 @@ fn get_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmError<Sq
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT details_json FROM ".to_owned() + &table_name + " WHERE confirmation_status = 0;";
+    let sql = format!("SELECT details_json FROM {} WHERE confirmation_status = 0;", table_name);
 
     Ok(sql)
 }
@@ -122,7 +143,7 @@ fn has_transactions_with_hash_sql(for_coin: &str) -> Result<String, MmError<SqlE
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT COUNT(id) FROM ".to_owned() + &table_name + " WHERE tx_hash = ?1;";
+    let sql = format!("SELECT COUNT(id) FROM {} WHERE tx_hash = ?1;", table_name);
 
     Ok(sql)
 }
@@ -131,7 +152,7 @@ fn unique_tx_hashes_num_sql(for_coin: &str) -> Result<String, MmError<SqlError>>
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT COUNT(DISTINCT tx_hash) FROM ".to_owned() + &table_name + ";";
+    let sql = format!("SELECT COUNT(DISTINCT tx_hash) FROM {};", table_name);
 
     Ok(sql)
 }
@@ -140,7 +161,7 @@ fn get_tx_hex_from_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     let table_name = tx_cache_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = "SELECT tx_hex FROM ".to_owned() + &table_name + " WHERE tx_hash = ?1 LIMIT 1;";
+    let sql = format!("SELECT tx_hex FROM {} WHERE tx_hash = ?1 LIMIT 1;", table_name);
 
     Ok(sql)
 }
@@ -172,7 +193,7 @@ impl SqliteTxHistoryStorage {
 
     fn is_table_empty(&self, table_name: &str) -> bool {
         validate_table_name(table_name).unwrap();
-        let sql = "SELECT COUNT(id) FROM ".to_owned() + table_name + ";";
+        let sql = format!("SELECT COUNT(id) FROM {};", table_name);
         let conn = self.0.lock().unwrap();
         let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
         rows_count == 0
@@ -301,7 +322,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            query_single_row(&conn, &sql, params, tx_details_from_row).map_err(From::from)
+            query_single_row(&conn, &sql, params, tx_details_from_row).map_to_mm(SqlError::from)
         })
         .await
     }
