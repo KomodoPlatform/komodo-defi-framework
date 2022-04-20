@@ -12,17 +12,14 @@ use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccou
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureError, SignatureResult, SwapOps,
-            TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WithdrawFut, WithdrawSenderAddress};
-use bitcrypto::dhash256;
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
-use keys::CompactSignature;
-use serialization::{CoinVariant, CompactInteger, Serializable, Stream};
+use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone, Debug)]
@@ -451,38 +448,16 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
-    /// Hash message for signature using Bitcoin's message signing format.
-    /// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        let message_prefix = self.utxo_arc.conf.sign_message_prefix.clone()?;
-        let mut stream = Stream::new();
-        let prefix_len = CompactInteger::from(message_prefix.len());
-        prefix_len.serialize(&mut stream);
-        stream.append_slice(message_prefix.as_bytes());
-        let msg_len = CompactInteger::from(message.len());
-        msg_len.serialize(&mut stream);
-        stream.append_slice(message.as_bytes());
-        Some(dhash256(&stream.out()).take())
+        utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let private_key = &self.utxo_arc.priv_key_policy.key_pair_or_err()?.private();
-        let signature = private_key.sign_compact(&H256::from(message_hash))?;
-        Ok(base64::encode(&*signature))
+        utxo_common::sign_message(self.as_ref(), message)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
-        let message_hash = self
-            .sign_message_hash(message)
-            .ok_or(VerificationError::PrefixNotFound)?;
-        let signature = CompactSignature::from(base64::decode(signature_base64)?);
-        let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-        let address_from_pubkey = self
-            .address_from_pubkey(&pubkey)
-            .display_address()
-            .map_err(VerificationError::InternalError)?;
-        Ok(address_from_pubkey == address)
+        utxo_common::verify_message(self, signature_base64, message, address)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }
