@@ -314,5 +314,13 @@ fn try_grpc() {
     let balance = db_read
         .get_balance_at(AccountId(0), BlockHeight::from_u32(60462))
         .unwrap();
-    println!("{:?}", balance);
+
+    println!("balance {:?}", balance);
+
+    let notes = db_read
+        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(60462))
+        .unwrap();
+    for note in notes {
+        println!("{:?}", note.note_value);
+    }
 }
