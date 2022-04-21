@@ -96,8 +96,7 @@ impl consensus::Parameters for ARRRConsensusParams {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-// TODO change this to one supplied by team, DO NOT USE IN PRODUCTION
-const DEX_FEE_Z_ADDR: &str = "zs18zh7mw38jpgr9v80xgx33s594zg9e59232v2gz4xx3k9wepfcv4kdpuca24tvruqnsxkgl7y704";
+const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
