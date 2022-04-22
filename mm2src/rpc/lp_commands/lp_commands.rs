@@ -4,7 +4,7 @@ use common::HttpStatusCode;
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use http::StatusCode;
-use rpc::v1::types::H160;
+use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
 
 pub type GetPublicKeyRpcResult<T> = Result<T, MmError<GetPublicKeyError>>;
@@ -39,10 +39,10 @@ pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<Get
 
 #[derive(Serialize)]
 pub struct GetPublicKeyHashResponse {
-    public_key_hash: H160,
+    public_key_hash: H160Json,
 }
 
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {
-    let public_key_hash: H160 = ctx.rmd160().to_owned().into();
+    let public_key_hash: H160Json = ctx.rmd160().to_owned().into();
     Ok(GetPublicKeyHashResponse { public_key_hash })
 }
