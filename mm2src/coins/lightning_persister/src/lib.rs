@@ -170,7 +170,7 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn insert_or_update_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+fn upsert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -196,7 +196,7 @@ fn insert_or_update_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn select_channel_from_table_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
+fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -227,7 +227,7 @@ fn select_channel_from_table_by_rpc_id_sql(for_coin: &str) -> Result<String, Sql
     Ok(sql)
 }
 
-fn select_payment_from_table_by_hash_sql(for_coin: &str) -> Result<String, SqlError> {
+fn select_payment_by_hash_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -1158,7 +1158,7 @@ impl DbStorage for LightningPersister {
 
     async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error> {
         let params = [rpc_id.to_string()];
-        let sql = select_channel_from_table_by_rpc_id_sql(self.storage_ticker.as_str())?;
+        let sql = select_channel_by_rpc_id_sql(self.storage_ticker.as_str())?;
         let sqlite_connection = self.sqlite_connection.clone();
 
         async_blocking(move || {
@@ -1267,7 +1267,7 @@ impl DbStorage for LightningPersister {
             ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&insert_or_update_payment_sql(&for_coin)?, &params)?;
+            sql_transaction.execute(&upsert_payment_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -1276,7 +1276,7 @@ impl DbStorage for LightningPersister {
 
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
-        let sql = select_payment_from_table_by_hash_sql(self.storage_ticker.as_str())?;
+        let sql = select_payment_by_hash_sql(self.storage_ticker.as_str())?;
         let sqlite_connection = self.sqlite_connection.clone();
 
         async_blocking(move || {

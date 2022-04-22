@@ -62,11 +62,12 @@ pub async fn connect_to_node(
             std::task::Poll::Pending => {},
         }
 
-        match peer_manager.get_peer_node_ids().contains(&pubkey) {
-            true => break,
-            // Wait for the handshake to complete if false.
-            false => Timer::sleep_ms(10).await,
+        if peer_manager.get_peer_node_ids().contains(&pubkey) {
+            break;
         }
+
+        // Wait for the handshake to complete
+        Timer::sleep_ms(10).await;
     }
 
     Ok(ConnectToNodeRes::ConnectedSuccessfully { pubkey, node_addr })

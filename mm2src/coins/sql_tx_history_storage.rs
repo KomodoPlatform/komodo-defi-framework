@@ -86,7 +86,7 @@ fn insert_tx_in_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     Ok(sql)
 }
 
-fn remove_tx_from_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
+fn remove_tx_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -95,7 +95,7 @@ fn remove_tx_from_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmE
     Ok(sql)
 }
 
-fn select_tx_from_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
+fn select_tx_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(for_coin);
     validate_table_name(&table_name)?;
 
@@ -292,7 +292,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         for_coin: &str,
         internal_id: &BytesJson,
     ) -> Result<RemoveTxResult, MmError<Self::Error>> {
-        let sql = remove_tx_from_table_by_internal_id_sql(for_coin)?;
+        let sql = remove_tx_by_internal_id_sql(for_coin)?;
         let params = [format!("{:02x}", internal_id)];
         let selfi = self.clone();
 
@@ -317,7 +317,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         internal_id: &BytesJson,
     ) -> Result<Option<TransactionDetails>, MmError<Self::Error>> {
         let params = [format!("{:02x}", internal_id)];
-        let sql = select_tx_from_table_by_internal_id_sql(for_coin)?;
+        let sql = select_tx_by_internal_id_sql(for_coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {

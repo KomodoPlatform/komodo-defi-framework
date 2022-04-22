@@ -103,6 +103,7 @@ impl fmt::Debug for LightningCoin {
 impl LightningCoin {
     fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
+    #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
     fn get_balance_msat(&self) -> (u64, u64) {

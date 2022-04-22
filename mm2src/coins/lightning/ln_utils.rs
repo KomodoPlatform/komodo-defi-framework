@@ -35,8 +35,10 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
 
+#[inline]
 fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
 
+#[inline]
 fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {
     path.map(|p| {
         PathBuf::from(&p)

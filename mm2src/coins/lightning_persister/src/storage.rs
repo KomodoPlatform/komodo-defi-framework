@@ -66,6 +66,7 @@ pub struct SqlChannelDetails {
 }
 
 impl SqlChannelDetails {
+    #[inline]
     pub fn new(
         rpc_id: u64,
         channel_id: [u8; 32],

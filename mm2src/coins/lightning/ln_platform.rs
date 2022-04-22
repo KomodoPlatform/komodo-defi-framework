@@ -28,6 +28,7 @@ const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 
+#[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
 
 struct TxWithBlockInfo {
@@ -225,12 +226,15 @@ impl Platform {
         }
     }
 
+    #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 
+    #[inline]
     pub fn update_best_block_height(&self, new_height: u64) {
         self.best_block_height.store(new_height, AtomicOrdering::Relaxed);
     }
 
+    #[inline]
     pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
 
     pub fn add_tx(&self, txid: Txid, script_pubkey: Script) {
@@ -524,6 +528,7 @@ impl BroadcasterInterface for Platform {
 
 impl Filter for Platform {
     // Watches for this transaction on-chain
+    #[inline]
     fn register_tx(&self, txid: &Txid, script_pubkey: &Script) { self.add_tx(*txid, script_pubkey.clone()); }
 
     // Watches for any transactions that spend this output on-chain
