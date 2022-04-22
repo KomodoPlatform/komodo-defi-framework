@@ -8434,25 +8434,20 @@ fn test_get_public_key_hash() {
         None,
     )
     .unwrap();
-
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({"Log path: {}", mm.log_path.display()});
-
-    fn get_public_key_hash_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
-        block_on(mm.rpc(json!({
+    let resp = block_on(mm.rpc(json!({
                  "userpass": "password",
                  "mmrpc": "2.0",
                  "method": "get_public_key_hash",
                  "params": {},
                  "id": 0})))
-        .unwrap()
-    }
-    let resp = get_public_key_hash_bot_rpc(&mm);
+    .unwrap();
 
     // Must be 200
-    assert_eq!(resp.0, 200);
+    assert_eq!(resp.0, StatusCode::OK);
     let v: RpcV2Response<GetPublicKeyHashResult> = serde_json::from_str(&*resp.1).unwrap();
-    println!("{}", v.result.public_key_hash);
+    // Public key hash must be "b506088aa2a3b4bb1da3a29bf00ce1a550ea1df9"
     assert_eq!(v.result.public_key_hash, "b506088aa2a3b4bb1da3a29bf00ce1a550ea1df9")
 }
 

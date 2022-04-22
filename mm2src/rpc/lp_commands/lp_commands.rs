@@ -6,8 +6,8 @@ use derive_more::Display;
 use http::StatusCode;
 use serde_json::Value as Json;
 
-// Start get_public_key rpc implementation
 pub type GetPublicKeyRpcResult<T> = Result<T, MmError<GetPublicKeyError>>;
+
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetPublicKeyError {
@@ -35,16 +35,13 @@ pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<Get
     let public_key = CryptoCtx::from_ctx(&ctx)?.secp256k1_pubkey().to_string();
     Ok(GetPublicKeyResponse { public_key })
 }
-// End get_public_key rpc implementation
 
-
-// Start get_public_key_hash rpc implementation
 #[derive(Serialize)]
 pub struct GetPublicKeyHashResponse {
     public_key_hash: String,
 }
+
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {
     let public_key_hash = ctx.rmd160().to_string();
     Ok(GetPublicKeyHashResponse { public_key_hash })
 }
-// end get_public_key_hash rpc implementation
