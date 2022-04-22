@@ -55,7 +55,7 @@
 //  marketmaker
 //
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, peer_id_from_secp_public};
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -183,10 +183,7 @@ pub fn broadcast_swap_message_every(
 /// Broadcast the swap message once
 pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<KeyPair>) {
     let (p2p_private, from) = match p2p_privkey {
-        Some(keypair) => {
-            let peer_id = peer_id_from_secp_public(keypair.public_slice()).expect("valid pubkey");
-            (keypair.private_bytes(), Some(peer_id))
-        },
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private().secret.take(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();

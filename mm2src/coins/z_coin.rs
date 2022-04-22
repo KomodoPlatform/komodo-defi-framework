@@ -149,12 +149,16 @@ pub struct ZOutput {
 }
 
 impl ZCoin {
+    #[inline(always)]
     pub fn z_rpc(&self) -> &(dyn ZRpcOps + Send + Sync) { self.utxo_arc.rpc_client.as_ref() }
 
+    #[inline(always)]
     pub fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
 
+    #[inline(always)]
     pub fn is_sapling_state_synced(&self) -> bool { self.z_fields.sapling_state_synced.load(AtomicOrdering::Relaxed) }
 
+    #[inline(always)]
     pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
 
     /// Returns all unspents included currently unspendable (not confirmed)
@@ -353,6 +357,7 @@ impl ZCoin {
         Ok(tx)
     }
 
+    #[inline(always)]
     fn sqlite_conn(&self) -> MutexGuard<'_, Connection> { self.z_fields.sqlite.lock().unwrap() }
 
     pub async fn get_unspent_witness(
@@ -400,6 +405,7 @@ impl ZCoin {
         witness.or_mm_err(|| GetUnspentWitnessErr::OutputCmuNotFoundInCache)
     }
 
+    #[inline(always)]
     fn into_weak_parts(self) -> (UtxoWeak, Weak<ZCoinFields>) {
         (self.utxo_arc.downgrade(), Arc::downgrade(&self.z_fields))
     }
@@ -627,7 +633,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         db_dir_path.push(&db_name);
         let sqlite = tokio::task::block_in_place(move || {
             if !db_dir_path.exists() {
-                let default_cache_path = PathBuf::new().join("./").join(db_name);
+                let default_cache_path = PathBuf::from(format!("./{}", db_name));
                 if !default_cache_path.exists() {
                     return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
                         path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),

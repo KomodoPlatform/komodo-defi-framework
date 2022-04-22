@@ -56,8 +56,8 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, peer_id_from_secp_public, request_any_relay, request_one_peer,
-                             subscribe_to_topic, P2PRequest};
+use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, Libp2pPeerId,
+                             P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
                           lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
@@ -924,10 +924,7 @@ fn maker_order_created_p2p_notify(
 
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
     let (key_pair, peer_id) = match order.p2p_keypair() {
-        Some(k) => {
-            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
-            (k, peer_id)
-        },
+        Some(k) => (k, Some(k.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair(), None),
     };
 
@@ -956,10 +953,7 @@ fn maker_order_updated_p2p_notify(
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
     let (secret, peer_id) = match p2p_privkey {
-        Some(k) => {
-            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
-            (k.private_bytes(), peer_id)
-        },
+        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private_bytes(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
@@ -2213,10 +2207,7 @@ fn broadcast_ordermatch_message(
     p2p_privkey: Option<&KeyPair>,
 ) {
     let (secret, peer_id) = match p2p_privkey {
-        Some(k) => {
-            let peer_id = Some(peer_id_from_secp_public(k.public_slice()).expect("valid public"));
-            (k.private_bytes(), peer_id)
-        },
+        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private_bytes(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();

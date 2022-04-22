@@ -23,6 +23,7 @@ use common::mm_error::prelude::*;
 use common::mm_metrics::{ClockOps, MetricsOps};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
+use keys::KeyPair;
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
 use mm2_libp2p::peers_exchange::PeerAddresses;
@@ -37,6 +38,15 @@ use std::sync::Arc;
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
+
+pub trait Libp2pPeerId {
+    fn libp2p_peer_id(&self) -> PeerId;
+}
+
+impl Libp2pPeerId for KeyPair {
+    #[inline(always)]
+    fn libp2p_peer_id(&self) -> PeerId { peer_id_from_secp_public(self.public_slice()).expect("valid public") }
+}
 
 #[derive(Debug, Display)]
 #[allow(clippy::enum_variant_names)]

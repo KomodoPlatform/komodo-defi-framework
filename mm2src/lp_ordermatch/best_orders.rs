@@ -211,10 +211,10 @@ pub async fn best_orders_rpc_v2(
     ctx: MmArc,
     req: BestOrdersRequest,
 ) -> Result<BestOrdersV2Response, MmError<BestOrdersRpcError>> {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     if is_wallet_only_ticker(&ctx, &req.coin) {
         return MmError::err(BestOrdersRpcError::CoinIsWalletOnly(req.coin));
     }
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let p2p_request = OrdermatchRequest::BestOrders {
         coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
         action: req.action,
