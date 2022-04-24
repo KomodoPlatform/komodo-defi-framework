@@ -77,6 +77,10 @@ For a curated list of AtomicDEX based projects and resources, check out [Awesome
 
 If you want to build from source, the following prerequisites are required:
 - [Rustup](https://rustup.rs/)
+- [Cmake](https://cmake.org/download/) version 3.12 or higher
+- OS specific build tools (e.g. [build-essential](https://linuxhint.com/install-build-essential-ubuntu/) on Linux, [XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12) on OSX or [MSVC](https://docs.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=vs-2017) on Win)
+- (Optional) OSX: install [openssl](https://www.openssl.org/), e.g. `brew install openssl`.
+- (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 - Additional Rust Components
     ```
     rustup install nightly-2022-02-01
