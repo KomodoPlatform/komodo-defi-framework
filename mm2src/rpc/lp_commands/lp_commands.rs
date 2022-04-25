@@ -43,6 +43,6 @@ pub struct GetPublicKeyHashResponse {
 }
 
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {
-    let public_key_hash: H160Json = ctx.rmd160().to_owned().into();
+    let public_key_hash = ctx.rmd160().to_owned().into();
     Ok(GetPublicKeyHashResponse { public_key_hash })
 }

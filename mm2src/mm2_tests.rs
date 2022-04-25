@@ -8414,6 +8414,7 @@ fn test_get_public_key() {
         "022cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420"
     )
 }
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_public_key_hash() {
