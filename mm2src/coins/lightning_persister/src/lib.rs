@@ -24,10 +24,10 @@ use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::Network;
 use common::fs::check_dir_operations;
 use common::{async_blocking, now_ms, PagingOptionsEnum};
-use db_common::sqlite::rusqlite::types::Type as SqlType;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{offset_by_id, query_single_row, string_from_row, validate_table_name, SqliteConnShared,
+use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
+                        sql_text_conversion_err, string_from_row, validate_table_name, SqliteConnShared,
                         CHECK_TABLE_EXISTS_SQL};
 use lightning::chain;
 use lightning::chain::chaininterface::{BroadcasterInterface, FeeEstimator};
@@ -279,46 +279,18 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
     let payment_type = if is_outbound {
         PaymentType::OutboundPayment {
-            destination: PublicKey::from_str(&row.get::<_, String>(1)?)
-                .map_err(|e| SqlError::FromSqlConversionFailure(1, SqlType::Text, Box::new(e)))?,
+            destination: PublicKey::from_str(&row.get::<_, String>(1)?).map_err(|e| sql_text_conversion_err(1, e))?,
         }
     } else {
         PaymentType::InboundPayment
     };
 
-    let mut hash_slice = [0u8; 32];
-    hex::decode_to_slice(row.get::<_, String>(0)?, &mut hash_slice as &mut [u8])
-        .map_err(|e| SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e)))?;
-    let payment_hash = PaymentHash(hash_slice);
-
-    let maybe_preimage = row.get::<_, Option<String>>(3)?;
-    let preimage = match maybe_preimage {
-        Some(p) => {
-            let mut preimage_slice = [0u8; 32];
-            hex::decode_to_slice(p, &mut preimage_slice as &mut [u8])
-                .map_err(|e| SqlError::FromSqlConversionFailure(3, SqlType::Text, Box::new(e)))?;
-            Some(PaymentPreimage(preimage_slice))
-        },
-        None => None,
-    };
-
-    let maybe_secret = row.get::<_, Option<String>>(4)?;
-    let secret = match maybe_secret {
-        Some(s) => {
-            let mut secret_slice = [0u8; 32];
-            hex::decode_to_slice(s, &mut secret_slice as &mut [u8])
-                .map_err(|e| SqlError::FromSqlConversionFailure(4, SqlType::Text, Box::new(e)))?;
-            Some(PaymentSecret(secret_slice))
-        },
-        None => None,
-    };
-
     let payment_info = PaymentInfo {
-        payment_hash,
+        payment_hash: PaymentHash(h256_slice_from_row::<String>(row, 0)?),
         payment_type,
         description: row.get(2)?,
-        preimage,
-        secret,
+        preimage: h256_option_slice_from_row::<String>(row, 3)?.map(PaymentPreimage),
+        secret: h256_option_slice_from_row::<String>(row, 4)?.map(PaymentSecret),
         amt_msat: row.get::<_, Option<u32>>(5)?.map(|v| v as u64),
         fee_paid_msat: row.get::<_, Option<u32>>(6)?.map(|v| v as u64),
         status: HTLCStatus::from_str(&row.get::<_, String>(7)?)?,
