@@ -41,12 +41,16 @@
 1. Set up [WASM Build Environment](../docs/WASM_BUILD.md#Setting-up-the-environment)
 2. Install Firefox.
 3. Download [Gecko driver](https://github.com/mozilla/geckodriver/releases) for your OS
-4. Set `wasm-pack` specific environment variables
+4. Set environment variables required to run WASM tests
+   ```shell
+   # wasm-bindgen specific variables
+   export WASM_BINDGEN_TEST_TIMEOUT=120
+   export GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN
+   # MarketMaker specific variables
+   export BOB_PASSPHRASE="also shoot benefit prefer juice shell elder veteran woman mimic image kidney"
+   export ALICE_PASSPHRASE="spice describe gravity federal blast come thank unfair canal monkey style afraid"
    ```
-   WASM_BINDGEN_TEST_TIMEOUT=120
-   GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN
-   ```
-5. Run WASM tests
+6. Run WASM tests
    - for Linux users:
    ```
    wasm-pack test --firefox --headless
