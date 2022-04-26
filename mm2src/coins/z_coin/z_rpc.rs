@@ -1,17 +1,30 @@
 use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
+use common::async_blocking;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
+use http::Uri;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
+use rustls::ClientConfig;
 use serde_json::{self as json, Value as Json};
+use std::path::Path;
+use tonic::transport::{Channel, ClientTlsConfig};
 use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::wallet::init::init_accounts_table;
+use zcash_client_sqlite::{BlockDb, WalletDb};
 use zcash_primitives::consensus::NetworkUpgrade;
+use zcash_primitives::consensus::{BlockHeight, Parameters};
+use zcash_primitives::constants::mainnet as z_mainnet_constants;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 use zcash_proofs::prover::LocalTxProver;
+
+mod z_coin_grpc {
+    tonic::include_proto!("cash.z.wallet.sdk.rpc");
+}
+use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 
 #[derive(Debug, Serialize)]
 pub struct ZSendManyItem {
@@ -151,8 +164,83 @@ impl AsRef<dyn ZRpcOps + Send + Sync> for UtxoRpcClientEnum {
     }
 }
 
-mod z_coin_grpc {
-    tonic::include_proto!("cash.z.wallet.sdk.rpc");
+pub struct ZcoinLightClient {
+    grpc_client: CompactTxStreamerClient<Channel>,
+    blocks_db: BlockDb,
+    wallet_db: WalletDb<ZombieNetwork>,
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ZcoinLightClientInitError {
+    TlsConfigFailure(tonic::transport::Error),
+    ConnectionFailure(tonic::transport::Error),
+    BlocksDbInitFailure(db_common::sqlite::rusqlite::Error),
+    WalletDbInitFailure(db_common::sqlite::rusqlite::Error),
+}
+
+impl ZcoinLightClient {
+    pub async fn init(
+        lightwalletd_url: Uri,
+        cache_db_path: impl AsRef<Path> + Send + 'static,
+        wallet_db_path: impl AsRef<Path> + Send + 'static,
+    ) -> Result<Self, MmError<ZcoinLightClientInitError>> {
+        let mut config = ClientConfig::new();
+        config
+            .root_store
+            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        config.set_protocols(&["h2".to_string().into()]);
+        let tls = ClientTlsConfig::new().rustls_client_config(config);
+
+        let channel = Channel::builder(lightwalletd_url)
+            .tls_config(tls)
+            .map_to_mm(ZcoinLightClientInitError::TlsConfigFailure)?
+            .connect()
+            .await
+            .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
+
+        let blocks_db = async_blocking(|| {
+            BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
+        })
+        .await?;
+
+        let wallet_db = async_blocking(|| {
+            WalletDb::for_path(wallet_db_path, ZombieNetwork).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+        })
+        .await?;
+
+        Ok(ZcoinLightClient {
+            grpc_client: CompactTxStreamerClient::new(channel),
+            blocks_db,
+            wallet_db,
+        })
+    }
+}
+
+#[derive(Copy, Clone)]
+struct ZombieNetwork;
+
+impl Parameters for ZombieNetwork {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Sapling => Some(BlockHeight::from(1)),
+            _ => None,
+        }
+    }
+
+    fn coin_type(&self) -> u32 { z_mainnet_constants::COIN_TYPE }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str { z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        z_mainnet_constants::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str { z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_PUBKEY_ADDRESS_PREFIX }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_SCRIPT_ADDRESS_PREFIX }
 }
 
 #[test]
@@ -161,18 +249,14 @@ fn try_grpc() {
     use common::block_on;
     use db_common::sqlite::rusqlite::{self, Connection, NO_PARAMS};
     use prost::Message;
-    use rustls::ClientConfig;
-    use tonic::transport::{Channel, ClientTlsConfig};
-    use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-    use z_coin_grpc::{BlockId, BlockRange, RawTransaction};
+    use std::str::FromStr;
+    use z_coin_grpc::{BlockId, BlockRange, ChainSpec, RawTransaction};
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
                                          BlockSource, WalletRead, WalletWrite};
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
                               BlockDb, WalletDb};
-    use zcash_primitives::consensus::{BlockHeight, Network, Parameters};
-    use zcash_primitives::constants::mainnet as z_mainnet_constants;
 
     pub fn init_cache_database(db_cache: &Connection) -> Result<(), rusqlite::Error> {
         db_cache.execute(
@@ -185,6 +269,14 @@ fn try_grpc() {
         Ok(())
     }
 
+    pub fn get_latest_block(db_cache: &Connection) -> Result<i64, rusqlite::Error> {
+        db_cache.query_row(
+            "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
+            NO_PARAMS,
+            |row| row.get(0),
+        )
+    }
+
     fn insert_into_cache(db_cache: &Connection, height: u32, cb_bytes: Vec<u8>) {
         db_cache
             .prepare("INSERT INTO compactblocks (height, data) VALUES (?, ?)")
@@ -195,73 +287,46 @@ fn try_grpc() {
 
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
-    let mut config = ClientConfig::new();
-    config
-        .root_store
-        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-    config.set_protocols(&["h2".to_string().into()]);
-    let tls = ClientTlsConfig::new().rustls_client_config(config);
-
-    let channel = block_on(
-        Channel::from_static("http://zombie.sirseven.me:443")
-            .tls_config(tls)
-            .unwrap()
-            .connect(),
-    )
+    let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
+    let mut client = block_on(ZcoinLightClient::init(
+        uri,
+        "test_cache_zombie.db",
+        "test_wallet_zombie.db",
+    ))
     .unwrap();
-    let mut client = CompactTxStreamerClient::new(channel);
 
-    const FROM_BLOCK: u64 = 61973;
-    const CURRENT_BLOCK: u64 = 61975;
-    let request = tonic::Request::new(BlockRange {
-        start: Some(BlockId {
-            height: FROM_BLOCK,
-            hash: Vec::new(),
-        }),
-        end: Some(BlockId {
-            height: CURRENT_BLOCK,
-            hash: Vec::new(),
-        }),
-    });
-
-    let mut response = block_on(client.get_block_range(request)).unwrap();
+    let request = tonic::Request::new(ChainSpec {});
+    let latest_block_response = block_on(client.grpc_client.get_latest_block(request)).unwrap();
+    let latest_block_height = latest_block_response.into_inner().height;
 
     let cache_file = "test_cache_zombie.db";
     let cache_sql = Connection::open(cache_file).unwrap();
     init_cache_database(&cache_sql).unwrap();
 
-    while let Ok(Some(block)) = block_on(response.get_mut().message()) {
-        println!("Got block {:?}", block);
-        insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
+    let from_block = get_latest_block(&cache_sql).unwrap() as u64 + 1;
+    let current_block: u64 = latest_block_height;
+
+    if current_block >= from_block {
+        let request = tonic::Request::new(BlockRange {
+            start: Some(BlockId {
+                height: from_block,
+                hash: Vec::new(),
+            }),
+            end: Some(BlockId {
+                height: current_block,
+                hash: Vec::new(),
+            }),
+        });
+
+        let mut response = block_on(client.grpc_client.get_block_range(request)).unwrap();
+
+        while let Ok(Some(block)) = block_on(response.get_mut().message()) {
+            println!("Got block {:?}", block);
+            insert_into_cache(&cache_sql, block.height as u32, block.encode_to_vec());
+        }
     }
 
     drop(cache_sql);
-
-    #[derive(Copy, Clone)]
-    struct ZombieNetwork;
-
-    impl Parameters for ZombieNetwork {
-        fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-            match nu {
-                NetworkUpgrade::Sapling => Some(BlockHeight::from(1)),
-                _ => None,
-            }
-        }
-
-        fn coin_type(&self) -> u32 { z_mainnet_constants::COIN_TYPE }
-
-        fn hrp_sapling_extended_spending_key(&self) -> &str { z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY }
-
-        fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-            z_mainnet_constants::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
-        }
-
-        fn hrp_sapling_payment_address(&self) -> &str { z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS }
-
-        fn b58_pubkey_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_PUBKEY_ADDRESS_PREFIX }
-
-        fn b58_script_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_SCRIPT_ADDRESS_PREFIX }
-    }
 
     let network = ZombieNetwork {};
     let db_cache = BlockDb::for_path(cache_file).unwrap();
@@ -315,19 +380,19 @@ fn try_grpc() {
     scan_cached_blocks(&network, &db_cache, &mut db_data, None).unwrap();
 
     let balance = db_read
-        .get_balance_at(AccountId(0), BlockHeight::from_u32(CURRENT_BLOCK as u32))
+        .get_balance_at(AccountId(0), BlockHeight::from_u32(current_block as u32))
         .unwrap();
 
     println!("balance {:?}", balance);
 
     let notes = db_read
-        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(CURRENT_BLOCK as u32))
+        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(current_block as u32))
         .unwrap();
 
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 
-    let mut tx_builder = ZTxBuilder::new(ZombieNetwork {}, BlockHeight::from_u32(CURRENT_BLOCK as u32));
+    let mut tx_builder = ZTxBuilder::new(ZombieNetwork {}, BlockHeight::from_u32(current_block as u32));
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();
@@ -351,7 +416,7 @@ fn try_grpc() {
         .unwrap();
 
     let prover = LocalTxProver::with_default_location().unwrap();
-    let (transaction, meta) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();
+    let (transaction, _) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();
 
     println!("{:?}", transaction);
 
@@ -362,7 +427,7 @@ fn try_grpc() {
         data: tx_bytes,
         height: 0,
     });
-    let response = block_on(client.send_transaction(request)).unwrap();
+    let response = block_on(client.grpc_client.send_transaction(request)).unwrap();
 
     println!("{:?}", response);
 }
