@@ -10,14 +10,23 @@ pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
 use uuid::Uuid;
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-#[derive(Debug, Display)]
+#[derive(Debug, Display, PartialEq)]
 pub enum MySwapsError {
+    #[display(fmt = "Error serializing swap: {}", _0)]
     ErrorSerializingItem(String),
+    #[display(fmt = "Error deserializing swap: {}", _0)]
     ErrorDeserializingItem(String),
+    #[display(fmt = "Invalid timestamp range")]
     InvalidTimestampRange,
+    #[display(fmt = "Error saving swap: {}", _0)]
     ErrorSavingSwap(String),
+    #[display(fmt = "'from_uuid' not found: {}", _0)]
+    FromUuidNotFound(Uuid),
+    #[display(fmt = "Error parsing uuid: {}", _0)]
     UuidParse(uuid::parser::ParseError),
+    #[display(fmt = "Unknown SQL error: {}", _0)]
     UnknownSqlError(String),
+    #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
 
@@ -232,7 +241,7 @@ mod wasm_impl {
                 .map(|(_item_id, item)| OrderedUuid::from(item))
                 .collect();
             match paging_options {
-                Some(paging) => Ok(take_according_to_paging_opts(uuids, paging)),
+                Some(paging) => take_according_to_paging_opts(uuids, paging),
                 None => {
                     let total_count = uuids.len();
                     Ok(MyRecentSwapsUuids {
@@ -248,43 +257,33 @@ mod wasm_impl {
     pub(super) fn take_according_to_paging_opts(
         uuids: BTreeSet<OrderedUuid>,
         paging: &PagingOptions,
-    ) -> MyRecentSwapsUuids {
+    ) -> MySwapsResult<MyRecentSwapsUuids> {
         let total_count = uuids.len();
 
-        // page_number is ignored if from_uuid is set
-        if let Some(expected_uuid) = paging.from_uuid {
-            let mut skipped = 0;
-            let uuids = uuids
-                .into_iter()
-                .map(|ordered| ordered.uuid)
-                .skip_while(|uuid| {
-                    let skip = uuid != &expected_uuid;
-                    if skip {
-                        skipped += 1;
-                    }
-                    skip
-                })
-                .take(paging.limit)
-                .collect();
+        let skip = match paging.from_uuid {
+            // `page_number` is ignored if from_uuid is set
+            Some(expected_uuid) => {
+                uuids
+                    .iter()
+                    .position(|ordered_uuid| ordered_uuid.uuid == expected_uuid)
+                    .or_mm_err(|| MySwapsError::FromUuidNotFound(expected_uuid))?
+                    + 1
+            },
+            None => (paging.page_number.get() - 1) * paging.limit,
+        };
 
-            return MyRecentSwapsUuids {
-                uuids,
-                total_count,
-                skipped,
-            };
-        }
+        let uuids = uuids
+            .into_iter()
+            .map(|ordered| ordered.uuid)
+            .skip(skip)
+            .take(paging.limit)
+            .collect();
 
-        let skipped = (paging.page_number.get() - 1) * paging.limit;
-        MyRecentSwapsUuids {
-            uuids: uuids
-                .into_iter()
-                .skip(skipped)
-                .take(paging.limit)
-                .map(|ordered| ordered.uuid)
-                .collect(),
+        Ok(MyRecentSwapsUuids {
+            uuids,
             total_count,
-            skipped,
-        }
+            skipped: skip,
+        })
     }
 
     /// A swap identifier is ordered first by `started_at` and then by `uuid`.
@@ -410,14 +409,14 @@ mod wasm_tests {
             page_number: NonZeroUsize::new(10).unwrap(),
             from_uuid: Some(Uuid::parse_str("8f5b267a-efa8-49d6-a92d-ec0523cca891").unwrap()),
         };
-        let actual = take_according_to_paging_opts(uuids.clone(), &paging);
+        let actual = take_according_to_paging_opts(uuids.clone(), &paging).unwrap();
         let expected = MyRecentSwapsUuids {
             uuids: vec![
-                "8f5b267a-efa8-49d6-a92d-ec0523cca891".parse().unwrap(),
                 "983ce732-62a8-4a44-b4ac-7e4271adc977".parse().unwrap(),
+                "c52659d7-4e13-41f5-9c1a-30cc2f646033".parse().unwrap(),
             ],
             total_count: uuids.len(),
-            skipped: 5,
+            skipped: 6,
         };
         assert_eq!(actual, expected);
 
@@ -426,7 +425,7 @@ mod wasm_tests {
             page_number: NonZeroUsize::new(2).unwrap(),
             from_uuid: None,
         };
-        let actual = take_according_to_paging_opts(uuids.clone(), &paging);
+        let actual = take_according_to_paging_opts(uuids.clone(), &paging).unwrap();
         let expected = MyRecentSwapsUuids {
             uuids: vec![
                 "5acb0e63-8b26-469e-81df-7dd9e4a9ad15".parse().unwrap(),
@@ -438,6 +437,18 @@ mod wasm_tests {
         };
 
         assert_eq!(actual, expected);
+
+        let from_uuid = Uuid::parse_str("f87fa9ce-0820-4675-b85d-db18c7bc9fb4").unwrap();
+        let paging = PagingOptions {
+            limit: 3,
+            // has to be ignored
+            page_number: NonZeroUsize::new(10).unwrap(),
+            // unknown UUID
+            from_uuid: Some(from_uuid),
+        };
+        let actual = take_according_to_paging_opts(uuids.clone(), &paging)
+            .expect_err("'take_according_to_paging_opts' must return an error");
+        assert_eq!(actual.into_inner(), MySwapsError::FromUuidNotFound(from_uuid));
     }
 
     #[wasm_bindgen_test]
