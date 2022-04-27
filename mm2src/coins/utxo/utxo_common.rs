@@ -2946,18 +2946,14 @@ pub async fn validate_spv_proof<T: UtxoCommonOps>(
         return MmError::err(SPVError::InvalidVout);
     }
 
-    let (height, merkle_branch) = get_height_and_merkle_branch(client, &tx, try_spv_proof_until).await?;
-
-    let block_header = block_header_from_storage_or_rpc(&coin, height, &coin.as_ref().block_headers_storage, client)
-        .await
-        .map_err(|_e| SPVError::UnableToGetHeader)?;
+    let (merkle_branch, block_header) = spv_proof_retry_pool(&coin, client, &tx, try_spv_proof_until).await?;
     let raw_header = RawBlockHeader::new(block_header.raw().take())?;
-
     let intermediate_nodes: Vec<H256> = merkle_branch
         .merkle
         .into_iter()
         .map(|hash| hash.reversed().into())
         .collect();
+
     let proof = SPVProof {
         tx_id: tx.hash(),
         vin: serialize_list(&tx.inputs).take(),
@@ -2967,16 +2963,19 @@ pub async fn validate_spv_proof<T: UtxoCommonOps>(
         raw_header,
         intermediate_nodes,
     };
+
     proof.validate().map_err(MmError::new)
 }
 
-async fn get_height_and_merkle_branch(
+async fn spv_proof_retry_pool<T: UtxoCommonOps>(
+    coin: &T,
     client: &ElectrumClient,
     tx: &UtxoTx,
     try_spv_proof_until: u64,
-) -> Result<(u64, TxMerkleBranch), MmError<SPVError>> {
+) -> Result<(TxMerkleBranch, BlockHeader), MmError<SPVError>> {
     let mut height: Option<u64> = None;
     let mut merkle_branch: Option<TxMerkleBranch> = None;
+
     loop {
         if now_ms() / 1000 > try_spv_proof_until {
             error!(
@@ -2990,7 +2989,8 @@ async fn get_height_and_merkle_branch(
         if height.is_none() {
             match get_tx_height(tx, client).await {
                 Ok(h) => height = Some(h),
-                Err(_) => {
+                Err(e) => {
+                    debug!("`get_tx_height` returned an error {:?}", e);
                     error!("{:?}", SPVError::InvalidHeight);
                 },
             }
@@ -3002,13 +3002,24 @@ async fn get_height_and_merkle_branch(
                 .compat()
                 .await
             {
-                Ok(m) => {
-                    merkle_branch = Some(m);
-                    break;
-                },
+                Ok(m) => merkle_branch = Some(m),
                 Err(e) => {
                     debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
                     error!("{:?}", SPVError::UnableToGetMerkle);
+                },
+            }
+        }
+
+        if height.is_some() && merkle_branch.is_some() {
+            match block_header_from_storage_or_rpc(&coin, height.unwrap(), &coin.as_ref().block_headers_storage, client)
+                .await
+            {
+                Ok(block_header) => {
+                    return Ok((merkle_branch.unwrap(), block_header));
+                },
+                Err(e) => {
+                    debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
+                    error!("{:?}", SPVError::UnableToGetHeader);
                 },
             }
         }
@@ -3018,10 +3029,9 @@ async fn get_height_and_merkle_branch(
             tx.hash(),
             TRY_SPV_PROOF_INTERVAL,
         );
+
         Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
     }
-
-    Ok((height.unwrap(), merkle_branch.unwrap()))
 }
 
 pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
