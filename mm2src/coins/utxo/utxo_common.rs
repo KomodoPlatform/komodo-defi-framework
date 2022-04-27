@@ -2988,7 +2988,7 @@ async fn get_height_and_merkle_branch(
         }
 
         if height.is_none() {
-            match get_tx_height(&tx, client).await {
+            match get_tx_height(tx, client).await {
                 Ok(h) => height = Some(h),
                 Err(_e) => {
                     // error!("{:?}", e);
