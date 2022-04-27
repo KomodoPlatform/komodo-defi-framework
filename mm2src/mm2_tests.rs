@@ -6778,7 +6778,7 @@ fn test_get_public_key_hash() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({"Log path: {}", mm.log_path.display()});
-    let resp = block_on(mm.rpc(json!({
+    let resp = block_on(mm.rpc(&json!({
                  "userpass": "password",
                  "mmrpc": "2.0",
                  "method": "get_public_key_hash",
@@ -6819,7 +6819,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({"Log path: {}", mm.log_path.display()});
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -6832,7 +6832,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
         rc.1
     );
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -6869,7 +6869,7 @@ fn test_conf_settings_in_orderbook() {
     log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     log!("Issue set_price request for RICK/MORTY on Bob side");
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -6881,7 +6881,7 @@ fn test_conf_settings_in_orderbook() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Issue set_price request for MORTY/RICK on Bob side");
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MORTY",
@@ -6911,7 +6911,7 @@ fn test_conf_settings_in_orderbook() {
     log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -6974,7 +6974,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
 
     log!("Issue sell request on Bob side");
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -6985,7 +6985,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "mmrpc": "2.0",
         "method": "get_public_key",
@@ -7022,7 +7022,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -7042,7 +7042,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
