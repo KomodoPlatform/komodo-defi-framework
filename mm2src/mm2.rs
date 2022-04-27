@@ -28,6 +28,12 @@ use common::double_panic_crash;
 use common::log::LogLevel;
 use common::mm_ctx::MmCtxBuilder;
 
+#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
+#[cfg(feature = "custom-swap-locktime")]
+use lp_swap::PAYMENT_LOCKTIME;
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::Ordering;
+
 use derive_more::Display;
 use gstuff::slurp;
 use lazy_static::lazy_static;
@@ -66,6 +72,9 @@ pub mod mm2_tests;
 pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
+
+#[cfg(feature = "custom-swap-locktime")]
+const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
 #[derive(Serialize)]
 pub struct MmVersionResult {
@@ -204,6 +213,22 @@ fn check_password_policy() {
     password_policy("StrongPass123£StrongPass123£Pass").unwrap();
 }
 
+#[cfg(feature = "custom-swap-locktime")]
+/// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
+/// Assigns 900 if `payment_locktime` is invalid or not provided.
+fn initialize_payment_locktime(conf: &Json) {
+    match conf["payment_locktime"].as_u64() {
+        Some(lt) => PAYMENT_LOCKTIME.store(lt, Ordering::Relaxed),
+        None => {
+            warn!(
+                "payment_locktime is either invalid type or not provided in the configuration or
+                MM2.json file. payment_locktime will be proceeded as {} seconds.",
+                CUSTOM_PAYMENT_LOCKTIME_DEFAULT
+            );
+        },
+    };
+}
+
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
@@ -230,6 +255,9 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
             }
         }
     }
+
+    #[cfg(feature = "custom-swap-locktime")]
+    initialize_payment_locktime(&conf);
 
     let ctx = MmCtxBuilder::new()
         .with_conf(conf)
@@ -377,13 +405,10 @@ pub fn mm2_main() {
     }
 }
 
-/// Parses the `first_arg` as JSON and runs LP_main.
-/// Attempts to load the config from `MM2.json` file if `first_arg` is None
-///
-/// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+/// Parses and returns the `first_arg` as JSON.
+/// Attempts to load the config from `MM2.json` file if `first_arg` is None
+pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     let conf_path = env::var("MM_CONF_PATH").unwrap_or_else(|_| "MM2.json".into());
     let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
@@ -423,6 +448,17 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
             },
         }
     }
+
+    Ok(conf)
+}
+
+/// Runs LP_main with result of `get_mm2config()`.
+///
+/// * `ctx_cb` - Invoked with the MM context handle,
+///              allowing the `run_lp_main` caller to communicate with MM.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+    let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
 

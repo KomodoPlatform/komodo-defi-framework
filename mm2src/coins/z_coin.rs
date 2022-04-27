@@ -23,6 +23,8 @@ use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
 use common::{log, now_ms};
+use db_common::sqlite::rusqlite::types::Type;
+use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -31,8 +33,6 @@ use keys::hash::H256;
 use keys::{KeyPair, Public};
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H256 as H256Json};
-use rusqlite::types::Type;
-use rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize_list, CoinVariant, Reader};
@@ -64,9 +64,10 @@ mod z_rpc;
 use z_rpc::{ZRpcOps, ZUnspent};
 
 mod z_coin_errors;
-use z_coin_errors::*;
+pub use z_coin_errors::*;
 
-#[cfg(test)] mod z_coin_tests;
+#[cfg(all(test, feature = "zhtlc-native-tests"))]
+mod z_coin_tests;
 
 #[derive(Debug, Clone)]
 pub struct ARRRConsensusParams {}
@@ -95,8 +96,7 @@ impl consensus::Parameters for ARRRConsensusParams {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-// TODO change this to one supplied by team, DO NOT USE IN PRODUCTION
-const DEX_FEE_Z_ADDR: &str = "zs18zh7mw38jpgr9v80xgx33s594zg9e59232v2gz4xx3k9wepfcv4kdpuca24tvruqnsxkgl7y704";
+const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
@@ -149,9 +149,17 @@ pub struct ZOutput {
 }
 
 impl ZCoin {
+    #[inline(always)]
     pub fn z_rpc(&self) -> &(dyn ZRpcOps + Send + Sync) { self.utxo_arc.rpc_client.as_ref() }
 
+    #[inline(always)]
     pub fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
+
+    #[inline(always)]
+    pub fn is_sapling_state_synced(&self) -> bool { self.z_fields.sapling_state_synced.load(AtomicOrdering::Relaxed) }
+
+    #[inline(always)]
+    pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
 
     /// Returns all unspents included currently unspendable (not confirmed)
     async fn my_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
@@ -201,7 +209,7 @@ impl ZCoin {
         z_outputs: Vec<ZOutput>,
     ) -> Result<(ZTransaction, AdditionalTxData), MmError<GenTxError>> {
         let _lock = self.z_fields.z_unspent_mutex.lock().await;
-        while !self.z_fields.sapling_state_synced.load(AtomicOrdering::Relaxed) {
+        while !self.is_sapling_state_synced() {
             Timer::sleep(0.5).await
         }
         let tx_fee = self.get_one_kbyte_tx_fee().await?;
@@ -240,10 +248,9 @@ impl ZCoin {
         let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
 
         let mut ext = HashMap::new();
-        ext.insert(
-            AccountId::default(),
-            ExtendedFullViewingKey::from(&self.z_fields.z_spending_key),
-        );
+
+        let evk = ExtendedFullViewingKey::from(&self.z_fields.z_spending_key);
+        ext.insert(AccountId::default(), evk);
         let mut selected_notes_with_witness: Vec<(_, IncrementalWitness<Node>)> =
             Vec::with_capacity(selected_unspents.len());
 
@@ -311,7 +318,8 @@ impl ZCoin {
             tx_builder.add_tx_out(output);
         }
 
-        let (tx, _) = tx_builder.build(consensus::BranchId::Sapling, &self.z_fields.z_tx_prover)?;
+        let (tx, _) =
+            tokio::task::block_in_place(|| tx_builder.build(consensus::BranchId::Sapling, &self.z_fields.z_tx_prover))?;
 
         let additional_data = AdditionalTxData {
             received_by_me,
@@ -349,6 +357,7 @@ impl ZCoin {
         Ok(tx)
     }
 
+    #[inline(always)]
     fn sqlite_conn(&self) -> MutexGuard<'_, Connection> { self.z_fields.sqlite.lock().unwrap() }
 
     pub async fn get_unspent_witness(
@@ -358,7 +367,7 @@ impl ZCoin {
     ) -> Result<IncrementalWitness<Node>, MmError<GetUnspentWitnessErr>> {
         let mut attempts = 0;
         let states = loop {
-            let states = query_states_after_height(&self.sqlite_conn(), tx_height)?;
+            let states = tokio::task::block_in_place(|| query_states_after_height(&self.sqlite_conn(), tx_height))?;
             if states.is_empty() {
                 if attempts > 2 {
                     return MmError::err(GetUnspentWitnessErr::EmptyDbResult);
@@ -396,6 +405,7 @@ impl ZCoin {
         witness.or_mm_err(|| GetUnspentWitnessErr::OutputCmuNotFoundInCache)
     }
 
+    #[inline(always)]
     fn into_weak_parts(self) -> (UtxoWeak, Weak<ZCoinFields>) {
         (self.utxo_arc.downgrade(), Arc::downgrade(&self.z_fields))
     }
@@ -418,8 +428,8 @@ pub async fn z_coin_from_conf_and_params(
     conf: &Json,
     params: &UtxoActivationParams,
     secp_priv_key: &[u8],
-    db_dir_path: PathBuf,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
+    let db_dir_path = ctx.dbdir();
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
     z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir_path, z_key).await
 }
@@ -505,7 +515,8 @@ fn insert_block_state(conn: &Connection, state: SaplingBlockState) -> Result<(),
 }
 
 async fn sapling_state_cache_loop(coin: ZCoin) {
-    let (mut processed_height, mut current_tree) = match query_latest_block(&coin.sqlite_conn()) {
+    let query = tokio::task::block_in_place(|| query_latest_block(&coin.sqlite_conn()));
+    let (mut processed_height, mut current_tree) = match query {
         Ok(state) => {
             let mut tree = state.prev_tree_state;
             for cmu in state.cmus {
@@ -620,18 +631,22 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let mut db_dir_path = self.db_dir_path;
 
         db_dir_path.push(&db_name);
-        if !db_dir_path.exists() {
-            let default_cache_path = PathBuf::new().join("./").join(db_name);
-            if !default_cache_path.exists() {
-                return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
-                    path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
-                });
+        let sqlite = tokio::task::block_in_place(move || {
+            if !db_dir_path.exists() {
+                let default_cache_path = PathBuf::from(format!("./{}", db_name));
+                if !default_cache_path.exists() {
+                    return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
+                        path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
+                    });
+                }
+                std::fs::copy(default_cache_path, &db_dir_path)?;
             }
-            std::fs::copy(default_cache_path, &db_dir_path)?;
-        }
 
-        let sqlite = Connection::open(db_dir_path)?;
-        init_db(&sqlite)?;
+            let sqlite = Connection::open(db_dir_path)?;
+            init_db(&sqlite)?;
+            Ok(sqlite)
+        })?;
+
         let (_, my_z_addr) = self
             .z_spending_key
             .default_address()
@@ -641,7 +656,9 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             .expect("DEX_FEE_Z_ADDR is a valid z-address")
             .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = LocalTxProver::bundled();
+        let z_tx_prover = tokio::task::block_in_place(LocalTxProver::with_default_location)
+            .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+
         let my_z_addr_encoded = encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &my_z_addr);
         let my_z_key_encoded = encode_extended_spending_key(
             z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,

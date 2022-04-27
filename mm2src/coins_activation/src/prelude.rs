@@ -1,3 +1,4 @@
+use coins::utxo::UtxoActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -5,8 +6,16 @@ use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 
-pub trait TxHistoryEnabled {
-    fn tx_history_enabled(&self) -> bool;
+pub trait CurrentBlock {
+    fn current_block(&self) -> u64;
+}
+
+pub trait TxHistory {
+    fn tx_history(&self) -> bool;
+}
+
+impl TxHistory for UtxoActivationParams {
+    fn tx_history(&self) -> bool { self.tx_history }
 }
 
 #[derive(Clone, Debug, Serialize)]

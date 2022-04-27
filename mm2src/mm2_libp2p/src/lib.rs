@@ -17,6 +17,9 @@ use sha2::{Digest, Sha256};
 
 pub use atomicdex_behaviour::{spawn_gossipsub, AdexBehaviourError, NodeType, WssCerts};
 pub use atomicdex_gossipsub::{GossipsubEvent, GossipsubMessage, MessageId};
+pub use libp2p::identity::error::DecodingError;
+pub use libp2p::identity::secp256k1::PublicKey as Libp2pSecpPublic;
+pub use libp2p::identity::PublicKey as Libp2pPublic;
 pub use libp2p::{Multiaddr, PeerId};
 pub use peers_exchange::PeerAddresses;
 pub use relay_address::{RelayAddress, RelayAddressError};

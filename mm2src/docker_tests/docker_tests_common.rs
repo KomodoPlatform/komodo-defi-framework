@@ -9,7 +9,6 @@ pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;
 
-use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, ChecksumType};
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin};
@@ -20,6 +19,7 @@ use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path,
                   UtxoAddressFormat, UtxoCoinFields};
 use coins::MarketCoinOps;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
+use common::mm_number::BigDecimal;
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
@@ -483,7 +483,7 @@ pub async fn enable_qrc20_native(mm: &MarketMakerIt, coin: &str) -> Json {
     };
 
     let native = mm
-        .rpc(json! ({
+        .rpc(&json! ({
             "userpass": mm.userpass,
             "method": "enable",
             "coin": coin,
@@ -599,7 +599,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!([block_on(enable_native(&mm_alice, "QTUM", &[]))]);
     log!([block_on(enable_native_bch(&mm_alice, "FORSLP", &[]))]);
     log!([block_on(enable_native(&mm_alice, "ADEXSLP", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": base,
@@ -613,7 +613,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     thread::sleep(Duration::from_secs(1));
 
     log!("Issue alice " (base) "/" (rel) " buy request");
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": base,
@@ -739,7 +739,7 @@ pub fn solana_supplied_node() -> MarketMakerIt {
 }
 
 pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> MyBalanceResponse {
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "my_balance",
         "coin": coin,
@@ -761,7 +761,7 @@ pub fn utxo_burn_address() -> Address {
 }
 
 pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> TransactionDetails {
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": coin,
@@ -772,7 +772,7 @@ pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> Tra
     assert_eq!(rc.0, StatusCode::OK, "withdraw request failed {}", rc.1);
     let tx_details: TransactionDetails = json::from_str(&rc.1).unwrap();
 
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "tx_hex": tx_details.tx_hex,

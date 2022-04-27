@@ -11,6 +11,7 @@ mod solana_with_tokens_activation;
 mod standalone_coin;
 mod token;
 mod utxo_activation;
+#[cfg(not(target_arch = "wasm32"))] mod z_coin_activation;
 
 pub use l2::enable_l2;
 pub use platform_coin_with_tokens::enable_platform_coin_with_tokens;

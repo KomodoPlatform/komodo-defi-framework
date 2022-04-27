@@ -3,7 +3,7 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
                                        TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
                                        TokenInitializer, TokenOf};
 use crate::prelude::*;
-use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistoryEnabled};
+use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistory};
 use crate::spl_token_activation::SplActivationRequest;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
@@ -74,8 +74,8 @@ pub struct SolanaWithTokensActivationRequest {
     spl_tokens_requests: Vec<TokenActivationRequest<SplActivationRequest>>,
 }
 
-impl TxHistoryEnabled for SolanaWithTokensActivationRequest {
-    fn tx_history_enabled(&self) -> bool { false }
+impl TxHistory for SolanaWithTokensActivationRequest {
+    fn tx_history(&self) -> bool { false }
 }
 
 #[derive(Debug, Serialize)]
@@ -93,6 +93,10 @@ impl GetPlatformBalance for SolanaWithTokensActivationResult {
                 &total + &addr_info.balances.get_total()
             })
     }
+}
+
+impl CurrentBlock for SolanaWithTokensActivationResult {
+    fn current_block(&self) -> u64 { self.current_block }
 }
 
 #[derive(Debug)]

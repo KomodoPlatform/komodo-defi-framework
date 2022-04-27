@@ -55,9 +55,8 @@
 //  marketmaker
 //
 
-use crate::mm2::lp_network::broadcast_p2p_msg;
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
-use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::mm_error::MmError;
@@ -65,13 +64,12 @@ use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
-             mm_number::MmNumber,
+             mm_number::{BigDecimal, BigRational, MmNumber},
              now_ms, var, PagingOptions};
 use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
-use num_rational::BigRational;
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -80,6 +78,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
+
+#[cfg(feature = "custom-swap-locktime")]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "lp_swap/check_balance.rs"] mod check_balance;
 #[path = "lp_swap/maker_swap.rs"] mod maker_swap;
@@ -96,6 +97,7 @@ use uuid::Uuid;
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
@@ -165,7 +167,7 @@ pub fn broadcast_swap_message_every(
     topic: String,
     msg: SwapMsg,
     interval: f64,
-    p2p_privkey: Option<H256Json>,
+    p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
@@ -179,13 +181,13 @@ pub fn broadcast_swap_message_every(
 }
 
 /// Broadcast the swap message once
-pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<H256Json>) {
-    let p2p_private = match p2p_privkey {
-        Some(privkey) => privkey.0,
-        None => ctx.secp256k1_key_pair.or(&&|| panic!()).private().secret.take(),
+pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<KeyPair>) {
+    let (p2p_private, from) = match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
-    broadcast_p2p_msg(ctx, vec![topic], encoded_msg);
+    broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
 pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
@@ -264,10 +266,27 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
+#[cfg(not(feature = "custom-swap-locktime"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
-pub const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
+const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
+
+#[cfg(feature = "custom-swap-locktime")]
+/// Default atomic swap payment locktime, in seconds.
+/// Maker sends payment with LOCKTIME * 2
+/// Taker sends payment with LOCKTIME
+pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+
+#[inline]
+/// Returns `PAYMENT_LOCKTIME`
+pub fn get_payment_locktime() -> u64 {
+    #[cfg(not(feature = "custom-swap-locktime"))]
+    return PAYMENT_LOCKTIME;
+    #[cfg(feature = "custom-swap-locktime")]
+    PAYMENT_LOCKTIME.load(Ordering::Relaxed)
+}
+
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
@@ -477,11 +496,11 @@ pub enum AtomicLocktimeVersion {
 
 pub fn lp_atomic_locktime_v1(maker_coin: &str, taker_coin: &str) -> u64 {
     if maker_coin == "BTC" || taker_coin == "BTC" {
-        PAYMENT_LOCKTIME * 10
+        get_payment_locktime() * 10
     } else if coin_with_4x_locktime(maker_coin) || coin_with_4x_locktime(taker_coin) {
-        PAYMENT_LOCKTIME * 4
+        get_payment_locktime() * 4
     } else {
-        PAYMENT_LOCKTIME
+        get_payment_locktime()
     }
 }
 
@@ -498,9 +517,9 @@ pub fn lp_atomic_locktime_v2(
         || my_conf_settings.requires_notarization()
         || other_conf_settings.requires_notarization()
     {
-        PAYMENT_LOCKTIME * 4
+        get_payment_locktime() * 4
     } else {
-        PAYMENT_LOCKTIME
+        get_payment_locktime()
     }
 }
 
@@ -832,7 +851,7 @@ async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String>
         data: status,
     };
     let msg = json::to_vec(&status).expect("Swap status ser should never fail");
-    broadcast_p2p_msg(ctx, vec![swap_topic(&uuid)], msg);
+    broadcast_p2p_msg(ctx, vec![swap_topic(&uuid)], msg, None);
     Ok(())
 }
 
@@ -1260,7 +1279,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1282,7 +1301,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1304,7 +1323,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1326,7 +1345,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1348,7 +1367,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1370,7 +1389,7 @@ mod lp_swap_tests {
             taker_coin_confs: 1,
             taker_coin_nota: false,
         };
-        let expected = PAYMENT_LOCKTIME * 4;
+        let expected = get_payment_locktime() * 4;
         let version = AtomicLocktimeVersion::V2 {
             my_conf_settings,
             other_conf_settings,
@@ -1380,37 +1399,37 @@ mod lp_swap_tests {
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME;
+        let expected = get_payment_locktime();
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "BTC";
         let taker_coin = "DEX";
-        let expected = PAYMENT_LOCKTIME * 10;
+        let expected = get_payment_locktime() * 10;
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
 
         let maker_coin = "KMD";
         let taker_coin = "BTC";
-        let expected = PAYMENT_LOCKTIME * 10;
+        let expected = get_payment_locktime() * 10;
         let actual = lp_atomic_locktime(maker_coin, taker_coin, AtomicLocktimeVersion::V1);
         assert_eq!(expected, actual);
     }

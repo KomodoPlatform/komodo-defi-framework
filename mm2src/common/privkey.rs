@@ -23,6 +23,7 @@ use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private};
 use primitives::hash::H256;
 use rustc_hex::FromHexError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub type PrivKeyResult<T> = Result<T, MmError<PrivKeyError>>;
 
@@ -105,4 +106,80 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
         checksum_type: Default::default(),
     };
     Ok(KeyPair::from_private(private)?)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SerializableSecp256k1Keypair {
+    inner: KeyPair,
+}
+
+impl PartialEq for SerializableSecp256k1Keypair {
+    fn eq(&self, other: &Self) -> bool { self.inner.public() == other.inner.public() }
+}
+
+impl Eq for SerializableSecp256k1Keypair {}
+
+impl SerializableSecp256k1Keypair {
+    fn new(key: [u8; 32]) -> PrivKeyResult<Self> {
+        Ok(SerializableSecp256k1Keypair {
+            inner: key_pair_from_secret(&key)?,
+        })
+    }
+
+    pub fn key_pair(&self) -> &KeyPair { &self.inner }
+
+    pub fn public_slice(&self) -> &[u8] { self.inner.public_slice() }
+
+    fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
+
+    pub fn random() -> Self {
+        SerializableSecp256k1Keypair {
+            inner: KeyPair::random_compressed(),
+        }
+    }
+
+    pub fn into_inner(self) -> KeyPair { self.inner }
+}
+
+impl From<KeyPair> for SerializableSecp256k1Keypair {
+    fn from(inner: KeyPair) -> Self { SerializableSecp256k1Keypair { inner } }
+}
+
+impl Serialize for SerializableSecp256k1Keypair {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.priv_key().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SerializableSecp256k1Keypair {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let priv_key = <[u8; 32]>::deserialize(deserializer)?;
+        SerializableSecp256k1Keypair::new(priv_key).map_err(serde::de::Error::custom)
+    }
+}
+
+#[test]
+fn serializable_secp256k1_keypair_test() {
+    use serde_json::{self as json};
+
+    let key_pair = KeyPair::random_compressed();
+    let serializable = SerializableSecp256k1Keypair { inner: key_pair };
+    let serialized = json::to_string(&serializable).unwrap();
+    println!("{}", serialized);
+    let deserialized = json::from_str(&serialized).unwrap();
+    assert_eq!(serializable, deserialized);
+
+    let invalid_privkey: [u8; 32] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xba, 0xae,
+        0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+    ];
+    let invalid_privkey_serialized = json::to_string(&invalid_privkey).unwrap();
+    let err = json::from_str::<SerializableSecp256k1Keypair>(&invalid_privkey_serialized).unwrap_err();
+    println!("{}", err);
 }

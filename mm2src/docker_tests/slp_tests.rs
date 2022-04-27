@@ -1,6 +1,6 @@
 use crate::docker_tests::docker_tests_common::*;
-use bigdecimal::BigDecimal;
 use common::for_tests::{enable_bch_with_tokens, enable_slp, UtxoRpcMode};
+use common::mm_number::BigDecimal;
 use serde_json::{self as json};
 use std::time::Duration;
 

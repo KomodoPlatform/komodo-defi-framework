@@ -3583,7 +3583,7 @@ where
     T: AsRef<UtxoCoinFields>,
 {
     match &coin.as_ref().priv_key_policy {
-        PrivKeyPolicy::KeyPair(key_pair) => key_pair.clone(),
+        PrivKeyPolicy::KeyPair(key_pair) => *key_pair,
         PrivKeyPolicy::Trezor => KeyPair::random_compressed(),
     }
 }

@@ -11,15 +11,14 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::MM_VERSION;
-use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue,
             ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, warn};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::mm_number::MmNumber;
-use common::privkey::key_pair_from_secret;
+use common::mm_number::{BigDecimal, MmNumber};
+use common::privkey::SerializableSecp256k1Keypair;
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use http::Response;
@@ -433,15 +432,15 @@ pub struct TakerSwapData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taker_coin_swap_contract_address: Option<BytesJson>,
     /// Temporary privkey used in HTLC redeem script when applicable for maker coin
-    pub maker_coin_htlc_privkey: Option<H256Json>,
+    pub maker_coin_htlc_privkey: Option<SerializableSecp256k1Keypair>,
     /// Temporary pubkey used in HTLC redeem script when applicable for maker coin
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used in HTLC redeem script when applicable for taker coin
-    pub taker_coin_htlc_privkey: Option<H256Json>,
+    pub taker_coin_htlc_privkey: Option<SerializableSecp256k1Keypair>,
     /// Temporary pubkey used in HTLC redeem script when applicable for taker coin
     pub taker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used to sign P2P messages when applicable
-    pub p2p_privkey: Option<H256Json>,
+    pub p2p_privkey: Option<SerializableSecp256k1Keypair>,
 }
 
 pub struct TakerSwapMut {
@@ -477,7 +476,7 @@ pub struct TakerSwap {
     mutable: RwLock<TakerSwapMut>,
     conf_settings: SwapConfirmationsSettings,
     payment_locktime: u64,
-    p2p_privkey: Option<H256Json>,
+    p2p_privkey: Option<KeyPair>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -616,14 +615,12 @@ impl TakerSwap {
     fn apply_event(&self, event: TakerSwapEvent) {
         match event {
             TakerSwapEvent::Started(data) => {
-                if let Some(privkey) = data.maker_coin_htlc_privkey {
-                    let keypair = key_pair_from_secret(&privkey.0).expect("valid privkey");
-                    self.w().my_maker_coin_htlc_keypair = keypair;
+                if let Some(keypair) = data.maker_coin_htlc_privkey {
+                    self.w().my_maker_coin_htlc_keypair = keypair.into_inner();
                 }
 
-                if let Some(privkey) = data.taker_coin_htlc_privkey {
-                    let keypair = key_pair_from_secret(&privkey.0).expect("valid privkey");
-                    self.w().my_taker_coin_htlc_keypair = keypair;
+                if let Some(keypair) = data.taker_coin_htlc_privkey {
+                    self.w().my_taker_coin_htlc_keypair = keypair.into_inner();
                 }
 
                 self.w().data = data;
@@ -703,7 +700,7 @@ impl TakerSwap {
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
         payment_locktime: u64,
-        p2p_privkey: Option<H256Json>,
+        p2p_privkey: Option<KeyPair>,
     ) -> Self {
         TakerSwap {
             maker_coin,
@@ -733,8 +730,8 @@ impl TakerSwap {
                 taker_payment_refund: None,
                 secret_hash: H160Json::default(),
                 secret: H256Json::default(),
-                my_maker_coin_htlc_keypair: ctx.secp256k1_key_pair().clone(),
-                my_taker_coin_htlc_keypair: ctx.secp256k1_key_pair().clone(),
+                my_maker_coin_htlc_keypair: *ctx.secp256k1_key_pair(),
+                my_taker_coin_htlc_keypair: *ctx.secp256k1_key_pair(),
             }),
             ctx,
         }
@@ -875,11 +872,11 @@ impl TakerSwap {
             maker_payment_spend_trade_fee: Some(SavedTradeFee::from(maker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_privkey: Some(maker_coin_htlc_key_pair.private_bytes().into()),
+            maker_coin_htlc_privkey: Some(maker_coin_htlc_key_pair.into()),
             maker_coin_htlc_pubkey: Some(maker_coin_htlc_key_pair.public_slice().into()),
-            taker_coin_htlc_privkey: Some(taker_coin_htlc_key_pair.private_bytes().into()),
+            taker_coin_htlc_privkey: Some(taker_coin_htlc_key_pair.into()),
             taker_coin_htlc_pubkey: Some(taker_coin_htlc_key_pair.public_slice().into()),
-            p2p_privkey: self.p2p_privkey,
+            p2p_privkey: self.p2p_privkey.map(Into::into),
         };
 
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))
@@ -1409,7 +1406,7 @@ impl TakerSwap {
             maker_coin,
             taker_coin,
             data.lock_duration,
-            data.p2p_privkey,
+            data.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         let command = saved.events.last().unwrap().get_command();
         for saved_event in saved.events {
@@ -1447,8 +1444,8 @@ impl TakerSwap {
         let taker_payment_lock = self.r().data.taker_payment_lock;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
         let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
-        let maker_coin_htlc_keypair = self.r().my_maker_coin_htlc_keypair.clone();
-        let taker_coin_htlc_keypair = self.r().my_taker_coin_htlc_keypair.clone();
+        let maker_coin_htlc_keypair = self.r().my_maker_coin_htlc_keypair;
+        let taker_coin_htlc_keypair = self.r().my_taker_coin_htlc_keypair;
 
         macro_rules! check_maker_payment_is_not_spent {
             // validate that maker payment is not spent

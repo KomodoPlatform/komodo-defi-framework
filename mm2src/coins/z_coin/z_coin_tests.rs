@@ -28,7 +28,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
     let db_dir = PathBuf::from("./for_tests");
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(z_coin_from_conf_and_params_with_z_key(
-        &ctx, "ZOMBIE", &conf, params, &priv_key, db_dir, z_key,
+        &ctx, "ZOMBIE", &conf, &params, &priv_key, db_dir, z_key,
     ))
     .unwrap();
 
@@ -77,7 +77,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     let db_dir = PathBuf::from("./for_tests");
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(z_coin_from_conf_and_params_with_z_key(
-        &ctx, "ZOMBIE", &conf, params, &priv_key, db_dir, z_key,
+        &ctx, "ZOMBIE", &conf, &params, &priv_key, db_dir, z_key,
     ))
     .unwrap();
 
@@ -128,7 +128,7 @@ fn zombie_coin_send_dex_fee() {
     let db_dir = PathBuf::from("./for_tests");
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(z_coin_from_conf_and_params_with_z_key(
-        &ctx, "ZOMBIE", &conf, params, &priv_key, db_dir, z_key,
+        &ctx, "ZOMBIE", &conf, &params, &priv_key, db_dir, z_key,
     ))
     .unwrap();
 
@@ -158,11 +158,11 @@ fn prepare_zombie_sapling_cache() {
     let db_dir = PathBuf::from("./for_tests");
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(z_coin_from_conf_and_params_with_z_key(
-        &ctx, "ZOMBIE", &conf, params, &priv_key, db_dir, z_key,
+        &ctx, "ZOMBIE", &conf, &params, &priv_key, db_dir, z_key,
     ))
     .unwrap();
 
-    while !coin.z_fields.sapling_state_synced.load(AtomicOrdering::Relaxed) {
+    while !coin.is_sapling_state_synced() {
         std::thread::sleep(Duration::from_secs(1));
     }
 }
@@ -189,7 +189,7 @@ fn zombie_coin_validate_dex_fee() {
     let db_dir = PathBuf::from("./for_tests");
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(z_coin_from_conf_and_params_with_z_key(
-        &ctx, "ZOMBIE", &conf, params, &priv_key, db_dir, z_key,
+        &ctx, "ZOMBIE", &conf, &params, &priv_key, db_dir, z_key,
     ))
     .unwrap();
 

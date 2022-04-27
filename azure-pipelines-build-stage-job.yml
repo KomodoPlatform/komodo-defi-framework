@@ -42,9 +42,9 @@ jobs:
           cat MM_VERSION
           if [ $AGENT_OS = "Darwin" ]
           then
-            cargo build --bin mm2 --release --features zhtlc --target x86_64-apple-darwin
+            cargo build --bin mm2 --release --target x86_64-apple-darwin
           else
-            cargo build --bin mm2 --release --features zhtlc
+            cargo build --bin mm2 --release
           fi
         displayName: 'Build MM2 Release'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )

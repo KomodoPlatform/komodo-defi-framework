@@ -12,8 +12,9 @@ default-run = "mm2"
 [features]
 # Deprecated
 native = []
-zhtlc = ["coins/zhtlc"]
 track-ctx-pointer = ["common/track-ctx-pointer"]
+custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
+zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 
 [[bin]]
 name = "mm2"
@@ -48,7 +49,6 @@ debug = false
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
-bigdecimal = { version = "0.1", features = ["serde"] }
 bitcrypto = { path = "mm2src/mm2_bitcoin/crypto" }
 blake2 = "0.9.1"
 bytes = "0.4"
@@ -84,7 +84,6 @@ lazy_static = "1.4"
 libc = "0.2"
 metrics = "0.12"
 mm2-libp2p = { path = "mm2src/mm2_libp2p" }
-num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
 num-traits = "0.2"
 rpc = { path = "mm2src/mm2_bitcoin/rpc" }
 rpc_task = { path = "mm2src/rpc_task" }

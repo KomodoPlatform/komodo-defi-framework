@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoActivationParams;
-use coins::{lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
+use coins::CoinProtocol;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::CryptoCtx;
@@ -57,8 +57,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         _task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-
-        let tx_history = activation_request.tx_history;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
 
         let coin = UtxoArcBuilder::new(
@@ -72,12 +70,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         .build()
         .await
         .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
-        lp_register_coin(&ctx, MmCoinEnum::from(coin.clone()), RegisterCoinParams {
-            ticker: ticker.clone(),
-            tx_history,
-        })
-        .await
-        .mm_err(|e| InitUtxoStandardError::from_register_err(e, ticker))?;
         Ok(coin)
     }
 

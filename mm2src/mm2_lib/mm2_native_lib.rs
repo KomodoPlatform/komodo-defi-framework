@@ -116,7 +116,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             },
         };
         let conf = json::to_string(&ctx.conf).unwrap();
-        let hy_res = mm2::rpc::lp_commands::stop(ctx);
+        let hy_res = mm2::rpc::lp_commands_legacy::stop(ctx);
         let r = match block_on(hy_res) {
             Ok(r) => r,
             Err(err) => {

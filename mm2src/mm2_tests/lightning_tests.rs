@@ -205,7 +205,7 @@ fn test_connect_to_lightning_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes();
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let connect = block_on(mm_node_2.rpc(json! ({
+    let connect = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "connect_to_lightning_node",
@@ -231,7 +231,7 @@ fn test_open_channel() {
     let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes();
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let open_channel = block_on(mm_node_2.rpc(json! ({
+    let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "open_channel",
@@ -249,7 +249,7 @@ fn test_open_channel() {
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
-    let list_channels_node_1 = block_on(mm_node_1.rpc(json! ({
+    let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
         "method": "list_channels",
@@ -278,7 +278,7 @@ fn test_open_channel() {
         0
     );
 
-    let list_channels_node_2 = block_on(mm_node_2.rpc(json! ({
+    let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
       "method": "list_channels",

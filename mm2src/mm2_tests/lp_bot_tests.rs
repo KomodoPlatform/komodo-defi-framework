@@ -58,7 +58,7 @@ mod tests {
         let (_dump_log, _dump_dashboard) = mm.mm_dump();
         log!({"Log path: {}", mm.log_path.display()});
         fn start_simple_market_maker_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
-            block_on(mm.rpc(json!({
+            block_on(mm.rpc(&json!({
                  "userpass": "password",
                  "mmrpc": "2.0",
                  "method": "start_simple_market_maker_bot",
@@ -94,7 +94,7 @@ mod tests {
         assert_eq!(start_simple_market_maker_bot.0, 400);
 
         fn stop_simple_market_maker_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
-            block_on(mm.rpc(json!({
+            block_on(mm.rpc(&json!({
                 "userpass": "password",
                 "mmrpc": "2.0",
                 "method": "stop_simple_market_maker_bot",
