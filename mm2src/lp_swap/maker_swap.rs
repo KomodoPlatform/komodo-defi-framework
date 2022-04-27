@@ -798,6 +798,7 @@ impl MakerSwap {
             secret_hash: dhash160(&self.r().data.secret.0).to_vec(),
             amount: self.taker_amount.clone(),
             swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
+            try_spv_proof_until: wait_taker_payment,
             confirmations,
         };
         let validated_f = self.taker_coin.validate_taker_payment(validate_input).compat();

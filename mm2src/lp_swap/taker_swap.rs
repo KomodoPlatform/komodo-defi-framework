@@ -1122,6 +1122,7 @@ impl TakerSwap {
             secret_hash: self.r().secret_hash.0.to_vec(),
             amount: self.maker_amount.to_decimal(),
             swap_contract_address: self.r().data.maker_coin_swap_contract_address.clone(),
+            try_spv_proof_until: self.r().data.maker_payment_wait,
             confirmations,
         };
         let validated = self.maker_coin.validate_maker_payment(validate_input).compat().await;

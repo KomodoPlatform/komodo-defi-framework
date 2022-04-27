@@ -132,6 +132,7 @@ fn test_validate_maker_payment() {
         secret_hash: vec![1; 20],
         amount: correct_amount.clone(),
         swap_contract_address: coin.swap_contract_address(),
+        try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
     };
 
@@ -852,6 +853,7 @@ fn test_validate_maker_payment_malicious() {
         secret_hash,
         amount,
         swap_contract_address: coin.swap_contract_address(),
+        try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
     };
     let error = coin

@@ -495,6 +495,7 @@ impl SlpToken {
             &input.secret_hash,
             self.platform_dust_dec(),
             input.time_lock,
+            now_ms() / 1000 + 60,
             input.confirmations,
         );
 
@@ -2068,6 +2069,7 @@ mod slp_tests {
             &secret_hash,
             fusd.platform_dust_dec(),
             lock_time,
+            now_ms() / 1000 + 60,
             1,
         )
         .wait()

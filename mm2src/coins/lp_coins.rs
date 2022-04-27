@@ -308,6 +308,7 @@ pub struct ValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub swap_contract_address: Option<BytesJson>,
+    pub try_spv_proof_until: u64,
     pub confirmations: u64,
 }
 
