@@ -4,7 +4,7 @@ use common::async_blocking;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
-use db_common::sqlite::rusqlite::{params, Connection, Error};
+use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use http::Uri;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
@@ -12,13 +12,13 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use rustls::ClientConfig;
 use serde_json::{self as json, Value as Json};
 use std::path::Path;
+use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
-use tonic::Status;
-use web3::types::Res;
 use zcash_client_backend::data_api::{BlockSource, WalletRead};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::wallet::get_balance;
 use zcash_client_sqlite::wallet::init::init_accounts_table;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::NetworkUpgrade;
@@ -31,6 +31,7 @@ use zcash_proofs::prover::LocalTxProver;
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
+use crate::utxo::utxo_common::big_decimal_from_sat;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, RawTransaction};
 
@@ -182,8 +183,16 @@ pub struct BlockDb(Connection);
 
 impl BlockDb {
     /// Opens a connection to the wallet database stored at the specified path.
-    pub fn for_path<P: AsRef<Path>>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
-        Connection::open(path).map(BlockDb)
+    pub fn for_path<P: AsRef<Path> + Send + 'static>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
+        let conn = Connection::open(path)?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS compactblocks (
+            height INTEGER PRIMARY KEY,
+            data BLOB NOT NULL
+        )",
+            NO_PARAMS,
+        )?;
+        Ok(BlockDb(conn))
     }
 
     fn with_blocks<F>(
@@ -263,10 +272,10 @@ impl BlockSource for BlockDb {
     }
 }
 
-pub struct ZcoinLightClient {
+pub struct ZcoinLightClient<P> {
     grpc_client: CompactTxStreamerClient<Channel>,
     blocks_db: BlockDb,
-    wallet_db: WalletDb<ZombieNetwork>,
+    wallet_db: WalletDb<P>,
 }
 
 #[derive(Debug)]
@@ -293,12 +302,39 @@ impl From<db_common::sqlite::rusqlite::Error> for UpdateBlocksCacheErr {
     fn from(err: Error) -> Self { UpdateBlocksCacheErr::DbError(err) }
 }
 
-impl ZcoinLightClient {
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum MyBalanceError {}
+
+impl<P: Parameters + Send + 'static> ZcoinLightClient<P> {
     pub async fn init(
         lightwalletd_url: Uri,
         cache_db_path: impl AsRef<Path> + Send + 'static,
         wallet_db_path: impl AsRef<Path> + Send + 'static,
+        network: P,
+        evk: ExtendedFullViewingKey,
     ) -> Result<Self, MmError<ZcoinLightClientInitError>> {
+        let blocks_db = async_blocking(|| {
+            BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
+        })
+        .await?;
+
+        let wallet_db = async_blocking(|| {
+            WalletDb::for_path(wallet_db_path, network).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+        })
+        .await?;
+
+        let existing_keys = block_in_place(|| {
+            wallet_db
+                .get_extended_full_viewing_keys()
+                .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+        })?;
+        if !existing_keys.is_empty() {
+            block_in_place(|| {
+                init_accounts_table(&wallet_db, &[evk]).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+            })?;
+        }
+
         let mut config = ClientConfig::new();
         config
             .root_store
@@ -312,16 +348,6 @@ impl ZcoinLightClient {
             .connect()
             .await
             .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
-
-        let blocks_db = async_blocking(|| {
-            BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
-        })
-        .await?;
-
-        let wallet_db = async_blocking(|| {
-            WalletDb::for_path(wallet_db_path, ZombieNetwork).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
-        })
-        .await?;
 
         Ok(ZcoinLightClient {
             grpc_client: CompactTxStreamerClient::new(channel),
@@ -369,6 +395,10 @@ impl ZcoinLightClient {
         }
         Ok(current_block)
     }
+
+    async fn my_balance(&self) -> Result<Amount, MmError<SqliteClientError>> {
+        block_in_place(|| get_balance(&self.wallet_db, AccountId(0)).map_err(MmError::new))
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -401,8 +431,6 @@ impl Parameters for ZombieNetwork {
 // This is a temporary test used to experiment with librustzcash and lightwalletd
 fn try_grpc() {
     use common::block_on;
-    use db_common::sqlite::rusqlite::{self, Connection, NO_PARAMS};
-    use prost::Message;
     use std::str::FromStr;
     use z_coin_grpc::{BlockId, BlockRange, ChainSpec, RawTransaction};
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
@@ -412,17 +440,6 @@ fn try_grpc() {
     use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
                               BlockDb, WalletDb};
 
-    pub fn init_cache_database(db_cache: &Connection) -> Result<(), rusqlite::Error> {
-        db_cache.execute(
-            "CREATE TABLE IF NOT EXISTS compactblocks (
-            height INTEGER PRIMARY KEY,
-            data BLOB NOT NULL
-        )",
-            NO_PARAMS,
-        )?;
-        Ok(())
-    }
-
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
@@ -430,17 +447,12 @@ fn try_grpc() {
         uri,
         "test_cache_zombie.db",
         "test_wallet_zombie.db",
+        ZombieNetwork {},
     ))
     .unwrap();
 
-    let latest_block = block_on(client.get_latest_block()).unwrap();
-    let latest_block_height = latest_block.height;
     let current_block = block_on(client.update_blocks_cache()).unwrap();
-
-    // init_cache_database(&cache_sql).unwrap();
-
     let network = ZombieNetwork {};
-    init_wallet_db(&client.wallet_db).unwrap();
 
     // init_accounts_table(&db_read, &[(&z_key).into()]).unwrap();
     let mut db_data = client.wallet_db.get_update_ops().unwrap();
@@ -487,10 +499,7 @@ fn try_grpc() {
     // next time this codepath is executed after new blocks are received).
     scan_cached_blocks(&network, &client.blocks_db, &mut db_data, None).unwrap();
 
-    let balance = client
-        .wallet_db
-        .get_balance_at(AccountId(0), BlockHeight::from_u32(current_block as u32))
-        .unwrap();
+    let balance = block_on(client.my_balance()).unwrap();
 
     println!("balance {:?}", balance);
 
