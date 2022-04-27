@@ -2990,8 +2990,7 @@ async fn get_height_and_merkle_branch(
         if height.is_none() {
             match get_tx_height(tx, client).await {
                 Ok(h) => height = Some(h),
-                Err(_e) => {
-                    // error!("{:?}", e);
+                Err(_) => {
                     error!("{:?}", SPVError::InvalidHeight);
                 },
             }
@@ -3007,8 +3006,8 @@ async fn get_height_and_merkle_branch(
                     merkle_branch = Some(m);
                     break;
                 },
-                Err(_e) => {
-                    // error!("{:?}", e);
+                Err(e) => {
+                    debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
                     error!("{:?}", SPVError::UnableToGetMerkle);
                 },
             }
