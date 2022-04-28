@@ -8,9 +8,9 @@ use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use http::Uri;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use rustls::ClientConfig;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json};
 use std::path::Path;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -26,12 +26,10 @@ use zcash_primitives::consensus::{BlockHeight, Parameters};
 use zcash_primitives::constants::mainnet as z_mainnet_constants;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
-use zcash_proofs::prover::LocalTxProver;
 
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
-use crate::utxo::utxo_common::big_decimal_from_sat;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, RawTransaction};
 
@@ -55,50 +53,6 @@ pub struct ZOperationHex {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "status")]
-#[serde(rename_all = "lowercase")]
-pub enum ZOperationStatus<T> {
-    Queued {
-        id: String,
-        creation_time: u64,
-        method: String,
-        params: Json,
-    },
-    Executing {
-        id: String,
-        creation_time: u64,
-        method: String,
-        params: Json,
-    },
-    Success {
-        id: String,
-        creation_time: u64,
-        result: T,
-        execution_secs: f64,
-        method: String,
-        params: Json,
-    },
-    Failed {
-        id: String,
-        creation_time: u64,
-        method: String,
-        params: Json,
-        error: Json,
-    },
-}
-
-#[derive(Debug, Serialize)]
-pub struct ZSendManyHtlcParams {
-    pub pubkey: H264Json,
-    pub refund_pubkey: H264Json,
-    pub secret_hash: BytesJson,
-    pub input_txid: H256Json,
-    pub input_index: usize,
-    pub input_amount: BigDecimal,
-    pub locktime: u32,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ZUnspent {
     pub txid: H256Json,
     #[serde(rename = "outindex")]
@@ -116,8 +70,6 @@ pub struct ZUnspent {
 pub trait ZRpcOps {
     fn z_get_balance(&self, address: &str, min_conf: u32) -> UtxoRpcFut<MmNumber>;
 
-    fn z_get_send_many_status(&self, op_ids: &[&str]) -> UtxoRpcFut<Vec<ZOperationStatus<ZOperationTxid>>>;
-
     fn z_list_unspent(
         &self,
         min_conf: u32,
@@ -126,19 +78,12 @@ pub trait ZRpcOps {
         addresses: &[&str],
     ) -> UtxoRpcFut<Vec<ZUnspent>>;
 
-    fn z_send_many(&self, from_address: &str, send_to: Vec<ZSendManyItem>) -> UtxoRpcFut<String>;
-
     fn z_import_key(&self, key: &str) -> UtxoRpcFut<()>;
 }
 
 impl ZRpcOps for NativeClient {
     fn z_get_balance(&self, address: &str, min_conf: u32) -> UtxoRpcFut<MmNumber> {
         let fut = rpc_func!(self, "z_getbalance", address, min_conf);
-        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
-    }
-
-    fn z_get_send_many_status(&self, op_ids: &[&str]) -> UtxoRpcFut<Vec<ZOperationStatus<ZOperationTxid>>> {
-        let fut = rpc_func!(self, "z_getoperationstatus", op_ids);
         Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
     }
 
@@ -150,11 +95,6 @@ impl ZRpcOps for NativeClient {
         addresses: &[&str],
     ) -> UtxoRpcFut<Vec<ZUnspent>> {
         let fut = rpc_func!(self, "z_listunspent", min_conf, max_conf, watch_only, addresses);
-        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
-    }
-
-    fn z_send_many(&self, from_address: &str, send_to: Vec<ZSendManyItem>) -> UtxoRpcFut<String> {
-        let fut = rpc_func!(self, "z_sendmany", from_address, send_to);
         Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
     }
 
@@ -285,8 +225,12 @@ pub enum ZcoinLightClientInitError {
     ConnectionFailure(tonic::transport::Error),
     BlocksDbInitFailure(db_common::sqlite::rusqlite::Error),
     WalletDbInitFailure(db_common::sqlite::rusqlite::Error),
+    ZcashSqliteError(SqliteClientError),
 }
 
+impl From<SqliteClientError> for ZcoinLightClientInitError {
+    fn from(err: SqliteClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
+}
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
@@ -324,15 +268,9 @@ impl<P: Parameters + Send + 'static> ZcoinLightClient<P> {
         })
         .await?;
 
-        let existing_keys = block_in_place(|| {
-            wallet_db
-                .get_extended_full_viewing_keys()
-                .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
-        })?;
-        if !existing_keys.is_empty() {
-            block_in_place(|| {
-                init_accounts_table(&wallet_db, &[evk]).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
-            })?;
+        let existing_keys = block_in_place(|| wallet_db.get_extended_full_viewing_keys())?;
+        if existing_keys.is_empty() {
+            block_in_place(|| init_accounts_table(&wallet_db, &[evk]))?;
         }
 
         let mut config = ClientConfig::new();
@@ -441,6 +379,7 @@ fn try_grpc() {
                               BlockDb, WalletDb};
 
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
+    let evk = ExtendedFullViewingKey::from(&z_key);
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
     let mut client = block_on(ZcoinLightClient::init(
@@ -448,6 +387,7 @@ fn try_grpc() {
         "test_cache_zombie.db",
         "test_wallet_zombie.db",
         ZombieNetwork {},
+        evk,
     ))
     .unwrap();
 
