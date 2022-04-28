@@ -2991,7 +2991,7 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
                 Ok(h) => height = Some(h),
                 Err(e) => {
                     debug!("`get_tx_height` returned an error {:?}", e);
-                    error!("{:?}", SPVError::InvalidHeight);
+                    error!("{:?} for tx {:?}", SPVError::InvalidHeight, tx);
                 },
             }
         }
@@ -3005,7 +3005,12 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
                 Ok(m) => merkle_branch = Some(m),
                 Err(e) => {
                     debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
-                    error!("{:?}", SPVError::UnableToGetMerkle);
+                    error!(
+                        "{:?} by tx: {:?}, height: {}",
+                        SPVError::UnableToGetMerkle,
+                        H256Json::from(tx.hash().reversed()),
+                        height.unwrap()
+                    );
                 },
             }
         }
@@ -3019,7 +3024,10 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
                 },
                 Err(e) => {
                     debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
-                    error!("{:?}", SPVError::UnableToGetHeader);
+                    error!(
+                        "{:?}, Received header likely not compatible with header format in mm2",
+                        SPVError::UnableToGetHeader
+                    );
                 },
             }
         }
@@ -3113,6 +3121,11 @@ pub fn validate_payment<T: UtxoCommonOps>(
                     expected_output
                 );
             }
+
+            if !coin.as_ref().conf.enable_spv_proof {
+                return Ok(());
+            }
+
             return match confirmations {
                 0 => Ok(()),
                 _ => validate_spv_proof(coin, tx, try_spv_proof_until)

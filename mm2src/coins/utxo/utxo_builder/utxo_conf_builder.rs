@@ -97,6 +97,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
         let trezor_coin = self.trezor_coin();
+        let enable_spv_proof = self.enable_spv_proof();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -127,6 +128,7 @@ impl<'a> UtxoConfBuilder<'a> {
             mature_confirmations,
             estimate_fee_blocks,
             trezor_coin,
+            enable_spv_proof,
         })
     }
 
@@ -279,4 +281,6 @@ impl<'a> UtxoConfBuilder<'a> {
     fn trezor_coin(&self) -> Option<TrezorUtxoCoin> {
         json::from_value(self.conf["trezor_coin"].clone()).unwrap_or_default()
     }
+
+    fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
 }
