@@ -221,6 +221,7 @@ pub struct LightningCoinConf {
     pub channel_options: Option<ChannelOptions>,
     pub our_channels_config: Option<OurChannelsConfig>,
     pub counterparty_channel_config_limits: Option<CounterpartyLimits>,
+    pub sign_message_prefix: Option<String>,
 }
 
 impl From<LightningCoinConf> for UserConfig {

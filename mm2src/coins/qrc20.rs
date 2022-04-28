@@ -1018,12 +1018,16 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        utxo_common::sign_message_hash(self.as_ref(), message)
+    }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message)
+    }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        utxo_common::verify_message(self, signature_base64, message, address)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {

@@ -126,6 +126,33 @@ mod tests {
         assert_eq!(res.is_valid, false);
     }
 
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_sign_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let signature = sol_coin.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let is_valid = sol_coin
+            .verify_message(
+                "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF",
+                "test",
+                "8UF6jSVE1jW8mSiGqt8Hft1rLwPjdKLaTfhkNozFwoAG",
+            )
+            .unwrap();
+        assert!(is_valid);
+    }
+
     #[tokio::test]
     #[cfg(not(target_arch = "wasm32"))]
     async fn solana_transaction_simulations() {

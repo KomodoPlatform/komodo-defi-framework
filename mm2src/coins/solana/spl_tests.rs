@@ -27,6 +27,45 @@ mod tests {
         );
     }
 
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_sign_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let sol_spl_usdc_coin = spl_coin_for_test(
+            sol_coin.clone(),
+            "USDC".to_string(),
+            6,
+            solana_sdk::pubkey::Pubkey::from_str("CpMah17kQEL2wqyMKt3mZBdTnZbkbfx4nqmQMFDP5vwp").unwrap(),
+        );
+        let signature = sol_spl_usdc_coin.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let sol_spl_usdc_coin = spl_coin_for_test(
+            sol_coin.clone(),
+            "USDC".to_string(),
+            6,
+            solana_sdk::pubkey::Pubkey::from_str("CpMah17kQEL2wqyMKt3mZBdTnZbkbfx4nqmQMFDP5vwp").unwrap(),
+        );
+        let is_valid = sol_spl_usdc_coin
+            .verify_message(
+                "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF",
+                "test",
+                "8UF6jSVE1jW8mSiGqt8Hft1rLwPjdKLaTfhkNozFwoAG",
+            )
+            .unwrap();
+        assert!(is_valid);
+    }
+
     #[tokio::test]
     #[cfg(not(target_arch = "wasm32"))]
     async fn spl_my_balance() {

@@ -82,6 +82,7 @@ tiny-bip39 = "0.8.0"
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 winapi = "0.3"
+zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }

@@ -309,3 +309,121 @@ fn test_open_channel() {
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_lightning() {
+    let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+
+    let coins = json! ([
+      {
+          "coin": "tBTC-TEST-segwit",
+          "name": "tbitcoin",
+          "fname": "tBitcoin",
+          "rpcport": 18332,
+          "pubtype": 111,
+          "p2shtype": 196,
+          "wiftype": 239,
+          "segwit": true,
+          "bech32_hrp": "tb",
+          "address_format":{"format":"segwit"},
+          "orderbook_ticker": "tBTC-TEST",
+          "txfee": 0,
+          "estimate_fee_mode": "ECONOMICAL",
+          "mm2": 1,
+          "required_confirmations": 0,
+          "protocol": {
+            "type": "UTXO"
+          }
+        },
+        {
+          "coin": "tBTC-TEST-lightning",
+          "mm2": 1,
+          "decimals": 11,
+          "sign_message_prefix": "Lightning Signed Message:",
+          "protocol": {
+            "type": "LIGHTNING",
+            "protocol_data":{
+              "platform": "tBTC-TEST-segwit",
+              "network": "testnet",
+              "confirmations": {
+                "background": {
+                  "default_feerate": 253,
+                  "n_blocks": 12
+                },
+                "normal": {
+                  "default_feerate": 2000,
+                  "n_blocks": 6
+                },
+                "high_priority": {
+                  "default_feerate": 5000,
+                  "n_blocks": 1
+                }
+              }
+            }
+          }
+        }
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
+
+    let rc = block_on(mm.rpc(json! ({
+      "userpass": mm.userpass,
+      "method":"sign_message",
+      "mmrpc":"2.0",
+      "id": 0,
+      "params":{
+        "coin":"tBTC-TEST-lightning",
+        "message":"test"
+      }
+    })))
+    .unwrap();
+
+    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
+
+    let response: Json = json::from_str(&rc.1).unwrap();
+    let signature = &response["result"]["signature"];
+    assert_eq!(
+        signature,
+        "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr"
+    );
+
+    let rc = block_on(mm.rpc(json! ({
+        "userpass": mm.userpass,
+        "method":"verify_message",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin":"tBTC-TEST-lightning",
+          "message":"test",
+          "signature": "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr",
+          "address":"0367c7b9f42eb15205de39454ddf9fcfce70a129b01049d9fe1b3b34eac1d6b933"
+        }
+        })))
+        .unwrap();
+
+    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
+
+    let response: Json = json::from_str(&rc.1).unwrap();
+    let is_valid = &response["result"]["is_valid"];
+    assert_eq!(is_valid, true);
+}

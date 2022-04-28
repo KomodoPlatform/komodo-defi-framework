@@ -344,10 +344,10 @@ impl MarketCoinOps for SolanaCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, message: &str) -> SignatureResult<String> { solana_common::sign_message(self, message) }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+    fn verify_message(&self, signature: &str, message: &str, pubkey_bs58: &str) -> VerificationResult<bool> {
+        solana_common::verify_message(self, signature, message, pubkey_bs58)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {

@@ -32,6 +32,7 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
+use base58::FromBase58Error;
 use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
@@ -50,6 +51,7 @@ use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAdd
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
+use solana_sdk::signature::{ParseSignatureError, SignerError};
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -1509,6 +1511,10 @@ impl From<PrivKeyNotAllowed> for SignatureError {
     fn from(e: PrivKeyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
 }
 
+impl From<SignerError> for SignatureError {
+    fn from(e: SignerError) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
 impl From<CoinFindError> for SignatureError {
     fn from(e: CoinFindError) -> Self { SignatureError::CoinIsNotFound(e.to_string()) }
 }
@@ -1547,8 +1553,25 @@ impl From<base64::DecodeError> for VerificationError {
     fn from(e: base64::DecodeError) -> Self { VerificationError::SignatureDecodingError(e.to_string()) }
 }
 
+impl From<ParseSignatureError> for VerificationError {
+    fn from(e: ParseSignatureError) -> Self { VerificationError::SignatureDecodingError(e.to_string()) }
+}
+
 impl From<hex::FromHexError> for VerificationError {
     fn from(e: hex::FromHexError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<FromBase58Error> for VerificationError {
+    fn from(e: FromBase58Error) -> Self {
+        match e {
+            FromBase58Error::InvalidBase58Character(c, _) => {
+                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
+            },
+            FromBase58Error::InvalidBase58Length => {
+                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
+            },
+        }
+    }
 }
 
 impl From<keys::Error> for VerificationError {
