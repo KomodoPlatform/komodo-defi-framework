@@ -137,6 +137,7 @@ fn utxo_coin_fields_for_test(
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
             trezor_coin: None,
+            enable_spv_proof: false,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,
