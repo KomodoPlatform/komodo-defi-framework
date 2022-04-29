@@ -2987,7 +2987,7 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
         }
 
         if height.is_none() {
-            match get_tx_height(tx, client).await {
+            match get_tx_height(client, tx).await {
                 Ok(h) => height = Some(h),
                 Err(e) => {
                     debug!("`get_tx_height` returned an error {:?}", e);
@@ -3042,7 +3042,33 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
     }
 }
 
-pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
+pub async fn get_tx_if_onchain(
+    client: &UtxoRpcClientEnum,
+    tx_hash: H256Json,
+) -> Result<Option<UtxoTx>, MmError<GetTxError>> {
+    match client
+        .get_transaction_bytes(&tx_hash)
+        .compat()
+        .await
+        .map_err(|e| e.into_inner())
+    {
+        Ok(bytes) => Ok(Some(deserialize(bytes.as_slice())?)),
+        Err(err) => {
+            if let UtxoRpcError::ResponseParseError(ref json_err) = err {
+                if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+                    if let Some(message) = json["message"].as_str() {
+                        if message.contains("'code': -5") {
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+            Err(err.into())
+        },
+    }
+}
+
+pub async fn get_tx_height(client: &ElectrumClient, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
     for output in tx.outputs.clone() {
         let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
         if let Ok(history) = client.scripthash_get_history(script_pubkey_str.as_str()).compat().await {

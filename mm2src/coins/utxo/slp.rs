@@ -40,7 +40,7 @@ use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
-use serialization::{deserialize, serialize, Deserializable, Error, Reader};
+use serialization::{deserialize, serialize, Deserializable, Error as SerError, Reader};
 use serialization_derive::Deserializable;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -101,7 +101,7 @@ struct SlpTxPreimage {
 enum ValidateHtlcError {
     TxLackOfOutputs,
     #[display(fmt = "TxParseError: {:?}", _0)]
-    TxParseError(Error),
+    TxParseError(SerError),
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
     OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
@@ -184,7 +184,7 @@ impl From<String> for SpendP2SHError {
 pub enum SpendHtlcError {
     TxLackOfOutputs,
     #[display(fmt = "DeserializationErr: {:?}", _0)]
-    DeserializationErr(Error),
+    DeserializationErr(SerError),
     #[display(fmt = "PubkeyParseError: {:?}", _0)]
     PubkeyParseErr(keys::Error),
     InvalidSlpDetails,
@@ -204,8 +204,8 @@ impl From<NumConversError> for SpendHtlcError {
     fn from(err: NumConversError) -> SpendHtlcError { SpendHtlcError::NumConversionErr(err) }
 }
 
-impl From<Error> for SpendHtlcError {
-    fn from(err: Error) -> SpendHtlcError { SpendHtlcError::DeserializationErr(err) }
+impl From<SerError> for SpendHtlcError {
+    fn from(err: SerError) -> SpendHtlcError { SpendHtlcError::DeserializationErr(err) }
 }
 
 impl From<keys::Error> for SpendHtlcError {
@@ -827,7 +827,7 @@ impl SlpTransaction {
 }
 
 impl Deserializable for SlpTransaction {
-    fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, Error>
+    fn deserialize<T>(reader: &mut Reader<T>) -> Result<Self, SerError>
     where
         Self: Sized,
         T: std::io::Read,
@@ -843,7 +843,7 @@ impl Deserializable for SlpTransaction {
                 } else {
                     let mut url = vec![0; maybe_push_op_code as usize];
                     reader.read_slice(&mut url)?;
-                    String::from_utf8(url).map_err(|e| Error::Custom(e.to_string()))?
+                    String::from_utf8(url).map_err(|e| SerError::Custom(e.to_string()))?
                 };
 
                 let maybe_push_op_code: u8 = reader.read()?;
@@ -864,7 +864,7 @@ impl Deserializable for SlpTransaction {
                 };
                 let bytes: Vec<u8> = reader.read_list()?;
                 if bytes.len() != 8 {
-                    return Err(Error::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
+                    return Err(SerError::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
                 }
                 let initial_token_mint_quantity = u64::from_be_bytes(bytes.try_into().expect("length is 8 bytes"));
 
@@ -881,7 +881,10 @@ impl Deserializable for SlpTransaction {
             SLP_MINT => {
                 let maybe_id: Vec<u8> = reader.read_list()?;
                 if maybe_id.len() != 32 {
-                    return Err(Error::Custom(format!("Unexpected token id length {}", maybe_id.len())));
+                    return Err(SerError::Custom(format!(
+                        "Unexpected token id length {}",
+                        maybe_id.len()
+                    )));
                 }
 
                 let maybe_push_op_code: u8 = reader.read()?;
@@ -894,7 +897,7 @@ impl Deserializable for SlpTransaction {
 
                 let bytes: Vec<u8> = reader.read_list()?;
                 if bytes.len() != 8 {
-                    return Err(Error::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
+                    return Err(SerError::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
                 }
                 let additional_token_quantity = u64::from_be_bytes(bytes.try_into().expect("length is 8 bytes"));
 
@@ -907,7 +910,10 @@ impl Deserializable for SlpTransaction {
             SLP_SEND => {
                 let maybe_id: Vec<u8> = reader.read_list()?;
                 if maybe_id.len() != 32 {
-                    return Err(Error::Custom(format!("Unexpected token id length {}", maybe_id.len())));
+                    return Err(SerError::Custom(format!(
+                        "Unexpected token id length {}",
+                        maybe_id.len()
+                    )));
                 }
 
                 let token_id = H256::from(maybe_id.as_slice());
@@ -915,21 +921,21 @@ impl Deserializable for SlpTransaction {
                 while !reader.is_finished() {
                     let bytes: Vec<u8> = reader.read_list()?;
                     if bytes.len() != 8 {
-                        return Err(Error::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
+                        return Err(SerError::Custom(format!("Expected 8 bytes, got {}", bytes.len())));
                     }
                     let amount = u64::from_be_bytes(bytes.try_into().expect("length is 8 bytes"));
                     amounts.push(amount)
                 }
 
                 if amounts.len() > 19 {
-                    return Err(Error::Custom(format!(
+                    return Err(SerError::Custom(format!(
                         "Expected at most 19 token amounts, got {}",
                         amounts.len()
                     )));
                 }
                 Ok(SlpTransaction::Send { token_id, amounts })
             },
-            _ => Err(Error::Custom(format!(
+            _ => Err(SerError::Custom(format!(
                 "Unsupported transaction type {}",
                 transaction_type
             ))),
@@ -952,11 +958,11 @@ pub enum ParseSlpScriptError {
     #[display(fmt = "UnexpectedTokenType: {:?}", _0)]
     UnexpectedTokenType(Vec<u8>),
     #[display(fmt = "DeserializeFailed: {:?}", _0)]
-    DeserializeFailed(Error),
+    DeserializeFailed(SerError),
 }
 
-impl From<Error> for ParseSlpScriptError {
-    fn from(err: Error) -> ParseSlpScriptError { ParseSlpScriptError::DeserializeFailed(err) }
+impl From<SerError> for ParseSlpScriptError {
+    fn from(err: SerError) -> ParseSlpScriptError { ParseSlpScriptError::DeserializeFailed(err) }
 }
 
 pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpScriptError>> {

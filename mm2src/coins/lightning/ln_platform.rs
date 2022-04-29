@@ -1,9 +1,9 @@
 use super::*;
-use crate::lightning::ln_errors::{FindWatchedOutputSpendError, GetHeaderError, GetTxError, SaveChannelClosingError,
+use crate::lightning::ln_errors::{FindWatchedOutputSpendError, GetHeaderError, SaveChannelClosingError,
                                   SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{electrum_script_hash, BestBlock as RpcBestBlock, BlockHashOrHeight,
-                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
-                               UtxoRpcClientEnum, UtxoRpcError};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
+                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
+use crate::utxo::utxo_common::{get_tx_height, get_tx_if_onchain};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -13,7 +13,6 @@ use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use keys::hash::H256;
@@ -21,7 +20,7 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::H256 as H256Json;
 use std::cmp;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
@@ -204,7 +203,7 @@ pub struct Platform {
     /// estimate_fee_sat fails.
     pub default_fees_and_confirmations: PlatformCoinConfirmations,
     /// This cache stores the transactions that the LN node has interest in.
-    pub registered_txs: PaMutex<HashMap<Txid, HashSet<Script>>>,
+    pub registered_txs: PaMutex<HashSet<Txid>>,
     /// This cache stores the outputs that the LN node has interest in.
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
@@ -223,7 +222,7 @@ impl Platform {
             network,
             best_block_height: AtomicU64::new(0),
             default_fees_and_confirmations,
-            registered_txs: PaMutex::new(HashMap::new()),
+            registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
         }
@@ -240,12 +239,9 @@ impl Platform {
     #[inline]
     pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
 
-    pub fn add_tx(&self, txid: Txid, script_pubkey: Script) {
+    pub fn add_tx(&self, txid: Txid) {
         let mut registered_txs = self.registered_txs.lock();
-        registered_txs
-            .entry(txid)
-            .or_insert_with(HashSet::new)
-            .insert(script_pubkey);
+        registered_txs.insert(txid);
     }
 
     pub fn add_output(&self, output: WatchedOutput) {
@@ -253,36 +249,12 @@ impl Platform {
         registered_outputs.push(output);
     }
 
-    async fn get_tx_if_onchain(&self, txid: Txid) -> Result<Option<Transaction>, GetTxError> {
-        let txid = h256_json_from_txid(txid);
-        match self
-            .rpc_client()
-            .get_transaction_bytes(&txid)
-            .compat()
-            .await
-            .map_err(|e| e.into_inner())
-        {
-            Ok(bytes) => Ok(Some(deserialize(&bytes.into_vec())?)),
-            Err(err) => {
-                if let UtxoRpcError::ResponseParseError(ref json_err) = err {
-                    if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-                        if let Some(message) = json["message"].as_str() {
-                            if message.contains("'code': -5") {
-                                return Ok(None);
-                            }
-                        }
-                    }
-                }
-                Err(err.into())
-            },
-        }
-    }
-
     async fn process_tx_for_unconfirmation<T>(&self, txid: Txid, monitor: &T)
     where
         T: Confirm,
     {
-        match self.get_tx_if_onchain(txid).await {
+        let rpc_txid = h256_json_from_txid(txid);
+        match get_tx_if_onchain(self.rpc_client(), rpc_txid).await {
             Ok(Some(_)) => {},
             Ok(None) => {
                 info!(
@@ -315,37 +287,29 @@ impl Platform {
     async fn get_confirmed_registered_txs(&self, client: &ElectrumClient) -> Vec<ConfirmedTransactionInfo> {
         let registered_txs = self.registered_txs.lock().clone();
         let mut confirmed_registered_txs = Vec::new();
-        for (txid, scripts) in registered_txs {
-            if let Some(transaction) = ok_or_continue!(self.get_tx_if_onchain(txid).await) {
-                for (_, vout) in transaction.output.iter().enumerate() {
-                    if scripts.contains(&vout.script_pubkey) {
-                        let script_hash = hex::encode(electrum_script_hash(vout.script_pubkey.as_ref()));
-                        let history = ok_or_continue!(client.scripthash_get_history(&script_hash).compat().await);
-                        for item in history {
-                            let rpc_txid = h256_json_from_txid(txid);
-                            if item.tx_hash == rpc_txid && item.height > 0 {
-                                let height = item.height as u64;
-                                let header = ok_or_continue!(get_block_header(client, height).await);
-                                let index = ok_or_continue!(
-                                    client
-                                        .blockchain_transaction_get_merkle(rpc_txid, height)
-                                        .compat()
-                                        .await
-                                )
-                                .pos;
-                                let confirmed_transaction_info = ConfirmedTransactionInfo::new(
-                                    txid,
-                                    header,
-                                    index,
-                                    transaction.clone(),
-                                    height as u32,
-                                );
-                                confirmed_registered_txs.push(confirmed_transaction_info);
-                                self.registered_txs.lock().remove(&txid);
-                            }
-                        }
-                    }
-                }
+        // Todo: Use utxo rpc batch requests when this PR https://github.com/KomodoPlatform/atomicDEX-API/pull/1255 is merged.
+        // This will reduce the time needed for checking for confirmed transactions.
+        for txid in registered_txs {
+            let rpc_txid = h256_json_from_txid(txid);
+            if let Some(transaction) = ok_or_continue!(get_tx_if_onchain(self.rpc_client(), rpc_txid).await) {
+                let height = ok_or_continue!(get_tx_height(client, &transaction).await);
+                let header = ok_or_continue!(get_block_header(client, height).await);
+                let index = ok_or_continue!(
+                    client
+                        .blockchain_transaction_get_merkle(rpc_txid, height)
+                        .compat()
+                        .await
+                )
+                .pos;
+                let confirmed_transaction_info = ConfirmedTransactionInfo::new(
+                    txid,
+                    header,
+                    index,
+                    ok_or_continue!(transaction.try_into()),
+                    height as u32,
+                );
+                confirmed_registered_txs.push(confirmed_transaction_info);
+                self.registered_txs.lock().remove(&txid);
             }
         }
         confirmed_registered_txs
@@ -521,7 +485,7 @@ impl BroadcasterInterface for Platform {
 impl Filter for Platform {
     // Watches for this transaction on-chain
     #[inline]
-    fn register_tx(&self, txid: &Txid, script_pubkey: &Script) { self.add_tx(*txid, script_pubkey.clone()); }
+    fn register_tx(&self, txid: &Txid, _script_pubkey: &Script) { self.add_tx(*txid); }
 
     // Watches for any transactions that spend this output on-chain
     fn register_output(&self, output: WatchedOutput) -> Option<(usize, Transaction)> {

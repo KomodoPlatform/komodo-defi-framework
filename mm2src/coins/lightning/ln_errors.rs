@@ -515,21 +515,6 @@ impl From<SqlError> for SaveChannelClosingError {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum GetTxError {
-    Rpc(UtxoRpcError),
-    TxDeserialization(encode::Error),
-}
-
-impl From<UtxoRpcError> for GetTxError {
-    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
-}
-
-impl From<encode::Error> for GetTxError {
-    fn from(err: encode::Error) -> GetTxError { GetTxError::TxDeserialization(err) }
-}
-
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub enum GetHeaderError {
     Rpc(JsonRpcError),
     HeaderDeserialization(encode::Error),

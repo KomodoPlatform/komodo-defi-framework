@@ -67,7 +67,7 @@ use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
-use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::types::SPVError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
@@ -554,6 +554,21 @@ pub enum UnsupportedAddr {
 
 impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum GetTxError {
+    Rpc(UtxoRpcError),
+    TxDeserialization(SerError),
+}
+
+impl From<UtxoRpcError> for GetTxError {
+    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
+}
+
+impl From<SerError> for GetTxError {
+    fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
 }
 
 #[derive(Debug)]
