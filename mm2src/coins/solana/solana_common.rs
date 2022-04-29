@@ -1,6 +1,6 @@
 use crate::solana::SolanaCommonOps;
-use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureResult, SolanaCoin, UnexpectedDerivationMethod,
-            VerificationResult, WithdrawError};
+use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureError, SignatureResult, SolanaCoin,
+            UnexpectedDerivationMethod, VerificationError, VerificationResult, WithdrawError};
 use base58::FromBase58;
 use bigdecimal::ToPrimitive;
 use common::mm_error::MmError;
@@ -109,7 +109,10 @@ pub fn amount_to_ui_amount(amount: u64, decimals: u8) -> BigDecimal {
 }
 
 pub fn sign_message(coin: &SolanaCoin, message: &str) -> SignatureResult<String> {
-    let signature = coin.key_pair.try_sign_message(message.as_bytes())?;
+    let signature = coin
+        .key_pair
+        .try_sign_message(message.as_bytes())
+        .map_err(|e| SignatureError::InternalError(e.to_string()))?;
     Ok(signature.to_string())
 }
 
@@ -120,7 +123,8 @@ pub fn verify_message(
     pubkey_bs58: &str,
 ) -> VerificationResult<bool> {
     let pubkey = pubkey_bs58.from_base58()?;
-    let signature = Signature::from_str(signature)?;
+    let signature =
+        Signature::from_str(signature).map_err(|e| VerificationError::SignatureDecodingError(e.to_string()))?;
     let is_valid = signature.verify(&pubkey, message.as_bytes());
     Ok(is_valid)
 }
