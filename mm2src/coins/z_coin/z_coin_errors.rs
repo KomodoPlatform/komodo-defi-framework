@@ -3,9 +3,9 @@ use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
+use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
 use rpc::v1::types::Bytes as BytesJson;
-use rusqlite::Error as SqliteError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
 #[derive(Debug, Display)]
@@ -124,6 +124,7 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
+    ZCashParamsNotFound,
 }
 
 impl From<SqliteError> for ZCoinBuildError {

@@ -255,6 +255,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-stream"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dad5c83079eae9969be7fadefe640a1c566901f05ff91ab221de4b6f68d9507e"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10f203db73a71dfa2fb6dd22763990fa26f3d2625a6da2da900d23b87d26be27"
+dependencies = [
+ "proc-macro2 1.0.27",
+ "quote 1.0.7",
+ "syn 1.0.72",
+]
+
+[[package]]
 name = "async-task"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,7 +1119,6 @@ dependencies = [
  "rmp-serde",
  "rpc",
  "rpc_task",
- "rusqlite",
  "rust-ini",
  "rustls 0.19.1",
  "script",
@@ -1121,6 +1141,8 @@ dependencies = [
  "tiny-bip39",
  "tokio",
  "tokio-rustls 0.22.0",
+ "tonic",
+ "tonic-build",
  "utxo_signer",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1130,6 +1152,7 @@ dependencies = [
  "webpki-roots 0.19.0",
  "winapi 0.3.9",
  "zcash_client_backend",
+ "zcash_client_sqlite",
  "zcash_primitives",
  "zcash_proofs",
 ]
@@ -1683,6 +1706,7 @@ checksum = "72aa14c04dfae8dd7d8a2b1cb7ca2152618cd01336dbfe704b8dcbf8d41dbd69"
 name = "db_common"
 version = "0.1.0"
 dependencies = [
+ "hex 0.4.2",
  "log 0.4.14",
  "rusqlite",
  "sql-builder",
@@ -2618,9 +2642,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9f1f717ddc7b2ba36df7e871fd88db79326551d3d6f1fc406fbfd28b582ff8e"
+checksum = "62eeb471aa3e3c9197aa4bfeabfe02982f6dc96f750486c0bb0009ac58b26d2b"
 dependencies = [
  "bytes 1.1.0",
  "fnv",
@@ -2873,9 +2897,9 @@ dependencies = [
 
 [[package]]
 name = "http-body"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60daa14be0e0786db0f03a9e57cb404c9d756eed2b6c62b9ea98ec5743ec75a9"
+checksum = "1ff4f84919677303da5f147645dbea6b1881f368d03ac84e1dc09031ebd7b2c6"
 dependencies = [
  "bytes 1.1.0",
  "http 0.2.1",
@@ -2884,9 +2908,9 @@ dependencies = [
 
 [[package]]
 name = "httparse"
-version = "1.4.1"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3a87b616e37e93c22fb19bcd386f02f3af5ea98a25670ad0fce773de23c5e68"
+checksum = "9100414882e15fb7feccb4897e5f0ff0ff1ca7d1a86a23208ada4d7a18e6c6c4"
 
 [[package]]
 name = "httpdate"
@@ -2931,9 +2955,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.14.11"
+version = "0.14.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b61cf2d1aebcf6e6352c97b81dc2244ca29194be1b276f5d8ad5c6330fffb11"
+checksum = "b26ae0a80afebe130861d90abf98e3814a4f28a4c6ffeb5ab8ebb2be311e0ef2"
 dependencies = [
  "bytes 1.1.0",
  "futures-channel",
@@ -2941,10 +2965,10 @@ dependencies = [
  "futures-util",
  "h2",
  "http 0.2.1",
- "http-body 0.4.2",
+ "http-body 0.4.4",
  "httparse",
  "httpdate",
- "itoa 0.4.6",
+ "itoa 1.0.1",
  "pin-project-lite 0.2.6",
  "socket2 0.4.4",
  "tokio",
@@ -2981,6 +3005,18 @@ dependencies = [
  "rustls 0.20.4",
  "tokio",
  "tokio-rustls 0.23.2",
+]
+
+[[package]]
+name = "hyper-timeout"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
+dependencies = [
+ "hyper",
+ "pin-project-lite 0.2.6",
+ "tokio",
+ "tokio-io-timeout",
 ]
 
 [[package]]
@@ -3716,21 +3752,22 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.104"
+version = "0.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0113e6b5a55b7ead30fb0a992b787e69a0551fa15b7eed93c99490eb018ab793"
+checksum = "a10e7439623b293d000fc875627704210d8d0ff5b7badbb689f2a3d51afc618f"
 dependencies = [
  "bitcoin",
- "hex 0.3.2",
+ "hex 0.4.2",
  "regex 0.1.80",
  "secp256k1",
 ]
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.104"
+version = "0.0.105"
 dependencies = [
  "bitcoin",
+ "db_common",
  "lightning",
  "lightning-invoice",
  "lightning-persister",
@@ -3738,9 +3775,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-invoice"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2531e38818b3872b9acbcc3ff499f93962d2ff23ee0d05fc386ef70b993a38a0"
+checksum = "ce661ad7182c2b258d1506e264095d2b4c71436a91b72834d7fb87b7e92e06c0"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
@@ -3751,9 +3788,9 @@ dependencies = [
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.104"
+version = "0.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1851ab90c2739929526c56e06d6b07def4508bfce70f190757fde2de648d1d9c"
+checksum = "e6eb1bcdf0a29baccb13d514e4a8761c9d8038ffd107f27e45182f0177f5e007"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3762,15 +3799,20 @@ dependencies = [
 
 [[package]]
 name = "lightning-persister"
-version = "0.0.104"
+version = "0.0.105"
 dependencies = [
  "async-trait",
  "bitcoin",
  "common",
+ "db_common",
+ "derive_more",
+ "hex 0.4.2",
  "libc",
  "lightning",
  "parking_lot 0.12.0",
+ "rand 0.7.3",
  "secp256k1",
+ "serde",
  "serde_json",
  "winapi 0.3.9",
 ]
@@ -4092,7 +4134,6 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "async-trait",
- "bigdecimal",
  "bitcrypto",
  "blake2",
  "bytes 0.4.12",
@@ -4134,7 +4175,6 @@ dependencies = [
  "metrics",
  "mm2-libp2p",
  "mocktopus",
- "num-rational",
  "num-traits 0.2.12",
  "parity-util-mem",
  "parking_lot 0.12.0",
@@ -5560,7 +5600,7 @@ dependencies = [
  "futures-util",
  "h2",
  "http 0.2.1",
- "http-body 0.4.2",
+ "http-body 0.4.4",
  "hyper",
  "hyper-rustls 0.23.0",
  "ipnet",
@@ -5736,6 +5776,7 @@ dependencies = [
  "libsqlite3-sys",
  "memchr 2.4.1",
  "smallvec 1.6.1",
+ "time 0.2.25",
 ]
 
 [[package]]
@@ -7761,6 +7802,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-io-timeout"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30b74022ada614a1b4834de765f9bb43877f910cc8ce4be40e89042c9223a8bf"
+dependencies = [
+ "pin-project-lite 0.2.6",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-macros"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7854,6 +7905,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "796c5e1cd49905e65dd8e700d4cb1dffcbfdb4fc9d017de08c1a537afd83627c"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "base64 0.13.0",
+ "bytes 1.1.0",
+ "flate2",
+ "futures-core",
+ "futures-util",
+ "h2",
+ "http 0.2.1",
+ "http-body 0.4.4",
+ "hyper",
+ "hyper-timeout",
+ "percent-encoding 2.1.0",
+ "pin-project 1.0.7",
+ "prost",
+ "prost-derive",
+ "tokio",
+ "tokio-rustls 0.22.0",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "tonic-build"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12b52d07035516c2b74337d2ac7746075e7dcae7643816c1b12c5ff8a7484c08"
+dependencies = [
+ "proc-macro2 1.0.27",
+ "prost-build",
+ "quote 1.0.7",
+ "syn 1.0.72",
+]
+
+[[package]]
+name = "tower"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f60422bc7fefa2f3ec70359b8ff1caff59d785877eb70595904605bcc412470f"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "indexmap",
+ "pin-project 1.0.7",
+ "rand 0.8.4",
+ "slab 0.4.2",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tower-layer"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
+
+[[package]]
 name = "tower-service"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7866,8 +7988,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01ebdc2bb4498ab1ab5f5b73c5803825e60199229ccba0698170e3be0e7f959f"
 dependencies = [
  "cfg-if 1.0.0",
+ "log 0.4.14",
  "pin-project-lite 0.2.6",
+ "tracing-attributes",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e65ce065b4b5c53e73bb28912318cb8c9e9ad3921f1d669eb0e68b4c8143a2b"
+dependencies = [
+ "proc-macro2 1.0.27",
+ "quote 1.0.7",
+ "syn 1.0.72",
 ]
 
 [[package]]
@@ -7877,6 +8012,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f50de3927f93d202783f4513cda820ab47ef17f624b03c096e86ef00c67e6b5f"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
+dependencies = [
+ "pin-project 1.0.7",
+ "tracing",
 ]
 
 [[package]]
@@ -8265,56 +8410,6 @@ name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
-
-[[package]]
-name = "wagyu-zcash-parameters"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c904628658374e651288f000934c33ef738b2d8b3e65d4100b70b395dbe2bb"
-dependencies = [
- "wagyu-zcash-parameters-1",
- "wagyu-zcash-parameters-2",
- "wagyu-zcash-parameters-3",
- "wagyu-zcash-parameters-4",
- "wagyu-zcash-parameters-5",
- "wagyu-zcash-parameters-6",
-]
-
-[[package]]
-name = "wagyu-zcash-parameters-1"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90bf2e21bb027d3f8428c60d6a720b54a08bf6ce4e6f834ef8e0d38bb5695da8"
-
-[[package]]
-name = "wagyu-zcash-parameters-2"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a616ab2e51e74cc48995d476e94de810fb16fc73815f390bf2941b046cc9ba2c"
-
-[[package]]
-name = "wagyu-zcash-parameters-3"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14da1e2e958ff93c0830ee68e91884069253bf3462a67831b02b367be75d6147"
-
-[[package]]
-name = "wagyu-zcash-parameters-4"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f058aeef03a2070e8666ffb5d1057d8bb10313b204a254a6e6103eb958e9a6d6"
-
-[[package]]
-name = "wagyu-zcash-parameters-5"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ffe916b30e608c032ae1b734f02574a3e12ec19ab5cc5562208d679efe4969d"
-
-[[package]]
-name = "wagyu-zcash-parameters-6"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7b6d5a78adc3e8f198e9cd730f219a695431467f7ec29dcfc63ade885feebe1"
 
 [[package]]
 name = "waker-fn"
@@ -8745,6 +8840,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash_client_sqlite"
+version = "0.3.0"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
+dependencies = [
+ "bech32",
+ "bs58",
+ "ff",
+ "group",
+ "jubjub",
+ "protobuf",
+ "rand_core 0.5.1",
+ "rusqlite",
+ "time 0.2.25",
+ "zcash_client_backend",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
 source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
@@ -8803,7 +8916,6 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "rand_core 0.5.1",
- "wagyu-zcash-parameters",
  "zcash_primitives",
 ]
 

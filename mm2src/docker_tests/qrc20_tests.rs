@@ -1,6 +1,5 @@
 use crate::docker_tests::docker_tests_common::*;
 use crate::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
-use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
@@ -11,6 +10,7 @@ use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Tr
             TransactionFutErr, ValidatePaymentInput};
 use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
+use common::mm_number::BigDecimal;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
 use futures01::Future;
@@ -118,7 +118,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> UtxoDockerNode {
 }
 
 fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
-    let withdraw = block_on(mm.rpc(json! ({
+    let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "withdraw",
@@ -141,7 +141,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
     assert_eq!(tx_details.to, vec![to.to_owned()]);
     assert!(BigDecimal::from(amount) + tx_details.my_balance_change < 0.into());
 
-    let send = block_on(mm.rpc(json! ({
+    let send = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": coin,
@@ -207,6 +207,7 @@ fn test_taker_spends_maker_payment() {
         secret_hash,
         amount: amount.clone(),
         swap_contract_address: taker_coin.swap_contract_address(),
+        try_spv_proof_until: wait_until + 30,
         confirmations,
     };
     taker_coin.validate_maker_payment(input).wait().unwrap();
@@ -298,6 +299,7 @@ fn test_maker_spends_taker_payment() {
         secret_hash: secret_hash.clone(),
         amount: amount.clone(),
         swap_contract_address: maker_coin.swap_contract_address(),
+        try_spv_proof_until: wait_until + 30,
         confirmations,
     };
     maker_coin.validate_taker_payment(input).wait().unwrap();
@@ -858,7 +860,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     block_on(enable_native(&mm_alice, "MYCOIN", &[]));
     block_on(enable_qrc20_native(&mm_alice, "QICK"));
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "QICK",
@@ -873,7 +875,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     thread::sleep(Duration::from_secs(2));
 
     // Buy QICK and thus lock ~ 0.05 Qtum
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "QICK",
@@ -888,7 +890,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     thread::sleep(Duration::from_secs(4));
 
     // QRC20 balance is sufficient, but most of the balance is locked
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "sell",
         "base": "MYCOIN",
@@ -980,7 +982,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     debug!("real_max_dex_fee: {:?}", real_dex_fee.to_fraction());
 
     // check if the actual max_taker_vol equals to the expected
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "max_taker_vol",
         "coin": "QTUM",
@@ -993,7 +995,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         json::to_value(expected_max_taker_vol.to_fraction()).unwrap()
     );
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "sell",
         "base": "QTUM",
@@ -1117,7 +1119,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
     // but balance = 0.5
     // This RPC call should fail because [`QtumCoin::get_sender_trade_fee`] will try to generate a dummy transaction due to the dynamic tx fee,
     // and this operation must fail with the [`TradePreimageError::NotSufficientBalance`].
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "mmrpc": "2.0",
         "method": "trade_preimage",
@@ -1174,7 +1176,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
     log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm, "QTUM", &[]))]);
 
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "mmrpc": "2.0",
         "method": "trade_preimage",
@@ -1233,7 +1235,7 @@ fn test_segwit_native_balance() {
     let balance = enable_res["balance"].as_str().unwrap();
     assert_eq!(balance, "0.5");
 
-    let my_balance = block_on(mm.rpc(json!({
+    let my_balance = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "my_balance",
         "coin": "QTUM",
@@ -1417,7 +1419,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
 pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
     let native = mm
-        .rpc(json! ({
+        .rpc(&json! ({
             "userpass": mm.userpass,
             "method": "enable",
             "coin": coin,
@@ -1470,7 +1472,7 @@ fn segwit_address_in_the_orderbook() {
 
     log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": "QTUM",
@@ -1481,7 +1483,7 @@ fn segwit_address_in_the_orderbook() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let orderbook = block_on(mm.rpc(json! ({
+    let orderbook = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "QTUM",

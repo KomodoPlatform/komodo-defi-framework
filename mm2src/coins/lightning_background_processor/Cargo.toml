@@ -1,6 +1,6 @@
 [package]
 name = "lightning-background-processor"
-version = "0.0.104"
+version = "0.0.105"
 authors = ["Valentine Wallace <vwallace@protonmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "http://github.com/lightningdevkit/rust-lightning"
@@ -11,9 +11,10 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "0.27.1"
-lightning = { version = "0.0.104", features = ["std"] }
+lightning = { version = "0.0.105", features = ["std"] }
 
 [dev-dependencies]
-lightning = { version = "0.0.104", features = ["_test_utils"] }
-lightning-invoice = "0.12.0"
-lightning-persister = { version = "0.0.104", path = "../lightning_persister" }
+db_common = { path = "../../db_common" }
+lightning = { version = "0.0.105", features = ["_test_utils"] }
+lightning-invoice = "0.13.0"
+lightning-persister = { version = "0.0.105", path = "../lightning_persister" }

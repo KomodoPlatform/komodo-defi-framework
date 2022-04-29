@@ -1,4 +1,12 @@
-use super::{lp_coinfind_or_err, MmCoinEnum};
+pub mod ln_conf;
+pub mod ln_errors;
+mod ln_events;
+mod ln_p2p;
+mod ln_platform;
+mod ln_serialization;
+mod ln_utils;
+
+use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
@@ -8,34 +16,35 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use bitcoin::blockdata::script::Script;
-use bitcoin::hash_types::Txid;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use chain::TransactionOutput;
+use common::executor::spawn;
 use common::ip_addr::myipaddr;
-use common::log::LogOnError;
+use common::log::{LogOnError, LogState};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
-use common::{async_blocking, log};
+use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{AddressHashEnum, KeyPair};
 use lightning::chain::channelmonitor::Balance;
-use lightning::chain::keysinterface::KeysInterface;
-use lightning::chain::keysinterface::KeysManager;
-use lightning::chain::WatchedOutput;
+use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
+use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
-use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::ln::{PaymentHash, PaymentPreimage};
+use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning::util::config::UserConfig;
 use lightning_background_processor::BackgroundProcessor;
-use lightning_invoice::utils::create_invoice_from_channelmanager;
-use lightning_invoice::Invoice;
-use lightning_persister::storage::{NodesAddressesMapShared, Storage};
-use lightning_persister::FilesystemPersister;
-use ln_conf::{ChannelOptions, LightningCoinConf, PlatformCoinConfirmations};
-use ln_connections::{connect_to_node, ConnectToNodeRes};
+use lightning_invoice::payment;
+use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
+use lightning_invoice::{Invoice, InvoiceDescription};
+use lightning_persister::storage::{ClosedChannelsFilter, DbStorage, FileSystemStorage, HTLCStatus,
+                                   NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer,
+                                   SqlChannelDetails};
+use lightning_persister::LightningPersister;
+use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
                 GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
@@ -43,8 +52,10 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
+use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
+use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
-use ln_utils::{ChainMonitor, ChannelManager, InvoicePayer, PeerManager};
+use ln_utils::{ChainMonitor, ChannelManager};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
@@ -56,75 +67,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-pub mod ln_conf;
-mod ln_connections;
-pub mod ln_errors;
-mod ln_events;
-mod ln_rpc;
-mod ln_serialization;
-pub mod ln_utils;
-
-type PaymentsMap = HashMap<PaymentHash, PaymentInfo>;
-type PaymentsMapShared = Arc<PaMutex<PaymentsMap>>;
-
-pub struct PlatformFields {
-    pub platform_coin: UtxoStandardCoin,
-    /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
-    pub network: BlockchainNetwork,
-    // Default fees to and confirmation targets to be used for FeeEstimator. Default fees are used when the call for
-    // estimate_fee_sat fails.
-    pub default_fees_and_confirmations: PlatformCoinConfirmations,
-    // This cache stores the transactions that the LN node has interest in.
-    pub registered_txs: PaMutex<HashMap<Txid, HashSet<Script>>>,
-    // This cache stores the outputs that the LN node has interest in.
-    pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
-    // This cache stores transactions to be broadcasted once the other node accepts the channel
-    pub unsigned_funding_txs: PaMutex<HashMap<[u8; 32], TransactionInputSigner>>,
-}
-
-impl PlatformFields {
-    pub fn add_tx(&self, txid: &Txid, script_pubkey: &Script) {
-        let mut registered_txs = self.registered_txs.lock();
-        match registered_txs.get_mut(txid) {
-            Some(h) => {
-                h.insert(script_pubkey.clone());
-            },
-            None => {
-                let mut script_pubkeys = HashSet::new();
-                script_pubkeys.insert(script_pubkey.clone());
-                registered_txs.insert(*txid, script_pubkeys);
-            },
-        }
-    }
-
-    pub fn add_output(&self, output: WatchedOutput) {
-        let mut registered_outputs = self.registered_outputs.lock();
-        registered_outputs.push(output);
-    }
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum HTLCStatus {
-    Pending,
-    Succeeded,
-    Failed,
-}
-
-#[derive(Clone)]
-pub struct PaymentInfo {
-    pub preimage: Option<PaymentPreimage>,
-    pub secret: Option<PaymentSecret>,
-    pub status: HTLCStatus,
-    pub amt_msat: Option<u64>,
-    pub fee_paid_msat: Option<u64>,
-}
+type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
+type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Mutex<Scorer>>, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
-    pub platform_fields: Arc<PlatformFields>,
+    pub platform: Arc<Platform>,
     pub conf: LightningCoinConf,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
@@ -140,13 +90,10 @@ pub struct LightningCoin {
     /// The lightning node invoice payer.
     pub invoice_payer: Arc<InvoicePayer<Arc<LightningEventHandler>>>,
     /// The lightning node persister that takes care of writing/reading data from storage.
-    pub persister: Arc<FilesystemPersister>,
-    /// The mutex storing the inbound payments info.
-    pub inbound_payments: PaymentsMapShared,
-    /// The mutex storing the outbound payments info.
-    pub outbound_payments: PaymentsMapShared,
-    /// The mutex storing the addresses of the nodes that are used for reconnecting.
-    pub nodes_addresses: NodesAddressesMapShared,
+    pub persister: Arc<LightningPersister>,
+    /// The mutex storing the addresses of the nodes that the lightning node has open channels with,
+    /// these addresses are used for reconnecting.
+    pub open_channels_nodes: NodesAddressesMapShared,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -154,8 +101,9 @@ impl fmt::Debug for LightningCoin {
 }
 
 impl LightningCoin {
-    fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform_fields.platform_coin }
+    fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
+    #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
     fn get_balance_msat(&self) -> (u64, u64) {
@@ -174,19 +122,31 @@ impl LightningCoin {
             })
     }
 
-    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<(PaymentHash, PaymentInfo)> {
+    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<PaymentInfo> {
         self.invoice_payer
             .pay_invoice(&invoice)
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
         let payment_hash = PaymentHash((*invoice.payment_hash()).into_inner());
+        let payment_type = PaymentType::OutboundPayment {
+            destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
+        };
+        let description = match invoice.description() {
+            InvoiceDescription::Direct(d) => d.to_string(),
+            InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
+        };
         let payment_secret = Some(*invoice.payment_secret());
-        Ok((payment_hash, PaymentInfo {
+        Ok(PaymentInfo {
+            payment_hash,
+            payment_type,
+            description,
             preimage: None,
             secret: payment_secret,
-            status: HTLCStatus::Pending,
             amt_msat: invoice.amount_milli_satoshis(),
             fee_paid_msat: None,
-        }))
+            status: HTLCStatus::Pending,
+            created_at: now_ms() / 1000,
+            last_updated: now_ms() / 1000,
+        })
     }
 
     fn keysend(
@@ -194,7 +154,7 @@ impl LightningCoin {
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> SendPaymentResult<(PaymentHash, PaymentInfo)> {
+    ) -> SendPaymentResult<PaymentInfo> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
             return MmError::err(SendPaymentError::CLTVExpiryError(
                 final_cltv_expiry_delta,
@@ -206,14 +166,68 @@ impl LightningCoin {
             .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
+        let payment_type = PaymentType::OutboundPayment { destination };
 
-        Ok((payment_hash, PaymentInfo {
+        Ok(PaymentInfo {
+            payment_hash,
+            payment_type,
+            description: "".into(),
             preimage: Some(payment_preimage),
             secret: None,
-            status: HTLCStatus::Pending,
             amt_msat: Some(amount_msat),
             fee_paid_msat: None,
-        }))
+            status: HTLCStatus::Pending,
+            created_at: now_ms() / 1000,
+            last_updated: now_ms() / 1000,
+        })
+    }
+
+    async fn get_open_channels_by_filter(
+        &self,
+        filter: Option<OpenChannelsFilter>,
+        paging: PagingOptionsEnum<u64>,
+        limit: usize,
+    ) -> ListChannelsResult<GetOpenChannelsResult> {
+        let mut total_open_channels: Vec<ChannelDetailsForRPC> = self
+            .channel_manager
+            .list_channels()
+            .into_iter()
+            .map(From::from)
+            .collect();
+
+        total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
+
+        let open_channels_filtered = if let Some(ref f) = filter {
+            total_open_channels
+                .into_iter()
+                .filter(|chan| apply_open_channel_filter(chan, f))
+                .collect()
+        } else {
+            total_open_channels
+        };
+
+        let offset = match paging {
+            PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+            PagingOptionsEnum::FromId(rpc_id) => open_channels_filtered
+                .iter()
+                .position(|x| x.rpc_channel_id == rpc_id)
+                .map(|pos| pos + 1)
+                .unwrap_or_default(),
+        };
+
+        let total = open_channels_filtered.len();
+
+        let channels = if offset + limit <= total {
+            open_channels_filtered[offset..offset + limit].to_vec()
+        } else {
+            open_channels_filtered[offset..].to_vec()
+        };
+
+        Ok(GetOpenChannelsResult {
+            channels,
+            skipped: offset,
+            total,
+        })
     }
 }
 
@@ -387,7 +401,7 @@ impl MarketCoinOps for LightningCoin {
         Box::new(self.platform_coin().my_balance().map(|res| res.spendable))
     }
 
-    fn platform_ticker(&self) -> &str { self.platform_fields.platform_coin.ticker() }
+    fn platform_ticker(&self) -> &str { self.platform_coin().ticker() }
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         Box::new(futures01::future::err(
@@ -435,7 +449,13 @@ impl MarketCoinOps for LightningCoin {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(self.keys_manager.get_node_secret().to_string()) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        Ok(self
+            .keys_manager
+            .get_node_secret(Recipient::Node)
+            .map_err(|_| "Unsupported recipient".to_string())?
+            .to_string())
+    }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
@@ -531,6 +551,161 @@ impl MmCoin for LightningCoin {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LightningParams {
+    // The listening port for the p2p LN node
+    pub listening_port: u16,
+    // Printable human-readable string to describe this node to other users.
+    pub node_name: [u8; 32],
+    // Node's RGB color. This is used for showing the node in a network graph with the desired color.
+    pub node_color: [u8; 3],
+    // Invoice Payer is initialized while starting the lightning node, and it requires the number of payment retries that
+    // it should do before considering a payment failed or partially failed. If not provided the number of retries will be 5
+    // as this is a good default value.
+    pub payment_retries: Option<usize>,
+    // Node's backup path for channels and other data that requires backup.
+    pub backup_path: Option<String>,
+}
+
+pub async fn start_lightning(
+    ctx: &MmArc,
+    platform_coin: UtxoStandardCoin,
+    protocol_conf: LightningProtocolConf,
+    conf: LightningCoinConf,
+    params: LightningParams,
+) -> EnableLightningResult<LightningCoin> {
+    // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
+    if let DerivationMethod::HDWallet(_) = platform_coin.as_ref().derivation_method {
+        return MmError::err(EnableLightningError::UnsupportedMode(
+            "'start_lightning'".into(),
+            "iguana".into(),
+        ));
+    }
+
+    let platform = Arc::new(Platform::new(
+        platform_coin.clone(),
+        protocol_conf.network.clone(),
+        protocol_conf.confirmations,
+    ));
+
+    // Initialize the Logger
+    let logger = ctx.log.0.clone();
+
+    // Initialize Persister
+    let persister = ln_utils::init_persister(ctx, platform.clone(), conf.ticker.clone(), params.backup_path).await?;
+
+    // Initialize the KeysManager
+    let keys_manager = ln_utils::init_keys_manager(ctx)?;
+
+    // Initialize the NetGraphMsgHandler. This is used for providing routes to send payments over
+    let network_graph = Arc::new(persister.get_network_graph(protocol_conf.network.into()).await?);
+    spawn(ln_utils::persist_network_graph_loop(
+        persister.clone(),
+        network_graph.clone(),
+    ));
+    let network_gossip = Arc::new(NetGraphMsgHandler::new(
+        network_graph.clone(),
+        None::<Arc<dyn Access + Send + Sync>>,
+        logger.clone(),
+    ));
+
+    // Initialize the ChannelManager
+    let (chain_monitor, channel_manager) = ln_utils::init_channel_manager(
+        platform.clone(),
+        logger.clone(),
+        persister.clone(),
+        keys_manager.clone(),
+        conf.clone().into(),
+    )
+    .await?;
+
+    // Initialize the PeerManager
+    let peer_manager = ln_p2p::init_peer_manager(
+        ctx.clone(),
+        params.listening_port,
+        channel_manager.clone(),
+        network_gossip.clone(),
+        keys_manager
+            .get_node_secret(Recipient::Node)
+            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
+        logger.clone(),
+    )
+    .await?;
+
+    // Initialize the event handler
+    let event_handler = Arc::new(ln_events::LightningEventHandler::new(
+        // It's safe to use unwrap here for now until implementing Native Client for Lightning
+        platform.clone(),
+        channel_manager.clone(),
+        keys_manager.clone(),
+        persister.clone(),
+    ));
+
+    // Initialize routing Scorer
+    let scorer = Arc::new(Mutex::new(persister.get_scorer(network_graph.clone()).await?));
+    spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
+
+    // Create InvoicePayer
+    let router = DefaultRouter::new(network_graph, logger.clone());
+    let invoice_payer = Arc::new(InvoicePayer::new(
+        channel_manager.clone(),
+        router,
+        scorer,
+        logger.clone(),
+        event_handler,
+        payment::RetryAttempts(params.payment_retries.unwrap_or(5)),
+    ));
+
+    // Persist ChannelManager
+    // Note: if the ChannelManager is not persisted properly to disk, there is risk of channels force closing the next time LN starts up
+    let channel_manager_persister = persister.clone();
+    let persist_channel_manager_callback =
+        move |node: &ChannelManager| channel_manager_persister.persist_manager(&*node);
+
+    // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
+    // InvoicePayer will act as our event handler as it handles some of the payments related events before
+    // delegating it to LightningEventHandler.
+    let background_processor = Arc::new(BackgroundProcessor::start(
+        persist_channel_manager_callback,
+        invoice_payer.clone(),
+        chain_monitor.clone(),
+        channel_manager.clone(),
+        Some(network_gossip),
+        peer_manager.clone(),
+        logger,
+    ));
+
+    // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
+    let open_channels_nodes = Arc::new(PaMutex::new(
+        ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
+    ));
+    spawn(ln_p2p::connect_to_nodes_loop(
+        open_channels_nodes.clone(),
+        peer_manager.clone(),
+    ));
+
+    // Broadcast Node Announcement
+    spawn(ln_p2p::ln_node_announcement_loop(
+        channel_manager.clone(),
+        params.node_name,
+        params.node_color,
+        params.listening_port,
+    ));
+
+    Ok(LightningCoin {
+        platform,
+        conf,
+        peer_manager,
+        background_processor,
+        channel_manager,
+        chain_monitor,
+        keys_manager,
+        invoice_payer,
+        persister,
+        open_channels_nodes,
+    })
+}
+
 #[derive(Deserialize)]
 pub struct ConnectToNodeRequest {
     pub coin: String,
@@ -551,11 +726,14 @@ pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) ->
 
     // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
     // can be used to reconnect to the new address while saving this new address for reconnections.
-    if let ConnectToNodeRes::ConnectedSuccessfully(_, _) = res {
-        if let Entry::Occupied(mut entry) = ln_coin.nodes_addresses.lock().entry(node_pubkey) {
+    if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
+        if let Entry::Occupied(mut entry) = ln_coin.open_channels_nodes.lock().entry(node_pubkey) {
             entry.insert(node_addr);
         }
-        ln_coin.persister.save_nodes_addresses(ln_coin.nodes_addresses).await?;
+        ln_coin
+            .persister
+            .save_nodes_addresses(ln_coin.open_channels_nodes)
+            .await?;
     }
 
     Ok(res.to_string())
@@ -585,7 +763,7 @@ pub struct OpenChannelRequest {
 
 #[derive(Serialize)]
 pub struct OpenChannelResponse {
-    temporary_channel_id: H256Json,
+    rpc_channel_id: u64,
     node_address: NodeAddress,
 }
 
@@ -656,38 +834,134 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         user_config.own_channel_config.our_htlc_minimum_msat = min;
     }
 
+    let rpc_channel_id = ln_coin.persister.get_last_channel_rpc_id().await? as u64 + 1;
+
     let temp_channel_id = async_blocking(move || {
         channel_manager
-            .create_channel(node_pubkey, amount_in_sat, push_msat, 1, Some(user_config))
+            .create_channel(node_pubkey, amount_in_sat, push_msat, rpc_channel_id, Some(user_config))
             .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
     })
     .await?;
 
     {
-        let mut unsigned_funding_txs = ln_coin.platform_fields.unsigned_funding_txs.lock();
-        unsigned_funding_txs.insert(temp_channel_id, unsigned);
+        let mut unsigned_funding_txs = ln_coin.platform.unsigned_funding_txs.lock();
+        unsigned_funding_txs.insert(rpc_channel_id, unsigned);
     }
 
+    let pending_channel_details = SqlChannelDetails::new(
+        rpc_channel_id,
+        temp_channel_id,
+        node_pubkey,
+        true,
+        user_config.channel_options.announced_channel,
+    );
+
     // Saving node data to reconnect to it on restart
-    ln_coin.nodes_addresses.lock().insert(node_pubkey, node_addr);
-    ln_coin.persister.save_nodes_addresses(ln_coin.nodes_addresses).await?;
+    ln_coin.open_channels_nodes.lock().insert(node_pubkey, node_addr);
+    ln_coin
+        .persister
+        .save_nodes_addresses(ln_coin.open_channels_nodes)
+        .await?;
+
+    ln_coin.persister.add_channel_to_db(pending_channel_details).await?;
 
     Ok(OpenChannelResponse {
-        temporary_channel_id: temp_channel_id.into(),
+        rpc_channel_id,
         node_address: req.node_address,
     })
 }
 
 #[derive(Deserialize)]
-pub struct ListChannelsRequest {
-    pub coin: String,
+pub struct OpenChannelsFilter {
+    pub channel_id: Option<H256Json>,
+    pub counterparty_node_id: Option<PublicKeyForRPC>,
+    pub funding_tx: Option<H256Json>,
+    pub from_funding_value_sats: Option<u64>,
+    pub to_funding_value_sats: Option<u64>,
+    pub is_outbound: Option<bool>,
+    pub from_balance_msat: Option<u64>,
+    pub to_balance_msat: Option<u64>,
+    pub from_outbound_capacity_msat: Option<u64>,
+    pub to_outbound_capacity_msat: Option<u64>,
+    pub from_inbound_capacity_msat: Option<u64>,
+    pub to_inbound_capacity_msat: Option<u64>,
+    pub confirmed: Option<bool>,
+    pub is_usable: Option<bool>,
+    pub is_public: Option<bool>,
 }
 
-#[derive(Serialize)]
+fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
+    let is_channel_id = filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
+
+    let is_counterparty_node_id = filter.counterparty_node_id.is_none()
+        || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
+
+    let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
+
+    let is_from_funding_value_sats =
+        Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
+
+    let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
+        || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
+
+    let is_outbound = filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
+
+    let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
+
+    let is_to_balance_msat =
+        filter.to_balance_msat.is_none() || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
+
+    let is_from_outbound_capacity_msat =
+        Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
+
+    let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
+        || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
+
+    let is_from_inbound_capacity_msat =
+        Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
+
+    let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
+        || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
+
+    let is_confirmed = filter.confirmed.is_none() || Some(&channel_details.confirmed) == filter.confirmed.as_ref();
+
+    let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
+
+    let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
+
+    is_channel_id
+        && is_counterparty_node_id
+        && is_funding_tx
+        && is_from_funding_value_sats
+        && is_to_funding_value_sats
+        && is_outbound
+        && is_from_balance_msat
+        && is_to_balance_msat
+        && is_from_outbound_capacity_msat
+        && is_to_outbound_capacity_msat
+        && is_from_inbound_capacity_msat
+        && is_to_inbound_capacity_msat
+        && is_confirmed
+        && is_usable
+        && is_public
+}
+
+#[derive(Deserialize)]
+pub struct ListOpenChannelsRequest {
+    pub coin: String,
+    pub filter: Option<OpenChannelsFilter>,
+    #[serde(default = "ten")]
+    limit: usize,
+    #[serde(default)]
+    paging_options: PagingOptionsEnum<u64>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct ChannelDetailsForRPC {
-    pub channel_id: String,
-    pub counterparty_node_id: String,
-    pub funding_tx: Option<String>,
+    pub rpc_channel_id: u64,
+    pub channel_id: H256Json,
+    pub counterparty_node_id: PublicKeyForRPC,
+    pub funding_tx: Option<H256Json>,
     pub funding_tx_output_index: Option<u16>,
     pub funding_tx_value_sats: u64,
     /// True if the channel was initiated (and thus funded) by us.
@@ -708,9 +982,10 @@ pub struct ChannelDetailsForRPC {
 impl From<ChannelDetails> for ChannelDetailsForRPC {
     fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
         ChannelDetailsForRPC {
-            channel_id: hex::encode(details.channel_id),
-            counterparty_node_id: details.counterparty.node_id.to_string(),
-            funding_tx: details.funding_txo.map(|tx| tx.txid.to_string()),
+            rpc_channel_id: details.user_channel_id,
+            channel_id: details.channel_id.into(),
+            counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
+            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
             funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
             funding_tx_value_sats: details.channel_value_satoshis,
             is_outbound: details.is_outbound,
@@ -724,36 +999,101 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
     }
 }
 
-#[derive(Serialize)]
-pub struct ListChannelsResponse {
-    channels: Vec<ChannelDetailsForRPC>,
+struct GetOpenChannelsResult {
+    pub channels: Vec<ChannelDetailsForRPC>,
+    pub skipped: usize,
+    pub total: usize,
 }
 
-pub async fn list_channels(ctx: MmArc, req: ListChannelsRequest) -> ListChannelsResult<ListChannelsResponse> {
+#[derive(Serialize)]
+pub struct ListOpenChannelsResponse {
+    open_channels: Vec<ChannelDetailsForRPC>,
+    limit: usize,
+    skipped: usize,
+    total: usize,
+    total_pages: usize,
+    paging_options: PagingOptionsEnum<u64>,
+}
+
+pub async fn list_open_channels_by_filter(
+    ctx: MmArc,
+    req: ListOpenChannelsRequest,
+) -> ListChannelsResult<ListOpenChannelsResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(ListChannelsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let channels = ln_coin
-        .channel_manager
-        .list_channels()
-        .into_iter()
-        .map(From::from)
-        .collect();
 
-    Ok(ListChannelsResponse { channels })
+    let result = ln_coin
+        .get_open_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
+        .await?;
+
+    Ok(ListOpenChannelsResponse {
+        open_channels: result.channels,
+        limit: req.limit,
+        skipped: result.skipped,
+        total: result.total,
+        total_pages: calc_total_pages(result.total, req.limit),
+        paging_options: req.paging_options,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct ListClosedChannelsRequest {
+    pub coin: String,
+    pub filter: Option<ClosedChannelsFilter>,
+    #[serde(default = "ten")]
+    limit: usize,
+    #[serde(default)]
+    paging_options: PagingOptionsEnum<u64>,
+}
+
+#[derive(Serialize)]
+pub struct ListClosedChannelsResponse {
+    closed_channels: Vec<SqlChannelDetails>,
+    limit: usize,
+    skipped: usize,
+    total: usize,
+    total_pages: usize,
+    paging_options: PagingOptionsEnum<u64>,
+}
+
+pub async fn list_closed_channels_by_filter(
+    ctx: MmArc,
+    req: ListClosedChannelsRequest,
+) -> ListChannelsResult<ListClosedChannelsResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ln_coin = match coin {
+        MmCoinEnum::LightningCoin(c) => c,
+        _ => return MmError::err(ListChannelsError::UnsupportedCoin(coin.ticker().to_string())),
+    };
+    let closed_channels_res = ln_coin
+        .persister
+        .get_closed_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
+        .await?;
+
+    Ok(ListClosedChannelsResponse {
+        closed_channels: closed_channels_res.channels,
+        limit: req.limit,
+        skipped: closed_channels_res.skipped,
+        total: closed_channels_res.total,
+        total_pages: calc_total_pages(closed_channels_res.total, req.limit),
+        paging_options: req.paging_options,
+    })
 }
 
 #[derive(Deserialize)]
 pub struct GetChannelDetailsRequest {
     pub coin: String,
-    pub channel_id: H256Json,
+    pub rpc_channel_id: u64,
 }
 
 #[derive(Serialize)]
-pub struct GetChannelDetailsResponse {
-    channel_details: ChannelDetailsForRPC,
+#[serde(tag = "status", content = "details")]
+pub enum GetChannelDetailsResponse {
+    Open(ChannelDetailsForRPC),
+    Closed(SqlChannelDetails),
 }
 
 pub async fn get_channel_details(
@@ -765,15 +1105,23 @@ pub async fn get_channel_details(
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(GetChannelDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let channel_details = ln_coin
+    let channel_details = match ln_coin
         .channel_manager
         .list_channels()
         .into_iter()
-        .find(|chan| chan.channel_id == req.channel_id.0)
-        .ok_or(GetChannelDetailsError::NoSuchChannel(req.channel_id))?
-        .into();
+        .find(|chan| chan.user_channel_id == req.rpc_channel_id)
+    {
+        Some(details) => GetChannelDetailsResponse::Open(details.into()),
+        None => GetChannelDetailsResponse::Closed(
+            ln_coin
+                .persister
+                .get_channel_from_db(req.rpc_channel_id)
+                .await?
+                .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
+        ),
+    };
 
-    Ok(GetChannelDetailsResponse { channel_details })
+    Ok(channel_details)
 }
 
 #[derive(Deserialize)]
@@ -799,8 +1147,8 @@ pub async fn generate_invoice(
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(GenerateInvoiceError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let nodes_addresses = ln_coin.nodes_addresses.lock().clone();
-    for (node_pubkey, node_addr) in nodes_addresses {
+    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
+    for (node_pubkey, node_addr) in open_channels_nodes {
         connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
             .await
             .error_log_with_msg(&format!(
@@ -808,16 +1156,30 @@ pub async fn generate_invoice(
                 node_pubkey
             ));
     }
-    let network = ln_coin.platform_fields.network.clone().into();
+    let network = ln_coin.platform.network.clone().into();
     let invoice = create_invoice_from_channelmanager(
         &ln_coin.channel_manager,
         ln_coin.keys_manager,
         network,
         req.amount_in_msat,
-        req.description,
+        req.description.clone(),
     )?;
+    let payment_hash = invoice.payment_hash().into_inner();
+    let payment_info = PaymentInfo {
+        payment_hash: PaymentHash(payment_hash),
+        payment_type: PaymentType::InboundPayment,
+        description: req.description,
+        preimage: None,
+        secret: Some(*invoice.payment_secret()),
+        amt_msat: req.amount_in_msat,
+        fee_paid_msat: None,
+        status: HTLCStatus::Pending,
+        created_at: now_ms() / 1000,
+        last_updated: now_ms() / 1000,
+    };
+    ln_coin.persister.add_or_update_payment_in_db(payment_info).await?;
     Ok(GenerateInvoiceResponse {
-        payment_hash: invoice.payment_hash().into_inner().into(),
+        payment_hash: payment_hash.into(),
         invoice: invoice.into(),
     })
 }
@@ -857,8 +1219,8 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(SendPaymentError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let nodes_addresses = ln_coin.nodes_addresses.lock().clone();
-    for (node_pubkey, node_addr) in nodes_addresses {
+    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
+    for (node_pubkey, node_addr) in open_channels_nodes {
         connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
             .await
             .error_log_with_msg(&format!(
@@ -866,7 +1228,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
                 node_pubkey
             ));
     }
-    let (payment_hash, payment_info) = match req.payment {
+    let payment_info = match req.payment {
         Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.into())?,
         Payment::Keysend {
             destination,
@@ -874,65 +1236,146 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             expiry,
         } => ln_coin.keysend(destination.into(), amount_in_msat, expiry)?,
     };
-    let mut outbound_payments = ln_coin.outbound_payments.lock();
-    outbound_payments.insert(payment_hash, payment_info);
+    ln_coin
+        .persister
+        .add_or_update_payment_in_db(payment_info.clone())
+        .await?;
     Ok(SendPaymentResponse {
-        payment_hash: payment_hash.0.into(),
+        payment_hash: payment_info.payment_hash.0.into(),
     })
+}
+
+#[derive(Deserialize)]
+pub struct PaymentsFilterForRPC {
+    pub payment_type: Option<PaymentTypeForRPC>,
+    pub description: Option<String>,
+    pub status: Option<HTLCStatus>,
+    pub from_amount_msat: Option<u64>,
+    pub to_amount_msat: Option<u64>,
+    pub from_fee_paid_msat: Option<u64>,
+    pub to_fee_paid_msat: Option<u64>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+}
+
+impl From<PaymentsFilterForRPC> for PaymentsFilter {
+    fn from(filter: PaymentsFilterForRPC) -> Self {
+        PaymentsFilter {
+            payment_type: filter.payment_type.map(From::from),
+            description: filter.description,
+            status: filter.status,
+            from_amount_msat: filter.from_amount_msat,
+            to_amount_msat: filter.to_amount_msat,
+            from_fee_paid_msat: filter.from_fee_paid_msat,
+            to_fee_paid_msat: filter.to_fee_paid_msat,
+            from_timestamp: filter.from_timestamp,
+            to_timestamp: filter.to_timestamp,
+        }
+    }
 }
 
 #[derive(Deserialize)]
 pub struct ListPaymentsReq {
     pub coin: String,
+    pub filter: Option<PaymentsFilterForRPC>,
+    #[serde(default = "ten")]
+    limit: usize,
+    #[serde(default)]
+    paging_options: PagingOptionsEnum<H256Json>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum PaymentTypeForRPC {
+    #[serde(rename = "Outbound Payment")]
+    OutboundPayment { destination: PublicKeyForRPC },
+    #[serde(rename = "Inbound Payment")]
+    InboundPayment,
+}
+
+impl From<PaymentType> for PaymentTypeForRPC {
+    fn from(payment_type: PaymentType) -> Self {
+        match payment_type {
+            PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
+                destination: PublicKeyForRPC(destination),
+            },
+            PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
+        }
+    }
+}
+
+impl From<PaymentTypeForRPC> for PaymentType {
+    fn from(payment_type: PaymentTypeForRPC) -> Self {
+        match payment_type {
+            PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
+                destination: destination.into(),
+            },
+            PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
+        }
+    }
 }
 
 #[derive(Serialize)]
 pub struct PaymentInfoForRPC {
-    status: HTLCStatus,
+    payment_hash: H256Json,
+    payment_type: PaymentTypeForRPC,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     amount_in_msat: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     fee_paid_msat: Option<u64>,
+    status: HTLCStatus,
+    created_at: u64,
+    last_updated: u64,
 }
 
 impl From<PaymentInfo> for PaymentInfoForRPC {
     fn from(info: PaymentInfo) -> Self {
         PaymentInfoForRPC {
-            status: info.status,
+            payment_hash: info.payment_hash.0.into(),
+            payment_type: info.payment_type.into(),
+            description: info.description,
             amount_in_msat: info.amt_msat,
             fee_paid_msat: info.fee_paid_msat,
+            status: info.status,
+            created_at: info.created_at,
+            last_updated: info.last_updated,
         }
     }
 }
 
 #[derive(Serialize)]
 pub struct ListPaymentsResponse {
-    pub inbound_payments: HashMap<H256Json, PaymentInfoForRPC>,
-    pub outbound_payments: HashMap<H256Json, PaymentInfoForRPC>,
+    payments: Vec<PaymentInfoForRPC>,
+    limit: usize,
+    skipped: usize,
+    total: usize,
+    total_pages: usize,
+    paging_options: PagingOptionsEnum<H256Json>,
 }
 
-pub async fn list_payments(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResult<ListPaymentsResponse> {
+pub async fn list_payments_by_filter(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResult<ListPaymentsResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(ListPaymentsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let inbound_payments = ln_coin
-        .inbound_payments
-        .lock()
-        .clone()
-        .into_iter()
-        .map(|(hash, info)| (hash.0.into(), info.into()))
-        .collect();
-    let outbound_payments = ln_coin
-        .outbound_payments
-        .lock()
-        .clone()
-        .into_iter()
-        .map(|(hash, info)| (hash.0.into(), info.into()))
-        .collect();
+    let get_payments_res = ln_coin
+        .persister
+        .get_payments_by_filter(
+            req.filter.map(From::from),
+            req.paging_options.clone().map(|h| PaymentHash(h.0)),
+            req.limit,
+        )
+        .await?;
 
     Ok(ListPaymentsResponse {
-        inbound_payments,
-        outbound_payments,
+        payments: get_payments_res.payments.into_iter().map(From::from).collect(),
+        limit: req.limit,
+        skipped: get_payments_res.skipped,
+        total: get_payments_res.total,
+        total_pages: calc_total_pages(get_payments_res.total, req.limit),
+        paging_options: req.paging_options,
     })
 }
 
@@ -943,16 +1386,7 @@ pub struct GetPaymentDetailsRequest {
 }
 
 #[derive(Serialize)]
-enum PaymentType {
-    #[serde(rename = "Outbound Payment")]
-    OutboundPayment,
-    #[serde(rename = "Inbound Payment")]
-    InboundPayment,
-}
-
-#[derive(Serialize)]
 pub struct GetPaymentDetailsResponse {
-    payment_type: PaymentType,
     payment_details: PaymentInfoForRPC,
 }
 
@@ -966,17 +1400,13 @@ pub async fn get_payment_details(
         _ => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
-    if let Some(payment_info) = ln_coin.outbound_payments.lock().get(&PaymentHash(req.payment_hash.0)) {
+    if let Some(payment_info) = ln_coin
+        .persister
+        .get_payment_from_db(PaymentHash(req.payment_hash.0))
+        .await?
+    {
         return Ok(GetPaymentDetailsResponse {
-            payment_type: PaymentType::OutboundPayment,
-            payment_details: payment_info.clone().into(),
-        });
-    }
-
-    if let Some(payment_info) = ln_coin.inbound_payments.lock().get(&PaymentHash(req.payment_hash.0)) {
-        return Ok(GetPaymentDetailsResponse {
-            payment_type: PaymentType::InboundPayment,
-            payment_details: payment_info.clone().into(),
+            payment_details: payment_info.into(),
         });
     }
 

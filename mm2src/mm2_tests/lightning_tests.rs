@@ -49,15 +49,15 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
                 "network": "testnet",
                 "confirmations": {
                   "background": {
-                    "default_feerate": 253,
+                    "default_fee_per_kb": 1012,
                     "n_blocks": 12
                   },
                   "normal": {
-                    "default_feerate": 2000,
+                    "default_fee_per_kb": 8000,
                     "n_blocks": 6
                   },
                   "high_priority": {
-                    "default_feerate": 5000,
+                    "default_fee_per_kb": 20000,
                     "n_blocks": 1
                   }
                 }
@@ -150,15 +150,15 @@ fn test_enable_lightning() {
                 "network": "testnet",
                 "confirmations": {
                   "background": {
-                    "default_feerate": 253,
+                    "default_fee_per_kb": 1012,
                     "n_blocks": 12
                   },
                   "normal": {
-                    "default_feerate": 2000,
+                    "default_fee_per_kb": 8000,
                     "n_blocks": 6
                   },
                   "high_priority": {
-                    "default_feerate": 5000,
+                    "default_fee_per_kb": 20000,
                     "n_blocks": 1
                   }
                 }
@@ -205,7 +205,7 @@ fn test_connect_to_lightning_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes();
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let connect = block_on(mm_node_2.rpc(json! ({
+    let connect = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "connect_to_lightning_node",
@@ -231,7 +231,7 @@ fn test_open_channel() {
     let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes();
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let open_channel = block_on(mm_node_2.rpc(json! ({
+    let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "open_channel",
@@ -249,7 +249,7 @@ fn test_open_channel() {
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
-    let list_channels_node_1 = block_on(mm_node_1.rpc(json! ({
+    let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
         "method": "list_channels",
@@ -266,13 +266,19 @@ fn test_open_channel() {
     let list_channels_node_1_res: Json = json::from_str(&list_channels_node_1.1).unwrap();
     log!("list_channels_node_1_res "[list_channels_node_1_res]);
     assert_eq!(
-        list_channels_node_1_res["result"]["channels"][0]["counterparty_node_id"],
+        list_channels_node_1_res["result"]["open_channels"][0]["counterparty_node_id"],
         node_2_id
     );
-    assert_eq!(list_channels_node_1_res["result"]["channels"][0]["is_outbound"], false);
-    assert_eq!(list_channels_node_1_res["result"]["channels"][0]["balance_msat"], 0);
+    assert_eq!(
+        list_channels_node_1_res["result"]["open_channels"][0]["is_outbound"],
+        false
+    );
+    assert_eq!(
+        list_channels_node_1_res["result"]["open_channels"][0]["balance_msat"],
+        0
+    );
 
-    let list_channels_node_2 = block_on(mm_node_2.rpc(json! ({
+    let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
       "method": "list_channels",
@@ -288,12 +294,15 @@ fn test_open_channel() {
     );
     let list_channels_node_2_res: Json = json::from_str(&list_channels_node_2.1).unwrap();
     assert_eq!(
-        list_channels_node_2_res["result"]["channels"][0]["counterparty_node_id"],
+        list_channels_node_2_res["result"]["open_channels"][0]["counterparty_node_id"],
         node_1_id
     );
-    assert_eq!(list_channels_node_2_res["result"]["channels"][0]["is_outbound"], true);
     assert_eq!(
-        list_channels_node_2_res["result"]["channels"][0]["balance_msat"],
+        list_channels_node_2_res["result"]["open_channels"][0]["is_outbound"],
+        true
+    );
+    assert_eq!(
+        list_channels_node_2_res["result"]["open_channels"][0]["balance_msat"],
         2000000
     );
 

@@ -1,12 +1,12 @@
 use crate::context::CoinsActivationContext;
-use crate::prelude::{coin_conf_with_protocol, TryFromCoinProtocol};
+use crate::prelude::*;
 use crate::standalone_coin::init_standalone_coin_error::{InitStandaloneCoinError, InitStandaloneCoinStatusError,
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
-use coins::{lp_coinfind, MmCoinEnum};
+use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::{NotSame, SuccessResponse};
+use common::{log, NotSame, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
@@ -27,11 +27,18 @@ pub struct InitStandaloneCoinReq<T> {
 
 #[async_trait]
 pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
-    type ActivationRequest: Sync + Send;
+    type ActivationRequest: TxHistory + Sync + Send;
     type StandaloneProtocol: TryFromCoinProtocol + Send;
     // The following types are related to `RpcTask` management.
-    type ActivationResult: serde::Serialize + Clone + Send + Sync + 'static;
-    type ActivationError: Into<InitStandaloneCoinError> + SerMmErrorType + NotMmError + Clone + Send + Sync + 'static;
+    type ActivationResult: serde::Serialize + Clone + CurrentBlock + Send + Sync + 'static;
+    type ActivationError: From<RegisterCoinError>
+        + Into<InitStandaloneCoinError>
+        + SerMmErrorType
+        + NotSame
+        + Clone
+        + Send
+        + Sync
+        + 'static;
     type InProgressStatus: InitStandaloneCoinInitialStatus + serde::Serialize + Clone + Send + Sync + 'static;
     type AwaitingStatus: serde::Serialize + Clone + Send + Sync + 'static;
     type UserAction: serde::de::DeserializeOwned + NotMmError + Send + Sync + 'static;
@@ -150,9 +157,10 @@ where
     }
 
     async fn run(self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+        let ticker = self.request.ticker.clone();
         let coin = Standalone::init_standalone_coin(
             self.ctx.clone(),
-            self.request.ticker,
+            ticker.clone(),
             self.coin_conf,
             &self.request.activation_params,
             self.protocol_info,
@@ -160,8 +168,16 @@ where
         )
         .await?;
 
-        coin.get_activation_result(self.ctx, task_handle, &self.request.activation_params)
-            .await
+        let result = coin
+            .get_activation_result(self.ctx.clone(), task_handle, &self.request.activation_params)
+            .await?;
+        log::info!("{} current block {}", ticker, result.current_block());
+
+        let tx_history = self.request.activation_params.tx_history();
+
+        lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker, tx_history }).await?;
+
+        Ok(result)
     }
 }
 

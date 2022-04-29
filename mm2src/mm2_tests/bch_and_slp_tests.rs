@@ -37,7 +37,7 @@ fn test_withdraw_cashaddresses() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({ "log path: {}", mm.log_path.display() });
 
-    let electrum = block_on(mm.rpc(json! ({
+    let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
@@ -57,7 +57,7 @@ fn test_withdraw_cashaddresses() {
     log!([electrum]);
 
     // make withdraw from cashaddress to cashaddress
-    let withdraw = block_on(mm.rpc(json! ({
+    let withdraw = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "BCH",
@@ -89,7 +89,7 @@ fn test_withdraw_cashaddresses() {
     assert_eq!(to, vec!["bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"]);
 
     // send the transaction
-    let send_tx = block_on(mm.rpc(json! ({
+    let send_tx = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": "BCH",
@@ -103,7 +103,7 @@ fn test_withdraw_cashaddresses() {
     thread::sleep(Duration::from_secs(5));
 
     // make withdraw from cashaddress to legacy
-    let withdraw = block_on(mm.rpc(json! ({
+    let withdraw = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "BCH",
@@ -135,7 +135,7 @@ fn test_withdraw_cashaddresses() {
     assert_eq!(to, vec!["1WxswvLF2HdaDr4k77e92VjaXuPQA8Uji"]);
 
     // send the transaction
-    let send_tx = block_on(mm.rpc(json! ({
+    let send_tx = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": "BCH",
@@ -149,7 +149,7 @@ fn test_withdraw_cashaddresses() {
     thread::sleep(Duration::from_secs(5));
 
     //Disable BCH to enable in Legacy Mode
-    let rc = block_on(mm.rpc(json!({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "disable_coin",
         "coin": "BCH",
@@ -157,7 +157,7 @@ fn test_withdraw_cashaddresses() {
     .unwrap();
     assert_eq!(rc.0, StatusCode::OK, "RPC «disable_coin» failed with status «{}»", rc.0);
 
-    let electrum = block_on(mm.rpc(json! ({
+    let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
@@ -178,7 +178,7 @@ fn test_withdraw_cashaddresses() {
     log!([electrum]);
 
     // make withdraw from Legacy to Cashaddress
-    let withdraw = block_on(mm.rpc(json! ({
+    let withdraw = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "BCH",
@@ -210,7 +210,7 @@ fn test_withdraw_cashaddresses() {
     assert_eq!(to, vec!["bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"]);
 
     // send the transaction
-    let send_tx = block_on(mm.rpc(json! ({
+    let send_tx = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": "BCH",
@@ -247,7 +247,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({ "log path: {}", mm.log_path.display() });
 
-    let electrum = block_on(mm.rpc(json! ({
+    let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
@@ -267,7 +267,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
     log!([electrum]);
 
     // make withdraw to from bchtest to bitcoincash should fail
-    let withdraw = block_on(mm.rpc(json! ({
+    let withdraw = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "BCH",
@@ -310,7 +310,7 @@ fn test_common_cashaddresses() {
 
     // Enable BCH electrum client with tx_history loop.
     // Enable RICK electrum client with tx_history loop.
-    let electrum = block_on(mm.rpc(json! ({
+    let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
@@ -335,7 +335,7 @@ fn test_common_cashaddresses() {
     );
 
     // check my_balance
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "my_balance",
         "coin": "BCH",
@@ -347,7 +347,7 @@ fn test_common_cashaddresses() {
     assert_eq!(my_balance_address, "bchtest:qze8g4gx3z428jjcxzpycpxl7ke7d947gca2a7n2la");
 
     // check get_enabled_coins
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "get_enabled_coins",
     })))

@@ -2,6 +2,7 @@ pub use rusqlite;
 pub use sql_builder;
 
 use log::debug;
+use rusqlite::types::{FromSql, Type as SqlType};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use std::sync::{Arc, Mutex, Weak};
@@ -122,4 +123,37 @@ where
     }
     let offset = maybe_offset?;
     Ok(Some(offset.try_into().expect("row index should be always above zero")))
+}
+
+pub fn sql_text_conversion_err<E>(field_id: usize, e: E) -> SqlError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    SqlError::FromSqlConversionFailure(field_id, SqlType::Text, Box::new(e))
+}
+
+pub fn h256_slice_from_row<T>(row: &Row<'_>, column_id: usize) -> Result<[u8; 32], SqlError>
+where
+    T: AsRef<[u8]> + FromSql,
+{
+    let mut h256_slice = [0u8; 32];
+    hex::decode_to_slice(row.get::<_, T>(column_id)?, &mut h256_slice as &mut [u8])
+        .map_err(|e| sql_text_conversion_err(column_id, e))?;
+    Ok(h256_slice)
+}
+
+pub fn h256_option_slice_from_row<T>(row: &Row<'_>, column_id: usize) -> Result<Option<[u8; 32]>, SqlError>
+where
+    T: AsRef<[u8]> + FromSql,
+{
+    let maybe_h256_slice = row.get::<_, Option<T>>(column_id)?;
+    let res = match maybe_h256_slice {
+        Some(s) => {
+            let mut h256_slice = [0u8; 32];
+            hex::decode_to_slice(s, &mut h256_slice as &mut [u8]).map_err(|e| sql_text_conversion_err(column_id, e))?;
+            Some(h256_slice)
+        },
+        None => None,
+    };
+    Ok(res)
 }

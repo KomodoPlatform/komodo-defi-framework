@@ -17,12 +17,12 @@
 //  marketmaker
 //
 
-use bigdecimal::BigDecimal;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsOps;
+use common::mm_number::BigDecimal;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;

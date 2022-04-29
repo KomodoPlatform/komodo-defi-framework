@@ -1,11 +1,10 @@
 use super::check_balance::CheckBalanceError;
 use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePreimage, TakerTradePreimage};
 use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerAction, TakerOrderBuildError};
-use bigdecimal::BigDecimal;
 use coins::{is_wallet_only_ticker, lp_coinfind_or_err, BalanceError, CoinFindError, TradeFee, TradePreimageError};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::mm_number::MmNumber;
+use common::mm_number::{BigDecimal, MmNumber};
 use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;

@@ -1,3 +1,4 @@
+use super::rpc_clients::TxMerkleBranch;
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
@@ -39,7 +40,7 @@ use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant,
                     SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
-use spv_validation::spv_proof::SPVProof;
+use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
 use spv_validation::types::SPVError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
@@ -1471,6 +1472,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps>(
         &input.secret_hash,
         input.amount,
         input.time_lock,
+        input.try_spv_proof_until,
         input.confirmations,
     )
 }
@@ -1492,6 +1494,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps>(
         &input.secret_hash,
         input.amount,
         input.time_lock,
+        input.try_spv_proof_until,
         input.confirmations,
     )
 }
@@ -2974,7 +2977,11 @@ pub fn address_from_pubkey(
     }
 }
 
-pub async fn validate_spv_proof<T: UtxoCommonOps>(coin: T, tx: UtxoTx) -> Result<(), MmError<SPVError>> {
+pub async fn validate_spv_proof<T: UtxoCommonOps>(
+    coin: T,
+    tx: UtxoTx,
+    try_spv_proof_until: u64,
+) -> Result<(), MmError<SPVError>> {
     let client = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(_) => return Ok(()),
         UtxoRpcClientEnum::Electrum(electrum_client) => electrum_client,
@@ -2982,22 +2989,15 @@ pub async fn validate_spv_proof<T: UtxoCommonOps>(coin: T, tx: UtxoTx) -> Result
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::InvalidVout);
     }
-    let height = get_tx_height(&tx, client).await?;
-    let block_header = block_header_from_storage_or_rpc(&coin, height, &coin.as_ref().block_headers_storage)
-        .await
-        .map_err(|_e| SPVError::UnableToGetHeader)?;
-    let raw_header = RawBlockHeader::new(block_header.raw().take())?;
 
-    let merkle_branch = client
-        .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
-        .compat()
-        .await
-        .map_to_mm(|_e| SPVError::UnableToGetMerkle)?;
+    let (merkle_branch, block_header) = spv_proof_retry_pool(&coin, client, &tx, try_spv_proof_until).await?;
+    let raw_header = RawBlockHeader::new(block_header.raw().take())?;
     let intermediate_nodes: Vec<H256> = merkle_branch
         .merkle
         .into_iter()
         .map(|hash| hash.reversed().into())
         .collect();
+
     let proof = SPVProof {
         tx_id: tx.hash(),
         vin: serialize_list(&tx.inputs).take(),
@@ -3007,7 +3007,83 @@ pub async fn validate_spv_proof<T: UtxoCommonOps>(coin: T, tx: UtxoTx) -> Result
         raw_header,
         intermediate_nodes,
     };
+
     proof.validate().map_err(MmError::new)
+}
+
+async fn spv_proof_retry_pool<T: UtxoCommonOps>(
+    coin: &T,
+    client: &ElectrumClient,
+    tx: &UtxoTx,
+    try_spv_proof_until: u64,
+) -> Result<(TxMerkleBranch, BlockHeader), MmError<SPVError>> {
+    let mut height: Option<u64> = None;
+    let mut merkle_branch: Option<TxMerkleBranch> = None;
+
+    loop {
+        if now_ms() / 1000 > try_spv_proof_until {
+            error!(
+                "Waited too long until {} for transaction {:?} to validate spv proof",
+                try_spv_proof_until,
+                tx.hash(),
+            );
+            return Err(SPVError::Timeout.into());
+        }
+
+        if height.is_none() {
+            match get_tx_height(tx, client).await {
+                Ok(h) => height = Some(h),
+                Err(e) => {
+                    debug!("`get_tx_height` returned an error {:?}", e);
+                    error!("{:?} for tx {:?}", SPVError::InvalidHeight, tx);
+                },
+            }
+        }
+
+        if height.is_some() && merkle_branch.is_none() {
+            match client
+                .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height.unwrap())
+                .compat()
+                .await
+            {
+                Ok(m) => merkle_branch = Some(m),
+                Err(e) => {
+                    debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
+                    error!(
+                        "{:?} by tx: {:?}, height: {}",
+                        SPVError::UnableToGetMerkle,
+                        H256Json::from(tx.hash().reversed()),
+                        height.unwrap()
+                    );
+                },
+            }
+        }
+
+        if height.is_some() && merkle_branch.is_some() {
+            match block_header_from_storage_or_rpc(&coin, height.unwrap(), &coin.as_ref().block_headers_storage, client)
+                .await
+            {
+                Ok(block_header) => {
+                    return Ok((merkle_branch.unwrap(), block_header));
+                },
+                Err(e) => {
+                    debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
+                    error!(
+                        "{:?}, Received header likely not compatible with header format in mm2",
+                        SPVError::UnableToGetHeader
+                    );
+                },
+            }
+        }
+
+        error!(
+            "Failed spv proof validation for transaction {:?}, retrying in {} seconds.",
+            tx.hash(),
+            TRY_SPV_PROOF_INTERVAL,
+        );
+
+        Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
+    }
 }
 
 pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
@@ -3035,6 +3111,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
     priv_bn_hash: &[u8],
     amount: BigDecimal,
     time_lock: u32,
+    try_spv_proof_until: u64,
     confirmations: u64,
 ) -> Box<dyn Future<Item = (), Error = String> + Send> {
     let amount = try_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
@@ -3088,9 +3165,16 @@ pub fn validate_payment<T: UtxoCommonOps>(
                     expected_output
                 );
             }
+
+            if !coin.as_ref().conf.enable_spv_proof {
+                return Ok(());
+            }
+
             return match confirmations {
                 0 => Ok(()),
-                _ => validate_spv_proof(coin, tx).await.map_err(|e| format!("{:?}", e)),
+                _ => validate_spv_proof(coin, tx, try_spv_proof_until)
+                    .await
+                    .map_err(|e| format!("{:?}", e)),
             };
         }
     };
@@ -3367,42 +3451,22 @@ where
     }
 }
 
+#[inline]
 pub async fn block_header_from_storage_or_rpc<T>(
     coin: &T,
     height: u64,
     storage: &Option<BlockHeaderStorage>,
+    client: &ElectrumClient,
 ) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
 where
     T: AsRef<UtxoCoinFields>,
 {
-    let client = match &coin.as_ref().rpc_client {
-        UtxoRpcClientEnum::Native(_) => {
-            return MmError::err(GetBlockHeaderError::NativeNotSupported(
-                "Native client not supported".to_string(),
-            ))
-        },
-        UtxoRpcClientEnum::Electrum(client) => client,
-    };
-
     match storage {
         Some(ref storage) => valid_block_header_from_storage(&coin, height, storage, client).await,
         None => Ok(deserialize(
             client.blockchain_block_header(height).compat().await?.as_slice(),
         )?),
     }
-}
-
-macro_rules! try_loop_with_sleep {
-    ($e:expr, $delay: ident) => {
-        match $e {
-            Ok(res) => res,
-            Err(e) => {
-                error!("error {:?}", e);
-                Timer::sleep($delay).await;
-                continue;
-            },
-        }
-    };
 }
 
 pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T) {
@@ -3444,25 +3508,26 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             params.difficulty_check,
             params.constant_difficulty,
         );
-        let height = try_loop_with_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
+        let height =
+            ok_or_continue_after_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
         };
-        let (block_registry, block_headers) = try_loop_with_sleep!(
+        let (block_registry, block_headers) = ok_or_continue_after_sleep!(
             client
                 .retrieve_last_headers(blocks_limit_to_check, height)
                 .compat()
                 .await,
             check_every
         );
-        try_loop_with_sleep!(
+        ok_or_continue_after_sleep!(
             validate_headers(block_headers, difficulty_check, constant_difficulty),
             check_every
         );
 
         let ticker = coin.as_ref().conf.ticker.as_str();
-        try_loop_with_sleep!(
+        ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(ticker, block_registry).await,
             check_every
         );
@@ -3639,7 +3704,7 @@ where
     T: AsRef<UtxoCoinFields>,
 {
     match &coin.as_ref().priv_key_policy {
-        PrivKeyPolicy::KeyPair(key_pair) => key_pair.clone(),
+        PrivKeyPolicy::KeyPair(key_pair) => *key_pair,
         PrivKeyPolicy::Trezor => KeyPair::random_compressed(),
     }
 }

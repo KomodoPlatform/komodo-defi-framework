@@ -4,7 +4,7 @@ use common::for_tests::{mm_dump, MarketMakerIt};
 
 fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     log!({"Get {}/{} orderbook", base, rel});
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": base,
@@ -26,7 +26,7 @@ fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
 
 fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     log!({"Get {}/{} orderbook", base, rel});
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": base,
@@ -48,7 +48,7 @@ fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
 
 fn check_orderbook_depth(mm: &MarketMakerIt, pairs: &[(&str, &str)], expected: &[(usize, usize)]) {
     log!({"Get {:?} orderbook depth", pairs});
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook_depth",
         "pairs": pairs,
@@ -85,7 +85,7 @@ fn check_best_orders(
     expected_num_orders: usize,
 ) {
     log!({"Get best orders for {}", for_coin});
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "best_orders",
         "coin": for_coin,
@@ -149,7 +149,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
     log!([block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN-Custom",
@@ -206,7 +206,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
         &[(1, 0); 4],
     );
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -274,7 +274,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -324,7 +324,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
         &[(1, 0); 4],
     );
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN-Custom",
@@ -397,7 +397,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN-Custom",
@@ -452,7 +452,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
         &[(1, 0); 4],
     );
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -528,7 +528,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
     log!([block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -583,7 +583,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
         &[(1, 0); 4],
     );
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN-Custom",
@@ -649,7 +649,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     log!([block_on(enable_native(&mm_maker, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_maker, "MYCOIN1", &[]))]);
 
-    let rc = block_on(mm_maker.rpc(json! ({
+    let rc = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -663,7 +663,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
 
     println!("set_price_res {:?}", set_price_res);
 
-    let withdraw = block_on(mm_maker.rpc(json! ({
+    let withdraw = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
         "method": "withdraw",
         "coin": "MYCOIN",
@@ -675,7 +675,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
 
     let withdraw: Json = json::from_str(&withdraw.1).unwrap();
 
-    let send_raw = block_on(mm_maker.rpc(json! ({
+    let send_raw = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
         "method": "send_raw_transaction",
         "coin": "MYCOIN",
@@ -689,7 +689,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     thread::sleep(Duration::from_secs(12));
 
     log!("Get MYCOIN/MYCOIN1 orderbook");
-    let rc = block_on(mm_maker.rpc(json! ({
+    let rc = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
         "method": "orderbook",
         "base": "MYCOIN",
@@ -708,7 +708,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
 
     log!("Get my orders");
-    let rc = block_on(mm_maker.rpc(json! ({
+    let rc = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
         "method": "my_orders",
     })))
@@ -729,7 +729,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
 
     // we should ignore our state submitted by another node to us
     log!("Get MYCOIN/MYCOIN1 orderbook");
-    let rc = block_on(mm_maker_dup.rpc(json! ({
+    let rc = block_on(mm_maker_dup.rpc(&json! ({
         "userpass": mm_maker_dup.userpass,
         "method": "orderbook",
         "base": "MYCOIN",
@@ -752,7 +752,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     thread::sleep(Duration::from_secs(5));
 
     log!("Get MYCOIN/MYCOIN1 orderbook");
-    let rc = block_on(mm_maker_dup.rpc(json! ({
+    let rc = block_on(mm_maker_dup.rpc(&json! ({
         "userpass": mm_maker_dup.userpass,
         "method": "orderbook",
         "base": "MYCOIN",
@@ -771,7 +771,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert_eq!(orderbook.asks[0].max_volume, new_expected_vol);
 
     log!("Get my orders");
-    let rc = block_on(mm_maker_dup.rpc(json! ({
+    let rc = block_on(mm_maker_dup.rpc(&json! ({
         "userpass": mm_maker_dup.userpass,
         "method": "my_orders",
     })))

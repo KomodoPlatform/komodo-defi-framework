@@ -24,10 +24,12 @@ use common::mm_metrics::{ClockOps, MetricsOps};
 use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
+use keys::KeyPair;
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
 use mm2_libp2p::peers_exchange::PeerAddresses;
-use mm2_libp2p::{decode_message, encode_message, GossipsubMessage, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
+use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
+                 MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
 #[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use serde::de;
@@ -37,6 +39,15 @@ use std::sync::Arc;
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
+
+pub trait Libp2pPeerId {
+    fn libp2p_peer_id(&self) -> PeerId;
+}
+
+impl Libp2pPeerId for KeyPair {
+    #[inline(always)]
+    fn libp2p_peer_id(&self) -> PeerId { peer_id_from_secp_public(self.public_slice()).expect("valid public") }
+}
 
 #[derive(Debug, Display)]
 #[allow(clippy::enum_variant_names)]
@@ -199,9 +210,12 @@ fn process_p2p_request(
     Ok(())
 }
 
-pub fn broadcast_p2p_msg(ctx: &MmArc, topics: Vec<String>, msg: Vec<u8>) {
+pub fn broadcast_p2p_msg(ctx: &MmArc, topics: Vec<String>, msg: Vec<u8>, from: Option<PeerId>) {
     let ctx = ctx.clone();
-    let cmd = AdexBehaviourCmd::PublishMsg { topics, msg };
+    let cmd = match from {
+        Some(from) => AdexBehaviourCmd::PublishMsgFrom { topics, msg, from },
+        None => AdexBehaviourCmd::PublishMsg { topics, msg },
+    };
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
     if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
         log::error!("broadcast_p2p_msg cmd_tx.send error {:?}", e);
@@ -440,4 +454,9 @@ pub fn lp_network_ports(netid: u16) -> Result<NetworkPorts, MmError<NetIdError>>
         tcp: network_port,
         wss: network_wss_port,
     })
+}
+
+pub fn peer_id_from_secp_public(secp_public: &[u8]) -> Result<PeerId, MmError<DecodingError>> {
+    let public_key = Libp2pSecpPublic::decode(secp_public)?;
+    Ok(PeerId::from_public_key(&Libp2pPublic::Secp256k1(public_key)))
 }

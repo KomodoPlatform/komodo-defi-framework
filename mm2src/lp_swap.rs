@@ -55,9 +55,8 @@
 //  marketmaker
 //
 
-use crate::mm2::lp_network::broadcast_p2p_msg;
+use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
-use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::mm_error::MmError;
@@ -65,13 +64,12 @@ use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
-             mm_number::MmNumber,
+             mm_number::{BigDecimal, BigRational, MmNumber},
              now_ms, var, PagingOptions};
 use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
-use num_rational::BigRational;
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -99,6 +97,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
@@ -170,7 +169,7 @@ pub fn broadcast_swap_message_every(
     topic: String,
     msg: SwapMsg,
     interval: f64,
-    p2p_privkey: Option<H256Json>,
+    p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
@@ -184,24 +183,24 @@ pub fn broadcast_swap_message_every(
 }
 
 /// Broadcast the swap message once
-pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<H256Json>) {
-    let p2p_private = match p2p_privkey {
-        Some(privkey) => privkey.0,
-        None => ctx.secp256k1_key_pair.or(&&|| panic!()).private().secret.take(),
+pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<KeyPair>) {
+    let (p2p_private, from) = match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
     };
     let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
-    broadcast_p2p_msg(ctx, vec![topic], encoded_msg);
+    broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
 /// Broadcast the tx message once
-pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<H256Json>) {
-    let p2p_private = match p2p_privkey {
-        Some(privkey) => privkey.0,
-        None => ctx.secp256k1_key_pair.or(&&|| panic!()).private().secret.take(),
+pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<KeyPair>) {
+    let (p2p_private, from) = match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
     };
 
     let encoded_msg = encode_and_sign(&msg.tx_hex(), &p2p_private).unwrap();
-    broadcast_p2p_msg(ctx, vec![topic], encoded_msg);
+    broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
 pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
@@ -875,7 +874,7 @@ async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String>
         data: status,
     };
     let msg = json::to_vec(&status).expect("Swap status ser should never fail");
-    broadcast_p2p_msg(ctx, vec![swap_topic(&uuid)], msg);
+    broadcast_p2p_msg(ctx, vec![swap_topic(&uuid)], msg, None);
     Ok(())
 }
 

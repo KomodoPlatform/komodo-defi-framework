@@ -3,7 +3,7 @@ use lightning::util::config::{ChannelConfig, ChannelHandshakeConfig, ChannelHand
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DefaultFeesAndConfirmations {
-    pub default_feerate: u64,
+    pub default_fee_per_kb: u64,
     pub n_blocks: u32,
 }
 
@@ -241,6 +241,8 @@ impl From<LightningCoinConf> for UserConfig {
         if let Some(accept_inbound) = conf.accept_inbound_channels {
             user_config.accept_inbound_channels = accept_inbound;
         }
+        // This allows OpenChannelRequest event to be fired
+        user_config.manually_accept_inbound_channels = true;
 
         user_config
     }

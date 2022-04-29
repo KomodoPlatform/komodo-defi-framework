@@ -157,6 +157,7 @@ impl_hash!(H256, GlobalH256, 32);
 impl_hash!(H160, GlobalH160, 20);
 
 impl H256 {
+    #[inline]
     pub fn reversed(&self) -> Self {
         let mut result = *self;
         result.0.reverse();

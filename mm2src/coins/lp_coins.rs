@@ -59,8 +59,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
-#[cfg(feature = "zhtlc")]
-use zcash_primitives::transaction::Transaction as ZTransaction;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -68,6 +66,7 @@ cfg_native! {
     use async_std::fs;
     use futures::AsyncWriteExt;
     use std::io;
+    use zcash_primitives::transaction::Transaction as ZTransaction;
 }
 
 cfg_wasm32! {
@@ -166,6 +165,51 @@ macro_rules! TX_RECOVERABLE_ERR {
     };
 }
 
+macro_rules! ok_or_continue_after_sleep {
+    ($e:expr, $delay: ident) => {
+        match $e {
+            Ok(res) => res,
+            Err(e) => {
+                error!("error {:?}", e);
+                Timer::sleep($delay).await;
+                continue;
+            },
+        }
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! ok_or_retry_after_sleep {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    Timer::sleep($delay).await;
+                    continue;
+                },
+            }
+        }
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! ok_or_retry_after_sleep_sync {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    std::thread::sleep(core::time::Duration::from_secs($delay));
+                    continue;
+                },
+            }
+        }
+    };
+}
+
 pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]
@@ -198,8 +242,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 
 #[cfg(target_arch = "wasm32")] pub mod tx_history_db;
 pub mod utxo;
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-pub mod z_coin;
+#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
@@ -218,8 +261,7 @@ use utxo::utxo_common::big_decimal_from_sat_unsigned;
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-use z_coin::{z_coin_from_conf_and_params, ZCoin};
+#[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
@@ -324,12 +366,12 @@ pub trait Transaction: fmt::Debug + 'static {
 pub enum TransactionEnum {
     UtxoTx(UtxoTx),
     SignedEthTx(SignedEthTx),
-    #[cfg(feature = "zhtlc")]
+    #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
 }
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
-#[cfg(feature = "zhtlc")]
+#[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, ZTransaction);
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
@@ -339,7 +381,7 @@ impl Deref for TransactionEnum {
         match self {
             TransactionEnum::UtxoTx(ref t) => t,
             TransactionEnum::SignedEthTx(ref t) => t,
-            #[cfg(feature = "zhtlc")]
+            #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
         }
     }
@@ -406,6 +448,7 @@ pub struct ValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub swap_contract_address: Option<BytesJson>,
+    pub try_spv_proof_until: u64,
     pub confirmations: u64,
 }
 
@@ -1598,12 +1641,13 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
     QtumCoin(QtumCoin),
     Qrc20Coin(Qrc20Coin),
     EthCoin(EthCoin),
-    #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+    #[cfg(not(target_arch = "wasm32"))]
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
@@ -1612,7 +1656,7 @@ pub enum MmCoinEnum {
     #[cfg(not(target_arch = "wasm32"))]
     SplToken(SplToken),
     #[cfg(not(target_arch = "wasm32"))]
-    LightningCoin(Box<LightningCoin>),
+    LightningCoin(LightningCoin),
     Test(TestCoin),
 }
 
@@ -1656,10 +1700,10 @@ impl From<SlpToken> for MmCoinEnum {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
-    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(Box::new(c)) }
+    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
 }
@@ -1676,8 +1720,8 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(ref c) => &**c,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+            MmCoinEnum::LightningCoin(ref c) => c,
+            #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
@@ -1923,7 +1967,7 @@ pub enum CoinProtocol {
         token_contract_address: String,
         decimals: u8,
     },
-    #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+    #[cfg(not(target_arch = "wasm32"))]
     ZHTLC,
 }
 
@@ -2163,12 +2207,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
             token.into()
         },
-        #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => {
-            let dbdir = ctx.dbdir();
-            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, &params, &secret, dbdir).await).into()
-        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2195,8 +2235,6 @@ pub enum RegisterCoinError {
     CoinIsInitializedAlready {
         coin: String,
     },
-    #[display(fmt = "Error getting block count: {}", _0)]
-    ErrorGettingBlockCount(String),
     Internal(String),
 }
 
@@ -2212,14 +2250,6 @@ pub async fn lp_register_coin(
 ) -> Result<(), MmError<RegisterCoinError>> {
     let RegisterCoinParams { ticker, tx_history } = params;
     let cctx = CoinsContext::from_ctx(ctx).map_to_mm(RegisterCoinError::Internal)?;
-
-    let block_count = coin
-        .current_block()
-        .compat()
-        .await
-        .map_to_mm(RegisterCoinError::ErrorGettingBlockCount)?;
-    // Warn the user when we know that the wallet is under-initialized.
-    log!([ticker]", "[block_count]);
 
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
@@ -2751,12 +2781,12 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },
-        #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
 

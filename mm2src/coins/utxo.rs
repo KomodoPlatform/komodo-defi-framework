@@ -495,6 +495,8 @@ pub struct UtxoCoinConf {
     pub estimate_fee_blocks: u32,
     /// The name of the coin with which Trezor wallet associates this asset.
     pub trezor_coin: Option<TrezorUtxoCoin>,
+    /// Used in condition where the coin will validate spv proof or not
+    pub enable_spv_proof: bool,
 }
 
 #[derive(Debug)]

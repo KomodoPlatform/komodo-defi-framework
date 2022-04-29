@@ -1695,6 +1695,18 @@ pub enum PagingOptionsEnum<Id> {
     PageNumber(NonZeroUsize),
 }
 
+impl<Id> PagingOptionsEnum<Id> {
+    pub fn map<U, F>(self, f: F) -> PagingOptionsEnum<U>
+    where
+        F: FnOnce(Id) -> U,
+    {
+        match self {
+            PagingOptionsEnum::FromId(id) => PagingOptionsEnum::FromId(f(id)),
+            PagingOptionsEnum::PageNumber(s) => PagingOptionsEnum::PageNumber(s),
+        }
+    }
+}
+
 impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
 }

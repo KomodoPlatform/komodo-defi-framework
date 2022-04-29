@@ -8,7 +8,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
-use common::{HttpStatusCode, NotSame, StatusCode};
+use common::{log, HttpStatusCode, NotSame, StatusCode};
 use derive_more::Display;
 use futures::future::AbortHandle;
 use ser_error_derive::SerializeErrorType;
@@ -138,9 +138,9 @@ pub trait GetPlatformBalance {
 
 #[async_trait]
 pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
-    type ActivationRequest: Clone + Send + Sync + TxHistoryEnabled;
+    type ActivationRequest: Clone + Send + Sync + TxHistory;
     type PlatformProtocolInfo: TryFromCoinProtocol;
-    type ActivationResult: GetPlatformBalance;
+    type ActivationResult: GetPlatformBalance + CurrentBlock;
     type ActivationError: NotMmError;
 
     /// Initializes the platform coin itself
@@ -291,7 +291,7 @@ where
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
-        req.ticker,
+        req.ticker.clone(),
         platform_conf,
         req.request.clone(),
         platform_protocol,
@@ -305,9 +305,10 @@ where
     }
 
     let activation_result = platform_coin.get_activation_result().await?;
+    log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     #[cfg(not(target_arch = "wasm32"))]
-    if req.request.tx_history_enabled() {
+    if req.request.tx_history() {
         let abort_handler = platform_coin.start_history_background_fetching(
             ctx.metrics.clone(),
             SqliteTxHistoryStorage(ctx.sqlite_connection.as_option().unwrap().clone()),

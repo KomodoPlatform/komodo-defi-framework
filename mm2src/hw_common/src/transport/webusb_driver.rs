@@ -434,12 +434,3 @@ extern "C" {
     #[wasm_bindgen(catch)]
     fn device_interface(device: &UsbDevice) -> Result<JsValue, JsValue>;
 }
-
-mod tests {
-    use wasm_bindgen_test::*;
-
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    async fn a_test() {}
-}
