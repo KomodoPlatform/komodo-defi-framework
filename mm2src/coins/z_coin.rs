@@ -1,5 +1,5 @@
-use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcError, UtxoRpcFut,
-                               UtxoRpcResult};
+use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcError,
+                               UtxoRpcFut, UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
@@ -24,13 +24,14 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
-use common::{log, now_ms};
+use common::{log, now_ms, spawn_abortable, AbortOnDropHandle};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
+use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Public};
 #[cfg(test)] use mocktopus::macros::*;
@@ -42,12 +43,14 @@ use serialization::{deserialize, serialize_list, CoinVariant, Reader};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use tokio::task::block_in_place;
 use zcash_client_backend::decrypt_transaction;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::AccountId;
-use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, H0};
+use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{CommitmentTree, Hashable, IncrementalWitness};
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
@@ -56,6 +59,7 @@ use zcash_primitives::sapling::{Node, Note};
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
+use zcash_primitives::zip32::ExtendedFullViewingKey;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
@@ -67,6 +71,7 @@ mod z_rpc;
 use z_rpc::{ZRpcOps, ZUnspent};
 
 mod z_coin_errors;
+use crate::z_coin::z_rpc::{ZcoinConsensusParams, ZcoinLightClient, ZcoinRpcClient};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -131,6 +136,8 @@ pub struct ZCoinFields {
     sapling_state_synced: AtomicBool,
     /// SQLite connection that is used to cache Sapling data for shielded transactions creation
     sqlite: Mutex<Connection>,
+    sapling_sync_abort_handler: AbortOnDropHandle,
+    z_rpc: ZcoinRpcClient,
 }
 
 impl std::fmt::Debug for ZCoinFields {
@@ -340,8 +347,7 @@ impl ZCoin {
             tx_builder.add_tx_out(output);
         }
 
-        let (tx, _) =
-            tokio::task::block_in_place(|| tx_builder.build(consensus::BranchId::Sapling, &self.z_fields.z_tx_prover))?;
+        let (tx, _) = block_in_place(|| tx_builder.build(consensus::BranchId::Sapling, &self.z_fields.z_tx_prover))?;
 
         let additional_data = AdditionalTxData {
             received_by_me,
@@ -389,7 +395,7 @@ impl ZCoin {
     ) -> Result<IncrementalWitness<Node>, MmError<GetUnspentWitnessErr>> {
         let mut attempts = 0;
         let states = loop {
-            let states = tokio::task::block_in_place(|| query_states_after_height(&self.sqlite_conn(), tx_height))?;
+            let states = block_in_place(|| query_states_after_height(&self.sqlite_conn(), tx_height))?;
             if states.is_empty() {
                 if attempts > 2 {
                     return MmError::err(GetUnspentWitnessErr::EmptyDbResult);
@@ -444,16 +450,45 @@ impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "rpc", content = "rpc_data")]
+pub enum ZcoinRpcMode {
+    Native,
+    Light {
+        electrum_servers: Vec<ElectrumRpcRequest>,
+        light_wallet_d_servers: Vec<String>,
+    },
+}
+
+#[derive(Deserialize)]
+pub struct ZcoinActivationParams {
+    pub mode: ZcoinRpcMode,
+    pub required_confirmations: Option<u64>,
+    pub requires_notarization: Option<bool>,
+}
+
 pub async fn z_coin_from_conf_and_params(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    params: &UtxoActivationParams,
+    params: &ZcoinActivationParams,
+    consensus_params: ZcoinConsensusParams,
     secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let db_dir_path = ctx.dbdir();
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
-    z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir_path, z_key).await
+
+    z_coin_from_conf_and_params_with_z_key(
+        ctx,
+        ticker,
+        conf,
+        params,
+        secp_priv_key,
+        db_dir_path,
+        z_key,
+        consensus_params,
+    )
+    .await
 }
 
 fn init_db(sql: &Connection) -> Result<(), SqliteError> {
@@ -537,7 +572,7 @@ fn insert_block_state(conn: &Connection, state: SaplingBlockState) -> Result<(),
 }
 
 async fn sapling_state_cache_loop(coin: ZCoin) {
-    let query = tokio::task::block_in_place(|| query_latest_block(&coin.sqlite_conn()));
+    let query = block_in_place(|| query_latest_block(&coin.sqlite_conn()));
     let (mut processed_height, mut current_tree) = match query {
         Ok(state) => {
             let mut tree = state.prev_tree_state;
@@ -620,10 +655,12 @@ pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    params: &'a UtxoActivationParams,
+    z_coin_params: &'a ZcoinActivationParams,
+    utxo_params: UtxoActivationParams,
     secp_priv_key: &'a [u8],
     db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
+    consensus_params: ZcoinConsensusParams,
 }
 
 impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
@@ -631,7 +668,7 @@ impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
 
     fn conf(&self) -> &Json { self.conf }
 
-    fn activation_params(&self) -> &UtxoActivationParams { self.params }
+    fn activation_params(&self) -> &UtxoActivationParams { &self.utxo_params }
 
     fn ticker(&self) -> &str { self.ticker }
 }
@@ -650,10 +687,10 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
         let utxo_arc = UtxoArc::new(utxo);
         let db_name = format!("{}_CACHE.db", self.ticker);
-        let mut db_dir_path = self.db_dir_path;
+        let mut db_dir_path = self.db_dir_path.clone();
 
         db_dir_path.push(&db_name);
-        let sqlite = tokio::task::block_in_place(move || {
+        let sqlite = block_in_place(move || {
             if !db_dir_path.exists() {
                 let default_cache_path = PathBuf::from(format!("./{}", db_name));
                 if !default_cache_path.exists() {
@@ -674,18 +711,32 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             .default_address()
             .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
 
-        let dex_fee_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, DEX_FEE_Z_ADDR)
+        let dex_fee_addr = decode_payment_address(self.consensus_params.hrp_sapling_payment_address(), DEX_FEE_Z_ADDR)
             .expect("DEX_FEE_Z_ADDR is a valid z-address")
             .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = tokio::task::block_in_place(LocalTxProver::with_default_location)
-            .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+        let z_tx_prover =
+            block_in_place(LocalTxProver::with_default_location).or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
 
-        let my_z_addr_encoded = encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &my_z_addr);
+        let my_z_addr_encoded = encode_payment_address(self.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
         let my_z_key_encoded = encode_extended_spending_key(
-            z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            self.consensus_params.hrp_sapling_extended_spending_key(),
             &self.z_spending_key,
         );
+
+        let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
+        let z_rpc = match &self.z_coin_params.mode {
+            ZcoinRpcMode::Native => self.native_client()?.into(),
+            ZcoinRpcMode::Light {
+                light_wallet_d_servers, ..
+            } => {
+                let uri = Uri::from_str(&light_wallet_d_servers[0])?;
+                let client = ZcoinLightClient::init(uri, "", "", self.consensus_params.clone(), evk).await?;
+                client.into()
+            },
+        };
+
+        let sapling_sync_abort_handler = spawn_abortable(async {});
 
         let z_fields = ZCoinFields {
             dex_fee_addr,
@@ -696,6 +747,8 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_unspent_mutex: AsyncMutex::new(()),
             sapling_state_synced: AtomicBool::new(false),
             sqlite: Mutex::new(sqlite),
+            sapling_sync_abort_handler,
+            z_rpc,
         };
 
         let z_coin = ZCoin {
@@ -714,19 +767,39 @@ impl<'a> ZCoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        params: &'a UtxoActivationParams,
+        z_coin_params: &'a ZcoinActivationParams,
         secp_priv_key: &'a [u8],
         db_dir_path: PathBuf,
         z_spending_key: ExtendedSpendingKey,
+        consensus_params: ZcoinConsensusParams,
     ) -> ZCoinBuilder<'a> {
+        let utxo_mode = match &z_coin_params.mode {
+            ZcoinRpcMode::Native => UtxoRpcMode::Native,
+            ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
+                servers: electrum_servers.clone(),
+            },
+        };
+        let utxo_params = UtxoActivationParams {
+            mode: utxo_mode,
+            utxo_merge_params: None,
+            tx_history: false,
+            required_confirmations: z_coin_params.required_confirmations,
+            requires_notarization: z_coin_params.requires_notarization,
+            address_format: None,
+            gap_limit: None,
+            scan_policy: Default::default(),
+            check_utxo_maturity: None,
+        };
         ZCoinBuilder {
             ctx,
             ticker,
             conf,
-            params,
+            z_coin_params,
+            utxo_params,
             secp_priv_key,
             db_dir_path,
             z_spending_key,
+            consensus_params,
         }
     }
 }
@@ -735,12 +808,22 @@ async fn z_coin_from_conf_and_params_with_z_key(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    params: &UtxoActivationParams,
+    params: &ZcoinActivationParams,
     secp_priv_key: &[u8],
     db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
+    consensus_params: ZcoinConsensusParams,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let builder = ZCoinBuilder::new(ctx, ticker, conf, params, secp_priv_key, db_dir_path, z_spending_key);
+    let builder = ZCoinBuilder::new(
+        ctx,
+        ticker,
+        conf,
+        params,
+        secp_priv_key,
+        db_dir_path,
+        z_spending_key,
+        consensus_params,
+    );
     builder.build().await
 }
 

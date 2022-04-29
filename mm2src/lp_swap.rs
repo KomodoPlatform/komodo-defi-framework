@@ -65,7 +65,7 @@ use common::{bits256, calc_total_pages,
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
              mm_number::{BigDecimal, BigRational, MmNumber},
-             now_ms, var, PagingOptions};
+             now_ms, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
@@ -153,13 +153,6 @@ impl SwapMsgStore {
             ..Default::default()
         }
     }
-}
-
-/// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(AbortHandle);
-
-impl Drop for AbortOnDropHandle {
-    fn drop(&mut self) { self.0.abort(); }
 }
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle

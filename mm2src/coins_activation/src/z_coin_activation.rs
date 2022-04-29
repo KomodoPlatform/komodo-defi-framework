@@ -173,27 +173,13 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         _protocol_info: ZcoinProtocolInfo,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let utxo_mode = match &activation_request.mode {
-            ZcoinRpcMode::Native => UtxoRpcMode::Native,
-            ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
-                servers: electrum_servers.clone(),
+        let priv_key = match priv_key_policy {
+            PrivKeyBuildPolicy::IguanaPrivKey(key) => key,
+            PrivKeyBuildPolicy::HardwareWallet => {
+                return MmError::err(ZcoinInitError::HardwareWalletsAreNotSupportedYet)
             },
         };
-        let utxo_params = UtxoActivationParams {
-            mode: utxo_mode,
-            utxo_merge_params: None,
-            tx_history: false,
-            required_confirmations: activation_request.required_confirmations,
-            requires_notarization: activation_request.requires_notarization,
-            address_format: None,
-            gap_limit: None,
-            scan_policy: Default::default(),
-            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
-            check_utxo_maturity: None,
-        };
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-        let priv_key = crypto_ctx.iguana_ctx().secp256k1_privkey().secret;
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &utxo_params, priv_key.as_slice())
+        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &activation_request, priv_key)
             .await
             .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 

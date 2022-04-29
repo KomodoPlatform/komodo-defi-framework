@@ -1,10 +1,12 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
+use crate::z_coin::z_rpc::ZcoinLightClientInitError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
+use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
@@ -124,6 +126,8 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
+    InvalidLightwalletdUri(InvalidUri),
+    LightClientInitErr(ZcoinLightClientInitError),
     ZCashParamsNotFound,
 }
 
@@ -141,4 +145,12 @@ impl From<UtxoCoinBuildError> for ZCoinBuildError {
 
 impl From<std::io::Error> for ZCoinBuildError {
     fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
+}
+
+impl From<InvalidUri> for ZCoinBuildError {
+    fn from(err: InvalidUri) -> Self { ZCoinBuildError::InvalidLightwalletdUri(err) }
+}
+
+impl From<ZcoinLightClientInitError> for ZCoinBuildError {
+    fn from(err: ZcoinLightClientInitError) -> Self { ZCoinBuildError::LightClientInitErr(err) }
 }
