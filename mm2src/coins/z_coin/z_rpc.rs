@@ -1,3 +1,4 @@
+use super::ZcoinConsensusParams;
 use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
 use common::async_blocking;
@@ -24,8 +25,7 @@ use zcash_client_sqlite::error::SqliteClientError;
 use zcash_client_sqlite::wallet::get_balance;
 use zcash_client_sqlite::wallet::init::{init_accounts_table, init_wallet_db};
 use zcash_client_sqlite::WalletDb;
-use zcash_primitives::consensus::NetworkUpgrade;
-use zcash_primitives::consensus::{BlockHeight, Parameters};
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
@@ -34,47 +34,6 @@ mod z_coin_grpc {
 }
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec};
-
-#[derive(Clone, Deserialize)]
-pub struct ZcoinConsensusParams {
-    // we don't support coins without overwinter and sapling active so these are mandatory
-    overwinter_activation_height: u32,
-    sapling_activation_height: u32,
-    // optional upgrades that we will possibly support in the future
-    blossom_activation_height: Option<u32>,
-    heartwood_activation_height: Option<u32>,
-    canopy_activation_height: Option<u32>,
-    coin_type: u32,
-    hrp_sapling_extended_spending_key: String,
-    hrp_sapling_extended_full_viewing_key: String,
-    hrp_sapling_payment_address: String,
-    b58_pubkey_address_prefix: [u8; 2],
-    b58_script_address_prefix: [u8; 2],
-}
-
-impl Parameters for ZcoinConsensusParams {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        match nu {
-            NetworkUpgrade::Overwinter => Some(BlockHeight::from(self.overwinter_activation_height)),
-            NetworkUpgrade::Sapling => Some(BlockHeight::from(self.sapling_activation_height)),
-            NetworkUpgrade::Blossom => self.blossom_activation_height.map(BlockHeight::from),
-            NetworkUpgrade::Heartwood => self.heartwood_activation_height.map(BlockHeight::from),
-            NetworkUpgrade::Canopy => self.canopy_activation_height.map(BlockHeight::from),
-        }
-    }
-
-    fn coin_type(&self) -> u32 { self.coin_type }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str { &self.hrp_sapling_extended_spending_key }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str { &self.hrp_sapling_extended_full_viewing_key }
-
-    fn hrp_sapling_payment_address(&self) -> &str { &self.hrp_sapling_payment_address }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] { self.b58_pubkey_address_prefix }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
-}
 
 pub enum ZcoinRpcClient {
     Native(NativeClient),
@@ -106,6 +65,11 @@ pub struct ZOperationTxid {
 #[derive(Debug, Deserialize)]
 pub struct ZOperationHex {
     pub hex: BytesJson,
+}
+
+pub struct ZcoinLightWalletDb {
+    blocks_db: BlockDb,
+    wallet_db: WalletDb<ZcoinConsensusParams>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -270,8 +234,7 @@ impl BlockSource for BlockDb {
 
 pub struct ZcoinLightClient {
     grpc_client: CompactTxStreamerClient<Channel>,
-    blocks_db: Arc<Mutex<BlockDb>>,
-    wallet_db: Arc<Mutex<WalletDb<ZcoinConsensusParams>>>,
+    db: Arc<Mutex<ZcoinLightWalletDb>>,
 }
 
 #[derive(Debug, Display)]
@@ -345,10 +308,10 @@ impl ZcoinLightClient {
             .await
             .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
 
+        let db = ZcoinLightWalletDb { blocks_db, wallet_db };
         Ok(ZcoinLightClient {
             grpc_client: CompactTxStreamerClient::new(channel),
-            blocks_db: Arc::new(Mutex::new(blocks_db)),
-            wallet_db: Arc::new(Mutex::new(wallet_db)),
+            db: Arc::new(Mutex::new(db)),
         })
     }
 
@@ -363,7 +326,7 @@ impl ZcoinLightClient {
 
     pub async fn update_blocks_cache(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
         let current_blockchain_block = self.get_latest_block().await?;
-        let current_block_in_db = self.blocks_db.lock().get_latest_block().await?;
+        let current_block_in_db = self.db.lock().blocks_db.get_latest_block().await?;
 
         let from_block = current_block_in_db as u64 + 1;
         let current_block: u64 = current_blockchain_block.height;
@@ -384,8 +347,9 @@ impl ZcoinLightClient {
 
             while let Ok(Some(block)) = response.get_mut().message().await {
                 println!("Got block {:?}", block);
-                self.blocks_db
+                self.db
                     .lock()
+                    .blocks_db
                     .insert_block(block.height as u32, block.encode_to_vec())
                     .await?;
             }
@@ -394,7 +358,7 @@ impl ZcoinLightClient {
     }
 
     async fn my_balance(&self) -> Result<Amount, MmError<SqliteClientError>> {
-        block_in_place(|| get_balance(&self.wallet_db.lock(), AccountId(0)).map_err(MmError::new))
+        block_in_place(|| get_balance(&self.db.lock().wallet_db, AccountId(0)).map_err(MmError::new))
     }
 }
 
@@ -403,16 +367,31 @@ impl ZcoinLightClient {
 fn try_grpc() {
     use common::block_on;
     use std::str::FromStr;
-    use z_coin_grpc::{BlockId, BlockRange, ChainSpec, RawTransaction};
+    use z_coin_grpc::RawTransaction;
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
-                                         BlockSource, WalletRead, WalletWrite};
+                                         WalletRead, WalletWrite};
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
                               BlockDb, WalletDb};
+    use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
 
-    let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
+    let zombie_consensus_params = ZcoinConsensusParams {
+        overwinter_activation_height: 0,
+        sapling_activation_height: 1,
+        blossom_activation_height: None,
+        heartwood_activation_height: None,
+        canopy_activation_height: None,
+        coin_type: 0,
+        hrp_sapling_extended_spending_key: mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY.into(),
+        hrp_sapling_extended_full_viewing_key: mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY.into(),
+        hrp_sapling_payment_address: mainnet::HRP_SAPLING_PAYMENT_ADDRESS.into(),
+        b58_pubkey_address_prefix: mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+        b58_script_address_prefix: mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+    };
+
+    let z_key = decode_extended_spending_key(zombie_consensus_params.hrp_sapling_extended_spending_key(), "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let evk = ExtendedFullViewingKey::from(&z_key);
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
@@ -420,16 +399,15 @@ fn try_grpc() {
         uri,
         "test_cache_zombie.db",
         "test_wallet_zombie.db",
-        ZombieNetwork {},
+        zombie_consensus_params.clone(),
         evk,
     ))
     .unwrap();
 
     let current_block = block_on(client.update_blocks_cache()).unwrap();
-    let network = ZombieNetwork {};
 
-    // init_accounts_table(&db_read, &[(&z_key).into()]).unwrap();
-    let mut db_data = client.wallet_db.get_update_ops().unwrap();
+    let db = client.db.lock();
+    let mut db_data = db.wallet_db.get_update_ops().unwrap();
 
     // 1) Download new CompactBlocks into db_cache.
 
@@ -437,7 +415,11 @@ fn try_grpc() {
     //
     // Given that we assume the server always gives us correct-at-the-time blocks, any
     // errors are in the blocks we have previously cached or scanned.
-    if let Err(e) = validate_chain(&network, &client.blocks_db, db_data.get_max_height_hash().unwrap()) {
+    if let Err(e) = validate_chain(
+        &zombie_consensus_params,
+        &db.blocks_db,
+        db_data.get_max_height_hash().unwrap(),
+    ) {
         match e {
             SqliteClientError::BackendError(Error::InvalidChain(lower_bound, _)) => {
                 // a) Pick a height to rewind to.
@@ -471,13 +453,9 @@ fn try_grpc() {
     // At this point, the cache and scanned data are locally consistent (though not
     // necessarily consistent with the latest chain tip - this would be discovered the
     // next time this codepath is executed after new blocks are received).
-    scan_cached_blocks(&network, &client.blocks_db, &mut db_data, None).unwrap();
+    scan_cached_blocks(&zombie_consensus_params, &db.blocks_db, &mut db_data, None).unwrap();
 
-    let balance = block_on(client.my_balance()).unwrap();
-
-    println!("balance {:?}", balance);
-
-    let notes = client
+    let notes = db
         .wallet_db
         .get_spendable_notes(AccountId(0), BlockHeight::from_u32(current_block as u32))
         .unwrap();
@@ -485,7 +463,7 @@ fn try_grpc() {
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 
-    let mut tx_builder = ZTxBuilder::new(ZombieNetwork {}, BlockHeight::from_u32(current_block as u32));
+    let mut tx_builder = ZTxBuilder::new(zombie_consensus_params, BlockHeight::from_u32(current_block as u32));
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();

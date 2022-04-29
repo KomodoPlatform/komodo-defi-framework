@@ -68,10 +68,9 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use z_rpc::{ZRpcOps, ZUnspent};
+use z_rpc::{ZRpcOps, ZUnspent, ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
-use crate::z_coin::z_rpc::{ZcoinConsensusParams, ZcoinLightClient, ZcoinRpcClient};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -125,6 +124,47 @@ impl consensus::Parameters for ARRRConsensusParams {
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZcoinConsensusParams {
+    // we don't support coins without overwinter and sapling active so these are mandatory
+    overwinter_activation_height: u32,
+    sapling_activation_height: u32,
+    // optional upgrades that we will possibly support in the future
+    blossom_activation_height: Option<u32>,
+    heartwood_activation_height: Option<u32>,
+    canopy_activation_height: Option<u32>,
+    coin_type: u32,
+    hrp_sapling_extended_spending_key: String,
+    hrp_sapling_extended_full_viewing_key: String,
+    hrp_sapling_payment_address: String,
+    b58_pubkey_address_prefix: [u8; 2],
+    b58_script_address_prefix: [u8; 2],
+}
+
+impl Parameters for ZcoinConsensusParams {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Overwinter => Some(BlockHeight::from(self.overwinter_activation_height)),
+            NetworkUpgrade::Sapling => Some(BlockHeight::from(self.sapling_activation_height)),
+            NetworkUpgrade::Blossom => self.blossom_activation_height.map(BlockHeight::from),
+            NetworkUpgrade::Heartwood => self.heartwood_activation_height.map(BlockHeight::from),
+            NetworkUpgrade::Canopy => self.canopy_activation_height.map(BlockHeight::from),
+        }
+    }
+
+    fn coin_type(&self) -> u32 { self.coin_type }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str { &self.hrp_sapling_extended_spending_key }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str { &self.hrp_sapling_extended_full_viewing_key }
+
+    fn hrp_sapling_payment_address(&self) -> &str { &self.hrp_sapling_payment_address }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] { self.b58_pubkey_address_prefix }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
+}
+
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -138,6 +178,7 @@ pub struct ZCoinFields {
     sqlite: Mutex<Connection>,
     sapling_sync_abort_handler: AbortOnDropHandle,
     z_rpc: ZcoinRpcClient,
+    consensus_params: ZcoinConsensusParams,
 }
 
 impl std::fmt::Debug for ZCoinFields {
@@ -189,6 +230,12 @@ impl ZCoin {
 
     #[inline(always)]
     pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
+
+    #[inline(always)]
+    pub fn consensus_params(&self) -> ZcoinConsensusParams { self.z_fields.consensus_params.clone() }
+
+    #[inline(always)]
+    pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
     /// Returns all unspents included currently unspendable (not confirmed)
     async fn my_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
@@ -274,7 +321,7 @@ impl ZCoin {
         }
 
         let current_block = self.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
-        let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
+        let mut tx_builder = ZTxBuilder::new(self.consensus_params(), current_block.into());
 
         let mut ext = HashMap::new();
 
@@ -295,7 +342,7 @@ impl ZCoin {
             let z_cash_tx = ZTransaction::read(prev_tx.hex.as_slice())
                 .map_to_mm(|err| GenTxError::TxReadError { err, hex: prev_tx.hex })?;
             let decrypted = decrypt_transaction(
-                &ARRRConsensusParams {},
+                self.consensus_params_ref(),
                 BlockHeight::from_u32(height as u32),
                 &z_cash_tx,
                 &ext,
@@ -749,6 +796,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             sqlite: Mutex::new(sqlite),
             sapling_sync_abort_handler,
             z_rpc,
+            consensus_params: self.consensus_params,
         };
 
         let z_coin = ZCoin {
@@ -1176,7 +1224,7 @@ impl SwapOps for ZCoin {
 
             for shielded_out in z_tx.shielded_outputs.iter() {
                 if let Some((note, address, memo)) =
-                    try_sapling_output_recovery(&ARRRConsensusParams {}, block_height, &DEX_FEE_OVK, shielded_out)
+                    try_sapling_output_recovery(coin.consensus_params_ref(), block_height, &DEX_FEE_OVK, shielded_out)
                 {
                     if address != coin.z_fields.dex_fee_addr {
                         let encoded =

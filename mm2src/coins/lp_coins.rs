@@ -68,6 +68,7 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
+    use z_coin::ZcoinConsensusParams;
 }
 
 cfg_wasm32! {
@@ -2106,7 +2107,9 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     #[cfg(not(target_arch = "wasm32"))]
-    ZHTLC,
+    ZHTLC {
+        consensus_params: ZcoinConsensusParams,
+    },
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
@@ -2346,7 +2349,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             token.into()
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
+        CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2945,7 +2948,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
+        CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
 

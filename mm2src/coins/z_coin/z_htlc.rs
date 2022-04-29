@@ -136,7 +136,7 @@ pub async fn z_p2sh_spend(
     htlc_privkey: &[u8],
 ) -> Result<UtxoTx, MmError<ZP2SHSpendError>> {
     let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
-    let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
+    let mut tx_builder = ZTxBuilder::new(coin.consensus_params(), current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 
     let secp_secret = SecretKey::from_slice(htlc_privkey).expect("Keypair contains a valid secret key");

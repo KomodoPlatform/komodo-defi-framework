@@ -137,8 +137,6 @@ impl From<ZcoinInitError> for InitStandaloneCoinError {
     fn from(_: ZcoinInitError) -> Self { todo!() }
 }
 
-pub struct ZcoinProtocolInfo;
-
 impl TryFromCoinProtocol for ZcoinProtocolInfo {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
