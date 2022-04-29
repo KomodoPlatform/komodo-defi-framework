@@ -13,7 +13,7 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFutnFutErrErrErrErrErr, TxFeeDetails,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TransactionFutErr, TxFeeDetails,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFee,
             WithdrawFut, WithdrawRequest};
 
