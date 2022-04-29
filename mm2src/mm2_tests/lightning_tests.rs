@@ -317,52 +317,52 @@ fn test_sign_verify_message_lightning() {
 
     let coins = json! ([
       {
-          "coin": "tBTC-TEST-segwit",
-          "name": "tbitcoin",
-          "fname": "tBitcoin",
-          "rpcport": 18332,
-          "pubtype": 111,
-          "p2shtype": 196,
-          "wiftype": 239,
-          "segwit": true,
-          "bech32_hrp": "tb",
-          "address_format":{"format":"segwit"},
-          "orderbook_ticker": "tBTC-TEST",
-          "txfee": 0,
-          "estimate_fee_mode": "ECONOMICAL",
-          "mm2": 1,
-          "required_confirmations": 0,
-          "protocol": {
-            "type": "UTXO"
-          }
-        },
-        {
-          "coin": "tBTC-TEST-lightning",
-          "mm2": 1,
-          "decimals": 11,
-          "sign_message_prefix": "Lightning Signed Message:",
-          "protocol": {
-            "type": "LIGHTNING",
-            "protocol_data":{
-              "platform": "tBTC-TEST-segwit",
-              "network": "testnet",
-              "confirmations": {
-                "background": {
-                  "default_feerate": 253,
-                  "n_blocks": 12
-                },
-                "normal": {
-                  "default_feerate": 2000,
-                  "n_blocks": 6
-                },
-                "high_priority": {
-                  "default_feerate": 5000,
-                  "n_blocks": 1
-                }
+        "coin": "tBTC-TEST-segwit",
+        "name": "tbitcoin",
+        "fname": "tBitcoin",
+        "rpcport": 18332,
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "address_format":{"format":"segwit"},
+        "orderbook_ticker": "tBTC-TEST",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "mm2": 1,
+        "required_confirmations": 0,
+        "protocol": {
+          "type": "UTXO"
+        }
+      },
+      {
+        "coin": "tBTC-TEST-lightning",
+        "mm2": 1,
+        "decimals": 11,
+        "sign_message_prefix": "Lightning Signed Message:",
+        "protocol": {
+          "type": "LIGHTNING",
+          "protocol_data":{
+            "platform": "tBTC-TEST-segwit",
+            "network": "testnet",
+            "confirmations": {
+              "background": {
+                "default_fee_per_kb": 1012,
+                "n_blocks": 12
+              },
+              "normal": {
+                "default_fee_per_kb": 8000,
+                "n_blocks": 6
+              },
+              "high_priority": {
+                "default_fee_per_kb": 20000,
+                "n_blocks": 1
               }
             }
           }
         }
+      }
     ]);
 
     let mm = MarketMakerIt::start(
@@ -386,7 +386,7 @@ fn test_sign_verify_message_lightning() {
     block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
       "userpass": mm.userpass,
       "method":"sign_message",
       "mmrpc":"2.0",
@@ -407,7 +407,7 @@ fn test_sign_verify_message_lightning() {
         "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr"
     );
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method":"verify_message",
         "mmrpc":"2.0",

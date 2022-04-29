@@ -6,8 +6,7 @@ use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
-            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash},
-            mm2::rpc::signature::{sign_message, verify_message}};
+            mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::coin_balance::{account_balance, scan_for_new_addresses};
 use coins::hd_wallet::get_new_address;
 use coins::init_create_account::{init_create_new_account, init_create_new_account_status,

@@ -7112,7 +7112,7 @@ fn test_sign_message_utxo() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
 
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
     "userpass": mm_bob.userpass,
     "method":"sign_message",
     "mmrpc":"2.0",
@@ -7174,7 +7174,7 @@ fn test_verify_message_utxo() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
 
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
     "userpass": mm_bob.userpass,
     "method":"verify_message",
     "mmrpc":"2.0",
@@ -7239,7 +7239,7 @@ fn test_sign_message_eth() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"])) });
 
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
     "userpass": mm_bob.userpass,
     "method":"sign_message",
     "mmrpc":"2.0",
@@ -7303,7 +7303,7 @@ fn test_verify_message_eth() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"])) });
 
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
     "userpass": mm_bob.userpass,
     "method":"verify_message",
     "mmrpc":"2.0",

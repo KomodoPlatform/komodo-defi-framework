@@ -493,7 +493,7 @@ fn test_sign_verify_message_bch() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!({ "log path: {}", mm.log_path.display() });
 
-    let electrum = block_on(mm.rpc(json! ({
+    let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "BCH",
@@ -512,7 +512,7 @@ fn test_sign_verify_message_bch() {
     let electrum: Json = json::from_str(&electrum.1).unwrap();
     log!([electrum]);
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
     "userpass": mm.userpass,
     "method":"sign_message",
     "mmrpc":"2.0",
@@ -533,7 +533,7 @@ fn test_sign_verify_message_bch() {
         "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
     );
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
     "userpass": mm.userpass,
     "method":"verify_message",
     "mmrpc":"2.0",
@@ -591,7 +591,7 @@ fn test_sign_verify_message_slp() {
     let enable_usdf = block_on(enable_slp(&mm, "USDF"));
     log!({ "enable_usdf: {:?}", enable_usdf });
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
     "userpass": mm.userpass,
     "method":"sign_message",
     "mmrpc":"2.0",
@@ -612,7 +612,7 @@ fn test_sign_verify_message_slp() {
         "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
     );
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
     "userpass": mm.userpass,
     "method":"verify_message",
     "mmrpc":"2.0",

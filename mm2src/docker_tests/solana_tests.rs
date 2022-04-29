@@ -54,7 +54,7 @@ fn test_sign_verify_message_solana() {
         tx_history,
     ));
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method":"sign_message",
         "mmrpc":"2.0",
@@ -75,7 +75,7 @@ fn test_sign_verify_message_solana() {
             "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
         );
     
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method":"verify_message",
         "mmrpc":"2.0",
@@ -111,7 +111,7 @@ fn test_sign_verify_message_spl() {
 
     block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
 
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method":"sign_message",
         "mmrpc":"2.0",
@@ -132,7 +132,7 @@ fn test_sign_verify_message_spl() {
             "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
         );
     
-    let rc = block_on(mm.rpc(json! ({
+    let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method":"verify_message",
         "mmrpc":"2.0",

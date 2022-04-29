@@ -400,7 +400,10 @@ impl MarketCoinOps for LightningCoin {
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let secret_key = self.keys_manager.get_node_secret();
+        let secret_key = self
+            .keys_manager
+            .get_node_secret(Recipient::Node)
+            .map_err(|_| SignatureError::InternalError("Error accessing node keys".to_string()))?;
         let private = Private {
             prefix: 239,
             secret: H256::from_str(&secret_key.to_string())

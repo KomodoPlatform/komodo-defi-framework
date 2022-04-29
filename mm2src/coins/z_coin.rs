@@ -9,9 +9,10 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoTxGenerationOps, UtxoWeak, VerboseTransactionFrom};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, RawTransactionFut, RawTransactionRequest, SignatureError,
-            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -729,14 +730,18 @@ impl MarketCoinOps for ZCoin {
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        SignatureError("Message signing is not supported by the given coin type")
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
+        MmError::err(SignatureError::InvalidRequest(
+            "Message signing is not supported by the given coin type".to_string(),
+        ))
     }
 
-    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
-        VerificationError("Message verification is not supported by the given coin type")
+    fn verify_message(&self, _signature_base64: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
+        MmError::err(VerificationError::InvalidRequest(
+            "Message verification is not supported by the given coin type".to_string(),
+        ))
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
