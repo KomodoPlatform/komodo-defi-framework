@@ -689,7 +689,6 @@ impl SwapOps for EthCoin {
 
         Box::new(
             self.send_to_address(address, try_tx_fus!(wei_from_big_decimal(&amount, self.decimals)))
-                .map_err(|e| TransactionFutErr::Plain(ERRL!("{:?}", e)))
                 .map(TransactionEnum::from),
         )
     }
