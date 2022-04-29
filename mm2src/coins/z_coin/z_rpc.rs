@@ -67,7 +67,9 @@ pub struct ZOperationHex {
     pub hex: BytesJson,
 }
 
-pub struct ZcoinLightWalletDb {
+pub type ZcoinWalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
+
+pub struct ZcoinWalletDb {
     blocks_db: BlockDb,
     wallet_db: WalletDb<ZcoinConsensusParams>,
 }
@@ -143,7 +145,7 @@ pub struct BlockDb(Connection);
 
 impl BlockDb {
     /// Opens a connection to the wallet database stored at the specified path.
-    pub fn for_path<P: AsRef<Path> + Send + 'static>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
+    pub fn for_path<P: AsRef<Path>>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
         let conn = Connection::open(path)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS compactblocks (
@@ -234,7 +236,7 @@ impl BlockSource for BlockDb {
 
 pub struct ZcoinLightClient {
     grpc_client: CompactTxStreamerClient<Channel>,
-    db: Arc<Mutex<ZcoinLightWalletDb>>,
+    db: ZcoinWalletDbShared,
 }
 
 #[derive(Debug, Display)]
@@ -308,7 +310,7 @@ impl ZcoinLightClient {
             .await
             .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
 
-        let db = ZcoinLightWalletDb { blocks_db, wallet_db };
+        let db = ZcoinWalletDb { blocks_db, wallet_db };
         Ok(ZcoinLightClient {
             grpc_client: CompactTxStreamerClient::new(channel),
             db: Arc::new(Mutex::new(db)),
@@ -374,6 +376,7 @@ fn try_grpc() {
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
                               BlockDb, WalletDb};
+    use zcash_primitives::consensus::Parameters;
     use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
 
