@@ -1036,7 +1036,7 @@ pub fn send_maker_payment<T: UtxoCommonOps>(
             Either::B(
                 client
                     .import_address(&addr_string, &addr_string, false)
-                    .map_err(|e| TransactionErr::PlainError(ERRL!("{}", e)))
+                    .map_err(|e| TransactionFutErr::Plain(ERRL!("{}", e)))
                     .and_then(move |_| send_outputs_from_my_address(coin, outputs)),
             )
         },
@@ -1071,7 +1071,7 @@ pub fn send_taker_payment<T: UtxoCommonOps>(
             Either::B(
                 client
                     .import_address(&addr_string, &addr_string, false)
-                    .map_err(|e| TransactionErr::PlainError(ERRL!("{}", e)))
+                    .map_err(|e| TransactionFutErr::Plain(ERRL!("{}", e)))
                     .and_then(move |_| send_outputs_from_my_address(coin, outputs)),
             )
         },
@@ -1126,12 +1126,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps>(
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         match tx_fut.await {
             Ok(_) => (),
-            Err(err) => {
-                return Err(TransactionErr::TxRecoverableError(
-                    TransactionEnum::from(transaction),
-                    ERRL!("{:?}", err),
-                ));
-            },
+            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
         };
 
         Ok(transaction.into())
@@ -1186,12 +1181,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps>(
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         match tx_fut.await {
             Ok(_) => (),
-            Err(err) => {
-                return Err(TransactionErr::TxRecoverableError(
-                    TransactionEnum::from(transaction),
-                    ERRL!("{:?}", err),
-                ));
-            },
+            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
         };
 
         Ok(transaction.into())
@@ -1211,7 +1201,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps>(
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
 
     let mut prev_tx: UtxoTx =
-        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::PlainError(format!("{:?}", e))));
+        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionFutErr::Plain(format!("{:?}", e))));
     prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
     let redeem_script = payment_script(
@@ -1244,12 +1234,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps>(
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         match tx_fut.await {
             Ok(_) => (),
-            Err(err) => {
-                return Err(TransactionErr::TxRecoverableError(
-                    TransactionEnum::from(transaction),
-                    ERRL!("{:?}", err),
-                ));
-            },
+            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
         };
 
         Ok(transaction.into())
@@ -1301,12 +1286,7 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps>(
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         match tx_fut.await {
             Ok(_) => (),
-            Err(err) => {
-                return Err(TransactionErr::TxRecoverableError(
-                    TransactionEnum::from(transaction),
-                    ERRL!("{:?}", err),
-                ));
-            },
+            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
         };
 
         Ok(transaction.into())
@@ -1764,7 +1744,7 @@ pub fn wait_for_output_spend(
             };
 
             if now_ms() / 1000 > wait_until {
-                return TX_ERR!(
+                return TX_PLAIN_ERR!(
                     "Waited too long until {} for transaction {:?} {} to be spent ",
                     wait_until,
                     tx,

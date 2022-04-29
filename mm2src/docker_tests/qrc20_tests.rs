@@ -8,7 +8,7 @@ use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TradePreimageValue, TransactionEnum,
-            TransactionErr, ValidatePaymentInput};
+            TransactionFutErr, ValidatePaymentInput};
 use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -738,8 +738,8 @@ fn test_wait_for_tx_spend() {
         .expect_err("Expected 'Waited too long' error");
 
     let err = match tx_err {
-        TransactionErr::TxRecoverableError(_tx, err) => err,
-        TransactionErr::PlainError(err) => err,
+        TransactionFutErr::TxRecoverable(_tx, err) => err,
+        TransactionFutErr::Plain(err) => err,
     };
     log!("error: "[err]);
     assert!(err.contains("Waited too long"));

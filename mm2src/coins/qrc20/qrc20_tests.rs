@@ -951,10 +951,10 @@ fn test_send_contract_calls_recoverable_tx() {
 
     let tx_err = block_on(coin.send_contract_calls(vec![transfer_output])).unwrap_err();
 
-    // The error variant should equal to `TxRecoverableError`
+    // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
-        discriminant(&TransactionErr::TxRecoverableError(
+        discriminant(&TransactionFutErr::TxRecoverable(
             TransactionEnum::from(tx),
             String::new()
         ))

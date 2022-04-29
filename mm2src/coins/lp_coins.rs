@@ -97,27 +97,38 @@ macro_rules! try_f {
     };
 }
 
-/// `TransactionErr:PlainError` compatible `try_fus` macro.
+/// `TransactionFutErr` compatible `try_fus` macro.
 macro_rules! try_tx_fus {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
             Err(err) => {
-                return Box::new(futures01::future::err(crate::TransactionErr::PlainError(ERRL!(
+                return Box::new(futures01::future::err(crate::TransactionFutErr::Plain(ERRL!(
                     "{:?}", err
                 ))))
             },
         }
     };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Box::new(futures01::future::err(crate::TransactionFutErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    ERRL!("{:?}", err),
+                )))
+            },
+        }
+    };
 }
 
-/// `TransactionErr:PlainError` compatible `try_s` macro.
+/// `TransactionFutErr` compatible `try_s` macro.
 macro_rules! try_tx_s {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
             Err(err) => {
-                return Err(crate::TransactionErr::PlainError(format!(
+                return Err(crate::TransactionFutErr::Plain(format!(
                     "{}:{}] {:?}",
                     file!(),
                     line!(),
@@ -126,12 +137,33 @@ macro_rules! try_tx_s {
             },
         }
     };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Err(crate::TransactionFutErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    format!("{}:{}] {:?}", file!(), line!(), err),
+                ))
+            },
+        }
+    };
 }
 
-/// `TransactionErr:PlainError` compatible `ERR` macro.
-macro_rules! TX_ERR {
-    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::PlainError((ERRL!($format, $($args)+)))) };
-    ($format: expr) => { Err(crate::TransactionErr::PlainError(ERRL!($format))) }
+/// `TransactionFutErr:Plain` compatible `ERR` macro.
+macro_rules! TX_PLAIN_ERR {
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionFutErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr) => { Err(crate::TransactionFutErr::Plain(ERRL!($format))) }
+}
+
+/// `TransactionFutErr:TxRecoverable` compatible `ERR` macro.
+macro_rules! TX_RECOVERABLE_ERR {
+    ($tx: expr, $format: expr, $($args: tt)+) => {
+        Err(crate::TransactionFutErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
+    };
+    ($tx: expr, $format: expr) => {
+        Err(crate::TransactionFutErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format)))
+    };
 }
 
 pub mod coin_balance;
@@ -315,19 +347,19 @@ impl Deref for TransactionEnum {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum TransactionErr {
+pub enum TransactionFutErr {
     /// Keeps transactions while throwing errors.
-    TxRecoverableError(TransactionEnum, String),
+    TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
-    PlainError(String),
+    Plain(String),
 }
 
-impl TransactionErr {
+impl TransactionFutErr {
     /// Returns transaction if the error includes it.
     #[inline]
     pub fn get_tx(&self) -> Option<TransactionEnum> {
         match self {
-            TransactionErr::TxRecoverableError(tx, _) => Some(tx.clone()),
+            TransactionFutErr::TxRecoverable(tx, _) => Some(tx.clone()),
             _ => None,
         }
     }
@@ -336,13 +368,13 @@ impl TransactionErr {
     /// Returns plain text part of error.
     pub fn get_plain_text_format(&self) -> String {
         match self {
-            TransactionErr::TxRecoverableError(_, err) => err.to_string(),
-            TransactionErr::PlainError(err) => err.to_string(),
+            TransactionFutErr::TxRecoverable(_, err) => err.to_string(),
+            TransactionFutErr::Plain(err) => err.to_string(),
         }
     }
 }
 
-pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
+pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionFutErr> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -1657,7 +1689,7 @@ impl Deref for MmCoinEnum {
 }
 
 impl MmCoinEnum {
-    pub fn is_utxo_and_in_native_mode(&self) -> bool {
+    pub fn is_utxo_in_native_mode(&self) -> bool {
         match self {
             MmCoinEnum::UtxoCoin(ref c) => c.as_ref().rpc_client.is_native(),
             MmCoinEnum::QtumCoin(ref c) => c.as_ref().rpc_client.is_native(),

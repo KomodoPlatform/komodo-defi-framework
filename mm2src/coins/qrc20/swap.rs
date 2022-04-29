@@ -37,13 +37,13 @@ impl Qrc20Coin {
         secret_hash: Vec<u8>,
         receiver_addr: H160,
         swap_contract_address: H160,
-    ) -> Result<TransactionEnum, TransactionErr> {
+    ) -> Result<TransactionEnum, TransactionFutErr> {
         let balance = try_tx_s!(self.my_spendable_balance().compat().await);
         let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
         // Check the balance to avoid unnecessary burning of gas
         if balance < value {
-            return TX_ERR!("Balance {} is less than value {}", balance, value);
+            return TX_PLAIN_ERR!("Balance {} is less than value {}", balance, value);
         }
 
         let outputs = try_tx_s!(
@@ -67,14 +67,14 @@ impl Qrc20Coin {
         payment_tx: UtxoTx,
         swap_contract_address: H160,
         secret: Vec<u8>,
-    ) -> Result<TransactionEnum, TransactionErr> {
+    ) -> Result<TransactionEnum, TransactionFutErr> {
         let Erc20PaymentDetails {
             swap_id, value, sender, ..
         } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
 
         let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return TX_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
         let spend_output =
@@ -86,7 +86,7 @@ impl Qrc20Coin {
         &self,
         swap_contract_address: H160,
         payment_tx: UtxoTx,
-    ) -> Result<TransactionEnum, TransactionErr> {
+    ) -> Result<TransactionEnum, TransactionFutErr> {
         let Erc20PaymentDetails {
             swap_id,
             value,
@@ -97,7 +97,7 @@ impl Qrc20Coin {
 
         let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return TX_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
         let refund_output =

@@ -201,10 +201,10 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
 
     let tx: UtxoTx = deserialize(tx_hex.as_slice()).unwrap();
 
-    // The error variant should equal to `TxRecoverableError`
+    // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
-        discriminant(&TransactionErr::TxRecoverableError(
+        discriminant(&TransactionFutErr::TxRecoverable(
             TransactionEnum::from(tx),
             String::new()
         ))

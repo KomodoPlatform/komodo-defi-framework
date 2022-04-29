@@ -131,7 +131,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     let res = try_s!(json::to_vec(&res));
     let res = try_s!(Response::builder().body(res));
 
-    if coin.is_utxo_and_in_native_mode() {
+    if coin.is_utxo_in_native_mode() {
         subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
     }
 
