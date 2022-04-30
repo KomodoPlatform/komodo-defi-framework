@@ -1,5 +1,3 @@
-use std::mem::discriminant;
-
 use super::*;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
@@ -9,6 +7,7 @@ use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
+use std::mem::discriminant;
 
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;

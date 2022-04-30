@@ -377,9 +377,7 @@ impl MarketCoinOps for SolanaCoin {
         let coin = self.clone();
         let tx = tx.to_owned();
         let fut = async move {
-            let tx: Transaction = deserialize(tx.as_slice())
-                .map_to_mm(|e| e)
-                .map_err(|e| format!("{:?}", e))?;
+            let tx = try_s!(deserialize(tx.as_slice()));
             let signature = coin.rpc().send_transaction(&tx).await.map_err(|e| format!("{:?}", e))?;
             Ok(signature.to_string())
         };

@@ -459,10 +459,7 @@ impl Qrc20Coin {
             .await
             .mm_err(|e| e.into_withdraw_error(platform, decimals))
             .map_err(|e| TransactionFutErr::Plain(ERRL!("{}", e)))?;
-        let _tx = match self.utxo.rpc_client.send_transaction(&signed).compat().await {
-            Ok(tx) => tx,
-            Err(err) => return TX_RECOVERABLE_ERR!(signed, "{:?}", err),
-        };
+        try_tx_s!(self.utxo.rpc_client.send_transaction(&signed).compat().await, signed);
         Ok(signed.into())
     }
 

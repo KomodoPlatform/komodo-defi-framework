@@ -1530,10 +1530,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    match coin.broadcast_tx(&signed).await {
-        Ok(_) => (),
-        Err(err) => return TX_RECOVERABLE_ERR!(signed, "{:?}", err),
-    };
+    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
 
     recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
 

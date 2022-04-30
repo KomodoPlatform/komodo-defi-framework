@@ -1125,10 +1125,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps>(
         );
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
-        match tx_fut.await {
-            Ok(_) => (),
-            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
-        };
+        try_tx_s!(tx_fut.await, transaction);
 
         Ok(transaction.into())
     };
@@ -1180,10 +1177,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps>(
         );
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
-        match tx_fut.await {
-            Ok(_) => (),
-            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
-        };
+        try_tx_s!(tx_fut.await, transaction);
 
         Ok(transaction.into())
     };
@@ -1233,10 +1227,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps>(
         );
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
-        match tx_fut.await {
-            Ok(_) => (),
-            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
-        };
+        try_tx_s!(tx_fut.await, transaction);
 
         Ok(transaction.into())
     };
@@ -1285,10 +1276,7 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps>(
         );
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
-        match tx_fut.await {
-            Ok(_) => (),
-            Err(err) => return TX_RECOVERABLE_ERR!(transaction, "{:?}", err),
-        };
+        try_tx_s!(tx_fut.await, transaction);
 
         Ok(transaction.into())
     };
@@ -1668,7 +1656,7 @@ where
     Box::new(fut.boxed().compat())
 }
 
-/// Receives raw transaction as input and returns tx hash in hexadecimal format
+/// Takes raw transaction as input and returns tx hash in hexadecimal format
 pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
     let bytes = try_fus!(hex::decode(tx));
     Box::new(
@@ -1679,7 +1667,7 @@ pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = Str
     )
 }
 
-/// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
+/// Takes raw transaction bytes as input and returns tx hash in hexadecimal format
 pub fn send_raw_tx_bytes(
     coin: &UtxoCoinFields,
     tx_bytes: &[u8],

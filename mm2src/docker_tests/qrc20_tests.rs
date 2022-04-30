@@ -739,10 +739,7 @@ fn test_wait_for_tx_spend() {
         .wait()
         .expect_err("Expected 'Waited too long' error");
 
-    let err = match tx_err {
-        TransactionFutErr::TxRecoverable(_tx, err) => err,
-        TransactionFutErr::Plain(err) => err,
-    };
+    let err = tx_err.get_plain_text_format();
     log!("error: "[err]);
     assert!(err.contains("Waited too long"));
 

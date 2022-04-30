@@ -156,6 +156,7 @@ macro_rules! TX_PLAIN_ERR {
 }
 
 /// `TransactionFutErr:TxRecoverable` compatible `ERR` macro.
+#[allow(unused_macros)]
 macro_rules! TX_RECOVERABLE_ERR {
     ($tx: expr, $format: expr, $($args: tt)+) => {
         Err(crate::TransactionFutErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
