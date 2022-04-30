@@ -34,21 +34,21 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
         let mut locked_db = self.mutex.lock().await;
         // Db is initialized already
         if locked_db.is_some() {
-            return Ok(unwrap_tx_history_db(locked_db));
+            return Ok(unwrap_db_instance(locked_db));
         }
 
         let db_id = DbIdentifier::new::<Db>(self.db_namespace, self.wallet_rmd160.clone());
 
         let db = Db::init(db_id).await?;
         *locked_db = Some(db);
-        Ok(unwrap_tx_history_db(locked_db))
+        Ok(unwrap_db_instance(locked_db))
     }
 }
 
 /// # Panics
 ///
 /// This function will `panic!()` if the inner value of the `guard` is `None`.
-fn unwrap_tx_history_db<Db>(guard: AsyncMutexGuard<'_, Option<Db>>) -> DbLocked<'_, Db> {
+fn unwrap_db_instance<Db>(guard: AsyncMutexGuard<'_, Option<Db>>) -> DbLocked<'_, Db> {
     AsyncMutexGuard::map(guard, |wrapped_db| {
         wrapped_db
             .as_mut()

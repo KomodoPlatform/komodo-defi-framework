@@ -749,7 +749,7 @@ mod sql_tx_history_storage_tests {
         let for_coin = "tBCH";
         let storage = SqliteTxHistoryStorage::in_memory();
         block_on(storage.init(for_coin)).unwrap();
-        let tx_details = include_str!("for_tests/tBCH_tx_history_fixtures.json");
+        let tx_details = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
         let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
 
         block_on(storage.add_transactions_to_history(for_coin, transactions)).unwrap();
@@ -802,7 +802,7 @@ mod sql_tx_history_storage_tests {
         let for_coin = "tBCH";
         let storage = SqliteTxHistoryStorage::in_memory();
         block_on(storage.init(for_coin)).unwrap();
-        let tx_details = include_str!("for_tests/tBCH_tx_history_fixtures.json");
+        let tx_details = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
         let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
 
         block_on(storage.add_transactions_to_history(for_coin, transactions)).unwrap();

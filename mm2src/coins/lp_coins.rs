@@ -72,7 +72,8 @@ cfg_native! {
 cfg_wasm32! {
     use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
-    use tx_history_db::TxHistoryDb;
+    use tx_history_storage::wasm::tx_history_db::TxHistoryDb;
+    use tx_history_storage::wasm::tx_history_storage_v1::{clear_tx_history, load_tx_history, save_tx_history};
 
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
@@ -155,11 +156,10 @@ pub mod init_withdraw;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
 pub mod qrc20;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod sql_tx_history_storage;
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
+pub mod tx_history_storage;
 pub use test_coin::TestCoin;
 
 #[doc(hidden)]
@@ -171,7 +171,6 @@ pub use solana::spl::SplToken;
 #[cfg(not(target_arch = "wasm32"))]
 pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
-#[cfg(target_arch = "wasm32")] pub mod tx_history_db;
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
@@ -2686,7 +2685,7 @@ where
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
         let db = coins_ctx.tx_history_db().await?;
-        let err = match db.load_history(&ticker, &my_address).await {
+        let err = match load_tx_history(&db, &ticker, &my_address).await {
             Ok(history) => return Ok(history),
             Err(e) => e,
         };
@@ -2697,7 +2696,7 @@ where
                 &[&"tx_history", &ticker.to_owned()],
                 &ERRL!("Error {} on history deserialization, resetting the cache.", e),
             );
-            db.clear(&ticker, &my_address).await?;
+            clear_tx_history(&db, &ticker, &my_address).await?;
             return Ok(Vec::new());
         }
 
@@ -2760,7 +2759,7 @@ where
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
         let db = coins_ctx.tx_history_db().await?;
-        db.save_history(&ticker, &my_address, history).await?;
+        save_tx_history(&db, &ticker, &my_address, history).await?;
         Ok(())
     };
     Box::new(fut.boxed().compat())

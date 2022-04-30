@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "wasm32"))]
-use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
+use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MarketCoinOps, MmCoinEnum,
             Transaction, TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;

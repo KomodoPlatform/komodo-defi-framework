@@ -1274,7 +1274,7 @@ pub fn bch_coin_for_test() -> BchCoin {
 #[cfg(test)]
 mod bch_tests {
     use super::*;
-    use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
+    use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
     use crate::{TransactionType, TxFeeDetails};
     use common::block_on;
 
