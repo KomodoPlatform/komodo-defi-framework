@@ -7,7 +7,7 @@ use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TradePreimageValue, TransactionEnum,
-            TransactionFutErr, ValidatePaymentInput};
+            TransactionErr, ValidatePaymentInput};
 use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::mm_number::BigDecimal;

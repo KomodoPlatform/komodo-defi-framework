@@ -66,7 +66,7 @@ pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
 mod web3_transport;
-use crate::{TransactionFut, TransactionFutErr, ValidatePaymentInput};
+use crate::{TransactionErr, TransactionFut, ValidatePaymentInput};
 use common::mm_number::MmNumber;
 use common::privkey::key_pair_from_secret;
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
@@ -1346,7 +1346,7 @@ lazy_static! {
     static ref NONCE_LOCK: TimedAsyncMutex<()> = TimedAsyncMutex::new(());
 }
 
-type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionFutErr> + Send + 'static>;
+type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Send + 'static>;
 
 async fn sign_and_send_transaction_impl(
     ctx: MmArc,
@@ -1355,7 +1355,7 @@ async fn sign_and_send_transaction_impl(
     action: Action,
     data: Vec<u8>,
     gas: U256,
-) -> Result<SignedEthTx, TransactionFutErr> {
+) -> Result<SignedEthTx, TransactionErr> {
     let mut status = ctx.log.status_handle();
     macro_rules! tags {
         () => {
@@ -2231,7 +2231,7 @@ impl EthCoin {
             } => {
                 let allowance_fut = self
                     .allowance(swap_contract_address)
-                    .map_err(|e| TransactionFutErr::Plain(ERRL!("{}", e)));
+                    .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)));
 
                 let function = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let data = try_tx_fus!(function.encode_input(&[
@@ -2288,10 +2288,10 @@ impl EthCoin {
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(
                     state_f
-                        .map_err(TransactionFutErr::Plain)
+                        .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
                             if state != PAYMENT_STATE_SENT.into() {
-                                return Box::new(futures01::future::err(TransactionFutErr::Plain(ERRL!(
+                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
                                     state
@@ -2326,10 +2326,10 @@ impl EthCoin {
 
                 Box::new(
                     state_f
-                        .map_err(TransactionFutErr::Plain)
+                        .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
                             if state != PAYMENT_STATE_SENT.into() {
-                                return Box::new(futures01::future::err(TransactionFutErr::Plain(ERRL!(
+                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
                                     state
@@ -2367,10 +2367,10 @@ impl EthCoin {
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(
                     state_f
-                        .map_err(TransactionFutErr::Plain)
+                        .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
                             if state != PAYMENT_STATE_SENT.into() {
-                                return Box::new(futures01::future::err(TransactionFutErr::Plain(ERRL!(
+                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
                                     state
@@ -2404,10 +2404,10 @@ impl EthCoin {
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(
                     state_f
-                        .map_err(TransactionFutErr::Plain)
+                        .map_err(TransactionErr::Plain)
                         .and_then(move |state| -> EthTxFut {
                             if state != PAYMENT_STATE_SENT.into() {
-                                return Box::new(futures01::future::err(TransactionFutErr::Plain(ERRL!(
+                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                                     "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
                                     payment,
                                     state

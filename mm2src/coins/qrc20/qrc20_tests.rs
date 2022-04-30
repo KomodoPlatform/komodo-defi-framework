@@ -955,9 +955,6 @@ fn test_send_contract_calls_recoverable_tx() {
     // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
-        discriminant(&TransactionFutErr::TxRecoverable(
-            TransactionEnum::from(tx),
-            String::new()
-        ))
+        discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
     );
 }

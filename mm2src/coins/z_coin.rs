@@ -893,7 +893,7 @@ impl SwapOps for ZCoin {
                 script_data,
                 key_pair.private().secret.as_slice(),
             );
-            let tx = try_tx_s!(tx_fut.await);
+            let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
@@ -931,7 +931,7 @@ impl SwapOps for ZCoin {
                 script_data,
                 key_pair.private().secret.as_slice(),
             );
-            let tx = try_tx_s!(tx_fut.await);
+            let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
@@ -966,7 +966,7 @@ impl SwapOps for ZCoin {
                 script_data,
                 key_pair.private().secret.as_slice(),
             );
-            let tx = try_tx_s!(tx_fut.await);
+            let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
@@ -1001,7 +1001,7 @@ impl SwapOps for ZCoin {
                 script_data,
                 key_pair.private().secret.as_slice(),
             );
-            let tx = try_tx_s!(tx_fut.await);
+            let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())

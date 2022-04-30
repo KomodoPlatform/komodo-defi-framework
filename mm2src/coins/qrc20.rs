@@ -14,7 +14,7 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest,
             SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TransactionFutErr, TransactionType,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFee,
             WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -447,7 +447,7 @@ impl Qrc20Coin {
     pub async fn send_contract_calls(
         &self,
         outputs: Vec<ContractCallOutput>,
-    ) -> Result<TransactionEnum, TransactionFutErr> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         // TODO: we need to somehow refactor it using RecentlySpentOutpoints cache
         // Move over all QRC20 tokens should share the same cache with each other and base QTUM coin
         let _utxo_lock = UTXO_LOCK.lock().await;
@@ -458,7 +458,7 @@ impl Qrc20Coin {
             .generate_qrc20_transaction(outputs)
             .await
             .mm_err(|e| e.into_withdraw_error(platform, decimals))
-            .map_err(|e| TransactionFutErr::Plain(ERRL!("{}", e)))?;
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         try_tx_s!(self.utxo.rpc_client.send_transaction(&signed).compat().await, signed);
         Ok(signed.into())
     }
@@ -1098,7 +1098,7 @@ impl MarketCoinOps for Qrc20Coin {
         let fut = async move {
             selfi
                 .wait_for_tx_spend_impl(tx, wait_until, from_block)
-                .map_err(TransactionFutErr::Plain)
+                .map_err(TransactionErr::Plain)
                 .await
         };
         Box::new(fut.boxed().compat())

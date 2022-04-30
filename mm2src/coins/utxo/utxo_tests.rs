@@ -205,10 +205,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
     // The error variant should equal to `TxRecoverable`
     assert_eq!(
         discriminant(&tx_err),
-        discriminant(&TransactionFutErr::TxRecoverable(
-            TransactionEnum::from(tx),
-            String::new()
-        ))
+        discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
     );
 }
 

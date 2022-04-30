@@ -97,7 +97,7 @@ use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
-use crate::TransactionFutErr;
+use crate::TransactionErr;
 use utxo_block_header_storage::BlockHeaderStorage;
 #[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -1473,7 +1473,7 @@ pub fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 async fn send_outputs_from_my_address_impl<T>(
     coin: T,
     outputs: Vec<TransactionOutput>,
-) -> Result<UtxoTx, TransactionFutErr>
+) -> Result<UtxoTx, TransactionErr>
 where
     T: UtxoCommonOps,
 {
@@ -1490,7 +1490,7 @@ async fn generate_and_send_tx<T>(
     fee_policy: FeePolicy,
     mut recently_spent: AsyncMutexGuard<'_, RecentlySpentOutPoints>,
     outputs: Vec<TransactionOutput>,
-) -> Result<UtxoTx, TransactionFutErr>
+) -> Result<UtxoTx, TransactionErr>
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {

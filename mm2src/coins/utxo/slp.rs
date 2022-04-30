@@ -13,7 +13,7 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TransactionFutErr, TxFeeDetails,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFee,
             WithdrawFut, WithdrawRequest};
 
@@ -409,7 +409,7 @@ impl SlpToken {
         Ok((preimage, recently_spent))
     }
 
-    pub async fn send_slp_outputs(&self, slp_outputs: Vec<SlpOutput>) -> Result<UtxoTx, TransactionFutErr> {
+    pub async fn send_slp_outputs(&self, slp_outputs: Vec<SlpOutput>) -> Result<UtxoTx, TransactionErr> {
         let (preimage, recently_spent) = try_tx_s!(self.generate_slp_tx_preimage(slp_outputs).await);
         generate_and_send_tx(
             self,
@@ -429,7 +429,7 @@ impl SlpToken {
         time_lock: u32,
         secret_hash: &[u8],
         amount: u64,
-    ) -> Result<UtxoTx, TransactionFutErr> {
+    ) -> Result<UtxoTx, TransactionErr> {
         let payment_script = payment_script(time_lock, secret_hash, my_pub, other_pub);
         let script_pubkey = ScriptBuilder::build_p2sh(&dhash160(&payment_script).into()).to_bytes();
         let slp_out = SlpOutput { amount, script_pubkey };
@@ -1296,7 +1296,7 @@ impl SwapOps for SlpToken {
             );
             Ok(tx.into())
         };
-        Box::new(fut.boxed().compat().map_err(TransactionFutErr::Plain))
+        Box::new(fut.boxed().compat().map_err(TransactionErr::Plain))
     }
 
     fn send_maker_refunds_payment(
@@ -1795,7 +1795,7 @@ pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, Mm
 #[cfg(test)]
 mod slp_tests {
     use super::*;
-    use crate::{utxo::bch::tbch_coin_for_test, TransactionFutErr};
+    use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
     use common::block_on;
     use std::mem::discriminant;
 
@@ -2023,8 +2023,8 @@ mod slp_tests {
         .unwrap_err();
 
         let err = match tx_err.clone() {
-            TransactionFutErr::TxRecoverable(_tx, err) => err,
-            TransactionFutErr::Plain(err) => err,
+            TransactionErr::TxRecoverable(_tx, err) => err,
+            TransactionErr::Plain(err) => err,
         };
 
         println!("{:?}", err);
@@ -2067,7 +2067,7 @@ mod slp_tests {
         // The error variant should equal to `TxRecoverable`
         assert_eq!(
             discriminant(&tx_err),
-            discriminant(&TransactionFutErr::TxRecoverable(
+            discriminant(&TransactionErr::TxRecoverable(
                 TransactionEnum::from(utxo_tx),
                 String::new()
             ))

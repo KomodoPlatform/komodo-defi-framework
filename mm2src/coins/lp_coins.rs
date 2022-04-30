@@ -96,23 +96,19 @@ macro_rules! try_f {
     };
 }
 
-/// `TransactionFutErr` compatible `try_fus` macro.
+/// `TransactionErr` compatible `try_fus` macro.
 macro_rules! try_tx_fus {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(err) => {
-                return Box::new(futures01::future::err(crate::TransactionFutErr::Plain(ERRL!(
-                    "{:?}", err
-                ))))
-            },
+            Err(err) => return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!("{:?}", err)))),
         }
     };
     ($e: expr, $tx: expr) => {
         match $e {
             Ok(ok) => ok,
             Err(err) => {
-                return Box::new(futures01::future::err(crate::TransactionFutErr::TxRecoverable(
+                return Box::new(futures01::future::err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     ERRL!("{:?}", err),
                 )))
@@ -121,13 +117,13 @@ macro_rules! try_tx_fus {
     };
 }
 
-/// `TransactionFutErr` compatible `try_s` macro.
+/// `TransactionErr` compatible `try_s` macro.
 macro_rules! try_tx_s {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
             Err(err) => {
-                return Err(crate::TransactionFutErr::Plain(format!(
+                return Err(crate::TransactionErr::Plain(format!(
                     "{}:{}] {:?}",
                     file!(),
                     line!(),
@@ -140,7 +136,7 @@ macro_rules! try_tx_s {
         match $e {
             Ok(ok) => ok,
             Err(err) => {
-                return Err(crate::TransactionFutErr::TxRecoverable(
+                return Err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     format!("{}:{}] {:?}", file!(), line!(), err),
                 ))
@@ -149,20 +145,44 @@ macro_rules! try_tx_s {
     };
 }
 
-/// `TransactionFutErr:Plain` compatible `ERR` macro.
-macro_rules! TX_PLAIN_ERR {
-    ($format: expr, $($args: tt)+) => { Err(crate::TransactionFutErr::Plain((ERRL!($format, $($args)+)))) };
-    ($format: expr) => { Err(crate::TransactionFutErr::Plain(ERRL!($format))) }
+/// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
+macro_rules! try_ztx_s {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                if let Some(tx) = err.get_inner().get_tx() {
+                    return Err(crate::TransactionErr::TxRecoverable(
+                        tx,
+                        format!("{}:{}] {:?}", file!(), line!(), err),
+                    ));
+                }
+
+                return Err(crate::TransactionErr::Plain(format!(
+                    "{}:{}] {:?}",
+                    file!(),
+                    line!(),
+                    err
+                )));
+            },
+        }
+    };
 }
 
-/// `TransactionFutErr:TxRecoverable` compatible `ERR` macro.
+/// `TransactionErr:Plain` compatible `ERR` macro.
+macro_rules! TX_PLAIN_ERR {
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
+}
+
+/// `TransactionErr:TxRecoverable` compatible `ERR` macro.
 #[allow(unused_macros)]
 macro_rules! TX_RECOVERABLE_ERR {
     ($tx: expr, $format: expr, $($args: tt)+) => {
-        Err(crate::TransactionFutErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
     };
     ($tx: expr, $format: expr) => {
-        Err(crate::TransactionFutErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format)))
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format)))
     };
 }
 
@@ -390,19 +410,19 @@ impl Deref for TransactionEnum {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum TransactionFutErr {
+pub enum TransactionErr {
     /// Keeps transactions while throwing errors.
     TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
     Plain(String),
 }
 
-impl TransactionFutErr {
+impl TransactionErr {
     /// Returns transaction if the error includes it.
     #[inline]
     pub fn get_tx(&self) -> Option<TransactionEnum> {
         match self {
-            TransactionFutErr::TxRecoverable(tx, _) => Some(tx.clone()),
+            TransactionErr::TxRecoverable(tx, _) => Some(tx.clone()),
             _ => None,
         }
     }
@@ -411,13 +431,13 @@ impl TransactionFutErr {
     /// Returns plain text part of error.
     pub fn get_plain_text_format(&self) -> String {
         match self {
-            TransactionFutErr::TxRecoverable(_, err) => err.to_string(),
-            TransactionFutErr::Plain(err) => err.to_string(),
+            TransactionErr::TxRecoverable(_, err) => err.to_string(),
+            TransactionErr::Plain(err) => err.to_string(),
         }
     }
 }
 
-pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionFutErr> + Send>;
+pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {

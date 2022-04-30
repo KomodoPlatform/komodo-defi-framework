@@ -37,7 +37,7 @@ impl Qrc20Coin {
         secret_hash: Vec<u8>,
         receiver_addr: H160,
         swap_contract_address: H160,
-    ) -> Result<TransactionEnum, TransactionFutErr> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         let balance = try_tx_s!(self.my_spendable_balance().compat().await);
         let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
@@ -67,7 +67,7 @@ impl Qrc20Coin {
         payment_tx: UtxoTx,
         swap_contract_address: H160,
         secret: Vec<u8>,
-    ) -> Result<TransactionEnum, TransactionFutErr> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         let Erc20PaymentDetails {
             swap_id, value, sender, ..
         } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
@@ -86,7 +86,7 @@ impl Qrc20Coin {
         &self,
         swap_contract_address: H160,
         payment_tx: UtxoTx,
-    ) -> Result<TransactionEnum, TransactionFutErr> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         let Erc20PaymentDetails {
             swap_id,
             value,
