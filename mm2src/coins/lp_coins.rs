@@ -483,7 +483,7 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
-    fn get_htlc_key_pair(&self) -> KeyPair;
+    fn get_htlc_key_pair(&self) -> Option<KeyPair>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

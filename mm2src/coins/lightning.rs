@@ -379,7 +379,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { unimplemented!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
 }
 
 impl MarketCoinOps for LightningCoin {

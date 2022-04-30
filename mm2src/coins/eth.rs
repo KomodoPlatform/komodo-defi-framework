@@ -68,7 +68,6 @@ pub use rlp;
 mod web3_transport;
 use crate::ValidatePaymentInput;
 use common::mm_number::MmNumber;
-use common::privkey::key_pair_from_secret;
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
 #[cfg(test)] mod eth_tests;
@@ -1087,9 +1086,7 @@ impl SwapOps for EthCoin {
         }
     }
 
-    fn get_htlc_key_pair(&self) -> keys::KeyPair {
-        key_pair_from_secret(self.key_pair.secret()).expect("a valid privkey")
-    }
+    fn get_htlc_key_pair(&self) -> Option<keys::KeyPair> { None }
 }
 
 #[cfg_attr(test, mockable)]

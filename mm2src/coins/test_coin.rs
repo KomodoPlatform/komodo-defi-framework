@@ -226,7 +226,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { unimplemented!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
 }
 
 #[async_trait]
