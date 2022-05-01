@@ -27,6 +27,7 @@ impl From<FsJsonError> for TxCacheError {
     }
 }
 
+/// The cache lock is used to avoid reading and writing the same files at the same time.
 #[derive(Default)]
 struct TxCacheLock {
     /// The collection of `Ticker -> Mutex` pairs.

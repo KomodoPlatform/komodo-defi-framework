@@ -69,38 +69,43 @@ where
 
 impl<T, A, B, E> TryUnzip<A, B, E> for T where T: Iterator<Item = Result<(A, B), E>> {}
 
-#[test]
-fn test_collect_into() {
-    let actual: Vec<String> = vec!["foo", "bar"].collect_into();
-    let expected = vec!["foo".to_owned(), "bar".to_owned()];
-    assert_eq!(actual, expected);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_try_into_group_map() {
-    let actual: Result<_, &'static str> = vec![Ok(("foo", 1)), Ok(("bar", 2)), Ok(("foo", 3))]
-        .into_iter()
-        .try_into_group_map();
-    let expected: HashMap<_, _> = vec![("foo", vec![1, 3]), ("bar", vec![2])].into_iter().collect();
-    assert_eq!(actual, Ok(expected));
+    #[test]
+    fn test_collect_into() {
+        let actual: Vec<String> = vec!["foo", "bar"].collect_into();
+        let expected = vec!["foo".to_owned(), "bar".to_owned()];
+        assert_eq!(actual, expected);
+    }
 
-    let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
-        .into_iter()
-        .try_into_group_map()
-        .unwrap_err();
-    assert_eq!(err, "Error");
-}
+    #[test]
+    fn test_try_into_group_map() {
+        let actual: Result<_, &'static str> = vec![Ok(("foo", 1)), Ok(("bar", 2)), Ok(("foo", 3))]
+            .into_iter()
+            .try_into_group_map();
+        let expected: HashMap<_, _> = vec![("foo", vec![1, 3]), ("bar", vec![2])].into_iter().collect();
+        assert_eq!(actual, Ok(expected));
 
-#[test]
-fn test_try_unzip() {
-    let actual: Result<(Vec<_>, Vec<_>), &'static str> = vec![Ok(("foo", 1)), Ok(("bar", 2)), Ok(("foo", 3))]
-        .into_iter()
-        .try_unzip();
-    assert_eq!(actual, Ok((vec!["foo", "bar", "foo"], vec![1, 2, 3])));
+        let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
+            .into_iter()
+            .try_into_group_map()
+            .unwrap_err();
+        assert_eq!(err, "Error");
+    }
 
-    let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
-        .into_iter()
-        .try_unzip::<Vec<_>, Vec<_>>()
-        .unwrap_err();
-    assert_eq!(err, "Error");
+    #[test]
+    fn test_try_unzip() {
+        let actual: Result<(Vec<_>, Vec<_>), &'static str> = vec![Ok(("foo", 1)), Ok(("bar", 2)), Ok(("foo", 3))]
+            .into_iter()
+            .try_unzip();
+        assert_eq!(actual, Ok((vec!["foo", "bar", "foo"], vec![1, 2, 3])));
+
+        let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
+            .into_iter()
+            .try_unzip::<Vec<_>, Vec<_>>()
+            .unwrap_err();
+        assert_eq!(err, "Error");
+    }
 }

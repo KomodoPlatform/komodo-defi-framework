@@ -35,15 +35,12 @@ pub trait UtxoVerboseCacheOps: fmt::Debug {
     }
 
     /// Tries to load transactions from cache concurrently.
-    /// Note 1: `tx.confirmations` can be out-of-date.
-    /// Note 2: this function locks the `TX_CACHE_LOCK` mutex to avoid reading and writing the same files at the same time.
+    /// Please note `tx.confirmations` can be out-of-date.
     async fn load_transactions_from_cache_concurrently(
         &self,
         tx_ids: HashSet<H256Json>,
     ) -> HashMap<H256Json, TxCacheResult<Option<RpcTransaction>>>;
 
     /// Uploads transactions to cache concurrently.
-    /// Note: this function locks the `TX_CACHE_LOCK` mutex and takes `txs` as the Hash map
-    /// to avoid reading and writing the same files at the same time.
     async fn cache_transactions_concurrently(&self, txs: &HashMap<H256Json, RpcTransaction>);
 }
