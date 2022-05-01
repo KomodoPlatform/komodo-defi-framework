@@ -10,6 +10,8 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
                                NativeClientImpl, NativeUnspent, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes,
                                VerboseBlock};
+use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
+use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests;
@@ -150,7 +152,7 @@ fn utxo_coin_fields_for_test(
         priv_key_policy,
         derivation_method,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        tx_cache: None,
+        tx_cache: DummyVerboseCache::default().into_shared(),
         block_headers_storage: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,

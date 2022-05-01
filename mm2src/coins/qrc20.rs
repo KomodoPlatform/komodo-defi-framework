@@ -4,7 +4,8 @@ use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc2
 use crate::utxo::qtum::QtumBasedCoin;
 use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps,
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
-use crate::utxo::tx_cache::UtxoVerboseCache;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
@@ -244,9 +245,11 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     }
 
     /// Override [`UtxoCoinBuilderCommonOps::tx_cache`] to initialize TX cache with the platform ticker.
-    fn tx_cache(&self) -> UtxoVerboseCache {
+    /// Please note the method is overridden for Native mode only.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tx_cache(&self) -> UtxoVerboseCacheShared {
         let tx_cache_path = self.ctx().dbdir().join("TX_CACHE");
-        UtxoVerboseCache::new(self.platform.clone(), tx_cache_path)
+        crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.platform.clone(), tx_cache_path).into_shared()
     }
 }
 

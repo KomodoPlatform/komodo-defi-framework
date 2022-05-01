@@ -7,6 +7,7 @@ use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, TradePreimageValue, TxFeeDetails,
@@ -2890,7 +2891,10 @@ where
         }
     }
 
-    cache_transactions_if_possible(coin.as_ref(), &txs_to_cache).await;
+    coin.as_ref()
+        .tx_cache
+        .cache_transactions_concurrently(&txs_to_cache)
+        .await;
     Ok(result)
 }
 
@@ -2901,7 +2905,6 @@ pub fn is_unspent_mature(mature_confirmations: u32, output: &RpcTransaction) -> 
 
 /// [`UtxoCommonOps::get_verbose_transactions_from_cache_or_rpc`] implementation.
 /// Loads verbose transactions from cache or requests it using RPC client.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn get_verbose_transactions_from_cache_or_rpc(
     coin: &UtxoCoinFields,
     tx_ids: HashSet<H256Json>,
@@ -2913,7 +2916,7 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
         result_map: &mut HashMap<H256Json, VerboseTransactionFrom>,
         to_request: &mut Vec<H256Json>,
         txid: H256Json,
-        res: tx_cache::TxCacheResult<Option<RpcTransaction>>,
+        res: TxCacheResult<Option<RpcTransaction>>,
     ) {
         match res {
             Ok(Some(tx)) => {
@@ -2936,17 +2939,11 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
     let mut result_map = HashMap::with_capacity(tx_ids.len());
     let mut to_request = Vec::with_capacity(tx_ids.len());
 
-    match coin.tx_cache {
-        Some(ref tx_cache) => {
-            tx_cache
-                .load_transactions_from_cache_concurrently(tx_ids.into_iter())
-                .await
-                .into_iter()
-                .for_each(|(txid, res)| on_cached_transaction_result(&mut result_map, &mut to_request, txid, res));
-        },
-        // the coin doesn't support TX local cache, don't try to load from cache
-        None => to_request = tx_ids.into_iter().collect(),
-    }
+    coin.tx_cache
+        .load_transactions_from_cache_concurrently(tx_ids)
+        .await
+        .into_iter()
+        .for_each(|(txid, res)| on_cached_transaction_result(&mut result_map, &mut to_request, txid, res));
 
     result_map.extend(
         coin.rpc_client
@@ -2958,39 +2955,6 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
     );
     Ok(result_map)
 }
-
-/// [`UtxoCommonOps::get_verbose_transactions_from_cache_or_rpc`] implementation.
-/// Loads verbose transactions from cache or requests it using RPC client.
-#[cfg(target_arch = "wasm32")]
-pub async fn get_verbose_transactions_from_cache_or_rpc(
-    coin: &UtxoCoinFields,
-    tx_ids: HashSet<H256Json>,
-) -> UtxoRpcResult<HashMap<H256Json, VerboseTransactionFrom>> {
-    let tx_ids: Vec<_> = tx_ids.into_iter().collect();
-    let txs = coin
-        .rpc_client
-        .get_verbose_transactions(&tx_ids)
-        .compat()
-        .await?
-        .into_iter()
-        .map(|tx| (tx.txid, VerboseTransactionFrom::Rpc(tx)))
-        .collect();
-    Ok(txs)
-}
-
-/// Saves the given `txs` transactions in a TX cache.
-/// The function takes `txs` as the Hash map to avoid duplicating same transactions.
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn cache_transactions_if_possible(coin: &UtxoCoinFields, txs: &HashMap<H256Json, RpcTransaction>) {
-    if let Some(ref tx_cache) = coin.tx_cache {
-        tx_cache.cache_transactions_concurrently(txs).await
-    }
-}
-
-/// Saves the given `txs` transactions in a TX cache.
-/// It takes `txs` as the Hash map to avoid duplicating same transactions.
-#[cfg(target_arch = "wasm32")]
-pub async fn cache_transactions_if_possible(_coin: &UtxoCoinFields, _txs: &HashMap<H256Json, RpcTransaction>) {}
 
 /// Swap contract address is not used by standard UTXO coins.
 pub fn swap_contract_address() -> Option<BytesJson> { None }

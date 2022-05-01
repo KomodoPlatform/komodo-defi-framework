@@ -75,8 +75,8 @@ use std::convert::TryInto;
 use std::hash::Hash;
 use std::num::NonZeroU64;
 use std::ops::Deref;
-#[cfg(not(target_arch = "wasm32"))] use std::path::Path;
-use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
@@ -98,11 +98,11 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
-use crate::utxo::tx_cache::UtxoVerboseCache;
+use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use utxo_block_header_storage::BlockHeaderStorage;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
+pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
 pub mod utxo_indexedb_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
@@ -525,7 +525,7 @@ pub struct UtxoCoinFields {
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
     /// The cache of verbose transactions.
-    pub tx_cache: Option<UtxoVerboseCache>,
+    pub tx_cache: UtxoVerboseCacheShared,
     pub block_headers_storage: Option<BlockHeaderStorage>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs

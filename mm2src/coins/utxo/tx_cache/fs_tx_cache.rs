@@ -1,28 +1,19 @@
+use crate::utxo::tx_cache::{TxCacheError, TxCacheResult, UtxoVerboseCacheOps};
+use async_trait::async_trait;
 use common::fs::{read_json, write_json, FsJsonError};
 use common::log::LogOnError;
 use common::mm_error::prelude::*;
-use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::FutureExt;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use std::collections::hash_map::RawEntryMut;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub type TxCacheResult<T> = MmResult<T, TxCacheError>;
-
 lazy_static! {
     static ref TX_CACHE_LOCK: TxCacheLock = TxCacheLock::default();
-}
-
-#[derive(Debug, Display)]
-pub enum TxCacheError {
-    ErrorLoading(String),
-    ErrorSaving(String),
-    ErrorDeserializing(String),
-    ErrorSerializing(String),
 }
 
 impl From<FsJsonError> for TxCacheError {
@@ -63,26 +54,17 @@ impl TxCacheLock {
 /// In particular, `QRC20` tokens have the same transactions as `Qtum` coin,
 /// so [`Qrc20Coin::platform_ticker`] is used as [`UtxoVerboseCache::ticker`].
 #[derive(Debug)]
-pub struct UtxoVerboseCache {
+pub struct FsVerboseCache {
     ticker: String,
     tx_cache_path: PathBuf,
 }
 
-impl UtxoVerboseCache {
-    pub fn new(ticker: String, tx_cache_path: PathBuf) -> UtxoVerboseCache {
-        UtxoVerboseCache { ticker, tx_cache_path }
-    }
-
-    /// Tries to load transactions from cache concurrently.
-    /// Note 1: `tx.confirmations` can be out-of-date.
-    /// Note 2: this function locks the `TX_CACHE_LOCK` mutex to avoid reading and writing the same files at the same time.
-    pub async fn load_transactions_from_cache_concurrently<I>(
+#[async_trait]
+impl UtxoVerboseCacheOps for FsVerboseCache {
+    async fn load_transactions_from_cache_concurrently(
         &self,
-        tx_ids: I,
-    ) -> HashMap<H256Json, TxCacheResult<Option<RpcTransaction>>>
-    where
-        I: IntoIterator<Item = H256Json>,
-    {
+        tx_ids: HashSet<H256Json>,
+    ) -> HashMap<H256Json, TxCacheResult<Option<RpcTransaction>>> {
         let mutex = TX_CACHE_LOCK.mutex_by_ticker(&self.ticker);
         let _lock = mutex.lock().await;
 
@@ -92,10 +74,7 @@ impl UtxoVerboseCache {
         futures::future::join_all(it).await.into_iter().collect()
     }
 
-    /// Uploads transactions to cache concurrently.
-    /// Note: this function locks the `TX_CACHE_LOCK` mutex and takes `txs` as the Hash map
-    /// to avoid reading and writing the same files at the same time.
-    pub async fn cache_transactions_concurrently(&self, txs: &HashMap<H256Json, RpcTransaction>) {
+    async fn cache_transactions_concurrently(&self, txs: &HashMap<H256Json, RpcTransaction>) {
         let mutex = TX_CACHE_LOCK.mutex_by_ticker(&self.ticker);
         let _lock = mutex.lock().await;
 
@@ -105,6 +84,10 @@ impl UtxoVerboseCache {
             .into_iter()
             .for_each(|tx| tx.error_log());
     }
+}
+
+impl FsVerboseCache {
+    pub fn new(ticker: String, tx_cache_path: PathBuf) -> FsVerboseCache { FsVerboseCache { ticker, tx_cache_path } }
 
     /// Tries to load transaction from cache.
     /// Note: `tx.confirmations` can be out-of-date.
