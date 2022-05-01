@@ -2,6 +2,7 @@ use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
 use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
+use crate::utxo::tx_cache::UtxoVerboseCache;
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
@@ -158,9 +159,10 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let dust_amount = self.dust_amount();
 
         let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
+        // TX cache can be not initialized within tests only.
+        let tx_cache = Some(self.tx_cache());
         let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
@@ -171,7 +173,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             priv_key_policy,
             derivation_method,
             history_sync_state: Mutex::new(initial_history_state),
-            tx_cache_directory,
+            tx_cache,
             block_headers_storage,
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
@@ -221,9 +223,10 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let dust_amount = self.dust_amount();
 
         let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
+        // TX cache can be not initialized within tests only.
+        let tx_cache = Some(self.tx_cache());
         let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
@@ -235,7 +238,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
             block_headers_storage,
-            tx_cache_directory,
+            tx_cache,
             recently_spent_outpoints,
             tx_fee,
             tx_hash_algo,
@@ -560,6 +563,11 @@ pub trait UtxoCoinBuilderCommonOps {
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
 
     fn is_hw_coin(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
+
+    fn tx_cache(&self) -> UtxoVerboseCache {
+        let tx_cache_path = self.ctx().dbdir().join("TX_CACHE");
+        UtxoVerboseCache::new(self.ticker().to_owned(), tx_cache_path)
+    }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword

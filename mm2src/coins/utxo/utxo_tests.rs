@@ -150,7 +150,7 @@ fn utxo_coin_fields_for_test(
         priv_key_policy,
         derivation_method,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        tx_cache_directory: None,
+        tx_cache: None,
         block_headers_storage: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,

@@ -98,8 +98,10 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
+use crate::utxo::tx_cache::UtxoVerboseCache;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use utxo_block_header_storage::BlockHeaderStorage;
+
 #[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
 pub mod utxo_indexedb_block_header_storage;
@@ -522,8 +524,8 @@ pub struct UtxoCoinFields {
     /// Either an Iguana address or an info about last derived account/address.
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
-    /// Path to the TX cache directory
-    pub tx_cache_directory: Option<PathBuf>,
+    /// The cache of verbose transactions.
+    pub tx_cache: Option<UtxoVerboseCache>,
     pub block_headers_storage: Option<BlockHeaderStorage>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs

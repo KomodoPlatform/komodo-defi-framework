@@ -2936,9 +2936,10 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
     let mut result_map = HashMap::with_capacity(tx_ids.len());
     let mut to_request = Vec::with_capacity(tx_ids.len());
 
-    match coin.tx_cache_directory {
-        Some(ref tx_cache_path) => {
-            tx_cache::load_transactions_from_cache_concurrently(tx_cache_path, tx_ids.into_iter())
+    match coin.tx_cache {
+        Some(ref tx_cache) => {
+            tx_cache
+                .load_transactions_from_cache_concurrently(tx_ids.into_iter())
                 .await
                 .into_iter()
                 .for_each(|(txid, res)| on_cached_transaction_result(&mut result_map, &mut to_request, txid, res));
@@ -2981,8 +2982,8 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
 /// The function takes `txs` as the Hash map to avoid duplicating same transactions.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn cache_transactions_if_possible(coin: &UtxoCoinFields, txs: &HashMap<H256Json, RpcTransaction>) {
-    if let Some(ref tx_cache_path) = coin.tx_cache_directory {
-        tx_cache::cache_transactions_concurrently(tx_cache_path, txs).await
+    if let Some(ref tx_cache) = coin.tx_cache {
+        tx_cache.cache_transactions_concurrently(txs).await
     }
 }
 
