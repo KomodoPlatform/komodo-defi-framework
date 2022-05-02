@@ -51,33 +51,6 @@ pub type JsonRpcResponseFut =
     Box<dyn Future<Item = (JsonRpcRemoteAddr, JsonRpcResponseEnum), Error = String> + Send + 'static>;
 pub type RpcRes<T> = Box<dyn Future<Item = T, Error = JsonRpcError> + Send + 'static>;
 
-pub trait BatchRequest {
-    /// Sends the RPC batch request.
-    /// Responses are guaranteed to be in the same order in which they were requested.
-    fn batch_rpc<Rpc, T>(self, rpc_client: &Rpc) -> RpcRes<Vec<T>>
-    where
-        Rpc: JsonRpcClient,
-        T: DeserializeOwned + Send + 'static;
-}
-
-impl<I> BatchRequest for I
-where
-    I: Iterator<Item = JsonRpcRequest>,
-{
-    fn batch_rpc<Rpc, T>(self, rpc_client: &Rpc) -> RpcRes<Vec<T>>
-    where
-        Rpc: JsonRpcClient,
-        T: DeserializeOwned + Send + 'static,
-    {
-        let requests: Vec<_> = self.collect();
-        if requests.is_empty() {
-            // Return an empty vector of results.
-            return Box::new(futures01::future::ok(Vec::new()));
-        }
-        rpc_client.send_batch_request(JsonRpcBatchRequest(requests))
-    }
-}
-
 /// Address of server from which an Rpc response was received
 #[derive(Clone, Default)]
 pub struct JsonRpcRemoteAddr(pub String);
@@ -291,6 +264,23 @@ pub trait JsonRpcClient {
             self.transport(JsonRpcRequestEnum::Single(request.clone()))
                 .then(move |result| process_transport_single_result(result, client_info, request)),
         )
+    }
+}
+
+pub trait JsonRpcBatchClient: JsonRpcClient {
+    /// Sends the RPC batch request.
+    /// Responses are guaranteed to be in the same order in which they were requested.
+    fn batch_rpc<I, T>(&self, batch_requests: I) -> RpcRes<Vec<T>>
+    where
+        I: IntoIterator<Item = JsonRpcRequest>,
+        T: DeserializeOwned + Send + 'static,
+    {
+        let requests: Vec<_> = batch_requests.into_iter().collect();
+        if requests.is_empty() {
+            // Return an empty vector of results.
+            return Box::new(futures01::future::ok(Vec::new()));
+        }
+        self.send_batch_request(JsonRpcBatchRequest(requests))
     }
 
     /// Sends the given batch `request` to the remote and tries to decode the batch response into `Vec<T>`.

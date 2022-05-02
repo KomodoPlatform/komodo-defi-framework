@@ -186,33 +186,32 @@ impl BchCoin {
     pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
+        let mut result = BchUnspents::default();
+        let mut temporary_undetermined = Vec::new();
+
         let to_verbose: HashSet<H256Json> = utxos
-            .iter()
+            .into_iter()
             .filter_map(|unspent| {
                 if unspent.outpoint.index == 0 {
                     // Zero output is reserved for OP_RETURN of specific protocols
                     // so if we get it we can safely consider this as standard BCH UTXO.
                     // There is no need to request verbose transaction for such UTXO.
+                    result.add_standard(unspent);
                     None
                 } else {
-                    Some(unspent.outpoint.hash.reversed().into())
+                    let hash = unspent.outpoint.hash.reversed().into();
+                    temporary_undetermined.push(unspent);
+                    Some(hash)
                 }
             })
             .collect();
+
         let verbose_txs = self
             .get_verbose_transactions_from_cache_or_rpc(to_verbose)
             .compat()
             .await?;
 
-        let mut result = BchUnspents::default();
-        for unspent in utxos {
-            if unspent.outpoint.index == 0 {
-                // Zero output is reserved for OP_RETURN of specific protocols
-                // so if we get it we can safely consider this as standard BCH UTXO.
-                result.add_standard(unspent);
-                continue;
-            }
-
+        for unspent in temporary_undetermined {
             let prev_tx_hash = unspent.outpoint.hash.reversed().into();
             let prev_tx_bytes = verbose_txs
                 .get(&prev_tx_hash)

@@ -9,7 +9,7 @@ use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transactio
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::{BatchRequest, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
+use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
@@ -636,6 +636,8 @@ impl JsonRpcClient for NativeClientImpl {
     }
 }
 
+impl JsonRpcBatchClient for NativeClientImpl {}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -977,12 +979,10 @@ impl NativeClientImpl {
     /// Always returns verbose transactions in the same order they were requested.
     fn get_raw_transaction_verbose_batch(&self, tx_ids: &[H256Json]) -> RpcRes<Vec<RpcTransaction>> {
         let verbose = 1;
-        Box::new(
-            tx_ids
-                .iter()
-                .map(|txid| rpc_req!(self, "getrawtransaction", txid, verbose))
-                .batch_rpc(self),
-        )
+        let requests = tx_ids
+            .iter()
+            .map(|txid| rpc_req!(self, "getrawtransaction", txid, verbose));
+        self.batch_rpc(requests)
     }
 
     /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
@@ -1699,6 +1699,8 @@ impl JsonRpcClient for ElectrumClient {
     }
 }
 
+impl JsonRpcBatchClient for ElectrumClient {}
+
 impl JsonRpcMultiClient for ElectrumClient {
     fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
@@ -1751,24 +1753,21 @@ impl ElectrumClient {
     /// We should remove them to build valid transactions.
     /// Please note the function returns `ScriptHashUnspents` elements in the same order in which they were requested.
     pub fn scripthash_list_unspent_batch(&self, hashes: Vec<ElectrumScriptHash>) -> RpcRes<Vec<ScriptHashUnspents>> {
-        Box::new(
-            hashes
-                .iter()
-                .map(|hash| rpc_req!(self, "blockchain.scripthash.listunspent", hash))
-                .batch_rpc(self)
-                .map(move |unspents: Vec<ScriptHashUnspents>| {
-                    unspents
+        let requests = hashes
+            .iter()
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.listunspent", hash));
+        Box::new(self.batch_rpc(requests).map(move |unspents: Vec<ScriptHashUnspents>| {
+            unspents
+                .into_iter()
+                .map(|hash_unspents| {
+                    let hash_unspents: Vec<_> = hash_unspents
                         .into_iter()
-                        .map(|hash_unspents| {
-                            let hash_unspents: Vec<_> = hash_unspents
-                                .into_iter()
-                                .unique_by(|unspent| (unspent.tx_hash, unspent.tx_pos))
-                                .collect();
-                            hash_unspents
-                        })
-                        .collect()
-                }),
-        )
+                        .unique_by(|unspent| (unspent.tx_hash, unspent.tx_pos))
+                        .collect();
+                    hash_unspents
+                })
+                .collect()
+        }))
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
@@ -1793,10 +1792,10 @@ impl ElectrumClient {
     where
         I: IntoIterator<Item = String>,
     {
-        hashes
+        let requests = hashes
             .into_iter()
-            .map(|hash| rpc_req!(self, "blockchain.scripthash.get_balance", &hash))
-            .batch_rpc(self)
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.get_balance", &hash));
+        self.batch_rpc(requests)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
@@ -1971,13 +1970,10 @@ impl UtxoRpcClientOps for ElectrumClient {
     /// Returns verbose transactions in a batch.
     fn get_verbose_transactions(&self, tx_ids: &[H256Json]) -> UtxoRpcFut<Vec<RpcTransaction>> {
         let verbose = true;
-        Box::new(
-            tx_ids
-                .iter()
-                .map(|txid| rpc_req!(self, "blockchain.transaction.get", txid, verbose))
-                .batch_rpc(self)
-                .map_to_mm_fut(UtxoRpcError::from),
-        )
+        let requests = tx_ids
+            .iter()
+            .map(|txid| rpc_req!(self, "blockchain.transaction.get", txid, verbose));
+        Box::new(self.batch_rpc(requests).map_to_mm_fut(UtxoRpcError::from))
     }
 
     fn get_block_count(&self) -> UtxoRpcFut<u64> {
