@@ -7074,7 +7074,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_sign_message_utxo() {
+fn test_sign_verify_message_utxo() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
     let coins = json!([
@@ -7132,11 +7132,32 @@ fn test_sign_message_utxo() {
         signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
     );
+
+    let rc = block_on(mm_bob.rpc(&json! ({
+    "userpass": mm_bob.userpass,
+    "method":"verify_message",
+    "mmrpc":"2.0",
+    "id": 0,
+    "params":{
+      "coin":"RICK",
+      "message":"test",
+      "signature": "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
+      "address":"R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"
+
+    }
+    })))
+    .unwrap();
+
+    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
+
+    let response: Json = json::from_str(&rc.1).unwrap();
+    let is_valid = &response["result"]["is_valid"];
+    assert_eq!(is_valid, true);
 }
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_verify_message_utxo() {
+fn test_sign_verify_message_utxo_segwit() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
     let coins = json!([
@@ -7147,6 +7168,9 @@ fn test_verify_message_utxo() {
             "sign_message_prefix": "Komodo Signed Message:\n",
             "txversion":4,
             "overwintered":1,
+            "segwit": true,
+            "address_format":{"format":"segwit"},
+            "bech32_hrp": "rck",
             "protocol":{"type":"UTXO"}
         },
         {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
@@ -7176,6 +7200,27 @@ fn test_verify_message_utxo() {
 
     let rc = block_on(mm_bob.rpc(&json! ({
     "userpass": mm_bob.userpass,
+    "method":"sign_message",
+    "mmrpc":"2.0",
+    "id": 0,
+    "params":{
+      "coin":"RICK",
+      "message":"test"
+    }
+    })))
+    .unwrap();
+
+    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
+
+    let response: Json = json::from_str(&rc.1).unwrap();
+    let signature = &response["result"]["signature"];
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+
+    let rc = block_on(mm_bob.rpc(&json! ({
+    "userpass": mm_bob.userpass,
     "method":"verify_message",
     "mmrpc":"2.0",
     "id": 0,
@@ -7183,7 +7228,7 @@ fn test_verify_message_utxo() {
       "coin":"RICK",
       "message":"test",
       "signature": "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
-      "address":"R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"
+      "address":"rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay"
 
     }
     })))

@@ -93,8 +93,16 @@ fn utxo_coin_fields_for_test(
         hash: key_pair.public().address_hash().into(),
         t_addr_prefix: 0,
         checksum_type,
-        hrp: None,
-        addr_format: UtxoAddressFormat::Standard,
+        hrp: if is_segwit_coin {
+            Some(TEST_COIN_HRP.to_string())
+        } else {
+            None
+        },
+        addr_format: if is_segwit_coin {
+            UtxoAddressFormat::Segwit
+        } else {
+            UtxoAddressFormat::Standard
+        },
     };
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
@@ -3886,22 +3894,7 @@ fn test_message_hash() {
 }
 
 #[test]
-fn test_sign_message() {
-    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
-    let coin = utxo_coin_for_test(
-        client.into(),
-        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
-        false,
-    );
-    let signature = coin.sign_message("test").unwrap();
-    assert_eq!(
-        signature,
-        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
-    );
-}
-
-#[test]
-fn test_verify_message() {
+fn test_sign_verify_message() {
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
@@ -3910,10 +3903,34 @@ fn test_verify_message() {
     );
 
     let message = "test";
-    let signature = coin.sign_message("test").unwrap();
+    let signature = coin.sign_message(message).unwrap();
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+
     let address = "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW";
-
     let is_valid = coin.verify_message(&signature, message, address).unwrap();
+    assert_eq!(is_valid, true);
+}
 
+#[test]
+fn test_sign_verify_message_segwit() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        true,
+    );
+
+    let message = "test";
+    let signature = coin.sign_message(message).unwrap();
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+
+    let address = "rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay";
+    let is_valid = coin.verify_message(&signature, message, address).unwrap();
     assert_eq!(is_valid, true);
 }

@@ -406,8 +406,7 @@ impl MarketCoinOps for LightningCoin {
             .map_err(|_| SignatureError::InternalError("Error accessing node keys".to_string()))?;
         let private = Private {
             prefix: 239,
-            secret: H256::from_str(&secret_key.to_string())
-                .map_err(|e| SignatureError::InternalError(e.to_string()))?,
+            secret: H256::from(*secret_key.as_ref()),
             compressed: true,
             checksum_type: ChecksumType::DSHA256,
         };
