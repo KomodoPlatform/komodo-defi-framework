@@ -2933,20 +2933,19 @@ pub fn address_from_pubkey(
     }
 }
 
-pub async fn validate_spv_proof<T: UtxoCommonOps>(
-    coin: T,
-    tx: UtxoTx,
+pub async fn validate_spv_proof(
+    ticker: &str,
+    block_headers_storage: &Option<BlockHeaderStorage>,
+    client: &ElectrumClient,
+    tx: &UtxoTx,
     try_spv_proof_until: u64,
-) -> Result<(), MmError<SPVError>> {
-    let client = match &coin.as_ref().rpc_client {
-        UtxoRpcClientEnum::Native(_) => return Ok(()),
-        UtxoRpcClientEnum::Electrum(electrum_client) => electrum_client,
-    };
+) -> Result<(SPVProof, u64), MmError<SPVError>> {
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::InvalidVout);
     }
 
-    let (merkle_branch, block_header) = spv_proof_retry_pool(&coin, client, &tx, try_spv_proof_until).await?;
+    let (merkle_branch, block_header, height) =
+        get_merkle_and_header_retry_loop(ticker, block_headers_storage, client, tx, try_spv_proof_until).await?;
     let raw_header = RawBlockHeader::new(block_header.raw().take())?;
     let intermediate_nodes: Vec<H256> = merkle_branch
         .merkle
@@ -2964,15 +2963,18 @@ pub async fn validate_spv_proof<T: UtxoCommonOps>(
         intermediate_nodes,
     };
 
-    proof.validate().map_err(MmError::new)
+    proof.validate().map_err(MmError::new)?;
+
+    Ok((proof, height))
 }
 
-async fn spv_proof_retry_pool<T: UtxoCommonOps>(
-    coin: &T,
+async fn get_merkle_and_header_retry_loop(
+    ticker: &str,
+    block_headers_storage: &Option<BlockHeaderStorage>,
     client: &ElectrumClient,
     tx: &UtxoTx,
     try_spv_proof_until: u64,
-) -> Result<(TxMerkleBranch, BlockHeader), MmError<SPVError>> {
+) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
     let mut height: Option<u64> = None;
     let mut merkle_branch: Option<TxMerkleBranch> = None;
 
@@ -3016,11 +3018,9 @@ async fn spv_proof_retry_pool<T: UtxoCommonOps>(
         }
 
         if height.is_some() && merkle_branch.is_some() {
-            match block_header_from_storage_or_rpc(&coin, height.unwrap(), &coin.as_ref().block_headers_storage, client)
-                .await
-            {
+            match block_header_from_storage_or_rpc(ticker, height.unwrap(), block_headers_storage, client).await {
                 Ok(block_header) => {
-                    return Ok((merkle_branch.unwrap(), block_header));
+                    return Ok((merkle_branch.unwrap(), block_header, height.unwrap()));
                 },
                 Err(e) => {
                     debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
@@ -3148,16 +3148,21 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 );
             }
 
-            if !coin.as_ref().conf.enable_spv_proof {
-                return Ok(());
+            if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
+                if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
+                    validate_spv_proof(
+                        &coin.as_ref().conf.ticker,
+                        &coin.as_ref().block_headers_storage,
+                        client,
+                        &tx,
+                        try_spv_proof_until,
+                    )
+                    .await
+                    .map_err(|e| format!("{:?}", e))?;
+                }
             }
 
-            return match confirmations {
-                0 => Ok(()),
-                _ => validate_spv_proof(coin, tx, try_spv_proof_until)
-                    .await
-                    .map_err(|e| format!("{:?}", e)),
-            };
+            return Ok(());
         }
     };
     Box::new(fut.boxed().compat())
@@ -3396,19 +3401,13 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-pub async fn valid_block_header_from_storage<T>(
-    coin: &T,
+pub async fn valid_block_header_from_storage(
+    ticker: &str,
     height: u64,
     storage: &BlockHeaderStorage,
     client: &ElectrumClient,
-) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
-where
-    T: AsRef<UtxoCoinFields>,
-{
-    match storage
-        .get_block_header(coin.as_ref().conf.ticker.as_str(), height)
-        .await?
-    {
+) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+    match storage.get_block_header(ticker, height).await? {
         None => {
             let bytes = client.blockchain_block_header(height).compat().await?;
             let header: BlockHeader = deserialize(bytes.0.as_slice())?;
@@ -3421,9 +3420,7 @@ where
                 params.constant_difficulty,
             ) {
                 Ok(_) => {
-                    storage
-                        .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), headers_registry)
-                        .await?;
+                    storage.add_block_headers_to_storage(ticker, headers_registry).await?;
                     Ok(header)
                 },
                 Err(err) => MmError::err(GetBlockHeaderError::SPVError(err)),
@@ -3434,17 +3431,14 @@ where
 }
 
 #[inline]
-pub async fn block_header_from_storage_or_rpc<T>(
-    coin: &T,
+pub async fn block_header_from_storage_or_rpc(
+    ticker: &str,
     height: u64,
     storage: &Option<BlockHeaderStorage>,
     client: &ElectrumClient,
-) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
-where
-    T: AsRef<UtxoCoinFields>,
-{
+) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
     match storage {
-        Some(ref storage) => valid_block_header_from_storage(&coin, height, storage, client).await,
+        Some(ref storage) => valid_block_header_from_storage(ticker, height, storage, client).await,
         None => Ok(deserialize(
             client.blockchain_block_header(height).compat().await?.as_slice(),
         )?),

@@ -3,9 +3,9 @@ use crate::lightning::ln_errors::{FindWatchedOutputSpendError, GetHeaderError, S
                                   SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
                                ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
-use crate::utxo::utxo_common::{get_tx_height, get_tx_if_onchain};
+use crate::utxo::utxo_common::{get_tx_if_onchain, validate_spv_proof};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
-use crate::{MarketCoinOps, MmCoin};
+use crate::{MarketCoinOps, MmCoin, UtxoTx};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -31,7 +31,7 @@ const TRY_LOOP_INTERVAL: f64 = 60.;
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
 
 struct TxWithBlockInfo {
-    tx: Transaction,
+    tx: UtxoTx,
     block_header: BlockHeader,
     block_height: u64,
 }
@@ -71,10 +71,9 @@ async fn find_watched_output_spend_with_header(
     let block_header = get_block_header(electrum_client, height as u64)
         .await
         .map_err(FindWatchedOutputSpendError::GetHeaderError)?;
-    let spending_tx = Transaction::try_from(output_spend.spending_tx)?;
 
     Ok(Some(TxWithBlockInfo {
-        tx: spending_tx,
+        tx: output_spend.spending_tx,
         block_header,
         block_height: height as u64,
     }))
@@ -262,6 +261,10 @@ impl Platform {
                     txid,
                 );
                 monitor.transaction_unconfirmed(&txid);
+                // If a transaction is unconfirmed due to a block reorganization; LDK will rebroadcast it.
+                // In this case, this transaction needs to be added again to the registered transactions
+                // to start watching for it on the chain again.
+                self.add_tx(txid);
             },
             Err(e) => error!(
                 "Error while trying to check if the transaction {} is discarded or not :{:?}",
@@ -285,6 +288,8 @@ impl Platform {
     }
 
     async fn get_confirmed_registered_txs(&self, client: &ElectrumClient) -> Vec<ConfirmedTransactionInfo> {
+        let ticker = self.coin.ticker();
+        let block_headers_storage = &self.coin.as_ref().block_headers_storage;
         let registered_txs = self.registered_txs.lock().clone();
         let mut confirmed_registered_txs = Vec::new();
         // Todo: Use utxo rpc batch requests when this PR https://github.com/KomodoPlatform/atomicDEX-API/pull/1255 is merged.
@@ -292,19 +297,13 @@ impl Platform {
         for txid in registered_txs {
             let rpc_txid = h256_json_from_txid(txid);
             if let Some(transaction) = ok_or_continue!(get_tx_if_onchain(self.rpc_client(), rpc_txid).await) {
-                let height = ok_or_continue!(get_tx_height(client, &transaction).await);
-                let header = ok_or_continue!(get_block_header(client, height).await);
-                let index = ok_or_continue!(
-                    client
-                        .blockchain_transaction_get_merkle(rpc_txid, height)
-                        .compat()
-                        .await
-                )
-                .pos;
+                let (proof, height) =
+                    ok_or_continue!(validate_spv_proof(ticker, block_headers_storage, client, &transaction, 5).await);
+                let header: BlockHeader = ok_or_continue!(deserialize(&proof.raw_header.0));
                 let confirmed_transaction_info = ConfirmedTransactionInfo::new(
                     txid,
                     header,
-                    index,
+                    proof.index as usize,
                     ok_or_continue!(transaction.try_into()),
                     height as u32,
                 );
@@ -320,27 +319,25 @@ impl Platform {
         transactions_to_confirm: &mut Vec<ConfirmedTransactionInfo>,
         client: &ElectrumClient,
     ) {
+        let ticker = self.coin.ticker();
+        let block_headers_storage = &self.coin.as_ref().block_headers_storage;
         let mut outputs_to_remove = Vec::new();
         let registered_outputs = self.registered_outputs.lock().clone();
         for output in registered_outputs {
             if let Some(tx_info) = ok_or_continue!(find_watched_output_spend_with_header(client, &output).await) {
                 if !transactions_to_confirm
                     .iter()
-                    .any(|info| info.txid == tx_info.tx.txid())
+                    .any(|info| h256_json_from_txid(info.txid) == tx_info.tx.hash().into())
                 {
-                    let rpc_txid = h256_json_from_txid(tx_info.tx.txid());
-                    let index = ok_or_continue!(
-                        client
-                            .blockchain_transaction_get_merkle(rpc_txid, tx_info.block_height)
-                            .compat()
-                            .await
-                    )
-                    .pos;
+                    let (proof, _) = ok_or_continue!(
+                        validate_spv_proof(ticker, block_headers_storage, client, &tx_info.tx, 5).await
+                    );
+                    let transaction: Transaction = ok_or_continue!(tx_info.tx.try_into());
                     let confirmed_transaction_info = ConfirmedTransactionInfo::new(
-                        tx_info.tx.txid(),
+                        transaction.txid(),
                         tx_info.block_header,
-                        index,
-                        tx_info.tx,
+                        proof.index as usize,
+                        transaction,
                         tx_info.block_height as u32,
                     );
                     transactions_to_confirm.push(confirmed_transaction_info);
