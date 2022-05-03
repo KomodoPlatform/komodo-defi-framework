@@ -24,7 +24,7 @@ use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
-use common::{log, now_ms, spawn_abortable, AbortOnDropHandle};
+use common::{log, now_ms};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use futures::compat::Future01CompatExt;
@@ -176,7 +176,6 @@ pub struct ZCoinFields {
     sapling_state_synced: AtomicBool,
     /// SQLite connection that is used to cache Sapling data for shielded transactions creation
     sqlite: Mutex<Connection>,
-    sapling_sync_abort_handler: AbortOnDropHandle,
     z_rpc: ZcoinRpcClient,
     consensus_params: ZcoinConsensusParams,
 }
@@ -783,8 +782,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             },
         };
 
-        let sapling_sync_abort_handler = spawn_abortable(async {});
-
         let z_fields = ZCoinFields {
             dex_fee_addr,
             my_z_addr,
@@ -794,7 +791,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_unspent_mutex: AsyncMutex::new(()),
             sapling_state_synced: AtomicBool::new(false),
             sqlite: Mutex::new(sqlite),
-            sapling_sync_abort_handler,
             z_rpc,
             consensus_params: self.consensus_params,
         };

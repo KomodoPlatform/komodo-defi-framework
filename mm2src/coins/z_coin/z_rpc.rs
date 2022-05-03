@@ -1,10 +1,12 @@
 use super::ZcoinConsensusParams;
 use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
-use common::async_blocking;
+use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
+use common::log::error;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
+use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use derive_more::Display;
 use http::Uri;
@@ -16,9 +18,12 @@ use rustls::ClientConfig;
 use serde_json::{self as json};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
-use zcash_client_backend::data_api::{BlockSource, WalletRead};
+use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
+use zcash_client_backend::data_api::error::Error as ChainError;
+use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::error::SqliteClientError;
@@ -67,7 +72,7 @@ pub struct ZOperationHex {
     pub hex: BytesJson,
 }
 
-pub type ZcoinWalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
+pub type WalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
 
 pub struct ZcoinWalletDb {
     blocks_db: BlockDb,
@@ -200,7 +205,7 @@ impl BlockDb {
         Ok(())
     }
 
-    async fn get_latest_block(&self) -> Result<i64, MmError<db_common::sqlite::rusqlite::Error>> {
+    fn get_latest_block(&self) -> Result<i64, MmError<db_common::sqlite::rusqlite::Error>> {
         self.0
             .query_row(
                 "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
@@ -210,7 +215,7 @@ impl BlockDb {
             .map_err(MmError::new)
     }
 
-    async fn insert_block(
+    fn insert_block(
         &self,
         height: u32,
         cb_bytes: Vec<u8>,
@@ -234,9 +239,15 @@ impl BlockSource for BlockDb {
     }
 }
 
+pub enum LightClientSyncState {
+    Syncing,
+    Finished { current_block: u64 },
+}
+
 pub struct ZcoinLightClient {
-    grpc_client: CompactTxStreamerClient<Channel>,
-    db: ZcoinWalletDbShared,
+    db: WalletDbShared,
+    db_sync_abort_handler: AbortOnDropHandle,
+    sync_state: Arc<Mutex<LightClientSyncState>>,
 }
 
 #[derive(Debug, Display)]
@@ -252,7 +263,7 @@ pub enum ZcoinLightClientInitError {
 impl From<SqliteClientError> for ZcoinLightClientInitError {
     fn from(err: SqliteClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
 }
-#[derive(Debug)]
+#[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
     GrpcError(tonic::Status),
@@ -284,9 +295,12 @@ impl ZcoinLightClient {
         })
         .await?;
 
-        let wallet_db = async_blocking(|| {
-            WalletDb::for_path(wallet_db_path, consensus_params)
-                .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+        let wallet_db = async_blocking({
+            let consensus_params = consensus_params.clone();
+            move || {
+                WalletDb::for_path(wallet_db_path, consensus_params)
+                    .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+            }
         })
         .await?;
         block_in_place(|| init_wallet_db(&wallet_db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure))?;
@@ -309,58 +323,133 @@ impl ZcoinLightClient {
             .connect()
             .await
             .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
+        let grpc_client = CompactTxStreamerClient::new(channel);
 
-        let db = ZcoinWalletDb { blocks_db, wallet_db };
+        let sync_state = Arc::new(Mutex::new(LightClientSyncState::Syncing));
+        let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
+        let db_sync_abort_handler = spawn_abortable(light_wallet_db_sync_loop(
+            grpc_client,
+            db.clone(),
+            sync_state.clone(),
+            consensus_params,
+        ));
+
         Ok(ZcoinLightClient {
-            grpc_client: CompactTxStreamerClient::new(channel),
-            db: Arc::new(Mutex::new(db)),
+            db,
+            db_sync_abort_handler,
+            sync_state,
         })
-    }
-
-    pub async fn get_latest_block(&mut self) -> Result<BlockId, MmError<tonic::Status>> {
-        let request = tonic::Request::new(ChainSpec {});
-        self.grpc_client
-            .get_latest_block(request)
-            .await
-            .map(|res| res.into_inner())
-            .map_err(MmError::new)
-    }
-
-    pub async fn update_blocks_cache(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
-        let current_blockchain_block = self.get_latest_block().await?;
-        let current_block_in_db = self.db.lock().blocks_db.get_latest_block().await?;
-
-        let from_block = current_block_in_db as u64 + 1;
-        let current_block: u64 = current_blockchain_block.height;
-
-        if current_block >= from_block {
-            let request = tonic::Request::new(BlockRange {
-                start: Some(BlockId {
-                    height: from_block,
-                    hash: Vec::new(),
-                }),
-                end: Some(BlockId {
-                    height: current_block,
-                    hash: Vec::new(),
-                }),
-            });
-
-            let mut response = self.grpc_client.get_block_range(request).await?;
-
-            while let Ok(Some(block)) = response.get_mut().message().await {
-                println!("Got block {:?}", block);
-                self.db
-                    .lock()
-                    .blocks_db
-                    .insert_block(block.height as u32, block.encode_to_vec())
-                    .await?;
-            }
-        }
-        Ok(current_block)
     }
 
     async fn my_balance(&self) -> Result<Amount, MmError<SqliteClientError>> {
         block_in_place(|| get_balance(&self.db.lock().wallet_db, AccountId(0)).map_err(MmError::new))
+    }
+}
+
+pub async fn update_blocks_cache(
+    grpc_client: &mut CompactTxStreamerClient<Channel>,
+    db: &WalletDbShared,
+) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
+    let request = tonic::Request::new(ChainSpec {});
+    let current_blockchain_block = grpc_client.get_latest_block(request).await?;
+    let current_block_in_db = db.lock().blocks_db.get_latest_block()?;
+
+    let from_block = current_block_in_db as u64 + 1;
+    let current_block: u64 = current_blockchain_block.into_inner().height;
+
+    if current_block >= from_block {
+        let request = tonic::Request::new(BlockRange {
+            start: Some(BlockId {
+                height: from_block,
+                hash: Vec::new(),
+            }),
+            end: Some(BlockId {
+                height: current_block,
+                hash: Vec::new(),
+            }),
+        });
+
+        let mut response = grpc_client.get_block_range(request).await?;
+
+        while let Ok(Some(block)) = response.get_mut().message().await {
+            println!("Got block {:?}", block);
+            db.lock()
+                .blocks_db
+                .insert_block(block.height as u32, block.encode_to_vec())?;
+        }
+    }
+    Ok(current_block)
+}
+
+async fn light_wallet_db_sync_loop(
+    mut grpc_client: CompactTxStreamerClient<Channel>,
+    db: WalletDbShared,
+    sync_state: Arc<Mutex<LightClientSyncState>>,
+    consensus_params: ZcoinConsensusParams,
+) {
+    loop {
+        *sync_state.lock() = LightClientSyncState::Syncing;
+        let current_block = match update_blocks_cache(&mut grpc_client, &db).await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Error {} on blocks cache update", e);
+                Timer::sleep(10.).await;
+                continue;
+            },
+        };
+
+        {
+            let db_guard = db.lock();
+            let mut db_data = db_guard.wallet_db.get_update_ops().unwrap();
+
+            // 1) Download new CompactBlocks into db_cache.
+
+            // 2) Run the chain validator on the received blocks.
+            //
+            // Given that we assume the server always gives us correct-at-the-time blocks, any
+            // errors are in the blocks we have previously cached or scanned.
+            if let Err(e) = validate_chain(
+                &consensus_params,
+                &db_guard.blocks_db,
+                db_data.get_max_height_hash().unwrap(),
+            ) {
+                match e {
+                    SqliteClientError::BackendError(ChainError::InvalidChain(lower_bound, _)) => {
+                        // a) Pick a height to rewind to.
+                        //
+                        // This might be informed by some external chain reorg information, or
+                        // heuristics such as the platform, available bandwidth, size of recent
+                        // CompactBlocks, etc.
+                        let rewind_height = lower_bound - 10;
+
+                        // b) Rewind scanned block information.
+                        db_data.rewind_to_height(rewind_height);
+                        // c) Delete cached blocks from rewind_height onwards.
+                        //
+                        // This does imply that assumed-valid blocks will be re-downloaded, but it
+                        // is also possible that in the intervening time, a chain reorg has
+                        // occurred that orphaned some of those blocks.
+
+                        // d) If there is some separate thread or service downloading
+                        // CompactBlocks, tell it to go back and download from rewind_height
+                        // onwards.
+                    },
+                    e => {
+                        // Handle or return other errors.
+                        panic!("{:?}", e);
+                    },
+                }
+            }
+
+            // 3) Scan (any remaining) cached blocks.
+            //
+            // At this point, the cache and scanned data are locally consistent (though not
+            // necessarily consistent with the latest chain tip - this would be discovered the
+            // next time this codepath is executed after new blocks are received).
+            scan_cached_blocks(&consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
+        }
+        *sync_state.lock() = LightClientSyncState::Finished { current_block };
+        Timer::sleep(10.).await;
     }
 }
 
@@ -370,12 +459,7 @@ fn try_grpc() {
     use common::block_on;
     use std::str::FromStr;
     use z_coin_grpc::RawTransaction;
-    use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
-                                         error::Error,
-                                         WalletRead, WalletWrite};
     use zcash_client_backend::encoding::decode_extended_spending_key;
-    use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, wallet::rewind_to_height,
-                              BlockDb, WalletDb};
     use zcash_primitives::consensus::Parameters;
     use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
@@ -386,7 +470,7 @@ fn try_grpc() {
         blossom_activation_height: None,
         heartwood_activation_height: None,
         canopy_activation_height: None,
-        coin_type: 0,
+        coin_type: mainnet::COIN_TYPE,
         hrp_sapling_extended_spending_key: mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY.into(),
         hrp_sapling_extended_full_viewing_key: mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY.into(),
         hrp_sapling_payment_address: mainnet::HRP_SAPLING_PAYMENT_ADDRESS.into(),
@@ -398,7 +482,7 @@ fn try_grpc() {
     let evk = ExtendedFullViewingKey::from(&z_key);
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
-    let mut client = block_on(ZcoinLightClient::init(
+    let client = block_on(ZcoinLightClient::init(
         uri,
         "test_cache_zombie.db",
         "test_wallet_zombie.db",
@@ -407,56 +491,14 @@ fn try_grpc() {
     ))
     .unwrap();
 
-    let current_block = block_on(client.update_blocks_cache()).unwrap();
+    let current_block = loop {
+        if let LightClientSyncState::Finished { current_block } = *client.sync_state.lock() {
+            break current_block;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    };
 
     let db = client.db.lock();
-    let mut db_data = db.wallet_db.get_update_ops().unwrap();
-
-    // 1) Download new CompactBlocks into db_cache.
-
-    // 2) Run the chain validator on the received blocks.
-    //
-    // Given that we assume the server always gives us correct-at-the-time blocks, any
-    // errors are in the blocks we have previously cached or scanned.
-    if let Err(e) = validate_chain(
-        &zombie_consensus_params,
-        &db.blocks_db,
-        db_data.get_max_height_hash().unwrap(),
-    ) {
-        match e {
-            SqliteClientError::BackendError(Error::InvalidChain(lower_bound, _)) => {
-                // a) Pick a height to rewind to.
-                //
-                // This might be informed by some external chain reorg information, or
-                // heuristics such as the platform, available bandwidth, size of recent
-                // CompactBlocks, etc.
-                let rewind_height = lower_bound - 10;
-
-                // b) Rewind scanned block information.
-                db_data.rewind_to_height(rewind_height);
-                // c) Delete cached blocks from rewind_height onwards.
-                //
-                // This does imply that assumed-valid blocks will be re-downloaded, but it
-                // is also possible that in the intervening time, a chain reorg has
-                // occurred that orphaned some of those blocks.
-
-                // d) If there is some separate thread or service downloading
-                // CompactBlocks, tell it to go back and download from rewind_height
-                // onwards.
-            },
-            e => {
-                // Handle or return other errors.
-                panic!("{:?}", e);
-            },
-        }
-    }
-
-    // 3) Scan (any remaining) cached blocks.
-    //
-    // At this point, the cache and scanned data are locally consistent (though not
-    // necessarily consistent with the latest chain tip - this would be discovered the
-    // next time this codepath is executed after new blocks are received).
-    scan_cached_blocks(&zombie_consensus_params, &db.blocks_db, &mut db_data, None).unwrap();
 
     let notes = db
         .wallet_db
@@ -501,7 +543,23 @@ fn try_grpc() {
         data: tx_bytes,
         height: 0,
     });
-    let response = block_on(client.grpc_client.send_transaction(request)).unwrap();
+
+    let mut config = ClientConfig::new();
+    config
+        .root_store
+        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+    config.set_protocols(&["h2".to_string().into()]);
+    let tls = ClientTlsConfig::new().rustls_client_config(config);
+
+    let channel = block_on(
+        Channel::from_static("http://zombie.sirseven.me:443")
+            .tls_config(tls)
+            .unwrap()
+            .connect(),
+    )
+    .unwrap();
+    let mut grpc_client = CompactTxStreamerClient::new(channel);
+    let response = block_on(grpc_client.send_transaction(request)).unwrap();
 
     println!("{:?}", response);
 }
