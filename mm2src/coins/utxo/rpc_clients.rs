@@ -749,18 +749,6 @@ impl UtxoRpcClientOps for NativeClient {
     }
 
     fn display_balances(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<Vec<(Address, BigDecimal)>> {
-        fn address_balance_from_unspent_map(address: &Address, unspent_map: &UnspentMap, decimals: u8) -> BigDecimal {
-            let unspents = match unspent_map.get(address) {
-                Some(unspents) => unspents,
-                // If `balances` doesn't contain `address`, there are no unspents related to the address.
-                // Consider the balance of that address equal to 0.
-                None => return BigDecimal::from(0),
-            };
-            unspents.iter().fold(BigDecimal::from(0), |sum, unspent| {
-                sum + big_decimal_from_sat_unsigned(unspent.value, decimals)
-            })
-        }
-
         let this = self.clone();
         let fut = async move {
             let unspent_map = this.list_unspent_group(addresses.clone(), decimals).compat().await?;
@@ -2580,4 +2568,16 @@ fn electrum_request(
         })
         .map_err(|e| ERRL!("{}", e));
     Box::new(send_fut)
+}
+
+fn address_balance_from_unspent_map(address: &Address, unspent_map: &UnspentMap, decimals: u8) -> BigDecimal {
+    let unspents = match unspent_map.get(address) {
+        Some(unspents) => unspents,
+        // If `balances` doesn't contain `address`, there are no unspents related to the address.
+        // Consider the balance of that address equal to 0.
+        None => return BigDecimal::from(0),
+    };
+    unspents.iter().fold(BigDecimal::from(0), |sum, unspent| {
+        sum + big_decimal_from_sat_unsigned(unspent.value, decimals)
+    })
 }
