@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::*;
-use common::for_tests::{enable_solana_with_tokens, enable_spl};
+use common::for_tests::{enable_solana_with_tokens, enable_spl, sign_message, verify_message};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 
@@ -54,47 +54,22 @@ fn test_sign_verify_message_solana() {
         tx_history,
     ));
 
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method":"sign_message",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-          "coin":"SOL-DEVNET",
-          "message":"test"
-        }
-        })))
-        .unwrap();
+    let response = block_on(sign_message(&mm, "SOL-DEVNET"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(
+        response.signature,
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
+    );
     
-        assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-    
-        let response: Json = json::from_str(&rc.1).unwrap();
-        let signature = &response["result"]["signature"];
-        assert_eq!(
-            signature,
-            "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
-        );
-    
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method":"verify_message",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-            "coin":"SOL-DEVNET",
-            "message":"test",
-            "signature": "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
-            "address":"FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"
-    
-        }
-        })))
-        .unwrap();
-    
-        assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-    
-        let response: Json = json::from_str(&rc.1).unwrap();
-        let is_valid = &response["result"]["is_valid"];
-        assert_eq!(is_valid, true);
+    let response = block_on(verify_message(&mm, "SOL-DEVNET", 
+    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
 }
 
 #[test]
@@ -110,47 +85,22 @@ fn test_sign_verify_message_spl() {
     ));
 
     block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
+    
+    let response = block_on(sign_message(&mm, "ADEX-SOL-DEVNET"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method":"sign_message",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-          "coin":"ADEX-SOL-DEVNET",
-          "message":"test"
-        }
-        })))
-        .unwrap();
+    assert_eq!(
+        response.signature,
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
+    );
     
-        assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-    
-        let response: Json = json::from_str(&rc.1).unwrap();
-        let signature = &response["result"]["signature"];
-        assert_eq!(
-            signature,
-            "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
-        );
-    
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method":"verify_message",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-            "coin":"ADEX-SOL-DEVNET",
-            "message":"test",
-            "signature": "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
-            "address":"FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"
-    
-        }
-        })))
-        .unwrap();
-    
-        assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-    
-        let response: Json = json::from_str(&rc.1).unwrap();
-        let is_valid = &response["result"]["is_valid"];
-        assert_eq!(is_valid, true);
+    let response = block_on(verify_message(&mm, "ADEX-SOL-DEVNET", 
+    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
 }
 

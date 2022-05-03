@@ -3911,7 +3911,7 @@ fn test_sign_verify_message() {
 
     let address = "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW";
     let is_valid = coin.verify_message(&signature, message, address).unwrap();
-    assert_eq!(is_valid, true);
+    assert!(is_valid);
 }
 
 #[test]
@@ -3930,7 +3930,13 @@ fn test_sign_verify_message_segwit() {
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
     );
 
-    let address = "rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay";
-    let is_valid = coin.verify_message(&signature, message, address).unwrap();
-    assert_eq!(is_valid, true);
+    let is_valid = coin
+        .verify_message(&signature, message, "rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay")
+        .unwrap();
+    assert!(is_valid);
+
+    let is_valid = coin
+        .verify_message(&signature, message, "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")
+        .unwrap();
+    assert!(is_valid);
 }

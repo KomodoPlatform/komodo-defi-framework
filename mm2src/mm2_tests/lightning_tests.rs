@@ -1,5 +1,5 @@
 use super::*;
-use common::for_tests::enable_lightning;
+use common::for_tests::{enable_lightning, sign_message, verify_message};
 
 const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
@@ -386,44 +386,23 @@ fn test_sign_verify_message_lightning() {
     block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
 
-    let rc = block_on(mm.rpc(&json! ({
-      "userpass": mm.userpass,
-      "method":"sign_message",
-      "mmrpc":"2.0",
-      "id": 0,
-      "params":{
-        "coin":"tBTC-TEST-lightning",
-        "message":"test"
-      }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm, "tBTC-TEST-lightning"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr"
     );
 
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method":"verify_message",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-          "coin":"tBTC-TEST-lightning",
-          "message":"test",
-          "signature": "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr",
-          "address":"0367c7b9f42eb15205de39454ddf9fcfce70a129b01049d9fe1b3b34eac1d6b933"
-        }
-        })))
-        .unwrap();
+    let response = block_on(verify_message(
+        &mm,
+        "tBTC-TEST-lightning",
+        "dhmbgykwzy53uycr6u8mpp3us6poikc5qh7wgex5qn54msq7cs3ygebj3h9swaocboqzi89jazwo7i3mmqou15w4dcty666sq3yqhzhr",
+        "0367c7b9f42eb15205de39454ddf9fcfce70a129b01049d9fe1b3b34eac1d6b933",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }

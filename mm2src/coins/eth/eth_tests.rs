@@ -1293,7 +1293,7 @@ fn test_message_hash() {
 }
 
 #[test]
-fn test_sign_message() {
+fn test_sign_verify_message() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
@@ -1325,46 +1325,12 @@ fn test_sign_message() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
     }));
 
-    let signature = coin.sign_message("test").unwrap();
-    assert_eq!(signature, "cdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600");
-}
-
-#[test]
-fn test_verify_message() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Eth,
-        my_address: key_pair.address(),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
-        swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
-        fallback_swap_contract: None,
-        web3_instances: vec![Web3Instance {
-            web3: web3.clone(),
-            is_parity: true,
-        }],
-        web3,
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-    }));
-
-    let signature = "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600";
-    let address = "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29";
     let message = "test";
-    let is_valid = coin.verify_message(signature, message, address).unwrap();
+    let signature = coin.sign_message(message).unwrap();
+    assert_eq!(signature, "cdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600");
+
+    let is_valid = coin
+        .verify_message(&signature, message, "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29")
+        .unwrap();
     assert!(is_valid);
 }

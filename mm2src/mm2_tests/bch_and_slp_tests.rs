@@ -1,5 +1,6 @@
 use super::*;
-use common::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, UtxoRpcMode};
+use common::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
+                        UtxoRpcMode};
 
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",
@@ -512,47 +513,25 @@ fn test_sign_verify_message_bch() {
     let electrum: Json = json::from_str(&electrum.1).unwrap();
     log!([electrum]);
 
-    let rc = block_on(mm.rpc(&json! ({
-    "userpass": mm.userpass,
-    "method":"sign_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"BCH",
-      "message":"test"
-    }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm, "BCH"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
     );
 
-    let rc = block_on(mm.rpc(&json! ({
-    "userpass": mm.userpass,
-    "method":"verify_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"BCH",
-      "message":"test",
-      "signature": "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
-      "address":"bitcoincash:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyursltctnw"
+    let response = block_on(verify_message(
+        &mm,
+        "BCH",
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
+        "bitcoincash:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyursltctnw",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    }
-    })))
-    .unwrap();
-
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }
 
 #[test]
@@ -591,45 +570,23 @@ fn test_sign_verify_message_slp() {
     let enable_usdf = block_on(enable_slp(&mm, "USDF"));
     log!({ "enable_usdf: {:?}", enable_usdf });
 
-    let rc = block_on(mm.rpc(&json! ({
-    "userpass": mm.userpass,
-    "method":"sign_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"USDF",
-      "message":"test"
-    }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm, "USDF"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
     );
 
-    let rc = block_on(mm.rpc(&json! ({
-    "userpass": mm.userpass,
-    "method":"verify_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"USDF",
-      "message":"test",
-      "signature": "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
-      "address":"slptest:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyuukuhqtx0"
+    let response = block_on(verify_message(
+        &mm,
+        "USDF",
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
+        "slptest:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyuukuhqtx0",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    }
-    })))
-    .unwrap();
-
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }

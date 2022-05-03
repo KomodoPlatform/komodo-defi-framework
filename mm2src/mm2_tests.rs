@@ -3,9 +3,9 @@ use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use common::executor::Timer;
 use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                         enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
-                        init_z_coin, init_z_coin_status, mm_spat, wait_till_history_has_records, LocalStart,
-                        MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                        TAKER_SUCCESS_EVENTS};
+                        init_z_coin, init_z_coin_status, mm_spat, sign_message, verify_message,
+                        wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS,
+                        MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::log::LogLevel;
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
@@ -7112,47 +7112,25 @@ fn test_sign_verify_message_utxo() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
 
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"sign_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"RICK",
-      "message":"test"
-    }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
     );
 
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"verify_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"RICK",
-      "message":"test",
-      "signature": "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
-      "address":"R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW"
+    let response = block_on(verify_message(
+        &mm_bob,
+        "RICK",
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
+        "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    }
-    })))
-    .unwrap();
-
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }
 
 #[test]
@@ -7198,52 +7176,41 @@ fn test_sign_verify_message_utxo_segwit() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
 
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"sign_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"RICK",
-      "message":"test"
-    }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
     );
 
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"verify_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"RICK",
-      "message":"test",
-      "signature": "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
-      "address":"rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay"
+    let response = block_on(verify_message(
+        &mm_bob,
+        "RICK",
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
+        "rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    }
-    })))
-    .unwrap();
+    assert!(response.is_valid);
 
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
+    let response = block_on(verify_message(
+        &mm_bob,
+        "RICK",
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
+        "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_sign_message_eth() {
+fn test_sign_verify_message_eth() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
     let coins = json!([
@@ -7284,88 +7251,20 @@ fn test_sign_message_eth() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!({ "enable_coins (bob): {:?}", block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"])) });
 
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"sign_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"ETH",
-      "message":"test"
-    }
-    })))
-    .unwrap();
+    let response = block_on(sign_message(&mm_bob, "ETH"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    assert!(rc.0.is_success(), "!sign_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let signature = &response["result"]["signature"];
     assert_eq!(
-        signature,
+        response.signature,
         "cdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"
     );
-}
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_verify_message_eth() {
-    let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+    let response = block_on(verify_message(&mm_bob, "ETH", 
+    "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
+    "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
 
-    let coins = json!([
-        {
-            "coin": "ETH",
-            "name": "ethereum",
-            "fname": "Ethereum",
-            "sign_message_prefix": "Ethereum Signed Message:\n",
-            "rpcport": 80,
-            "mm2": 1,
-            "chain_id": 1,
-            "required_confirmations": 3,
-            "avg_blocktime": 0.25,
-            "protocol": {"type": "ETH"}
-        }
-    ]);
-
-    // start bob and immediately place the order
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": seed.to_string(),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        local_start!("bob"),
-    )
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
-    // Enable coins on Bob side. Print the replies in case we need the "address".
-    log!({ "enable_coins (bob): {:?}", block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"])) });
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-    "userpass": mm_bob.userpass,
-    "method":"verify_message",
-    "mmrpc":"2.0",
-    "id": 0,
-    "params":{
-      "coin":"ETH",
-      "message":"test",
-      "signature": "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
-      "address":"0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"
-
-    }
-    })))
-    .unwrap();
-
-    assert!(rc.0.is_success(), "!verify_message: {}", rc.1);
-
-    let response: Json = json::from_str(&rc.1).unwrap();
-    let is_valid = &response["result"]["is_valid"];
-    assert_eq!(is_valid, true);
+    assert!(response.is_valid);
 }

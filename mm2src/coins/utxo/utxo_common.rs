@@ -1656,12 +1656,9 @@ pub fn verify_message<T: UtxoCommonOps>(
 ) -> VerificationResult<bool> {
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
     let signature = CompactSignature::from(base64::decode(signature_base64)?);
-    let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let address_from_pubkey = coin
-        .address_from_pubkey(&pubkey)
-        .display_address()
-        .map_err(VerificationError::InternalError)?;
-    Ok(address_from_pubkey == address)
+    let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
+    let received_address = checked_address_from_str(coin, address).map_err(VerificationError::AddressDecodingError)?;
+    Ok(recovered_pubkey.address_hash().to_string() == received_address.hash.to_string())
 }
 
 pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
