@@ -452,12 +452,9 @@ impl Qrc20Coin {
         // Move over all QRC20 tokens should share the same cache with each other and base QTUM coin
         let _utxo_lock = UTXO_LOCK.lock().await;
 
-        let platform = self.platform.clone();
-        let decimals = self.utxo.decimals;
         let GenerateQrc20TxResult { signed, .. } = self
             .generate_qrc20_transaction(outputs)
             .await
-            .mm_err(|e| e.into_withdraw_error(platform, decimals))
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         try_tx_s!(self.utxo.rpc_client.send_transaction(&signed).compat().await, signed);
         Ok(signed.into())

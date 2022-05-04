@@ -145,30 +145,6 @@ macro_rules! try_tx_s {
     };
 }
 
-/// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
-macro_rules! try_ztx_s {
-    ($e: expr) => {
-        match $e {
-            Ok(ok) => ok,
-            Err(err) => {
-                if let Some(tx) = err.get_inner().get_tx() {
-                    return Err(crate::TransactionErr::TxRecoverable(
-                        tx,
-                        format!("{}:{}] {:?}", file!(), line!(), err),
-                    ));
-                }
-
-                return Err(crate::TransactionErr::Plain(format!(
-                    "{}:{}] {:?}",
-                    file!(),
-                    line!(),
-                    err
-                )));
-            },
-        }
-    };
-}
-
 /// `TransactionErr:Plain` compatible `ERR` macro.
 macro_rules! TX_PLAIN_ERR {
     ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };

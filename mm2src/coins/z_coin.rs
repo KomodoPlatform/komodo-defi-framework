@@ -69,6 +69,25 @@ pub use z_coin_errors::*;
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 mod z_coin_tests;
 
+/// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
+macro_rules! try_ztx_s {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                if let Some(tx) = err.get_inner().get_tx() {
+                    return Err(crate::TransactionErr::TxRecoverable(
+                        tx,
+                        format!("{}:{}] {:?}", file!(), line!(), err),
+                    ));
+                }
+
+                return Err(crate::TransactionErr::Plain(ERRL!("{:?}", err)));
+            },
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct ARRRConsensusParams {}
 
