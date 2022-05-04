@@ -590,6 +590,7 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[inline(always)]
+    #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 }
 

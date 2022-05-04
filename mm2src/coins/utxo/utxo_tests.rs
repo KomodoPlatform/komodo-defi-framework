@@ -3135,10 +3135,11 @@ fn test_withdraw_to_p2wpkh() {
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]
 fn test_utxo_standard_with_check_utxo_maturity_true() {
-    static mut LIST_MATURE_UNSPENT_ORDERED_CALLED: bool = false;
+    /// Whether [`UtxoStandardCoin::get_mature_unspent_ordered_list`] is called or not.
+    static mut GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: bool = false;
 
     UtxoStandardCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
-        unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED = true };
+        unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED = true };
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         MockResult::Return(Box::pin(futures::future::ok((MatureUnspentList::default(), cache))))
     });
@@ -3165,13 +3166,14 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
     let address = Address::from("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW");
     // Don't use `block_on` here because it's used within a mock of [`GetUtxoListOps::get_mature_unspent_ordered_list`].
     coin.get_unspent_ordered_list(&address).compat().wait().unwrap();
-    assert!(unsafe { LIST_MATURE_UNSPENT_ORDERED_CALLED });
+    assert!(unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED });
 }
 
 /// `UtxoStandardCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is not set.
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]
 fn test_utxo_standard_without_check_utxo_maturity() {
+    /// Whether [`UtxoStandardCoin::get_all_unspent_ordered_list`] is called or not.
     static mut GET_ALL_UNSPENT_ORDERED_LIST_CALLED: bool = false;
 
     UtxoStandardCoin::get_all_unspent_ordered_list.mock_safe(|coin, _| {
@@ -3213,6 +3215,7 @@ fn test_utxo_standard_without_check_utxo_maturity() {
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]
 fn test_qtum_without_check_utxo_maturity() {
+    /// Whether [`QtumCoin::get_mature_unspent_ordered_list`] is called or not.
     static mut GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: bool = false;
 
     QtumCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
@@ -3246,6 +3249,7 @@ fn test_qtum_without_check_utxo_maturity() {
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]
 fn test_qtum_with_check_utxo_maturity_false() {
+    /// Whether [`QtumCoin::get_all_unspent_ordered_list`] is called or not.
     static mut GET_ALL_UNSPENT_ORDERED_LIST_CALLED: bool = false;
 
     QtumCoin::get_all_unspent_ordered_list.mock_safe(|coin, _address| {
@@ -3790,18 +3794,22 @@ fn test_native_display_balances() {
 
     let rpc_client = native_client_for_test();
 
+    let addresses = vec![
+        "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
+        "RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(),
+        "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
+        "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
+    ];
+    let actual = rpc_client
+        .display_balances(addresses, TEST_COIN_DECIMALS)
+        .wait()
+        .unwrap();
+
     let expected: Vec<(Address, BigDecimal)> = vec![
         ("RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(), BigDecimal::from(5.77699)),
         ("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(), BigDecimal::from(0)),
         ("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(), BigDecimal::from(0.77699)),
         ("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(), BigDecimal::from(0.99998)),
     ];
-
-    let addresses = expected.iter().map(|(address, _)| address.clone()).collect();
-    let actual = rpc_client
-        .display_balances(addresses, TEST_COIN_DECIMALS)
-        .wait()
-        .unwrap();
-
     assert_eq!(actual, expected);
 }
