@@ -936,13 +936,17 @@ pub enum UtxoRpcMode {
     Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
+fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+    servers
+        .iter()
+        .map(|url| ElectrumRpcRequest { url: url.to_string() })
+        .collect()
+}
+
 impl UtxoRpcMode {
     pub fn electrum(servers: &[&str]) -> Self {
         UtxoRpcMode::Electrum {
-            servers: servers
-                .iter()
-                .map(|url| ElectrumRpcRequest { url: url.to_string() })
-                .collect(),
+            servers: electrum_servers_rpc(servers),
         }
     }
 }
@@ -1291,7 +1295,7 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_z_coin(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
@@ -1302,6 +1306,31 @@ pub async fn init_z_coin(mm: &MarketMakerIt, coin: &str) -> Json {
                 "activation_params": {
                     "mode": {
                         "rpc": "Native",
+                    }
+                },
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str], lightwalletd_urls: &[&str]) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_z_coin",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "activation_params": {
+                    "mode": {
+                        "rpc": "Light",
+                        "rpc_data": {
+                            "electrum_servers": electrum_servers_rpc(electrums),
+                            "light_wallet_d_servers": lightwalletd_urls,
+                        },
                     }
                 },
             }

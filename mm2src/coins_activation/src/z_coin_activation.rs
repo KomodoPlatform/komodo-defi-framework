@@ -18,7 +18,7 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::Serialize;
 use serde_json::Value as Json;
 use std::time::Duration;
 
@@ -77,6 +77,7 @@ impl TxHistory for ZcoinActivationParams {
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
+#[non_exhaustive]
 pub enum ZcoinInitError {
     #[display(fmt = "Error on coin {} creation: {}", ticker, error)]
     CoinCreationError {
@@ -134,16 +135,33 @@ impl From<CryptoInitError> for ZcoinInitError {
 }
 
 impl From<ZcoinInitError> for InitStandaloneCoinError {
-    fn from(_: ZcoinInitError) -> Self { todo!() }
+    fn from(err: ZcoinInitError) -> Self {
+        match err {
+            ZcoinInitError::CoinCreationError { ticker, error } => {
+                InitStandaloneCoinError::CoinCreationError { ticker, error }
+            },
+            ZcoinInitError::CoinIsAlreadyActivated { ticker } => {
+                InitStandaloneCoinError::CoinIsAlreadyActivated { ticker }
+            },
+            ZcoinInitError::HardwareWalletsAreNotSupportedYet => {
+                InitStandaloneCoinError::Internal("Hardware wallets are not supported yet".into())
+            },
+            ZcoinInitError::TaskTimedOut { duration } => InitStandaloneCoinError::TaskTimedOut { duration },
+            ZcoinInitError::CouldNotGetBalance(e) | ZcoinInitError::CouldNotGetBlockCount(e) => {
+                InitStandaloneCoinError::Transport(e)
+            },
+            ZcoinInitError::Internal(e) => InitStandaloneCoinError::Internal(e),
+        }
+    }
 }
 
-impl TryFromCoinProtocol for ZcoinProtocolInfo {
+impl TryFromCoinProtocol for ZcoinConsensusParams {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
         match proto {
-            CoinProtocol::ZHTLC => Ok(ZcoinProtocolInfo),
+            CoinProtocol::ZHTLC { consensus_params } => Ok(consensus_params),
             protocol => MmError::err(protocol),
         }
     }
@@ -152,7 +170,7 @@ impl TryFromCoinProtocol for ZcoinProtocolInfo {
 #[async_trait]
 impl InitStandaloneCoinActivationOps for ZCoin {
     type ActivationRequest = ZcoinActivationParams;
-    type StandaloneProtocol = ZcoinProtocolInfo;
+    type StandaloneProtocol = ZcoinConsensusParams;
     type ActivationResult = ZcoinActivationResult;
     type ActivationError = ZcoinInitError;
     type InProgressStatus = ZcoinInProgressStatus;
@@ -168,7 +186,8 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         ticker: String,
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
-        _protocol_info: ZcoinProtocolInfo,
+        protocol_info: ZcoinConsensusParams,
+        priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
         let priv_key = match priv_key_policy {
@@ -177,7 +196,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                 return MmError::err(ZcoinInitError::HardwareWalletsAreNotSupportedYet)
             },
         };
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &activation_request, priv_key)
+        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &activation_request, protocol_info, priv_key)
             .await
             .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 

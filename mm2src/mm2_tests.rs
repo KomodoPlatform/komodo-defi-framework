@@ -23,9 +23,9 @@ use std::time::Duration;
 use uuid::Uuid;
 
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult {
-    let init = init_z_coin(mm, coin).await;
+    let init = init_z_coin_native(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 60000;
+    let timeout = now_ms() + 120000;
 
     loop {
         if now_ms() > timeout {
@@ -94,6 +94,10 @@ mod lp_bot_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "mm2_tests/orderbook_sync_tests.rs"]
 mod orderbook_sync_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "mm2_tests/z_coin_tests.rs"]
+mod z_coin_tests;
 
 #[path = "mm2_tests/structs.rs"] pub mod structs;
 

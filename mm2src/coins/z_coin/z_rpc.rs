@@ -10,15 +10,15 @@ use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use derive_more::Display;
 use http::Uri;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use rustls::ClientConfig;
 use serde_json::{self as json};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
 use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
@@ -40,13 +40,21 @@ mod z_coin_grpc {
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec};
 
-pub enum ZcoinRpcClient {
-    Native(NativeClient),
-    Light(ZcoinLightClient),
+pub struct ZcoinNativeClient {
+    pub(super) client: NativeClient,
+    /// SQLite connection that is used to cache Sapling data for shielded transactions creation
+    pub(super) sqlite: Mutex<Connection>,
+    pub(super) sapling_state_synced: AtomicBool,
 }
 
-impl From<NativeClient> for ZcoinRpcClient {
-    fn from(client: NativeClient) -> Self { ZcoinRpcClient::Native(client) }
+impl ZcoinNativeClient {
+    #[inline(always)]
+    pub(super) fn sqlite_conn(&self) -> MutexGuard<'_, Connection> { self.sqlite.lock() }
+}
+
+pub enum ZcoinRpcClient {
+    Native(ZcoinNativeClient),
+    Light(ZcoinLightClient),
 }
 
 impl From<ZcoinLightClient> for ZcoinRpcClient {
@@ -247,7 +255,7 @@ pub enum LightClientSyncState {
 pub struct ZcoinLightClient {
     db: WalletDbShared,
     db_sync_abort_handler: AbortOnDropHandle,
-    sync_state: Arc<Mutex<LightClientSyncState>>,
+    pub(super) sync_state: Arc<Mutex<LightClientSyncState>>,
 }
 
 #[derive(Debug, Display)]
@@ -461,22 +469,9 @@ fn try_grpc() {
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_primitives::consensus::Parameters;
-    use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
 
-    let zombie_consensus_params = ZcoinConsensusParams {
-        overwinter_activation_height: 0,
-        sapling_activation_height: 1,
-        blossom_activation_height: None,
-        heartwood_activation_height: None,
-        canopy_activation_height: None,
-        coin_type: mainnet::COIN_TYPE,
-        hrp_sapling_extended_spending_key: mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY.into(),
-        hrp_sapling_extended_full_viewing_key: mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY.into(),
-        hrp_sapling_payment_address: mainnet::HRP_SAPLING_PAYMENT_ADDRESS.into(),
-        b58_pubkey_address_prefix: mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-        b58_script_address_prefix: mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-    };
+    let zombie_consensus_params = ZcoinConsensusParams::for_zombie();
 
     let z_key = decode_extended_spending_key(zombie_consensus_params.hrp_sapling_extended_spending_key(), "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let evk = ExtendedFullViewingKey::from(&z_key);

@@ -50,7 +50,7 @@ pub async fn z_send_htlc(
 
     let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
     let address = htlc_address.to_string();
-    if let UtxoRpcClientEnum::Native(native) = coin.rpc_client() {
+    if let UtxoRpcClientEnum::Native(native) = coin.utxo_rpc_client() {
         native.import_address(&address, &address, false).compat().await.unwrap();
     }
 
@@ -173,10 +173,10 @@ pub async fn z_p2sh_spend(
     zcash_tx.write(&mut tx_buffer).unwrap();
     let refund_tx: UtxoTx = deserialize(tx_buffer.as_slice()).expect("librustzcash should produce a valid tx");
 
-    match coin.rpc_client().send_raw_transaction(tx_buffer.into()).compat().await {
-        Ok(_) => (),
-        Err(e) => return Err(ZP2SHSpendError::TxRecoverable(refund_tx.into(), e.to_string()).into()),
-    };
+    coin.utxo_rpc_client()
+        .send_raw_transaction(tx_buffer.into())
+        .compat()
+        .await?;
 
     Ok(refund_tx)
 }

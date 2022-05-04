@@ -35,6 +35,7 @@ use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Public};
 #[cfg(test)] use mocktopus::macros::*;
+use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -44,13 +45,14 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::atomic::Ordering as AtomicOrdering;
+use std::sync::{Arc, Weak};
 use tokio::task::block_in_place;
 use zcash_client_backend::decrypt_transaction;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::AccountId;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
+use zcash_primitives::constants::mainnet;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{CommitmentTree, Hashable, IncrementalWitness};
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
@@ -71,6 +73,7 @@ mod z_rpc;
 use z_rpc::{ZRpcOps, ZUnspent, ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
+use crate::z_coin::z_rpc::{LightClientSyncState, ZcoinNativeClient};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -141,6 +144,24 @@ pub struct ZcoinConsensusParams {
     b58_script_address_prefix: [u8; 2],
 }
 
+impl ZcoinConsensusParams {
+    pub fn for_zombie() -> Self {
+        ZcoinConsensusParams {
+            overwinter_activation_height: 0,
+            sapling_activation_height: 1,
+            blossom_activation_height: None,
+            heartwood_activation_height: None,
+            canopy_activation_height: None,
+            coin_type: mainnet::COIN_TYPE,
+            hrp_sapling_extended_spending_key: mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY.into(),
+            hrp_sapling_extended_full_viewing_key: mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY.into(),
+            hrp_sapling_payment_address: mainnet::HRP_SAPLING_PAYMENT_ADDRESS.into(),
+            b58_pubkey_address_prefix: mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            b58_script_address_prefix: mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+        }
+    }
+}
+
 impl Parameters for ZcoinConsensusParams {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
@@ -173,9 +194,6 @@ pub struct ZCoinFields {
     z_tx_prover: LocalTxProver,
     /// Mutex preventing concurrent transaction generation/same input usage
     z_unspent_mutex: AsyncMutex<()>,
-    sapling_state_synced: AtomicBool,
-    /// SQLite connection that is used to cache Sapling data for shielded transactions creation
-    sqlite: Mutex<Connection>,
     z_rpc: ZcoinRpcClient,
     consensus_params: ZcoinConsensusParams,
 }
@@ -221,11 +239,19 @@ impl ZCoin {
     #[inline(always)]
     pub fn z_rpc(&self) -> &(dyn ZRpcOps + Send + Sync) { self.utxo_arc.rpc_client.as_ref() }
 
-    #[inline(always)]
-    pub fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
+    pub fn rpc_client(&self) -> &ZcoinRpcClient { &self.z_fields.z_rpc }
 
-    #[inline(always)]
-    pub fn is_sapling_state_synced(&self) -> bool { self.z_fields.sapling_state_synced.load(AtomicOrdering::Relaxed) }
+    pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
+
+    pub fn is_sapling_state_synced(&self) -> bool {
+        match self.rpc_client() {
+            ZcoinRpcClient::Native(n) => n.sapling_state_synced.load(AtomicOrdering::Relaxed),
+            ZcoinRpcClient::Light(l) => match *l.sync_state.lock() {
+                LightClientSyncState::Syncing => false,
+                LightClientSyncState::Finished { .. } => true,
+            },
+        }
+    }
 
     #[inline(always)]
     pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
@@ -331,7 +357,7 @@ impl ZCoin {
 
         for unspent in selected_unspents {
             let prev_tx = self
-                .rpc_client()
+                .utxo_rpc_client()
                 .get_verbose_transaction(&unspent.txid)
                 .compat()
                 .await?;
@@ -414,9 +440,12 @@ impl ZCoin {
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
 
-        self.rpc_client().send_raw_transaction(tx_bytes.into()).compat().await?;
+        self.utxo_rpc_client()
+            .send_raw_transaction(tx_bytes.into())
+            .compat()
+            .await?;
 
-        self.rpc_client()
+        self.utxo_rpc_client()
             .wait_for_confirmations(
                 H256Json::from(tx.txid().0).reversed(),
                 tx.expiry_height.into(),
@@ -431,17 +460,18 @@ impl ZCoin {
         Ok(tx)
     }
 
-    #[inline(always)]
-    fn sqlite_conn(&self) -> MutexGuard<'_, Connection> { self.z_fields.sqlite.lock().unwrap() }
-
     pub async fn get_unspent_witness(
         &self,
         note: &Note,
         tx_height: u32,
     ) -> Result<IncrementalWitness<Node>, MmError<GetUnspentWitnessErr>> {
+        let client = match self.rpc_client() {
+            ZcoinRpcClient::Native(n) => n,
+            _ => unimplemented!(),
+        };
         let mut attempts = 0;
         let states = loop {
-            let states = block_in_place(|| query_states_after_height(&self.sqlite_conn(), tx_height))?;
+            let states = block_in_place(|| query_states_after_height(&client.sqlite_conn(), tx_height))?;
             if states.is_empty() {
                 if attempts > 2 {
                     return MmError::err(GetUnspentWitnessErr::EmptyDbResult);
@@ -618,7 +648,11 @@ fn insert_block_state(conn: &Connection, state: SaplingBlockState) -> Result<(),
 }
 
 async fn sapling_state_cache_loop(coin: ZCoin) {
-    let query = block_in_place(|| query_latest_block(&coin.sqlite_conn()));
+    let native_client = match coin.rpc_client() {
+        ZcoinRpcClient::Native(n) => n,
+        _ => return,
+    };
+    let query = block_in_place(|| query_latest_block(&native_client.sqlite_conn()));
     let (mut processed_height, mut current_tree) = match query {
         Ok(state) => {
             let mut tree = state.prev_tree_state;
@@ -634,8 +668,12 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
 
     let zero_root = Some(H256Json::default());
     while let Some(coin) = ZCoin::from_weak_parts(&utxo_weak, &z_fields_weak) {
-        coin.z_fields.sapling_state_synced.store(false, AtomicOrdering::Relaxed);
-        let current_block = match coin.rpc_client().get_block_count().compat().await {
+        let native_client = match coin.rpc_client() {
+            ZcoinRpcClient::Native(n) => n,
+            _ => return,
+        };
+        native_client.sapling_state_synced.store(false, AtomicOrdering::Relaxed);
+        let current_block = match native_client.client.get_block_count().compat().await {
             Ok(b) => b,
             Err(e) => {
                 log::error!("Error {} on getting block count", e);
@@ -644,12 +682,8 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
             },
         };
 
-        let native_client = match coin.rpc_client() {
-            UtxoRpcClientEnum::Native(n) => n,
-            _ => unimplemented!("Implemented only for native client"),
-        };
         while processed_height as u64 <= current_block {
-            let block = match native_client.get_block_by_height(processed_height as u64).await {
+            let block = match native_client.client.get_block_by_height(processed_height as u64).await {
                 Ok(b) => b,
                 Err(e) => {
                     log::error!("Error {} on getting block", e);
@@ -669,6 +703,7 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
                 let mut cmus = Vec::new();
                 for hash in block.tx {
                     let tx = native_client
+                        .client
                         .get_transaction_bytes(&hash)
                         .compat()
                         .await
@@ -687,11 +722,11 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
                     prev_tree_state,
                     cmus,
                 };
-                insert_block_state(&coin.sqlite_conn(), state_to_insert).expect("Insertion should not fail");
+                insert_block_state(&native_client.sqlite_conn(), state_to_insert).expect("Insertion should not fail");
             }
             processed_height += 1;
         }
-        coin.z_fields.sapling_state_synced.store(true, AtomicOrdering::Relaxed);
+        native_client.sapling_state_synced.store(true, AtomicOrdering::Relaxed);
         drop(coin);
         Timer::sleep(10.).await;
     }
@@ -732,25 +767,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
         let utxo_arc = UtxoArc::new(utxo);
-        let db_name = format!("{}_CACHE.db", self.ticker);
-        let mut db_dir_path = self.db_dir_path.clone();
-
-        db_dir_path.push(&db_name);
-        let sqlite = block_in_place(move || {
-            if !db_dir_path.exists() {
-                let default_cache_path = PathBuf::from(format!("./{}", db_name));
-                if !default_cache_path.exists() {
-                    return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
-                        path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
-                    });
-                }
-                std::fs::copy(default_cache_path, &db_dir_path)?;
-            }
-
-            let sqlite = Connection::open(db_dir_path)?;
-            init_db(&sqlite)?;
-            Ok(sqlite)
-        })?;
 
         let (_, my_z_addr) = self
             .z_spending_key
@@ -772,7 +788,32 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
         let z_rpc = match &self.z_coin_params.mode {
-            ZcoinRpcMode::Native => self.native_client()?.into(),
+            ZcoinRpcMode::Native => {
+                let db_name = format!("{}_CACHE.db", self.ticker);
+                let mut db_dir_path = self.db_dir_path.clone();
+
+                db_dir_path.push(&db_name);
+                let sqlite = block_in_place(move || {
+                    if !db_dir_path.exists() {
+                        let default_cache_path = PathBuf::new().join("./").join(db_name);
+                        if !default_cache_path.exists() {
+                            return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
+                                path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
+                            });
+                        }
+                        std::fs::copy(default_cache_path, &db_dir_path)?;
+                    }
+
+                    let sqlite = Connection::open(db_dir_path)?;
+                    init_db(&sqlite)?;
+                    Ok(sqlite)
+                })?;
+                ZcoinRpcClient::Native(ZcoinNativeClient {
+                    client: self.native_client()?,
+                    sqlite: Mutex::new(sqlite),
+                    sapling_state_synced: Default::default(),
+                })
+            },
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
@@ -789,8 +830,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_spending_key: self.z_spending_key,
             z_tx_prover,
             z_unspent_mutex: AsyncMutex::new(()),
-            sapling_state_synced: AtomicBool::new(false),
-            sqlite: Mutex::new(sqlite),
             z_rpc,
             consensus_params: self.consensus_params,
         };
@@ -1192,7 +1231,7 @@ impl SwapOps for ZCoin {
         let fut = async move {
             let tx_hash = H256::from(z_tx.txid().0).reversed();
             let tx_from_rpc = try_s!(
-                coin.rpc_client()
+                coin.utxo_rpc_client()
                     .get_verbose_transaction(&tx_hash.into())
                     .compat()
                     .await

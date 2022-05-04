@@ -65,9 +65,9 @@ use common::{bits256, calc_total_pages,
              log::{error, info},
              mm_ctx::{from_ctx, MmArc},
              mm_number::{BigDecimal, BigRational, MmNumber},
-             now_ms, var, AbortOnDropHandle, PagingOptions};
+             now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
-use futures::future::{abortable, AbortHandle, TryFutureExt};
+use futures::future::{abortable, AbortHandle};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use primitives::hash::{H160, H264};
@@ -170,9 +170,7 @@ pub fn broadcast_swap_message_every(
             Timer::sleep(interval).await;
         }
     };
-    let (abortable, abort_handle) = abortable(fut);
-    spawn(abortable.unwrap_or_else(|_| ()));
-    AbortOnDropHandle(abort_handle)
+    spawn_abortable(fut)
 }
 
 /// Broadcast the swap message once
