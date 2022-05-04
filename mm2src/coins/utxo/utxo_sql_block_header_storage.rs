@@ -39,9 +39,9 @@ fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, MmError
 
 fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, MmError<BlockHeaderStorageError>> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    // We can simply ignore the repetitive attempt to insert the same block_height
+    // Always update the block headers with new values just in case a chain reorganization occurs.
     let sql = format!(
-        "INSERT OR IGNORE INTO {} (block_height, hex) VALUES (?1, ?2);",
+        "INSERT OR REPLACE INTO {} (block_height, hex) VALUES (?1, ?2);",
         table_name
     );
     Ok(sql)

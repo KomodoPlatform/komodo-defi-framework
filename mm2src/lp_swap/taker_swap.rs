@@ -849,6 +849,16 @@ impl TakerSwap {
         let maker_coin_htlc_key_pair = self.maker_coin.get_htlc_key_pair();
         let taker_coin_htlc_key_pair = self.taker_coin.get_htlc_key_pair();
 
+        let maker_coin_htlc_pubkey = match maker_coin_htlc_key_pair {
+            Some(k) => Some(k.public_slice().into()),
+            None => Some(self.ctx.secp256k1_key_pair().public_slice().into()),
+        };
+
+        let taker_coin_htlc_pubkey = match taker_coin_htlc_key_pair {
+            Some(k) => Some(k.public_slice().into()),
+            None => Some(self.ctx.secp256k1_key_pair().public_slice().into()),
+        };
+
         let data = TakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
@@ -872,11 +882,11 @@ impl TakerSwap {
             maker_payment_spend_trade_fee: Some(SavedTradeFee::from(maker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_privkey: Some(maker_coin_htlc_key_pair.into()),
-            maker_coin_htlc_pubkey: Some(maker_coin_htlc_key_pair.public_slice().into()),
-            taker_coin_htlc_privkey: Some(taker_coin_htlc_key_pair.into()),
-            taker_coin_htlc_pubkey: Some(taker_coin_htlc_key_pair.public_slice().into()),
-            p2p_privkey: self.p2p_privkey.map(Into::into),
+            maker_coin_htlc_privkey: maker_coin_htlc_key_pair.map(SerializableSecp256k1Keypair::from),
+            maker_coin_htlc_pubkey,
+            taker_coin_htlc_privkey: taker_coin_htlc_key_pair.map(SerializableSecp256k1Keypair::from),
+            taker_coin_htlc_pubkey,
+            p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
         Ok((Some(TakerSwapCommand::Negotiate), vec![TakerSwapEvent::Started(data)]))

@@ -660,7 +660,7 @@ impl SwapOps for QtumCoin {
         Ok(None)
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { utxo_common::get_htlc_key_pair(self) }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(self) }
 }
 
 impl MarketCoinOps for QtumCoin {

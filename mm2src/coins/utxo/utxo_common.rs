@@ -3692,13 +3692,13 @@ where
         .mm_err(From::from)
 }
 
-pub fn get_htlc_key_pair<T>(coin: &T) -> KeyPair
+pub fn get_htlc_key_pair<T>(coin: &T) -> Option<KeyPair>
 where
     T: AsRef<UtxoCoinFields>,
 {
     match &coin.as_ref().priv_key_policy {
-        PrivKeyPolicy::KeyPair(key_pair) => *key_pair,
-        PrivKeyPolicy::Trezor => KeyPair::random_compressed(),
+        PrivKeyPolicy::KeyPair(_) => None,
+        PrivKeyPolicy::Trezor => Some(KeyPair::random_compressed()),
     }
 }
 

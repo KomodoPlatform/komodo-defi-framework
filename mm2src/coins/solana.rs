@@ -563,7 +563,7 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { todo!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { todo!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
