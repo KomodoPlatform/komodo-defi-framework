@@ -1,10 +1,10 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SolanaCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionType, ValidateAddressResult, ValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+            TransactionDetails, TransactionFut, TransactionType, ValidateAddressResult, ValidatePaymentInput,
+            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bincode::serialize;
@@ -117,14 +117,13 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
     let signers = vec![&coin.platform_coin.key_pair];
     let tx = Transaction::new(&signers, msg, hash);
     let serialized_tx = serialize(&tx).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-    let encoded_tx = hex::encode(&serialized_tx);
     let received_by_me = if req.to == coin.platform_coin.my_address {
         res.to_send.clone()
     } else {
         0.into()
     };
     Ok(TransactionDetails {
-        tx_hex: encoded_tx.as_bytes().into(),
+        tx_hex: serialized_tx.into(),
         tx_hash: tx.signatures[0].to_string(),
         from: vec![coin.platform_coin.my_address.clone()],
         to: vec![req.to],
@@ -219,8 +218,14 @@ impl MarketCoinOps for SplToken {
 
     fn platform_ticker(&self) -> &str { self.platform_coin.ticker() }
 
+    #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         self.platform_coin.send_raw_tx(tx)
+    }
+
+    #[inline(always)]
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        self.platform_coin.send_raw_tx_bytes(tx)
     }
 
     fn wait_for_confirmations(
@@ -397,7 +402,7 @@ impl SwapOps for SplToken {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { todo!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { todo!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]

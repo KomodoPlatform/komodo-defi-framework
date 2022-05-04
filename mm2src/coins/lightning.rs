@@ -379,7 +379,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { unimplemented!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
 }
 
 impl MarketCoinOps for LightningCoin {
@@ -404,6 +404,15 @@ impl MarketCoinOps for LightningCoin {
     fn platform_ticker(&self) -> &str { self.platform_coin().ticker() }
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        Box::new(futures01::future::err(
+            MmError::new(
+                "send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string(),
+            )
+            .to_string(),
+        ))
+    }
+
+    fn send_raw_tx_bytes(&self, _tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         Box::new(futures01::future::err(
             MmError::new(
                 "send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string(),
