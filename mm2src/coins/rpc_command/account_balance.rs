@@ -73,7 +73,6 @@ pub mod common_impl {
         <Coin as HDWalletCoinOps>::Address: fmt::Display + Clone,
     {
         let account_id = params.account_index;
-        let chain = params.chain;
         let hd_account = coin
             .derivation_method()
             .hd_wallet_or_err()?
@@ -89,14 +88,14 @@ pub mod common_impl {
         let to_address_id = std::cmp::min(from_address_id + params.limit as u32, total_addresses_number);
 
         let addresses = coin
-            .known_addresses_balances_with_ids(&hd_account, chain, from_address_id..to_address_id)
+            .known_addresses_balances_with_ids(&hd_account, params.chain, from_address_id..to_address_id)
             .await?;
         let page_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
             total + addr_balance.balance.clone()
         });
 
         let result = HDAccountBalanceResponse {
-            account_index: params.account_index,
+            account_index: account_id,
             derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
             addresses,
             page_balance,
