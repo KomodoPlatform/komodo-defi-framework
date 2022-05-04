@@ -750,6 +750,7 @@ pub struct MatureUnspentList {
 }
 
 impl MatureUnspentList {
+    #[inline(always)]
     pub fn with_capacity(capacity: usize) -> MatureUnspentList {
         MatureUnspentList {
             mature: Vec::with_capacity(capacity),
@@ -757,6 +758,7 @@ impl MatureUnspentList {
         }
     }
 
+    #[inline(always)]
     pub fn new_mature(mature: Vec<UnspentInfo>) -> MatureUnspentList {
         MatureUnspentList {
             mature,
@@ -764,8 +766,10 @@ impl MatureUnspentList {
         }
     }
 
+    #[inline(always)]
     pub fn only_mature(self) -> Vec<UnspentInfo> { self.mature }
 
+    #[inline(always)]
     pub fn to_coin_balance(&self, decimals: u8) -> CoinBalance {
         let fold = |acc: BigDecimal, x: &UnspentInfo| acc + big_decimal_from_sat_unsigned(x.value, decimals);
         CoinBalance {
@@ -1067,6 +1071,7 @@ pub enum VerboseTransactionFrom {
 }
 
 impl VerboseTransactionFrom {
+    #[inline(always)]
     fn to_inner(&self) -> &RpcTransaction {
         match self {
             VerboseTransactionFrom::Rpc(tx) | VerboseTransactionFrom::Cache(tx) => tx,

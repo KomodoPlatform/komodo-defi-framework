@@ -1174,12 +1174,14 @@ impl ElectrumBlockHeaderV12 {
         }
     }
 
+    #[inline(always)]
     pub fn as_hex(&self) -> String {
         let block_header = self.as_block_header();
         let serialized = serialize(&block_header);
         hex::encode(serialized)
     }
 
+    #[inline(always)]
     pub fn hash(&self) -> H256Json {
         let block_header = self.as_block_header();
         BlockHeader::hash(&block_header).into()
@@ -1265,18 +1267,21 @@ pub struct ElectrumBalance {
 }
 
 impl ElectrumBalance {
+    #[inline(always)]
     pub fn to_big_decimal(&self, decimals: u8) -> BigDecimal {
         let balance_sat = BigInt::from(self.confirmed) + BigInt::from(self.unconfirmed);
         BigDecimal::from(balance_sat) / BigDecimal::from(10u64.pow(decimals as u32))
     }
 }
 
+#[inline(always)]
 fn sha_256(input: &[u8]) -> Vec<u8> {
     let mut sha = Sha256::new();
     sha.input(input);
     sha.result().to_vec()
 }
 
+#[inline(always)]
 pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     let mut result = sha_256(script);
     result.reverse();
@@ -1748,11 +1753,10 @@ impl ElectrumClient {
             unspents
                 .into_iter()
                 .map(|hash_unspents| {
-                    let hash_unspents: Vec<_> = hash_unspents
+                    hash_unspents
                         .into_iter()
                         .unique_by(|unspent| (unspent.tx_hash, unspent.tx_pos))
-                        .collect();
-                    hash_unspents
+                        .collect::<Vec<_>>()
                 })
                 .collect()
         }))

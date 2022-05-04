@@ -94,12 +94,11 @@ impl From<AddressDerivingError> for HDAccountBalanceRpcError {
 
 impl From<RpcTaskError> for HDAccountBalanceRpcError {
     fn from(e: RpcTaskError) -> Self {
-        let error = e.to_string();
         match e {
             RpcTaskError::Canceled => HDAccountBalanceRpcError::Internal("Canceled".to_owned()),
             RpcTaskError::Timeout(timeout) => HDAccountBalanceRpcError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
-                HDAccountBalanceRpcError::Internal(error)
+                HDAccountBalanceRpcError::Internal(e.to_string())
             },
             RpcTaskError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
         }

@@ -27,6 +27,7 @@ pub enum TxCacheError {
 
 #[async_trait]
 pub trait UtxoVerboseCacheOps: fmt::Debug {
+    #[inline(always)]
     fn into_shared(self) -> UtxoVerboseCacheShared
     where
         Self: Sized + Send + Sync + 'static,

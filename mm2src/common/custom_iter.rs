@@ -12,6 +12,7 @@ pub trait CollectInto {
     /// let expected = vec!["foo".to_owned(), "bar".to_owned()];
     /// assert_eq!(actual, expected);
     /// ```
+    #[inline(always)]
     fn collect_into<A, B, FromB>(self) -> FromB
     where
         Self: IntoIterator<Item = A> + Sized,

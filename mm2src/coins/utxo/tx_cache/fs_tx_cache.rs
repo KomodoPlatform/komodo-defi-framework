@@ -88,6 +88,7 @@ impl UtxoVerboseCacheOps for FsVerboseCache {
 }
 
 impl FsVerboseCache {
+    #[inline(always)]
     pub fn new(ticker: String, tx_cache_path: PathBuf) -> FsVerboseCache { FsVerboseCache { ticker, tx_cache_path } }
 
     /// Tries to load transaction from cache.
@@ -105,5 +106,6 @@ impl FsVerboseCache {
         write_json(tx, &path, USE_TMP_FILE).await.mm_err(TxCacheError::from)
     }
 
+    #[inline(always)]
     fn cached_transaction_path(&self, txid: &H256Json) -> PathBuf { self.tx_cache_path.join(format!("{:?}", txid)) }
 }

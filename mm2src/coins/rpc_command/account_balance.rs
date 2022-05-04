@@ -51,8 +51,7 @@ pub async fn account_balance(
     ctx: MmArc,
     req: HDAccountBalanceRequest,
 ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
+    match lp_coinfind_or_err(&ctx, &req.coin).await? {
         MmCoinEnum::UtxoCoin(utxo) => utxo.account_balance_rpc(req.params).await,
         MmCoinEnum::QtumCoin(qtum) => qtum.account_balance_rpc(req.params).await,
         _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
@@ -73,11 +72,11 @@ pub mod common_impl {
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display + Clone,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
-
         let account_id = params.account_index;
         let chain = params.chain;
-        let hd_account = hd_wallet
+        let hd_account = coin
+            .derivation_method()
+            .hd_wallet_or_err()?
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
