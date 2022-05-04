@@ -1658,7 +1658,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     let signature = CompactSignature::from(base64::decode(signature_base64)?);
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
     let received_address = checked_address_from_str(coin, address).map_err(VerificationError::AddressDecodingError)?;
-    Ok(recovered_pubkey.address_hash().to_string() == received_address.hash.to_string())
+    Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == received_address.hash)
 }
 
 pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>

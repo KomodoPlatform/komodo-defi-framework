@@ -7257,7 +7257,7 @@ fn test_sign_verify_message_eth() {
 
     assert_eq!(
         response.signature,
-        "cdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"
+        "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600"
     );
 
     let response = block_on(verify_message(&mm_bob, "ETH", 

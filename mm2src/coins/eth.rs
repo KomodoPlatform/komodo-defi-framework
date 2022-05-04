@@ -1120,7 +1120,7 @@ impl MarketCoinOps for EthCoin {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let privkey = &self.key_pair.secret();
         let signature = sign(privkey, &H256::from(message_hash))?;
-        Ok(signature.to_string())
+        Ok(format!("0x{}", signature))
     }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -1130,11 +1130,7 @@ impl MarketCoinOps for EthCoin {
         let address = self
             .address_from_str(address)
             .map_err(VerificationError::AddressDecodingError)?;
-        let signature = if &signature[..2] == "0x" {
-            Signature::from_str(&signature[2..])?
-        } else {
-            Signature::from_str(signature)?
-        };
+        let signature = Signature::from_str(signature.strip_prefix("0x").unwrap_or(signature))?;
         let is_verified = verify_address(&address, &signature, &H256::from(message_hash))?;
         Ok(is_verified)
     }
