@@ -1,8 +1,6 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::GenerateTxError;
 use crate::{BalanceError, CoinFindError, NumConversError, PrivKeyNotAllowed, UnexpectedDerivationMethod};
-use bitcoin::consensus::encode;
-use common::jsonrpc_client::JsonRpcError;
 use common::mm_error::prelude::*;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -511,36 +509,4 @@ pub enum SaveChannelClosingError {
 
 impl From<SqlError> for SaveChannelClosingError {
     fn from(err: SqlError) -> SaveChannelClosingError { SaveChannelClosingError::DbError(err.to_string()) }
-}
-
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum GetHeaderError {
-    Rpc(JsonRpcError),
-    HeaderDeserialization(encode::Error),
-}
-
-impl From<JsonRpcError> for GetHeaderError {
-    fn from(err: JsonRpcError) -> GetHeaderError { GetHeaderError::Rpc(err) }
-}
-
-impl From<encode::Error> for GetHeaderError {
-    fn from(err: encode::Error) -> GetHeaderError { GetHeaderError::HeaderDeserialization(err) }
-}
-
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum FindWatchedOutputSpendError {
-    HashNotHeight,
-    DeserializationErr(encode::Error),
-    RpcError(String),
-    GetHeaderError(GetHeaderError),
-}
-
-impl From<JsonRpcError> for FindWatchedOutputSpendError {
-    fn from(err: JsonRpcError) -> Self { FindWatchedOutputSpendError::RpcError(err.to_string()) }
-}
-
-impl From<encode::Error> for FindWatchedOutputSpendError {
-    fn from(err: encode::Error) -> Self { FindWatchedOutputSpendError::DeserializationErr(err) }
 }

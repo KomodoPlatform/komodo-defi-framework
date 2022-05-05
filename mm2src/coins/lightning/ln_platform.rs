@@ -1,11 +1,10 @@
 use super::*;
-use crate::lightning::ln_errors::{FindWatchedOutputSpendError, GetHeaderError, SaveChannelClosingError,
-                                  SaveChannelClosingResult};
+use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
                                ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
 use crate::utxo::utxo_common::{get_tx_if_onchain, validate_spv_proof};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
-use crate::{MarketCoinOps, MmCoin, UtxoTx};
+use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -30,54 +29,8 @@ const TRY_LOOP_INTERVAL: f64 = 60.;
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
 
-struct TxWithBlockInfo {
-    tx: UtxoTx,
-    block_header: BlockHeader,
-    block_height: u64,
-}
-
-async fn get_block_header(electrum_client: &ElectrumClient, height: u64) -> Result<BlockHeader, GetHeaderError> {
-    Ok(deserialize(
-        &electrum_client.blockchain_block_header(height).compat().await?,
-    )?)
-}
-
-async fn find_watched_output_spend_with_header(
-    electrum_client: &ElectrumClient,
-    output: &WatchedOutput,
-) -> Result<Option<TxWithBlockInfo>, FindWatchedOutputSpendError> {
-    // from_block parameter is not used in find_output_spend for electrum clients
-    let utxo_client: UtxoRpcClientEnum = electrum_client.clone().into();
-    let tx_hash = H256::from(output.outpoint.txid.as_hash().into_inner());
-    let output_spend = match utxo_client
-        .find_output_spend(
-            tx_hash,
-            output.script_pubkey.as_ref(),
-            output.outpoint.index.into(),
-            BlockHashOrHeight::Hash(Default::default()),
-        )
-        .compat()
-        .await
-        .map_err(FindWatchedOutputSpendError::RpcError)?
-    {
-        Some(output) => output,
-        None => return Ok(None),
-    };
-
-    let height = match output_spend.spent_in_block {
-        BlockHashOrHeight::Height(h) => h,
-        _ => return Err(FindWatchedOutputSpendError::HashNotHeight),
-    };
-    let block_header = get_block_header(electrum_client, height as u64)
-        .await
-        .map_err(FindWatchedOutputSpendError::GetHeaderError)?;
-
-    Ok(Some(TxWithBlockInfo {
-        tx: output_spend.spending_tx,
-        block_header,
-        block_height: height as u64,
-    }))
-}
+#[inline]
+pub fn h256_from_txid(txid: Txid) -> H256 { H256::from(txid.as_hash().into_inner()) }
 
 pub async fn get_best_header(best_header_listener: &ElectrumClient) -> EnableLightningResult<ElectrumBlockHeader> {
     best_header_listener
@@ -324,21 +277,32 @@ impl Platform {
         let mut outputs_to_remove = Vec::new();
         let registered_outputs = self.registered_outputs.lock().clone();
         for output in registered_outputs {
-            if let Some(tx_info) = ok_or_continue!(find_watched_output_spend_with_header(client, &output).await) {
+            if let Some(tx_info) = ok_or_continue!(
+                self.rpc_client()
+                    .find_output_spend(
+                        h256_from_txid(output.outpoint.txid),
+                        output.script_pubkey.as_ref(),
+                        output.outpoint.index.into(),
+                        BlockHashOrHeight::Hash(Default::default()),
+                    )
+                    .compat()
+                    .await
+            ) {
                 if !transactions_to_confirm
                     .iter()
-                    .any(|info| h256_json_from_txid(info.txid) == tx_info.tx.hash().into())
+                    .any(|info| h256_json_from_txid(info.txid) == tx_info.spending_tx.hash().into())
                 {
-                    let (proof, _) = ok_or_continue!(
-                        validate_spv_proof(ticker, block_headers_storage, client, &tx_info.tx, 5).await
+                    let (proof, height) = ok_or_continue!(
+                        validate_spv_proof(ticker, block_headers_storage, client, &tx_info.spending_tx, 5).await
                     );
-                    let transaction: Transaction = ok_or_continue!(tx_info.tx.try_into());
+                    let transaction: Transaction = ok_or_continue!(tx_info.spending_tx.try_into());
+                    let header: BlockHeader = ok_or_continue!(deserialize(&proof.raw_header.0));
                     let confirmed_transaction_info = ConfirmedTransactionInfo::new(
                         transaction.txid(),
-                        tx_info.block_header,
+                        header,
                         proof.index as usize,
                         transaction,
-                        tx_info.block_height as u32,
+                        height as u32,
                     );
                     transactions_to_confirm.push(confirmed_transaction_info);
                 }
@@ -497,7 +461,7 @@ impl Filter for Platform {
         // this is the reason for initializing the filter as an option in the start_lightning function as it will be None
         // when implementing lightning for native clients
         let output_spend_fut = self.rpc_client().find_output_spend(
-            H256::from(output.outpoint.txid.as_hash().into_inner()),
+            h256_from_txid(output.outpoint.txid),
             output.script_pubkey.as_ref(),
             output.outpoint.index.into(),
             BlockHashOrHeight::Hash(block_hash),
