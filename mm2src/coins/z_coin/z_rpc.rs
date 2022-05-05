@@ -504,7 +504,7 @@ fn try_grpc() {
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();
-    let amount_to_send = Amount::from_i64(100000000).unwrap();
+    let amount_to_send = Amount::from_i64(1000000000).unwrap();
     let change = notes[0].note_value - amount_to_send - Amount::from_i64(1000).unwrap();
     for spendable_note in notes.into_iter().take(1) {
         let note = from_addr
@@ -522,7 +522,7 @@ fn try_grpc() {
 
     let to_address = decode_payment_address(
         mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-        "zs1g6z7dcfp5wg085fuzqlauf8d85ct4hke7xmwxe0djnq48909yfsj66hzj0fjgfgzynddud8n04g",
+        "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",
     )
     .unwrap()
     .unwrap();

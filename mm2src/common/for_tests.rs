@@ -1295,6 +1295,24 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_withdraw",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "to": to,
+                "amount": amount,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_withdraw' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
         .rpc(&json! ({
