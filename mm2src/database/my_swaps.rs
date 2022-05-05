@@ -1,5 +1,6 @@
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
+use bigdecimal::BigDecimal;
 use common::log::debug;
 use common::mm_ctx::MmArc;
 use common::PagingOptions;
@@ -20,23 +21,56 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
             my_coin VARCHAR(255) NOT NULL,
             other_coin VARCHAR(255) NOT NULL,
             uuid VARCHAR(255) NOT NULL UNIQUE,
-            started_at INTEGER NOT NULL
+            started_at INTEGER NOT NULL,
+            my_coin_usd_price DECIMAL,
+            other_coin_usd_price DECIMAL
         );"
     };
 }
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
-pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
+const INSERT_MY_SWAP_WITH_PRICES: &str =  "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, my_coin_usd_price, other_coin_usd_price) VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+
+pub fn insert_new_swap(
+    ctx: &MmArc,
+    my_coin: &str,
+    other_coin: &str,
+    uuid: &str,
+    started_at: &str,
+    my_coin_price_usd: Option<BigDecimal>,
+    other_coin_usd: Option<BigDecimal>,
+) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
-    let params = [my_coin, other_coin, uuid, started_at];
-    conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
+    let result = match (my_coin_price_usd, other_coin_usd) {
+        (Some(base), Some(rel)) => {
+            let base = &base.to_string();
+            let rel = &rel.to_string();
+            let params = [my_coin, other_coin, uuid, started_at, base, rel];
+            conn.execute(INSERT_MY_SWAP_WITH_PRICES, &params).map(|_| ())
+        },
+        _ => {
+            let params = [my_coin, other_coin, uuid, started_at];
+            conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
+        },
+    };
+    result
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
-    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
+    let mut result = vec![];
+    for swap in swaps {
+        // let prices = match &swap {
+        //     SavedSwap::Maker(maker) => swap_coins_price(&maker.maker_coin, &maker.taker_coin).await,
+        //     SavedSwap::Taker(taker) => swap_coins_price(&taker.maker_coin, &taker.taker_coin).await,
+        // };
+        let swap_data = insert_saved_swap_sql(swap).expect("swap data");
+        result.push(swap_data)
+    }
+
+    result
 }
 
 fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
@@ -45,13 +79,31 @@ fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)>
         // get_my_info returning None means that swap did not even start - so we can keep it away from indexing.
         None => return None,
     };
-    let params = vec![
-        swap_info.my_coin,
-        swap_info.other_coin,
-        swap.uuid().to_string(),
-        swap_info.started_at.to_string(),
-    ];
-    Some((INSERT_MY_SWAP, params))
+
+    match (swap_info.my_price_usd.as_ref(), swap_info.other_price_usd.as_ref()) {
+        (Some(base), Some(rel)) => {
+            let params = vec![
+                swap_info.my_coin,
+                swap_info.other_coin,
+                swap.uuid().to_string(),
+                swap_info.started_at.to_string(),
+                base.to_owned().clone().to_string(),
+                rel.to_owned().clone().to_string(),
+            ];
+
+            Some((INSERT_MY_SWAP_WITH_PRICES, params))
+        },
+        _ => {
+            let params = vec![
+                swap_info.my_coin,
+                swap_info.other_coin,
+                swap.uuid().to_string(),
+                swap_info.started_at.to_string(),
+            ];
+
+            Some((INSERT_MY_SWAP, params))
+        },
+    }
 }
 
 #[derive(Debug)]
@@ -150,4 +202,64 @@ pub fn select_uuids_by_my_swaps_filter(
         total_count,
         skipped,
     })
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn insert_new_swap_test() {
+    use common::block_on;
+    use common::mm_ctx::MmCtxBuilder;
+    use common::new_uuid;
+    use db_common::sqlite::rusqlite::Connection;
+    use rand::Rng;
+    use std::ops::Range;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    use crate::mm2::database::init_and_migrate_db;
+
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let connection = Connection::open_in_memory().unwrap();
+    ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection))).unwrap();
+    block_on(init_and_migrate_db(&ctx)).unwrap();
+
+    let mut rng = rand::thread_rng();
+
+    let timestamp: Range<u64> = 1000..5000;
+    let uuid = new_uuid();
+    let my_coin = &"ETH";
+    let other_coin = &"JST";
+    let started_at = rng.gen_range(timestamp.start, timestamp.end);
+    //TRY WITH VALUE PRICE FOR BOTH my_coin_price_usd and other_coin_price_usd
+    let coins_price = (
+        Some(BigDecimal::from_str("34.0004").expect("Can't parse to BigDecimal")),
+        Some(BigDecimal::from_str("3").expect("Can't parse to BigDecimal")),
+    );
+
+    let result = insert_new_swap(
+        &ctx,
+        my_coin,
+        other_coin,
+        uuid.to_string().as_str(),
+        &started_at.to_string().as_str(),
+        coins_price.0,
+        coins_price.1,
+    );
+    assert_eq!((), result.unwrap());
+
+    let uuid = new_uuid();
+    //TRY WITH NULL VALUES PRICE FOR BOTH my_coin_price_usd and other_coin_price_usd
+    let coins_price = (None, None);
+
+    let result = insert_new_swap(
+        &ctx,
+        my_coin,
+        other_coin,
+        uuid.to_string().as_str(),
+        &started_at.to_string().as_str(),
+        coins_price.0,
+        coins_price.1,
+    );
+    assert_eq!((), result.unwrap());
 }

@@ -1,10 +1,11 @@
-/// The module responsible to work with SQLite database
-///
-#[path = "database/my_orders.rs"]
-pub mod my_orders;
+#[path = "database/my_orders.rs"] pub mod my_orders;
 #[path = "database/my_swaps.rs"] pub mod my_swaps;
 #[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
+/// The module responsible to work with SQLite database
+///
+#[path = "database/swap_coins_price.rs"]
+pub mod swap_coins_price;
 
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::{log::{debug, error, info},

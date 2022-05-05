@@ -4,8 +4,9 @@
 //
 
 use async_trait::async_trait;
+use bigdecimal::BigDecimal;
 use common::event_dispatcher::{EventListener, EventUniqueId};
-use common::log::info;
+use common::log::{debug, info};
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;
@@ -157,7 +158,7 @@ pub struct SimpleCoinMarketMakerCfg {
     pub min_pair_price: Option<MmNumber>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct TickerInfosRegistry(HashMap<String, TickerInfos>);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -329,6 +330,10 @@ impl RateInfos {
             ..Default::default()
         }
     }
+
+    pub fn get_rate_price(&self) -> (BigDecimal, BigDecimal) {
+        (self.base_price.clone().into(), self.rel_price.clone().into())
+    }
 }
 
 impl TickerInfosRegistry {
@@ -355,6 +360,10 @@ impl TickerInfosRegistry {
                     || base_price_infos.last_updated_timestamp == 0
                     || rel_price_infos.last_updated_timestamp == 0
                 {
+                    debug!(
+                        "Unable to fetch tickers price. Tickers ({}/{})",
+                        base_price_infos.last_price, rel_price_infos.last_price
+                    );
                     return None;
                 }
 
@@ -371,7 +380,9 @@ impl TickerInfosRegistry {
                 rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
                 Some(rate_infos)
             },
-            None => None,
+            None => {
+                None
+            },
         }
     }
 }

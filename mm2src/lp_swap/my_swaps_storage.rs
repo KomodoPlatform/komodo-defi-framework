@@ -1,5 +1,6 @@
 use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
+use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::PagingOptions;
@@ -23,7 +24,15 @@ pub enum MySwapsError {
 
 #[async_trait]
 pub trait MySwapsOps {
-    async fn save_new_swap(&self, my_coin: &str, other_coin: &str, uuid: Uuid, started_at: u64) -> MySwapsResult<()>;
+    async fn save_new_swap(
+        &self,
+        my_coin: &str,
+        other_coin: &str,
+        uuid: Uuid,
+        started_at: u64,
+        my_coin_usd_price: Option<BigDecimal>,
+        other_coin_usd_price: Option<BigDecimal>,
+    ) -> MySwapsResult<()>;
 
     async fn my_recent_swaps_with_filters(
         &self,
@@ -67,6 +76,8 @@ mod native_impl {
             other_coin: &str,
             uuid: Uuid,
             started_at: u64,
+            my_coin_usd_price: Option<BigDecimal>,
+            other_coin_usd_price: Option<BigDecimal>,
         ) -> MySwapsResult<()> {
             Ok(insert_new_swap(
                 &self.ctx,
@@ -74,6 +85,8 @@ mod native_impl {
                 other_coin,
                 &uuid.to_string(),
                 &started_at.to_string(),
+                my_coin_usd_price,
+                other_coin_usd_price,
             )?)
         }
 
@@ -156,6 +169,8 @@ mod wasm_impl {
             other_coin: &str,
             uuid: Uuid,
             started_at: u64,
+            my_coin_usd_price: Option<BigDecimal>,
+            other_coin_usd_price: Option<BigDecimal>,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
             let db = swap_ctx.swap_db().await?;
@@ -167,6 +182,8 @@ mod wasm_impl {
                 my_coin: my_coin.to_owned(),
                 other_coin: other_coin.to_owned(),
                 started_at: started_at as u32,
+                my_coin_usd_price,
+                other_coin_usd_price,
             };
             my_swaps_table.add_item(&item).await?;
             Ok(())
@@ -354,15 +371,30 @@ mod wasm_tests {
             let my_coin = *coins.choose(&mut rng).unwrap();
             let other_coin = *coins.choose(&mut rng).unwrap();
             let started_at = rng.gen_range(timestamp_range.start, timestamp_range.end);
+            let coins_price = swap_coins_price(Some(&"".to_string()), Some(&"".to_string())).await;
 
-            if is_applied(&filters, my_coin, other_coin, started_at) {
+            if is_applied(
+                &filters,
+                my_coin,
+                other_coin,
+                started_at,
+                &coins_price.0.clone(),
+                &coins_price.1.clone(),
+            ) {
                 expected_uuids.insert(OrderedUuid {
                     started_at: started_at as u32,
                     uuid,
                 });
             }
             my_swaps
-                .save_new_swap(my_coin, other_coin, uuid, started_at)
+                .save_new_swap(
+                    my_coin,
+                    other_coin,
+                    uuid,
+                    started_at,
+                    &coins_price.0.clone(),
+                    &coins_price.1.clone(),
+                )
                 .await
                 .expect("!MySwapsStorage::save_new_swap");
         }

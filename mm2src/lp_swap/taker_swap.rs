@@ -75,8 +75,10 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             uuid: swap.uuid,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
+            maker_coin_usd_price: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
             taker_amount: Some(swap.taker_amount.to_decimal()),
+            taker_coin_usd_price: Some(swap.taker_amount.to_decimal()),
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
@@ -140,8 +142,10 @@ pub struct TakerSavedSwap {
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
+    pub maker_coin_usd_price: Option<BigDecimal>,
     pub maker_coin: Option<String>,
     pub taker_amount: Option<BigDecimal>,
+    pub taker_coin_usd_price: Option<BigDecimal>,
     pub taker_coin: Option<String>,
     pub gui: Option<String>,
     pub mm_version: Option<String>,
@@ -184,7 +188,9 @@ impl TakerSavedSwap {
                     my_coin: data.taker_coin.clone(),
                     other_coin: data.maker_coin.clone(),
                     my_amount: data.taker_amount.clone(),
+                    my_price_usd: data.maker_coin_usd_price.clone(),
                     other_amount: data.maker_amount.clone(),
+                    other_price_usd: data.taker_coin_usd_price.clone(),
                     started_at: data.started_at,
                 }),
                 _ => None,
@@ -408,6 +414,8 @@ pub struct TakerSwapData {
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
     pub taker_amount: BigDecimal,
+    pub maker_coin_usd_price: Option<BigDecimal>,
+    pub taker_coin_usd_price: Option<BigDecimal>,
     pub maker_payment_confirmations: u64,
     pub maker_payment_requires_nota: Option<bool>,
     pub taker_payment_confirmations: u64,
@@ -466,6 +474,8 @@ pub struct TakerSwap {
     taker_coin: MmCoinEnum,
     maker_amount: MmNumber,
     taker_amount: MmNumber,
+    maker_coin_usd_price: Option<BigDecimal>,
+    taker_coin_usd_price: Option<BigDecimal>,
     my_persistent_pub: H264,
     maker: bits256,
     uuid: Uuid,
@@ -696,6 +706,8 @@ impl TakerSwap {
         maker: bits256,
         maker_amount: MmNumber,
         taker_amount: MmNumber,
+        maker_coin_usd_price: Option<BigDecimal>,
+        taker_coin_usd_price: Option<BigDecimal>,
         my_persistent_pub: H264,
         uuid: Uuid,
         my_order_uuid: Option<Uuid>,
@@ -710,6 +722,8 @@ impl TakerSwap {
             taker_coin,
             maker_amount,
             taker_amount,
+            maker_coin_usd_price,
+            taker_coin_usd_price,
             my_persistent_pub,
             maker,
             uuid,
@@ -852,6 +866,15 @@ impl TakerSwap {
         let maker_coin_htlc_key_pair = self.maker_coin.get_htlc_key_pair();
         let taker_coin_htlc_key_pair = self.taker_coin.get_htlc_key_pair();
 
+        let maker_coin_usd_price = match &self.maker_coin_usd_price {
+            Some(res) => Some(res.to_owned()),
+            None => None,
+        };
+        let taker_coin_usd_price = match &self.taker_coin_usd_price {
+            Some(res) => Some(res.to_owned()),
+            None => None,
+        };
+
         let data = TakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
@@ -860,6 +883,8 @@ impl TakerSwap {
             lock_duration: self.payment_locktime,
             maker_amount: self.maker_amount.to_decimal(),
             taker_amount: self.taker_amount.to_decimal(),
+            maker_coin_usd_price,
+            taker_coin_usd_price,
             maker_payment_confirmations: self.conf_settings.maker_coin_confs,
             maker_payment_requires_nota: Some(self.conf_settings.maker_coin_nota),
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
@@ -1397,11 +1422,21 @@ impl TakerSwap {
                 .unwrap_or_else(|| taker_coin.requires_notarization()),
         };
 
+        let maker_coin_usd_price = match data.maker_coin_usd_price.clone() {
+            Some(res) => Some(res.into()),
+            None => None,
+        };
+        let taker_coin_usd_price = match data.taker_coin_usd_price.clone() {
+            Some(res) => Some(res.into()),
+            None => None,
+        };
         let swap = TakerSwap::new(
             ctx,
             maker,
             data.maker_amount.clone().into(),
             data.taker_amount.clone().into(),
+            maker_coin_usd_price,
+            taker_coin_usd_price,
             my_persistent_pub,
             saved.uuid,
             Some(saved.uuid),

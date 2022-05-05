@@ -1021,6 +1021,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             sender_pubkey: H256Json::default(),
             match_by: MatchBy::Any,
             conf_settings: None,
+
             base_protocol_info: None,
             rel_protocol_info: None,
         },

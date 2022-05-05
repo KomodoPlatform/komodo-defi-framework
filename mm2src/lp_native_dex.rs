@@ -45,6 +45,8 @@ use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
 
+use super::lp_swap::{init_swaps_context, SwapsInitError};
+
 cfg_native! {
     use common::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use common::ip_addr::myipaddr;
@@ -172,6 +174,17 @@ impl From<OrdermatchInitError> for MmInitError {
                 MmInitError::ErrorDeserializingConfig { field, error }
             },
             OrdermatchInitError::Internal(internal) => MmInitError::Internal(internal),
+        }
+    }
+}
+
+impl From<SwapsInitError> for MmInitError {
+    fn from(e: SwapsInitError) -> Self {
+        match e {
+            SwapsInitError::ErrorDeserializingConfig { field, error } => {
+                MmInitError::ErrorDeserializingConfig { field, error }
+            },
+            SwapsInitError::Internal(internal) => MmInitError::Internal(internal),
         }
     }
 }
@@ -359,6 +372,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         migrate_db(&ctx)?;
     }
 
+    init_swaps_context(&ctx)?;
     init_ordermatch_context(&ctx)?;
     init_message_service(&ctx).await?;
     init_p2p(ctx.clone()).await?;

@@ -60,6 +60,7 @@ use async_std::sync as async_std_sync;
 use bigdecimal::BigDecimal;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
+use common::mm_error::prelude::MapToMmResult;
 use common::mm_error::MmError;
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
@@ -122,6 +123,18 @@ cfg_wasm32! {
     use swap_wasm_db::{InitDbResult, SwapDb};
 
     pub type SwapDbLocked<'a> = DbLocked<'a, SwapDb>;
+}
+
+pub type SwapsInitResult<T> = Result<T, MmError<SwapsInitError>>;
+
+#[derive(Debug, Deserialize, Display, Serialize)]
+pub enum SwapsInitError {
+    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    ErrorDeserializingConfig {
+        field: String,
+        error: String,
+    },
+    Internal(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -196,6 +209,7 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         Ok(u) => u,
         Err(_) => return,
     };
+
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
@@ -349,8 +363,72 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
+    /// The map from coin original ticker to the price ticker
+    pub price_tickers: Mutex<HashMap<String, String>>,
+    /// The map from swaps ticker to original tickers having it in the config
+    pub original_tickers: Mutex<HashMap<String, HashSet<String>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
+}
+
+pub fn init_swaps_context(ctx: &MmArc) -> SwapsInitResult<()> {
+    // Helper
+    #[derive(Deserialize)]
+    struct CoinConf {
+        coin: String,
+        price_ticker: Option<String>,
+    }
+
+    let (shutdown_tx, shutdown_rx) = async_std_sync::channel(1);
+    let mut shutdown_tx = Some(shutdown_tx);
+    ctx.on_stop(Box::new(move || {
+        if let Some(shutdown_tx) = shutdown_tx.take() {
+            info!("on_stop] firing shutdown_tx!");
+            spawn(async move {
+                shutdown_tx.send(()).await;
+            });
+            Ok(())
+        } else {
+            ERR!("on_stop callback called twice!")
+        }
+    }));
+
+    let coins: Vec<CoinConf> =
+        json::from_value(ctx.conf["coins"].clone()).map_to_mm(|e| SwapsInitError::ErrorDeserializingConfig {
+            field: "coins".to_owned(),
+            error: e.to_string(),
+        })?;
+    let price_tickers = Mutex::new(HashMap::new());
+    let original_tickers = Mutex::new(HashMap::new());
+    for coin in coins {
+        if let Some(price_ticker) = coin.price_ticker {
+            price_tickers
+                .lock()
+                .expect("Price Tickers first call")
+                .insert(coin.coin.clone(), price_ticker.clone());
+            original_tickers
+                .lock()
+                .expect("Original Tickers")
+                .entry(price_ticker.to_string())
+                .or_insert_with(HashSet::new)
+                .insert(coin.coin.clone().to_string());
+        }
+    }
+
+    let swaps_context = SwapsContext {
+        running_swaps: Mutex::new(vec![]),
+        banned_pubkeys: Mutex::new(HashMap::new()),
+        shutdown_rx,
+        swap_msgs: Mutex::new(HashMap::new()),
+        price_tickers,
+        original_tickers,
+        #[cfg(target_arch = "wasm32")]
+        swap_db: ConstructibleDb::new(ctx),
+    };
+
+    from_ctx(&ctx.swaps_ctx, move || Ok(swaps_context))
+        .map(|_| ())
+        .map_to_mm(SwapsInitError::Internal)
 }
 
 impl SwapsContext {
@@ -378,6 +456,8 @@ impl SwapsContext {
                 swap_msgs: Mutex::new(HashMap::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
+                price_tickers: Mutex::new(HashMap::new()),
+                original_tickers: Mutex::new(HashMap::new()),
             })
         })))
     }
@@ -385,6 +465,14 @@ impl SwapsContext {
     pub fn init_msg_store(&self, uuid: Uuid, accept_only_from: bits256) {
         let store = SwapMsgStore::new(accept_only_from);
         self.swap_msgs.lock().unwrap().insert(uuid, store);
+    }
+
+    fn price_ticker(&self, ticker: &str) -> Option<String> {
+        self.price_tickers.lock().expect("Price Tickers").get(ticker).cloned()
+    }
+
+    fn price_ticker_bypass(&self, ticker: &str) -> String {
+        self.price_ticker(ticker).unwrap_or_else(|| ticker.to_owned())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -699,16 +787,26 @@ pub async fn insert_new_swap_to_db(
     other_coin: &str,
     uuid: Uuid,
     started_at: u64,
+    my_coin_usd_price: &Option<BigDecimal>,
+    other_coin_usd_price: &Option<BigDecimal>,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .save_new_swap(my_coin, other_coin, uuid, started_at)
+        .save_new_swap(
+            my_coin,
+            other_coin,
+            uuid,
+            started_at,
+            my_coin_usd_price.to_owned(),
+            other_coin_usd_price.to_owned(),
+        )
         .await
         .map_err(|e| ERRL!("{}", e))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap)
+    let ctx = &ctx.sqlite_connection();
+    crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -725,8 +823,11 @@ pub struct MySwapInfo {
     pub my_coin: String,
     pub other_coin: String,
     pub my_amount: BigDecimal,
+    pub my_price_usd: Option<BigDecimal>,
     pub other_amount: BigDecimal,
+    pub other_price_usd: Option<BigDecimal>,
     pub started_at: u64,
+    // pub fiat_price: BigDecimal,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -1153,12 +1254,15 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         match swap.save_to_db(&ctx).await {
             Ok(_) => {
                 if let Some(info) = swap.get_my_info() {
+                    debug!("FIAT import_swaps");
                     if let Err(e) = insert_new_swap_to_db(
                         ctx.clone(),
                         &info.my_coin,
                         &info.other_coin,
                         *swap.uuid(),
                         info.started_at,
+                        &info.my_price_usd,
+                        &info.other_price_usd,
                     )
                     .await
                     {
