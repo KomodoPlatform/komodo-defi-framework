@@ -97,6 +97,72 @@ macro_rules! try_f {
     };
 }
 
+/// `TransactionErr` compatible `try_fus` macro.
+macro_rules! try_tx_fus {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!("{:?}", err)))),
+        }
+    };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Box::new(futures01::future::err(crate::TransactionErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    ERRL!("{:?}", err),
+                )))
+            },
+        }
+    };
+}
+
+/// `TransactionErr` compatible `try_s` macro.
+macro_rules! try_tx_s {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Err(crate::TransactionErr::Plain(format!(
+                    "{}:{}] {:?}",
+                    file!(),
+                    line!(),
+                    err
+                )))
+            },
+        }
+    };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Err(crate::TransactionErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    format!("{}:{}] {:?}", file!(), line!(), err),
+                ))
+            },
+        }
+    };
+}
+
+/// `TransactionErr:Plain` compatible `ERR` macro.
+macro_rules! TX_PLAIN_ERR {
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
+}
+
+/// `TransactionErr:TxRecoverable` compatible `ERR` macro.
+#[allow(unused_macros)]
+macro_rules! TX_RECOVERABLE_ERR {
+    ($tx: expr, $format: expr, $($args: tt)+) => {
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
+    };
+    ($tx: expr, $format: expr) => {
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format)))
+    };
+}
+
 macro_rules! ok_or_continue_after_sleep {
     ($e:expr, $delay: ident) => {
         match $e {
@@ -322,7 +388,36 @@ impl Deref for TransactionEnum {
     }
 }
 
-pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = String> + Send>;
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum TransactionErr {
+    /// Keeps transactions while throwing errors.
+    TxRecoverable(TransactionEnum, String),
+    /// Simply for plain error messages.
+    Plain(String),
+}
+
+impl TransactionErr {
+    /// Returns transaction if the error includes it.
+    #[inline]
+    pub fn get_tx(&self) -> Option<TransactionEnum> {
+        match self {
+            TransactionErr::TxRecoverable(tx, _) => Some(tx.clone()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    /// Returns plain text part of error.
+    pub fn get_plain_text_format(&self) -> String {
+        match self {
+            TransactionErr::TxRecoverable(_, err) => err.to_string(),
+            TransactionErr::Plain(err) => err.to_string(),
+        }
+    }
+}
+
+pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -527,6 +622,9 @@ pub trait MarketCoinOps {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
+
+    /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -814,7 +912,7 @@ impl Default for TransactionType {
 /// Transaction details
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionDetails {
-    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
     pub tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: String,
@@ -1766,6 +1864,21 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::SolanaCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::SplToken(ref c) => c,
+        }
+    }
+}
+
+impl MmCoinEnum {
+    pub fn is_utxo_in_native_mode(&self) -> bool {
+        match self {
+            MmCoinEnum::UtxoCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::QtumCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Qrc20Coin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Bch(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::SlpToken(ref c) => c.as_ref().rpc_client.is_native(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+            MmCoinEnum::ZCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            _ => false,
         }
     }
 }

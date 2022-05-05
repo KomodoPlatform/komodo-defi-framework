@@ -92,11 +92,12 @@ use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMet
             PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy, RawTransactionFut, RawTransactionRequest,
             RawTransactionResult, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, TransactionFut, UnexpectedDerivationMethod, WithdrawError, WithdrawRequest};
+            TransactionEnum, UnexpectedDerivationMethod, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
+use crate::TransactionErr;
 use utxo_block_header_storage::BlockHeaderStorage;
 #[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -1470,12 +1471,15 @@ pub fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
         })
 }
 
-async fn send_outputs_from_my_address_impl<T>(coin: T, outputs: Vec<TransactionOutput>) -> Result<UtxoTx, String>
+async fn send_outputs_from_my_address_impl<T>(
+    coin: T,
+    outputs: Vec<TransactionOutput>,
+) -> Result<UtxoTx, TransactionErr>
 where
     T: UtxoCommonOps,
 {
-    let my_address = try_s!(coin.as_ref().derivation_method.iguana_or_err());
-    let (unspents, recently_sent_txs) = try_s!(coin.list_unspent_ordered(my_address).await);
+    let my_address = try_tx_s!(coin.as_ref().derivation_method.iguana_or_err());
+    let (unspents, recently_sent_txs) = try_tx_s!(coin.list_unspent_ordered(my_address).await);
     generate_and_send_tx(&coin, unspents, None, FeePolicy::SendExact, recently_sent_txs, outputs).await
 }
 
@@ -1487,12 +1491,12 @@ async fn generate_and_send_tx<T>(
     fee_policy: FeePolicy,
     mut recently_spent: AsyncMutexGuard<'_, RecentlySpentOutPoints>,
     outputs: Vec<TransactionOutput>,
-) -> Result<UtxoTx, String>
+) -> Result<UtxoTx, TransactionErr>
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
-    let my_address = try_s!(coin.as_ref().derivation_method.iguana_or_err());
-    let key_pair = try_s!(coin.as_ref().priv_key_policy.key_pair_or_err());
+    let my_address = try_tx_s!(coin.as_ref().derivation_method.iguana_or_err());
+    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.key_pair_or_err());
 
     let mut builder = UtxoTxBuilder::new(coin)
         .add_available_inputs(unspents)
@@ -1501,7 +1505,7 @@ where
     if let Some(required) = required_inputs {
         builder = builder.add_required_inputs(required);
     }
-    let (unsigned, _) = try_s!(builder.build().await);
+    let (unsigned, _) = try_tx_s!(builder.build().await);
 
     let spent_unspents = unsigned
         .inputs
@@ -1519,7 +1523,7 @@ where
     };
 
     let prev_script = Builder::build_p2pkh(&my_address.hash);
-    let signed = try_s!(sign_tx(
+    let signed = try_tx_s!(sign_tx(
         unsigned,
         key_pair,
         prev_script,
@@ -1527,7 +1531,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    try_s!(coin.broadcast_tx(&signed).await);
+    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
 
     recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
 

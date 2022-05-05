@@ -116,6 +116,8 @@ pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
+pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
+
 cfg_wasm32! {
     use common::indexed_db::{ConstructibleDb, DbLocked};
     use swap_wasm_db::{InitDbResult, SwapDb};
@@ -190,6 +192,17 @@ pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_priv
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
 
+/// Broadcast the tx message once
+pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<KeyPair>) {
+    let (p2p_private, from) = match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
+    };
+
+    let encoded_msg = encode_and_sign(&msg.tx_hex(), &p2p_private).unwrap();
+    broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
+}
+
 pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
     let uuid = match Uuid::from_str(topic) {
         Ok(u) => u,
@@ -236,6 +249,16 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+
+/// Formats and returns a topic format for `txhlp`.
+///
+/// # Usage
+/// ```ignore
+/// let topic = tx_helper_topic("BTC");
+/// // Returns topic format `txhlp/BTC` as String type.
+/// ```
+#[inline(always)]
+pub fn tx_helper_topic(coin: &str) -> String { pub_sub_topic(TX_HELPER_PREFIX, coin) }
 
 async fn recv_swap_msg<T>(
     ctx: MmArc,

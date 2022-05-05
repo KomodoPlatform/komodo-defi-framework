@@ -13,7 +13,8 @@ use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
+            TransactionFut, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
+            WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -466,8 +467,14 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
+    #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
+    }
+
+    #[inline(always)]
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
     fn wait_for_confirmations(

@@ -467,7 +467,7 @@ impl Platform {
             )
             .compat()
             .await
-            .map_to_mm(SaveChannelClosingError::WaitForFundingTxSpendError)?;
+            .map_to_mm(|e| SaveChannelClosingError::WaitForFundingTxSpendError(e.get_plain_text_format()))?;
 
         let closing_tx_hash = format!("{:02x}", closing_tx.tx_hash());
 

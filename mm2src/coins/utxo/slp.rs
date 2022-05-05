@@ -13,9 +13,9 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
             RawTransactionRequest, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
-            TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -409,8 +409,8 @@ impl SlpToken {
         Ok((preimage, recently_spent))
     }
 
-    pub async fn send_slp_outputs(&self, slp_outputs: Vec<SlpOutput>) -> Result<UtxoTx, String> {
-        let (preimage, recently_spent) = try_s!(self.generate_slp_tx_preimage(slp_outputs).await);
+    pub async fn send_slp_outputs(&self, slp_outputs: Vec<SlpOutput>) -> Result<UtxoTx, TransactionErr> {
+        let (preimage, recently_spent) = try_tx_s!(self.generate_slp_tx_preimage(slp_outputs).await);
         generate_and_send_tx(
             self,
             preimage.available_bch_inputs,
@@ -429,11 +429,11 @@ impl SlpToken {
         time_lock: u32,
         secret_hash: &[u8],
         amount: u64,
-    ) -> Result<UtxoTx, String> {
+    ) -> Result<UtxoTx, TransactionErr> {
         let payment_script = payment_script(time_lock, secret_hash, my_pub, other_pub);
         let script_pubkey = ScriptBuilder::build_p2sh(&dhash160(&payment_script).into()).to_bytes();
         let slp_out = SlpOutput { amount, script_pubkey };
-        let (preimage, recently_spent) = try_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
+        let (preimage, recently_spent) = try_tx_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
         generate_and_send_tx(
             self,
             preimage.available_bch_inputs,
@@ -1111,16 +1111,27 @@ impl MarketCoinOps for SlpToken {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let coin = self.clone();
+        let selfi = self.clone();
         let tx = tx.to_owned();
         let fut = async move {
             let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
-            let tx = deserialize(bytes.as_slice())
-                .map_to_mm(|e| e)
-                .map_err(|e| format!("{:?}", e))?;
-            let hash = coin.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
+            let tx = try_s!(deserialize(bytes.as_slice()));
+            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
             Ok(format!("{:?}", hash))
         };
+
+        Box::new(fut.boxed().compat())
+    }
+
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        let selfi = self.clone();
+        let bytes = tx.to_owned();
+        let fut = async move {
+            let tx = try_s!(deserialize(bytes.as_slice()));
+            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
+            Ok(format!("{:?}", hash))
+        };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -1169,13 +1180,13 @@ impl MarketCoinOps for SlpToken {
 impl SwapOps for SlpToken {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let coin = self.clone();
-        let fee_pubkey = try_fus!(Public::from_slice(fee_addr));
+        let fee_pubkey = try_tx_fus!(Public::from_slice(fee_addr));
         let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals()));
+        let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
 
         let fut = async move {
             let slp_out = SlpOutput { amount, script_pubkey };
-            let (preimage, recently_spent) = try_s!(coin.generate_slp_tx_preimage(vec![slp_out]).await);
+            let (preimage, recently_spent) = try_tx_s!(coin.generate_slp_tx_preimage(vec![slp_out]).await);
             generate_and_send_tx(
                 &coin,
                 preimage.available_bch_inputs,
@@ -1198,14 +1209,14 @@ impl SwapOps for SlpToken {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        let maker_pub = try_fus!(Public::from_slice(maker_pub));
-        let taker_pub = try_fus!(Public::from_slice(taker_pub));
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals()));
+        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
+        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
+        let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
         let secret_hash = secret_hash.to_owned();
 
         let coin = self.clone();
         let fut = async move {
-            let tx = try_s!(
+            let tx = try_tx_s!(
                 coin.send_htlc(&maker_pub, &taker_pub, time_lock, &secret_hash, amount)
                     .await
             );
@@ -1223,14 +1234,14 @@ impl SwapOps for SlpToken {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        let taker_pub = try_fus!(Public::from_slice(taker_pub));
-        let maker_pub = try_fus!(Public::from_slice(maker_pub));
-        let amount = try_fus!(sat_from_big_decimal(&amount, self.decimals()));
+        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
+        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
+        let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
         let secret_hash = secret_hash.to_owned();
 
         let coin = self.clone();
         let fut = async move {
-            let tx = try_s!(
+            let tx = try_tx_s!(
                 coin.send_htlc(&taker_pub, &maker_pub, time_lock, &secret_hash, amount)
                     .await
             );
@@ -1249,13 +1260,13 @@ impl SwapOps for SlpToken {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = taker_payment_tx.to_owned();
-        let taker_pub = try_fus!(Public::from_slice(taker_pub));
+        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let secret = secret.to_owned();
-        let htlc_keypair = try_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
         let coin = self.clone();
 
         let fut = async move {
-            let tx = try_s!(
+            let tx = try_tx_s!(
                 coin.spend_htlc(&tx, &taker_pub, time_lock, &secret, &htlc_keypair)
                     .await
             );
@@ -1274,13 +1285,13 @@ impl SwapOps for SlpToken {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = maker_payment_tx.to_owned();
-        let maker_pub = try_fus!(Public::from_slice(maker_pub));
+        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let secret = secret.to_owned();
-        let htlc_keypair = try_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
         let coin = self.clone();
 
         let fut = async move {
-            let tx = try_s!(
+            let tx = try_tx_s!(
                 coin.spend_htlc(&tx, &maker_pub, time_lock, &secret, &htlc_keypair)
                     .await
             );
@@ -1299,9 +1310,9 @@ impl SwapOps for SlpToken {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = taker_payment_tx.to_owned();
-        let maker_pub = try_fus!(Public::from_slice(maker_pub));
+        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let secret_hash = secret_hash.to_owned();
-        let keypair = try_fus!(key_pair_from_secret(htlc_privkey));
+        let keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
         let coin = self.clone();
 
         let fut = async move {
@@ -1311,7 +1322,7 @@ impl SwapOps for SlpToken {
             );
             Ok(tx.into())
         };
-        Box::new(fut.boxed().compat())
+        Box::new(fut.boxed().compat().map_err(TransactionErr::Plain))
     }
 
     fn send_maker_refunds_payment(
@@ -1324,13 +1335,13 @@ impl SwapOps for SlpToken {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = maker_payment_tx.to_owned();
-        let taker_pub = try_fus!(Public::from_slice(taker_pub));
+        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let secret_hash = secret_hash.to_owned();
-        let keypair = try_fus!(key_pair_from_secret(htlc_privkey));
+        let keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
         let coin = self.clone();
 
         let fut = async move {
-            let tx = try_s!(
+            let tx = try_tx_s!(
                 coin.refund_htlc(&tx, &taker_pub, time_lock, &secret_hash, &keypair)
                     .await
             );
@@ -1810,8 +1821,9 @@ pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, Mm
 #[cfg(test)]
 mod slp_tests {
     use super::*;
-    use crate::utxo::bch::tbch_coin_for_test;
+    use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
     use common::block_on;
+    use std::mem::discriminant;
 
     // https://slp.dev/specs/slp-token-type-1/#examples
     #[test]
@@ -2026,7 +2038,7 @@ mod slp_tests {
             script_pubkey: ScriptBuilder::build_p2sh(&dhash160(&htlc_script).into()).into(),
         };
 
-        let err = block_on(generate_and_send_tx(
+        let tx_err = block_on(generate_and_send_tx(
             &fusd,
             unspents,
             None,
@@ -2035,6 +2047,12 @@ mod slp_tests {
             vec![slp_send_op_return_out, invalid_slp_send_out],
         ))
         .unwrap_err();
+
+        let err = match tx_err.clone() {
+            TransactionErr::TxRecoverable(_tx, err) => err,
+            TransactionErr::Plain(err) => err,
+        };
+
         println!("{:?}", err);
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
 
@@ -2054,11 +2072,16 @@ mod slp_tests {
             142, 135, 205, 228, 173, 0, 0, 0, 0, 0, 25, 118, 169, 20, 140, 255, 252, 36, 9, 208, 99, 67, 125, 106, 168,
             183, 90, 0, 155, 155, 165, 27, 113, 252, 136, 172, 216, 36, 92, 97,
         ];
-        let tx_bytes_str = hex::encode(tx_bytes);
 
+        let tx_bytes_str = hex::encode(tx_bytes);
         let err = fusd.send_raw_tx(&tx_bytes_str).wait().unwrap_err();
         println!("{:?}", err);
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
+
+        let err2 = fusd.send_raw_tx_bytes(tx_bytes).wait().unwrap_err();
+        println!("{:?}", err2);
+        assert!(err2.contains("is not valid with reason outputs greater than inputs"));
+        assert_eq!(err, err2);
 
         let utxo_tx: UtxoTx = deserialize(tx_bytes).unwrap();
         let err = block_on(fusd.broadcast_tx(&utxo_tx)).unwrap_err();
@@ -2066,6 +2089,15 @@ mod slp_tests {
             BroadcastTxErr::Other(err) => assert!(err.contains("is not valid with reason outputs greater than inputs")),
             e @ _ => panic!("Unexpected err {:?}", e),
         };
+
+        // The error variant should equal to `TxRecoverable`
+        assert_eq!(
+            discriminant(&tx_err),
+            discriminant(&TransactionErr::TxRecoverable(
+                TransactionEnum::from(utxo_tx),
+                String::new()
+            ))
+        );
     }
 
     #[test]

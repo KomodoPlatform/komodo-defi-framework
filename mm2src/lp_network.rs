@@ -16,11 +16,12 @@
 //  lp_network.rs
 //  marketmaker
 //
+use coins::lp_coinfind;
 use common::executor::spawn;
-use common::log;
 use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_error::prelude::*;
 use common::mm_metrics::{ClockOps, MetricsOps};
+use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
@@ -148,6 +149,16 @@ async fn process_p2p_message(
                 lp_swap::process_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await;
                 to_propagate = true;
             },
+            Some(lp_swap::TX_HELPER_PREFIX) => {
+                if let Some(pair) = split.next() {
+                    if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
+                        match coin.send_raw_tx_bytes(&message.data).compat().await {
+                            Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
+                            Err(e) => log::error!("Broadcast transaction failed. {}", e),
+                        }
+                    }
+                }
+            },
             None | Some(_) => (),
         }
     }
@@ -160,6 +171,7 @@ async fn process_p2p_message(
             &message.data,
             i_am_relay,
         );
+
         if process_fut.await {
             to_propagate = true;
         }
