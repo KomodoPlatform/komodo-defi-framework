@@ -35,6 +35,9 @@ test = false
 doctest = false
 bench = false
 
+[profile.test]
+debug-assertions = false
+
 [profile.release]
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true

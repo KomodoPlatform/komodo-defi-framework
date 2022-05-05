@@ -1,5 +1,5 @@
 use super::ZcoinConsensusParams;
-use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut};
+use crate::utxo::rpc_clients::{NativeClient, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
@@ -7,6 +7,7 @@ use common::log::error;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
+use db_common::sqlite::query_single_row;
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use derive_more::Display;
 use http::Uri;
@@ -24,6 +25,7 @@ use tonic::transport::{Channel, ClientTlsConfig};
 use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
 use zcash_client_backend::data_api::error::Error as ChainError;
 use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
+use zcash_client_backend::encoding::decode_payment_address;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::wallet::AccountId;
 use zcash_client_sqlite::error::SqliteClientError;
@@ -31,6 +33,7 @@ use zcash_client_sqlite::wallet::get_balance;
 use zcash_client_sqlite::wallet::init::{init_accounts_table, init_wallet_db};
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::constants::mainnet;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
@@ -139,15 +142,6 @@ impl ZRpcOps for NativeClient {
     }
 }
 
-impl AsRef<dyn ZRpcOps + Send + Sync> for UtxoRpcClientEnum {
-    fn as_ref(&self) -> &(dyn ZRpcOps + Send + Sync + 'static) {
-        match self {
-            UtxoRpcClientEnum::Native(native) => native,
-            UtxoRpcClientEnum::Electrum(_) => panic!("Electrum client does not support ZRpcOps"),
-        }
-    }
-}
-
 struct CompactBlockRow {
     height: BlockHeight,
     data: Vec<u8>,
@@ -214,13 +208,14 @@ impl BlockDb {
     }
 
     fn get_latest_block(&self) -> Result<i64, MmError<db_common::sqlite::rusqlite::Error>> {
-        self.0
-            .query_row(
-                "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
-                db_common::sqlite::rusqlite::NO_PARAMS,
-                |row| row.get(0),
-            )
-            .map_err(MmError::new)
+        Ok(query_single_row(
+            &self.0,
+            "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
+            db_common::sqlite::rusqlite::NO_PARAMS,
+            |row| row.get(0),
+        )
+        .map_err(MmError::new)?
+        .unwrap_or(0))
     }
 
     fn insert_block(
@@ -380,7 +375,7 @@ pub async fn update_blocks_cache(
         let mut response = grpc_client.get_block_range(request).await?;
 
         while let Ok(Some(block)) = response.get_mut().message().await {
-            println!("Got block {:?}", block);
+            common::log::info!("Got block {:?}", block);
             db.lock()
                 .blocks_db
                 .insert_block(block.height as u32, block.encode_to_vec())?;
@@ -466,6 +461,7 @@ async fn light_wallet_db_sync_loop(
 fn try_grpc() {
     use common::block_on;
     use std::str::FromStr;
+    use std::time::Duration;
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_primitives::consensus::Parameters;
@@ -495,11 +491,12 @@ fn try_grpc() {
 
     let db = client.db.lock();
 
-    let notes = db
+    let mut notes = db
         .wallet_db
         .get_spendable_notes(AccountId(0), BlockHeight::from_u32(current_block as u32))
         .unwrap();
 
+    notes.sort_by(|a, b| b.note_value.cmp(&a.note_value));
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 
@@ -507,7 +504,8 @@ fn try_grpc() {
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();
-    let amount_to_send = notes[0].note_value - Amount::from_i64(1000).unwrap();
+    let amount_to_send = Amount::from_i64(100000000).unwrap();
+    let change = notes[0].note_value - amount_to_send - Amount::from_i64(1000).unwrap();
     for spendable_note in notes.into_iter().take(1) {
         let note = from_addr
             .create_note(spendable_note.note_value.into(), spendable_note.rseed)
@@ -522,9 +520,16 @@ fn try_grpc() {
             .unwrap();
     }
 
+    let to_address = decode_payment_address(
+        mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+        "zs1g6z7dcfp5wg085fuzqlauf8d85ct4hke7xmwxe0djnq48909yfsj66hzj0fjgfgzynddud8n04g",
+    )
+    .unwrap()
+    .unwrap();
     tx_builder
-        .add_sapling_output(None, from_addr, amount_to_send, None)
+        .add_sapling_output(None, to_address, amount_to_send, None)
         .unwrap();
+    tx_builder.add_sapling_output(None, from_addr, change, None).unwrap();
 
     let prover = LocalTxProver::with_default_location().unwrap();
     let (transaction, _) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();
@@ -559,10 +564,25 @@ fn try_grpc() {
     println!("{:?}", response);
 }
 
-impl ZRpcOps for ZcoinLightClient {
-    fn z_get_balance(&self, _address: &str, _min_conf: u32) -> UtxoRpcFut<MmNumber> { todo!() }
+impl ZcoinRpcClient {
+    pub async fn my_balance_sat(&self) -> Result<u64, ()> {
+        match self {
+            ZcoinRpcClient::Native(_) => unimplemented!(),
+            ZcoinRpcClient::Light(light) => {
+                let db = light.db.clone();
+                async_blocking(move || {
+                    get_balance(&db.lock().wallet_db, AccountId::default())
+                        .map(|a| a.into())
+                        .map_err(|e| ())
+                })
+                .await
+            },
+        }
+    }
 
-    fn z_list_unspent(
+    pub fn z_get_balance(&self, _address: &str, _min_conf: u32) -> UtxoRpcFut<MmNumber> { todo!() }
+
+    pub fn z_list_unspent(
         &self,
         _min_conf: u32,
         _max_conf: u32,
@@ -572,5 +592,5 @@ impl ZRpcOps for ZcoinLightClient {
         todo!()
     }
 
-    fn z_import_key(&self, _key: &str) -> UtxoRpcFut<()> { todo!() }
+    pub fn z_import_key(&self, _key: &str) -> UtxoRpcFut<()> { todo!() }
 }

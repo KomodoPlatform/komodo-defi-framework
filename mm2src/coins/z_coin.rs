@@ -70,7 +70,7 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use z_rpc::{ZRpcOps, ZUnspent, ZcoinLightClient, ZcoinRpcClient};
+use z_rpc::{ZUnspent, ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
 use crate::z_coin::z_rpc::{LightClientSyncState, ZcoinNativeClient};
@@ -236,15 +236,12 @@ pub struct ZOutput {
 }
 
 impl ZCoin {
-    #[inline(always)]
-    pub fn z_rpc(&self) -> &(dyn ZRpcOps + Send + Sync) { self.utxo_arc.rpc_client.as_ref() }
-
-    pub fn rpc_client(&self) -> &ZcoinRpcClient { &self.z_fields.z_rpc }
+    pub fn z_rpc(&self) -> &ZcoinRpcClient { &self.z_fields.z_rpc }
 
     pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
 
     pub fn is_sapling_state_synced(&self) -> bool {
-        match self.rpc_client() {
+        match self.z_rpc() {
             ZcoinRpcClient::Native(n) => n.sapling_state_synced.load(AtomicOrdering::Relaxed),
             ZcoinRpcClient::Light(l) => match *l.sync_state.lock() {
                 LightClientSyncState::Syncing => false,
@@ -465,7 +462,7 @@ impl ZCoin {
         note: &Note,
         tx_height: u32,
     ) -> Result<IncrementalWitness<Node>, MmError<GetUnspentWitnessErr>> {
-        let client = match self.rpc_client() {
+        let client = match self.z_rpc() {
             ZcoinRpcClient::Native(n) => n,
             _ => unimplemented!(),
         };
@@ -648,7 +645,7 @@ fn insert_block_state(conn: &Connection, state: SaplingBlockState) -> Result<(),
 }
 
 async fn sapling_state_cache_loop(coin: ZCoin) {
-    let native_client = match coin.rpc_client() {
+    let native_client = match coin.z_rpc() {
         ZcoinRpcClient::Native(n) => n,
         _ => return,
     };
@@ -668,7 +665,7 @@ async fn sapling_state_cache_loop(coin: ZCoin) {
 
     let zero_root = Some(H256Json::default());
     while let Some(coin) = ZCoin::from_weak_parts(&utxo_weak, &z_fields_weak) {
-        let native_client = match coin.rpc_client() {
+        let native_client = match coin.z_rpc() {
             ZcoinRpcClient::Native(n) => n,
             _ => return,
         };
@@ -790,21 +787,20 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let z_rpc = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
                 let db_name = format!("{}_CACHE.db", self.ticker);
-                let mut db_dir_path = self.db_dir_path.clone();
+                let db_path = self.db_dir_path.join(&db_name);
 
-                db_dir_path.push(&db_name);
                 let sqlite = block_in_place(move || {
-                    if !db_dir_path.exists() {
+                    if !db_path.exists() {
                         let default_cache_path = PathBuf::new().join("./").join(db_name);
                         if !default_cache_path.exists() {
                             return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
                                 path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
                             });
                         }
-                        std::fs::copy(default_cache_path, &db_dir_path)?;
+                        std::fs::copy(default_cache_path, &db_path)?;
                     }
 
-                    let sqlite = Connection::open(db_dir_path)?;
+                    let sqlite = Connection::open(db_path)?;
                     init_db(&sqlite)?;
                     Ok(sqlite)
                 })?;
@@ -817,8 +813,12 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
+                let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
+                let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
                 let uri = Uri::from_str(&light_wallet_d_servers[0])?;
-                let client = ZcoinLightClient::init(uri, "", "", self.consensus_params.clone(), evk).await?;
+                let client =
+                    ZcoinLightClient::init(uri, cache_db_path, wallet_db_path, self.consensus_params.clone(), evk)
+                        .await?;
                 client.into()
             },
         };
@@ -839,7 +839,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_fields: Arc::new(z_fields),
         };
 
-        z_coin.z_rpc().z_import_key(&my_z_key_encoded).compat().await?;
+        // z_coin.z_rpc().z_import_key(&my_z_key_encoded).compat().await?;
         spawn(sapling_state_cache_loop(z_coin.clone()));
         Ok(z_coin)
     }
@@ -934,6 +934,17 @@ impl MarketCoinOps for ZCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
+            let sat = coin
+                .z_rpc()
+                .my_balance_sat()
+                .await
+                .map_err(|_| MmError::new(BalanceError::Internal("".into())))?;
+            Ok(CoinBalance::new(big_decimal_from_sat_unsigned(sat, coin.decimals())))
+        };
+        Box::new(fut.boxed().compat())
+        /*
+        let coin = self.clone();
+        let fut = async move {
             let unspents = coin.my_z_unspents_ordered().await?;
             let (spendable, unspendable) = unspents.iter().fold(
                 (BigDecimal::from(0), BigDecimal::from(0)),
@@ -948,6 +959,8 @@ impl MarketCoinOps for ZCoin {
             Ok(CoinBalance { spendable, unspendable })
         };
         Box::new(fut.boxed().compat())
+
+         */
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }

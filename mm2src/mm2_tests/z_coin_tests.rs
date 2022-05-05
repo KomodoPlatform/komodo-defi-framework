@@ -80,5 +80,10 @@ fn activate_z_coin_light() {
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
     ));
-    println!("{:?}", activation_result);
+
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana,
+        _ => panic!("Expected EnableCoinBalance::Iguana"),
+    };
+    assert_eq!(balance.balance.spendable, BigDecimal::from(1));
 }

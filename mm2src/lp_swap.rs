@@ -67,7 +67,6 @@ use common::{bits256, calc_total_pages,
              mm_number::{BigDecimal, BigRational, MmNumber},
              now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
-use futures::future::{abortable, AbortHandle};
 use http::Response;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use primitives::hash::{H160, H264};
