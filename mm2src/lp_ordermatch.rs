@@ -2713,6 +2713,17 @@ impl OrdermatchContext {
     pub async fn ordermatch_db(&self) -> InitDbResult<OrdermatchDbLocked<'_>> {
         Ok(self.ordermatch_db.get_or_initialize().await?)
     }
+
+    async fn coin_has_active_maker_orders(&self, ticker: &str) -> bool {
+        let my_maker_orders = self.my_maker_orders.lock().clone();
+        for (_, order) in my_maker_orders {
+            let order = order.lock().await;
+            if order.base == ticker {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -4267,7 +4278,7 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
 pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
     let mut current_balance = None;
     loop {
-        Timer::sleep(10.).await;
+        Timer::sleep(30.).await;
         let ctx = match MmArc::from_weak(&ctx) {
             Some(ctx) => ctx,
             None => return,
@@ -4275,14 +4286,10 @@ pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
 
         match lp_coinfind(&ctx, &ticker).await {
             Ok(Some(coin)) => {
-                let storage = MyOrdersStorage::new(ctx.clone());
-
-                match storage.active_maker_orders_has_coin(&ticker).await {
-                    Ok(false) => break,
-                    Err(_) => continue,
-                    _ => (),
-                };
-
+                let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+                if !ordermatch_ctx.coin_has_active_maker_orders(&ticker).await {
+                    break;
+                }
                 let balance = match coin.my_spendable_balance().compat().await {
                     Ok(balance) => balance,
                     Err(_) => continue,
@@ -4340,19 +4347,14 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         req.volume.clone()
     };
 
-    let storage = MyOrdersStorage::new(ctx.clone());
+    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let ticker = base_coin.ticker().to_string();
-    let coin_has_order = storage
-        .active_maker_orders_has_coin(&ticker)
-        .await
-        .map_err(|e| e.to_string())?;
+    let coin_has_order = ordermatch_ctx.coin_has_active_maker_orders(&ticker).await;
 
     if !coin_has_order {
         let ctx_weak = ctx.weak();
         spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
     }
-
-    let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
     if req.cancel_previous {
         cancel_previous_maker_orders(ctx, &ordermatch_ctx, &req.base, &req.rel).await;
