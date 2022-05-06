@@ -85,13 +85,13 @@ pub enum JsonRpcRequestEnum {
 
 impl JsonRpcRequestEnum {
     /// Creates [`JsonRpcRequestEnum::Batch`] from the given `requests`.
-    #[inline(always)]
+    #[inline]
     pub fn new_batch(requests: Vec<JsonRpcRequest>) -> JsonRpcRequestEnum {
         JsonRpcRequestEnum::Batch(JsonRpcBatchRequest(requests))
     }
 
     /// Returns a `JsonRpcId` identifier of the request.
-    #[inline(always)]
+    #[inline]
     pub fn rpc_id(&self) -> JsonRpcId {
         match self {
             JsonRpcRequestEnum::Single(single) => single.rpc_id(),
@@ -121,11 +121,11 @@ pub struct JsonRpcRequest {
 
 impl JsonRpcRequest {
     // Returns [`JsonRpcRequest::id`].
-    #[inline(always)]
+    #[inline]
     pub fn get_id(&self) -> &str { &self.id }
 
     /// Returns a `JsonRpcId` identifier of the request.
-    #[inline(always)]
+    #[inline]
     pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id.clone()) }
 }
 
@@ -139,20 +139,20 @@ pub struct JsonRpcBatchRequest(Vec<JsonRpcRequest>);
 
 impl JsonRpcBatchRequest {
     /// Returns a `JsonRpcId` identifier of the request.
-    #[inline(always)]
+    #[inline]
     pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Batch(self.orig_sequence_ids().collect()) }
 
     /// Returns the number of the requests in the batch.
-    #[inline(always)]
+    #[inline]
     pub fn len(&self) -> usize { self.0.len() }
 
     /// Whether the batch is empty.
-    #[inline(always)]
+    #[inline]
     pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
     /// Returns original sequence of identifiers.
     /// The method is used to process batch responses in the same order in which the requests were sent.
-    #[inline(always)]
+    #[inline]
     fn orig_sequence_ids(&self) -> impl Iterator<Item = String> + '_ { self.0.iter().map(|req| req.id.clone()) }
 }
 
@@ -170,7 +170,7 @@ pub enum JsonRpcResponseEnum {
 
 impl JsonRpcResponseEnum {
     /// Returns a `JsonRpcId` identifier of the response.
-    #[inline(always)]
+    #[inline]
     pub fn rpc_id(&self) -> JsonRpcId {
         match self {
             JsonRpcResponseEnum::Single(single) => single.rpc_id(),
@@ -194,7 +194,7 @@ pub struct JsonRpcResponse {
 
 impl JsonRpcResponse {
     /// Returns a `JsonRpcId` identifier of the response.
-    #[inline(always)]
+    #[inline]
     pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id.clone()) }
 }
 
@@ -207,11 +207,11 @@ impl JsonRpcBatchResponse {
     pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Batch(self.0.iter().map(|res| res.id.clone()).collect()) }
 
     /// Returns the number of the requests in the batch.
-    #[inline(always)]
+    #[inline]
     pub fn len(&self) -> usize { self.0.len() }
 
     /// Whether the batch is empty.
-    #[inline(always)]
+    #[inline]
     pub fn is_empty(&self) -> bool { self.0.is_empty() }
 }
 
@@ -251,7 +251,7 @@ pub enum JsonRpcErrorType {
 
 impl JsonRpcErrorType {
     /// Whether the error type is [`JsonRpcErrorType::Transport`].
-    #[inline(always)]
+    #[inline]
     pub fn is_transport(&self) -> bool { matches!(self, JsonRpcErrorType::Transport(_)) }
 }
 

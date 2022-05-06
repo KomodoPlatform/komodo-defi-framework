@@ -246,7 +246,7 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
 
     /// Override [`UtxoCoinBuilderCommonOps::tx_cache`] to initialize TX cache with the platform ticker.
     /// Please note the method is overridden for Native mode only.
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache(&self) -> UtxoVerboseCacheShared {
         crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.platform.clone(), self.tx_cache_path())

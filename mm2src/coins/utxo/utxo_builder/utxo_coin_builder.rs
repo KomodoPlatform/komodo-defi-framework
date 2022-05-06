@@ -255,7 +255,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .mm_err(UtxoCoinBuildError::from)
     }
 
-    #[inline(always)]
+    #[inline]
     fn derivation_path(&self) -> UtxoConfResult<Bip44PathToCoin> {
         if self.conf()["derivation_path"].is_null() {
             return MmError::err(UtxoConfError::DerivationPathIsNotSet);
@@ -264,13 +264,13 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
 
-    #[inline(always)]
+    #[inline]
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
 
-    #[inline(always)]
+    #[inline]
     fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 
-    #[inline(always)]
+    #[inline]
     fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
         let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
         let hw_ctx = crypto_ctx
@@ -292,7 +292,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
     fn ticker(&self) -> &str;
 
-    #[inline(always)]
+    #[inline]
     fn block_headers_storage(&self) -> UtxoCoinBuildResult<Option<BlockHeaderStorage>> {
         let params: Option<_> = json::from_value(self.conf()["block_header_params"].clone())
             .map_to_mm(|e| UtxoConfError::InvalidBlockHeaderParams(e.to_string()))?;
@@ -342,7 +342,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(address_format)
     }
 
-    #[inline(always)]
+    #[inline]
     fn pub_addr_prefix(&self) -> u8 {
         let pubtype = self.conf()["pubtype"]
             .as_u64()
@@ -350,17 +350,17 @@ pub trait UtxoCoinBuilderCommonOps {
         pubtype as u8
     }
 
-    #[inline(always)]
+    #[inline]
     fn p2sh_address_prefix(&self) -> u8 {
         self.conf()["p2shtype"]
             .as_u64()
             .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
     }
 
-    #[inline(always)]
+    #[inline]
     fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
 
-    #[inline(always)]
+    #[inline]
     fn network(&self) -> UtxoCoinBuildResult<BlockchainNetwork> {
         let conf = self.conf();
         if !conf["network"].is_null() {
@@ -370,7 +370,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(BlockchainNetwork::Mainnet)
     }
 
-    #[inline(always)]
+    #[inline]
     async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<u8> {
         Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
     }
@@ -394,7 +394,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(tx_fee)
     }
 
-    #[inline(always)]
+    #[inline]
     fn initial_history_state(&self) -> HistorySyncState {
         if self.activation_params().tx_history {
             HistorySyncState::NotStarted
@@ -561,7 +561,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn tx_hash_algo(&self) -> TxHashAlgo {
         if self.ticker() == "GRS" {
             TxHashAlgo::SHA256
@@ -570,26 +570,26 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
 
-    #[inline(always)]
+    #[inline]
     fn is_hw_coin(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 
-    #[inline(always)]
+    #[inline]
     #[cfg(target_arch = "wasm32")]
     fn tx_cache(&self) -> UtxoVerboseCacheShared {
         crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
     }
 
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache(&self) -> UtxoVerboseCacheShared {
         crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.ticker().to_owned(), self.tx_cache_path())
             .into_shared()
     }
 
-    #[inline(always)]
+    #[inline]
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 }
