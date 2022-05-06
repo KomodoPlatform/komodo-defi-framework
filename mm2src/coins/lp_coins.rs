@@ -32,6 +32,7 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
+use base58::FromBase58Error;
 use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_error::prelude::*;
@@ -326,6 +327,9 @@ pub struct RawTransactionRes {
     pub tx_hex: BytesJson,
 }
 
+pub type SignatureResult<T> = Result<T, MmError<SignatureError>>;
+pub type VerificationResult<T> = Result<T, MmError<VerificationError>>;
+
 #[derive(Debug, Display)]
 pub enum TxHistoryError {
     ErrorSerializing(String),
@@ -587,6 +591,14 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> Result<String, String>;
 
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
+
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
+
+    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
+
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
         let closure = |spendable: BigDecimal| {
             if spendable.is_zero() {
@@ -743,6 +755,20 @@ pub struct GetStakingInfosRequest {
     pub coin: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SignatureRequest {
+    coin: String,
+    message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VerificationRequest {
+    coin: String,
+    message: String,
+    signature: String,
+    address: String,
+}
+
 impl WithdrawRequest {
     pub fn new(
         coin: String,
@@ -787,6 +813,16 @@ impl From<QtumStakingInfosDetails> for StakingInfosDetails {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StakingInfos {
     pub staking_infos_details: StakingInfosDetails,
+}
+
+#[derive(Serialize)]
+pub struct SignatureResponse {
+    signature: String,
+}
+
+#[derive(Serialize)]
+pub struct VerificationResponse {
+    is_valid: bool,
 }
 
 /// Please note that no type should have the same structure as another type,
@@ -1533,6 +1569,109 @@ impl WithdrawError {
             GenerateTxError::Internal(e) => WithdrawError::InternalError(e),
         }
     }
+}
+
+#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum SignatureError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
+    PrefixNotFound,
+}
+
+impl HttpStatusCode for SignatureError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            SignatureError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            SignatureError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
+            SignatureError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SignatureError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<keys::Error> for SignatureError {
+    fn from(e: keys::Error) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<ethkey::Error> for SignatureError {
+    fn from(e: ethkey::Error) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<PrivKeyNotAllowed> for SignatureError {
+    fn from(e: PrivKeyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<CoinFindError> for SignatureError {
+    fn from(e: CoinFindError) -> Self { SignatureError::CoinIsNotFound(e.to_string()) }
+}
+
+#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum VerificationError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+    #[display(fmt = "Signature decoding error: {}", _0)]
+    SignatureDecodingError(String),
+    #[display(fmt = "Address decoding error: {}", _0)]
+    AddressDecodingError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
+    PrefixNotFound,
+}
+
+impl HttpStatusCode for VerificationError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            VerificationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            VerificationError::SignatureDecodingError(_) => StatusCode::BAD_REQUEST,
+            VerificationError::AddressDecodingError(_) => StatusCode::BAD_REQUEST,
+            VerificationError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
+            VerificationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            VerificationError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<base64::DecodeError> for VerificationError {
+    fn from(e: base64::DecodeError) -> Self { VerificationError::SignatureDecodingError(e.to_string()) }
+}
+
+impl From<hex::FromHexError> for VerificationError {
+    fn from(e: hex::FromHexError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<FromBase58Error> for VerificationError {
+    fn from(e: FromBase58Error) -> Self {
+        match e {
+            FromBase58Error::InvalidBase58Character(c, _) => {
+                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
+            },
+            FromBase58Error::InvalidBase58Length => {
+                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
+            },
+        }
+    }
+}
+
+impl From<keys::Error> for VerificationError {
+    fn from(e: keys::Error) -> Self { VerificationError::InternalError(e.to_string()) }
+}
+
+impl From<ethkey::Error> for VerificationError {
+    fn from(e: ethkey::Error) -> Self { VerificationError::InternalError(e.to_string()) }
+}
+
+impl From<CoinFindError> for VerificationError {
+    fn from(e: CoinFindError) -> Self { VerificationError::CoinIsNotFound(e.to_string()) }
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
@@ -2361,9 +2500,9 @@ struct ValidateAddressReq {
 
 #[derive(Serialize)]
 pub struct ValidateAddressResult {
-    is_valid: bool,
+    pub is_valid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub reason: Option<String>,
 }
 
 pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -2387,6 +2526,27 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.get_raw_transaction(req).compat().await
+}
+
+pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let signature = coin.sign_message(&req.message)?;
+    Ok(SignatureResponse { signature })
+}
+
+pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    let validate_address_result = coin.validate_address(&req.address);
+    if !validate_address_result.is_valid {
+        return MmError::err(VerificationError::InvalidRequest(
+            validate_address_result.reason.unwrap_or_else(|| "Unknown".to_string()),
+        ));
+    }
+
+    let is_valid = coin.verify_message(&req.signature, &req.message, &req.address)?;
+
+    Ok(VerificationResponse { is_valid })
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {

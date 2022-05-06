@@ -11,13 +11,16 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SignatureError, SignatureResult,
+            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum,
+            TransactionFut, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
+use bitcrypto::dhash256;
+use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
 use common::executor::spawn;
 use common::ip_addr::myipaddr;
@@ -28,7 +31,7 @@ use common::mm_number::MmNumber;
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{AddressHashEnum, KeyPair};
+use keys::{hash::H256, AddressHashEnum, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::channelmonitor::Balance;
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
@@ -386,6 +389,42 @@ impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { Ok(self.my_node_id()) }
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        let mut _message_prefix = self.conf.sign_message_prefix.clone()?;
+        let prefixed_message = format!("{}{}", _message_prefix, message);
+        Some(dhash256(prefixed_message.as_bytes()).take())
+    }
+
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
+        let secret_key = self
+            .keys_manager
+            .get_node_secret(Recipient::Node)
+            .map_err(|_| SignatureError::InternalError("Error accessing node keys".to_string()))?;
+        let private = Private {
+            prefix: 239,
+            secret: H256::from(*secret_key.as_ref()),
+            compressed: true,
+            checksum_type: ChecksumType::DSHA256,
+        };
+        let signature = private.sign_compact(&H256::from(message_hash))?;
+        Ok(zbase32::encode_full_bytes(&*signature))
+    }
+
+    fn verify_message(&self, signature: &str, message: &str, pubkey: &str) -> VerificationResult<bool> {
+        let message_hash = self
+            .sign_message_hash(message)
+            .ok_or(VerificationError::PrefixNotFound)?;
+        let signature = CompactSignature::from(
+            zbase32::decode_full_bytes_str(signature)
+                .map_err(|e| VerificationError::SignatureDecodingError(e.to_string()))?,
+        );
+        let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
+        Ok(recovered_pubkey.to_string() == pubkey)
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals();

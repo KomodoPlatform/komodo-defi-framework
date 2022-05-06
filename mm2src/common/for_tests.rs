@@ -1327,3 +1327,42 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     assert_eq!(request.0, StatusCode::OK, "'init_z_coin_status' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }
+
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method":"sign_message",
+            "mmrpc":"2.0",
+            "id": 0,
+            "params":{
+              "coin": coin,
+              "message":"test"
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'sign_message' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn verify_message(mm: &MarketMakerIt, coin: &str, signature: &str, address: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method":"verify_message",
+            "mmrpc":"2.0",
+            "id": 0,
+            "params":{
+              "coin": coin,
+              "message":"test",
+              "signature": signature,
+              "address": address
+
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'verify_message' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}

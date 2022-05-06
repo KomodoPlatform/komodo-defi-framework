@@ -546,6 +546,7 @@ dependencies = [
  "groestl",
  "primitives",
  "ripemd160 0.8.0",
+ "serialization",
  "sha-1 0.8.2",
  "sha2 0.8.2",
  "sha3 0.8.2",
@@ -1151,6 +1152,7 @@ dependencies = [
  "web3",
  "webpki-roots 0.19.0",
  "winapi 0.3.9",
+ "zbase32",
  "zcash_client_backend",
  "zcash_client_sqlite",
  "zcash_primitives",
@@ -2123,7 +2125,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "ethereum-types 0.4.2",
  "ethkey",
@@ -2173,7 +2175,7 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "byteorder 1.4.3",
  "edit-distance",
@@ -3961,7 +3963,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "memchr"
@@ -8208,7 +8210,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "unicode-bidi"
@@ -8814,6 +8816,12 @@ dependencies = [
  "rand 0.8.4",
  "static_assertions",
 ]
+
+[[package]]
+name = "zbase32"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 
 [[package]]
 name = "zcash_client_backend"
