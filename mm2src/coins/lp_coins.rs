@@ -33,8 +33,7 @@
 
 use async_trait::async_trait;
 use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
-use common::executor::{spawn, Timer};
-use common::mm_ctx::{from_ctx, MmArc, MmWeak};
+use common::mm_ctx::{from_ctx, MmArc};
 use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
@@ -2262,8 +2261,6 @@ pub async fn lp_register_coin(
     if tx_history {
         lp_spawn_tx_history(ctx.clone(), coin).map_to_mm(RegisterCoinError::Internal)?;
     }
-    let ctx_weak = ctx.weak();
-    spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
     Ok(())
 }
 
@@ -2641,34 +2638,6 @@ pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         }
     })));
     Ok(try_s!(Response::builder().body(res)))
-}
-
-// TODO: Refactor this, it's actually not required to check balance and trade fee when there no orders using the coin
-pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
-    let mut current_balance = None;
-    loop {
-        Timer::sleep(10.).await;
-        let ctx = match MmArc::from_weak(&ctx) {
-            Some(ctx) => ctx,
-            None => return,
-        };
-
-        match lp_coinfind(&ctx, &ticker).await {
-            Ok(Some(coin)) => {
-                let balance = match coin.my_spendable_balance().compat().await {
-                    Ok(balance) => balance,
-                    Err(_) => continue,
-                };
-                if Some(&balance) != current_balance.as_ref() {
-                    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-                    coins_ctx.balance_updated(&coin, &balance).await;
-                    current_balance = Some(balance);
-                }
-            },
-            Ok(None) => break,
-            Err(_) => continue,
-        }
-    }
 }
 
 pub async fn register_balance_update_handler(

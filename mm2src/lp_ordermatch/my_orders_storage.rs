@@ -141,6 +141,8 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
 
 #[async_trait]
 pub trait MyActiveOrders {
+    async fn active_maker_orders_has_coin(&self, ticker: &str) -> MyOrdersResult<bool>;
+
     async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>>;
 
     async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder>;
@@ -239,6 +241,12 @@ mod native_impl {
         async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
             let dir_path = my_maker_orders_dir(&self.ctx);
             Ok(read_dir_json(&dir_path).await?)
+        }
+
+        async fn active_maker_orders_has_coin(&self, ticker: &str) -> MyOrdersResult<bool> {
+            let dir_path = my_maker_orders_dir(&self.ctx);
+            let result: Vec<MakerOrder> = read_dir_json(&dir_path).await?;
+            Ok(result.iter().any(|order| order.base == ticker))
         }
 
         async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {

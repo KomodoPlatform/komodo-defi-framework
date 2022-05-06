@@ -23,7 +23,8 @@ use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
 use blake2::VarBlake2b;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
-use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, FeeApproxStage, MmCoinEnum};
+use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
+            FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::{error, LogOnError};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
@@ -4263,6 +4264,41 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
     ))
 }
 
+pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
+    let mut current_balance = None;
+    loop {
+        Timer::sleep(10.).await;
+        let ctx = match MmArc::from_weak(&ctx) {
+            Some(ctx) => ctx,
+            None => return,
+        };
+
+        match lp_coinfind(&ctx, &ticker).await {
+            Ok(Some(coin)) => {
+                let storage = MyOrdersStorage::new(ctx.clone());
+
+                match storage.active_maker_orders_has_coin(&ticker).await {
+                    Ok(false) => break,
+                    Err(_) => continue,
+                    _ => (),
+                };
+
+                let balance = match coin.my_spendable_balance().compat().await {
+                    Ok(balance) => balance,
+                    Err(_) => continue,
+                };
+                if Some(&balance) != current_balance.as_ref() {
+                    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+                    coins_ctx.balance_updated(&coin, &balance).await;
+                    current_balance = Some(balance);
+                }
+            },
+            Ok(None) => break,
+            Err(_) => continue,
+        }
+    }
+}
+
 pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOrder, String> {
     let base_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, &req.base).await) {
         Some(coin) => coin,
@@ -4303,6 +4339,18 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         );
         req.volume.clone()
     };
+
+    let storage = MyOrdersStorage::new(ctx.clone());
+    let ticker = base_coin.ticker().to_string();
+    let coin_has_order = storage
+        .active_maker_orders_has_coin(&ticker)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !coin_has_order {
+        let ctx_weak = ctx.weak();
+        spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
+    }
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
@@ -5020,6 +5068,10 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
 
     for order in saved_maker_orders {
+        let ctx_weak = ctx.weak();
+        let ticker = order.base.clone();
+        spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
+
         coins.insert(order.base.clone());
         coins.insert(order.rel.clone());
         let mut maker_orders = ordermatch_ctx.my_maker_orders.lock();
