@@ -59,7 +59,6 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::database::swap_coins_price::swap_coins_price;
 use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
@@ -2774,24 +2773,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             uuid
         );
 
-        let coins_price = swap_coins_price(
-            Some(maker_coin.ticker().to_string()),
-            Some(taker_coin.ticker().to_string()),
-        )
-        .await;
-
         let now = now_ms() / 1000;
-        if let Err(e) = insert_new_swap_to_db(
-            ctx.clone(),
-            maker_coin.ticker(),
-            taker_coin.ticker(),
-            uuid,
-            now,
-            &coins_price.0.clone(),
-            &coins_price.1.clone(),
-        )
-        .await
-        {
+        if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
 
@@ -2800,8 +2783,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             alice,
             maker_amount,
             taker_amount,
-            coins_price.0.clone(),
-            coins_price.1.clone(),
             my_persistent_pub,
             uuid,
             Some(maker_order.uuid),
@@ -2879,24 +2860,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             uuid
         );
 
-        let coins_price = swap_coins_price(
-            Some(maker_coin.ticker().to_string()),
-            Some(taker_coin.ticker().to_string()),
-        )
-        .await;
-
         let now = now_ms() / 1000;
-        if let Err(e) = insert_new_swap_to_db(
-            ctx.clone(),
-            taker_coin.ticker(),
-            maker_coin.ticker(),
-            uuid,
-            now,
-            &coins_price.0.clone(),
-            &coins_price.1.clone(),
-        )
-        .await
-        {
+        if let Err(e) = insert_new_swap_to_db(ctx.clone(), taker_coin.ticker(), maker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
 
@@ -2905,8 +2870,6 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             maker,
             maker_amount,
             taker_amount,
-            coins_price.0.clone(),
-            coins_price.1.clone(),
             my_persistent_pub,
             uuid,
             Some(uuid),

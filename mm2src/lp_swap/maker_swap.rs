@@ -75,10 +75,8 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             uuid: swap.uuid,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
-            maker_coin_usd_price: swap.maker_coin_usd_price.clone(),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
             taker_amount: Some(swap.taker_amount.clone()),
-            taker_coin_usd_price: swap.maker_coin_usd_price.clone(),
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
@@ -126,8 +124,6 @@ pub struct MakerSwapData {
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
     pub taker_amount: BigDecimal,
-    pub taker_coin_usd_price: Option<BigDecimal>,
-    pub maker_coin_usd_price: Option<BigDecimal>,
     pub maker_payment_confirmations: u64,
     pub maker_payment_requires_nota: Option<bool>,
     pub taker_payment_confirmations: u64,
@@ -181,8 +177,6 @@ pub struct MakerSwap {
     taker_coin: MmCoinEnum,
     maker_amount: BigDecimal,
     taker_amount: BigDecimal,
-    maker_coin_usd_price: Option<BigDecimal>,
-    taker_coin_usd_price: Option<BigDecimal>,
     my_persistent_pub: H264,
     taker: bits256,
     uuid: Uuid,
@@ -287,8 +281,6 @@ impl MakerSwap {
         taker: bits256,
         maker_amount: BigDecimal,
         taker_amount: BigDecimal,
-        maker_coin_usd_price: Option<BigDecimal>,
-        taker_coin_usd_price: Option<BigDecimal>,
         my_persistent_pub: H264,
         uuid: Uuid,
         my_order_uuid: Option<Uuid>,
@@ -303,8 +295,6 @@ impl MakerSwap {
             taker_coin,
             maker_amount,
             taker_amount,
-            maker_coin_usd_price,
-            taker_coin_usd_price,
             my_persistent_pub,
             taker,
             uuid,
@@ -449,8 +439,6 @@ impl MakerSwap {
             lock_duration: self.payment_locktime,
             maker_amount: self.maker_amount.clone(),
             taker_amount: self.taker_amount.clone(),
-            taker_coin_usd_price: self.maker_coin_usd_price.clone(),
-            maker_coin_usd_price: self.taker_coin_usd_price.clone(),
             maker_payment_confirmations: self.conf_settings.maker_coin_confs,
             maker_payment_requires_nota: Some(self.conf_settings.maker_coin_nota),
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
@@ -1008,8 +996,6 @@ impl MakerSwap {
             taker,
             data.maker_amount.clone(),
             data.taker_amount.clone(),
-            saved.maker_coin_usd_price,
-            saved.taker_coin_usd_price,
             my_persistent_pub,
             saved.uuid,
             saved.my_order_uuid,
@@ -1389,8 +1375,6 @@ pub struct MakerSwapStatusChanged {
     pub taker_amount: BigDecimal,
     pub maker_amount: BigDecimal,
     pub event_status: String,
-    pub maker_coin_usd_price: Option<BigDecimal>,
-    pub taker_coin_usd_price: Option<BigDecimal>,
 }
 
 impl MakerSwapStatusChanged {
@@ -1406,8 +1390,6 @@ impl MakerSwapStatusChanged {
             taker_amount: maker_swap.taker_amount.clone(),
             maker_amount: maker_swap.maker_amount.clone(),
             event_status: saved_swap.event.status_str(),
-            maker_coin_usd_price: maker_swap.maker_coin_usd_price.clone(),
-            taker_coin_usd_price: maker_swap.taker_coin_usd_price.clone(),
         }
     }
 }
@@ -1418,10 +1400,8 @@ pub struct MakerSavedSwap {
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
-    pub maker_coin_usd_price: Option<BigDecimal>,
     pub maker_coin: Option<String>,
     pub taker_amount: Option<BigDecimal>,
-    pub taker_coin_usd_price: Option<BigDecimal>,
     pub taker_coin: Option<String>,
     pub gui: Option<String>,
     pub mm_version: Option<String>,
@@ -1445,8 +1425,6 @@ impl MakerSavedSwap {
                 lock_duration: 0,
                 maker_amount: maker_amount.to_decimal(),
                 taker_amount: taker_amount.to_decimal(),
-                maker_coin_usd_price: None,
-                taker_coin_usd_price: None,
                 maker_payment_confirmations: 0,
                 maker_payment_requires_nota: None,
                 taker_payment_confirmations: 0,
@@ -1476,10 +1454,8 @@ impl MakerSavedSwap {
             my_order_uuid: None,
             events,
             maker_amount: Some(maker_amount.to_decimal()),
-            maker_coin_usd_price: None,
             maker_coin: None,
             taker_amount: Some(taker_amount.to_decimal()),
-            taker_coin_usd_price: None,
             taker_coin: None,
             gui: None,
             mm_version: None,
@@ -1524,9 +1500,7 @@ impl MakerSavedSwap {
                     my_coin: data.maker_coin.clone(),
                     other_coin: data.taker_coin.clone(),
                     my_amount: data.maker_amount.clone(),
-                    my_price_usd: data.maker_coin_usd_price.clone(),
                     other_amount: data.taker_amount.clone(),
-                    other_price_usd: data.taker_coin_usd_price.clone(),
                     started_at: data.started_at,
                 }),
                 _ => None,
@@ -1721,6 +1695,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                             event.clone().into(),
                         )
                     }
+
                     status.status(swap_tags!(), &event.status_str());
                     running_swap.apply_event(event);
                 }

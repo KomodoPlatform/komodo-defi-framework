@@ -29,32 +29,30 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
 }
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
-const INSERT_MY_SWAP_WITH_PRICES: &str =  "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, my_coin_usd_price, other_coin_usd_price) VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+const UPDATE_MY_SWAP: &str = "UPDATE my_swaps SET my_coin_usd_price = ?2, other_coin_usd_price = ?3 WHERE uuid = ?1";
 
-pub fn insert_new_swap(
-    ctx: &MmArc,
-    my_coin: &str,
-    other_coin: &str,
-    uuid: &str,
-    started_at: &str,
-    my_coin_price_usd: Option<BigDecimal>,
-    other_coin_usd: Option<BigDecimal>,
-) -> SqlResult<()> {
+pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
-    let result = match (my_coin_price_usd, other_coin_usd) {
-        (Some(base), Some(rel)) => {
-            let base = &base.to_string();
-            let rel = &rel.to_string();
-            let params = [my_coin, other_coin, uuid, started_at, base, rel];
-            conn.execute(INSERT_MY_SWAP_WITH_PRICES, &params).map(|_| ())
-        },
-        _ => {
-            let params = [my_coin, other_coin, uuid, started_at];
-            conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
-        },
-    };
-    result
+    let params = [my_coin, other_coin, uuid, started_at];
+
+    conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
+}
+
+pub fn update_coins_price(
+    ctx: &MmArc,
+    uuid: &str,
+    my_coin_usd_price: BigDecimal,
+    other_coin_usd_price: BigDecimal,
+) -> SqlResult<()> {
+    debug!("Updating fiat price on moment of trade {} in SQLite database", uuid);
+    let conn = ctx.sqlite_connection();
+    let params = vec![
+        uuid.to_string(),
+        my_coin_usd_price.to_string(),
+        other_coin_usd_price.to_string(),
+    ];
+    conn.execute(UPDATE_MY_SWAP, &params).map(|_| ())
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
@@ -80,30 +78,14 @@ fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)>
         None => return None,
     };
 
-    match (swap_info.my_price_usd.as_ref(), swap_info.other_price_usd.as_ref()) {
-        (Some(base), Some(rel)) => {
-            let params = vec![
-                swap_info.my_coin,
-                swap_info.other_coin,
-                swap.uuid().to_string(),
-                swap_info.started_at.to_string(),
-                base.to_owned().clone().to_string(),
-                rel.to_owned().clone().to_string(),
-            ];
+    let params = vec![
+        swap_info.my_coin,
+        swap_info.other_coin,
+        swap.uuid().to_string(),
+        swap_info.started_at.to_string(),
+    ];
 
-            Some((INSERT_MY_SWAP_WITH_PRICES, params))
-        },
-        _ => {
-            let params = vec![
-                swap_info.my_coin,
-                swap_info.other_coin,
-                swap.uuid().to_string(),
-                swap_info.started_at.to_string(),
-            ];
-
-            Some((INSERT_MY_SWAP, params))
-        },
-    }
+    Some((INSERT_MY_SWAP, params))
 }
 
 #[derive(Debug)]
@@ -213,7 +195,6 @@ fn insert_new_swap_test() {
     use db_common::sqlite::rusqlite::Connection;
     use rand::Rng;
     use std::ops::Range;
-    use std::str::FromStr;
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -231,35 +212,13 @@ fn insert_new_swap_test() {
     let my_coin = &"ETH";
     let other_coin = &"JST";
     let started_at = rng.gen_range(timestamp.start, timestamp.end);
-    //TRY WITH VALUE PRICE FOR BOTH my_coin_price_usd and other_coin_price_usd
-    let coins_price = (
-        Some(BigDecimal::from_str("34.0004").expect("Can't parse to BigDecimal")),
-        Some(BigDecimal::from_str("3").expect("Can't parse to BigDecimal")),
-    );
-
     let result = insert_new_swap(
         &ctx,
         my_coin,
         other_coin,
         uuid.to_string().as_str(),
         &started_at.to_string().as_str(),
-        coins_price.0,
-        coins_price.1,
     );
-    assert_eq!((), result.unwrap());
 
-    let uuid = new_uuid();
-    //TRY WITH NULL VALUES PRICE FOR BOTH my_coin_price_usd and other_coin_price_usd
-    let coins_price = (None, None);
-
-    let result = insert_new_swap(
-        &ctx,
-        my_coin,
-        other_coin,
-        uuid.to_string().as_str(),
-        &started_at.to_string().as_str(),
-        coins_price.0,
-        coins_price.1,
-    );
     assert_eq!((), result.unwrap());
 }

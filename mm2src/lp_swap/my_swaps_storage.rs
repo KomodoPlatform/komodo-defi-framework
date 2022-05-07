@@ -24,14 +24,13 @@ pub enum MySwapsError {
 
 #[async_trait]
 pub trait MySwapsOps {
-    async fn save_new_swap(
+    async fn save_new_swap(&self, my_coin: &str, other_coin: &str, uuid: Uuid, started_at: u64) -> MySwapsResult<()>;
+
+    async fn save_updated_coins_price(
         &self,
-        my_coin: &str,
-        other_coin: &str,
         uuid: Uuid,
-        started_at: u64,
-        my_coin_usd_price: Option<BigDecimal>,
-        other_coin_usd_price: Option<BigDecimal>,
+        my_coin_usd_price: BigDecimal,
+        other_coin_usd_price: BigDecimal,
     ) -> MySwapsResult<()>;
 
     async fn my_recent_swaps_with_filters(
@@ -52,7 +51,8 @@ impl MySwapsStorage {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectRecentSwapsUuidsErr};
+    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, update_coins_price,
+                                         SelectRecentSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectRecentSwapsUuidsErr> for MySwapsError {
@@ -76,8 +76,6 @@ mod native_impl {
             other_coin: &str,
             uuid: Uuid,
             started_at: u64,
-            my_coin_usd_price: Option<BigDecimal>,
-            other_coin_usd_price: Option<BigDecimal>,
         ) -> MySwapsResult<()> {
             Ok(insert_new_swap(
                 &self.ctx,
@@ -85,6 +83,18 @@ mod native_impl {
                 other_coin,
                 &uuid.to_string(),
                 &started_at.to_string(),
+            )?)
+        }
+
+        async fn save_updated_coins_price(
+            &self,
+            uuid: Uuid,
+            my_coin_usd_price: BigDecimal,
+            other_coin_usd_price: BigDecimal,
+        ) -> MySwapsResult<()> {
+            Ok(update_coins_price(
+                &self.ctx,
+                &uuid.to_string(),
                 my_coin_usd_price,
                 other_coin_usd_price,
             )?)
@@ -168,9 +178,7 @@ mod wasm_impl {
             my_coin: &str,
             other_coin: &str,
             uuid: Uuid,
-            started_at: u64,
-            my_coin_usd_price: Option<BigDecimal>,
-            other_coin_usd_price: Option<BigDecimal>,
+            started_at: u64
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
             let db = swap_ctx.swap_db().await?;
@@ -181,9 +189,7 @@ mod wasm_impl {
                 uuid,
                 my_coin: my_coin.to_owned(),
                 other_coin: other_coin.to_owned(),
-                started_at: started_at as u32,
-                my_coin_usd_price,
-                other_coin_usd_price,
+                started_at: started_at as u32
             };
             my_swaps_table.add_item(&item).await?;
             Ok(())
