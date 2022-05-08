@@ -385,12 +385,7 @@ mod wasm_tests {
                 });
             }
             my_swaps
-                .save_new_swap(
-                    my_coin,
-                    other_coin,
-                    uuid,
-                    started_at
-                )
+                .save_new_swap(my_coin, other_coin, uuid, started_at)
                 .await
                 .expect("!MySwapsStorage::save_new_swap");
         }
