@@ -58,7 +58,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -74,7 +74,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     log!("Maker order "(rc.1));
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",
@@ -96,7 +96,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = block_on(mm_bob.rpc(json! ({
+    let maker_status = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
@@ -133,7 +133,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         Some(expected_lock_duration)
     );
 
-    let taker_status = block_on(mm_alice.rpc(json! ({
+    let taker_status = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {
@@ -223,7 +223,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -239,7 +239,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     log!("Maker order "(rc.1));
 
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "sell",
         "base": "MYCOIN1",
@@ -261,7 +261,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     log!("Sleep for 3 seconds to allow Started event to be saved");
     thread::sleep(Duration::from_secs(3));
 
-    let maker_status = block_on(mm_bob.rpc(json! ({
+    let maker_status = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "my_swap_status",
         "params": {
@@ -298,7 +298,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         Some(expected_lock_duration)
     );
 
-    let taker_status = block_on(mm_alice.rpc(json! ({
+    let taker_status = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "my_swap_status",
         "params": {

@@ -56,18 +56,6 @@ impl From<InitUtxoStandardError> for InitStandaloneCoinError {
 }
 
 impl InitUtxoStandardError {
-    pub fn from_register_err(reg_err: RegisterCoinError, ticker: String) -> InitUtxoStandardError {
-        match reg_err {
-            RegisterCoinError::CoinIsInitializedAlready { coin } => {
-                InitUtxoStandardError::CoinIsAlreadyActivated { ticker: coin }
-            },
-            RegisterCoinError::ErrorGettingBlockCount(error) => {
-                InitUtxoStandardError::CoinCreationError { ticker, error }
-            },
-            RegisterCoinError::Internal(internal) => InitUtxoStandardError::Internal(internal),
-        }
-    }
-
     pub fn from_build_err(build_err: UtxoCoinBuildError, ticker: String) -> Self {
         match build_err {
             UtxoCoinBuildError::Internal(internal) => InitUtxoStandardError::Internal(internal),
@@ -75,6 +63,17 @@ impl InitUtxoStandardError {
                 ticker,
                 error: build_err.to_string(),
             },
+        }
+    }
+}
+
+impl From<RegisterCoinError> for InitUtxoStandardError {
+    fn from(reg_err: RegisterCoinError) -> InitUtxoStandardError {
+        match reg_err {
+            RegisterCoinError::CoinIsInitializedAlready { coin } => {
+                InitUtxoStandardError::CoinIsAlreadyActivated { ticker: coin }
+            },
+            RegisterCoinError::Internal(internal) => InitUtxoStandardError::Internal(internal),
         }
     }
 }

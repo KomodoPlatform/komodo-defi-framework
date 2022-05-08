@@ -1,11 +1,15 @@
 use crate::solana::SolanaCommonOps;
-use crate::{BalanceError, MarketCoinOps, NumConversError, UnexpectedDerivationMethod, WithdrawError};
+use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureError, SignatureResult, SolanaCoin,
+            UnexpectedDerivationMethod, VerificationError, VerificationResult, WithdrawError};
+use base58::FromBase58;
 use bigdecimal::ToPrimitive;
 use common::mm_error::MmError;
 use common::mm_number::BigDecimal;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::signature::{Signature, Signer};
+use std::str::FromStr;
 
 #[derive(Debug, Display)]
 pub enum SufficientBalanceError {
@@ -102,6 +106,27 @@ pub fn ui_amount_to_amount(ui_amount: BigDecimal, decimals: u8) -> Result<u64, M
 
 pub fn amount_to_ui_amount(amount: u64, decimals: u8) -> BigDecimal {
     BigDecimal::from(amount) / BigDecimal::from(10_u64.pow(decimals as u32))
+}
+
+pub fn sign_message(coin: &SolanaCoin, message: &str) -> SignatureResult<String> {
+    let signature = coin
+        .key_pair
+        .try_sign_message(message.as_bytes())
+        .map_err(|e| SignatureError::InternalError(e.to_string()))?;
+    Ok(signature.to_string())
+}
+
+pub fn verify_message(
+    coin: &SolanaCoin,
+    signature: &str,
+    message: &str,
+    pubkey_bs58: &str,
+) -> VerificationResult<bool> {
+    let pubkey = pubkey_bs58.from_base58()?;
+    let signature =
+        Signature::from_str(signature).map_err(|e| VerificationError::SignatureDecodingError(e.to_string()))?;
+    let is_valid = signature.verify(&pubkey, message.as_bytes());
+    Ok(is_valid)
 }
 
 pub async fn check_balance_and_prepare_transfer<T>(

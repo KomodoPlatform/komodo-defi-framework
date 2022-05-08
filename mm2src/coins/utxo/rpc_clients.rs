@@ -178,6 +178,14 @@ impl UtxoRpcClientEnum {
         };
         Box::new(fut.boxed().compat())
     }
+
+    #[inline]
+    pub fn is_native(&self) -> bool {
+        match self {
+            UtxoRpcClientEnum::Native(_) => true,
+            UtxoRpcClientEnum::Electrum(_) => false,
+        }
+    }
 }
 
 /// Generic unspent info required to build transactions, we need this separate type because native

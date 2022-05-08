@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [features]
-zhtlc = ["rusqlite", "zcash_client_backend", "zcash_primitives", "zcash_proofs"]
+zhtlc-native-tests = []
 
 [lib]
 name = "coins"
@@ -50,9 +50,9 @@ jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
-lightning = "0.0.104"
+lightning = "0.0.105"
 lightning-background-processor = { path = "lightning_background_processor" }
-lightning-invoice = "0.12.0"
+lightning-invoice = "0.13.0"
 metrics = "0.12"
 mocktopus = "0.7.0"
 num-traits = "0.2"
@@ -82,6 +82,7 @@ tiny-bip39 = "0.8.0"
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 winapi = "0.3"
+zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
@@ -93,21 +94,23 @@ web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "Re
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 lightning-persister = { path = "lightning_persister" }
-lightning-net-tokio = "0.0.104"
-rusqlite = { version = "0.24.2", features = ["bundled"], optional = true }
+lightning-net-tokio = "0.0.105"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.19", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
 tokio-rustls = { version = "0.22.0" }
+tonic = { version = "0.5.2", features = ["tls", "compression"] }
 webpki-roots = { version = "0.19.0" }
 solana-client = {version = "1.9.9", default-features = false}
 solana-sdk = {version = "1.9.9", default-features = false}
 solana-transaction-status = "1.9.9"
 spl-token = {version = "3.2.0"}
 spl-associated-token-account = "1.0.3"
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
-zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
-zcash_proofs = { features = ["bundled-prover"], git = "https://github.com/KomodoPlatform/librustzcash.git", optional = true }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
+zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 
 [build-dependencies]
 prost-build = "0.8"
+tonic-build = { version = "0.5.2", features = ["prost", "compression"] }

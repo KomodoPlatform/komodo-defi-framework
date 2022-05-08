@@ -32,6 +32,7 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
+use base58::FromBase58Error;
 use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::{from_ctx, MmArc, MmWeak};
@@ -59,8 +60,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
-#[cfg(feature = "zhtlc")]
-use zcash_primitives::transaction::Transaction as ZTransaction;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -68,6 +67,7 @@ cfg_native! {
     use async_std::fs;
     use futures::AsyncWriteExt;
     use std::io;
+    use zcash_primitives::transaction::Transaction as ZTransaction;
 }
 
 cfg_wasm32! {
@@ -93,6 +93,117 @@ macro_rules! try_f {
         match $e {
             Ok(ok) => ok,
             Err(e) => return Box::new(futures01::future::err(e)),
+        }
+    };
+}
+
+/// `TransactionErr` compatible `try_fus` macro.
+macro_rules! try_tx_fus {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!("{:?}", err)))),
+        }
+    };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Box::new(futures01::future::err(crate::TransactionErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    ERRL!("{:?}", err),
+                )))
+            },
+        }
+    };
+}
+
+/// `TransactionErr` compatible `try_s` macro.
+macro_rules! try_tx_s {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Err(crate::TransactionErr::Plain(format!(
+                    "{}:{}] {:?}",
+                    file!(),
+                    line!(),
+                    err
+                )))
+            },
+        }
+    };
+    ($e: expr, $tx: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => {
+                return Err(crate::TransactionErr::TxRecoverable(
+                    TransactionEnum::from($tx),
+                    format!("{}:{}] {:?}", file!(), line!(), err),
+                ))
+            },
+        }
+    };
+}
+
+/// `TransactionErr:Plain` compatible `ERR` macro.
+macro_rules! TX_PLAIN_ERR {
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
+}
+
+/// `TransactionErr:TxRecoverable` compatible `ERR` macro.
+#[allow(unused_macros)]
+macro_rules! TX_RECOVERABLE_ERR {
+    ($tx: expr, $format: expr, $($args: tt)+) => {
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format, $($args)+)))
+    };
+    ($tx: expr, $format: expr) => {
+        Err(crate::TransactionErr::TxRecoverable(TransactionEnum::from($tx), ERRL!($format)))
+    };
+}
+
+macro_rules! ok_or_continue_after_sleep {
+    ($e:expr, $delay: ident) => {
+        match $e {
+            Ok(res) => res,
+            Err(e) => {
+                error!("error {:?}", e);
+                Timer::sleep($delay).await;
+                continue;
+            },
+        }
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! ok_or_retry_after_sleep {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    Timer::sleep($delay).await;
+                    continue;
+                },
+            }
+        }
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! ok_or_retry_after_sleep_sync {
+    ($e:expr, $delay: ident) => {
+        loop {
+            match $e {
+                Ok(res) => break res,
+                Err(e) => {
+                    error!("error {:?}", e);
+                    std::thread::sleep(core::time::Duration::from_secs($delay));
+                    continue;
+                },
+            }
         }
     };
 }
@@ -129,8 +240,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 
 #[cfg(target_arch = "wasm32")] pub mod tx_history_db;
 pub mod utxo;
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-pub mod z_coin;
+#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
@@ -149,8 +259,7 @@ use utxo::utxo_common::big_decimal_from_sat_unsigned;
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-use z_coin::{z_coin_from_conf_and_params, ZCoin};
+#[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
@@ -219,6 +328,9 @@ pub struct RawTransactionRes {
     pub tx_hex: BytesJson,
 }
 
+pub type SignatureResult<T> = Result<T, MmError<SignatureError>>;
+pub type VerificationResult<T> = Result<T, MmError<VerificationError>>;
+
 #[derive(Debug, Display)]
 pub enum TxHistoryError {
     ErrorSerializing(String),
@@ -255,12 +367,12 @@ pub trait Transaction: fmt::Debug + 'static {
 pub enum TransactionEnum {
     UtxoTx(UtxoTx),
     SignedEthTx(SignedEthTx),
-    #[cfg(feature = "zhtlc")]
+    #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
 }
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
-#[cfg(feature = "zhtlc")]
+#[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, ZTransaction);
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
@@ -270,13 +382,42 @@ impl Deref for TransactionEnum {
         match self {
             TransactionEnum::UtxoTx(ref t) => t,
             TransactionEnum::SignedEthTx(ref t) => t,
-            #[cfg(feature = "zhtlc")]
+            #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
         }
     }
 }
 
-pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = String> + Send>;
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum TransactionErr {
+    /// Keeps transactions while throwing errors.
+    TxRecoverable(TransactionEnum, String),
+    /// Simply for plain error messages.
+    Plain(String),
+}
+
+impl TransactionErr {
+    /// Returns transaction if the error includes it.
+    #[inline]
+    pub fn get_tx(&self) -> Option<TransactionEnum> {
+        match self {
+            TransactionErr::TxRecoverable(tx, _) => Some(tx.clone()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    /// Returns plain text part of error.
+    pub fn get_plain_text_format(&self) -> String {
+        match self {
+            TransactionErr::TxRecoverable(_, err) => err.to_string(),
+            TransactionErr::Plain(err) => err.to_string(),
+        }
+    }
+}
+
+pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -308,6 +449,7 @@ pub struct ValidatePaymentInput {
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub swap_contract_address: Option<BytesJson>,
+    pub try_spv_proof_until: u64,
     pub confirmations: u64,
 }
 
@@ -440,7 +582,7 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
-    fn get_htlc_key_pair(&self) -> KeyPair;
+    fn get_htlc_key_pair(&self) -> Option<KeyPair>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -449,6 +591,14 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> Result<String, String>;
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
+
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
+
+    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
         let closure = |spendable: BigDecimal| {
@@ -472,6 +622,9 @@ pub trait MarketCoinOps {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
+
+    /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -603,6 +756,20 @@ pub struct GetStakingInfosRequest {
     pub coin: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SignatureRequest {
+    coin: String,
+    message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VerificationRequest {
+    coin: String,
+    message: String,
+    signature: String,
+    address: String,
+}
+
 impl WithdrawRequest {
     pub fn new(
         coin: String,
@@ -647,6 +814,16 @@ impl From<QtumStakingInfosDetails> for StakingInfosDetails {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StakingInfos {
     pub staking_infos_details: StakingInfosDetails,
+}
+
+#[derive(Serialize)]
+pub struct SignatureResponse {
+    signature: String,
+}
+
+#[derive(Serialize)]
+pub struct VerificationResponse {
+    is_valid: bool,
 }
 
 /// Please note that no type should have the same structure as another type,
@@ -735,7 +912,7 @@ impl Default for TransactionType {
 /// Transaction details
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionDetails {
-    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
     pub tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: String,
@@ -1395,6 +1572,109 @@ impl WithdrawError {
     }
 }
 
+#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum SignatureError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
+    PrefixNotFound,
+}
+
+impl HttpStatusCode for SignatureError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            SignatureError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            SignatureError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
+            SignatureError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SignatureError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<keys::Error> for SignatureError {
+    fn from(e: keys::Error) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<ethkey::Error> for SignatureError {
+    fn from(e: ethkey::Error) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<PrivKeyNotAllowed> for SignatureError {
+    fn from(e: PrivKeyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
+}
+
+impl From<CoinFindError> for SignatureError {
+    fn from(e: CoinFindError) -> Self { SignatureError::CoinIsNotFound(e.to_string()) }
+}
+
+#[derive(Serialize, Display, Debug, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum VerificationError {
+    #[display(fmt = "Invalid request: {}", _0)]
+    InvalidRequest(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+    #[display(fmt = "Signature decoding error: {}", _0)]
+    SignatureDecodingError(String),
+    #[display(fmt = "Address decoding error: {}", _0)]
+    AddressDecodingError(String),
+    #[display(fmt = "Coin is not found: {}", _0)]
+    CoinIsNotFound(String),
+    #[display(fmt = "sign_message_prefix is not set in coin config")]
+    PrefixNotFound,
+}
+
+impl HttpStatusCode for VerificationError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            VerificationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            VerificationError::SignatureDecodingError(_) => StatusCode::BAD_REQUEST,
+            VerificationError::AddressDecodingError(_) => StatusCode::BAD_REQUEST,
+            VerificationError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
+            VerificationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            VerificationError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<base64::DecodeError> for VerificationError {
+    fn from(e: base64::DecodeError) -> Self { VerificationError::SignatureDecodingError(e.to_string()) }
+}
+
+impl From<hex::FromHexError> for VerificationError {
+    fn from(e: hex::FromHexError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<FromBase58Error> for VerificationError {
+    fn from(e: FromBase58Error) -> Self {
+        match e {
+            FromBase58Error::InvalidBase58Character(c, _) => {
+                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
+            },
+            FromBase58Error::InvalidBase58Length => {
+                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
+            },
+        }
+    }
+}
+
+impl From<keys::Error> for VerificationError {
+    fn from(e: keys::Error) -> Self { VerificationError::InternalError(e.to_string()) }
+}
+
+impl From<ethkey::Error> for VerificationError {
+    fn from(e: ethkey::Error) -> Self { VerificationError::InternalError(e.to_string()) }
+}
+
+impl From<CoinFindError> for VerificationError {
+    fn from(e: CoinFindError) -> Self { VerificationError::CoinIsNotFound(e.to_string()) }
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
@@ -1497,12 +1777,13 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
     QtumCoin(QtumCoin),
     Qrc20Coin(Qrc20Coin),
     EthCoin(EthCoin),
-    #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+    #[cfg(not(target_arch = "wasm32"))]
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
@@ -1511,7 +1792,7 @@ pub enum MmCoinEnum {
     #[cfg(not(target_arch = "wasm32"))]
     SplToken(SplToken),
     #[cfg(not(target_arch = "wasm32"))]
-    LightningCoin(Box<LightningCoin>),
+    LightningCoin(LightningCoin),
     Test(TestCoin),
 }
 
@@ -1555,10 +1836,10 @@ impl From<SlpToken> for MmCoinEnum {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
-    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(Box::new(c)) }
+    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
 }
@@ -1575,14 +1856,29 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(ref c) => &**c,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+            MmCoinEnum::LightningCoin(ref c) => c,
+            #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::SolanaCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::SplToken(ref c) => c,
+        }
+    }
+}
+
+impl MmCoinEnum {
+    pub fn is_utxo_in_native_mode(&self) -> bool {
+        match self {
+            MmCoinEnum::UtxoCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::QtumCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Qrc20Coin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Bch(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::SlpToken(ref c) => c.as_ref().rpc_client.is_native(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+            MmCoinEnum::ZCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            _ => false,
         }
     }
 }
@@ -1807,7 +2103,7 @@ pub enum CoinProtocol {
         token_contract_address: String,
         decimals: u8,
     },
-    #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+    #[cfg(not(target_arch = "wasm32"))]
     ZHTLC,
 }
 
@@ -2047,12 +2343,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
             token.into()
         },
-        #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => {
-            let dbdir = ctx.dbdir();
-            let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(z_coin_from_conf_and_params(ctx, ticker, &coins_en, &params, &secret, dbdir).await).into()
-        },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2079,8 +2371,6 @@ pub enum RegisterCoinError {
     CoinIsInitializedAlready {
         coin: String,
     },
-    #[display(fmt = "Error getting block count: {}", _0)]
-    ErrorGettingBlockCount(String),
     Internal(String),
 }
 
@@ -2096,14 +2386,6 @@ pub async fn lp_register_coin(
 ) -> Result<(), MmError<RegisterCoinError>> {
     let RegisterCoinParams { ticker, tx_history } = params;
     let cctx = CoinsContext::from_ctx(ctx).map_to_mm(RegisterCoinError::Internal)?;
-
-    let block_count = coin
-        .current_block()
-        .compat()
-        .await
-        .map_to_mm(RegisterCoinError::ErrorGettingBlockCount)?;
-    // Warn the user when we know that the wallet is under-initialized.
-    log!([ticker]", "[block_count]);
 
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
@@ -2221,9 +2503,9 @@ struct ValidateAddressReq {
 
 #[derive(Serialize)]
 pub struct ValidateAddressResult {
-    is_valid: bool,
+    pub is_valid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub reason: Option<String>,
 }
 
 pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -2247,6 +2529,27 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.get_raw_transaction(req).compat().await
+}
+
+pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let signature = coin.sign_message(&req.message)?;
+    Ok(SignatureResponse { signature })
+}
+
+pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    let validate_address_result = coin.validate_address(&req.address);
+    if !validate_address_result.is_valid {
+        return MmError::err(VerificationError::InvalidRequest(
+            validate_address_result.reason.unwrap_or_else(|| "Unknown".to_string()),
+        ));
+    }
+
+    let is_valid = coin.verify_message(&req.signature, &req.message, &req.address)?;
+
+    Ok(VerificationResponse { is_valid })
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
@@ -2635,12 +2938,12 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },
-        #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-        CoinProtocol::ZHTLC => utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
 

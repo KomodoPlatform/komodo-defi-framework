@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use coins::utxo::qtum::{QtumCoin, QtumCoinBuilder};
 use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
-use coins::{lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
+use coins::CoinProtocol;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::CryptoCtx;
@@ -57,20 +57,12 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         _task_handle: &QtumRpcTaskHandle,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-
-        let tx_history = activation_request.tx_history;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
 
         let coin = QtumCoinBuilder::new(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
             .build()
             .await
             .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
-        lp_register_coin(&ctx, MmCoinEnum::from(coin.clone()), RegisterCoinParams {
-            ticker: ticker.clone(),
-            tx_history,
-        })
-        .await
-        .mm_err(|e| InitUtxoStandardError::from_register_err(e, ticker))?;
         Ok(coin)
     }
 

@@ -100,7 +100,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
     log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    let rc = block_on(mm_bob.rpc(json! ({
+    let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MYCOIN",
@@ -110,7 +110,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc = block_on(mm_alice.rpc(json! ({
+    let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": "MYCOIN",

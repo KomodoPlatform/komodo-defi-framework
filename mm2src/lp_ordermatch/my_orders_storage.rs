@@ -352,8 +352,8 @@ mod wasm_impl {
                                                         MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
                                                         MyHistoryOrdersTable};
     use crate::mm2::lp_ordermatch::{OrdermatchContext, TakerAction};
-    use bigdecimal::ToPrimitive;
     use common::log::warn;
+    use num_traits::ToPrimitive;
     use std::sync::Arc;
 
     impl From<InitDbError> for MyOrdersError {

@@ -17,12 +17,12 @@
 //  marketmaker
 //
 
-use bigdecimal::BigDecimal;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_ctx::MmArc;
 use common::mm_metrics::MetricsOps;
+use common::mm_number::BigDecimal;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
@@ -30,8 +30,9 @@ use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
-use crate::mm2::lp_swap::active_swaps_using_coin;
+use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic};
 use crate::mm2::MmVersionResult;
 
 /// Attempts to disable the coin
@@ -128,7 +129,13 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
         mature_confirmations: coin.mature_confirmations(),
     };
     let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = try_s!(Response::builder().body(res));
+
+    if coin.is_utxo_in_native_mode() {
+        subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
+    }
+
+    Ok(res)
 }
 
 #[cfg(target_arch = "wasm32")]

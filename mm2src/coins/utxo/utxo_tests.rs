@@ -24,6 +24,7 @@ use futures::TryFutureExt;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use std::mem::discriminant;
 use std::num::NonZeroUsize;
 
 const TEST_COIN_NAME: &'static str = "RICK";
@@ -93,8 +94,16 @@ fn utxo_coin_fields_for_test(
         hash: key_pair.public().address_hash().into(),
         t_addr_prefix: 0,
         checksum_type,
-        hrp: None,
-        addr_format: UtxoAddressFormat::Standard,
+        hrp: if is_segwit_coin {
+            Some(TEST_COIN_HRP.to_string())
+        } else {
+            None
+        },
+        addr_format: if is_segwit_coin {
+            UtxoAddressFormat::Segwit
+        } else {
+            UtxoAddressFormat::Standard
+        },
     };
     let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
 
@@ -120,6 +129,7 @@ fn utxo_coin_fields_for_test(
             p2sh_t_addr_prefix: 0,
             pub_addr_prefix: 60,
             pub_t_addr_prefix: 0,
+            sign_message_prefix: Some(String::from("Komodo Signed Message:\n")),
             bech32_hrp,
             ticker: TEST_COIN_NAME.into(),
             wif_prefix: 0,
@@ -137,6 +147,7 @@ fn utxo_coin_fields_for_test(
             mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
             estimate_fee_blocks: 1,
             trezor_coin: None,
+            enable_spv_proof: false,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,
@@ -176,6 +187,35 @@ fn test_extract_secret() {
     let secret_hash = &*dhash160(&expected_secret);
     let secret = coin.extract_secret(secret_hash, &tx_hex).unwrap();
     assert_eq!(secret, expected_secret);
+}
+
+#[test]
+fn test_send_maker_spends_taker_payment_recoverable_tx() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(client.into(), None, false);
+    let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
+    let secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
+    let keypair = key_pair_from_seed("").unwrap();
+
+    let tx_err = coin
+        .send_maker_spends_taker_payment(
+            &tx_hex,
+            777,
+            &coin.my_public_key().unwrap().to_vec(),
+            &secret,
+            &*keypair.private().secret,
+            &coin.swap_contract_address(),
+        )
+        .wait()
+        .unwrap_err();
+
+    let tx: UtxoTx = deserialize(tx_hex.as_slice()).unwrap();
+
+    // The error variant should equal to `TxRecoverable`
+    assert_eq!(
+        discriminant(&tx_err),
+        discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
+    );
 }
 
 #[test]
@@ -933,7 +973,8 @@ fn test_spv_proof() {
     // https://rick.explorer.dexstats.info/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
     let tx_str = "0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000";
     let tx: UtxoTx = tx_str.into();
-    let res = block_on(utxo_common::validate_spv_proof(coin.clone(), tx));
+
+    let res = block_on(utxo_common::validate_spv_proof(coin.clone(), tx, now_ms() / 1000 + 30));
     res.unwrap()
 }
 
@@ -3866,4 +3907,66 @@ fn test_electrum_balance_deserializing() {
     let actual: ElectrumBalance = json::from_str(serialized).unwrap();
     assert_eq!(actual.confirmed, i128::MIN);
     assert_eq!(actual.unconfirmed, i128::MAX);
+}
+
+#[test]
+fn test_message_hash() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+    let expected = H256::from_reversed_str("5aef9b67485adba55a2cd935269e73f2f9876382f1eada02418797ae76c07e18");
+    let result = coin.sign_message_hash("test");
+    assert!(result.is_some());
+    assert_eq!(H256::from(result.unwrap()), expected);
+}
+
+#[test]
+fn test_sign_verify_message() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+
+    let message = "test";
+    let signature = coin.sign_message(message).unwrap();
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+
+    let address = "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW";
+    let is_valid = coin.verify_message(&signature, message, address).unwrap();
+    assert!(is_valid);
+}
+
+#[test]
+fn test_sign_verify_message_segwit() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        true,
+    );
+
+    let message = "test";
+    let signature = coin.sign_message(message).unwrap();
+    assert_eq!(
+        signature,
+        "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
+    );
+
+    let is_valid = coin
+        .verify_message(&signature, message, "rck1qqk4t2dppvmu9jja0z7nan0h464n5gve8h7nhay")
+        .unwrap();
+    assert!(is_valid);
+
+    let is_valid = coin
+        .verify_message(&signature, message, "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")
+        .unwrap();
+    assert!(is_valid);
 }

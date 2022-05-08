@@ -57,6 +57,8 @@ pub enum SPVError {
     InvalidHeight,
     /// Block Header Not Verified / Verification failed
     BlockHeaderNotVerified,
+    /// Raises during validation loop
+    Timeout,
     /// Any other error
     UnknownError,
 }

@@ -240,13 +240,23 @@ impl Gossipsub {
 
     /// Publishes a message to the network.
     pub fn publish(&mut self, topic: &Topic, data: impl Into<Vec<u8>>) {
-        self.publish_many(iter::once(topic.clone()), data)
+        self.publish_many_from(iter::once(topic.clone()), data, self.local_peer_id)
     }
 
     /// Publishes a message with multiple topics to the network.
     pub fn publish_many(&mut self, topic: impl IntoIterator<Item = Topic>, data: impl Into<Vec<u8>>) {
+        self.publish_many_from(topic, data, self.local_peer_id);
+    }
+
+    /// Publishes a message with multiple topics to the network.
+    pub fn publish_many_from(
+        &mut self,
+        topic: impl IntoIterator<Item = Topic>,
+        data: impl Into<Vec<u8>>,
+        source: PeerId,
+    ) {
         let message = GossipsubMessage {
-            source: self.local_peer_id,
+            source,
             data: data.into(),
             // To be interoperable with the go-implementation this is treated as a 64-bit
             // big-endian uint.
@@ -257,8 +267,7 @@ impl Gossipsub {
         debug!("Publishing message: {:?}", (self.config.message_id_fn)(&message));
 
         // forward the message to mesh peers
-        let local_peer_id = self.local_peer_id;
-        self.forward_msg(message.clone(), &local_peer_id);
+        self.forward_msg(message.clone(), &source);
 
         let mut recipient_peers = HashSet::new();
         for topic_hash in &message.topics {
@@ -290,8 +299,7 @@ impl Gossipsub {
         // add published message to our received caches
         let msg_id = (self.config.message_id_fn)(&message);
         self.mcache.put(message.clone());
-        self.received
-            .insert(msg_id.clone(), SmallVec::from_elem(local_peer_id, 1));
+        self.received.insert(msg_id.clone(), SmallVec::from_elem(source, 1));
 
         debug!("Published message: {:?}", msg_id);
 

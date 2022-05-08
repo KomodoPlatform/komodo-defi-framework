@@ -65,6 +65,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let p2sh_addr_prefix = self.p2sh_address_prefix();
         let pub_t_addr_prefix = self.pub_t_address_prefix();
         let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
+        let sign_message_prefix = self.sign_message_prefix();
 
         let wif_prefix = self.wif_prefix();
 
@@ -97,6 +98,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let estimate_fee_mode = self.estimate_fee_mode();
         let estimate_fee_blocks = self.estimate_fee_blocks();
         let trezor_coin = self.trezor_coin();
+        let enable_spv_proof = self.enable_spv_proof();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -107,6 +109,7 @@ impl<'a> UtxoConfBuilder<'a> {
             p2sh_addr_prefix,
             pub_t_addr_prefix,
             p2sh_t_addr_prefix,
+            sign_message_prefix,
             bech32_hrp,
             segwit,
             wif_prefix,
@@ -127,6 +130,7 @@ impl<'a> UtxoConfBuilder<'a> {
             mature_confirmations,
             estimate_fee_blocks,
             trezor_coin,
+            enable_spv_proof,
         })
     }
 
@@ -154,6 +158,10 @@ impl<'a> UtxoConfBuilder<'a> {
     fn pub_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
 
     fn p2sh_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
+
+    fn sign_message_prefix(&self) -> Option<String> {
+        json::from_value(self.conf["sign_message_prefix"].clone()).unwrap_or(None)
+    }
 
     fn wif_prefix(&self) -> u8 {
         let wiftype = self.conf["wiftype"]
@@ -279,4 +287,6 @@ impl<'a> UtxoConfBuilder<'a> {
     fn trezor_coin(&self) -> Option<TrezorUtxoCoin> {
         json::from_value(self.conf["trezor_coin"].clone()).unwrap_or_default()
     }
+
+    fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
 }

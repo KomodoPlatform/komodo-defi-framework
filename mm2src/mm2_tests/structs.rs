@@ -3,9 +3,7 @@
 /// The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
 /// backwards compatibility
 /// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
-use bigdecimal::BigDecimal;
-use common::mm_number::{Fraction, MmNumber};
-use num_rational::BigRational;
+use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use rpc::v1::types::H256 as H256Json;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -572,8 +570,80 @@ pub struct MyBalanceResponse {
     pub coin: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IguanaWalletBalance {
+    pub address: String,
+    pub balance: CoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum Bip44Chain {
+    External = 0,
+    Internal = 1,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDWalletBalance {
+    pub accounts: Vec<HDAccountBalance>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDAccountBalance {
+    pub account_index: u32,
+    pub derivation_path: String,
+    pub total_balance: CoinBalance,
+    pub addresses: Vec<HDAddressBalance>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDAddressBalance {
+    pub address: String,
+    pub derivation_path: String,
+    pub chain: Bip44Chain,
+    pub balance: CoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "wallet_type")]
+pub enum EnableCoinBalance {
+    Iguana(IguanaWalletBalance),
+    HD(HDWalletBalance),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZcoinActivationResult {
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitTaskResult {
+    pub task_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, untagged)]
+pub enum MmRpcResult<T> {
+    Ok { result: T },
+    Err(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitZcoinStatus {
+    Ready(MmRpcResult<ZcoinActivationResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
 pub mod withdraw_error {
-    use bigdecimal::BigDecimal;
+    use common::mm_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
@@ -592,7 +662,7 @@ pub mod withdraw_error {
 }
 
 pub mod trade_preimage_error {
-    use bigdecimal::BigDecimal;
+    use common::mm_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
@@ -751,4 +821,80 @@ pub struct UtxoFeeDetails {
 pub struct MmVersion {
     pub result: String,
     pub datetime: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "address_type", content = "address_data")]
+pub enum OrderbookAddress {
+    Transparent(String),
+    Shielded,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RpcOrderbookEntryV2 {
+    pub coin: String,
+    pub address: OrderbookAddress,
+    pub price: MmNumberMultiRepr,
+    pub pubkey: String,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume: MmNumberMultiRepr,
+    pub base_min_volume: MmNumberMultiRepr,
+    pub rel_max_volume: MmNumberMultiRepr,
+    pub rel_min_volume: MmNumberMultiRepr,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AggregatedOrderbookEntryV2 {
+    #[serde(flatten)]
+    pub entry: RpcOrderbookEntryV2,
+    pub base_max_volume_aggr: MmNumberMultiRepr,
+    pub rel_max_volume_aggr: MmNumberMultiRepr,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MmNumberMultiRepr {
+    pub decimal: BigDecimal,
+    pub rational: BigRational,
+    pub fraction: Fraction,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderbookV2Response {
+    pub asks: Vec<AggregatedOrderbookEntryV2>,
+    pub base: String,
+    pub bids: Vec<AggregatedOrderbookEntryV2>,
+    pub net_id: u16,
+    pub num_asks: usize,
+    pub num_bids: usize,
+    pub rel: String,
+    pub timestamp: u64,
+    pub total_asks_base_vol: MmNumberMultiRepr,
+    pub total_asks_rel_vol: MmNumberMultiRepr,
+    pub total_bids_base_vol: MmNumberMultiRepr,
+    pub total_bids_rel_vol: MmNumberMultiRepr,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BestOrdersV2Response {
+    pub orders: HashMap<String, Vec<RpcOrderbookEntryV2>>,
+    pub original_tickers: HashMap<String, HashSet<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignatureResponse {
+    pub signature: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerificationResponse {
+    pub is_valid: bool,
 }

@@ -5,6 +5,8 @@ use helpers_validation::merkle_prove;
 use primitives::hash::H256;
 use types::SPVError;
 
+pub const TRY_SPV_PROOF_INTERVAL: u64 = 10;
+
 #[derive(PartialEq, Clone)]
 pub struct SPVProof {
     /// The tx id
