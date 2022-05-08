@@ -1,6 +1,5 @@
 use crate::mm2::lp_ordermatch::process_price_request;
-use bigdecimal::BigDecimal;
-use common::log::debug;
+use common::{log::debug, mm_number::BigDecimal};
 
 const MY_PRICE_ENDPOINT1: &str = "https://prices.komodo.live:1313/api/v2/tickers";
 const MY_PRICE_ENDPOINT2: &str = "https://prices.cipig.net:1717/api/v2/tickers";

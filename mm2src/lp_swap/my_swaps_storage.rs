@@ -1,9 +1,9 @@
 use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::PagingOptions;
+use common::mm_number::BigDecimal;
 use derive_more::Display;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
@@ -62,6 +62,7 @@ mod native_impl {
     use super::*;
     use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, update_coins_price,
                                          SelectRecentSwapsUuidsErr};
+    use common::mm_number::BigDecimal;
     use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectRecentSwapsUuidsErr> for MySwapsError {

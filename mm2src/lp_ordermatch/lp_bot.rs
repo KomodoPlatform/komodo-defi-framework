@@ -4,9 +4,9 @@
 //
 
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
 use common::event_dispatcher::{EventListener, EventUniqueId};
 use common::log::{debug, info};
+use common::mm_number::BigDecimal;
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;

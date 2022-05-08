@@ -748,6 +748,8 @@ async fn update_my_swap_coins_price_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
+    use super::database::price_fetcher::fetch_swap_coins_price;
+
     if swap.is_finished_and_success() {
         let swap_coins_usd_price = fetch_swap_coins_price(
             swap.maker_coin_ticker().unwrap_or("".to_string()),

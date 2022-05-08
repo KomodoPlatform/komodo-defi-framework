@@ -1,9 +1,8 @@
 use crate::mm2::{database::SqlResult,
                  lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap}};
 
-use bigdecimal::BigDecimal;
 use common::{log::{debug, error},
-             mm_ctx::MmArc};
+             mm_ctx::MmArc, mm_number::BigDecimal};
 use db_common::sqlite::rusqlite::{Connection, OptionalExtension};
 use std::collections::HashSet;
 
