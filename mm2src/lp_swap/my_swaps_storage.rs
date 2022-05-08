@@ -2,8 +2,8 @@ use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::PagingOptions;
 use common::mm_number::BigDecimal;
+use common::PagingOptions;
 use derive_more::Display;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
@@ -188,7 +188,7 @@ mod wasm_impl {
             my_coin: &str,
             other_coin: &str,
             uuid: Uuid,
-            started_at: u64
+            started_at: u64,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
             let db = swap_ctx.swap_db().await?;
@@ -199,7 +199,7 @@ mod wasm_impl {
                 uuid,
                 my_coin: my_coin.to_owned(),
                 other_coin: other_coin.to_owned(),
-                started_at: started_at as u32
+                started_at: started_at as u32,
             };
             my_swaps_table.add_item(&item).await?;
             Ok(())
@@ -377,16 +377,8 @@ mod wasm_tests {
             let my_coin = *coins.choose(&mut rng).unwrap();
             let other_coin = *coins.choose(&mut rng).unwrap();
             let started_at = rng.gen_range(timestamp_range.start, timestamp_range.end);
-            let coins_price = swap_coins_price(Some(&"".to_string()), Some(&"".to_string())).await;
 
-            if is_applied(
-                &filters,
-                my_coin,
-                other_coin,
-                started_at,
-                &coins_price.0.clone(),
-                &coins_price.1.clone(),
-            ) {
+            if is_applied(&filters, my_coin, other_coin, started_at) {
                 expected_uuids.insert(OrderedUuid {
                     started_at: started_at as u32,
                     uuid,
@@ -397,9 +389,7 @@ mod wasm_tests {
                     my_coin,
                     other_coin,
                     uuid,
-                    started_at,
-                    &coins_price.0.clone(),
-                    &coins_price.1.clone(),
+                    started_at
                 )
                 .await
                 .expect("!MySwapsStorage::save_new_swap");

@@ -337,7 +337,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let ctx = swap.ctx.clone();
     subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
-    let uuid = swap.uuid;
+    let uuid = swap.uuid.to_string();
     let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     let running_swap = Arc::new(swap);
     let weak_ref = Arc::downgrade(&running_swap);
@@ -370,8 +370,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                             event.clone().into(),
                         )
                     }
-
-                    status.status(&[&"swap", &("uuid", uuid.to_string().as_str())], &event.status_str());
+                    status.status(&[&"swap", &("uuid", uuid.as_str())], &event.status_str());
                     running_swap.apply_event(event);
                 }
                 match res.0 {

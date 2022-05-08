@@ -210,7 +210,6 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         Ok(u) => u,
         Err(_) => return,
     };
-
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
@@ -249,7 +248,7 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);
         }
-    };
+    }
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
@@ -719,7 +718,6 @@ pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY
 
 pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
     my_coin: &str,
@@ -733,7 +731,6 @@ pub async fn insert_new_swap_to_db(
         .map_err(|e| ERRL!("{}", e))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn update_my_swap_coins_price_to_db(
     ctx: MmArc,
     uuid: Uuid,
@@ -781,6 +778,7 @@ async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
     let ctx = &ctx.sqlite_connection();
+
     crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap);
 }
 
@@ -800,7 +798,6 @@ pub struct MySwapInfo {
     pub my_amount: BigDecimal,
     pub other_amount: BigDecimal,
     pub started_at: u64,
-    // pub fiat_price: BigDecimal,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]

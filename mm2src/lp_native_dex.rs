@@ -359,7 +359,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         migrate_db(&ctx)?;
     }
 
-    // init_swaps_context(&ctx)?;
     init_ordermatch_context(&ctx)?;
     init_message_service(&ctx).await?;
     init_p2p(ctx.clone()).await?;

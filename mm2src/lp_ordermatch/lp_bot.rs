@@ -158,7 +158,7 @@ pub struct SimpleCoinMarketMakerCfg {
     pub min_pair_price: Option<MmNumber>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct TickerInfosRegistry(HashMap<String, TickerInfos>);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -380,9 +380,7 @@ impl TickerInfosRegistry {
                 rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
                 Some(rate_infos)
             },
-            None => {
-                None
-            },
+            None => None,
         }
     }
 }

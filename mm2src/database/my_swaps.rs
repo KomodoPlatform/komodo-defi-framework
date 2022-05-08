@@ -35,7 +35,6 @@ pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str,
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at];
-
     conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
 }
 
@@ -77,14 +76,12 @@ fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)>
         // get_my_info returning None means that swap did not even start - so we can keep it away from indexing.
         None => return None,
     };
-
     let params = vec![
         swap_info.my_coin,
         swap_info.other_coin,
         swap.uuid().to_string(),
         swap_info.started_at.to_string(),
     ];
-
     Some((INSERT_MY_SWAP, params))
 }
 

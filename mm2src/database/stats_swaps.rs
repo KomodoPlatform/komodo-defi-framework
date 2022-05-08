@@ -98,7 +98,6 @@ pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Ve
             result.push(sql_with_params);
         }
     }
-
     result
 }
 
@@ -145,7 +144,6 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, V
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
     ];
-
     Some((INSERT_STATS_SWAP, params))
 }
 
@@ -217,7 +215,6 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, V
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
     ];
-
     Some((INSERT_STATS_SWAP, params))
 }
 

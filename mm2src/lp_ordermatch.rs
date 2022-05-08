@@ -2741,7 +2741,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 return;
             },
         };
-
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
         let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
         let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
@@ -2754,7 +2753,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             &maker_coin,
             &taker_coin,
         );
-
         // detect atomic lock time version implicitly by conf_settings existence in taker request
         let atomic_locktime_v = match maker_match.request.conf_settings {
             Some(_) => {
@@ -2776,12 +2774,10 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin.ticker(),
             uuid
         );
-
         let now = now_ms() / 1000;
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);
         }
-
         let maker_swap = MakerSwap::new(
             ctx.clone(),
             alice,
