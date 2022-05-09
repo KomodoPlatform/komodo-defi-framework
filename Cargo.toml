@@ -18,18 +18,18 @@ zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 
 [[bin]]
 name = "mm2"
-path = "mm2src/mm2_bin.rs"
+path = "mm2src/mm2/src/mm2_bin.rs"
 test = false
 doctest = false
 bench = false
 
 [[bin]]
 name = "docker_tests"
-path = "mm2src/docker_tests.rs"
+path = "mm2src/mm2/src/docker_tests.rs"
 
 [lib]
 name = "mm2"
-path = "mm2src/mm2_lib.rs"
+path = "mm2src/mm2/src/mm2_lib.rs"
 crate-type = ["cdylib", "staticlib"]
 test = false
 doctest = false
