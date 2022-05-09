@@ -12,11 +12,10 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest};
-
+            RawTransactionRequest, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -33,7 +32,8 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
 use keys::hash::H160;
-use keys::{AddressHashEnum, CashAddrType, CashAddress, KeyPair, NetworkPrefix as CashAddrPrefix, Public};
+use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
+           Public};
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
@@ -1064,6 +1064,32 @@ impl MarketCoinOps for SlpToken {
         let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
         let slp_address = try_s!(self.platform_coin.slp_address(my_address));
         slp_address.encode()
+    }
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        utxo_common::sign_message_hash(self.as_ref(), message)
+    }
+
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message)
+    }
+
+    fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        let message_hash = self
+            .sign_message_hash(message)
+            .ok_or(VerificationError::PrefixNotFound)?;
+        let signature = CompactSignature::from(base64::decode(signature)?);
+        let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
+        let address_from_pubkey = self.platform_coin.address_from_pubkey(&pubkey);
+        let slp_address = self
+            .platform_coin
+            .slp_address(&address_from_pubkey)
+            .map_err(VerificationError::InternalError)?
+            .encode()
+            .map_err(VerificationError::InternalError)?;
+        Ok(slp_address == address)
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
@@ -2117,5 +2143,33 @@ mod slp_tests {
             ValidateHtlcError::InvalidSlpUtxo(e) => println!("{:?}", e),
             err @ _ => panic!("Unexpected err {:?}", err),
         };
+    }
+
+    #[test]
+    fn test_sign_message() {
+        let bch = tbch_coin_for_test();
+        let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
+        let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
+        let signature = fusd.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let bch = tbch_coin_for_test();
+        let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
+        let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
+        let is_valid = fusd
+            .verify_message(
+                "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA=",
+                "test",
+                "slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8",
+            )
+            .unwrap();
+        assert!(is_valid);
     }
 }

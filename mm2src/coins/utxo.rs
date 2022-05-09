@@ -444,6 +444,7 @@ pub struct UtxoCoinConf {
     pub wif_prefix: u8,
     pub pub_t_addr_prefix: u8,
     pub p2sh_t_addr_prefix: u8,
+    pub sign_message_prefix: Option<String>,
     // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#Segwit_address_format
     pub bech32_hrp: Option<String>,
     /// True if coins uses Proof of Stake consensus algo

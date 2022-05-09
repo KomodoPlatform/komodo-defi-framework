@@ -6,14 +6,16 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SwapOps, TradePreimageValue, TransactionFut,
-            TransactionType, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFut};
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use itertools::Either as EitherIter;
+use keys::hash::H256;
 use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
@@ -1063,6 +1065,20 @@ impl MarketCoinOps for BchCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        utxo_common::sign_message_hash(self.as_ref(), message)
+    }
+
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message)
+    }
+
+    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        utxo_common::verify_message(self, signature_base64, message, address)
+    }
+
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
@@ -1247,7 +1263,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
 
-    let conf = json!({"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id":"0x40","protocol":{"type":"UTXO"},
+    let conf = json!({"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id":"0x40","protocol":{"type":"UTXO"}, "sign_message_prefix": "Bitcoin Signed Message:\n",
          "address_format":{"format":"cashaddress","network":"bchtest"}});
     let req = json!({
         "method": "electrum",
@@ -1405,5 +1421,29 @@ mod bch_tests {
         assert_eq!(expected_tx_type, slp_tx_details.transaction_type);
 
         assert_eq!(coin.ticker(), slp_tx_details.coin);
+    }
+
+    #[test]
+    fn test_sign_message() {
+        let coin = tbch_coin_for_test();
+        let signature = coin.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let coin = tbch_coin_for_test();
+        let is_valid = coin
+            .verify_message(
+                "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA=",
+                "test",
+                "bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66",
+            )
+            .unwrap();
+        assert!(is_valid);
     }
 }

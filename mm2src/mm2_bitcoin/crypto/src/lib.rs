@@ -1,6 +1,7 @@
 extern crate groestl;
 extern crate primitives;
 extern crate ripemd160;
+extern crate serialization;
 extern crate sha1;
 extern crate sha2;
 extern crate sha3;

@@ -886,3 +886,15 @@ pub struct BestOrdersV2Response {
     pub orders: HashMap<String, Vec<RpcOrderbookEntryV2>>,
     pub original_tickers: HashMap<String, HashSet<String>>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignatureResponse {
+    pub signature: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerificationResponse {
+    pub is_valid: bool,
+}

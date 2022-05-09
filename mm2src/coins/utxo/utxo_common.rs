@@ -11,10 +11,11 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, TradePreimageValue, TransactionFut,
-            TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, SignatureError, SignatureResult,
+            TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bigdecimal::BigDecimal;
+use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
@@ -33,14 +34,15 @@ use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use itertools::Itertools;
 use keys::bytes::Bytes;
-use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Public, SegwitAddress, Type as ScriptType};
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
+           Type as ScriptType};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant,
-                    SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger,
+                    Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
 use spv_validation::types::SPVError;
@@ -1689,6 +1691,40 @@ pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, String> {
         DerivationMethod::Iguana(ref my_address) => my_address.display_address(),
         DerivationMethod::HDWallet(_) => ERR!("'my_address' is deprecated for HD wallets"),
     }
+}
+
+/// Hash message for signature using Bitcoin's message signing format.
+/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
+pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32]> {
+    let message_prefix = coin.conf.sign_message_prefix.clone()?;
+    let mut stream = Stream::new();
+    let prefix_len = CompactInteger::from(message_prefix.len());
+    prefix_len.serialize(&mut stream);
+    stream.append_slice(message_prefix.as_bytes());
+    let msg_len = CompactInteger::from(message.len());
+    msg_len.serialize(&mut stream);
+    stream.append_slice(message.as_bytes());
+    Some(dhash256(&stream.out()).take())
+}
+
+pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<String> {
+    let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
+    let private_key = coin.priv_key_policy.key_pair_or_err()?.private();
+    let signature = private_key.sign_compact(&H256::from(message_hash))?;
+    Ok(base64::encode(&*signature))
+}
+
+pub fn verify_message<T: UtxoCommonOps>(
+    coin: &T,
+    signature_base64: &str,
+    message: &str,
+    address: &str,
+) -> VerificationResult<bool> {
+    let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
+    let signature = CompactSignature::from(base64::decode(signature_base64)?);
+    let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
+    let received_address = checked_address_from_str(coin, address).map_err(VerificationError::AddressDecodingError)?;
+    Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == received_address.hash)
 }
 
 pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
