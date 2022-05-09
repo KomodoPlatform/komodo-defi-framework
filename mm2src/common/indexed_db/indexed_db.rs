@@ -23,10 +23,12 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
+mod be_big_uint;
 mod db_driver;
 mod db_lock;
 mod indexed_cursor;
 
+pub use be_big_uint::BeBigUint;
 pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
                     OnUpgradeError, OnUpgradeResult};
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
