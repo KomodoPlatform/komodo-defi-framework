@@ -2,8 +2,8 @@
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use common::PagingOptions;
 use common::mm_number::BigDecimal;
+use common::PagingOptions;
 use db_common::sqlite::offset_by_uuid;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
@@ -57,17 +57,7 @@ pub fn update_coins_price(
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
-    let mut result = vec![];
-    for swap in swaps {
-        // let prices = match &swap {
-        //     SavedSwap::Maker(maker) => swap_coins_price(&maker.maker_coin, &maker.taker_coin).await,
-        //     SavedSwap::Taker(taker) => swap_coins_price(&taker.maker_coin, &taker.taker_coin).await,
-        // };
-        let swap_data = insert_saved_swap_sql(swap).expect("swap data");
-        result.push(swap_data)
-    }
-
-    result
+    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
 }
 
 fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {

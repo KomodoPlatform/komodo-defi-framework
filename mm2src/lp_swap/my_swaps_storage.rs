@@ -35,7 +35,7 @@ pub enum MySwapsError {
 pub trait MySwapsOps {
     async fn save_new_swap(&self, my_coin: &str, other_coin: &str, uuid: Uuid, started_at: u64) -> MySwapsResult<()>;
 
-    async fn save_updated_coins_price(
+    async fn update_coins_price(
         &self,
         uuid: Uuid,
         my_coin_usd_price: BigDecimal,
@@ -96,7 +96,7 @@ mod native_impl {
             )?)
         }
 
-        async fn save_updated_coins_price(
+        async fn update_coins_price(
             &self,
             uuid: Uuid,
             my_coin_usd_price: BigDecimal,

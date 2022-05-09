@@ -2639,9 +2639,9 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
         if let Some(orderbook_ticker) = coin.orderbook_ticker {
             orderbook_tickers.insert(coin.coin.clone(), orderbook_ticker.clone());
             original_tickers
-                .entry(orderbook_ticker.to_string())
+                .entry(orderbook_ticker)
                 .or_insert_with(HashSet::new)
-                .insert(coin.coin.clone().to_string());
+                .insert(coin.coin);
         }
     }
 
@@ -2680,7 +2680,6 @@ impl OrdermatchContext {
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
-                price_tickers: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::new(ctx),
@@ -2774,6 +2773,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin.ticker(),
             uuid
         );
+        
         let now = now_ms() / 1000;
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);

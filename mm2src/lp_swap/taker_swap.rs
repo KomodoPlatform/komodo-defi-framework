@@ -623,6 +623,7 @@ impl TakerSwap {
                 if let Some(keypair) = data.taker_coin_htlc_privkey {
                     self.w().my_taker_coin_htlc_keypair = keypair.into_inner();
                 }
+
                 self.w().data = data;
             },
             TakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),

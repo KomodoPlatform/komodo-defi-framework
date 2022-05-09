@@ -2,7 +2,8 @@ use crate::mm2::{database::SqlResult,
                  lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap}};
 
 use common::{log::{debug, error},
-             mm_ctx::MmArc, mm_number::BigDecimal};
+             mm_ctx::MmArc,
+             mm_number::BigDecimal};
 use db_common::sqlite::rusqlite::{Connection, OptionalExtension};
 use std::collections::HashSet;
 
@@ -256,7 +257,7 @@ fn update_stats_swap_db(
     taker_coin_usd_price: &str,
     uuid: &str,
 ) -> SqlResult<()> {
-    debug!("Inserting new swap {} to the SQLite database", uuid);
+    debug!("Updating swap coins usd price for {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
     let params = [uuid, maker_coin_usd_price, taker_coin_usd_price];
 

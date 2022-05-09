@@ -738,7 +738,7 @@ async fn update_my_swap_coins_price_to_db(
     other_coin_usd_price: BigDecimal,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .save_updated_coins_price(uuid, my_coin_usd_price.to_owned(), other_coin_usd_price.to_owned())
+        .update_coins_price(uuid, my_coin_usd_price.to_owned(), other_coin_usd_price.to_owned())
         .await
         .map_err(|e| ERRL!("{}", e))
 }
@@ -778,7 +778,6 @@ async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
     let ctx = &ctx.sqlite_connection();
-
     crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap);
 }
 
