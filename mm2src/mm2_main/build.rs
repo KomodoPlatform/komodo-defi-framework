@@ -92,7 +92,7 @@ fn mm_version() -> String {
         }
     }
 
-    let mm_datetime_p = root().join("MM_DATETIME");
+    let mm_datetime_p = root().join("../../MM_DATETIME");
     let dt_file = String::from_utf8(slurp(&mm_datetime_p)).unwrap();
     let mut dt_file = dt_file.trim().to_string();
     if let Some(ref dt_git) = dt_git {

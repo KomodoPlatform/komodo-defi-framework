@@ -4131,7 +4131,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "mm2"
+name = "mm2-libp2p"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "atomicdex-gossipsub",
+ "derive_more",
+ "env_logger 0.7.1",
+ "futures 0.3.15",
+ "futures-rustls",
+ "getrandom 0.2.5",
+ "hex 0.4.2",
+ "lazy_static",
+ "libp2p",
+ "libp2p-floodsub 0.22.0",
+ "log 0.4.14",
+ "num-bigint 0.2.6",
+ "num-rational",
+ "rand 0.7.3",
+ "regex 1.5.4",
+ "rmp-serde",
+ "secp256k1",
+ "serde",
+ "serde_bytes 0.11.5",
+ "serde_json",
+ "sha2 0.9.5",
+ "tokio",
+ "void",
+ "wasm-bindgen-futures",
+ "wasm-timer",
+]
+
+[[package]]
+name = "mm2_main"
 version = "0.1.0"
 dependencies = [
  "async-std",
@@ -4211,39 +4244,6 @@ dependencies = [
  "wasm-timer",
  "web-sys",
  "winapi 0.3.9",
-]
-
-[[package]]
-name = "mm2-libp2p"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "async-trait",
- "atomicdex-gossipsub",
- "derive_more",
- "env_logger 0.7.1",
- "futures 0.3.15",
- "futures-rustls",
- "getrandom 0.2.5",
- "hex 0.4.2",
- "lazy_static",
- "libp2p",
- "libp2p-floodsub 0.22.0",
- "log 0.4.14",
- "num-bigint 0.2.6",
- "num-rational",
- "rand 0.7.3",
- "regex 1.5.4",
- "rmp-serde",
- "secp256k1",
- "serde",
- "serde_bytes 0.11.5",
- "serde_json",
- "sha2 0.9.5",
- "tokio",
- "void",
- "wasm-bindgen-futures",
- "wasm-timer",
 ]
 
 [[package]]
