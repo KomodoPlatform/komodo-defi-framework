@@ -41,16 +41,14 @@ use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize_list, CoinVariant, Reader};
-use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::{Arc, Weak};
 use tokio::task::block_in_place;
-use zcash_client_backend::decrypt_transaction;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
-use zcash_client_backend::wallet::AccountId;
+use zcash_client_backend::wallet::SpendableNote;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::constants::mainnet;
 use zcash_primitives::memo::MemoBytes;
@@ -70,9 +68,10 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use z_rpc::{ZUnspent, ZcoinLightClient, ZcoinRpcClient};
+use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
+use crate::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::z_coin::z_rpc::{LightClientSyncState, ZcoinNativeClient};
 pub use z_coin_errors::*;
 
@@ -259,35 +258,11 @@ impl ZCoin {
     #[inline(always)]
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
-    /// Returns all unspents included currently unspendable (not confirmed)
-    async fn my_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
-        let min_conf = 0;
-        let max_conf = i32::MAX as u32;
-        let watch_only = true;
+    /// Returns spendable notes
+    async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, ()> {
+        let mut unspents = self.z_rpc().get_spendable_notes().await?;
 
-        let mut unspents = self
-            .z_rpc()
-            .z_list_unspent(min_conf, max_conf, watch_only, &[&self.z_fields.my_z_addr_encoded])
-            .compat()
-            .await?;
-
-        unspents.sort_unstable_by(|a, b| a.amount.cmp(&b.amount));
-        Ok(unspents)
-    }
-
-    /// shielded outputs are not spendable until confirmed
-    async fn my_spendable_z_unspents_ordered(&self) -> UtxoRpcResult<Vec<ZUnspent>> {
-        let min_conf = 1;
-        let max_conf = i32::MAX as u32;
-        let watch_only = true;
-
-        let mut unspents = self
-            .z_rpc()
-            .z_list_unspent(min_conf, max_conf, watch_only, &[&self.z_fields.my_z_addr_encoded])
-            .compat()
-            .await?;
-
-        unspents.sort_unstable_by(|a, b| a.amount.cmp(&b.amount));
+        unspents.sort_unstable_by(|a, b| a.note_value.cmp(&b.note_value));
         Ok(unspents)
     }
 
@@ -317,16 +292,16 @@ impl ZCoin {
         let total_output = big_decimal_from_sat_unsigned(total_output_sat, self.utxo_arc.decimals);
         let total_required = &total_output + &tx_fee;
 
-        let z_unspents = self.my_spendable_z_unspents_ordered().await?;
-        let mut selected_unspents = Vec::new();
-        let mut total_input_amount = BigDecimal::from(0u8);
-        let mut change = BigDecimal::from(0u8);
+        let spendable_notes = self.spendable_notes_ordered().await.unwrap();
+        let mut selected_notes = Vec::new();
+        let mut total_input_amount = BigDecimal::from(0);
+        let mut change = BigDecimal::from(0);
 
         let mut received_by_me = 0u64;
 
-        for unspent in z_unspents {
-            total_input_amount += unspent.amount.to_decimal();
-            selected_unspents.push(unspent);
+        for note in spendable_notes {
+            total_input_amount += big_decimal_from_sat_unsigned(note.note_value.into(), self.decimals());
+            selected_notes.push(note);
 
             if total_input_amount >= total_required {
                 change = &total_input_amount - &total_required;
@@ -345,45 +320,20 @@ impl ZCoin {
         let current_block = self.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
         let mut tx_builder = ZTxBuilder::new(self.consensus_params(), current_block.into());
 
-        let mut ext = HashMap::new();
-
-        let evk = ExtendedFullViewingKey::from(&self.z_fields.z_spending_key);
-        ext.insert(AccountId::default(), evk);
-        let mut selected_notes_with_witness: Vec<(_, IncrementalWitness<Node>)> =
-            Vec::with_capacity(selected_unspents.len());
-
-        for unspent in selected_unspents {
-            let prev_tx = self
-                .utxo_rpc_client()
-                .get_verbose_transaction(&unspent.txid)
-                .compat()
-                .await?;
-
-            let height = prev_tx.height.or_mm_err(|| GenTxError::PrevTxNotConfirmed)?;
-
-            let z_cash_tx = ZTransaction::read(prev_tx.hex.as_slice())
-                .map_to_mm(|err| GenTxError::TxReadError { err, hex: prev_tx.hex })?;
-            let decrypted = decrypt_transaction(
-                self.consensus_params_ref(),
-                BlockHeight::from_u32(height as u32),
-                &z_cash_tx,
-                &ext,
-            );
-
-            let decrypted_output = decrypted
-                .iter()
-                .find(|out| out.index as u32 == unspent.out_index)
-                .or_mm_err(|| GenTxError::DecryptedOutputNotFound)?;
-            let witness = self.get_unspent_witness(&decrypted_output.note, height as u32).await?;
-            selected_notes_with_witness.push((decrypted_output.note.clone(), witness));
-        }
-
-        for (note, witness) in selected_notes_with_witness {
+        for spendable_note in selected_notes {
+            let note = self
+                .z_fields
+                .my_z_addr
+                .create_note(spendable_note.note_value.into(), spendable_note.rseed)
+                .unwrap();
             tx_builder.add_sapling_spend(
                 self.z_fields.z_spending_key.clone(),
                 *self.z_fields.my_z_addr.diversifier(),
                 note,
-                witness.path().or_mm_err(|| GenTxError::FailedToGetMerklePath)?,
+                spendable_note
+                    .witness
+                    .path()
+                    .or_mm_err(|| GenTxError::FailedToGetMerklePath)?,
             )?;
         }
 
@@ -778,10 +728,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             block_in_place(LocalTxProver::with_default_location).or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
 
         let my_z_addr_encoded = encode_payment_address(self.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
-        let my_z_key_encoded = encode_extended_spending_key(
-            self.consensus_params.hrp_sapling_extended_spending_key(),
-            &self.z_spending_key,
-        );
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
         let z_rpc = match &self.z_coin_params.mode {
@@ -839,7 +785,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_fields: Arc::new(z_fields),
         };
 
-        // z_coin.z_rpc().z_import_key(&my_z_key_encoded).compat().await?;
         spawn(sapling_state_cache_loop(z_coin.clone()));
         Ok(z_coin)
     }
@@ -1702,6 +1647,74 @@ impl UtxoCommonOps for ZCoin {
             conf.bech32_hrp.clone(),
             self.addr_format().clone(),
         )
+    }
+}
+
+#[async_trait]
+impl InitWithdrawCoin for ZCoin {
+    async fn init_withdraw(
+        &self,
+        _ctx: MmArc,
+        req: WithdrawRequest,
+        task_handle: &WithdrawTaskHandle,
+    ) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        if req.fee.is_some() {
+            return MmError::err(WithdrawError::InternalError(
+                "Setting a custom withdraw fee is not supported for ZCoin yet".to_owned(),
+            ));
+        }
+
+        let to_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &req.to)
+            .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{}", e)))?
+            .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
+        let amount = if req.max {
+            let fee = self.get_one_kbyte_tx_fee().await?;
+            let balance = self.my_balance().compat().await?;
+            balance.spendable - fee
+        } else {
+            req.amount
+        };
+
+        task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction);
+        let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
+        let z_output = ZOutput {
+            to_addr,
+            amount: Amount::from_u64(satoshi)
+                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
+            // TODO add optional viewing_key and memo fields to the WithdrawRequest
+            viewing_key: None,
+            memo: None,
+        };
+
+        let (tx, data) = self.gen_tx(vec![], vec![z_output]).await?;
+        let mut tx_bytes = Vec::with_capacity(1024);
+        tx.write(&mut tx_bytes)
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+        let mut tx_hash = tx.txid().0.to_vec();
+        tx_hash.reverse();
+
+        let my_balance_change = data.spent_by_me - data.received_by_me;
+
+        Ok(TransactionDetails {
+            tx_hex: tx_bytes.into(),
+            tx_hash: tx_hash.clone().into(),
+            from: vec![self.z_fields.my_z_addr_encoded.clone()],
+            to: vec![req.to],
+            total_amount: big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals()),
+            spent_by_me: big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals()),
+            received_by_me: big_decimal_from_sat_unsigned(data.received_by_me, self.decimals()),
+            my_balance_change: big_decimal_from_sat_unsigned(my_balance_change, self.decimals()),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+                coin: Some(self.ticker().to_owned()),
+                amount: big_decimal_from_sat_unsigned(data.fee_amount, self.decimals()),
+            })),
+            coin: self.ticker().to_owned(),
+            internal_id: tx_hash.into(),
+            kmd_rewards: None,
+            transaction_type: Default::default(),
+        })
     }
 }
 

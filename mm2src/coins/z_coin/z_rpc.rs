@@ -25,15 +25,14 @@ use tonic::transport::{Channel, ClientTlsConfig};
 use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
 use zcash_client_backend::data_api::error::Error as ChainError;
 use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
-use zcash_client_backend::encoding::decode_payment_address;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::wallet::AccountId;
+use zcash_client_backend::wallet::{AccountId, SpendableNote};
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_client_sqlite::wallet::get_balance;
 use zcash_client_sqlite::wallet::init::{init_accounts_table, init_wallet_db};
+use zcash_client_sqlite::wallet::transact::get_spendable_notes;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::constants::mainnet;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
@@ -469,7 +468,9 @@ fn try_grpc() {
     use std::time::Duration;
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
+    use zcash_client_backend::encoding::decode_payment_address;
     use zcash_primitives::consensus::Parameters;
+    use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
 
     let zombie_consensus_params = ZcoinConsensusParams::for_zombie();
@@ -579,14 +580,19 @@ impl ZcoinRpcClient {
 
     pub fn z_get_balance(&self, _address: &str, _min_conf: u32) -> UtxoRpcFut<MmNumber> { todo!() }
 
-    pub fn z_list_unspent(
-        &self,
-        _min_conf: u32,
-        _max_conf: u32,
-        _watch_only: bool,
-        _addresses: &[&str],
-    ) -> UtxoRpcFut<Vec<ZUnspent>> {
-        todo!()
+    pub async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, ()> {
+        match self {
+            ZcoinRpcClient::Native(_) => unimplemented!(),
+            ZcoinRpcClient::Light(light) => {
+                let db = light.db.clone();
+                async_blocking(move || {
+                    let guard = db.lock();
+                    let (_, latest_db_block) = guard.wallet_db.block_height_extrema().map_err(|e| ())?.ok_or(())?;
+                    get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(|e| ())
+                })
+                .await
+            },
+        }
     }
 
     pub fn z_import_key(&self, _key: &str) -> UtxoRpcFut<()> { todo!() }

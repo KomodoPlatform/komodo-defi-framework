@@ -76,7 +76,7 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Wit
         if let WithdrawStatus::Ready(rpc_result) = status.result {
             match rpc_result {
                 MmRpcResult::Ok { result } => break result,
-                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
+                MmRpcResult::Err(e) => panic!("{} withdraw error {:?}", coin, e),
             }
         }
         Timer::sleep(1.).await;
