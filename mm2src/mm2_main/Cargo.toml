@@ -53,7 +53,6 @@ cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
-crc = "1.8"
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }
@@ -70,7 +69,6 @@ gstuff = { version = "0.7", features = ["nightly"] }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
 hex = "0.4.2"
-hex-literal = "0.3.1"
 http = "0.2"
 hw_common = { path = "../hw_common" }
 itertools = "0.9"
@@ -98,7 +96,6 @@ regex = "1"
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
-serde_bencode = "0.2"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_derive = "1.0"
 ser_error = { path = "../derives/ser_error" }

@@ -798,12 +798,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build_const"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39092a32794787acd8525ee150305ff051b0aa6cc2abaf193924f5ab05425f39"
-
-[[package]]
 name = "bumpalo"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1349,15 +1343,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95059428f66df56b63431fdb4e1947ed2190586af5c5a8a8b71122bdf5a7f469"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "crc"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d663548de7f5cca343f1e0a48d14dcfb0e9eb4e079ec58883b7251539fa10aeb"
-dependencies = [
- "build_const",
 ]
 
 [[package]]
@@ -2775,12 +2760,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
 
 [[package]]
-name = "hex-literal"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5af1f635ef1bc545d78392b136bfe1c9809e029023c84a3638a864a10b8819c8"
-
-[[package]]
 name = "hkd32"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4178,7 +4157,6 @@ dependencies = [
  "coins",
  "coins_activation",
  "common",
- "crc",
  "crc32fast",
  "crossbeam",
  "crypto",
@@ -4197,7 +4175,6 @@ dependencies = [
  "hash-db",
  "hash256-std-hasher",
  "hex 0.4.2",
- "hex-literal",
  "http 0.2.1",
  "hw_common",
  "hyper",
@@ -4225,7 +4202,6 @@ dependencies = [
  "ser_error",
  "ser_error_derive",
  "serde",
- "serde_bencode",
  "serde_derive",
  "serde_json",
  "serialization",
@@ -8041,12 +8017,10 @@ dependencies = [
  "byteorder 1.4.3",
  "common",
  "derive_more",
- "env_logger 0.7.1",
  "futures 0.3.15",
  "hw_common",
  "js-sys",
  "prost",
- "prost-build",
  "rand 0.7.3",
  "rpc_task",
  "serde",
