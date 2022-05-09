@@ -7,8 +7,8 @@ use common::log::error;
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
-use db_common::sqlite::query_single_row;
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
+use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use derive_more::Display;
 use http::Uri;
 use parking_lot::{Mutex, MutexGuard};
@@ -154,6 +154,7 @@ impl BlockDb {
     /// Opens a connection to the wallet database stored at the specified path.
     pub fn for_path<P: AsRef<Path>>(path: P) -> Result<Self, db_common::sqlite::rusqlite::Error> {
         let conn = Connection::open(path)?;
+        run_optimization_pragmas(&conn)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -306,6 +307,10 @@ impl ZcoinLightClient {
             }
         })
         .await?;
+        block_in_place(|| {
+            run_optimization_pragmas(wallet_db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+        })?;
+
         block_in_place(|| init_wallet_db(&wallet_db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure))?;
 
         let existing_keys = block_in_place(|| wallet_db.get_extended_full_viewing_keys())?;
@@ -504,8 +509,7 @@ fn try_grpc() {
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();
-    let amount_to_send = Amount::from_i64(1000000000).unwrap();
-    let change = notes[0].note_value - amount_to_send - Amount::from_i64(1000).unwrap();
+    let amount_to_send = notes[0].note_value - Amount::from_i64(1000).unwrap();
     for spendable_note in notes.into_iter().take(1) {
         let note = from_addr
             .create_note(spendable_note.note_value.into(), spendable_note.rseed)
@@ -520,16 +524,9 @@ fn try_grpc() {
             .unwrap();
     }
 
-    let to_address = decode_payment_address(
-        mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-        "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",
-    )
-    .unwrap()
-    .unwrap();
     tx_builder
-        .add_sapling_output(None, to_address, amount_to_send, None)
+        .add_sapling_output(None, from_addr, amount_to_send, None)
         .unwrap();
-    tx_builder.add_sapling_output(None, from_addr, change, None).unwrap();
 
     let prover = LocalTxProver::with_default_location().unwrap();
     let (transaction, _) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();

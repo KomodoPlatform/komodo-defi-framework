@@ -157,3 +157,15 @@ where
     };
     Ok(res)
 }
+
+/// As per https://twitter.com/marcan42/status/1494213862970707969, I've noticed significant SQLite performance
+/// difference on M1 Mac and Linux.
+/// But according to https://phiresky.github.io/blog/2020/sqlite-performance-tuning/, these pragmas should
+/// be safe to use, while giving great speed boost.
+/// With these, Mac and Linux have comparable SQLite performance.
+pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
+    conn.query_row("pragma journal_mode = WAL;", NO_PARAMS, |row| row.get::<_, String>(0))?;
+    conn.execute("pragma synchronous = normal;", NO_PARAMS)?;
+    conn.execute("pragma temp_store = memory;", NO_PARAMS)?;
+    Ok(())
+}

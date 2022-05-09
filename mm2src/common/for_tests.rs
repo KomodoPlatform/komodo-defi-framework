@@ -1313,6 +1313,22 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "withdraw_status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'withdraw_status' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
         .rpc(&json! ({

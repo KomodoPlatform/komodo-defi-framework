@@ -1,11 +1,11 @@
 use super::*;
 use coins::z_coin::ZcoinConsensusParams;
-use common::for_tests::{init_withdraw, init_z_coin_light};
+use common::for_tests::{init_withdraw, init_z_coin_light, withdraw_status};
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
 const ZOMBIE_TICKER: &str = "ZOMBIE";
-const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
+const ZOMBIE_ELECTRUMS: &[&str] = &["electrum1.cipig.net:10001"];
 const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
 
 fn zombie_conf() -> Json {
@@ -25,12 +25,21 @@ fn zombie_conf() -> Json {
     })
 }
 
+fn blocks_cache_path(mm: &MarketMakerIt, seed: &str, coin: &str) -> PathBuf {
+    let rmd = rmd160_from_passphrase(seed);
+    let db_name = format!("{}_light_cache.db", coin);
+    mm.folder.join("DB").join(hex::encode(rmd)).join(db_name)
+}
+
 async fn enable_z_coin_light(
     mm: &MarketMakerIt,
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
+    blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
+    std::fs::copy("./mm2src/coins/test_cache_zombie.db", blocks_cache_path).unwrap();
+
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = now_ms() + 120000;
@@ -43,6 +52,28 @@ async fn enable_z_coin_light(
         let status = init_z_coin_status(mm, init.result.task_id).await;
         let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
+            match rpc_result {
+                MmRpcResult::Ok { result } => break result,
+                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
+            }
+        }
+        Timer::sleep(1.).await;
+    }
+}
+
+async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> WithdrawResult {
+    let init = init_withdraw(mm, coin, to, amount).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = now_ms() + 120000;
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} init_withdraw timed out", coin);
+        }
+
+        let status = withdraw_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<WithdrawStatus> = json::from_value(status).unwrap();
+        if let WithdrawStatus::Ready(rpc_result) = status.result {
             match rpc_result {
                 MmRpcResult::Ok { result } => break result,
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
@@ -81,6 +112,7 @@ fn activate_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -119,11 +151,12 @@ fn withdraw_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm, ZOMBIE_TEST_WITHDRAW_SEED, ZOMBIE_TICKER),
     ));
 
     println!("{:?}", activation_result);
 
-    let withdraw = block_on(init_withdraw(
+    let withdraw = block_on(withdraw(
         &mm,
         ZOMBIE_TICKER,
         "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",

@@ -642,6 +642,14 @@ pub enum InitZcoinStatus {
     UserActionRequired(Json),
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum WithdrawStatus {
+    Ready(MmRpcResult<WithdrawResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
 pub mod withdraw_error {
     use common::mm_number::BigDecimal;
 
@@ -898,3 +906,7 @@ pub struct SignatureResponse {
 pub struct VerificationResponse {
     pub is_valid: bool,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WithdrawResult {}

@@ -813,8 +813,8 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
-                let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
-                let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
+                let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
+                let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
                 let uri = Uri::from_str(&light_wallet_d_servers[0])?;
                 let client =
                     ZcoinLightClient::init(uri, cache_db_path, wallet_db_path, self.consensus_params.clone(), evk)

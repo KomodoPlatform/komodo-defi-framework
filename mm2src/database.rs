@@ -9,6 +9,7 @@ pub mod my_orders;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::{log::{debug, error, info},
              mm_ctx::MmArc};
+use db_common::sqlite::run_optimization_pragmas;
 use db_common::sqlite::rusqlite::{Result as SqlResult, NO_PARAMS};
 
 use my_swaps::fill_my_swaps_from_json_statements;
@@ -50,6 +51,7 @@ pub async fn init_and_migrate_db(ctx: &MmArc) -> SqlResult<()> {
 
 fn init_db(ctx: &MmArc) -> SqlResult<()> {
     let conn = ctx.sqlite_connection();
+    run_optimization_pragmas(&conn)?;
     let init_batch = concat!(
         "BEGIN;
         CREATE TABLE IF NOT EXISTS migration (current_migration INTEGER NOT_NULL UNIQUE);
