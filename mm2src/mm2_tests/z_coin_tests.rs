@@ -50,6 +50,7 @@ async fn enable_z_coin_light(
         }
 
         let status = init_z_coin_status(mm, init.result.task_id).await;
+        println!("Status {}", json::to_string(&status).unwrap());
         let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
             match rpc_result {
