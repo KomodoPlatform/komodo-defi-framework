@@ -79,8 +79,8 @@ cfg_wasm32! {
 
 #[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
 #[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
-pub use lp_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                 StartSimpleMakerBotRequest, TradingBotEvent, KMD_PRICE_ENDPOINT};
+pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
+                 TradingBotEvent, KMD_PRICE_ENDPOINT};
 
 #[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;
@@ -2773,7 +2773,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin.ticker(),
             uuid
         );
-        
+
         let now = now_ms() / 1000;
         if let Err(e) = insert_new_swap_to_db(ctx.clone(), maker_coin.ticker(), taker_coin.ticker(), uuid, now).await {
             error!("Error {} on new swap insertion", e);

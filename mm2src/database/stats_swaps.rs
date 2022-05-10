@@ -4,21 +4,21 @@ use crate::mm2::{database::SqlResult,
 use common::{log::{debug, error},
              mm_ctx::MmArc,
              mm_number::BigDecimal};
-use db_common::sqlite::rusqlite::{Connection, OptionalExtension};
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, OptionalExtension};
 use std::collections::HashSet;
 
 const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
     id INTEGER NOT NULL PRIMARY KEY,
     maker_coin VARCHAR(255) NOT NULL,
     taker_coin VARCHAR(255) NOT NULL,
-    maker_coin_usd_price DECIMAL,
-    taker_coin_usd_price DECIMAL,
     uuid VARCHAR(255) NOT NULL UNIQUE,
     started_at INTEGER NOT NULL,
     finished_at INTEGER NOT NULL,
     maker_amount DECIMAL NOT NULL,
     taker_amount DECIMAL NOT NULL,
-    is_success INTEGER NOT NULL
+    is_success INTEGER NOT NULL,
+    maker_coin_usd_price DECIMAL,
+    taker_coin_usd_price DECIMAL
 );";
 
 const INSERT_STATS_SWAP_ON_INIT: &str = "INSERT INTO stats_swaps (
@@ -269,31 +269,16 @@ pub async fn update_stats_swap_coins_price_to_db(
     swap: &SavedSwap,
     base_usd_price: BigDecimal,
     rel_usd_price: BigDecimal,
-) -> Result<(), String> {
-    match &swap {
-        SavedSwap::Maker(maker) => {
-            if let Err(e) = update_stats_swap_db(
-                ctx,
-                &base_usd_price.to_string(),
-                &rel_usd_price.to_string(),
-                &maker.uuid.to_string(),
-            ) {
-                error!("Error updating maker stats_swaps db -> {}", e);
-            };
-            Ok(())
-        },
-        SavedSwap::Taker(taker) => {
-            if let Err(e) = update_stats_swap_db(
-                ctx,
-                &base_usd_price.to_string(),
-                &rel_usd_price.to_string(),
-                &taker.uuid.to_string(),
-            ) {
-                error!("Error updating taker stats_swaps db -> {}", e);
-            };
-            Ok(())
-        },
+) -> Result<(), SqlError> {
+    if let Err(e) = update_stats_swap_db(
+        ctx,
+        &base_usd_price.to_string(),
+        &rel_usd_price.to_string(),
+        &swap.uuid().to_string(),
+    ) {
+        error!("Error updating stats_swaps db -> {}", e);
     }
+    Ok(())
 }
 
 pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {

@@ -2,11 +2,10 @@ use crate::mm2::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
                                         TradingBotStopped, TradingBotStopping, VolumeSettings};
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
+use crate::mm2::lp_price::{fetch_price_tickers, Provider, RateInfos};
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
-                                 lp_bot::TickerInfos,
-                                 lp_bot::{Provider, SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry,
-                                          TradingBotContext, TradingBotState},
-                                 lp_bot::{RateInfos, TickerInfosRegistry},
+                                 lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
+                                          TradingBotState},
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
@@ -17,15 +16,13 @@ use common::{executor::{spawn, Timer},
              mm_ctx::MmArc,
              mm_error::MmError,
              mm_number::MmNumber,
-             transport::{slurp_url, SlurpError},
              HttpStatusCode, PagingOptions};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use serde_json::Value as Json;
 use std::{collections::{HashMap, HashSet},
-          num::NonZeroUsize,
-          str::Utf8Error};
+          num::NonZeroUsize};
 use uuid::Uuid;
 
 // !< constants
@@ -198,38 +195,6 @@ pub enum SwapUpdateNotificationError {
 
 impl From<MyRecentSwapsErr> for SwapUpdateNotificationError {
     fn from(e: MyRecentSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
-}
-
-#[derive(Debug)]
-pub enum PriceServiceRequestError {
-    HttpProcessError(String),
-    ParsingAnswerError(String),
-    Internal(String),
-}
-
-impl From<serde_json::Error> for PriceServiceRequestError {
-    fn from(error: serde_json::Error) -> Self { PriceServiceRequestError::ParsingAnswerError(error.to_string()) }
-}
-
-impl From<std::string::String> for PriceServiceRequestError {
-    fn from(error: String) -> Self { PriceServiceRequestError::HttpProcessError(error) }
-}
-
-impl From<std::str::Utf8Error> for PriceServiceRequestError {
-    fn from(error: Utf8Error) -> Self { PriceServiceRequestError::HttpProcessError(error.to_string()) }
-}
-
-impl From<SlurpError> for PriceServiceRequestError {
-    fn from(e: SlurpError) -> Self {
-        let error = e.to_string();
-        match e {
-            SlurpError::ErrorDeserializing { .. } => PriceServiceRequestError::ParsingAnswerError(error),
-            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => {
-                PriceServiceRequestError::HttpProcessError(error)
-            },
-            SlurpError::Internal(_) | SlurpError::InvalidRequest(_) => PriceServiceRequestError::Internal(error),
-        }
-    }
 }
 
 impl HttpStatusCode for StartSimpleMakerBotError {
@@ -769,23 +734,6 @@ pub async fn lp_bot_loop(ctx: MmArc) {
         Timer::sleep(refresh_rate).await;
     }
     info!("lp_bot_loop successfully stopped");
-}
-
-pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    debug!("Fetching price from: {}", price_url);
-    let (status, headers, body) = slurp_url(price_url).await?;
-    let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
-    if status_code != StatusCode::OK {
-        return MmError::err(PriceServiceRequestError::HttpProcessError(body));
-    }
-    let model: HashMap<String, TickerInfos> = serde_json::from_str(&body)?;
-    Ok(TickerInfosRegistry(model))
-}
-
-async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
-    let model = process_price_request(price_url).await?;
-    debug!("price registry size: {}", model.0.len());
-    Ok(model)
 }
 
 pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotRequest) -> StartSimpleMakerBotResult {

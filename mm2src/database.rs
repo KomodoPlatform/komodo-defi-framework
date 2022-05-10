@@ -3,7 +3,6 @@
 #[path = "database/my_orders.rs"]
 pub mod my_orders;
 #[path = "database/my_swaps.rs"] pub mod my_swaps;
-#[path = "database/price_fetcher.rs"] pub mod price_fetcher;
 #[path = "database/stats_nodes.rs"] pub mod stats_nodes;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 

@@ -38,8 +38,8 @@ pub trait MySwapsOps {
     async fn update_coins_price(
         &self,
         uuid: Uuid,
-        my_coin_usd_price: BigDecimal,
-        other_coin_usd_price: BigDecimal,
+        my_coin_usd_price: &BigDecimal,
+        other_coin_usd_price: &BigDecimal,
     ) -> MySwapsResult<()>;
 
     async fn my_recent_swaps_with_filters(
@@ -99,8 +99,8 @@ mod native_impl {
         async fn update_coins_price(
             &self,
             uuid: Uuid,
-            my_coin_usd_price: BigDecimal,
-            other_coin_usd_price: BigDecimal,
+            my_coin_usd_price: &BigDecimal,
+            other_coin_usd_price: &BigDecimal,
         ) -> MySwapsResult<()> {
             Ok(update_coins_price(
                 &self.ctx,

@@ -41,8 +41,8 @@ pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str,
 pub fn update_coins_price(
     ctx: &MmArc,
     uuid: &str,
-    my_coin_usd_price: BigDecimal,
-    other_coin_usd_price: BigDecimal,
+    my_coin_usd_price: &BigDecimal,
+    other_coin_usd_price: &BigDecimal,
 ) -> SqlResult<()> {
     debug!("Updating fiat price on moment of trade {} in SQLite database", uuid);
     let conn = ctx.sqlite_connection();
@@ -173,39 +173,81 @@ pub fn select_uuids_by_my_swaps_filter(
     })
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn insert_new_swap_test() {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm2::database::init_and_migrate_db;
     use common::block_on;
     use common::mm_ctx::MmCtxBuilder;
     use common::new_uuid;
     use db_common::sqlite::rusqlite::Connection;
+    use db_common::sqlite::rusqlite::Error;
+    use db_common::sqlite::rusqlite::NO_PARAMS;
     use rand::Rng;
-    use std::ops::Range;
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    use crate::mm2::database::init_and_migrate_db;
+    const GET_SWAP: &str =
+        "SELECT uuid, my_coin, other_coin, started_at, my_coin_usd_price, other_coin_usd_price FROM my_swaps";
 
-    let ctx = MmCtxBuilder::default().into_mm_arc();
-    let connection = Connection::open_in_memory().unwrap();
-    ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection))).unwrap();
-    block_on(init_and_migrate_db(&ctx)).unwrap();
+    #[derive(Debug, PartialEq)]
+    struct MySwap {
+        uuid: String,
+        my_coin: String,
+        other_coin: String,
+        my_coin_usd_price: Option<String>,
+        other_coin_usd_price: Option<String>,
+        started_at: i32,
+    }
 
-    let mut rng = rand::thread_rng();
+    #[test]
+    fn insert_new_swap_test() {
+        let ctx = MmCtxBuilder::default().into_mm_arc();
+        let connection = Connection::open_in_memory().unwrap();
+        ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection))).unwrap();
+        block_on(init_and_migrate_db(&ctx)).unwrap();
 
-    let timestamp: Range<u64> = 1000..5000;
-    let uuid = new_uuid();
-    let my_coin = &"ETH";
-    let other_coin = &"JST";
-    let started_at = rng.gen_range(timestamp.start, timestamp.end);
-    let result = insert_new_swap(
-        &ctx,
-        my_coin,
-        other_coin,
-        uuid.to_string().as_str(),
-        &started_at.to_string().as_str(),
-    );
+        fn get_my_swap(ctx: &MmArc) -> SqlResult<MySwap, Error> {
+            let conn = ctx.sqlite_connection();
+            conn.query_row(GET_SWAP, NO_PARAMS, |row| {
+                Ok(MySwap {
+                    uuid: row.get(0)?,
+                    my_coin: row.get(1)?,
+                    other_coin: row.get(2)?,
+                    started_at: row.get(3)?,
+                    my_coin_usd_price: row.get(4)?,
+                    other_coin_usd_price: row.get(5)?,
+                })
+            })
+        }
 
-    assert_eq!((), result.unwrap());
+        let mut rng = rand::thread_rng();
+
+        let timestamp_start = 1000;
+        let timestamp_end = 5000;
+        let uuid = new_uuid();
+        let my_coin = &"ETH";
+        let other_coin = &"JST";
+        let started_at = rng.gen_range(timestamp_start, timestamp_end);
+        let result = insert_new_swap(
+            &ctx,
+            my_coin,
+            other_coin,
+            uuid.to_string().as_str(),
+            &started_at.to_string().as_str(),
+        );
+        assert_eq!((), result.unwrap());
+
+        let my_swap_example = MySwap {
+            uuid: uuid.to_string(),
+            my_coin: my_coin.to_string(),
+            other_coin: other_coin.to_string(),
+            started_at,
+            my_coin_usd_price: None,
+            other_coin_usd_price: None,
+        };
+
+        let my_swap_from_req = get_my_swap(&ctx).expect("MY SWAP DATA");
+        assert_eq!(my_swap_example, my_swap_from_req)
+    }
 }

@@ -738,23 +738,23 @@ async fn update_my_swap_coins_price_to_db(
     other_coin_usd_price: BigDecimal,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .update_coins_price(uuid, my_coin_usd_price.to_owned(), other_coin_usd_price.to_owned())
+        .update_coins_price(uuid, &my_coin_usd_price, &other_coin_usd_price)
         .await
         .map_err(|e| ERRL!("{}", e))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
-    use super::database::price_fetcher::fetch_swap_coins_price;
+    use super::lp_price::fetch_swap_coins_price;
 
     if swap.is_finished_and_success() {
-        let swap_coins_usd_price = fetch_swap_coins_price(
-            swap.maker_coin_ticker().unwrap_or("".to_string()),
-            swap.taker_coin_ticker().unwrap_or("".to_string()),
+        let cex_rates = fetch_swap_coins_price(
+            &swap.maker_coin_ticker().unwrap_or("".to_string()).as_str(),
+            &swap.taker_coin_ticker().unwrap_or("".to_string()).as_str(),
         )
         .await;
 
-        if let (Some(base_usd_price), Some(rel_usd_price)) = swap_coins_usd_price {
+        if let (Some(base_usd_price), Some(rel_usd_price)) = (cex_rates.base, cex_rates.rel) {
             if let Err(e) = update_my_swap_coins_price_to_db(
                 ctx.clone(),
                 swap.uuid().to_owned(),
