@@ -419,7 +419,7 @@ where
 {
     if coin.as_ref().check_utxo_maturity {
         let (unspents_map, _) = coin.get_mature_unspent_ordered_map(addresses.clone()).await?;
-        return addresses
+        addresses
             .into_iter()
             .map(|address| {
                 let unspents = unspents_map.get(&address).or_mm_err(|| {
@@ -429,24 +429,22 @@ where
                 let balance = unspents.to_coin_balance(coin.as_ref().decimals);
                 Ok((address, balance))
             })
-            .collect();
+            .collect()
+    } else {
+        Ok(coin
+            .as_ref()
+            .rpc_client
+            .display_balances(addresses.clone(), coin.as_ref().decimals)
+            .compat()
+            .await?
+            .into_iter()
+            .map(|(address, spendable)| {
+                let unspendable = BigDecimal::from(0);
+                let balance = CoinBalance { spendable, unspendable };
+                (address, balance)
+            })
+            .collect())
     }
-
-    let balances = coin
-        .as_ref()
-        .rpc_client
-        .display_balances(addresses.clone(), coin.as_ref().decimals)
-        .compat()
-        .await?
-        .into_iter()
-        .map(|(address, spendable)| {
-            let unspendable = BigDecimal::from(0);
-            let balance = CoinBalance { spendable, unspendable };
-            (address, balance)
-        })
-        .collect();
-
-    Ok(balances)
 }
 
 pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> { &coin.derivation_method }
