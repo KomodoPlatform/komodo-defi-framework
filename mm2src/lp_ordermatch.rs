@@ -103,6 +103,7 @@ pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 30;
 #[cfg(test)]
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 5;
+const BALANCE_REQUEST_INTERVAL: f64 = 30.;
 const MAKER_ORDER_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 3;
 const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
@@ -2714,15 +2715,9 @@ impl OrdermatchContext {
         Ok(self.ordermatch_db.get_or_initialize().await?)
     }
 
-    async fn coin_has_active_maker_orders(&self, ticker: &str) -> bool {
+    fn maker_order_exists(&self, uuid: Uuid) -> bool {
         let my_maker_orders = self.my_maker_orders.lock().clone();
-        for (_, order) in my_maker_orders {
-            let order = order.lock().await;
-            if order.base == ticker {
-                return true;
-            }
-        }
-        false
+        my_maker_orders.contains_key(&uuid)
     }
 }
 
@@ -4275,33 +4270,30 @@ async fn get_max_volume(ctx: &MmArc, my_coin: &MmCoinEnum, other_coin: &MmCoinEn
     ))
 }
 
-pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String) {
-    let mut current_balance = None;
+pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Option<BigDecimal>, order_uuid: Uuid) {
+    let mut current_balance = balance;
     loop {
-        Timer::sleep(30.).await;
+        Timer::sleep(BALANCE_REQUEST_INTERVAL).await;
         let ctx = match MmArc::from_weak(&ctx) {
             Some(ctx) => ctx,
             None => return,
         };
 
-        match lp_coinfind(&ctx, &ticker).await {
-            Ok(Some(coin)) => {
-                let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-                if !ordermatch_ctx.coin_has_active_maker_orders(&ticker).await {
-                    break;
-                }
-                let balance = match coin.my_spendable_balance().compat().await {
-                    Ok(balance) => balance,
-                    Err(_) => continue,
-                };
-                if Some(&balance) != current_balance.as_ref() {
-                    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-                    coins_ctx.balance_updated(&coin, &balance).await;
-                    current_balance = Some(balance);
-                }
-            },
-            Ok(None) => break,
-            Err(_) => continue,
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        if !ordermatch_ctx.maker_order_exists(order_uuid) {
+            break;
+        }
+
+        if let Ok(Some(coin)) = lp_coinfind(&ctx, &ticker).await {
+            let balance = match coin.my_spendable_balance().compat().await {
+                Ok(balance) => balance,
+                Err(_) => continue,
+            };
+            if Some(&balance) != current_balance.as_ref() {
+                let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+                coins_ctx.balance_updated(&coin, &balance).await;
+                current_balance = Some(balance);
+            }
         }
     }
 }
@@ -4348,13 +4340,6 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     };
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
-    let ticker = base_coin.ticker().to_string();
-    let coin_has_order = ordermatch_ctx.coin_has_active_maker_orders(&ticker).await;
-
-    if !coin_has_order {
-        let ctx_weak = ctx.weak();
-        spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
-    }
 
     if req.cancel_previous {
         cancel_previous_maker_orders(ctx, &ordermatch_ctx, &req.base, &req.rel).await;
@@ -4401,6 +4386,17 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         let mut my_maker_orders = ordermatch_ctx.my_maker_orders.lock();
         my_maker_orders.insert(new_order.uuid, Arc::new(AsyncMutex::new(new_order.clone())));
     }
+
+    let balance = match base_coin.my_spendable_balance().compat().await {
+        Ok(balance) => Some(balance),
+        Err(_) => None,
+    };
+
+    let ctx_weak = ctx.weak();
+    let ticker = base_coin.ticker().to_string();
+    let uuid = new_order.uuid;
+    spawn(async move { check_balance_update_loop(ctx_weak, ticker, balance, uuid).await });
+
     Ok(new_order)
 }
 
@@ -5072,7 +5068,8 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     for order in saved_maker_orders {
         let ctx_weak = ctx.weak();
         let ticker = order.base.clone();
-        spawn(async move { check_balance_update_loop(ctx_weak, ticker).await });
+        let uuid = order.uuid;
+        spawn(async move { check_balance_update_loop(ctx_weak, ticker, None, uuid).await });
 
         coins.insert(order.base.clone());
         coins.insert(order.rel.clone());
