@@ -832,7 +832,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
 
         for utxo in self.available_inputs.clone() {
             self.tx.inputs.push(UnsignedTransactionInput {
-                previous_output: utxo.outpoint.clone(),
+                previous_output: utxo.outpoint,
                 sequence: SEQUENCE_FINAL,
                 amount: utxo.value,
                 witness: vec![],
@@ -3857,7 +3857,7 @@ where
     unspents
         .into_iter()
         // dedup just in case we add duplicates of same unspent out
-        .unique_by(|unspent| unspent.outpoint.clone())
+        .unique_by(|unspent| unspent.outpoint)
         .sorted_unstable_by(|a, b| {
             if a.value < b.value {
                 Ordering::Less

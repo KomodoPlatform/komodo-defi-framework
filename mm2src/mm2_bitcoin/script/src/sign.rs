@@ -268,7 +268,7 @@ impl TransactionInputSigner {
 
         let unsigned_input = &self.inputs[input_index];
         TransactionInput {
-            previous_output: unsigned_input.previous_output.clone(),
+            previous_output: unsigned_input.previous_output,
             sequence: unsigned_input.sequence,
             script_sig: script_sig.to_bytes(),
             script_witness: vec![],
@@ -301,7 +301,7 @@ impl TransactionInputSigner {
         let inputs = if sighash.anyone_can_pay {
             let input = &self.inputs[input_index];
             vec![TransactionInput {
-                previous_output: input.previous_output.clone(),
+                previous_output: input.previous_output,
                 script_sig: script_pubkey.to_bytes(),
                 sequence: input.sequence,
                 script_witness: vec![],
@@ -311,7 +311,7 @@ impl TransactionInputSigner {
                 .iter()
                 .enumerate()
                 .map(|(n, input)| TransactionInput {
-                    previous_output: input.previous_output.clone(),
+                    previous_output: input.previous_output,
                     script_sig: if n == input_index {
                         script_pubkey.to_bytes()
                     } else {

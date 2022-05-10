@@ -1608,7 +1608,7 @@ where
         .inputs
         .iter()
         .map(|input| UnspentInfo {
-            outpoint: input.previous_output.clone(),
+            outpoint: input.previous_output,
             value: input.amount,
             height: None,
         })
