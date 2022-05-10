@@ -645,7 +645,7 @@ pub enum InitZcoinStatus {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum WithdrawStatus {
-    Ready(MmRpcResult<WithdrawResult>),
+    Ready(MmRpcResult<TransactionDetails>),
     InProgress(Json),
     UserActionRequired(Json),
 }

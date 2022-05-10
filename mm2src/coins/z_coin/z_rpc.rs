@@ -3,13 +3,15 @@ use crate::utxo::rpc_clients::{NativeClient, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
-use common::log::error;
+use common::log::{error, warn};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
+use crossbeam::channel::Receiver as CrossbeamReceiver;
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use derive_more::Display;
+use futures::channel::mpsc::Sender as AsyncSender;
 use http::Uri;
 use parking_lot::{Mutex, MutexGuard};
 use prost::Message;
@@ -34,6 +36,7 @@ use zcash_client_sqlite::wallet::transact::get_spendable_notes;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
 mod z_coin_grpc {
@@ -242,15 +245,9 @@ impl BlockSource for BlockDb {
     }
 }
 
-pub enum LightClientSyncState {
-    Syncing,
-    Finished { current_block: u64 },
-}
-
 pub struct ZcoinLightClient {
     db: WalletDbShared,
     db_sync_abort_handler: AbortOnDropHandle,
-    pub(super) sync_state: Arc<Mutex<LightClientSyncState>>,
 }
 
 #[derive(Debug, Display)]
@@ -292,6 +289,8 @@ impl ZcoinLightClient {
         wallet_db_path: impl AsRef<Path> + Send + 'static,
         consensus_params: ZcoinConsensusParams,
         evk: ExtendedFullViewingKey,
+        new_tx_watcher: CrossbeamReceiver<TxId>,
+        sync_state_notifier: AsyncSender<BlockHeight>,
     ) -> Result<Self, MmError<ZcoinLightClientInitError>> {
         let blocks_db = async_blocking(|| {
             BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
@@ -332,19 +331,18 @@ impl ZcoinLightClient {
             .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
         let grpc_client = CompactTxStreamerClient::new(channel);
 
-        let sync_state = Arc::new(Mutex::new(LightClientSyncState::Syncing));
         let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
         let db_sync_abort_handler = spawn_abortable(light_wallet_db_sync_loop(
             grpc_client,
             db.clone(),
-            sync_state.clone(),
             consensus_params,
+            new_tx_watcher,
+            sync_state_notifier,
         ));
 
         Ok(ZcoinLightClient {
             db,
             db_sync_abort_handler,
-            sync_state,
         })
     }
 
@@ -391,11 +389,11 @@ pub async fn update_blocks_cache(
 async fn light_wallet_db_sync_loop(
     mut grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
-    sync_state: Arc<Mutex<LightClientSyncState>>,
     consensus_params: ZcoinConsensusParams,
+    new_tx_watcher: CrossbeamReceiver<TxId>,
+    mut synced_notifier: AsyncSender<BlockHeight>,
 ) {
     loop {
-        *sync_state.lock() = LightClientSyncState::Syncing;
         let current_block = match update_blocks_cache(&mut grpc_client, &db).await {
             Ok(b) => b,
             Err(e) => {
@@ -455,7 +453,10 @@ async fn light_wallet_db_sync_loop(
             // next time this codepath is executed after new blocks are received).
             scan_cached_blocks(&consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
         }
-        *sync_state.lock() = LightClientSyncState::Finished { current_block };
+        if let Err(_) = synced_notifier.try_send(BlockHeight::from_u32(current_block as u32)) {
+            warn!("synced watcher is no longer available");
+            break;
+        }
         Timer::sleep(10.).await;
     }
 }
@@ -464,19 +465,23 @@ async fn light_wallet_db_sync_loop(
 // This is a temporary test used to experiment with librustzcash and lightwalletd
 fn try_grpc() {
     use common::block_on;
+    use crossbeam::channel::bounded as crossbeam_bounded;
+    use futures::channel::mpsc::channel as async_channel;
+    use futures::executor::block_on_stream;
+    use futures::StreamExt;
     use std::str::FromStr;
-    use std::time::Duration;
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
-    use zcash_client_backend::encoding::decode_payment_address;
     use zcash_primitives::consensus::Parameters;
-    use zcash_primitives::constants::mainnet;
     use zcash_proofs::prover::LocalTxProver;
 
     let zombie_consensus_params = ZcoinConsensusParams::for_zombie();
 
     let z_key = decode_extended_spending_key(zombie_consensus_params.hrp_sapling_extended_spending_key(), "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let evk = ExtendedFullViewingKey::from(&z_key);
+
+    let (new_tx_notifier, new_tx_watcher) = crossbeam_bounded(1);
+    let (sync_state_notifier, sync_state_watcher) = async_channel(100);
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
     let client = block_on(ZcoinLightClient::init(
@@ -485,28 +490,21 @@ fn try_grpc() {
         "test_wallet_zombie.db",
         zombie_consensus_params.clone(),
         evk,
+        new_tx_watcher,
+        sync_state_notifier,
     ))
     .unwrap();
 
-    let current_block = loop {
-        if let LightClientSyncState::Finished { current_block } = *client.sync_state.lock() {
-            break current_block;
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    };
-
+    let current_block = block_on_stream(sync_state_watcher).next().unwrap();
     let db = client.db.lock();
 
-    let mut notes = db
-        .wallet_db
-        .get_spendable_notes(AccountId(0), BlockHeight::from_u32(current_block as u32))
-        .unwrap();
+    let mut notes = db.wallet_db.get_spendable_notes(AccountId(0), current_block).unwrap();
 
     notes.sort_by(|a, b| b.note_value.cmp(&a.note_value));
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 
-    let mut tx_builder = ZTxBuilder::new(zombie_consensus_params, BlockHeight::from_u32(current_block as u32));
+    let mut tx_builder = ZTxBuilder::new(zombie_consensus_params, current_block);
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();

@@ -1,11 +1,11 @@
 use super::*;
 use coins::z_coin::ZcoinConsensusParams;
-use common::for_tests::{init_withdraw, init_z_coin_light, withdraw_status};
+use common::for_tests::{init_withdraw, init_z_coin_light, send_raw_transaction, withdraw_status};
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
 const ZOMBIE_TICKER: &str = "ZOMBIE";
-const ZOMBIE_ELECTRUMS: &[&str] = &["electrum1.cipig.net:10001"];
+const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
 
 fn zombie_conf() -> Json {
@@ -61,7 +61,7 @@ async fn enable_z_coin_light(
     }
 }
 
-async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> WithdrawResult {
+async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let init = init_withdraw(mm, coin, to, amount).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = now_ms() + 120000;
@@ -163,4 +163,7 @@ fn withdraw_z_coin_light() {
         "0.1",
     ));
     println!("{:?}", withdraw);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw.tx_hex));
+    println!("{:?}", send_raw_tx);
 }

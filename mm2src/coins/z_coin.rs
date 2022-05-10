@@ -18,17 +18,21 @@ use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
-use chain::{Transaction as UtxoTx, TransactionOutput};
+use chain::{Block, Transaction as UtxoTx, TransactionOutput};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
 use common::{log, now_ms};
+use crossbeam::channel::bounded as crossbeam_bounded;
+use crossbeam::channel::Sender as CrossbeamSender;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
+use futures::channel::mpsc::channel as async_channel;
+use futures::channel::mpsc::Receiver as AsyncReceiver;
 use futures::compat::Future01CompatExt;
-use futures::lock::Mutex as AsyncMutex;
+use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
@@ -72,7 +76,7 @@ use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
 use crate::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::z_coin::z_rpc::{LightClientSyncState, ZcoinNativeClient};
+use crate::z_coin::z_rpc::ZcoinNativeClient;
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -191,10 +195,10 @@ pub struct ZCoinFields {
     my_z_addr_encoded: String,
     z_spending_key: ExtendedSpendingKey,
     z_tx_prover: LocalTxProver,
-    /// Mutex preventing concurrent transaction generation/same input usage
-    z_unspent_mutex: AsyncMutex<()>,
     z_rpc: ZcoinRpcClient,
     consensus_params: ZcoinConsensusParams,
+    // sync_state_watcher: AsyncReceiver<BlockHeight>,
+    // new_tx_notifier: CrossbeamSender<TxId>,
 }
 
 impl std::fmt::Debug for ZCoinFields {
@@ -242,10 +246,7 @@ impl ZCoin {
     pub fn is_sapling_state_synced(&self) -> bool {
         match self.z_rpc() {
             ZcoinRpcClient::Native(n) => n.sapling_state_synced.load(AtomicOrdering::Relaxed),
-            ZcoinRpcClient::Light(l) => match *l.sync_state.lock() {
-                LightClientSyncState::Syncing => false,
-                LightClientSyncState::Finished { .. } => true,
-            },
+            ZcoinRpcClient::Light(l) => unimplemented!(),
         }
     }
 
@@ -281,7 +282,6 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<(ZTransaction, AdditionalTxData), MmError<GenTxError>> {
-        let _lock = self.z_fields.z_unspent_mutex.lock().await;
         while !self.is_sapling_state_synced() {
             Timer::sleep(0.5).await
         }
@@ -762,9 +762,18 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                 let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
                 let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
                 let uri = Uri::from_str(&light_wallet_d_servers[0])?;
-                let client =
-                    ZcoinLightClient::init(uri, cache_db_path, wallet_db_path, self.consensus_params.clone(), evk)
-                        .await?;
+                let (new_tx_notifier, new_tx_watcher) = crossbeam_bounded(1);
+                let (sync_state_notifier, sync_state_watcher) = async_channel(100);
+                let client = ZcoinLightClient::init(
+                    uri,
+                    cache_db_path,
+                    wallet_db_path,
+                    self.consensus_params.clone(),
+                    evk,
+                    new_tx_watcher,
+                    sync_state_notifier,
+                )
+                .await?;
                 client.into()
             },
         };
@@ -775,7 +784,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             my_z_addr_encoded,
             z_spending_key: self.z_spending_key,
             z_tx_prover,
-            z_unspent_mutex: AsyncMutex::new(()),
             z_rpc,
             consensus_params: self.consensus_params,
         };
