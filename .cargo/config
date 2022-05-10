@@ -1,3 +1,7 @@
 [target.wasm32-unknown-unknown]
 runner = 'wasm-bindgen-test-runner-0.2.78'
 rustflags = ["--cfg=web_sys_unstable_apis"]
+
+# [target.x86_64-unknown-linux-gnu]
+# linker = "/usr/bin/clang"
+# rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zshare-generics=y"]
