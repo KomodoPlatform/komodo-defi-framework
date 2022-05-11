@@ -34,7 +34,7 @@ type TaskAbortHandle = oneshot::Sender<()>;
 type TaskAbortHandler = oneshot::Receiver<()>;
 type UserActionSender<UserAction> = oneshot::Sender<UserAction>;
 
-#[derive(Clone, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum RpcTaskError {
     #[display(fmt = "RPC task timeout '{:?}'", _0)]
     Timeout(Duration),
@@ -54,7 +54,7 @@ pub enum RpcTaskError {
     Internal(String),
 }
 
-#[derive(Clone, Display)]
+#[derive(Clone, Debug, Display)]
 pub enum TaskStatusError {
     Idle,
     InProgress,

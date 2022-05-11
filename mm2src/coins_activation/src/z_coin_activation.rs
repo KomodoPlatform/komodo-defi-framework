@@ -178,7 +178,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
         task_handle.update_in_progress_status(ZcoinInProgressStatus::Scanning)?;
-        coin.wait_for_blockchain_scan().await;
+        coin.wait_for_blockchain_scan().await.unwrap();
         Ok(coin)
     }
 

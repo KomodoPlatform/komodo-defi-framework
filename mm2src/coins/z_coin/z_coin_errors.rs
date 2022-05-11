@@ -10,6 +10,9 @@ use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
+#[derive(Debug)]
+pub struct BlockchainScanStopped {}
+
 #[derive(Debug, Display)]
 pub enum GenTxError {
     DecryptedOutputNotFound,
@@ -35,6 +38,7 @@ pub enum GenTxError {
         hex: BytesJson,
         err: std::io::Error,
     },
+    BlockchainScanStopped,
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -72,9 +76,15 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::GetWitnessErr(_)
             | GenTxError::NumConversion(_)
             | GenTxError::TxBuilderError(_)
-            | GenTxError::TxReadError { .. } => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::TxReadError { .. }
+            | GenTxError::BlockchainScanStopped => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
+}
+
+impl From<BlockchainScanStopped> for GenTxError {
+    #[inline]
+    fn from(_: BlockchainScanStopped) -> Self { GenTxError::BlockchainScanStopped }
 }
 
 #[derive(Debug, Display)]

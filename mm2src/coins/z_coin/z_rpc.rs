@@ -35,7 +35,6 @@ use zcash_client_sqlite::wallet::init::{init_accounts_table, init_wallet_db};
 use zcash_client_sqlite::wallet::transact::get_spendable_notes;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::zip32::ExtendedFullViewingKey;
 
@@ -245,6 +244,7 @@ impl BlockSource for BlockDb {
     }
 }
 
+#[allow(dead_code)]
 pub struct ZcoinLightClient {
     db: WalletDbShared,
     db_sync_abort_handler: AbortOnDropHandle,
@@ -345,10 +345,6 @@ impl ZcoinLightClient {
             db_sync_abort_handler,
         })
     }
-
-    async fn my_balance(&self) -> Result<Amount, MmError<SqliteClientError>> {
-        block_in_place(|| get_balance(&self.db.lock().wallet_db, AccountId(0)).map_err(MmError::new))
-    }
 }
 
 pub async fn update_blocks_cache(
@@ -390,7 +386,7 @@ async fn light_wallet_db_sync_loop(
     mut grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    new_tx_watcher: CrossbeamReceiver<TxId>,
+    _new_tx_watcher: CrossbeamReceiver<TxId>,
     mut synced_notifier: AsyncSender<BlockHeight>,
 ) {
     loop {
@@ -428,7 +424,7 @@ async fn light_wallet_db_sync_loop(
                         let rewind_height = lower_bound - 10;
 
                         // b) Rewind scanned block information.
-                        db_data.rewind_to_height(rewind_height);
+                        db_data.rewind_to_height(rewind_height).unwrap();
                         // c) Delete cached blocks from rewind_height onwards.
                         //
                         // This does imply that assumed-valid blocks will be re-downloaded, but it
@@ -453,7 +449,10 @@ async fn light_wallet_db_sync_loop(
             // next time this codepath is executed after new blocks are received).
             scan_cached_blocks(&consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
         }
-        if let Err(_) = synced_notifier.try_send(BlockHeight::from_u32(current_block as u32)) {
+        if synced_notifier
+            .try_send(BlockHeight::from_u32(current_block as u32))
+            .is_err()
+        {
             warn!("synced watcher is no longer available");
             break;
         }
@@ -567,9 +566,8 @@ impl ZcoinRpcClient {
             ZcoinRpcClient::Light(light) => {
                 let db = light.db.clone();
                 async_blocking(move || {
-                    get_balance(&db.lock().wallet_db, AccountId::default())
-                        .map(|a| a.into())
-                        .map_err(|e| ())
+                    let balance = get_balance(&db.lock().wallet_db, AccountId::default()).unwrap().into();
+                    Ok(balance)
                 })
                 .await
             },
@@ -585,7 +583,7 @@ impl ZcoinRpcClient {
                 let db = light.db.clone();
                 async_blocking(move || {
                     let guard = db.lock();
-                    let (_, latest_db_block) = guard.wallet_db.block_height_extrema().map_err(|e| ())?.ok_or(())?;
+                    let (_, latest_db_block) = guard.wallet_db.block_height_extrema().unwrap().unwrap();
                     get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(|_| ())
                 })
                 .await

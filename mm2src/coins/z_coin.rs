@@ -163,6 +163,7 @@ impl Parameters for ZcoinConsensusParams {
 
 type SyncStateWatcher = AsyncMutex<AsyncReceiver<BlockHeight>>;
 
+#[allow(dead_code)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -256,9 +257,8 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<(ZTransaction, AdditionalTxData), MmError<GenTxError>> {
-        while !self.is_sapling_state_synced() {
-            Timer::sleep(0.5).await
-        }
+        let current_block = self.wait_for_blockchain_scan().await?;
+
         let tx_fee = self.get_one_kbyte_tx_fee().await?;
         let t_output_sat: u64 = t_outputs.iter().fold(0, |cur, out| cur + u64::from(out.value));
         let z_output_sat: u64 = z_outputs.iter().fold(0, |cur, out| cur + u64::from(out.amount));
@@ -291,8 +291,7 @@ impl ZCoin {
             });
         }
 
-        let current_block = self.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
-        let mut tx_builder = ZTxBuilder::new(self.consensus_params(), current_block.into());
+        let mut tx_builder = ZTxBuilder::new(self.consensus_params(), current_block);
 
         for spendable_note in selected_notes {
             let note = self
@@ -442,8 +441,19 @@ impl ZCoin {
         Some(ZCoin { utxo_arc, z_fields })
     }
 
-    pub async fn wait_for_blockchain_scan(&self) -> Result<BlockHeight, ()> {
-        self.z_fields.sync_state_watcher.lock().await.next().await.ok_or(())
+    pub async fn wait_for_blockchain_scan(&self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
+        let mut watcher = self.z_fields.sync_state_watcher.lock().await;
+
+        // consume all existing messages and return the latest
+        if let Ok(Some(mut b)) = watcher.try_next() {
+            while let Ok(Some(newer)) = watcher.try_next() {
+                b = newer;
+            }
+            return Ok(b);
+        }
+
+        // return the next available item if there were no available messages in channel
+        watcher.next().await.or_mm_err(|| BlockchainScanStopped {})
     }
 }
 
@@ -477,28 +487,18 @@ pub async fn z_coin_from_conf_and_params(
     secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
-
+    let db_dir = ctx.dbdir();
     z_coin_from_conf_and_params_with_z_key(
         ctx,
         ticker,
         conf,
         params,
         secp_priv_key,
-        ctx.dbdir(),
+        db_dir,
         z_key,
         consensus_params,
     )
     .await
-}
-
-fn init_db(sql: &Connection) -> Result<(), SqliteError> {
-    const INIT_SAPLING_CACHE_TABLE_STMT: &str = "CREATE TABLE IF NOT EXISTS sapling_cache (
-        height INTEGER NOT NULL PRIMARY KEY,
-        prev_tree_state BLOB NOT NULL,
-        cmus BLOB NOT NULL
-    );";
-
-    sql.execute(INIT_SAPLING_CACHE_TABLE_STMT, NO_PARAMS).map(|_| ())
 }
 
 struct SaplingBlockState {
@@ -782,6 +782,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
 }
 
 impl<'a> ZCoinBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &'a MmArc,
         ticker: &'a str,
@@ -824,6 +825,7 @@ impl<'a> ZCoinBuilder<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn z_coin_from_conf_and_params_with_z_key(
     ctx: &MmArc,
     ticker: &str,
@@ -1667,7 +1669,9 @@ impl InitWithdrawCoin for ZCoin {
             req.amount
         };
 
-        task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction);
+        task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
+            .unwrap();
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
         let z_output = ZOutput {
             to_addr,
