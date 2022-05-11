@@ -4110,6 +4110,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm2_io"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "gstuff",
+ "mm2_ehandle",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mm2_main"
 version = "0.1.0"
 dependencies = [
@@ -4187,6 +4202,35 @@ dependencies = [
  "wasm-timer",
  "web-sys",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "mm2_net"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "http 0.2.1",
+ "hyper",
+ "js-sys",
+ "mm2_ehandle",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "mm2_rpc"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "gstuff",
+ "http 0.2.1",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
