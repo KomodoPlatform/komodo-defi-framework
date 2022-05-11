@@ -2688,6 +2688,7 @@ impl OrdermatchContext {
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::new(ctx),
+                balance_loops: Default::default(),
             })
         })))
     }
