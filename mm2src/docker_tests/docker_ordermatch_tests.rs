@@ -686,7 +686,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
 
     let new_expected_vol: BigDecimal = "499.99998".parse().unwrap();
 
-    thread::sleep(Duration::from_secs(12));
+    thread::sleep(Duration::from_secs(32));
 
     log!("Get MYCOIN/MYCOIN1 orderbook");
     let rc = block_on(mm_maker.rpc(&json! ({

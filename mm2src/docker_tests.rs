@@ -695,7 +695,7 @@ mod docker_tests {
         .unwrap();
         assert!(send_raw.0.is_success(), "!send_raw: {}", send_raw.1);
 
-        thread::sleep(Duration::from_secs(12));
+        thread::sleep(Duration::from_secs(32));
 
         log!("Get MYCOIN/MYCOIN1 orderbook");
         let rc = block_on(mm_bob.rpc(&json! ({
@@ -831,7 +831,7 @@ mod docker_tests {
         .unwrap();
         assert!(send_raw.0.is_success(), "!send_raw: {}", send_raw.1);
 
-        thread::sleep(Duration::from_secs(12));
+        thread::sleep(Duration::from_secs(32));
 
         log!("Get MYCOIN/MYCOIN1 orderbook on Bob side");
         let rc = block_on(mm_bob.rpc(&json! ({
@@ -850,7 +850,7 @@ mod docker_tests {
 
         let order_volume = asks[0]["maxvolume"].as_str().unwrap();
         assert_eq!("500", order_volume);
-
+        
         log!("Get MYCOIN/MYCOIN1 orderbook on Alice side");
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
@@ -983,7 +983,7 @@ mod docker_tests {
         .unwrap();
         assert!(send_raw.0.is_success(), "!send_raw: {}", send_raw.1);
 
-        thread::sleep(Duration::from_secs(12));
+        thread::sleep(Duration::from_secs(32));
 
         log!("Get MYCOIN/MYCOIN1 orderbook on Bob side");
         let rc = block_on(mm_bob.rpc(&json! ({
