@@ -18,7 +18,7 @@ use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
-use chain::{Block, Transaction as UtxoTx, TransactionOutput};
+use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -32,7 +32,7 @@ use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, 
 use futures::channel::mpsc::channel as async_channel;
 use futures::channel::mpsc::Receiver as AsyncReceiver;
 use futures::compat::Future01CompatExt;
-use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
+use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
@@ -75,7 +75,6 @@ use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::z_coin::z_rpc::ZcoinNativeClient;
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -221,7 +220,7 @@ impl ZCoin {
     pub fn is_sapling_state_synced(&self) -> bool {
         match self.z_rpc() {
             ZcoinRpcClient::Native(n) => n.sapling_state_synced.load(AtomicOrdering::Relaxed),
-            ZcoinRpcClient::Light(l) => unimplemented!(),
+            ZcoinRpcClient::Light(_) => unimplemented!(),
         }
     }
 

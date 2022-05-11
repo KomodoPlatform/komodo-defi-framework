@@ -586,7 +586,7 @@ impl ZcoinRpcClient {
                 async_blocking(move || {
                     let guard = db.lock();
                     let (_, latest_db_block) = guard.wallet_db.block_height_extrema().map_err(|e| ())?.ok_or(())?;
-                    get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(|e| ())
+                    get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(|_| ())
                 })
                 .await
             },
