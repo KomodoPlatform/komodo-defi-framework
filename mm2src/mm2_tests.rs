@@ -3,7 +3,7 @@ use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use common::executor::Timer;
 use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                         enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json, from_env_file,
-                        init_z_coin, init_z_coin_status, mm_spat, sign_message, verify_message,
+                        init_z_coin_native, init_z_coin_status, mm_spat, sign_message, verify_message,
                         wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS,
                         MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use common::log::LogLevel;

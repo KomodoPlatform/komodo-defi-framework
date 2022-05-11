@@ -475,9 +475,9 @@ pub async fn z_coin_from_conf_and_params(
     conf: &Json,
     params: &ZcoinActivationParams,
     consensus_params: ZcoinConsensusParams,
+    secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let secp_priv_key = ctx.secp256k1_key_pair().private().secret;
-    let z_key = ExtendedSpendingKey::master(secp_priv_key.as_slice());
+    let z_key = ExtendedSpendingKey::master(secp_priv_key);
 
     z_coin_from_conf_and_params_with_z_key(
         ctx,

@@ -1,4 +1,5 @@
 use coins::utxo::UtxoActivationParams;
+use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
@@ -16,6 +17,10 @@ pub trait TxHistory {
 
 impl TxHistory for UtxoActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
+}
+
+impl TxHistory for ZcoinActivationParams {
+    fn tx_history(&self) -> bool { false }
 }
 
 #[derive(Clone, Debug, Serialize)]

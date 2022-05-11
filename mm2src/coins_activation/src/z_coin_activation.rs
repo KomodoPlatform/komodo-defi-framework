@@ -5,15 +5,12 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
-use coins::utxo::rpc_clients::ElectrumRpcRequest;
-use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
 use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError, ZcoinActivationParams, ZcoinConsensusParams};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
-use common::executor::Timer;
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
-use crypto::{CryptoCtx, CryptoInitError};
+use crypto::CryptoInitError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use rpc_task::RpcTaskError;
@@ -168,9 +165,17 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         protocol_info: ZcoinConsensusParams,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, activation_request, protocol_info)
-            .await
-            .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
+        let secp_privkey = ctx.secp256k1_key_pair().private().secret;
+        let coin = z_coin_from_conf_and_params(
+            &ctx,
+            &ticker,
+            &coin_conf,
+            activation_request,
+            protocol_info,
+            secp_privkey.as_slice(),
+        )
+        .await
+        .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
         task_handle.update_in_progress_status(ZcoinInProgressStatus::Scanning)?;
         coin.wait_for_blockchain_scan().await;
