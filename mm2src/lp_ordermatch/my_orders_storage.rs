@@ -212,6 +212,8 @@ mod native_impl {
                                     my_taker_order_file_path, my_taker_orders_dir};
     use common::fs::{read_dir_json, read_json, remove_file_async, write_json, FsJsonError};
 
+    const USE_TMP_FILE: bool = false;
+
     impl From<FsJsonError> for MyOrdersError {
         fn from(fs: FsJsonError) -> Self {
             match fs {
@@ -255,13 +257,13 @@ mod native_impl {
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
             let path = my_maker_order_file_path(&self.ctx, &order.uuid);
-            write_json(order, &path).await?;
+            write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
             let path = my_taker_order_file_path(&self.ctx, &order.request.uuid);
-            write_json(order, &path).await?;
+            write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
@@ -294,7 +296,7 @@ mod native_impl {
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
             let path = my_order_history_file_path(&self.ctx, &order.uuid());
-            write_json(order, &path).await?;
+            write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 

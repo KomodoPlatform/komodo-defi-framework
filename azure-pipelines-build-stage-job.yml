@@ -50,6 +50,29 @@ jobs:
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
           MANUAL_MM_VERSION: true
+      - task: Docker@2
+        displayName: Build & Push container of dev branch
+        condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        inputs:
+          containerRegistry: dockerhub
+          repository: komodoofficial/atomicdexapi
+          command: buildAndPush
+          tags: |
+            dev-$(COMMIT_HASH)
+            dev-latest
+          Dockerfile: Dockerfile.dev-release
+      - bash: |
+          rm -rf mm2-playground-node
+          git clone git@github.com:KomodoPlatform/mm2-playground-node.git
+          if [ -d "mm2-playground-node" ]; then
+            cd mm2-playground-node
+            sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
+            git add .commit
+            git commit -m "$(COMMIT_HASH) is committed for git & container registry"
+            git push
+          fi
+        condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        displayName: 'Update playground deployment'
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
       # On MacOS, run for x86_64-apple-darwin

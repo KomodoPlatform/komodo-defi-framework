@@ -1,102 +1,18 @@
 use crate::hd_pubkey::HDXPubExtractor;
-use crate::hd_wallet::{AddressDerivingError, HDWalletCoinOps, InvalidBip44ChainError, NewAccountCreatingError};
-use crate::{lp_coinfind_or_err, BalanceError, BalanceResult, CoinBalance, CoinFindError, CoinWithDerivationMethod,
-            DerivationMethod, HDAddress, MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::hd_wallet::{HDWalletCoinOps, NewAccountCreatingError};
+use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, HDAddress,
+            MarketCoinOps};
 use async_trait::async_trait;
+use common::custom_iter::TryUnzip;
 use common::log::{debug, info};
-use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
-use common::{HttpStatusCode, PagingOptionsEnum};
 use crypto::{Bip44Chain, RpcDerivationPath};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use http::StatusCode;
 use std::fmt;
 use std::ops::Range;
 
 pub type AddressIdRange = Range<u32>;
-
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum HDAccountBalanceRpcError {
-    #[display(fmt = "No such coin {}", coin)]
-    NoSuchCoin { coin: String },
-    #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
-    CoinIsActivatedNotWithHDWallet,
-    #[display(fmt = "HD account '{}' is not activated", account_id)]
-    UnknownAccount { account_id: u32 },
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
-    InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "Error deriving an address: {}", _0)]
-    ErrorDerivingAddress(String),
-    #[display(fmt = "Wallet storage error: {}", _0)]
-    WalletStorageError(String),
-    #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
-    RpcInvalidResponse(String),
-    #[display(fmt = "Transport: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal: {}", _0)]
-    Internal(String),
-}
-
-impl HttpStatusCode for HDAccountBalanceRpcError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            HDAccountBalanceRpcError::NoSuchCoin { .. }
-            | HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet
-            | HDAccountBalanceRpcError::UnknownAccount { .. }
-            | HDAccountBalanceRpcError::InvalidBip44Chain { .. }
-            | HDAccountBalanceRpcError::ErrorDerivingAddress(_) => StatusCode::BAD_REQUEST,
-            HDAccountBalanceRpcError::Transport(_)
-            | HDAccountBalanceRpcError::WalletStorageError(_)
-            | HDAccountBalanceRpcError::RpcInvalidResponse(_)
-            | HDAccountBalanceRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for HDAccountBalanceRpcError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => HDAccountBalanceRpcError::NoSuchCoin { coin },
-        }
-    }
-}
-
-impl From<UnexpectedDerivationMethod> for HDAccountBalanceRpcError {
-    fn from(e: UnexpectedDerivationMethod) -> Self {
-        match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet,
-            unexpected_error => HDAccountBalanceRpcError::Internal(unexpected_error.to_string()),
-        }
-    }
-}
-
-impl From<BalanceError> for HDAccountBalanceRpcError {
-    fn from(e: BalanceError) -> Self {
-        match e {
-            BalanceError::Transport(transport) => HDAccountBalanceRpcError::Transport(transport),
-            BalanceError::InvalidResponse(rpc) => HDAccountBalanceRpcError::RpcInvalidResponse(rpc),
-            BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
-            BalanceError::WalletStorageError(e) => HDAccountBalanceRpcError::Internal(e),
-            BalanceError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
-        }
-    }
-}
-
-impl From<InvalidBip44ChainError> for HDAccountBalanceRpcError {
-    fn from(e: InvalidBip44ChainError) -> Self { HDAccountBalanceRpcError::InvalidBip44Chain { chain: e.chain } }
-}
-
-impl From<AddressDerivingError> for HDAccountBalanceRpcError {
-    fn from(e: AddressDerivingError) -> Self {
-        match e {
-            AddressDerivingError::Bip32Error(bip32) => {
-                HDAccountBalanceRpcError::ErrorDerivingAddress(bip32.to_string())
-            },
-        }
-    }
-}
 
 #[derive(Display)]
 pub enum EnableCoinBalanceError {
@@ -144,56 +60,6 @@ pub struct HDAddressBalance {
     pub derivation_path: RpcDerivationPath,
     pub chain: Bip44Chain,
     pub balance: CoinBalance,
-}
-
-#[derive(Deserialize)]
-pub struct HDAccountBalanceRequest {
-    coin: String,
-    #[serde(flatten)]
-    params: AccountBalanceParams,
-}
-
-#[derive(Deserialize)]
-pub struct AccountBalanceParams {
-    pub account_index: u32,
-    pub chain: Bip44Chain,
-    #[serde(default = "common::ten")]
-    pub limit: usize,
-    #[serde(default)]
-    pub paging_options: PagingOptionsEnum<u32>,
-}
-
-#[derive(Deserialize)]
-pub struct CheckHDAccountBalanceRequest {
-    coin: String,
-    #[serde(flatten)]
-    params: CheckHDAccountBalanceParams,
-}
-
-#[derive(Deserialize)]
-pub struct CheckHDAccountBalanceParams {
-    pub account_index: u32,
-    pub gap_limit: Option<u32>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct HDAccountBalanceResponse {
-    pub account_index: u32,
-    pub derivation_path: RpcDerivationPath,
-    pub addresses: Vec<HDAddressBalance>,
-    pub page_balance: CoinBalance,
-    pub limit: usize,
-    pub skipped: u32,
-    pub total: u32,
-    pub total_pages: usize,
-    pub paging_options: PagingOptionsEnum<u32>,
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct CheckHDAccountBalanceResponse {
-    pub account_index: u32,
-    pub derivation_path: RpcDerivationPath,
-    pub new_addresses: Vec<HDAddressBalance>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -299,27 +165,37 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         address_ids: Ids,
     ) -> BalanceResult<Vec<HDAddressBalance>>
     where
-        Self::Address: fmt::Display,
+        Self::Address: fmt::Display + Clone,
         Ids: Iterator<Item = u32> + Send,
     {
-        let (lower, upper) = address_ids.size_hint();
-        let max_addresses = upper.unwrap_or(lower);
+        let (addresses, der_paths) = address_ids
+            .into_iter()
+            .map(|address_id| -> BalanceResult<_> {
+                let HDAddress {
+                    address,
+                    derivation_path,
+                    ..
+                } = self.derive_address(hd_account, chain, address_id)?;
+                Ok((address, derivation_path))
+            })
+            // Try to unzip `Result<(Address, DerivationPath)>` elements into `Result<(Vec<Address>, Vec<DerivationPath>)>`.
+            .try_unzip::<Vec<_>, Vec<_>>()?;
 
-        let mut balances = Vec::with_capacity(max_addresses);
-        for address_id in address_ids {
-            let HDAddress {
-                address,
-                derivation_path,
-                ..
-            } = self.derive_address(hd_account, chain, address_id)?;
-            let balance = self.known_address_balance(&address).await?;
-            balances.push(HDAddressBalance {
+        let balances = self
+            .known_addresses_balances(addresses)
+            .await?
+            .into_iter()
+            // [`HDWalletBalanceOps::known_addresses_balances`] returns pairs `(Address, CoinBalance)`
+            // that are guaranteed to be in the same order in which they were requested.
+            // So we can zip the derivation paths with the pairs `(Address, CoinBalance)`.
+            .zip(der_paths)
+            .map(|((address, balance), derivation_path)| HDAddressBalance {
                 address: address.to_string(),
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
                 balance,
-            });
-        }
+            })
+            .collect();
         Ok(balances)
     }
 
@@ -327,6 +203,13 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     /// This function is expected to be more efficient than ['HDWalletBalanceOps::is_address_used'] in most cases
     /// since many of RPC clients allow us to request the address balance without the history.
     async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance>;
+
+    /// Requests balances of the given `addresses`.
+    /// The pairs `(Address, CoinBalance)` are guaranteed to be in the same order in which they were requested.
+    async fn known_addresses_balances(
+        &self,
+        addresses: Vec<Self::Address>,
+    ) -> BalanceResult<Vec<(Self::Address, CoinBalance)>>;
 
     /// Checks if the address has been used by the user by checking if the transaction history of the given `address` is not empty.
     /// Please note the function can return zero balance even if the address has been used before.
@@ -356,48 +239,9 @@ pub enum AddressBalanceStatus<Balance> {
     NotUsed,
 }
 
-#[async_trait]
-pub trait HDWalletBalanceRpcOps {
-    async fn account_balance_rpc(
-        &self,
-        params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>;
-
-    async fn scan_for_new_addresses_rpc(
-        &self,
-        params: CheckHDAccountBalanceParams,
-    ) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError>;
-}
-
-pub async fn account_balance(
-    ctx: MmArc,
-    req: HDAccountBalanceRequest,
-) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.account_balance_rpc(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.account_balance_rpc(req.params).await,
-        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
-    }
-}
-
-pub async fn scan_for_new_addresses(
-    ctx: MmArc,
-    req: CheckHDAccountBalanceRequest,
-) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.scan_for_new_addresses_rpc(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.scan_for_new_addresses_rpc(req.params).await,
-        _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
-    }
-}
-
 pub mod common_impl {
     use super::*;
     use crate::hd_wallet::{HDAccountOps, HDWalletOps};
-    use common::calc_total_pages;
-    use std::ops::DerefMut;
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -482,81 +326,5 @@ pub mod common_impl {
         }
 
         Ok(result)
-    }
-
-    pub async fn account_balance_rpc<Coin>(
-        coin: &Coin,
-        params: AccountBalanceParams,
-    ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError>
-    where
-        Coin: HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
-    {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
-
-        let account_id = params.account_index;
-        let chain = params.chain;
-        let hd_account = hd_wallet
-            .get_account(account_id)
-            .await
-            .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
-        let total_addresses_number = hd_account.known_addresses_number(params.chain)?;
-
-        let from_address_id = match params.paging_options {
-            PagingOptionsEnum::FromId(from_address_id) => from_address_id,
-            PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * params.limit) as u32,
-        };
-        let to_address_id = std::cmp::min(from_address_id + params.limit as u32, total_addresses_number);
-
-        let addresses = coin
-            .known_addresses_balances_with_ids(&hd_account, chain, from_address_id..to_address_id)
-            .await?;
-        let page_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
-            total + addr_balance.balance.clone()
-        });
-
-        let result = HDAccountBalanceResponse {
-            account_index: params.account_index,
-            derivation_path: RpcDerivationPath(hd_account.account_derivation_path()),
-            addresses,
-            page_balance,
-            limit: params.limit,
-            skipped: std::cmp::min(from_address_id, total_addresses_number),
-            total: total_addresses_number,
-            total_pages: calc_total_pages(total_addresses_number as usize, params.limit),
-            paging_options: params.paging_options,
-        };
-
-        Ok(result)
-    }
-
-    pub async fn scan_for_new_addresses_rpc<Coin>(
-        coin: &Coin,
-        params: CheckHDAccountBalanceParams,
-    ) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError>
-    where
-        Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + HDWalletBalanceOps + Sync,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
-    {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
-
-        let account_id = params.account_index;
-        let mut hd_account = hd_wallet
-            .get_account_mut(account_id)
-            .await
-            .or_mm_err(|| HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet)?;
-        let account_derivation_path = hd_account.account_derivation_path();
-        let address_scanner = coin.produce_hd_address_scanner().await?;
-        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-
-        let new_addresses = coin
-            .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_scanner, gap_limit)
-            .await?;
-
-        Ok(CheckHDAccountBalanceResponse {
-            account_index: account_id,
-            derivation_path: RpcDerivationPath(account_derivation_path),
-            new_addresses,
-        })
     }
 }

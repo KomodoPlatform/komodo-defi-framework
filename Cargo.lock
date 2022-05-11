@@ -1097,7 +1097,7 @@ dependencies = [
  "gstuff",
  "hex 0.4.2",
  "http 0.2.1",
- "itertools 0.9.0",
+ "itertools 0.10.3",
  "js-sys",
  "jsonrpc-core 8.0.1",
  "keys",
@@ -1215,7 +1215,7 @@ dependencies = [
  "hyper",
  "hyper-rustls 0.22.1",
  "indexmap",
- "itertools 0.8.2",
+ "itertools 0.10.3",
  "js-sys",
  "keys",
  "lazy_static",
@@ -3200,15 +3200,6 @@ name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
-
-[[package]]
-name = "itertools"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56a2d0bc861f9165be4eb3442afd3c236d8a98afd426f65d92324ae1091a484"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itertools"

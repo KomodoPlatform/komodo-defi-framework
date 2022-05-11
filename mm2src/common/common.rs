@@ -78,6 +78,17 @@ macro_rules! cfg_native {
     };
 }
 
+/// Returns a JSON error HyRes on a failure.
+#[macro_export]
+macro_rules! try_h {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
+        }
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -88,6 +99,7 @@ pub mod mm_metrics;
 pub mod big_int_str;
 pub mod crash_reports;
 pub mod custom_futures;
+pub mod custom_iter;
 pub mod duplex_mutex;
 pub mod event_dispatcher;
 pub mod for_tests;
@@ -805,17 +817,6 @@ pub mod lazy {
             );
         assert_eq!(actual, Some("HELLO".into()));
     }
-}
-
-/// Returns a JSON error HyRes on a failure.
-#[macro_export]
-macro_rules! try_h {
-    ($e: expr) => {
-        match $e {
-            Ok(ok) => ok,
-            Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
-        }
-    };
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.

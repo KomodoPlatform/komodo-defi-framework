@@ -215,12 +215,11 @@ pub mod eth;
 pub mod hd_pubkey;
 pub mod hd_wallet;
 pub mod hd_wallet_storage;
-pub mod init_create_account;
-pub mod init_withdraw;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
 pub mod qrc20;
+pub mod rpc_command;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sql_tx_history_storage;
 #[doc(hidden)]
@@ -243,11 +242,12 @@ pub mod utxo;
 
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
-use init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared};
-use init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
+use rpc_command::init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared};
+use rpc_command::init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared};
+use rpc_command::init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
 use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
 use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
@@ -1894,6 +1894,7 @@ pub struct CoinsContext {
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     withdraw_task_manager: WithdrawTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
+    scan_addresses_manager: ScanAddressesTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
     tx_history_db: SharedDb<TxHistoryDb>,
     #[cfg(target_arch = "wasm32")]
@@ -1919,6 +1920,7 @@ impl CoinsContext {
                 balance_update_handlers: AsyncMutex::new(vec![]),
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
+                scan_addresses_manager: ScanAddressesTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
                 tx_history_db: ConstructibleDb::new_shared(ctx),
                 #[cfg(target_arch = "wasm32")]

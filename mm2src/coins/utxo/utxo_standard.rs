@@ -1,15 +1,17 @@
 use super::*;
-use crate::coin_balance::{self, AccountBalanceParams, CheckHDAccountBalanceParams, CheckHDAccountBalanceResponse,
-                          EnableCoinBalanceError, HDAccountBalance, HDAccountBalanceResponse,
-                          HDAccountBalanceRpcError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps,
-                          HDWalletBalanceRpcOps};
+use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
+                          HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
                        GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
                        NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
-use crate::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
-use crate::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
+use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
+use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::rpc_command::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
+use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
+                                                      ScanAddressesResponse};
+use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult, SwapOps, TradePreimageValue,
@@ -88,6 +90,56 @@ impl UtxoTxGenerationOps for UtxoStandardCoin {
     }
 }
 
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl GetUtxoListOps for UtxoStandardCoin {
+    async fn get_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_unspent_ordered_list(self, address).await
+    }
+
+    async fn get_all_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_all_unspent_ordered_list(self, address).await
+    }
+
+    async fn get_mature_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(MatureUnspentList, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_mature_unspent_ordered_list(self, address).await
+    }
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl GetUtxoMapOps for UtxoStandardCoin {
+    async fn get_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_unspent_ordered_map(self, addresses).await
+    }
+
+    async fn get_all_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_all_unspent_ordered_map(self, addresses).await
+    }
+
+    async fn get_mature_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(MatureUnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_mature_unspent_ordered_map(self, addresses).await
+    }
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -154,35 +206,13 @@ impl UtxoCommonOps for UtxoStandardCoin {
         .await
     }
 
-    async fn list_all_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_all_unspent_ordered(self, address).await
-    }
-
-    async fn list_mature_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_mature_unspent_ordered(self, address).await
-    }
-
-    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
+    fn get_verbose_transactions_from_cache_or_rpc(
+        &self,
+        tx_ids: HashSet<H256Json>,
+    ) -> UtxoRpcFut<HashMap<H256Json, VerboseTransactionFrom>> {
         let selfi = self.clone();
-        let fut = async move { utxo_common::get_verbose_transaction_from_cache_or_rpc(&selfi.utxo_arc, txid).await };
+        let fut = async move { utxo_common::get_verbose_transactions_from_cache_or_rpc(&selfi.utxo_arc, tx_ids).await };
         Box::new(fut.boxed().compat())
-    }
-
-    async fn cache_transaction_if_possible(&self, tx: &RpcTransaction) -> Result<(), String> {
-        utxo_common::cache_transaction_if_possible(&self.utxo_arc, tx).await
-    }
-
-    async fn list_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_unspent_ordered(self, address).await
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(
@@ -758,6 +788,13 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
     async fn known_address_balance(&self, address: &Self::Address) -> BalanceResult<CoinBalance> {
         utxo_common::address_balance(self, address).await
     }
+
+    async fn known_addresses_balances(
+        &self,
+        addresses: Vec<Self::Address>,
+    ) -> BalanceResult<Vec<(Self::Address, CoinBalance)>> {
+        utxo_common::addresses_balances(self, addresses).await
+    }
 }
 
 impl HDWalletCoinWithStorageOps for UtxoStandardCoin {
@@ -767,19 +804,22 @@ impl HDWalletCoinWithStorageOps for UtxoStandardCoin {
 }
 
 #[async_trait]
-impl HDWalletBalanceRpcOps for UtxoStandardCoin {
+impl AccountBalanceRpcOps for UtxoStandardCoin {
     async fn account_balance_rpc(
         &self,
         params: AccountBalanceParams,
     ) -> MmResult<HDAccountBalanceResponse, HDAccountBalanceRpcError> {
-        coin_balance::common_impl::account_balance_rpc(self, params).await
+        account_balance::common_impl::account_balance_rpc(self, params).await
     }
+}
 
-    async fn scan_for_new_addresses_rpc(
+#[async_trait]
+impl InitScanAddressesRpcOps for UtxoStandardCoin {
+    async fn init_scan_for_new_addresses_rpc(
         &self,
-        params: CheckHDAccountBalanceParams,
-    ) -> MmResult<CheckHDAccountBalanceResponse, HDAccountBalanceRpcError> {
-        coin_balance::common_impl::scan_for_new_addresses_rpc(self, params).await
+        params: ScanAddressesParams,
+    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError> {
+        init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await
     }
 }
 
