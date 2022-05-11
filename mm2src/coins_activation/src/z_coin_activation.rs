@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
 use coins::utxo::rpc_clients::ElectrumRpcRequest;
 use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
-use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
+use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError, ZcoinActivationParams, ZcoinConsensusParams};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
 use common::executor::Timer;
 use common::mm_ctx::MmArc;
@@ -52,27 +52,6 @@ pub enum ZcoinInProgressStatus {
 
 impl InitStandaloneCoinInitialStatus for ZcoinInProgressStatus {
     fn initial_status() -> Self { ZcoinInProgressStatus::ActivatingCoin }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "rpc", content = "rpc_data")]
-pub enum ZcoinRpcMode {
-    Native,
-    Light {
-        electrum_servers: Vec<ElectrumRpcRequest>,
-        light_wallet_d_servers: Vec<String>,
-    },
-}
-
-#[derive(Deserialize)]
-pub struct ZcoinActivationParams {
-    pub mode: ZcoinRpcMode,
-    pub required_confirmations: Option<u64>,
-    pub requires_notarization: Option<bool>,
-}
-
-impl TxHistory for ZcoinActivationParams {
-    fn tx_history(&self) -> bool { false }
 }
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
@@ -187,16 +166,9 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
         protocol_info: ZcoinConsensusParams,
-        priv_key_policy: PrivKeyBuildPolicy<'_>,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let priv_key = match priv_key_policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(key) => key,
-            PrivKeyBuildPolicy::HardwareWallet => {
-                return MmError::err(ZcoinInitError::HardwareWalletsAreNotSupportedYet)
-            },
-        };
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &activation_request, protocol_info, priv_key)
+        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, activation_request, protocol_info)
             .await
             .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 

@@ -6,14 +6,14 @@ use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoFeeDetails, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak,
+                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak,
                   VerboseTransactionFrom};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, RawTransactionFut, RawTransactionRequest, SignatureError,
-            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
-            WithdrawRequest};
+use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
+            RawTransactionRequest, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
+            TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
@@ -32,19 +32,19 @@ use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, 
 use futures::channel::mpsc::channel as async_channel;
 use futures::channel::mpsc::Receiver as AsyncReceiver;
 use futures::compat::Future01CompatExt;
-use futures::lock::MutexGuard as AsyncMutexGuard;
+use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Public};
 #[cfg(test)] use mocktopus::macros::*;
-use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize_list, CoinVariant, Reader};
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -63,7 +63,6 @@ use zcash_primitives::sapling::{Node, Note};
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::{Transaction as ZTransaction, TxId};
-use zcash_primitives::zip32::ExtendedFullViewingKey;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
@@ -75,7 +74,7 @@ mod z_rpc;
 use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
-use crate::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
+use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::z_coin::z_rpc::ZcoinNativeClient;
 pub use z_coin_errors::*;
 
@@ -99,32 +98,6 @@ macro_rules! try_ztx_s {
             },
         }
     };
-}
-
-#[derive(Debug, Clone)]
-pub struct ARRRConsensusParams {}
-
-impl consensus::Parameters for ARRRConsensusParams {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
-        match nu {
-            NetworkUpgrade::Sapling => Some(BlockHeight::from_u32(1)),
-            _ => None,
-        }
-    }
-
-    fn coin_type(&self) -> u32 { z_mainnet_constants::COIN_TYPE }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str { z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        z_mainnet_constants::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str { z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_PUBKEY_ADDRESS_PREFIX }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] { z_mainnet_constants::B58_SCRIPT_ADDRESS_PREFIX }
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
@@ -502,10 +475,9 @@ pub async fn z_coin_from_conf_and_params(
     conf: &Json,
     params: &ZcoinActivationParams,
     consensus_params: ZcoinConsensusParams,
-    secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    let db_dir_path = ctx.dbdir();
-    let z_key = ExtendedSpendingKey::master(secp_priv_key);
+    let secp_priv_key = ctx.secp256k1_key_pair().private().secret;
+    let z_key = ExtendedSpendingKey::master(secp_priv_key.as_slice());
 
     z_coin_from_conf_and_params_with_z_key(
         ctx,
@@ -513,7 +485,7 @@ pub async fn z_coin_from_conf_and_params(
         conf,
         params,
         secp_priv_key,
-        db_dir_path,
+        ctx.dbdir(),
         z_key,
         consensus_params,
     )
@@ -836,6 +808,7 @@ impl<'a> ZCoinBuilder<'a> {
             address_format: None,
             gap_limit: None,
             scan_policy: Default::default(),
+            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
             check_utxo_maturity: None,
         };
         ZCoinBuilder {
@@ -1717,7 +1690,7 @@ impl InitWithdrawCoin for ZCoin {
 
         Ok(TransactionDetails {
             tx_hex: tx_bytes.into(),
-            tx_hash: tx_hash.clone().into(),
+            tx_hash: hex::encode(&tx_hash),
             from: vec![self.z_fields.my_z_addr_encoded.clone()],
             to: vec![req.to],
             total_amount: big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals()),
