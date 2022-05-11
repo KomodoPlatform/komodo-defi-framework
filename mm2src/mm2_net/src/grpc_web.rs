@@ -1,9 +1,10 @@
 /// The small module implementing gRPC-WEB support
 /// Implementation was taken from https://github.com/hyperium/tonic/blob/ddab65ede90f503360b7adb0d7afe6d5b7bb8b02/examples/src/grpc-web/client.rs
 /// with minor refactoring
-use crate::mm_error::prelude::*;
 use crate::transport::SlurpError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use common::{cfg_native, cfg_wasm32};
+use mm2_ehandle::mm_error::prelude::*;
 use prost::DecodeError;
 
 cfg_native! {

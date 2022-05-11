@@ -6,11 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytes = "1.1"
+cfg-if = "1.0"
+common = { path = "../common" }
 mm2_ehandle = { path = "../mm2_ehandle" }
 derive_more = "0.99"
-common = { path = "../common" }
 http = "0.2"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+prost = "0.8"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
