@@ -1,8 +1,8 @@
-use crate::log::{error, LogOnError};
-use crate::mm_error::prelude::*;
 use async_std::fs as async_fs;
+use common::log::error;
 use derive_more::Display;
 use futures::AsyncWriteExt;
+use gstuff::{try_s, ERR};
 use rand::random;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -23,8 +23,6 @@ pub enum FsJsonError {
     Serializing(JsonError),
     Deserializing(JsonError),
 }
-
-pub mod file_lock;
 
 pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
     let r: [u8; 32] = random();

@@ -1,6 +1,6 @@
-use crate::executor::spawn_local;
-use crate::mm_error::prelude::*;
-use crate::stringify_js_error;
+use common::executor::spawn_local;
+use mm2_ehandle::mm_error::prelude::*;
+use common::stringify_js_error;
 use crate::transport::{SlurpError, SlurpResult};
 use futures::channel::oneshot;
 use http::{HeaderMap, StatusCode};

@@ -1,6 +1,7 @@
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex as AsyncMutex;
 use futures::Stream;
+use gstuff::{ERR, ERRL};
 use serde_json::Value as Json;
 use std::pin::Pin;
 use std::task::{Context, Poll};

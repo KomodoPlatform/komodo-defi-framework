@@ -1,6 +1,6 @@
-use crate::mm_error::prelude::*;
-use crate::{now_float, now_ms};
 use derive_more::Display;
+use gstuff::{now_float, now_ms};
+use mm2_ehandle::mm_error::MmError;
 use std::path::{Path, PathBuf};
 
 pub type FileLockResult<T> = std::result::Result<T, MmError<FileLockError>>;

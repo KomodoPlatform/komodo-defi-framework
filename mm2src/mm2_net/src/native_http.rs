@@ -1,6 +1,6 @@
-use crate::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crate::transport::{SlurpError, SlurpResult};
-use crate::wio::{drive03, HYPER};
+use common::wio::{drive03, HYPER};
 use futures::channel::oneshot::Canceled;
 use http::{header, HeaderValue, Request};
 use hyper::Body;
@@ -66,8 +66,7 @@ pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::block_on;
+    use common::block_on;
 
     #[test]
     fn test_slurp_req() {

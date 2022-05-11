@@ -96,12 +96,10 @@ pub mod iguana_utils;
 #[cfg(not(target_arch = "wasm32"))] pub mod ip_addr;
 pub mod mm_ctx;
 pub mod mm_number;
-pub mod mm_rpc_protocol;
 pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
-#[path = "transport/transport.rs"] pub mod transport;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "executor/native_executor.rs"]
@@ -158,10 +156,6 @@ pub use http::StatusCode;
 pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;
-
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "fs/fs.rs"]
-pub mod fs;
 
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
