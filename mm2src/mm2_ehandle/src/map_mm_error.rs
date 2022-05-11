@@ -1,4 +1,4 @@
-use super::{MmError, NotMmError};
+use crate::mm_error::{MmError, NotMmError};
 
 pub trait MapMmError<T, E1, E2: NotMmError> {
     fn mm_err<F>(self, f: F) -> Result<T, MmError<E2>>

@@ -4094,6 +4094,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm2_ehandle"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "derive_more",
+ "futures 0.1.29",
+ "gstuff",
+ "http 0.2.1",
+ "itertools 0.8.2",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mm2_main"
 version = "0.1.0"
 dependencies = [

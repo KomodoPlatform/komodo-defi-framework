@@ -10,6 +10,7 @@ members = [
     "mm2src/db_common",
     "mm2src/derives/ser_error",
     "mm2src/derives/ser_error_derive",
+    "mm2src/mm2_ehandle",
     "mm2src/floodsub",
     "mm2src/gossipsub",
     "mm2src/hw_common",

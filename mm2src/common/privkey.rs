@@ -17,7 +17,7 @@
 //  marketmaker
 //
 
-use crate::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use bitcrypto::{sha256, ChecksumType};
 use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private};

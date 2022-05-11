@@ -1,4 +1,4 @@
-use super::{MmError, NotMmError};
+use crate::mm_error::{MmError, NotMmError};
 
 pub trait OrMmError<T, E: NotMmError> {
     fn or_mm_err<F>(self, f: F) -> Result<T, MmError<E>>

@@ -95,7 +95,6 @@ pub mod grpc_web;
 pub mod iguana_utils;
 #[cfg(not(target_arch = "wasm32"))] pub mod ip_addr;
 pub mod mm_ctx;
-#[path = "mm_error/mm_error.rs"] pub mod mm_error;
 pub mod mm_number;
 pub mod mm_rpc_protocol;
 pub mod privkey;

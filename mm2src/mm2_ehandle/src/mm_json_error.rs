@@ -1,5 +1,4 @@
 use crate::mm_error::{MmError, NotMmError};
-use crate::SerializationError;
 use ser_error::SerializeErrorType;
 use serde_json::{self as json, Error as JsonError, Value as Json};
 use std::fmt;

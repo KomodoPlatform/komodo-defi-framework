@@ -1,4 +1,4 @@
-use super::{MmError, NotMmError};
+use crate::mm_error::{MmError, NotMmError};
 
 pub trait MapToMmResult<T, E1, E2>
 where

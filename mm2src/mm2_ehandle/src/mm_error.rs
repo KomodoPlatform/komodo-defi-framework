@@ -84,7 +84,7 @@
 //!  }
 //! ```
 
-use crate::{HttpStatusCode, NotSame};
+use common::{HttpStatusCode, NotSame};
 use derive_more::Display;
 use http::StatusCode;
 use itertools::Itertools;
@@ -95,20 +95,14 @@ use std::fmt;
 use std::panic::Location;
 
 pub mod prelude {
-    pub use crate::mm_error::map_mm_error::MapMmError;
-    pub use crate::mm_error::map_to_mm::MapToMmResult;
-    pub use crate::mm_error::map_to_mm_fut::MapToMmFutureExt;
-    pub use crate::mm_error::mm_json_error::MmJsonError;
-    pub use crate::mm_error::or_mm_error::OrMmError;
+    pub use crate::map_mm_error::MapMmError;
+    pub use crate::map_to_mm::MapToMmResult;
+    pub use crate::map_to_mm_fut::MapToMmFutureExt;
+    pub use crate::mm_json_error::MmJsonError;
+    pub use crate::or_mm_error::OrMmError;
     pub use crate::mm_error::{MmError, MmResult, NotMmError, SerMmErrorType};
     pub use ser_error::SerializeErrorType;
 }
-
-mod map_mm_error;
-mod map_to_mm;
-mod map_to_mm_fut;
-mod mm_json_error;
-mod or_mm_error;
 
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
