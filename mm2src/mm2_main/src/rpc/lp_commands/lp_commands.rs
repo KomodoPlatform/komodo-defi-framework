@@ -1,5 +1,5 @@
 use common::mm_ctx::MmArc;
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 use common::HttpStatusCode;
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;

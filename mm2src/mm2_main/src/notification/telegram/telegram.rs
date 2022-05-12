@@ -1,6 +1,6 @@
 use crate::mm2::lp_message_service::{MessageResult, MessageServiceTraits};
 use async_trait::async_trait;
-use common::transport::{post_json, SlurpError};
+use mm2_net::transport::{post_json, SlurpError};
 use derive_more::Display;
 use std::collections::HashMap;
 

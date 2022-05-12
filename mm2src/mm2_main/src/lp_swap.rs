@@ -59,7 +59,7 @@ use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
