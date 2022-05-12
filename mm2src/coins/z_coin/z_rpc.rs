@@ -350,7 +350,7 @@ impl ZcoinLightClient {
 pub async fn update_blocks_cache(
     grpc_client: &mut CompactTxStreamerClient<Channel>,
     db: &WalletDbShared,
-) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
+) -> Result<BlockHeight, MmError<UpdateBlocksCacheErr>> {
     let request = tonic::Request::new(ChainSpec {});
     let current_blockchain_block = grpc_client.get_latest_block(request).await?;
     let current_block_in_db = db.lock().blocks_db.get_latest_block()?;
@@ -379,16 +379,25 @@ pub async fn update_blocks_cache(
                 .insert_block(block.height as u32, block.encode_to_vec())?;
         }
     }
-    Ok(current_block)
+    Ok(BlockHeight::from_u32(current_block as u32))
+}
+
+fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
+    const QUERY: &str = "SELECT id_tx FROM transactions WHERE tx_id = ?1;";
+    match query_single_row(conn, QUERY, [tx_id.0.to_vec()], |row| row.get::<_, i64>(0)) {
+        Ok(Some(_)) => true,
+        Ok(None) | Err(_) => false,
+    }
 }
 
 async fn light_wallet_db_sync_loop(
     mut grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    _new_tx_watcher: CrossbeamReceiver<TxId>,
+    new_tx_watcher: CrossbeamReceiver<TxId>,
     mut synced_notifier: AsyncSender<BlockHeight>,
 ) {
+    let mut watch_for_tx_id = None;
     loop {
         let current_block = match update_blocks_cache(&mut grpc_client, &db).await {
             Ok(b) => b,
@@ -449,10 +458,17 @@ async fn light_wallet_db_sync_loop(
             // next time this codepath is executed after new blocks are received).
             scan_cached_blocks(&consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
         }
-        if synced_notifier
-            .try_send(BlockHeight::from_u32(current_block as u32))
-            .is_err()
-        {
+
+        if let Some(tx_id) = watch_for_tx_id {
+            if !is_tx_imported(db.lock().wallet_db.sql_conn(), tx_id) {
+                Timer::sleep(10.).await;
+                continue;
+            }
+        }
+
+        watch_for_tx_id = new_tx_watcher.try_recv().map(Some).unwrap_or(None);
+
+        if watch_for_tx_id.is_none() && synced_notifier.try_send(current_block).is_err() {
             warn!("synced watcher is no longer available");
             break;
         }
@@ -467,11 +483,11 @@ fn try_grpc() {
     use crossbeam::channel::bounded as crossbeam_bounded;
     use futures::channel::mpsc::channel as async_channel;
     use futures::executor::block_on_stream;
-    use futures::StreamExt;
     use std::str::FromStr;
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
     use zcash_primitives::consensus::Parameters;
+    use zcash_primitives::transaction::components::Amount;
     use zcash_proofs::prover::LocalTxProver;
 
     let zombie_consensus_params = ZcoinConsensusParams::for_zombie();
