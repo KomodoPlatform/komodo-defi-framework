@@ -1,5 +1,8 @@
-use crate::mm_ctx::MmArc;
 use crate::transport::slurp_url;
+use common::log;
+use common::mm_ctx::MmArc;
+use gstuff::try_s;
+use gstuff::{ERR, ERRL};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::fs;
@@ -104,6 +107,8 @@ pub async fn fetch_external_ip() -> Result<IpAddr, String> {
 /// Which might be a good thing, allowing us to detect the likehoodness of NAT early.
 #[cfg(not(target_arch = "wasm32"))]
 async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
+    use fomat_macros::{fomat, wite};
+
     let ip = try_s!(fetch_external_ip().await);
 
     // Try to bind on this IP.

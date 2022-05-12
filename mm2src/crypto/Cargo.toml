@@ -6,6 +6,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rustc-hex = "2"
+mm2_ehandle = { path = "../mm2_ehandle" }
 async-trait = "0.1"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }

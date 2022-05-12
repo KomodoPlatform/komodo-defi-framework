@@ -12,14 +12,18 @@ common = { path = "../common" }
 mm2_ehandle = { path = "../mm2_ehandle" }
 derive_more = "0.99"
 http = "0.2"
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 prost = "0.8"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+fomat-macros = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+gstuff = { version = "0.7", features = ["nightly"] }
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
 wasm-bindgen-futures = "0.4.21"
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
 js-sys = "0.3.27"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
