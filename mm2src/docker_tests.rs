@@ -850,7 +850,7 @@ mod docker_tests {
 
         let order_volume = asks[0]["maxvolume"].as_str().unwrap();
         assert_eq!("500", order_volume);
-        
+
         log!("Get MYCOIN/MYCOIN1 orderbook on Alice side");
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
