@@ -11,7 +11,7 @@ use crossbeam::channel::Receiver as CrossbeamReceiver;
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use derive_more::Display;
-use futures::channel::mpsc::Sender as AsyncSender;
+use futures::channel::mpsc::UnboundedSender as AsyncSender;
 use http::Uri;
 use parking_lot::{Mutex, MutexGuard};
 use prost::Message;
@@ -395,7 +395,7 @@ async fn light_wallet_db_sync_loop(
     db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     new_tx_watcher: CrossbeamReceiver<TxId>,
-    mut synced_notifier: AsyncSender<BlockHeight>,
+    synced_notifier: AsyncSender<BlockHeight>,
 ) {
     let mut watch_for_tx_id = None;
     loop {
@@ -468,7 +468,7 @@ async fn light_wallet_db_sync_loop(
 
         watch_for_tx_id = new_tx_watcher.try_recv().map(Some).unwrap_or(None);
 
-        if watch_for_tx_id.is_none() && synced_notifier.try_send(current_block).is_err() {
+        if watch_for_tx_id.is_none() && synced_notifier.unbounded_send(current_block).is_err() {
             warn!("synced watcher is no longer available");
             break;
         }
@@ -481,7 +481,7 @@ async fn light_wallet_db_sync_loop(
 fn try_grpc() {
     use common::block_on;
     use crossbeam::channel::bounded as crossbeam_bounded;
-    use futures::channel::mpsc::channel as async_channel;
+    use futures::channel::mpsc::unbounded as async_unbounded;
     use futures::executor::block_on_stream;
     use std::str::FromStr;
     use z_coin_grpc::RawTransaction;
@@ -496,7 +496,7 @@ fn try_grpc() {
     let evk = ExtendedFullViewingKey::from(&z_key);
 
     let (new_tx_notifier, new_tx_watcher) = crossbeam_bounded(1);
-    let (sync_state_notifier, sync_state_watcher) = async_channel(100);
+    let (sync_state_notifier, sync_state_watcher) = async_unbounded();
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
     let client = block_on(ZcoinLightClient::init(

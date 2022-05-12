@@ -20,19 +20,20 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{spawn, Timer};
+use common::log;
+use common::log::warn;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
-use common::{log, now_ms};
 use crossbeam::channel::bounded as crossbeam_bounded;
 use crossbeam::channel::Sender as CrossbeamSender;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
-use futures::channel::mpsc::channel as async_channel;
-use futures::channel::mpsc::Receiver as AsyncReceiver;
+use futures::channel::mpsc::unbounded as async_unbounded;
+use futures::channel::mpsc::UnboundedReceiver as AsyncReceiver;
 use futures::compat::Future01CompatExt;
-use futures::lock::Mutex as AsyncMutex;
+use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
@@ -40,7 +41,7 @@ use keys::hash::H256;
 use keys::{KeyPair, Public};
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::bytes::Bytes;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize_list, CoinVariant, Reader};
@@ -161,7 +162,52 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
-type SyncStateWatcher = AsyncMutex<AsyncReceiver<BlockHeight>>;
+type SyncStateWatcher = AsyncReceiver<BlockHeight>;
+type NewTxNotifier = CrossbeamSender<TxId>;
+
+pub struct SaplingSyncStateConnector {
+    sync_state_watcher: SyncStateWatcher,
+    new_tx_notifier: NewTxNotifier,
+}
+
+impl SaplingSyncStateConnector {
+    #[inline]
+    fn new_mutex_wrapped(sync_state_watcher: SyncStateWatcher, new_tx_notifier: NewTxNotifier) -> AsyncMutex<Self> {
+        AsyncMutex::new(SaplingSyncStateConnector {
+            sync_state_watcher,
+            new_tx_notifier,
+        })
+    }
+
+    #[inline]
+    /// Checks whether the connector has txid that background sync loop is not aware of yet
+    fn has_overdue_sent_tx(&self) -> bool { self.new_tx_notifier.is_full() }
+
+    fn new_tx_sent(&self, tx_id: TxId) {
+        if self.new_tx_notifier.try_send(tx_id).is_err() {
+            warn!(
+                "Background loop stopped for some reason, but tx {} was already sent",
+                tx_id
+            );
+        }
+    }
+
+    async fn wait_for_blockchain_scan(&mut self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
+        // consume all existing messages and return the latest
+        if let Ok(Some(mut b)) = self.sync_state_watcher.try_next() {
+            while let Ok(Some(newer)) = self.sync_state_watcher.try_next() {
+                b = newer;
+            }
+            return Ok(b);
+        }
+
+        // return the next available item if there were no available messages in channel
+        self.sync_state_watcher
+            .next()
+            .await
+            .or_mm_err(|| BlockchainScanStopped {})
+    }
+}
 
 #[allow(dead_code)]
 pub struct ZCoinFields {
@@ -172,8 +218,7 @@ pub struct ZCoinFields {
     z_tx_prover: LocalTxProver,
     z_rpc: ZcoinRpcClient,
     consensus_params: ZcoinConsensusParams,
-    sync_state_watcher: SyncStateWatcher,
-    new_tx_notifier: CrossbeamSender<TxId>,
+    sync_state_connector: AsyncMutex<SaplingSyncStateConnector>,
 }
 
 impl std::fmt::Debug for ZCoinFields {
@@ -214,25 +259,30 @@ pub struct ZOutput {
 }
 
 impl ZCoin {
+    #[inline]
     pub fn z_rpc(&self) -> &ZcoinRpcClient { &self.z_fields.z_rpc }
 
+    #[inline]
     pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
 
-    pub fn is_sapling_state_synced(&self) -> bool {
-        match self.z_rpc() {
-            ZcoinRpcClient::Native(n) => n.sapling_state_synced.load(AtomicOrdering::Relaxed),
-            ZcoinRpcClient::Light(_) => unimplemented!(),
-        }
-    }
-
-    #[inline(always)]
+    #[inline]
     pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
 
-    #[inline(always)]
+    #[inline]
     pub fn consensus_params(&self) -> ZcoinConsensusParams { self.z_fields.consensus_params.clone() }
 
-    #[inline(always)]
+    #[inline]
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
+
+    #[inline]
+    pub async fn wait_for_blockchain_scan(&self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
+        self.z_fields
+            .sync_state_connector
+            .lock()
+            .await
+            .wait_for_blockchain_scan()
+            .await
+    }
 
     /// Returns spendable notes
     async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, ()> {
@@ -256,8 +306,16 @@ impl ZCoin {
         &self,
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
-    ) -> Result<(ZTransaction, AdditionalTxData), MmError<GenTxError>> {
-        let current_block = self.wait_for_blockchain_scan().await?;
+    ) -> Result<
+        (
+            ZTransaction,
+            AdditionalTxData,
+            AsyncMutexGuard<'_, SaplingSyncStateConnector>,
+        ),
+        MmError<GenTxError>,
+    > {
+        let mut connector_guard = self.z_fields.sync_state_connector.lock().await;
+        let current_block = connector_guard.wait_for_blockchain_scan().await?;
 
         let tx_fee = self.get_one_kbyte_tx_fee().await?;
         let t_output_sat: u64 = t_outputs.iter().fold(0, |cur, out| cur + u64::from(out.value));
@@ -348,7 +406,7 @@ impl ZCoin {
             unused_change: None,
             kmd_rewards: None,
         };
-        Ok((tx, additional_data))
+        Ok((tx, additional_data, connector_guard))
     }
 
     pub async fn send_outputs(
@@ -356,7 +414,7 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-        let (tx, _) = self.gen_tx(t_outputs, z_outputs).await?;
+        let (tx, _, sync_connector_guard) = self.gen_tx(t_outputs, z_outputs).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
 
@@ -365,18 +423,7 @@ impl ZCoin {
             .compat()
             .await?;
 
-        self.utxo_rpc_client()
-            .wait_for_confirmations(
-                H256Json::from(tx.txid().0).reversed(),
-                tx.expiry_height.into(),
-                1,
-                false,
-                now_ms() + 4000,
-                10,
-            )
-            .compat()
-            .await
-            .map_to_mm(SendOutputsErr::TxNotMined)?;
+        sync_connector_guard.new_tx_sent(tx.txid());
         Ok(tx)
     }
 
@@ -429,7 +476,7 @@ impl ZCoin {
         witness.or_mm_err(|| GetUnspentWitnessErr::OutputCmuNotFoundInCache)
     }
 
-    #[inline(always)]
+    #[inline]
     fn into_weak_parts(self) -> (UtxoWeak, Weak<ZCoinFields>) {
         (self.utxo_arc.downgrade(), Arc::downgrade(&self.z_fields))
     }
@@ -439,21 +486,6 @@ impl ZCoin {
         let z_fields = z_fields.upgrade()?;
 
         Some(ZCoin { utxo_arc, z_fields })
-    }
-
-    pub async fn wait_for_blockchain_scan(&self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
-        let mut watcher = self.z_fields.sync_state_watcher.lock().await;
-
-        // consume all existing messages and return the latest
-        if let Ok(Some(mut b)) = watcher.try_next() {
-            while let Ok(Some(newer)) = watcher.try_next() {
-                b = newer;
-            }
-            return Ok(b);
-        }
-
-        // return the next available item if there were no available messages in channel
-        watcher.next().await.or_mm_err(|| BlockchainScanStopped {})
     }
 }
 
@@ -707,7 +739,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let my_z_addr_encoded = encode_payment_address(self.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
-        let (z_rpc, new_tx_notifier, sync_state_watcher) = match &self.z_coin_params.mode {
+        let (z_rpc, sync_state_watcher, new_tx_notifier) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
                 unimplemented!()
                 /*
@@ -744,7 +776,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                 let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
                 let uri = Uri::from_str(&light_wallet_d_servers[0])?;
                 let (new_tx_notifier, new_tx_watcher) = crossbeam_bounded(1);
-                let (sync_state_notifier, sync_state_watcher) = async_channel(100);
+                let (sync_state_notifier, sync_state_watcher) = async_unbounded();
                 let client = ZcoinLightClient::init(
                     uri,
                     cache_db_path,
@@ -755,7 +787,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                     sync_state_notifier,
                 )
                 .await?;
-                (client.into(), new_tx_notifier, sync_state_watcher)
+                (client.into(), sync_state_watcher, new_tx_notifier)
             },
         };
 
@@ -767,8 +799,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_tx_prover,
             z_rpc,
             consensus_params: self.consensus_params,
-            new_tx_notifier,
-            sync_state_watcher: AsyncMutex::new(sync_state_watcher),
+            sync_state_connector: SaplingSyncStateConnector::new_mutex_wrapped(sync_state_watcher, new_tx_notifier),
         };
 
         let z_coin = ZCoin {
@@ -906,14 +937,41 @@ impl MarketCoinOps for ZCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
-    #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        utxo_common::send_raw_tx(self.as_ref(), tx)
+        let tx_bytes = try_fus!(hex::decode(tx));
+        let z_tx = try_fus!(ZTransaction::read(tx_bytes.as_slice()));
+
+        let this = self.clone();
+        let tx = tx.to_owned();
+
+        let fut = async move {
+            let connector_guard = this.z_fields.sync_state_connector.lock().await;
+            if connector_guard.has_overdue_sent_tx() {
+                return ERR!("Sync state connector has overdue tx");
+            }
+            let tx_hash = utxo_common::send_raw_tx(this.as_ref(), &tx).compat().await?;
+            connector_guard.new_tx_sent(z_tx.txid());
+            Ok(tx_hash)
+        };
+        Box::new(fut.boxed().compat())
     }
 
-    #[inline(always)]
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        utxo_common::send_raw_tx_bytes(self.as_ref(), tx)
+        let z_tx = try_fus!(ZTransaction::read(tx));
+
+        let this = self.clone();
+        let tx = tx.to_owned();
+
+        let fut = async move {
+            let connector_guard = this.z_fields.sync_state_connector.lock().await;
+            if connector_guard.has_overdue_sent_tx() {
+                return ERR!("Sync state connector has overdue tx");
+            }
+            let tx_hash = utxo_common::send_raw_tx_bytes(this.as_ref(), &tx).compat().await?;
+            connector_guard.new_tx_sent(z_tx.txid());
+            Ok(tx_hash)
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn wait_for_confirmations(
@@ -1328,66 +1386,10 @@ impl SwapOps for ZCoin {
 impl MmCoin for ZCoin {
     fn is_asset_chain(&self) -> bool { self.utxo_arc.conf.asset_chain }
 
-    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        let coin = self.clone();
-        let fut = async move {
-            if req.fee.is_some() {
-                return MmError::err(WithdrawError::InternalError(
-                    "Setting a custom withdraw fee is not supported for ZCoin yet".to_owned(),
-                ));
-            }
-
-            let to_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &req.to)
-                .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{}", e)))?
-                .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
-            let amount = if req.max {
-                let fee = coin.get_one_kbyte_tx_fee().await?;
-                let balance = coin.my_balance().compat().await?;
-                balance.spendable - fee
-            } else {
-                req.amount
-            };
-            let satoshi = sat_from_big_decimal(&amount, coin.decimals())?;
-            let z_output = ZOutput {
-                to_addr,
-                amount: Amount::from_u64(satoshi)
-                    .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
-                // TODO add optional viewing_key and memo fields to the WithdrawRequest
-                viewing_key: None,
-                memo: None,
-            };
-
-            let (tx, data) = coin.gen_tx(vec![], vec![z_output]).await?;
-            let mut tx_bytes = Vec::with_capacity(1024);
-            tx.write(&mut tx_bytes)
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-            let mut tx_hash = tx.txid().0.to_vec();
-            tx_hash.reverse();
-
-            let my_balance_change = data.spent_by_me - data.received_by_me;
-
-            Ok(TransactionDetails {
-                tx_hex: tx_bytes.into(),
-                tx_hash: tx_hash.to_tx_hash(),
-                from: vec![coin.z_fields.my_z_addr_encoded.clone()],
-                to: vec![req.to],
-                total_amount: big_decimal_from_sat_unsigned(data.spent_by_me, coin.decimals()),
-                spent_by_me: big_decimal_from_sat_unsigned(data.spent_by_me, coin.decimals()),
-                received_by_me: big_decimal_from_sat_unsigned(data.received_by_me, coin.decimals()),
-                my_balance_change: big_decimal_from_sat_unsigned(my_balance_change, coin.decimals()),
-                block_height: 0,
-                timestamp: 0,
-                fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {
-                    coin: Some(coin.utxo_arc.conf.ticker.clone()),
-                    amount: big_decimal_from_sat_unsigned(data.fee_amount, coin.decimals()),
-                })),
-                coin: coin.ticker().to_owned(),
-                internal_id: tx_hash.into(),
-                kmd_rewards: None,
-                transaction_type: Default::default(),
-            })
-        };
-        Box::new(fut.boxed().compat())
+    fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
+        Box::new(futures01::future::err(MmError::new(WithdrawError::InternalError(
+            "Zcoin doesn't support legacy withdraw".into(),
+        ))))
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
@@ -1682,7 +1684,7 @@ impl InitWithdrawCoin for ZCoin {
             memo: None,
         };
 
-        let (tx, data) = self.gen_tx(vec![], vec![z_output]).await?;
+        let (tx, data, _connector_guard) = self.gen_tx(vec![], vec![z_output]).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes)
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
