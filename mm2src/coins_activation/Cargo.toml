@@ -9,6 +9,7 @@ edition = "2018"
 async-trait = "0.1"
 coins = { path = "../coins" }
 common = { path = "../common" }
+mm2_ehandle = { path = "../mm2_ehandle" }
 crypto = { path = "../crypto" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }

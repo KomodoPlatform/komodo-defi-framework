@@ -6,7 +6,7 @@ use crate::mm2::lp_swap::taker_swap::{maker_payment_wait, MakerNegotiationData, 
 use crate::mm2::lp_swap::{MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError, TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json};

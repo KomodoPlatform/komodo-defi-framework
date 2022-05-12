@@ -13,7 +13,7 @@ use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::CryptoCtx;
 use serde_json::Value as Json;
 

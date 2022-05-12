@@ -5,9 +5,9 @@ use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncSt
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::{prelude::*, NotEqual};
 use common::mm_number::BigDecimal;
-use common::{calc_total_pages, ten, HttpStatusCode, NotSame, PagingOptionsEnum, StatusCode};
+use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
@@ -30,7 +30,7 @@ pub struct GetHistoryResult {
     pub total: usize,
 }
 
-pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotSame + Send {}
+pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotEqual + Send {}
 
 #[async_trait]
 pub trait TxHistoryStorage: Send + Sync + 'static {

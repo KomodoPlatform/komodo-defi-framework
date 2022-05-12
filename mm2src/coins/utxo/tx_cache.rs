@@ -1,4 +1,4 @@
-use common::fs::safe_slurp;
+use mm2_io::fs::safe_slurp;
 use futures::lock::Mutex as AsyncMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use std::path::{Path, PathBuf};

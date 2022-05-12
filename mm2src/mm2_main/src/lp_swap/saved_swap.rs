@@ -4,7 +4,7 @@ use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
 use coins::lp_coinfind;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
@@ -174,7 +174,7 @@ mod native_impl {
     use crate::mm2::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
     use crate::mm2::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
     use crate::mm2::lp_swap::{my_swap_file_path, my_swaps_dir};
-    use common::fs::{read_dir_json, read_json, write_json, FsJsonError};
+    use mm2_io::fs::{read_dir_json, read_json, write_json, FsJsonError};
 
     impl From<FsJsonError> for SavedSwapError {
         fn from(fs: FsJsonError) -> Self {

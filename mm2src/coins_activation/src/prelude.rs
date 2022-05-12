@@ -1,7 +1,7 @@
 use coins::utxo::UtxoActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;

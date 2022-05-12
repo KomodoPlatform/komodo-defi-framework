@@ -3,7 +3,7 @@ use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 use coins::{BalanceError, MmCoinEnum, TradeFee, TradePreimageError};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;

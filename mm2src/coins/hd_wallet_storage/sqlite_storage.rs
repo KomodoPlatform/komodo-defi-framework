@@ -3,7 +3,7 @@ use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorage
 use async_trait::async_trait;
 use common::async_blocking;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::{SqliteConnShared, SqliteConnWeak};
 use derive_more::Display;

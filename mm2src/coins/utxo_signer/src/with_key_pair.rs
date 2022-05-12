@@ -2,7 +2,7 @@ use crate::sign_common::{complete_tx, p2pk_spend_with_signature, p2pkh_spend_wit
                          p2sh_spend_with_signature, p2wpkh_spend_with_signature};
 use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;

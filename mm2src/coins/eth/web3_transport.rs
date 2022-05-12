@@ -151,7 +151,7 @@ async fn send_request(
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
-    use common::transport::slurp_req;
+    use mm2_net::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;

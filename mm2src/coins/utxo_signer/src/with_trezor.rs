@@ -3,7 +3,7 @@ use crate::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams}
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TrezorUtxoCoin, TxOutput,
                            TxSignResult, UnsignedTxInput, UnsignedUtxoTx};
 use crypto::trezor::TrezorClient;

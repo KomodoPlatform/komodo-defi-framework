@@ -45,7 +45,7 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;

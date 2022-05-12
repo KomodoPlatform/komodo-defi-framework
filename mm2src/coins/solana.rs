@@ -10,13 +10,12 @@ use async_trait::async_trait;
 use base58::ToBase58;
 use bigdecimal::BigDecimal;
 use bincode::{deserialize, serialize};
-use common::mm_error::prelude::MapToMmResult;
-use common::{mm_ctx::MmArc, mm_error::MmError, mm_number::MmNumber, now_ms};
+use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
 use derive_more::Display;
-use ed25519_dalek::SignatureError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
+use mm2_ehandle::mm_error::prelude::{MapToMmResult, MmError};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;
@@ -149,7 +148,7 @@ pub enum KeyPairCreationError {
 }
 
 impl From<ed25519_dalek::SignatureError> for KeyPairCreationError {
-    fn from(e: SignatureError) -> Self { KeyPairCreationError::SignatureError(e) }
+    fn from(e: ed25519_dalek::SignatureError) -> Self { KeyPairCreationError::SignatureError(e) }
 }
 
 fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPairCreationError>> {

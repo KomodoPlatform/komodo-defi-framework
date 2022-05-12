@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use common::custom_futures::FutureTimerExt;
-use common::mm_error::prelude::*;
-use common::NotSame;
 use derive_more::Display;
 use futures::FutureExt;
 use hw_common::primitives::Bip32Error;
+use mm2_ehandle::mm_error::{prelude::*, NotEqual};
 use primitives::hash::H264;
 use std::time::Duration;
 use trezor::client::TrezorClient;
@@ -91,7 +90,7 @@ impl<E> From<TrezorProcessingError<E>> for HwProcessingError<E> {
 }
 
 /// This is required for converting `MmError<HwError>` into `MmError<HwProcessingError<E>>`.
-impl<E> NotSame for HwProcessingError<E> {}
+impl<E> NotEqual for HwProcessingError<E> {}
 
 #[derive(Clone, Copy, Deserialize)]
 pub enum HwWalletType {

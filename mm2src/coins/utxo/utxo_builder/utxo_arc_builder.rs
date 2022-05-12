@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use common::executor::spawn;
 use common::log::info;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use futures::future::{abortable, AbortHandle};
 use serde_json::Value as Json;
 

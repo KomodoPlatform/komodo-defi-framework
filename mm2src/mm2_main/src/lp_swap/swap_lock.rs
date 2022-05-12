@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ pub trait SwapLockOps: Sized {
 mod native_lock {
     use super::*;
     use crate::mm2::lp_swap::my_swaps_dir;
-    use common::fs::file_lock::{FileLock, FileLockError};
+    use mm2_io::file_lock::{FileLock, FileLockError};
     use std::path::PathBuf;
 
     impl From<FileLockError> for SwapLockError {

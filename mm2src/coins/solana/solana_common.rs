@@ -3,7 +3,7 @@ use crate::{BalanceError, MarketCoinOps, NumConversError, SignatureError, Signat
             UnexpectedDerivationMethod, VerificationError, VerificationResult, WithdrawError};
 use base58::FromBase58;
 use bigdecimal::ToPrimitive;
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 use common::mm_number::BigDecimal;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;

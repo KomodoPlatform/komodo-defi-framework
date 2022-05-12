@@ -3,7 +3,7 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32Error, ChildNumber};
 use derive_more::Display;

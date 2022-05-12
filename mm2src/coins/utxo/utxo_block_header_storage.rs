@@ -7,7 +7,7 @@ use crate::utxo::UtxoBlockHeaderVerificationParams;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::mm_ctx::MmArc;
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 use derive_more::Display;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};

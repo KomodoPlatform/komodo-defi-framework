@@ -20,9 +20,9 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
-use common::privkey::key_pair_from_secret;
+use crypto::privkey::key_pair_from_secret;
 use common::{log, now_ms};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
@@ -1520,7 +1520,7 @@ impl UtxoCommonOps for ZCoin {
 
 #[test]
 fn derive_z_key_from_mm_seed() {
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
     use zcash_client_backend::encoding::encode_extended_spending_key;
 
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";

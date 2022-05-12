@@ -11,7 +11,7 @@ use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
 use common::executor::Timer;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;

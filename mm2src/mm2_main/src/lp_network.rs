@@ -19,7 +19,7 @@
 use coins::lp_coinfind;
 use common::executor::spawn;
 use common::mm_ctx::{MmArc, MmWeak};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_metrics::{ClockOps, MetricsOps};
 use common::{log, Future01CompatExt};
 use derive_more::Display;

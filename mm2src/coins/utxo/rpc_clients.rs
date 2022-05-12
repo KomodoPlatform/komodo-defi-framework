@@ -11,7 +11,7 @@ use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient, JsonRpcRemoteAddr,
                              JsonRpcRequest, JsonRpcResponse, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -573,7 +573,7 @@ impl JsonRpcClient for NativeClientImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
-        use common::transport::slurp_req;
+        use mm2_net::transport::slurp_req;
 
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length

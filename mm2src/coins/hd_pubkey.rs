@@ -1,7 +1,7 @@
 use crate::hd_wallet::{HDWalletRpcError, NewAccountCreatingError};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::trezor_rpc_task::TrezorRpcTaskProcessor;
 use crypto::trezor::utxo::TrezorUtxoCoin;

@@ -2,7 +2,7 @@ use super::*;
 use crate::solana::spl::{SplToken, SplTokenConf};
 use bip39::Language;
 use common::mm_ctx::MmCtxBuilder;
-use common::privkey::key_pair_from_seed;
+use crypto::privkey::key_pair_from_seed;
 use ed25519_dalek_bip32::{DerivationPath, ExtendedSecretKey};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use std::str::FromStr;

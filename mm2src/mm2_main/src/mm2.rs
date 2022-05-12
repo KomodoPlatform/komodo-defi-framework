@@ -51,7 +51,7 @@ use std::str;
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
 use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "database.rs"]
@@ -469,7 +469,7 @@ pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), 
 
 #[cfg(not(target_arch = "wasm32"))]
 fn on_update_config(args: &[OsString]) -> Result<(), String> {
-    use common::fs::safe_slurp;
+    use mm2_io::fs::safe_slurp;
 
     let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
     let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;

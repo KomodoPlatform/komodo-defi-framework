@@ -4,7 +4,7 @@ use crate::utxo::unsigned_tx::UnsignedUtxoTx;
 use crate::utxo::Signature;
 use crate::{TrezorError, TrezorResponse, TrezorResult, TrezorSession};
 use common::log::{debug, info};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 
 const NO_DETAILS_ERROR: &str = "'TxRequest::details' is expected to be set";
 const NO_REQUEST_INDEX_ERROR: &str = "'TxRequestDetailsType::request_index' is expected to be set";

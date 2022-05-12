@@ -25,7 +25,7 @@ use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::now_ms;
 use derive_more::Display;

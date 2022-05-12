@@ -17,9 +17,9 @@ use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoin
 use common::executor::Timer;
 use common::log::{debug, error, warn};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
-use common::privkey::SerializableSecp256k1Keypair;
+use crypto::privkey::SerializableSecp256k1Keypair;
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use http::Response;
@@ -2063,7 +2063,7 @@ mod taker_swap_tests {
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
     use common::mm_ctx::MmCtxBuilder;
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
     use common::{block_on, new_uuid};
     use mocktopus::mocking::*;
 

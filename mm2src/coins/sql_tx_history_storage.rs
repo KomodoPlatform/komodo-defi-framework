@@ -2,7 +2,7 @@ use crate::my_tx_history_v2::{GetHistoryResult, HistoryCoinType, RemoveTxResult,
                               TxHistoryStorageError};
 use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};

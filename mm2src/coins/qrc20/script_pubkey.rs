@@ -1,4 +1,5 @@
 use super::*;
+use mm2_ehandle::mm_error::MmError;
 
 /// Generate a script_pubkey contains a `function_call` from the specified `contract_address`.
 /// The `contract_address` can be either Token address (QRC20) or Swap contract address (EtomicSwap).

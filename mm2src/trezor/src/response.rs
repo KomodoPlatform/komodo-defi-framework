@@ -4,7 +4,7 @@ use crate::result_handler::ResultHandler;
 use crate::user_interaction::TrezorUserInteraction;
 use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use std::fmt;
 
 pub use crate::proto::messages_common::button_request::ButtonRequestType;

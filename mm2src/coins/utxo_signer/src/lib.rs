@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::trezor::TrezorError;

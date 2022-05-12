@@ -1,7 +1,7 @@
 use crate::proto::messages::MessageType;
 use crate::proto::messages_common::{failure::FailureType, Failure};
 use crate::user_interaction::TrezorUserInteraction;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use prost::{DecodeError, EncodeError};
 

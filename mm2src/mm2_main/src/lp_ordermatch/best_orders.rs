@@ -4,7 +4,7 @@ use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use crate::mm2::lp_ordermatch::{orderbook_address, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, is_wallet_only_ticker};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigRational, MmNumber};
 use common::{log, HttpStatusCode};
 use derive_more::Display;

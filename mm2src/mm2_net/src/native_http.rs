@@ -1,9 +1,9 @@
-use mm2_ehandle::mm_error::prelude::*;
 use crate::transport::{SlurpError, SlurpResult};
 use common::wio::{drive03, HYPER};
 use futures::channel::oneshot::Canceled;
 use http::{header, HeaderValue, Request};
 use hyper::Body;
+use mm2_ehandle::mm_error::prelude::*;
 
 impl From<Canceled> for SlurpError {
     fn from(_: Canceled) -> Self { SlurpError::Internal("Spawned Slurp future has been canceled".to_owned()) }
@@ -66,6 +66,7 @@ pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
 
 #[cfg(test)]
 mod tests {
+    use crate::native_http::slurp_url;
     use common::block_on;
 
     #[test]

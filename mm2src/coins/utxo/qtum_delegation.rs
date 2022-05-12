@@ -11,8 +11,7 @@ use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, Sta
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
 use bigdecimal::Zero;
 use bitcrypto::dhash256;
-use common::mm_error::prelude::{MapMmError, MapToMmResult};
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::prelude::{MmError, MapMmError, MapToMmResult};
 use common::mm_number::BigDecimal;
 use common::now_ms;
 use derive_more::Display;

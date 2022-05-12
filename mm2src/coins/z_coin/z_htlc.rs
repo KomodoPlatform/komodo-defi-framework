@@ -14,7 +14,7 @@ use crate::{NumConversError, PrivKeyNotAllowed, TransactionEnum};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use chain::Transaction as UtxoTx;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, Public};

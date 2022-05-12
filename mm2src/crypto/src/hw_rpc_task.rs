@@ -1,7 +1,7 @@
 use crate::hw_client::{HwProcessingError, TrezorConnectProcessor};
 use crate::trezor::TrezorPinMatrix3x3Response;
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use rpc_task::rpc_common::RpcTaskUserActionRequest;
 use serde::Serialize;
 use std::convert::{TryFrom, TryInto};

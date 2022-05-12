@@ -4,7 +4,7 @@ use crate::trezor::TrezorSession;
 use crate::HwWalletType;
 use bitcrypto::dhash160;
 use common::log::warn;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use futures::lock::Mutex as AsyncMutex;
 use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;

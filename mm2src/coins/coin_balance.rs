@@ -5,7 +5,7 @@ use crate::{lp_coinfind_or_err, BalanceError, BalanceResult, CoinBalance, CoinFi
 use async_trait::async_trait;
 use common::log::{debug, info};
 use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use common::{HttpStatusCode, PagingOptionsEnum};
 use crypto::{Bip44Chain, RpcDerivationPath};
 use derive_more::Display;

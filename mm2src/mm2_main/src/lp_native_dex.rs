@@ -22,7 +22,7 @@ use coins::register_balance_update_handler;
 use common::executor::{spawn, spawn_boxed, Timer};
 use common::log::{info, warn};
 use common::mm_ctx::{MmArc, MmCtx};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use crypto::{CryptoCtx, CryptoInitError, HwError, HwProcessingError};
 use derive_more::Display;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
@@ -46,8 +46,8 @@ use crate::mm2::rpc::spawn_rpc;
 use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 cfg_native! {
-    use common::fs::{ensure_dir_is_writable, ensure_file_is_writable};
-    use common::ip_addr::myipaddr;
+    use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
+    use mm2_net::ip_addr::myipaddr;
     use db_common::sqlite::rusqlite::Error as SqlError;
 }
 
