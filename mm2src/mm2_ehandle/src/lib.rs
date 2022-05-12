@@ -6,9 +6,6 @@
 #![feature(auto_traits)]
 #![feature(drain_filter)]
 
-#[macro_use] pub extern crate serde_json;
-#[macro_use] extern crate ser_error_derive;
-
 pub mod map_mm_error;
 pub mod map_to_mm;
 pub mod mm_error;

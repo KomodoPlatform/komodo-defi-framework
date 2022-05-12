@@ -22,7 +22,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::hash_types::{BlockHash, Txid};
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::Network;
-use common::fs::check_dir_operations;
+use mm2_io::fs::check_dir_operations;
 use common::{async_blocking, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;

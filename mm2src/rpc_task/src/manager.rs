@@ -4,7 +4,7 @@ use crate::{AtomicTaskId, FinishedTaskResult, RpcTask, RpcTaskError, RpcTaskHand
             UserActionSender};
 use common::executor::spawn;
 use common::log::{debug, warn};
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use std::collections::hash_map::Entry;

@@ -1,7 +1,9 @@
 use common::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
+use mm2_ehandle::mm_error::{MmError, SerMmErrorType};
 use serde::{Deserialize, Serialize};
-use serde_json::{self as json, Value as Json};
+use serde_json as json;
+use serde_json::Value as Json;
 
 /// Please note there is no standardized `1.0` version, so this enumeration should not be used in the legacy protocol context.
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -165,9 +167,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use derive_more::Display;
-    use serde::Serializer;
+    use mm2_ehandle::mm_error::MmError;
+    use ser_error_derive::SerializeErrorType;
+    use serde::{Serialize, Serializer};
+    use serde_json as json;
+    use serde_json::{json, Value as Json};
+
+    use crate::mm_protocol::{MmRpcBuilder, MmRpcResponse};
 
     #[derive(Display, Serialize, SerializeErrorType)]
     #[serde(tag = "error_type", content = "error_data")]

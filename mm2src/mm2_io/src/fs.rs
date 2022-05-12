@@ -2,7 +2,7 @@ use async_std::fs as async_fs;
 use common::log::error;
 use derive_more::Display;
 use futures::AsyncWriteExt;
-use gstuff::{try_s, ERR};
+use gstuff::{try_s, ERR, ERRL};
 use rand::random;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

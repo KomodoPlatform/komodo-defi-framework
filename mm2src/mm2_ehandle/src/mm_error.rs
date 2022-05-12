@@ -84,7 +84,7 @@
 //!  }
 //! ```
 
-use common::{HttpStatusCode, NotSame};
+use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
 use itertools::Itertools;
@@ -95,14 +95,20 @@ use std::fmt;
 use std::panic::Location;
 
 pub mod prelude {
-    pub use crate::map_mm_error::MapMmError;
-    pub use crate::map_to_mm::MapToMmResult;
-    pub use crate::map_to_mm_fut::MapToMmFutureExt;
-    pub use crate::mm_json_error::MmJsonError;
-    pub use crate::or_mm_error::OrMmError;
+    pub use crate::mm_error::map_mm_error::MapMmError;
+    pub use crate::mm_error::map_to_mm::MapToMmResult;
+    pub use crate::mm_error::map_to_mm_fut::MapToMmFutureExt;
+    pub use crate::mm_error::mm_json_error::MmJsonError;
+    pub use crate::mm_error::or_mm_error::OrMmError;
     pub use crate::mm_error::{MmError, MmResult, NotMmError, SerMmErrorType};
     pub use ser_error::SerializeErrorType;
 }
+
+#[path = "map_mm_error.rs"] mod map_mm_error;
+#[path = "map_to_mm.rs"] mod map_to_mm;
+#[path = "map_to_mm_fut.rs"] mod map_to_mm_fut;
+#[path = "mm_json_error.rs"] mod mm_json_error;
+#[path = "or_mm_error.rs"] mod or_mm_error;
 
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
@@ -124,16 +130,20 @@ impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmE
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[display(fmt = "{} {}", "trace.formatted()", etype)]
 pub struct MmError<E: NotMmError> {
-    etype: E,
-    trace: Vec<TraceLocation>,
+    pub etype: E,
+    pub trace: Vec<TraceLocation>,
 }
+
+pub auto trait NotEqual {}
+impl<X> !NotEqual for (X, X) {}
+impl<T: ?Sized> NotEqual for Box<T> {}
 
 /// Track the location whenever `MmError<E2>::from(MmError<E1>)` is called.
 impl<E1, E2> From<MmError<E1>> for MmError<E2>
 where
     E1: NotMmError,
     E2: From<E1> + NotMmError,
-    (E1, E2): NotSame,
+    (E1, E2): NotEqual,
 {
     #[track_caller]
     fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
@@ -313,7 +323,9 @@ mod tests {
     use super::prelude::*;
     use super::*;
     use futures01::Future;
+    use ser_error_derive::SerializeErrorType;
     use serde_json as json;
+    use serde_json::json;
 
     enum ErrorKind {
         NotSufficientBalance { actual: u64, required: u64 },
