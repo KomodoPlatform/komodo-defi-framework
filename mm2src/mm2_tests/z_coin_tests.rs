@@ -2,6 +2,7 @@ use super::*;
 use coins::z_coin::ZcoinConsensusParams;
 use common::for_tests::{init_withdraw, init_z_coin_light, send_raw_transaction, withdraw_status};
 
+const RICK: &str = "RICK";
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
 const ZOMBIE_TICKER: &str = "ZOMBIE";
@@ -22,6 +23,19 @@ fn zombie_conf() -> Json {
             }
         },
         "required_confirmations":0
+    })
+}
+
+fn rick_conf() -> Json {
+    json!({
+        "coin":"RICK",
+        "asset":"RICK",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "protocol":{
+            "type":"UTXO"
+        }
     })
 }
 
@@ -167,16 +181,125 @@ fn withdraw_z_coin_light() {
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw_res.tx_hex));
     println!("{:?}", send_raw_tx);
+}
 
-    // Consecutive withdraw attempts must wait for previous tx to be imported and not fail
-    let withdraw_res = block_on(withdraw(
-        &mm,
+#[test]
+fn trade_rick_zombie_light() {
+    let coins = json!([zombie_conf(), rick_conf()]);
+    let bob_passphrase = "RICK ZOMBIE BOB";
+    let alice_passphrase = "RICK ZOMBIE ALICE";
+
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 8999,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    let zombie_activation = block_on(enable_z_coin_light(
+        &mm_bob,
         ZOMBIE_TICKER,
-        "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",
-        "0.1",
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_bob, bob_passphrase, ZOMBIE_TICKER),
     ));
-    println!("{:?}", withdraw_res);
 
-    let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw_res.tx_hex));
-    println!("{:?}", send_raw_tx);
+    println!("Bob ZOMBIE activation {:?}", zombie_activation);
+
+    let rick_activation = block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
+
+    println!("Bob RICK activation {:?}", rick_activation);
+
+    let rc = block_on(mm_bob.rpc(&json! ({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": RICK,
+        "rel": ZOMBIE_TICKER,
+        "price": 1,
+        "volume": "0.1"
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let mut mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 8999,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "seednodes": [mm_bob.my_seed_addr()],
+            "rpc_password": "password",
+            "skip_startup_checks": true,
+        }),
+        "password".into(),
+        local_start!("alice"),
+    )
+    .unwrap();
+
+    thread::sleep(Duration::from_secs(1));
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({"Alice log path: {}", mm_alice.log_path.display()});
+
+    let zombie_activation = block_on(enable_z_coin_light(
+        &mm_alice,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_alice, alice_passphrase, ZOMBIE_TICKER),
+    ));
+
+    println!("Alice ZOMBIE activation {:?}", zombie_activation);
+
+    let rick_activation = block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
+
+    println!("Alice RICK activation {:?}", rick_activation);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "orderbook",
+        "base": RICK,
+        "rel": ZOMBIE_TICKER,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+    thread::sleep(Duration::from_secs(1));
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "buy",
+        "base": RICK,
+        "rel": ZOMBIE_TICKER,
+        "volume": "0.1",
+        "price": 1
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+    let buy_json: Json = serde_json::from_str(&rc.1).unwrap();
+    let uuid = buy_json["result"]["uuid"].as_str().unwrap().to_owned();
+
+    block_on(mm_alice.wait_for_log(5., |log| log.contains("Entering the taker_swap_loop RICK/ZOMBIE"))).unwrap();
+
+    block_on(mm_bob.wait_for_log(5., |log| log.contains("Entering the maker_swap_loop RICK/ZOMBIE"))).unwrap();
+
+    block_on(mm_bob.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+
+    block_on(mm_alice.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
 }

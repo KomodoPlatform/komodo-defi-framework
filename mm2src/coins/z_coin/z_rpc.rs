@@ -523,10 +523,12 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncRespawnHandle) {
 // This is a temporary test used to experiment with librustzcash and lightwalletd
 fn try_grpc() {
     use common::block_on;
+    use futures::channel::mpsc::channel;
     use futures::executor::block_on_stream;
     use std::str::FromStr;
     use z_coin_grpc::RawTransaction;
     use zcash_client_backend::encoding::decode_extended_spending_key;
+    use zcash_client_backend::encoding::decode_payment_address;
     use zcash_primitives::consensus::Parameters;
     use zcash_primitives::transaction::components::Amount;
     use zcash_proofs::prover::LocalTxProver;
@@ -560,11 +562,19 @@ fn try_grpc() {
     use zcash_primitives::consensus;
     use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 
-    let mut tx_builder = ZTxBuilder::new(zombie_consensus_params, current_block);
+    let mut tx_builder = ZTxBuilder::new(zombie_consensus_params.clone(), current_block);
 
     let from_key = ExtendedFullViewingKey::from(&z_key);
     let (_, from_addr) = from_key.default_address().unwrap();
-    let amount_to_send = notes[0].note_value - Amount::from_i64(1000).unwrap();
+    let to_addr = decode_payment_address(
+        zombie_consensus_params.hrp_sapling_payment_address(),
+        "zs1aj847k37mwme6rx40vfv3rutqv3q3sczxh9alqyhvsdrkjgu6cedczyxm25fk4elhglxg3a3mfv",
+    )
+    .unwrap()
+    .unwrap();
+
+    let amount_to_send = Amount::from_i64(777777777).unwrap();
+    let change = notes[0].note_value - amount_to_send - Amount::from_i64(1000).unwrap();
     for spendable_note in notes.into_iter().take(1) {
         let note = from_addr
             .create_note(spendable_note.note_value.into(), spendable_note.rseed)
@@ -580,8 +590,9 @@ fn try_grpc() {
     }
 
     tx_builder
-        .add_sapling_output(None, from_addr, amount_to_send, None)
+        .add_sapling_output(None, to_addr, amount_to_send, None)
         .unwrap();
+    tx_builder.add_sapling_output(None, from_addr, change, None).unwrap();
 
     let prover = LocalTxProver::with_default_location().unwrap();
     let (transaction, _) = tx_builder.build(consensus::BranchId::Sapling, &prover).unwrap();
