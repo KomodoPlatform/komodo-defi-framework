@@ -676,8 +676,7 @@ where
 mod tests {
     use super::*;
     use common::register_wasm_log;
-    use common::{custom_futures::FutureTimerExt,
-                 log::debug};
+    use common::{custom_futures::FutureTimerExt, log::debug};
     use common::{WasmUnwrapErrExt, WasmUnwrapExt};
     use lazy_static::lazy_static;
     use serde_json::json;
