@@ -18,12 +18,12 @@
 //
 use coins::lp_coinfind;
 use common::executor::spawn;
-use common::mm_ctx::{MmArc, MmWeak};
 use common::mm_metrics::{ClockOps, MetricsOps};
 use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_ehandle::mm_error::prelude::*;
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};

@@ -7,9 +7,9 @@ pub mod my_orders;
 #[path = "database/stats_swaps.rs"] pub mod stats_swaps;
 
 use crate::CREATE_MY_SWAPS_TABLE;
-use common::{log::{debug, error, info},
-             mm_ctx::MmArc};
+use common::log::{debug, error, info};
 use db_common::sqlite::rusqlite::{Result as SqlResult, NO_PARAMS};
+use mm2_core::mm_ctx::MmArc;
 
 use my_swaps::fill_my_swaps_from_json_statements;
 use stats_swaps::create_and_fill_stats_swaps_from_json_statements;

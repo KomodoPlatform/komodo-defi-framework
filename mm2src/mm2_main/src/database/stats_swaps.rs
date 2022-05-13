@@ -1,7 +1,7 @@
 use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
-use common::{log::{debug, error},
-             mm_ctx::MmArc};
+use common::log::{debug, error};
 use db_common::sqlite::rusqlite::{Connection, OptionalExtension};
+use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
 
 const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (

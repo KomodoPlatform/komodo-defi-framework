@@ -1,0 +1,29 @@
+[package]
+name = "mm2_db"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+common = { path = "../common" }
+mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_core = { path = "../mm2_core" }
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+lazy_static = "1.4"
+hex = "0.3.2"
+primitives = { path = "../mm2_bitcoin/primitives" }
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+serde = "1"
+serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+async-trait = "0.1"
+derive_more = "0.99"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
+wasm-bindgen-test = { version = "0.3.2" }
+js-sys = "0.3.27"
+web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }

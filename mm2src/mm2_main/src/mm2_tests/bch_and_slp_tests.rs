@@ -1,6 +1,6 @@
 use super::*;
-use mm_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
-                                 UtxoRpcMode};
+use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
+                                  UtxoRpcMode};
 
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",

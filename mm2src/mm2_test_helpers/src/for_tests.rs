@@ -5,6 +5,7 @@ use fomat_macros::wite;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
+#[cfg(target_arch = "wasm32")] use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
@@ -16,9 +17,9 @@ use uuid::Uuid;
 
 use common::executor::Timer;
 use common::log;
-use common::mm_ctx::MmArc;
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::{cfg_native, cfg_wasm32, now_float, now_ms, PagingOptionsEnum};
+use mm2_core::mm_ctx::MmArc;
 
 cfg_wasm32! {
     use common::log::LogLevel;
@@ -206,7 +207,7 @@ pub struct MarketMakerIt {
 /// A MarketMaker instance started by and for an integration test.
 #[cfg(target_arch = "wasm32")]
 pub struct MarketMakerIt {
-    pub ctx: common::mm_ctx::MmArc,
+    pub ctx: mm2_core::mm_ctx::MmArc,
     /// RPC API key.
     pub userpass: String,
 }
@@ -346,7 +347,7 @@ impl MarketMakerIt {
             conf["p2p_in_memory_port"] = Json::Number(new_p2p_port.into());
         }
 
-        let ctx = common::mm_ctx::MmCtxBuilder::new()
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::new()
             .with_conf(conf.clone())
             .with_test_db_namespace()
             .into_mm_arc();
@@ -748,30 +749,6 @@ pub fn mm_spat(
     _conf_mod: &dyn Fn(Json) -> Json,
 ) -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
     unimplemented!()
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn register_wasm_log() {
-    use common::log::{register_callback, WasmCallback, WasmLoggerBuilder};
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-    // Check if the logger is initialized already
-    if let Err(true) = IS_INITIALIZED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
-        return;
-    }
-
-    let log_level = match option_env!("RUST_WASM_TEST_LOG") {
-        Some(level_str) => LogLevel::from_str(level_str).unwrap_or(LogLevel::Info),
-        None => LogLevel::Info,
-    };
-
-    register_callback(WasmCallback::console_log());
-    WasmLoggerBuilder::default()
-        .level_filter(log_level)
-        .try_init()
-        .expect("Must be initialized only once");
 }
 
 /// Asks MM to enable the given currency in electrum mode

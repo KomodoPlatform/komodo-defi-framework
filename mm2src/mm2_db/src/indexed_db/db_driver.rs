@@ -6,11 +6,12 @@
 //! Since the wrappers represented below are not `Send`, it's strongly recommended NOT to use them directly.
 //! Please consider using a higher-level interface from `indexed_db.rs`.
 
-use crate::log::{error, info};
-use crate::mm_error::prelude::*;
-use crate::stringify_js_error;
+use common::log::{error, info};
+use common::stringify_js_error;
 use futures::channel::mpsc;
 use js_sys::Array;
+use lazy_static::lazy_static;
+use mm2_ehandle::mm_error::prelude::*;
 use serde_json::Value as Json;
 use std::collections::HashSet;
 use std::fmt;

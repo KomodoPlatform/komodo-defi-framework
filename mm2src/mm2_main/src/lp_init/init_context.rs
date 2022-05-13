@@ -1,5 +1,5 @@
 use crate::mm2::lp_native_dex::init_hw::InitHwTaskManagerShared;
-use common::mm_ctx::{from_ctx, MmArc};
+use mm2_core::mm_ctx::{from_ctx, MmArc};
 use rpc_task::RpcTaskManager;
 use std::sync::Arc;
 

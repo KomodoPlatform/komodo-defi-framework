@@ -2,10 +2,10 @@
 
 use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
 use async_trait::async_trait;
-use common::mm_ctx::from_ctx;
-use common::mm_ctx::MmArc;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
+use mm2_core::mm_ctx::from_ctx;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::{MapToMmResult, MmError};
 use serde_json::{self as json};
 use std::sync::Arc;

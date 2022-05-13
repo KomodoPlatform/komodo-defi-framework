@@ -2,7 +2,7 @@
 pub use crate::mm2::mm2_tests::structs::*;
 pub use common::mm_number::MmNumber;
 pub use common::{block_on, now_ms};
-pub use mm_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
                                      enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use secp256k1::{PublicKey, SecretKey};
@@ -18,7 +18,7 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields};
 use coins::MarketCoinOps;
-use common::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use common::mm_number::BigDecimal;
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;

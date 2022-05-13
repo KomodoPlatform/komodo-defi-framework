@@ -1,7 +1,7 @@
-use crate::mm_error::prelude::*;
-use crate::stringify_js_error;
+use common::stringify_js_error;
 use derive_more::Display;
 use js_sys::Array;
+use mm2_ehandle::mm_error::prelude::*;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStore, IdbObjectStoreParameters, IdbTransaction};
 

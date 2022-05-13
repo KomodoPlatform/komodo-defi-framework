@@ -12,6 +12,7 @@ async-trait = "0.1"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 common = { path = "../common" }
+mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"
 enum-primitive-derive = "0.1"
 futures = "0.3"

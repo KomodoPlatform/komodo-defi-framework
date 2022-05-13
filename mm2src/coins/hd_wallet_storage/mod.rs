@@ -1,8 +1,8 @@
 use crate::hd_wallet::HDWalletCoinOps;
 use async_trait::async_trait;
-use common::mm_ctx::MmArc;
 use crypto::{CryptoCtx, CryptoInitError, XPub};
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::hash::H160;
@@ -303,8 +303,8 @@ fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }
 #[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use common::mm_ctx::MmCtxBuilder;
     use itertools::Itertools;
+    use mm2_core::mm_ctx::MmCtxBuilder;
     use primitives::hash::H160;
 
     cfg_wasm32! {

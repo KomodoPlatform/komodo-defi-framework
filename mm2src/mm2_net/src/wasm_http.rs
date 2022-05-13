@@ -208,7 +208,7 @@ impl FetchRequest {
                 let error = format!(
                     "Expected blob, found {:?}: {}",
                     js_response,
-                    crate::stringify_js_error(&e)
+                    common::stringify_js_error(&e)
                 );
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },

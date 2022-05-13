@@ -1,8 +1,8 @@
 use crate::transport::slurp_url;
 use common::log;
-use common::mm_ctx::MmArc;
 use gstuff::try_s;
 use gstuff::{ERR, ERRL};
+use mm2_core::mm_ctx::MmArc;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::fs;

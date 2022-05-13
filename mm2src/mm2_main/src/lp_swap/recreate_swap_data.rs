@@ -5,9 +5,9 @@ use crate::mm2::lp_swap::taker_swap::{maker_payment_wait, MakerNegotiationData, 
                                       TAKER_SUCCESS_EVENTS};
 use crate::mm2::lp_swap::{MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError, TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
-use common::mm_ctx::MmArc;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json};
 
@@ -486,7 +486,7 @@ mod tests {
     use super::*;
     use coins::{CoinsContext, SwapOps, TestCoin};
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
+    use mm2_core::mm_ctx::MmCtxBuilder;
     use mocktopus::mocking::{MockResult, Mockable};
     use serde_json as json;
 

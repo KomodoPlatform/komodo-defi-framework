@@ -21,7 +21,6 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::log::warn;
-use common::mm_ctx::MmArc;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
 use crypto::privkey::key_pair_from_secret;
@@ -34,6 +33,7 @@ use hex::FromHexError;
 use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};

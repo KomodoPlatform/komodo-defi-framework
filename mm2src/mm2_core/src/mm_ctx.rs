@@ -1,13 +1,17 @@
+use arrayref::array_ref;
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
-use crate::executor::Timer;
-use crate::log::{self, LogLevel, LogState};
-use crate::mm_metrics::{MetricsArc, MetricsOps};
-use crate::{bits256, small_rng};
+use common::executor::Timer;
+use common::log::{self, LogLevel, LogState};
+use common::mm_metrics::{MetricsArc, MetricsOps};
+use common::{bits256, cfg_native, cfg_wasm32, small_rng};
+use fomat_macros::wite;
 use futures::future::AbortHandle;
-use gstuff::Constructible;
+use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
+use lazy_static::lazy_static;
 use primitives::hash::H160;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use shared_ref_counter::{SharedRc, WeakRc};
@@ -20,12 +24,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 cfg_wasm32! {
-    use crate::wasm_rpc::WasmRpcSender;
-    use crate::indexed_db::DbNamespaceId;
+    use mm2_rpc::wasm_rpc::WasmRpcSender;
+    use common::DbNamespaceId;
 }
 
 cfg_native! {
-    use crate::mm_metrics::prometheus;
+    use common::mm_metrics::prometheus;
     use db_common::sqlite::rusqlite::Connection;
     use std::net::{IpAddr, SocketAddr};
     use std::sync::MutexGuard;
@@ -220,7 +224,7 @@ impl MmCtx {
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         if self.stop.copy_or(false) {
             if let Err(err) = cb() {
-                log! ({"MmCtx::on_stop] Listener error: {}", err})
+                common::log! ({"MmCtx::on_stop] Listener error: {}", err})
             }
         } else {
             stop_listeners.push(cb)
@@ -283,7 +287,7 @@ impl Drop for MmCtx {
             .as_option()
             .map(|handle| handle.to_string())
             .unwrap_or_else(|| "UNKNOWN".to_owned());
-        log!("MmCtx ("(ffi_handle)") has been dropped")
+        common::log!("MmCtx ("(ffi_handle)") has been dropped")
     }
 }
 
@@ -377,7 +381,7 @@ impl MmArc {
         // that would prevent the contexts from properly `Drop`ping.
         for mut listener in stop_listeners.drain(..) {
             if let Err(err) = listener() {
-                log! ({"MmCtx::stop] Listener error: {}", err})
+                common::log! ({"MmCtx::stop] Listener error: {}", err})
             }
         }
 

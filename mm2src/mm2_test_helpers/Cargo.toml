@@ -1,0 +1,33 @@
+[package]
+name = "mm2_test_helpers"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1"
+serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+bigdecimal = { version = "0.1", features = ["serde"] }
+http = "0.2"
+uuid = { version = "0.7", features = ["serde", "v4"] }
+lazy_static = "1.4"
+common = { path = "../common" }
+mm2_io = { path = "../mm2_io" }
+mm2_net = { path = "../mm2_net" }
+mm2_core = { path = "../mm2_core" }
+cfg-if = "1.0"
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+regex = "1"
+fomat-macros = "0.2"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+bytes = "1.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+chrono = { version = "0.4", features = ["wasmbind"] }
+gstuff = { version = "0.7", features = ["nightly"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+chrono = "0.4"
+crossterm = "0.20"
+gstuff = { version = "0.7", features = ["crossterm", "nightly"] }

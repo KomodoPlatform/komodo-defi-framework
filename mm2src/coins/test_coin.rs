@@ -5,10 +5,10 @@ use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractA
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use common::mm_ctx::MmArc;
 use common::mm_number::MmNumber;
 use futures01::Future;
 use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::MmError;
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;

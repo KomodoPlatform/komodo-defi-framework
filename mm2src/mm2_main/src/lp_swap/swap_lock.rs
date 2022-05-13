@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use common::mm_ctx::MmArc;
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use uuid::Uuid;
 
@@ -202,9 +202,9 @@ mod tests {
     use crate::mm2::lp_swap::SwapsContext;
     use common::executor::Timer;
     use common::indexed_db::ItemId;
-    use common::mm_ctx::{MmArc, MmCtxBuilder};
     use common::new_uuid;
     use common::now_ms;
+    use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

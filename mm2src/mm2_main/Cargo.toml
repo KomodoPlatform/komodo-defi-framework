@@ -51,11 +51,12 @@ cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
-mm_test_helpers = { path = "../mm_test_helpers" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 mm2_ehandle = { path = "../mm2_ehandle" }
 mm2_io = { path = "../mm2_io" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_net = { path = "../mm2_net" }
+mm2_core = { path = "../mm2_core" }
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }

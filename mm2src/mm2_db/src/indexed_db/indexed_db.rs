@@ -7,13 +7,14 @@
 //! the implementation below initializes and spawns a `IdbDatabaseImpl` database instance locally
 //! and communicate with it through the `mpsc` channel.
 
-use crate::executor::spawn_local;
-use crate::log::debug;
-use crate::mm_error::prelude::*;
 use async_trait::async_trait;
+use common::executor::spawn_local;
+use common::log::debug;
+use common::DbNamespaceId;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use mm2_ehandle::mm_error::prelude::*;
 use primitives::hash::H160;
 use rand::{thread_rng, Rng};
 use serde::de::DeserializeOwned;
@@ -43,25 +44,17 @@ pub mod cursor_prelude {
                                                 WithOnly};
 }
 
-/// The database namespace identifier.
-/// This is used to distinguish the databases of one test from others.
-#[derive(Clone, Copy, Display, PartialEq)]
-pub enum DbNamespaceId {
-    #[display(fmt = "MAIN")]
-    Main,
-    #[display(fmt = "TEST_{}", _0)]
-    Test(u64),
+pub trait TableSignature: DeserializeOwned + Serialize + 'static {
+    fn table_name() -> &'static str;
+
+    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
 }
 
-impl Default for DbNamespaceId {
-    fn default() -> Self { DbNamespaceId::Main }
-}
+#[async_trait]
+pub trait DbInstance: Sized {
+    fn db_name() -> &'static str;
 
-impl DbNamespaceId {
-    pub fn for_test() -> DbNamespaceId {
-        let mut rng = thread_rng();
-        DbNamespaceId::Test(rng.gen())
-    }
+    async fn init(db_id: DbIdentifier) -> InitDbResult<Self>;
 }
 
 #[derive(Clone, Display)]
@@ -94,19 +87,6 @@ impl DbIdentifier {
     }
 
     pub fn display_rmd160(&self) -> String { hex::encode(&*self.wallet_rmd160) }
-}
-
-pub trait TableSignature: DeserializeOwned + Serialize + 'static {
-    fn table_name() -> &'static str;
-
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
-}
-
-#[async_trait]
-pub trait DbInstance: Sized {
-    fn db_name() -> &'static str;
-
-    async fn init(db_id: DbIdentifier) -> InitDbResult<Self>;
 }
 
 pub struct IndexedDbBuilder {
@@ -630,7 +610,9 @@ mod internal {
 
 mod tests {
     use super::*;
-    use crate::for_tests::register_wasm_log;
+    use lazy_static::lazy_static;
+    use mm2_test_helpers::for_tests::register_wasm_log;
+    use serde::{Deserialize, Serialize};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

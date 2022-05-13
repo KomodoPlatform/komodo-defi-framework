@@ -26,7 +26,7 @@
 use common::crash_reports::init_crash_reports;
 use common::double_panic_crash;
 use common::log::LogLevel;
-use common::mm_ctx::MmCtxBuilder;
+use mm2_core::mm_ctx::MmCtxBuilder;
 
 #[cfg(feature = "custom-swap-locktime")] use common::log::warn;
 #[cfg(feature = "custom-swap-locktime")]

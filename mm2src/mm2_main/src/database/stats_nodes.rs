@@ -1,8 +1,8 @@
 /// This module contains code to work with nodes table for stats collection in MM2 SQLite DB
 use crate::mm2::lp_stats::{NodeInfo, NodeVersionStat};
 use common::log::debug;
-use common::mm_ctx::MmArc;
 use db_common::sqlite::rusqlite::{Error as SqlError, Result as SqlResult, NO_PARAMS};
+use mm2_core::mm_ctx::MmArc;
 use std::collections::hash_map::HashMap;
 
 pub const CREATE_NODES_TABLE: &str = "CREATE TABLE IF NOT EXISTS nodes (

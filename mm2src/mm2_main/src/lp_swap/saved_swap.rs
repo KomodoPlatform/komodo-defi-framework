@@ -3,8 +3,8 @@ use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent}
 use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
 use coins::lp_coinfind;
-use common::mm_ctx::MmArc;
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
@@ -335,7 +335,7 @@ mod tests {
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::{ItemId, SavedSwapTable};
     use crate::mm2::lp_swap::SwapsContext;
-    use common::mm_ctx::MmCtxBuilder;
+    use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json as json;
     use wasm_bindgen_test::*;
 

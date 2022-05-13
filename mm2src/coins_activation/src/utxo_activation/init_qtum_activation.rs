@@ -12,8 +12,8 @@ use coins::utxo::qtum::{QtumCoin, QtumCoinBuilder};
 use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
-use common::mm_ctx::MmArc;
 use crypto::CryptoCtx;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use serde_json::Value as Json;
 

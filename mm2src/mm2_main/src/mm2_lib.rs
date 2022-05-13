@@ -25,7 +25,7 @@ mod mm2_native_lib;
 #[path = "mm2_lib/mm2_wasm_lib.rs"]
 mod mm2_wasm_lib;
 
-use crate::common::mm_ctx::MmArc;
+use mm2_core::mm_ctx::MmArc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
 

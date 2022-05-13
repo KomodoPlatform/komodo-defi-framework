@@ -18,10 +18,11 @@ use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFe
             TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, warn};
 use common::mm_number::{BigDecimal, MmNumber};
-use common::{bits256, executor::Timer, mm_ctx::MmArc, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
@@ -1964,8 +1965,8 @@ mod maker_swap_tests {
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::{MarketCoinOps, MmCoin, SwapOps, TestCoin};
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
     use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
     use mocktopus::mocking::*;
     use serde_json as json;
 

@@ -2,11 +2,11 @@ use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, Rece
                                 TakerOrder};
 /// This module contains code to work with my_orders table in MM2 SQLite DB
 use common::log::debug;
-use common::mm_ctx::MmArc;
 use common::{now_ms, PagingOptions};
 use db_common::sqlite::offset_by_uuid;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
+use mm2_core::mm_ctx::MmArc;
 use std::convert::TryInto;
 use uuid::Uuid;
 

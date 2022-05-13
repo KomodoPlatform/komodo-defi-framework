@@ -53,11 +53,11 @@ use crate::indexed_db::db_driver::cursor::{CollectCursorAction, CollectItemActio
                                            DbFilter, IdbCursorBuilder};
 pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
 use crate::indexed_db::{ItemId, TableSignature};
-use crate::mm_error::prelude::*;
-use crate::serde::de::DeserializeOwned;
 use async_trait::async_trait;
+use common::serde::de::DeserializeOwned;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use mm2_ehandle::mm_error::prelude::*;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::fmt;
@@ -536,8 +536,9 @@ async fn send_event_recv_response<Event, Result>(
 
 mod tests {
     use super::*;
-    use crate::for_tests::register_wasm_log;
     use crate::indexed_db::{DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
+    use mm2_test_helpers::for_tests::register_wasm_log;
+    use serde::Deserialize;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

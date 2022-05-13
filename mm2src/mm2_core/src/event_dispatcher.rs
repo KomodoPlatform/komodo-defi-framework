@@ -68,10 +68,10 @@ where
 
 #[cfg(test)]
 mod event_dispatcher_tests {
-    use crate::block_on;
     use crate::event_dispatcher::{Dispatcher, EventListener, EventUniqueId};
     use crate::mm_ctx::{MmArc, MmCtxBuilder};
     use async_trait::async_trait;
+    use common::block_on;
     use std::any::TypeId;
     use std::ops::Deref;
     use std::sync::Arc;

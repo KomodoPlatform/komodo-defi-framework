@@ -827,7 +827,7 @@ mod tests {
     use super::*;
     use common::block_on;
     use common::mm_metrics::{MetricType, MetricsJson, MetricsOps};
-    use mm_test_helpers::for_tests::find_metrics_in_json;
+    use mm2_test_helpers::for_tests::find_metrics_in_json;
     use qrc20_tests::qrc20_coin_for_test;
 
     #[test]

@@ -1,12 +1,13 @@
-use crate::executor::spawn;
-use crate::log::{debug, error};
-use crate::mm_error::prelude::*;
-use crate::state_machine::prelude::*;
-use crate::stringify_js_error;
 use async_trait::async_trait;
+use common::log::{debug, error};
+use common::state_machine::prelude::*;
+use common::stringify_js_error;
+use common::{executor::spawn,
+             state_machine::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom}};
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
 use futures::{FutureExt, SinkExt, Stream, StreamExt};
+use mm2_ehandle::mm_error::prelude::*;
 use serde_json::{self as json, Value as Json};
 use std::future::Future;
 use std::pin::Pin;
@@ -675,10 +676,14 @@ where
 
 mod tests {
     use super::*;
-    use crate::custom_futures::FutureTimerExt;
-    use crate::for_tests::register_wasm_log;
-    use crate::{WasmUnwrapErrExt, WasmUnwrapExt};
+    use common::register_wasm_log;
+    use common::{custom_futures::FutureTimerExt,
+                 log::{debug, error, warn}};
+    use common::{WasmUnwrapErrExt, WasmUnwrapExt};
+    use lazy_static::lazy_static;
+    use serde_json::{self as json, json, Value as Json};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use wasm_bindgen::*;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

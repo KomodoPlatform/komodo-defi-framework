@@ -9,10 +9,11 @@ use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractA
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bincode::serialize;
-use common::{mm_ctx::MmArc, mm_number::MmNumber, now_ms};
+use common::{mm_number::MmNumber, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::{MapToMmResult, MmError};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;

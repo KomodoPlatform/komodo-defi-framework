@@ -13,7 +13,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use crate::transport::wasm_http::FetchRequest;
+    use crate::wasm_http::FetchRequest;
 }
 
 // one byte for the compression flag plus four bytes for the length

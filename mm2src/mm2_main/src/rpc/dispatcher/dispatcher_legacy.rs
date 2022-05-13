@@ -1,10 +1,10 @@
 use super::PUBLIC_METHODS;
-use common::mm_ctx::MmArc;
 #[cfg(not(target_arch = "wasm32"))] use common::wio::CPUPOOL;
 use common::HyRes;
 use futures::compat::Future01CompatExt;
 use futures::{Future as Future03, FutureExt, TryFutureExt};
 use http::Response;
+use mm2_core::mm_ctx::MmArc;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 

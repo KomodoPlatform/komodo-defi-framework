@@ -7,13 +7,13 @@ use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, T
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
-use common::mm_ctx::MmArc;
 use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
 use keys::{Public as PublicKey, Type as ScriptType};
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;

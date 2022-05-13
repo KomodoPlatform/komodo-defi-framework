@@ -4,9 +4,9 @@ use crate::standalone_coin::init_standalone_coin_error::{InitStandaloneCoinError
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
-use common::mm_ctx::MmArc;
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::{prelude::*, NotEqual};
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};

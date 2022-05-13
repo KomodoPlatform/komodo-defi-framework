@@ -1,8 +1,8 @@
 use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
-use common::mm_ctx::MmArc;
 use common::PagingOptions;
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
 use mm2_ehandle::mm_error::prelude::*;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
@@ -308,8 +308,8 @@ mod wasm_tests {
     use super::wasm_impl::*;
     use super::*;
     use common::for_tests::register_wasm_log;
-    use common::mm_ctx::MmCtxBuilder;
     use common::new_uuid;
+    use mm2_core::mm_ctx::MmCtxBuilder;
     use rand::seq::SliceRandom;
     use rand::Rng;
     use std::collections::BTreeSet;

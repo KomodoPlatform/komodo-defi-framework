@@ -6,11 +6,11 @@ use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
-use mm_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                 enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
-                                 from_env_file, mm_spat, sign_message, verify_message, wait_till_history_has_records,
-                                 LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
-                                 TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
+                                  enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
+                                  from_env_file, mm_spat, sign_message, verify_message, wait_till_history_has_records,
+                                  LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                                  TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::identity;
@@ -22,7 +22,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-use mm_test_helpers::for_tests::{init_z_coin, init_z_coin_status};
+use mm2_test_helpers::for_tests::{init_z_coin, init_z_coin_status};
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult {
@@ -49,7 +49,7 @@ async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult 
 
 cfg_native! {
     use common::block_on;
-    use mm_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path};
+    use mm2_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path};
     use mm2_io::fs::slurp;
     use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 }
@@ -108,7 +108,7 @@ use structs::*;
 
 /// Ideally, this function should be replaced everywhere with `enable_electrum_json`.
 async fn enable_electrum(mm: &MarketMakerIt, coin: &str, tx_history: bool, urls: &[&str]) -> EnableElectrumResponse {
-    use mm_test_helpers::for_tests::enable_electrum as enable_electrum_impl;
+    use mm2_test_helpers::for_tests::enable_electrum as enable_electrum_impl;
 
     let value = enable_electrum_impl(mm, coin, tx_history, urls).await;
     json::from_value(value).unwrap()
@@ -120,7 +120,7 @@ async fn enable_electrum_json(
     tx_history: bool,
     servers: Vec<Json>,
 ) -> EnableElectrumResponse {
-    use mm_test_helpers::for_tests::enable_electrum_json as enable_electrum_impl;
+    use mm2_test_helpers::for_tests::enable_electrum_json as enable_electrum_impl;
 
     let value = enable_electrum_impl(mm, coin, tx_history, servers).await;
     json::from_value(value).unwrap()
@@ -283,7 +283,7 @@ fn local_start_impl(folder: PathBuf, log_path: PathBuf, mut conf: Json) {
 
 /// Starts the WASM version of MM.
 #[cfg(target_arch = "wasm32")]
-fn wasm_start_impl(ctx: crate::common::mm_ctx::MmArc) {
+fn wasm_start_impl(ctx: mm2_core::mm_ctx::MmArc) {
     common::executor::spawn(async move {
         super::lp_init(ctx).await.unwrap();
     })
@@ -919,7 +919,7 @@ async fn trade_base_rel_electrum(
     taker_price: i32,
     volume: f64,
 ) {
-    use mm_test_helpers::get_passphrase;
+    use mm2_test_helpers::get_passphrase;
 
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();

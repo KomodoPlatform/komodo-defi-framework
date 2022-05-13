@@ -1,5 +1,5 @@
 use super::*;
-use mm_test_helpers::for_tests::{enable_lightning, sign_message, verify_message};
+use mm2_test_helpers::for_tests::{enable_lightning, sign_message, verify_message};
 
 const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
