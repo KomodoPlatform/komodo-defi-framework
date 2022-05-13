@@ -1,10 +1,9 @@
-use crate::mm2::{database::SqlResult,
+use crate::mm2::{lp_price::CEXRates,
                  lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap}};
 
 use common::{log::{debug, error},
-             mm_ctx::MmArc,
-             mm_number::BigDecimal};
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, OptionalExtension};
+             mm_ctx::MmArc};
+use db_common::sqlite::rusqlite::{types::Value, Connection, OptionalExtension};
 use std::collections::HashSet;
 
 const CREATE_STATS_SWAPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS stats_swaps (
@@ -36,19 +35,18 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     maker_coin,
     maker_coin_ticker,
     maker_coin_platform,
+    maker_coin_usd_price,
     taker_coin,
     taker_coin_ticker,
     taker_coin_platform,
+    taker_coin_usd_price,
     uuid,
     started_at,
     finished_at,
     maker_amount,
     taker_amount,
     is_success
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
-
-const UPDATE_STATS_SWAP: &str =
-    "UPDATE stats_swaps SET maker_coin_usd_price = ?2, taker_coin_usd_price = ?3 WHERE uuid = ?1";
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)";
 
 const ADD_SPLIT_TICKERS: &[&str] = &[
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
@@ -109,7 +107,10 @@ fn split_coin(coin: &str) -> (String, String) {
     (ticker, platform)
 }
 
-fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_maker_swap_sql(
+    swap: &MakerSavedSwap,
+    prices: Option<CEXRates>,
+) -> Option<(&'static str, Vec<Value>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -131,19 +132,26 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, V
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
+    let (base_usd_price, rel_usd_price) = match prices {
+        None => (Value::Null, Value::Null),
+        Some(e) => (e.base.to_string().into(), e.base.to_string().into()),
+    };
+
     let params = vec![
-        swap_data.maker_coin.clone(),
-        maker_coin_ticker,
-        maker_coin_platform,
-        swap_data.taker_coin.clone(),
-        taker_coin_ticker,
-        taker_coin_platform,
-        swap.uuid.to_string(),
-        swap_data.started_at.to_string(),
-        finished_at,
-        swap_data.maker_amount.to_string(),
-        swap_data.taker_amount.to_string(),
-        (is_success as u32).to_string(),
+        swap_data.maker_coin.clone().into(),
+        maker_coin_ticker.into(),
+        maker_coin_platform.into(),
+        base_usd_price,
+        swap_data.taker_coin.clone().into(),
+        taker_coin_ticker.into(),
+        taker_coin_platform.into(),
+        rel_usd_price,
+        swap.uuid.to_string().into(),
+        swap_data.started_at.to_string().into(),
+        finished_at.into(),
+        swap_data.maker_amount.to_string().into(),
+        swap_data.taker_amount.to_string().into(),
+        (is_success as u32).to_string().into(),
     ];
     Some((INSERT_STATS_SWAP, params))
 }
@@ -180,7 +188,10 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_taker_swap_sql(
+    swap: &TakerSavedSwap,
+    prices: Option<CEXRates>,
+) -> Option<(&'static str, Vec<Value>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -202,19 +213,26 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, V
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
+    let (base_usd_price, rel_usd_price) = match prices {
+        None => (Value::Null, Value::Null),
+        Some(e) => (e.base.to_string().into(), e.base.to_string().into()),
+    };
+
     let params = vec![
-        swap_data.maker_coin.clone(),
-        maker_coin_ticker,
-        maker_coin_platform,
-        swap_data.taker_coin.clone(),
-        taker_coin_ticker,
-        taker_coin_platform,
-        swap.uuid.to_string(),
-        swap_data.started_at.to_string(),
-        finished_at,
-        swap_data.maker_amount.to_string(),
-        swap_data.taker_amount.to_string(),
-        (is_success as u32).to_string(),
+        swap_data.maker_coin.clone().into(),
+        maker_coin_ticker.into(),
+        maker_coin_platform.into(),
+        base_usd_price,
+        swap_data.taker_coin.clone().into(),
+        taker_coin_ticker.into(),
+        taker_coin_platform.into(),
+        rel_usd_price,
+        swap.uuid.to_string().into(),
+        swap_data.started_at.to_string().into(),
+        finished_at.into(),
+        swap_data.maker_amount.to_string().into(),
+        swap_data.taker_amount.to_string().into(),
+        (is_success as u32).to_string().into(),
     ];
     Some((INSERT_STATS_SWAP, params))
 }
@@ -251,37 +269,7 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-fn update_stats_swap_db(
-    ctx: &MmArc,
-    maker_coin_usd_price: &str,
-    taker_coin_usd_price: &str,
-    uuid: &str,
-) -> SqlResult<()> {
-    debug!("Updating swap coins usd price for {} to the SQLite database", uuid);
-    let conn = ctx.sqlite_connection();
-    let params = [uuid, maker_coin_usd_price, taker_coin_usd_price];
-
-    conn.execute(UPDATE_STATS_SWAP, &params).map(|_| ())
-}
-
-pub async fn update_stats_swap_coins_price_to_db(
-    ctx: &MmArc,
-    swap: &SavedSwap,
-    base_usd_price: BigDecimal,
-    rel_usd_price: BigDecimal,
-) -> Result<(), SqlError> {
-    if let Err(e) = update_stats_swap_db(
-        ctx,
-        &base_usd_price.to_string(),
-        &rel_usd_price.to_string(),
-        &swap.uuid().to_string(),
-    ) {
-        error!("Error updating stats_swaps db -> {}", e);
-    }
-    Ok(())
-}
-
-pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
+pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap, prices: Option<CEXRates>) {
     let params = vec![swap.uuid().to_string()];
     let query_row = conn.query_row(SELECT_ID_BY_UUID, &params, |row| row.get::<_, i64>(0));
     match query_row.optional() {
@@ -296,8 +284,8 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     };
 
     let sql_with_params = match swap {
-        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker),
-        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker),
+        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker, prices),
+        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker, prices),
     };
 
     let (sql, params) = match sql_with_params {

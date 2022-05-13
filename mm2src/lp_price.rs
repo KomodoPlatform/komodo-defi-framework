@@ -1,3 +1,4 @@
+use common::mm_error::prelude::OrMmError;
 use common::mm_error::MmError;
 use common::mm_number::MmNumber;
 use common::transport::{slurp_url, SlurpError};
@@ -188,9 +189,10 @@ pub async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry,
 
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct CEXRates {
-    pub base: Option<BigDecimal>,
-    pub rel: Option<BigDecimal>,
+    pub base: BigDecimal,
+    pub rel: BigDecimal,
 }
+
 // Fetcher funtion to test fetching latest prices from a endoint.
 async fn try_price_fetcher_endpoint(
     endpoint: &str,
@@ -202,42 +204,38 @@ async fn try_price_fetcher_endpoint(
             Some(fiat_price) => {
                 let (base_usd_price, rel_usd_price) = fiat_price.get_rate_price();
                 Ok(CEXRates {
-                    base: Some(base_usd_price),
-                    rel: Some(rel_usd_price),
+                    base: base_usd_price,
+                    rel: rel_usd_price,
                 })
             },
             None => {
-                return MmError::err(PriceServiceRequestError::Internal(
-                    "Error encoutered while trying to get cex rates.".to_string(),
-                ))
+                let cex: Option<CEXRates> = None;
+                cex.or_mm_err(|| PriceServiceRequestError::Internal("Couldn't fetch price".to_string()))
             },
         },
-        Err(_) => {
-            return MmError::err(PriceServiceRequestError::Internal(
-                "Error encoutered while trying to fetch prcie from endpoint.".to_string(),
-            ))
-        },
+        Err(e) => return MmError::err(e.into_inner()),
     }
 }
 
 // Consume try_price_fetcher_endpoint result here using MY_PRICE_ENDPOINT1 and if it fails, we'll retry to fetch from MY_PRICE_ENDPOINT2.
 // Returning price data if successful or None if price fetching fails.
-pub async fn fetch_swap_coins_price(base: &str, rel: &str) -> CEXRates {
+pub async fn fetch_swap_coins_price(base: &str, rel: &str) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
     for endpoint in [MY_PRICE_ENDPOINT1, MY_PRICE_ENDPOINT2] {
         match try_price_fetcher_endpoint(endpoint, base, rel).await {
-            Ok(response) => return response,
+            Ok(response) => return Some(response),
             // Continue fetching endpoints.
             Err(e) => error!("{:?}", e),
         }
     }
     // Couldn't fetch prices.
-    CEXRates { base: None, rel: None }
+    None
 }
 
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
 mod tests {
     #[test]
-    #[cfg(not(target_arch = "wasm32"))]
     fn test_process_price_request() {
         use common::block_on;
 
@@ -246,18 +244,16 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_arch = "wasm32"))]
     fn test_fetch_swap_coins_price() {
         use common::block_on;
 
         use super::*;
-        let example_response = CEXRates { base: None, rel: None };
-        let example_request = block_on(fetch_swap_coins_price("ETH0", "KMD0"));
+        let example_response = None;
+        let example_request = block_on(fetch_swap_coins_price("ETH", "JST"));
         assert_eq!(example_response, example_request);
     }
 
     #[test]
-    #[cfg(not(target_arch = "wasm32"))]
     fn test_get_cex_rates() {
         use common::mm_number::MmNumber;
         use wasm_timer::SystemTime;

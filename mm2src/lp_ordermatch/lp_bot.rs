@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use common::event_dispatcher::{EventListener, EventUniqueId};
-use common::log::{info};
+use common::log::info;
 use common::{mm_ctx::{from_ctx, MmArc},
              mm_number::MmNumber};
 use derive_more::Display;

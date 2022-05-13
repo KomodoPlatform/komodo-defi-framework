@@ -114,8 +114,6 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
                      TakerSwapPreparedParams, TakerTradePreimage};
 pub use trade_preimage::trade_preimage_rpc;
 
-use super::database::stats_swaps::update_stats_swap_coins_price_to_db;
-
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
@@ -734,11 +732,11 @@ pub async fn insert_new_swap_to_db(
 async fn update_my_swap_coins_price_to_db(
     ctx: MmArc,
     uuid: Uuid,
-    my_coin_usd_price: BigDecimal,
-    other_coin_usd_price: BigDecimal,
+    my_coin_usd_price: &BigDecimal,
+    other_coin_usd_price: &BigDecimal,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .update_coins_price(uuid, &my_coin_usd_price, &other_coin_usd_price)
+        .update_coins_price(uuid, my_coin_usd_price, other_coin_usd_price)
         .await
         .map_err(|e| ERRL!("{}", e))
 }
@@ -753,38 +751,35 @@ async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
             &swap.taker_coin_ticker().unwrap_or("".to_string()).as_str(),
         )
         .await;
-
-        if let (Some(base_usd_price), Some(rel_usd_price)) = (cex_rates.base, cex_rates.rel) {
-            if let Err(e) = update_my_swap_coins_price_to_db(
-                ctx.clone(),
-                swap.uuid().to_owned(),
-                base_usd_price.to_owned(),
-                rel_usd_price.to_owned(),
-            )
-            .await
-            {
-                error!("Error updating taker my_swaps db -> {}", e);
-            };
-            if let Err(e) =
-                update_stats_swap_coins_price_to_db(&ctx, &swap, base_usd_price.to_owned(), rel_usd_price.to_owned())
-                    .await
-            {
-                error!("Error updating stats_swaps db -> {}", e);
-            };
+        match cex_rates {
+            Some(response) => {
+                if let Err(e) =
+                    update_my_swap_coins_price_to_db(ctx.clone(), swap.uuid().to_owned(), &response.base, &response.rel)
+                        .await
+                {
+                    error!("Error updating taker my_swaps db -> {}", e);
+                };
+            },
+            None => error!("Error getting price data"),
         }
     };
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
+fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap, prices: Option<crate::mm2::lp_price::CEXRates>) {
     let ctx = &ctx.sqlite_connection();
-    crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap);
+    crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap, prices);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
-    add_swap_to_db_index(ctx, swap);
+    let prices = crate::mm2::lp_price::fetch_swap_coins_price(
+        &swap.maker_coin_ticker().unwrap_or("".to_string()).as_str(),
+        &swap.taker_coin_ticker().unwrap_or("".to_string()).as_str(),
+    )
+    .await;
+    add_swap_to_db_index(ctx, swap, prices);
     Ok(())
 }
 
