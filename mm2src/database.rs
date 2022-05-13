@@ -72,17 +72,21 @@ fn clean_db(ctx: &MmArc) {
 
 async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx).await }
 
-async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+fn migration_2() -> Vec<(&'static str, Vec<String>)> { my_swaps::add_coins_price_information_to_my_swap_db() }
+
+async fn migration_3(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     create_and_fill_stats_swaps_from_json_statements(ctx).await
 }
 
-fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
+fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_coins_price_information_to_stats_swap_db() }
 
-fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_split_tickers() }
+fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
 
-fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
+fn migration_6() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_split_tickers() }
 
-fn migration_6() -> Vec<(&'static str, Vec<String>)> {
+fn migration_7() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
+
+fn migration_8() -> Vec<(&'static str, Vec<String>)> {
     vec![
         (stats_nodes::CREATE_NODES_TABLE, vec![]),
         (stats_nodes::CREATE_STATS_NODES_TABLE, vec![]),
@@ -92,11 +96,13 @@ fn migration_6() -> Vec<(&'static str, Vec<String>)> {
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
-        2 => Some(migration_2(ctx).await),
-        3 => Some(migration_3()),
+        2 => Some(migration_2()),
+        3 => Some(migration_3(ctx).await),
         4 => Some(migration_4()),
         5 => Some(migration_5()),
         6 => Some(migration_6()),
+        7 => Some(migration_7()),
+        8 => Some(migration_8()),
         _ => None,
     }
 }

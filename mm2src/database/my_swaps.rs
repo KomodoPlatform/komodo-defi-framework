@@ -21,15 +21,29 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
             my_coin VARCHAR(255) NOT NULL,
             other_coin VARCHAR(255) NOT NULL,
             uuid VARCHAR(255) NOT NULL UNIQUE,
-            started_at INTEGER NOT NULL,
-            my_coin_usd_price DECIMAL,
-            other_coin_usd_price DECIMAL
+            started_at INTEGER NOT NULL
         );"
     };
 }
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
 const UPDATE_MY_SWAP: &str = "UPDATE my_swaps SET my_coin_usd_price = ?2, other_coin_usd_price = ?3 WHERE uuid = ?1";
+
+const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
+    "ALTER TABLE my_swaps ADD COLUMN my_coin_usd_price DECIMAL;",
+    "ALTER TABLE my_swaps ADD COLUMN other_coin_usd_price DECIMAL;",
+];
+
+/// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
+pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
+    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
+}
+
+//Add maker_coin_usd_price && taker_coin_usd_price columns to existing stats_swap table without the columns and default to NULL
+pub fn add_coins_price_information_to_my_swap_db() -> Vec<(&'static str, Vec<String>)> {
+    ADD_COINS_PRICE_INFOMATION.iter().map(|sql| (*sql, vec![])).collect()
+}
 
 pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
@@ -44,7 +58,7 @@ pub fn update_coins_price(
     my_coin_usd_price: &BigDecimal,
     other_coin_usd_price: &BigDecimal,
 ) -> SqlResult<()> {
-    debug!("Updating fiat price on moment of trade {} in SQLite database", uuid);
+    debug!("Updating fiat price on moment of trade for {} in SQLite database", uuid);
     let conn = ctx.sqlite_connection();
     let params = vec![
         uuid.to_string(),
@@ -52,12 +66,6 @@ pub fn update_coins_price(
         other_coin_usd_price.to_string(),
     ];
     conn.execute(UPDATE_MY_SWAP, &params).map(|_| ())
-}
-
-/// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
-pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
-    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
 }
 
 fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
@@ -223,12 +231,10 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
-        let timestamp_start = 1000;
-        let timestamp_end = 5000;
         let uuid = new_uuid();
         let my_coin = &"ETH";
         let other_coin = &"JST";
-        let started_at = rng.gen_range(timestamp_start, timestamp_end);
+        let started_at = rng.gen_range(1000, 5000);
         let result = insert_new_swap(
             &ctx,
             my_coin,
