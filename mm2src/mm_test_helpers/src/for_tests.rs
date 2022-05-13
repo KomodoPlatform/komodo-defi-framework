@@ -5,8 +5,8 @@ use fomat_macros::wite;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
-use serde_json as json;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
@@ -21,7 +21,7 @@ use common::mm_metrics::{MetricType, MetricsJson};
 use common::{cfg_native, cfg_wasm32, now_float, now_ms, PagingOptionsEnum};
 
 cfg_wasm32! {
-    use crate::log::LogLevel;
+    use common::log::LogLevel;
     use std::str::FromStr;
 }
 
@@ -206,7 +206,7 @@ pub struct MarketMakerIt {
 /// A MarketMaker instance started by and for an integration test.
 #[cfg(target_arch = "wasm32")]
 pub struct MarketMakerIt {
-    pub ctx: super::mm_ctx::MmArc,
+    pub ctx: common::mm_ctx::MmArc,
     /// RPC API key.
     pub userpass: String,
 }
@@ -339,14 +339,14 @@ impl MarketMakerIt {
         let i_am_seed = conf["i_am_seed"].as_bool().unwrap_or_default();
         let p2p_in_memory_port_missed = conf["p2p_in_memory_port"].is_null();
         if i_am_seed && p2p_in_memory_port_missed {
-            let mut rng = super::small_rng();
+            let mut rng = common::small_rng();
             let new_p2p_port: u64 = rng.gen();
 
             log!("Set 'p2p_in_memory_port' to "[new_p2p_port]);
             conf["p2p_in_memory_port"] = Json::Number(new_p2p_port.into());
         }
 
-        let ctx = crate::mm_ctx::MmCtxBuilder::new()
+        let ctx = common::mm_ctx::MmCtxBuilder::new()
             .with_conf(conf.clone())
             .with_test_db_namespace()
             .into_mm_arc();
@@ -571,7 +571,7 @@ impl MarketMakerIt {
         if conf["myipaddr"].is_null() {
             // Generate an unique IP.
             let mut attempts = 0;
-            let mut rng = super::small_rng();
+            let mut rng = common::small_rng();
             loop {
                 if attempts > 128 {
                     return ERR!("Out of local IPs?");
@@ -591,6 +591,8 @@ impl MarketMakerIt {
         }
 
         // Just use the IP given in the `conf`.
+
+        use rand::Rng;
         let ip: IpAddr = try_s!(try_s!(conf["myipaddr"].as_str().ok_or("myipaddr is not a string")).parse());
         let mut mm_ips = try_s!(MM_IPS.lock());
         if mm_ips.contains_key(&ip) {
@@ -730,7 +732,7 @@ pub fn mm_spat(
             "rpc_password": "pass",
         })),
         "pass".into(),
-        match super::var("LOCAL_THREAD_MM") {
+        match common::var("LOCAL_THREAD_MM") {
             Ok(ref e) if e == "1" => Some(local_start),
             _ => None,
         },
@@ -750,7 +752,7 @@ pub fn mm_spat(
 
 #[cfg(target_arch = "wasm32")]
 pub fn register_wasm_log() {
-    use crate::log::{register_callback, WasmCallback, WasmLoggerBuilder};
+    use common::log::{register_callback, WasmCallback, WasmLoggerBuilder};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -870,7 +872,7 @@ pub fn get_passphrase(path: &dyn AsRef<Path>, env: &str) -> Result<String, Strin
         return Ok(file_passphrase);
     }
 
-    if let Ok(v) = super::var(env) {
+    if let Ok(v) = common::var(env) {
         Ok(v)
     } else {
         ERR!("No {} or {}", env, path.as_ref().display())
@@ -1082,13 +1084,13 @@ pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
 /// Appends IpAddr if it is pre-known
 #[cfg(not(target_arch = "wasm32"))]
 pub fn new_mm2_temp_folder_path(ip: Option<IpAddr>) -> PathBuf {
-    let now = super::now_ms();
+    let now = common::now_ms();
     let now = Local.timestamp((now / 1000) as i64, (now % 1000) as u32 * 1_000_000);
     let folder = match ip {
         Some(ip) => format!("mm2_{}_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f"), ip),
         None => format!("mm2_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f")),
     };
-    super::temp_dir().join(folder)
+    common::temp_dir().join(folder)
 }
 
 pub fn find_metrics_in_json(

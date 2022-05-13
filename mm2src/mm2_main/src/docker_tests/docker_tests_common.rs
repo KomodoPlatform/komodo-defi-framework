@@ -1,10 +1,10 @@
 // re-export the most common imports
 pub use crate::mm2::mm2_tests::structs::*;
-pub use common::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
-                            enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
-                            TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use common::mm_number::MmNumber;
 pub use common::{block_on, now_ms};
+pub use mm_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
+                                     enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
+                                     MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;

@@ -30,6 +30,7 @@ common = { path = "../common" }
 mm2_ehandle = { path = "../mm2_ehandle" }
 mm2_net = { path = "../mm2_net" }
 mm2_io = { path = "../mm2_io" }
+mm_test_helpers = { path = "../mm_test_helpers" }
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"

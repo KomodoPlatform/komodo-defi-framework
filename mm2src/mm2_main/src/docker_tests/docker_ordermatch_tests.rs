@@ -1,6 +1,6 @@
 use super::*;
 use common::block_on;
-use common::for_tests::{mm_dump, MarketMakerIt};
+use mm_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 
 fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     log!({"Get {}/{} orderbook", base, rel});

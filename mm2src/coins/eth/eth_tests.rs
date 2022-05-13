@@ -718,7 +718,7 @@ fn test_withdraw_impl_fee_details() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_nonce_lock() {
-    use common::for_tests::wait_for_log;
+    use mm_test_helpers::for_tests::wait_for_log;
     use futures::future::join_all;
 
     // send several transactions concurrently to check that they are not using same nonce

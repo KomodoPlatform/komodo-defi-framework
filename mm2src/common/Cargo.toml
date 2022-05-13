@@ -96,7 +96,3 @@ tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 cc = "1.0"
 fomat-macros = "0.3"
 gstuff = { version = "0.7", features = ["nightly"] }
-
-[dev-dependencies]
-mm2_io = { path = "../mm2_io" }
-mm2_net = { path = "../mm2_net" }

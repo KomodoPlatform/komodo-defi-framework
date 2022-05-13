@@ -1,5 +1,7 @@
 use super::*;
-use common::for_tests::orderbook_v2;
+
+#[cfg(feature = "zhtlc-native-tests")]
+use mm_test_helpers::for_tests::orderbook_v2;
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]

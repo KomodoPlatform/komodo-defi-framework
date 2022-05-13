@@ -1,5 +1,7 @@
 use super::*;
-use common::for_tests::best_orders_v2;
+
+#[cfg(feature = "zhtlc-native-tests")]
+use mm_test_helpers::for_tests::best_orders_v2;
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
