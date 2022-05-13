@@ -1094,6 +1094,7 @@ dependencies = [
  "lightning-persister",
  "metrics",
  "mm2_core",
+ "mm2_db",
  "mm2_ehandle",
  "mm2_io",
  "mm2_net",
@@ -4150,6 +4151,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
 ]
@@ -4230,6 +4232,7 @@ dependencies = [
  "metrics",
  "mm2-libp2p",
  "mm2_core",
+ "mm2_db",
  "mm2_ehandle",
  "mm2_io",
  "mm2_net",

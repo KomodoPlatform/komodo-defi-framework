@@ -5,8 +5,8 @@ use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::warn;
-use common::mm_error::prelude::*;
 use hw_common::transport::webusb_driver::{DeviceFilter, WebUsbDevice, WebUsbWrapper};
+use mm2_ehandle::mm_error::prelude::*;
 
 pub use hw_common::transport::webusb_driver::WebUsbDeviceInfo;
 

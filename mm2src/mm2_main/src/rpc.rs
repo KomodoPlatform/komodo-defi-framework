@@ -372,8 +372,8 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
 #[cfg(target_arch = "wasm32")]
 pub fn spawn_rpc(ctx_h: u32) {
-    use common::wasm_rpc;
     use futures::StreamExt;
+    use mm2_rpc::wasm_rpc;
     use std::sync::Mutex;
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");

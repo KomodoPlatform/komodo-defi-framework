@@ -119,7 +119,7 @@ pub const SWAP_PREFIX: TopicPrefix = "swap";
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
     use swap_wasm_db::{InitDbResult, SwapDb};
 
     pub type SwapDbLocked<'a> = DbLocked<'a, SwapDb>;

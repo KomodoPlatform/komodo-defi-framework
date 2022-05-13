@@ -71,7 +71,7 @@ pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
     use ordermatch_wasm_db::{InitDbResult, OrdermatchDb};
 
     pub type OrdermatchDbLocked<'a> = DbLocked<'a, OrdermatchDb>;

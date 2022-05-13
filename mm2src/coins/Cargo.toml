@@ -30,6 +30,7 @@ common = { path = "../common" }
 mm2_core = { path = "../mm2_core" }
 mm2_ehandle = { path = "../mm2_ehandle" }
 mm2_net = { path = "../mm2_net" }
+mm2_db = { path = "../mm2_db" }
 mm2_io = { path = "../mm2_io" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 crypto = { path = "../crypto" }

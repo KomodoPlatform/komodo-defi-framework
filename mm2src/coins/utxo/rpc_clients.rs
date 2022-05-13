@@ -2222,7 +2222,7 @@ async fn connect_loop(
         static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     }
 
-    use common::transport::wasm_ws::ws_transport;
+    use mm2_net::wasm_ws::ws_transport;
 
     let delay = Arc::new(AtomicU64::new(0));
     loop {

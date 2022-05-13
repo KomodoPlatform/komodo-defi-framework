@@ -57,6 +57,7 @@ mm2_io = { path = "../mm2_io" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_net = { path = "../mm2_net" }
 mm2_core = { path = "../mm2_core" }
+mm2_db = { path = "../mm2_db" }
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }

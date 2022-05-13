@@ -690,11 +690,11 @@ mod tests {
     use super::*;
     use crate::mm2::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
     use crate::mm2::lp_ordermatch::{MatchBy, OrderType, OrdermatchContext, TakerAction, TakerRequest};
-    use common::indexed_db::TableSignature;
     use common::{new_uuid, now_ms};
     use futures::compat::Future01CompatExt;
     use itertools::Itertools;
     use mm2_core::mm_ctx::MmCtxBuilder;
+    use mm2_db::indexed_db::TableSignature;
     use std::collections::HashMap;
     use wasm_bindgen_test::*;
 

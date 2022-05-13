@@ -201,10 +201,10 @@ mod tests {
     use crate::mm2::lp_swap::swap_wasm_db::SwapLockTable;
     use crate::mm2::lp_swap::SwapsContext;
     use common::executor::Timer;
-    use common::indexed_db::ItemId;
     use common::new_uuid;
     use common::now_ms;
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+    use mm2_db::indexed_db::ItemId;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

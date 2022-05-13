@@ -12,6 +12,7 @@ use futures::channel::mpsc;
 use js_sys::Array;
 use lazy_static::lazy_static;
 use mm2_ehandle::mm_error::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashSet;
 use std::fmt;

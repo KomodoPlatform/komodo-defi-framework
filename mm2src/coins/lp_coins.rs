@@ -71,7 +71,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
     use tx_history_db::TxHistoryDb;
 

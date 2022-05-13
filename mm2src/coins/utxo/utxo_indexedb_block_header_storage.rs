@@ -3,7 +3,7 @@ use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageOps;
 use async_trait::async_trait;
 use chain::BlockHeader;
-use common::mm_error::MmError;
+use mm2_ehandle::mm_error::MmError;
 use std::collections::HashMap;
 
 #[derive(Debug)]

@@ -15,10 +15,10 @@
 use super::*;
 use crate::mm2::{LpMainParams, MmVersionResult};
 use common::log::{register_callback, LogLevel, WasmCallback};
-use common::wasm_rpc::WasmRpcResponse;
 use common::{executor, set_panic_hook};
 use gstuff::any_to_str;
 use js_sys::Array;
+use mm2_rpc::wasm_rpc::WasmRpcResponse;
 use num_traits::FromPrimitive;
 use serde_json::{self as json, Value as Json};
 use std::cell::RefCell;
