@@ -3,15 +3,15 @@ use crate::utxo::rpc_clients::{NativeClient, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
-use common::log::{error, warn};
+use common::log::{debug, error, info};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
-use crossbeam::channel::Receiver as CrossbeamReceiver;
 use db_common::sqlite::rusqlite::{params, Connection, Error, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use derive_more::Display;
-use futures::channel::mpsc::UnboundedSender as AsyncSender;
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
+use futures::channel::oneshot::Sender as OneshotSender;
 use http::Uri;
 use parking_lot::{Mutex, MutexGuard};
 use prost::Message;
@@ -20,7 +20,6 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use rustls::ClientConfig;
 use serde_json::{self as json};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -48,7 +47,6 @@ pub struct ZcoinNativeClient {
     pub(super) client: NativeClient,
     /// SQLite connection that is used to cache Sapling data for shielded transactions creation
     pub(super) sqlite: Mutex<Connection>,
-    pub(super) sapling_state_synced: AtomicBool,
 }
 
 impl ZcoinNativeClient {
@@ -247,7 +245,6 @@ impl BlockSource for BlockDb {
 #[allow(dead_code)]
 pub struct ZcoinLightClient {
     db: WalletDbShared,
-    db_sync_abort_handler: AbortOnDropHandle,
 }
 
 #[derive(Debug, Display)]
@@ -289,9 +286,9 @@ impl ZcoinLightClient {
         wallet_db_path: impl AsRef<Path> + Send + 'static,
         consensus_params: ZcoinConsensusParams,
         evk: ExtendedFullViewingKey,
-        new_tx_watcher: CrossbeamReceiver<TxId>,
-        sync_state_notifier: AsyncSender<BlockHeight>,
-    ) -> Result<Self, MmError<ZcoinLightClientInitError>> {
+        simple_sync_notifier: AsyncSender<BlockHeight>,
+        on_tx_generation_watcher: OnTxGenWatcher,
+    ) -> Result<(Self, AbortOnDropHandle), MmError<ZcoinLightClientInitError>> {
         let blocks_db = async_blocking(|| {
             BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
         })
@@ -332,18 +329,18 @@ impl ZcoinLightClient {
         let grpc_client = CompactTxStreamerClient::new(channel);
 
         let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
-        let db_sync_abort_handler = spawn_abortable(light_wallet_db_sync_loop(
+        let sync_handle = SaplingSyncRespawnHandle {
+            current_block: BlockHeight::from_u32(0),
             grpc_client,
-            db.clone(),
+            db: db.clone(),
             consensus_params,
-            new_tx_watcher,
-            sync_state_notifier,
-        ));
+            simple_sync_notifier,
+            on_tx_gen_watcher: on_tx_generation_watcher,
+            watch_for_tx: None,
+        };
+        let db_sync_abort_handler = spawn_abortable(light_wallet_db_sync_loop(sync_handle));
 
-        Ok(ZcoinLightClient {
-            db,
-            db_sync_abort_handler,
-        })
+        Ok((ZcoinLightClient { db }, db_sync_abort_handler))
     }
 }
 
@@ -383,23 +380,55 @@ pub async fn update_blocks_cache(
 }
 
 fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
-    const QUERY: &str = "SELECT id_tx FROM transactions WHERE tx_id = ?1;";
+    const QUERY: &str = "SELECT id_tx FROM transactions WHERE txid = ?1;";
     match query_single_row(conn, QUERY, [tx_id.0.to_vec()], |row| row.get::<_, i64>(0)) {
         Ok(Some(_)) => true,
         Ok(None) | Err(_) => false,
     }
 }
 
-async fn light_wallet_db_sync_loop(
-    mut grpc_client: CompactTxStreamerClient<Channel>,
+type OnTxGenWatcher = AsyncReceiver<OneshotSender<SaplingSyncRespawnHandle>>;
+
+pub struct SaplingSyncRespawnGuard {
+    pub(super) sync_handle: Option<SaplingSyncRespawnHandle>,
+    pub(super) abort_handle: Arc<Mutex<AbortOnDropHandle>>,
+}
+
+impl Drop for SaplingSyncRespawnGuard {
+    fn drop(&mut self) {
+        if let Some(handle) = self.sync_handle.take() {
+            *self.abort_handle.lock() = spawn_abortable(light_wallet_db_sync_loop(handle));
+        }
+    }
+}
+
+impl SaplingSyncRespawnGuard {
+    pub(super) fn watch_for_tx(&mut self, tx_id: TxId) {
+        if let Some(ref mut handle) = self.sync_handle {
+            handle.watch_for_tx = Some(tx_id);
+        }
+    }
+
+    #[inline]
+    pub(super) fn current_block(&self) -> BlockHeight { self.sync_handle.as_ref().expect("always Some").current_block }
+}
+
+pub struct SaplingSyncRespawnHandle {
+    pub(super) current_block: BlockHeight,
+    grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    new_tx_watcher: CrossbeamReceiver<TxId>,
-    synced_notifier: AsyncSender<BlockHeight>,
-) {
-    let mut watch_for_tx_id = None;
+    /// Notifies that sync is done without stopping the loop, e.g. on coin activation
+    simple_sync_notifier: AsyncSender<BlockHeight>,
+    /// If new tx is required to be generated, we stop the sync and respawn it after tx is sent
+    /// This watcher waits for such notification
+    on_tx_gen_watcher: AsyncReceiver<OneshotSender<Self>>,
+    pub(super) watch_for_tx: Option<TxId>,
+}
+
+async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncRespawnHandle) {
     loop {
-        let current_block = match update_blocks_cache(&mut grpc_client, &db).await {
+        sync_handle.current_block = match update_blocks_cache(&mut sync_handle.grpc_client, &sync_handle.db).await {
             Ok(b) => b,
             Err(e) => {
                 error!("Error {} on blocks cache update", e);
@@ -409,7 +438,7 @@ async fn light_wallet_db_sync_loop(
         };
 
         {
-            let db_guard = db.lock();
+            let db_guard = sync_handle.db.lock();
             let mut db_data = db_guard.wallet_db.get_update_ops().unwrap();
 
             // 1) Download new CompactBlocks into db_cache.
@@ -419,7 +448,7 @@ async fn light_wallet_db_sync_loop(
             // Given that we assume the server always gives us correct-at-the-time blocks, any
             // errors are in the blocks we have previously cached or scanned.
             if let Err(e) = validate_chain(
-                &consensus_params,
+                &sync_handle.consensus_params,
                 &db_guard.blocks_db,
                 db_data.get_max_height_hash().unwrap(),
             ) {
@@ -456,22 +485,36 @@ async fn light_wallet_db_sync_loop(
             // At this point, the cache and scanned data are locally consistent (though not
             // necessarily consistent with the latest chain tip - this would be discovered the
             // next time this codepath is executed after new blocks are received).
-            scan_cached_blocks(&consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
+            scan_cached_blocks(&sync_handle.consensus_params, &db_guard.blocks_db, &mut db_data, None).unwrap();
         }
 
-        if let Some(tx_id) = watch_for_tx_id {
-            if !is_tx_imported(db.lock().wallet_db.sql_conn(), tx_id) {
+        if let Some(tx_id) = sync_handle.watch_for_tx {
+            if !is_tx_imported(sync_handle.db.lock().wallet_db.sql_conn(), tx_id) {
+                info!("Tx {} is not imported yet", hex::encode(tx_id.0));
                 Timer::sleep(10.).await;
                 continue;
+            } else {
+                sync_handle.watch_for_tx = None;
             }
         }
 
-        watch_for_tx_id = new_tx_watcher.try_recv().map(Some).unwrap_or(None);
-
-        if watch_for_tx_id.is_none() && synced_notifier.unbounded_send(current_block).is_err() {
-            warn!("synced watcher is no longer available");
-            break;
+        if sync_handle
+            .simple_sync_notifier
+            .try_send(sync_handle.current_block)
+            .is_err()
+        {
+            debug!("No one seems to be interested about sync state");
         }
+
+        if let Ok(Some(sender)) = sync_handle.on_tx_gen_watcher.try_next() {
+            match sender.send(sync_handle) {
+                Ok(_) => break,
+                Err(handle_from_channel) => {
+                    sync_handle = handle_from_channel;
+                },
+            }
+        }
+
         Timer::sleep(10.).await;
     }
 }
@@ -480,8 +523,6 @@ async fn light_wallet_db_sync_loop(
 // This is a temporary test used to experiment with librustzcash and lightwalletd
 fn try_grpc() {
     use common::block_on;
-    use crossbeam::channel::bounded as crossbeam_bounded;
-    use futures::channel::mpsc::unbounded as async_unbounded;
     use futures::executor::block_on_stream;
     use std::str::FromStr;
     use z_coin_grpc::RawTransaction;
@@ -495,22 +536,22 @@ fn try_grpc() {
     let z_key = decode_extended_spending_key(zombie_consensus_params.hrp_sapling_extended_spending_key(), "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let evk = ExtendedFullViewingKey::from(&z_key);
 
-    let (new_tx_notifier, new_tx_watcher) = crossbeam_bounded(1);
-    let (sync_state_notifier, sync_state_watcher) = async_unbounded();
+    let (simple_sync_notifier, simple_sync_watcher) = channel(1);
+    let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
     let uri = Uri::from_str("http://zombie.sirseven.me:443").unwrap();
-    let client = block_on(ZcoinLightClient::init(
+    let (client, _handle) = block_on(ZcoinLightClient::init(
         uri,
         "test_cache_zombie.db",
         "test_wallet_zombie.db",
         zombie_consensus_params.clone(),
         evk,
-        new_tx_watcher,
-        sync_state_notifier,
+        simple_sync_notifier,
+        on_tx_gen_watcher,
     ))
     .unwrap();
 
-    let current_block = block_on_stream(sync_state_watcher).next().unwrap();
+    let current_block = block_on_stream(simple_sync_watcher).next().unwrap();
     let db = client.db.lock();
 
     let mut notes = db.wallet_db.get_spendable_notes(AccountId(0), current_block).unwrap();

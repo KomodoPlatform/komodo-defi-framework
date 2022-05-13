@@ -10,7 +10,7 @@ use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub struct BlockchainScanStopped {}
 
 #[derive(Debug, Display)]

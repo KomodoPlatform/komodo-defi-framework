@@ -65,7 +65,7 @@ async fn enable_z_coin_light(
 async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let init = init_withdraw(mm, coin, to, amount).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 120000;
+    let timeout = now_ms() + 150000;
 
     loop {
         if now_ms() > timeout {
@@ -157,14 +157,26 @@ fn withdraw_z_coin_light() {
 
     println!("{:?}", activation_result);
 
-    let withdraw = block_on(withdraw(
+    let withdraw_res = block_on(withdraw(
         &mm,
         ZOMBIE_TICKER,
         "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",
         "0.1",
     ));
-    println!("{:?}", withdraw);
+    println!("{:?}", withdraw_res);
 
-    let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw.tx_hex));
+    let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw_res.tx_hex));
+    println!("{:?}", send_raw_tx);
+
+    // Consecutive withdraw attempts must wait for previous tx to be imported and not fail
+    let withdraw_res = block_on(withdraw(
+        &mm,
+        ZOMBIE_TICKER,
+        "zs1hs0p406y5tntz6wlp7sc3qe4g6ycnnd46leeyt6nyxr42dfvf0dwjkhmjdveukem0x72kkx0tup",
+        "0.1",
+    ));
+    println!("{:?}", withdraw_res);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw_res.tx_hex));
     println!("{:?}", send_raw_tx);
 }
