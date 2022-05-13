@@ -1,4 +1,4 @@
-use common::mm_error::prelude::*;
+use mm2_ehandle::mm_error::prelude::*;
 
 pub type LedgerResult<T> = Result<T, MmError<LedgerError>>;
 

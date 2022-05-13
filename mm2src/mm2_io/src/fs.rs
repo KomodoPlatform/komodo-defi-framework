@@ -225,16 +225,26 @@ where
     Ok(result)
 }
 
-pub async fn write_json<T>(t: &T, path: &Path) -> FsJsonResult<()>
+pub async fn write_json<T>(t: &T, path: &Path, use_tmp_file: bool) -> FsJsonResult<()>
 where
     T: Serialize,
 {
     let content = json::to_vec(t).map_to_mm(FsJsonError::Serializing)?;
 
+    let path_tmp = if use_tmp_file {
+        PathBuf::from(format!("{}.tmp", path.display()))
+    } else {
+        path.to_path_buf()
+    };
+
     let fs_fut = async {
-        let mut file = async_fs::File::create(&path).await?;
+        let mut file = async_fs::File::create(&path_tmp).await?;
         file.write_all(&content).await?;
         file.flush().await?;
+
+        if use_tmp_file {
+            async_fs::rename(path_tmp, path).await?;
+        }
         Ok(())
     };
 

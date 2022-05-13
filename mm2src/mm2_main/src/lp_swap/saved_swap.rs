@@ -176,6 +176,8 @@ mod native_impl {
     use crate::mm2::lp_swap::{my_swap_file_path, my_swaps_dir};
     use mm2_io::fs::{read_dir_json, read_json, write_json, FsJsonError};
 
+    const USE_TMP_FILE: bool = false;
+
     impl From<FsJsonError> for SavedSwapError {
         fn from(fs: FsJsonError) -> Self {
             match fs {
@@ -223,7 +225,7 @@ mod native_impl {
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
             let path = my_swap_file_path(ctx, self.uuid());
-            write_json(self, &path).await?;
+            write_json(self, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
@@ -232,11 +234,11 @@ mod native_impl {
             match self {
                 SavedSwap::Maker(maker) => {
                     let path = stats_maker_swap_file_path(ctx, &maker.uuid);
-                    write_json(self, &path).await?;
+                    write_json(self, &path, USE_TMP_FILE).await?;
                 },
                 SavedSwap::Taker(taker) => {
                     let path = stats_taker_swap_file_path(ctx, &taker.uuid);
-                    write_json(self, &path).await?;
+                    write_json(self, &path, USE_TMP_FILE).await?;
                 },
             }
             Ok(())

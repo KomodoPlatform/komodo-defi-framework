@@ -18,13 +18,8 @@ use uuid::Uuid;
 use common::executor::Timer;
 use common::log;
 use common::mm_metrics::{MetricType, MetricsJson};
-use common::{cfg_native, cfg_wasm32, now_float, now_ms, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
 use mm2_core::mm_ctx::MmArc;
-
-cfg_wasm32! {
-    use common::log::LogLevel;
-    use std::str::FromStr;
-}
 
 cfg_native! {
     use common::block_on;

@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use common::log::{debug, error};
-use common::state_machine::prelude::*;
 use common::stringify_js_error;
 use common::{executor::spawn,
              state_machine::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom}};
@@ -678,12 +677,11 @@ mod tests {
     use super::*;
     use common::register_wasm_log;
     use common::{custom_futures::FutureTimerExt,
-                 log::{debug, error, warn}};
+                 log::debug};
     use common::{WasmUnwrapErrExt, WasmUnwrapExt};
     use lazy_static::lazy_static;
-    use serde_json::{self as json, json, Value as Json};
+    use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use wasm_bindgen::*;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

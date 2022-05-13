@@ -51,7 +51,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 http = "0.2"
-itertools = "0.9"
+itertools = { version = "0.10", features = ["use_std"] }
 jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"

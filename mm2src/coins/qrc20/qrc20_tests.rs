@@ -1,4 +1,5 @@
 use super::*;
+use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
@@ -56,7 +57,7 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
 
 #[test]
 fn test_withdraw_impl_fee_details() {
-    Qrc20Coin::list_mature_unspent_ordered.mock_safe(|coin, _| {
+    Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {

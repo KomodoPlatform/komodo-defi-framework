@@ -10,13 +10,12 @@
 use async_trait::async_trait;
 use common::executor::spawn_local;
 use common::log::debug;
-use common::{register_wasm_log, DbNamespaceId};
+use common::DbNamespaceId;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use mm2_ehandle::mm_error::prelude::*;
 use primitives::hash::H160;
-use rand::{thread_rng, Rng};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};

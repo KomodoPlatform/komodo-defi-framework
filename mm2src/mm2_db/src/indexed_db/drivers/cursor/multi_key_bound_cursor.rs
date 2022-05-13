@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common::stringify_js_error;
 use js_sys::Array;
 use mm2_ehandle::mm_error::prelude::*;
-use serde_json::{self as json, json, Value as Json};
+use serde_json::{json, Value as Json};
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};
 
