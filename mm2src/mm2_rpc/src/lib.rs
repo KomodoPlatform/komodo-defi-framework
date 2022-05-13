@@ -1,2 +1,2 @@
 pub mod mm_protocol;
-pub mod wasm_rpc;
+#[cfg(target_arch = "wasm32")] pub mod wasm_rpc;

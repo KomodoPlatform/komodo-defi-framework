@@ -3,10 +3,10 @@ use super::{get_locked_amount, get_locked_amount_by_other_swaps};
 use coins::{BalanceError, MmCoinEnum, TradeFee, TradePreimageError};
 use common::log::debug;
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
+use mm2_ehandle::mm_error::prelude::*;
 use uuid::Uuid;
 
 pub type CheckBalanceResult<T> = Result<T, MmError<CheckBalanceError>>;

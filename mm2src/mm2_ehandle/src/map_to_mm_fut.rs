@@ -1,4 +1,4 @@
-use crate::mm_error::{NotMmError, TraceLocation, MmError};
+use crate::mm_error::{MmError, NotMmError, TraceLocation};
 use futures01::{Future, Poll};
 use std::panic::Location;
 

@@ -8,10 +8,10 @@ use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::utxo::UtxoActivationParams;
 use coins::{MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
+use mm2_ehandle::mm_error::prelude::*;
 
 pub async fn get_activation_result<Coin>(
     ctx: &MmArc,

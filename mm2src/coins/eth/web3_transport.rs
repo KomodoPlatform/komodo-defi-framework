@@ -151,10 +151,10 @@ async fn send_request(
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
-    use mm2_net::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
+    use mm2_net::transport::slurp_req;
 
     const REQUEST_TIMEOUT_S: f64 = 60.;
 

@@ -9,8 +9,8 @@ use crate::response::TrezorResponse;
 use crate::result_handler::ResultHandler;
 use crate::transport::Transport;
 use crate::{TrezorError, TrezorResult};
-use mm2_ehandle::mm_error::prelude::*;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
+use mm2_ehandle::mm_error::prelude::*;
 use std::sync::Arc;
 
 #[derive(Clone)]

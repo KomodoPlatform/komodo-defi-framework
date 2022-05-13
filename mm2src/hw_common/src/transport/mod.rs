@@ -1,5 +1,5 @@
-use mm2_ehandle::mm_error::prelude::*;
 use futures::channel::{mpsc, oneshot};
+use mm2_ehandle::mm_error::prelude::*;
 
 #[cfg(target_arch = "wasm32")] pub mod webusb_driver;
 #[cfg(target_arch = "wasm32")]

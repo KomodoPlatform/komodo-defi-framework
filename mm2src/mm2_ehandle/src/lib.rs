@@ -8,7 +8,7 @@
 
 pub mod map_mm_error;
 pub mod map_to_mm;
+pub mod map_to_mm_fut;
 pub mod mm_error;
 pub mod mm_json_error;
 pub mod or_mm_error;
-pub mod map_to_mm_fut;

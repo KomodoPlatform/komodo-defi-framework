@@ -113,8 +113,6 @@ pub mod executor;
 #[path = "indexed_db/indexed_db.rs"]
 pub mod indexed_db;
 
-#[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
-
 use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
 pub use futures::compat::Future01CompatExt;

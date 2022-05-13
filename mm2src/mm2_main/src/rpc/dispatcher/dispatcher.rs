@@ -23,11 +23,11 @@ use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token
                        init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
-use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
 use common::HttpStatusCode;
 use futures::Future as Future03;
 use http::Response;
+use mm2_ehandle::mm_error::prelude::*;
+use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;

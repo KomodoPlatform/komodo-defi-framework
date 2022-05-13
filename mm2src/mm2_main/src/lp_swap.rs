@@ -59,7 +59,6 @@ use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
-use mm2_ehandle::mm_error::MmError;
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
@@ -69,6 +68,7 @@ use common::{bits256, calc_total_pages,
 use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
+use mm2_ehandle::mm_error::MmError;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};

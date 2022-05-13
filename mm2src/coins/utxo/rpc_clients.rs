@@ -11,7 +11,6 @@ use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient, JsonRpcRemoteAddr,
                              JsonRpcRequest, JsonRpcResponse, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
-use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -26,6 +25,7 @@ use futures01::{Future, Sink, Stream};
 use http::Uri;
 use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
+use mm2_ehandle::mm_error::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};

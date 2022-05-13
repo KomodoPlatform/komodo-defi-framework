@@ -1,9 +1,9 @@
 use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
 use common::PagingOptions;
 use derive_more::Display;
+use mm2_ehandle::mm_error::prelude::*;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
 

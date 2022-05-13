@@ -3,11 +3,11 @@ use crate::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams}
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
-use mm2_ehandle::mm_error::prelude::*;
 use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TrezorUtxoCoin, TxOutput,
                            TxSignResult, UnsignedTxInput, UnsignedUtxoTx};
 use crypto::trezor::TrezorClient;
 use keys::bytes::Bytes;
+use mm2_ehandle::mm_error::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use script::{SignatureVersion, UnsignedTransactionInput};
 use serialization::deserialize;

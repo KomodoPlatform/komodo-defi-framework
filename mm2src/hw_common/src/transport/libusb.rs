@@ -3,10 +3,10 @@
 
 use common::block_on;
 use common::log::error;
-use mm2_ehandle::mm_error::prelude::*;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use mm2_ehandle::mm_error::prelude::*;
 use rusb::Error as RusbError;
 use rusb::UsbContext as RusbContext;
 use std::thread;

@@ -3,10 +3,10 @@ use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, Rec
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
 use common::{BoxFut, PagingOptions};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
+use mm2_ehandle::mm_error::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use uuid::Uuid;
 

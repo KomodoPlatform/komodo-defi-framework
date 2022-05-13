@@ -11,7 +11,6 @@ use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, Sta
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
 use bigdecimal::Zero;
 use bitcrypto::dhash256;
-use mm2_ehandle::mm_error::prelude::{MmError, MapMmError, MapToMmResult};
 use common::mm_number::BigDecimal;
 use common::now_ms;
 use derive_more::Display;
@@ -20,6 +19,7 @@ use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use keys::{AddressHashEnum, Signature};
+use mm2_ehandle::mm_error::prelude::{MapMmError, MapToMmResult, MmError};
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;

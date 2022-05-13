@@ -1,7 +1,7 @@
 use crate::mm2::lp_message_service::{MessageResult, MessageServiceTraits};
 use async_trait::async_trait;
-use mm2_net::transport::{post_json, SlurpError};
 use derive_more::Display;
+use mm2_net::transport::{post_json, SlurpError};
 use std::collections::HashMap;
 
 pub const TELEGRAM_BOT_API_ENDPOINT: &str = "https://api.telegram.org/bot";

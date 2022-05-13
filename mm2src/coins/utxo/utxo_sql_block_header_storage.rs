@@ -3,12 +3,12 @@ use crate::utxo::utxo_block_header_storage::{BlockHeaderStorageError, BlockHeade
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
-use mm2_ehandle::mm_error::MmError;
 use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::rusqlite::{Connection, Row, ToSql, NO_PARAMS},
                 sqlite::string_from_row,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
+use mm2_ehandle::mm_error::MmError;
 use serialization::deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

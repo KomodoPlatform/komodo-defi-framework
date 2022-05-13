@@ -17,13 +17,13 @@ use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoin
 use common::executor::Timer;
 use common::log::{debug, error, warn};
 use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
-use crypto::privkey::SerializableSecp256k1Keypair;
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::privkey::SerializableSecp256k1Keypair;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use http::Response;
 use keys::KeyPair;
+use mm2_ehandle::mm_error::prelude::*;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
@@ -2063,8 +2063,8 @@ mod taker_swap_tests {
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
     use common::mm_ctx::MmCtxBuilder;
-    use crypto::privkey::key_pair_from_seed;
     use common::{block_on, new_uuid};
+    use crypto::privkey::key_pair_from_seed;
     use mocktopus::mocking::*;
 
     fn eth_tx_for_test() -> SignedEthTx {

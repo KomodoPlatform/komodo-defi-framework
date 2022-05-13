@@ -1,12 +1,12 @@
 use crate::hw_client::{HwError, HwProcessingError, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 use crate::key_pair_ctx::IguanaArc;
-use common::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::{prelude::*, NotEqual};
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
+use common::mm_ctx::MmArc;
 use derive_more::Display;
 use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
+use mm2_ehandle::mm_error::{prelude::*, NotEqual};
 use parking_lot::RwLock;
 use primitives::hash::H160;
 use std::ops::Deref;
