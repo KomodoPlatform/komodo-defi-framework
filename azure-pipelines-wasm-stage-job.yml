@@ -46,7 +46,7 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          CC=clang-8 cargo test --target wasm32-unknown-unknown --release --bin mm2
+          CC=clang-8 cargo test --package mm2_main --target wasm32-unknown-unknown --release --bin mm2
         displayName: 'Test MM2 WASM'
         env:
           WASM_BINDGEN_TEST_TIMEOUT: 120

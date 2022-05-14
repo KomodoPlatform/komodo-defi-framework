@@ -4145,7 +4145,6 @@ dependencies = [
  "lazy_static",
  "mm2_core",
  "mm2_ehandle",
- "mm2_test_helpers",
  "primitives",
  "rand 0.7.3",
  "serde",
