@@ -210,8 +210,8 @@ mod tests {
         let expected = json!({
             "mmrpc": "2.0",
             "error": "Not sufficient balance. Top up your balance by 123",
-            "error_path": "mm_rpc_protocol",
-            "error_trace": format!("mm_rpc_protocol:{}]", err_line),
+            "error_path": "mm_protocol",
+            "error_trace": format!("mm_protocol:{}]", err_line),
             "error_type": "NotSufficientBalance",
             "error_data": {
                 "missing": 123,
