@@ -51,6 +51,7 @@ use std::sync::{Arc, Weak};
 use tokio::task::block_in_place;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::SpendableNote;
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::constants::mainnet;
 use zcash_primitives::memo::MemoBytes;
@@ -298,7 +299,7 @@ impl ZCoin {
     }
 
     /// Returns spendable notes
-    async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, ()> {
+    async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SqliteClientError>> {
         let mut unspents = self.z_rpc().get_spendable_notes().await?;
 
         unspents.sort_unstable_by(|a, b| a.note_value.cmp(&b.note_value));
@@ -329,7 +330,7 @@ impl ZCoin {
         let total_output = big_decimal_from_sat_unsigned(total_output_sat, self.utxo_arc.decimals);
         let total_required = &total_output + &tx_fee;
 
-        let spendable_notes = self.spendable_notes_ordered().await.unwrap();
+        let spendable_notes = self.spendable_notes_ordered().await?;
         let mut selected_notes = Vec::new();
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
@@ -361,7 +362,7 @@ impl ZCoin {
                 .z_fields
                 .my_z_addr
                 .create_note(spendable_note.note_value.into(), spendable_note.rseed)
-                .unwrap();
+                .or_mm_err(|| GenTxError::FailedToCreateNote)?;
             tx_builder.add_sapling_spend(
                 self.z_fields.z_spending_key.clone(),
                 *self.z_fields.my_z_addr.diversifier(),
@@ -1673,9 +1674,7 @@ impl InitWithdrawCoin for ZCoin {
             req.amount
         };
 
-        task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
-            .unwrap();
+        task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
         let z_output = ZOutput {
             to_addr,

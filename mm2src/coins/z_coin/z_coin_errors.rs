@@ -8,6 +8,7 @@ use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
 use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
 #[derive(Debug, Display)]
@@ -39,6 +40,8 @@ pub enum GenTxError {
         err: std::io::Error,
     },
     BlockchainScanStopped,
+    LightClientErr(SqliteClientError),
+    FailedToCreateNote,
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -55,6 +58,10 @@ impl From<UtxoRpcError> for GenTxError {
 
 impl From<ZTxBuilderError> for GenTxError {
     fn from(err: ZTxBuilderError) -> GenTxError { GenTxError::TxBuilderError(err) }
+}
+
+impl From<SqliteClientError> for GenTxError {
+    fn from(err: SqliteClientError) -> Self { GenTxError::LightClientErr(err) }
 }
 
 impl From<GenTxError> for WithdrawError {
@@ -77,7 +84,9 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::NumConversion(_)
             | GenTxError::TxBuilderError(_)
             | GenTxError::TxReadError { .. }
-            | GenTxError::BlockchainScanStopped => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::BlockchainScanStopped
+            | GenTxError::LightClientErr(_)
+            | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }

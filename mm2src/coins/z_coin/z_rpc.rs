@@ -1,8 +1,6 @@
 use super::ZcoinConsensusParams;
-use crate::utxo::rpc_clients::{NativeClient, UtxoRpcError, UtxoRpcFut};
-use bigdecimal::BigDecimal;
+use crate::utxo::rpc_clients::{NativeClient, UtxoRpcFut};
 use common::executor::Timer;
-use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
 use common::log::{debug, error, info};
 use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
@@ -16,9 +14,7 @@ use http::Uri;
 use parking_lot::{Mutex, MutexGuard};
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use rustls::ClientConfig;
-use serde_json::{self as json};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -63,82 +59,11 @@ impl From<ZcoinLightClient> for ZcoinRpcClient {
     fn from(client: ZcoinLightClient) -> Self { ZcoinRpcClient::Light(client) }
 }
 
-#[derive(Debug, Serialize)]
-pub struct ZSendManyItem {
-    pub amount: BigDecimal,
-    #[serde(rename = "opreturn")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub op_return: Option<BytesJson>,
-    pub address: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ZOperationTxid {
-    pub txid: H256Json,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ZOperationHex {
-    pub hex: BytesJson,
-}
-
 pub type WalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
 
 pub struct ZcoinWalletDb {
     blocks_db: BlockDb,
     wallet_db: WalletDb<ZcoinConsensusParams>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ZUnspent {
-    pub txid: H256Json,
-    #[serde(rename = "outindex")]
-    pub out_index: u32,
-    pub confirmations: u32,
-    #[serde(rename = "raw_confirmations")]
-    pub raw_confirmations: Option<u32>,
-    pub spendable: bool,
-    pub address: String,
-    pub amount: MmNumber,
-    pub memo: BytesJson,
-    pub change: bool,
-}
-
-pub trait ZRpcOps {
-    fn z_get_balance(&self, address: &str, min_conf: u32) -> UtxoRpcFut<MmNumber>;
-
-    fn z_list_unspent(
-        &self,
-        min_conf: u32,
-        max_conf: u32,
-        watch_only: bool,
-        addresses: &[&str],
-    ) -> UtxoRpcFut<Vec<ZUnspent>>;
-
-    fn z_import_key(&self, key: &str) -> UtxoRpcFut<()>;
-}
-
-impl ZRpcOps for NativeClient {
-    fn z_get_balance(&self, address: &str, min_conf: u32) -> UtxoRpcFut<MmNumber> {
-        let fut = rpc_func!(self, "z_getbalance", address, min_conf);
-        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
-    }
-
-    fn z_list_unspent(
-        &self,
-        min_conf: u32,
-        max_conf: u32,
-        watch_only: bool,
-        addresses: &[&str],
-    ) -> UtxoRpcFut<Vec<ZUnspent>> {
-        let fut = rpc_func!(self, "z_listunspent", min_conf, max_conf, watch_only, addresses);
-        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
-    }
-
-    fn z_import_key(&self, key: &str) -> UtxoRpcFut<()> {
-        let fut = rpc_func!(self, "z_importkey", key, "no");
-        Box::new(fut.map_to_mm_fut(UtxoRpcError::from))
-    }
 }
 
 struct CompactBlockRow {
@@ -644,15 +569,19 @@ impl ZcoinRpcClient {
 
     pub fn z_get_balance(&self, _address: &str, _min_conf: u32) -> UtxoRpcFut<MmNumber> { todo!() }
 
-    pub async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, ()> {
+    pub async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SqliteClientError>> {
         match self {
             ZcoinRpcClient::Native(_) => unimplemented!(),
             ZcoinRpcClient::Light(light) => {
                 let db = light.db.clone();
                 async_blocking(move || {
                     let guard = db.lock();
-                    let (_, latest_db_block) = guard.wallet_db.block_height_extrema().unwrap().unwrap();
-                    get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(|_| ())
+                    let (_, latest_db_block) = guard.wallet_db.block_height_extrema()?.unwrap();
+                    Ok(get_spendable_notes(
+                        &guard.wallet_db,
+                        AccountId::default(),
+                        latest_db_block,
+                    )?)
                 })
                 .await
             },
