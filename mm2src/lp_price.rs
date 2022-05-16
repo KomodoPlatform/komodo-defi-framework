@@ -213,7 +213,7 @@ async fn try_price_fetcher_endpoint(
                 cex.or_mm_err(|| PriceServiceRequestError::Internal("Couldn't fetch price".to_string()))
             },
         },
-        Err(e) => return MmError::err(e.into_inner()),
+        Err(e) => MmError::err(e.into_inner()),
     }
 }
 

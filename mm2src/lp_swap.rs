@@ -747,8 +747,8 @@ async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
 
     if swap.is_finished_and_success() {
         let cex_rates = fetch_swap_coins_price(
-            &swap.maker_coin_ticker().unwrap_or("".to_string()).as_str(),
-            &swap.taker_coin_ticker().unwrap_or("".to_string()).as_str(),
+            swap.maker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
+            swap.taker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
         )
         .await;
         match cex_rates {
@@ -775,8 +775,8 @@ fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap, prices: Option<crate::mm2
 async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
     let prices = crate::mm2::lp_price::fetch_swap_coins_price(
-        &swap.maker_coin_ticker().unwrap_or("".to_string()).as_str(),
-        &swap.taker_coin_ticker().unwrap_or("".to_string()).as_str(),
+        swap.maker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
+        swap.taker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
     )
     .await;
     add_swap_to_db_index(ctx, swap, prices);
