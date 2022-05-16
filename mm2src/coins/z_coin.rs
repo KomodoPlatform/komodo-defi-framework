@@ -1,12 +1,12 @@
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcClientOps, UtxoRpcError,
-                               UtxoRpcFut, UtxoRpcResult};
+use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+                               UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, UtxoWeak,
+                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
@@ -19,14 +19,11 @@ use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::executor::{spawn, Timer};
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::privkey::key_pair_from_secret;
 use common::{log, AbortOnDropHandle};
-use db_common::sqlite::rusqlite::types::Type;
-use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use futures::compat::Future01CompatExt;
@@ -42,12 +39,11 @@ use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
-use serialization::{deserialize, serialize_list, CoinVariant, Reader};
+use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::task::block_in_place;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::SpendableNote;
@@ -55,10 +51,8 @@ use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::constants::mainnet;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::{CommitmentTree, Hashable, IncrementalWitness};
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
 use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
-use zcash_primitives::sapling::{Node, Note};
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
@@ -432,67 +426,6 @@ impl ZCoin {
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
     }
-
-    pub async fn get_unspent_witness(
-        &self,
-        note: &Note,
-        tx_height: u32,
-    ) -> Result<IncrementalWitness<Node>, MmError<GetUnspentWitnessErr>> {
-        let client = match self.z_rpc() {
-            ZcoinRpcClient::Native(n) => n,
-            _ => unimplemented!(),
-        };
-        let mut attempts = 0;
-        let states = loop {
-            let states = block_in_place(|| query_states_after_height(&client.sqlite_conn(), tx_height))?;
-            if states.is_empty() {
-                if attempts > 2 {
-                    return MmError::err(GetUnspentWitnessErr::EmptyDbResult);
-                }
-                attempts += 1;
-                Timer::sleep(10.).await;
-            } else {
-                break states;
-            }
-        };
-
-        let mut tree = states[0].prev_tree_state.clone();
-        let mut witness = None::<IncrementalWitness<Node>>;
-
-        let note_cmu = H256::from(note.cmu().to_bytes());
-        for state in states {
-            for cmu in state.cmus {
-                let build_witness = cmu == note_cmu;
-                let node = Node::new(cmu.take());
-                match witness {
-                    Some(ref mut w) => w
-                        .append(node)
-                        .map_to_mm(|_| GetUnspentWitnessErr::TreeOrWitnessAppendFailed)?,
-                    None => tree
-                        .append(node)
-                        .map_to_mm(|_| GetUnspentWitnessErr::TreeOrWitnessAppendFailed)?,
-                };
-
-                if build_witness {
-                    witness = Some(IncrementalWitness::from_tree(&tree));
-                }
-            }
-        }
-
-        witness.or_mm_err(|| GetUnspentWitnessErr::OutputCmuNotFoundInCache)
-    }
-
-    #[inline]
-    fn into_weak_parts(self) -> (UtxoWeak, Weak<ZCoinFields>) {
-        (self.utxo_arc.downgrade(), Arc::downgrade(&self.z_fields))
-    }
-
-    fn from_weak_parts(utxo: &UtxoWeak, z_fields: &Weak<ZCoinFields>) -> Option<Self> {
-        let utxo_arc = utxo.upgrade()?;
-        let z_fields = z_fields.upgrade()?;
-
-        Some(ZCoin { utxo_arc, z_fields })
-    }
 }
 
 impl AsRef<UtxoCoinFields> for ZCoin {
@@ -537,159 +470,6 @@ pub async fn z_coin_from_conf_and_params(
         consensus_params,
     )
     .await
-}
-
-struct SaplingBlockState {
-    height: u32,
-    prev_tree_state: CommitmentTree<Node>,
-    cmus: Vec<H256>,
-}
-
-impl TryFrom<&Row<'_>> for SaplingBlockState {
-    type Error = SqliteError;
-
-    fn try_from(row: &Row<'_>) -> Result<SaplingBlockState, SqliteError> {
-        let height = row.get(0)?;
-        let prev_state_bytes: Vec<u8> = row.get(1)?;
-        let cmus_bytes: Vec<u8> = row.get(2)?;
-
-        let prev_tree_state = CommitmentTree::read(prev_state_bytes.as_slice())
-            .map_err(|e| SqliteError::FromSqlConversionFailure(1, Type::Blob, Box::new(e)))?;
-
-        let mut reader = Reader::from_read(cmus_bytes.as_slice());
-        let cmus = reader
-            .read_list()
-            .map_err(|e| SqliteError::FromSqlConversionFailure(2, Type::Blob, Box::new(e)))?;
-        Ok(SaplingBlockState {
-            height,
-            prev_tree_state,
-            cmus,
-        })
-    }
-}
-
-fn query_latest_block(conn: &Connection) -> Result<SaplingBlockState, SqliteError> {
-    const QUERY_LATEST_BLOCK_STMT: &str =
-        "SELECT height, prev_tree_state, cmus FROM sapling_cache ORDER BY height desc LIMIT 1";
-
-    conn.query_row(QUERY_LATEST_BLOCK_STMT, NO_PARAMS, |row: &Row<'_>| {
-        SaplingBlockState::try_from(row)
-    })
-}
-
-#[allow(clippy::needless_question_mark)]
-fn query_states_after_height(conn: &Connection, height: u32) -> Result<Vec<SaplingBlockState>, SqliteError> {
-    const GET_BLOCK_STATES_AFTER_HEIGHT: &str =
-        "SELECT height, prev_tree_state, cmus from sapling_cache WHERE height >= ?1 ORDER BY height ASC;";
-
-    let mut statement = conn.prepare(GET_BLOCK_STATES_AFTER_HEIGHT)?;
-
-    #[allow(clippy::redundant_closure)]
-    let rows: Result<Vec<_>, _> = statement
-        .query_map(&[height.to_sql()?], |row: &Row<'_>| SaplingBlockState::try_from(row))?
-        .collect();
-
-    Ok(rows?)
-}
-
-fn insert_block_state(conn: &Connection, state: SaplingBlockState) -> Result<(), SqliteError> {
-    const INSERT_BLOCK_STMT: &str = "INSERT INTO sapling_cache (height, prev_tree_state, cmus) VALUES (?1, ?2, ?3);";
-    let block = state.height.to_sql()?;
-    let mut tree_bytes = Vec::new();
-    state
-        .prev_tree_state
-        .write(&mut tree_bytes)
-        .expect("write should not fail");
-
-    let prev_tree = tree_bytes.to_sql()?;
-
-    let cmus = serialize_list(&state.cmus).take();
-    let cmus = cmus.to_sql()?;
-
-    conn.execute(INSERT_BLOCK_STMT, &[block, prev_tree, cmus]).map(|_| ())
-}
-
-async fn sapling_state_cache_loop(coin: ZCoin) {
-    let native_client = match coin.z_rpc() {
-        ZcoinRpcClient::Native(n) => n,
-        _ => return,
-    };
-    let query = block_in_place(|| query_latest_block(&native_client.sqlite_conn()));
-    let (mut processed_height, mut current_tree) = match query {
-        Ok(state) => {
-            let mut tree = state.prev_tree_state;
-            for cmu in state.cmus {
-                tree.append(Node::new(cmu.take())).expect("Commitment tree not full");
-            }
-            (state.height, tree)
-        },
-        Err(_) => (0, CommitmentTree::empty()),
-    };
-
-    let (utxo_weak, z_fields_weak) = coin.into_weak_parts();
-
-    let zero_root = Some(H256Json::default());
-    while let Some(coin) = ZCoin::from_weak_parts(&utxo_weak, &z_fields_weak) {
-        let native_client = match coin.z_rpc() {
-            ZcoinRpcClient::Native(n) => n,
-            _ => return,
-        };
-        let current_block = match native_client.client.get_block_count().compat().await {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!("Error {} on getting block count", e);
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
-
-        while processed_height as u64 <= current_block {
-            let block = match native_client.client.get_block_by_height(processed_height as u64).await {
-                Ok(b) => b,
-                Err(e) => {
-                    log::error!("Error {} on getting block", e);
-                    Timer::sleep(1.).await;
-                    continue;
-                },
-            };
-            let current_sapling_root = current_tree.root();
-            let mut root_bytes = [0u8; 32];
-            current_sapling_root
-                .write(&mut root_bytes as &mut [u8])
-                .expect("Root len is 32 bytes");
-
-            let current_sapling_root = Some(H256::from(root_bytes).reversed().into());
-            if current_sapling_root != block.final_sapling_root && block.final_sapling_root != zero_root {
-                let prev_tree_state = current_tree.clone();
-                let mut cmus = Vec::new();
-                for hash in block.tx {
-                    let tx = native_client
-                        .client
-                        .get_transaction_bytes(&hash)
-                        .compat()
-                        .await
-                        .expect("Panic here to avoid storing invalid tree state to the DB");
-                    let tx: UtxoTx = deserialize(tx.as_slice()).expect("Panic here to avoid invalid tree state");
-                    for output in tx.shielded_outputs {
-                        current_tree
-                            .append(Node::new(output.cmu.take()))
-                            .expect("Commitment tree not full");
-                        cmus.push(output.cmu);
-                    }
-                }
-
-                let state_to_insert = SaplingBlockState {
-                    height: processed_height + 1,
-                    prev_tree_state,
-                    cmus,
-                };
-                insert_block_state(&native_client.sqlite_conn(), state_to_insert).expect("Insertion should not fail");
-            }
-            processed_height += 1;
-        }
-        drop(coin);
-        Timer::sleep(10.).await;
-    }
 }
 
 pub struct ZCoinBuilder<'a> {
@@ -745,40 +525,18 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
         let (z_rpc, sync_state_connector) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
-                unimplemented!()
-                /*
-                let db_name = format!("{}_CACHE.db", self.ticker);
-                let db_path = self.db_dir_path.join(&db_name);
-
-                let sqlite = block_in_place(move || {
-                    if !db_path.exists() {
-                        let default_cache_path = PathBuf::new().join("./").join(db_name);
-                        if !default_cache_path.exists() {
-                            return MmError::err(ZCoinBuildError::SaplingCacheDbDoesNotExist {
-                                path: std::env::current_dir()?.join(&default_cache_path).display().to_string(),
-                            });
-                        }
-                        std::fs::copy(default_cache_path, &db_path)?;
-                    }
-
-                    let sqlite = Connection::open(db_path)?;
-                    init_db(&sqlite)?;
-                    Ok(sqlite)
-                })?;
-                ZcoinRpcClient::Native(ZcoinNativeClient {
-                    client: self.native_client()?,
-                    sqlite: Mutex::new(sqlite),
-                    sapling_state_synced: Default::default(),
-                })
-
-                 */
+                return MmError::err(ZCoinBuildError::NativeModeIsNotSupportedYet);
             },
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
                 let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
                 let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
-                let uri = Uri::from_str(&light_wallet_d_servers[0])?;
+                let uri = Uri::from_str(
+                    light_wallet_d_servers
+                        .first()
+                        .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
+                )?;
 
                 let (simple_sync_notifier, simple_sync_watcher) = channel(1);
                 let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
@@ -816,7 +574,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_fields: Arc::new(z_fields),
         };
 
-        spawn(sapling_state_cache_loop(z_coin.clone()));
         Ok(z_coin)
     }
 }
@@ -917,29 +674,10 @@ impl MarketCoinOps for ZCoin {
                 .z_rpc()
                 .my_balance_sat()
                 .await
-                .map_err(|_| MmError::new(BalanceError::Internal("".into())))?;
+                .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
             Ok(CoinBalance::new(big_decimal_from_sat_unsigned(sat, coin.decimals())))
         };
         Box::new(fut.boxed().compat())
-        /*
-        let coin = self.clone();
-        let fut = async move {
-            let unspents = coin.my_z_unspents_ordered().await?;
-            let (spendable, unspendable) = unspents.iter().fold(
-                (BigDecimal::from(0), BigDecimal::from(0)),
-                |(cur_spendable, cur_unspendable), unspent| {
-                    if unspent.confirmations > 0 {
-                        (cur_spendable + unspent.amount.to_decimal(), cur_unspendable)
-                    } else {
-                        (cur_spendable, cur_unspendable + unspent.amount.to_decimal())
-                    }
-                },
-            );
-            Ok(CoinBalance { spendable, unspendable })
-        };
-        Box::new(fut.boxed().compat())
-
-         */
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }

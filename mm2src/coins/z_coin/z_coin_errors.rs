@@ -145,6 +145,8 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
+    EmptyLightwalletdUris,
+    NativeModeIsNotSupportedYet,
     InvalidLightwalletdUri(InvalidUri),
     LightClientInitErr(ZcoinLightClientInitError),
     ZCashParamsNotFound,
