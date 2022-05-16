@@ -3,7 +3,7 @@ use crate::indexed_db::db_driver::cursor::IdbCursorBuilder;
 use common::stringify_js_error;
 use futures::channel::mpsc;
 use futures::StreamExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

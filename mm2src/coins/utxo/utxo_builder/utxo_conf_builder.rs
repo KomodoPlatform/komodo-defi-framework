@@ -8,7 +8,7 @@ use crypto::{Bip32Error, ChildNumber};
 use derive_more::Display;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
 use std::num::NonZeroU64;

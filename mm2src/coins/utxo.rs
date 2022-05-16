@@ -60,7 +60,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
                Type as ScriptType};
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};

@@ -6,7 +6,7 @@ use crypto::trezor::TrezorError;
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use script::Script;
 

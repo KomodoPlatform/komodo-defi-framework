@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crypto::{CryptoCtx, CryptoInitError, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::hash::H160;
 use serde::{Deserialize, Serialize};

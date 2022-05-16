@@ -20,7 +20,7 @@
 use bitcrypto::{sha256, ChecksumType};
 use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rustc_hex::FromHexError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

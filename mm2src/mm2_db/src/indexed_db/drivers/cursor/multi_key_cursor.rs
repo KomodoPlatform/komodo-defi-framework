@@ -2,7 +2,7 @@ use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, Curs
 use async_trait::async_trait;
 use common::stringify_js_error;
 use js_sys::Array;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};

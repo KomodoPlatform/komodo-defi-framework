@@ -15,7 +15,7 @@ use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};

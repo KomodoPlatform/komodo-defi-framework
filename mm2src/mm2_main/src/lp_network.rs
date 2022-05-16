@@ -24,7 +24,7 @@ use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
                                       AdexResponseChannel};
 use mm2_libp2p::peers_exchange::PeerAddresses;

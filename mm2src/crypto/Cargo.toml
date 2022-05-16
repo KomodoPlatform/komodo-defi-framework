@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 rustc-hex = "2"
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 async-trait = "0.1"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }

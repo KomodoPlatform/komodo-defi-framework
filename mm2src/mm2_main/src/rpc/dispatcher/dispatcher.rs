@@ -27,7 +27,7 @@ use common::HttpStatusCode;
 use futures::Future as Future03;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};

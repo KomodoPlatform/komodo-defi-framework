@@ -8,7 +8,7 @@ use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsCo
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::{prelude::*, NotEqual};
+use mm2_err_handle::{mm_error::NotEqual, prelude::*};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 

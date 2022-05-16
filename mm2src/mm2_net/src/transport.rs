@@ -1,6 +1,6 @@
 use derive_more::Display;
 use http::{HeaderMap, StatusCode};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -16,7 +16,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::{MapToMmResult, MmError};
+use mm2_err_handle::prelude::{MapToMmResult, MmError};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;

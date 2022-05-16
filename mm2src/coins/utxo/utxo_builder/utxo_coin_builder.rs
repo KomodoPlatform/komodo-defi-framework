@@ -24,7 +24,7 @@ use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};

@@ -1,6 +1,6 @@
 use crate::{LedgerError, LedgerResult};
 use byteorder::{BigEndian, ByteOrder};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 const APDU_RET_LEN: usize = 2;
 

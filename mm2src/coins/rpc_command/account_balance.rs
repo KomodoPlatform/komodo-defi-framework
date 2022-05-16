@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use common::PagingOptionsEnum;
 use crypto::{Bip44Chain, RpcDerivationPath};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::fmt;
 
 #[derive(Deserialize)]

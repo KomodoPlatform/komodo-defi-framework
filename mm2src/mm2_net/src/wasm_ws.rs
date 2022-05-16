@@ -6,7 +6,7 @@ use common::{executor::spawn,
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
 use futures::{FutureExt, SinkExt, Stream, StreamExt};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::{self as json, Value as Json};
 use std::future::Future;
 use std::pin::Pin;

@@ -1,7 +1,7 @@
 use common::custom_futures::TimeoutError;
 use derive_more::Display;
 use futures::channel::oneshot;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::MmRpcResult;
 use serde::Serialize;
 use std::sync::atomic::AtomicU64;

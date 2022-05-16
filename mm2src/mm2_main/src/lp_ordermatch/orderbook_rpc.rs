@@ -8,7 +8,7 @@ use crypto::CryptoCtx;
 use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 

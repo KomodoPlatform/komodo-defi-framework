@@ -5,7 +5,7 @@ use chain::{Transaction as UtxoTx, TransactionInput};
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 

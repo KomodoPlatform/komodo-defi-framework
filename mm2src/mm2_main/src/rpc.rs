@@ -30,7 +30,7 @@ use http::{Method, Request, Response, StatusCode};
 use hyper::{self, Body, Server};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
 use regex::Regex;
 use serde::Serialize;

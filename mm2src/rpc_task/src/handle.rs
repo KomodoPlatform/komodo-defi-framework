@@ -3,7 +3,7 @@ use crate::{FinishedTaskResult, RpcTask, RpcTaskError, RpcTaskResult, TaskId, Ta
 use common::custom_futures::FutureTimerExt;
 use common::log::LogOnError;
 use futures::channel::oneshot;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::sync::MutexGuard;
 use std::time::Duration;
 

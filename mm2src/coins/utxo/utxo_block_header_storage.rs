@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chain::BlockHeader;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::MmError;
+use mm2_err_handle::mm_error::MmError;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 

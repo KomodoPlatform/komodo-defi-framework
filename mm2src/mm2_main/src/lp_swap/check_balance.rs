@@ -6,7 +6,7 @@ use common::mm_number::{BigDecimal, MmNumber};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
 pub type CheckBalanceResult<T> = Result<T, MmError<CheckBalanceError>>;

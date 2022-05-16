@@ -1,5 +1,5 @@
 [package]
-name = "mm2_ehandle"
+name = "mm2_err_handle"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,7 +7,7 @@ edition = "2018"
 futures01 = { version = "0.1", package = "futures" }
 serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 derive_more = "0.99"
-itertools = "0.8"
+itertools = "0.10"
 serde = "1"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }

@@ -3,7 +3,7 @@ use common::wio::{drive03, HYPER};
 use futures::channel::oneshot::Canceled;
 use http::{header, HeaderValue, Request};
 use hyper::Body;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 impl From<Canceled> for SlurpError {
     fn from(_: Canceled) -> Self { SlurpError::Internal("Spawned Slurp future has been canceled".to_owned()) }

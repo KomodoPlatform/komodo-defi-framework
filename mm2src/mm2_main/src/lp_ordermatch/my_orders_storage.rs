@@ -6,7 +6,7 @@ use common::{BoxFut, PagingOptions};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use uuid::Uuid;
 

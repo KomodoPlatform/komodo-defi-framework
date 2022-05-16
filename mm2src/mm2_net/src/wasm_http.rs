@@ -4,7 +4,7 @@ use common::stringify_js_error;
 use futures::channel::oneshot;
 use http::{HeaderMap, StatusCode};
 use js_sys::Uint8Array;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

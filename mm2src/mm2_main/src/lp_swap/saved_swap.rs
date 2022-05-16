@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use coins::lp_coinfind;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
 

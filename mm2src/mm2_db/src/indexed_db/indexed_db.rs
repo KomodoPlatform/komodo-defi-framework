@@ -14,7 +14,7 @@ use common::DbNamespaceId;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

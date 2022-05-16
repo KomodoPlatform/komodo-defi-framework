@@ -1,6 +1,6 @@
 use crate::handle::RpcTaskHandle;
 use async_trait::async_trait;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde::Serialize;
 
 pub trait RpcTaskTypes {

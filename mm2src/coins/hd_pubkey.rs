@@ -7,7 +7,7 @@ use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorPinMatrix3x3Respo
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError,
              HwProcessingError, XPub};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
 use std::convert::TryInto;
 

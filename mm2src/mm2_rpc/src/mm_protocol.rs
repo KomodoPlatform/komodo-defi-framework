@@ -1,6 +1,6 @@
 use common::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
-use mm2_ehandle::mm_error::{MmError, SerMmErrorType};
+use mm2_err_handle::mm_error::{MmError, SerMmErrorType};
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use serde_json::Value as Json;

@@ -17,7 +17,7 @@ use chain::Transaction as UtxoTx;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, Public};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use script::{Builder as ScriptBuilder, Opcode, Script};
 use secp256k1::SecretKey;
 use serialization::deserialize;

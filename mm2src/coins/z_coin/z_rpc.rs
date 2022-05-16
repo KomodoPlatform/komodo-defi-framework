@@ -2,7 +2,7 @@ use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, Ut
 use bigdecimal::BigDecimal;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
 use common::mm_number::MmNumber;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 

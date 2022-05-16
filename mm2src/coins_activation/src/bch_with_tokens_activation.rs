@@ -16,7 +16,7 @@ use common::mm_number::BigDecimal;
 use common::Future01CompatExt;
 use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;

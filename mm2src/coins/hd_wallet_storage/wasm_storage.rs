@@ -8,7 +8,7 @@ use mm2_db::indexed_db::cursor_prelude::*;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb,
                          IndexedDbBuilder, InitDbError, InitDbResult, ItemId, OnUpgradeResult, SharedDb,
                          TableSignature, WeakDb};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 const DB_NAME: &str = "hd_wallet";
 const DB_VERSION: u32 = 1;

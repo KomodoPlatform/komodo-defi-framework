@@ -6,7 +6,7 @@ use bigdecimal::ToPrimitive;
 use common::mm_number::BigDecimal;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use mm2_ehandle::mm_error::MmError;
+use mm2_err_handle::mm_error::MmError;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::{Signature, Signer};
 use std::str::FromStr;

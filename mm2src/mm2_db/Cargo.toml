@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_core = { path = "../mm2_core" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 lazy_static = "1.4"

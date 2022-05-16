@@ -8,7 +8,7 @@ use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::fmt;
 use std::ops::Range;
 

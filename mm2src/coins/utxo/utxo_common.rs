@@ -35,7 +35,7 @@ use keys::bytes::Bytes;
 use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
            Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};

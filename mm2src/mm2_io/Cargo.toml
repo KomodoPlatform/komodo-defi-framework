@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 serde = "1"
 serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }

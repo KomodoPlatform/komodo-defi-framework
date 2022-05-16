@@ -11,7 +11,7 @@ use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 pub async fn get_activation_result<Coin>(
     ctx: &MmArc,

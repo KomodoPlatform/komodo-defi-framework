@@ -6,7 +6,7 @@ use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_
 use db_common::sqlite::{SqliteConnShared, SqliteConnWeak};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::convert::TryFrom;
 use std::sync::MutexGuard;
 

@@ -3,7 +3,7 @@ use common::{log::info, stringify_js_error};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::StreamExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

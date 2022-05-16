@@ -3,7 +3,7 @@ use common::log::{error, LogOnError};
 use derive_more::Display;
 use futures::AsyncWriteExt;
 use gstuff::{try_s, ERR, ERRL};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rand::random;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

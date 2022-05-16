@@ -1,7 +1,7 @@
 use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::utxo::{ScriptPubkey, Signature};
 use crate::{TrezorError, TrezorResult};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 /// Missing fields:
 /// * decred_tree - only for Decred

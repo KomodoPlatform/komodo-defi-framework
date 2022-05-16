@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::warn;
 use hw_common::transport::webusb_driver::{DeviceFilter, WebUsbDevice, WebUsbWrapper};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 pub use hw_common::transport::webusb_driver::WebUsbDeviceInfo;
 

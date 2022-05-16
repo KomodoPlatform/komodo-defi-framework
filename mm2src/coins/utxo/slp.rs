@@ -33,7 +33,7 @@ use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;

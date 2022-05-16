@@ -35,7 +35,7 @@ use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, SlurpError};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;

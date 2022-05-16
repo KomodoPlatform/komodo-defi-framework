@@ -57,7 +57,7 @@ use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};

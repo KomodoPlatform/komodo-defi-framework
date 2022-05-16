@@ -7,7 +7,7 @@ use common::log::warn;
 use futures::lock::Mutex as AsyncMutex;
 use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use primitives::hash::{H160, H264};
 use std::ops::Deref;
 use std::str::FromStr;

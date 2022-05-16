@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 http = "0.2"

@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1"
 common = { path = "../common" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_rpc = { path = "../mm2_rpc" }
 derive_more = "0.99"
 futures = "0.3"

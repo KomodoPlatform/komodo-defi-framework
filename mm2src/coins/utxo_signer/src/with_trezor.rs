@@ -7,7 +7,7 @@ use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptT
                            TxSignResult, UnsignedTxInput, UnsignedUtxoTx};
 use crypto::trezor::TrezorClient;
 use keys::bytes::Bytes;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use script::{SignatureVersion, UnsignedTransactionInput};
 use serialization::deserialize;

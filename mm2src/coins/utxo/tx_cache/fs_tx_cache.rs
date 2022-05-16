@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use common::log::LogOnError;
 use futures::lock::Mutex as AsyncMutex;
 use futures::FutureExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use mm2_io::fs::{read_json, write_json, FsJsonError};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};

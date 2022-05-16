@@ -1,7 +1,7 @@
 use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
 use crate::TrezorPinMatrix3x3Response;
 use async_trait::async_trait;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use std::convert::TryInto;
 use std::time::Duration;
 

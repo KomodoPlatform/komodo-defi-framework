@@ -23,7 +23,7 @@ use futures::{compat::Future01CompatExt, select, FutureExt};
 use http::Response;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};

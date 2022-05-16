@@ -32,7 +32,7 @@ use futures01::Future;
 use keys::hash::H256;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H256 as H256Json};

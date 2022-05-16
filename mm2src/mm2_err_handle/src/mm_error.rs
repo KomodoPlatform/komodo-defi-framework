@@ -94,22 +94,6 @@ use std::cell::UnsafeCell;
 use std::fmt;
 use std::panic::Location;
 
-pub mod prelude {
-    pub use crate::mm_error::map_mm_error::MapMmError;
-    pub use crate::mm_error::map_to_mm::MapToMmResult;
-    pub use crate::mm_error::map_to_mm_fut::MapToMmFutureExt;
-    pub use crate::mm_error::mm_json_error::MmJsonError;
-    pub use crate::mm_error::or_mm_error::OrMmError;
-    pub use crate::mm_error::{MmError, MmResult, NotMmError, SerMmErrorType};
-    pub use ser_error::SerializeErrorType;
-}
-
-#[path = "map_mm_error.rs"] mod map_mm_error;
-#[path = "map_to_mm.rs"] mod map_to_mm;
-#[path = "map_to_mm_fut.rs"] mod map_to_mm_fut;
-#[path = "mm_json_error.rs"] mod mm_json_error;
-#[path = "or_mm_error.rs"] mod or_mm_error;
-
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
 pub auto trait NotMmError {}

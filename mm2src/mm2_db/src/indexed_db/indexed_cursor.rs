@@ -57,7 +57,7 @@ use async_trait::async_trait;
 use common::serde::de::DeserializeOwned;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::fmt;

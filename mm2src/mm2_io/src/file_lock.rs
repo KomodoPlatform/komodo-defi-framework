@@ -1,6 +1,6 @@
 use derive_more::Display;
 use gstuff::{now_float, now_ms};
-use mm2_ehandle::{map_to_mm::MapToMmResult, mm_error::MmError};
+use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmError};
 use std::path::{Path, PathBuf};
 
 pub type FileLockResult<T> = std::result::Result<T, MmError<FileLockError>>;

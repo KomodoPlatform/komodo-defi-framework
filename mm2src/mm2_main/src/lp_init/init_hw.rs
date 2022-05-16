@@ -7,7 +7,7 @@ use crypto::{CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwWalletType};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use std::time::Duration;

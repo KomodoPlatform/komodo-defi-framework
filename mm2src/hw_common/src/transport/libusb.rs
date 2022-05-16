@@ -6,7 +6,7 @@ use common::log::error;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rusb::Error as RusbError;
 use rusb::UsbContext as RusbContext;
 use std::thread;

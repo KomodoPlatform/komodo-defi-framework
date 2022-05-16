@@ -3,7 +3,7 @@ use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use mm2_core::mm_ctx::from_ctx;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::MmError;
+use mm2_err_handle::mm_error::MmError;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;

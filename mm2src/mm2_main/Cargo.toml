@@ -52,7 +52,7 @@ coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_io = { path = "../mm2_io" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_net = { path = "../mm2_net" }
@@ -76,7 +76,7 @@ hash-db = "0.15.2"
 hex = "0.4.2"
 http = "0.2"
 hw_common = { path = "../hw_common" }
-itertools = "0.9"
+itertools = "0.10"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 # ledger = { path = "../ledger" }

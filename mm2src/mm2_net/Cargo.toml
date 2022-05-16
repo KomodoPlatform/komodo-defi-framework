@@ -12,7 +12,7 @@ serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
 bytes = "1.1"
 cfg-if = "1.0"
 common = { path = "../common" }
-mm2_ehandle = { path = "../mm2_ehandle" }
+mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"
 http = "0.2"

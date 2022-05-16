@@ -47,7 +47,7 @@ use futures01::Future;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};

@@ -4,7 +4,7 @@
 use crate::transport::SlurpError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use common::{cfg_native, cfg_wasm32};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use prost::DecodeError;
 
 cfg_native! {

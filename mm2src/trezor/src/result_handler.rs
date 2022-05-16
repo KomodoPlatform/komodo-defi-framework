@@ -3,7 +3,7 @@
 use crate::proto::messages::MessageType;
 use crate::proto::{ProtoMessage, TrezorMessage};
 use crate::{TrezorError, TrezorResult};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 /// Function to be passed to the [`TrezorClient::call`] method
 /// to process the Trezor response message into a general-purpose type.

@@ -14,7 +14,7 @@ use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};

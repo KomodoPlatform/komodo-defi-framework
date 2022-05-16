@@ -1,7 +1,7 @@
 use super::{CollectCursorAction, CollectItemAction, CursorBoundValue, CursorError, CursorOps, CursorResult, DbFilter};
 use async_trait::async_trait;
 use common::{log::warn, stringify_js_error};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};

@@ -8,7 +8,7 @@ use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{H160 as H160Json, H256 as H256Json};
 
 pub type RecreateSwapResult<T> = Result<T, MmError<RecreateSwapError>>;

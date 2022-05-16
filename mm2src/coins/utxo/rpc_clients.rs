@@ -28,7 +28,7 @@ use http::Uri;
 use itertools::Itertools;
 use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
 #[cfg(not(target_arch = "wasm32"))]

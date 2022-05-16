@@ -9,7 +9,7 @@ edition = "2018"
 async-trait = "0.1"
 chain = { path = "../../mm2_bitcoin/chain" }
 common = { path = "../../common" }
-mm2_ehandle = { path = "../../mm2_ehandle" }
+mm2_err_handle = { path = "../../mm2_err_handle" }
 crypto = { path = "../../crypto" }
 derive_more = "0.99"
 hex = "0.4.2"

@@ -14,7 +14,7 @@ use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub type QtumTaskManagerShared = InitStandaloneCoinTaskManagerShared<QtumCoin>;

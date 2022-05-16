@@ -37,7 +37,7 @@ use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
 use keys::{Address as UtxoAddress, Address, KeyPair, Public};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};

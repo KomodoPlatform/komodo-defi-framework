@@ -6,7 +6,7 @@ use derive_more::Display;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Array;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

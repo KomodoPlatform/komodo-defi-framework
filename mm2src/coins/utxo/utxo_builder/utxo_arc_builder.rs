@@ -9,7 +9,7 @@ use common::executor::spawn;
 use common::log::info;
 use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub struct UtxoArcBuilder<'a, F, T>

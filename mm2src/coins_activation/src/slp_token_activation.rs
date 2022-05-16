@@ -5,7 +5,7 @@ use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;

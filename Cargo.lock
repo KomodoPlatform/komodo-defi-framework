@@ -1081,7 +1081,7 @@ dependencies = [
  "gstuff",
  "hex 0.4.2",
  "http 0.2.1",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "jsonrpc-core 8.0.1",
  "keys",
@@ -1095,7 +1095,7 @@ dependencies = [
  "metrics",
  "mm2_core",
  "mm2_db",
- "mm2_ehandle",
+ "mm2_err_handle",
  "mm2_io",
  "mm2_net",
  "mm2_test_helpers",
@@ -1161,7 +1161,7 @@ dependencies = [
  "futures 0.3.15",
  "hex 0.4.2",
  "mm2_core",
- "mm2_ehandle",
+ "mm2_err_handle",
  "rpc",
  "rpc_task",
  "ser_error",
@@ -1207,7 +1207,7 @@ dependencies = [
  "hyper",
  "hyper-rustls 0.22.1",
  "indexmap",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "keys",
  "lazy_static",
@@ -1501,7 +1501,7 @@ dependencies = [
  "hw_common",
  "keys",
  "mm2_core",
- "mm2_ehandle",
+ "mm2_err_handle",
  "num-traits 0.1.43",
  "parking_lot 0.12.0",
  "primitives",
@@ -2895,7 +2895,7 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "js-sys",
- "mm2_ehandle",
+ "mm2_err_handle",
  "mm2_net",
  "rusb",
  "secp256k1",
@@ -3152,24 +3152,6 @@ name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
-
-[[package]]
-name = "itertools"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56a2d0bc861f9165be4eb3442afd3c236d8a98afd426f65d92324ae1091a484"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itertools"
@@ -4144,7 +4126,7 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "mm2_core",
- "mm2_ehandle",
+ "mm2_err_handle",
  "primitives",
  "rand 0.7.3",
  "serde",
@@ -4156,7 +4138,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mm2_ehandle"
+name = "mm2_err_handle"
 version = "0.1.0"
 dependencies = [
  "common",
@@ -4164,7 +4146,7 @@ dependencies = [
  "futures 0.1.29",
  "gstuff",
  "http 0.2.1",
- "itertools 0.8.2",
+ "itertools",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -4180,7 +4162,7 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "gstuff",
- "mm2_ehandle",
+ "mm2_err_handle",
  "rand 0.7.3",
  "serde",
  "serde_json",
@@ -4223,7 +4205,7 @@ dependencies = [
  "hw_common",
  "hyper",
  "instant",
- "itertools 0.9.0",
+ "itertools",
  "js-sys",
  "keys",
  "lazy_static",
@@ -4232,7 +4214,7 @@ dependencies = [
  "mm2-libp2p",
  "mm2_core",
  "mm2_db",
- "mm2_ehandle",
+ "mm2_err_handle",
  "mm2_io",
  "mm2_net",
  "mm2_rpc",
@@ -4290,7 +4272,7 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "mm2_core",
- "mm2_ehandle",
+ "mm2_err_handle",
  "prost",
  "rand 0.7.3",
  "serde",
@@ -4310,7 +4292,7 @@ dependencies = [
  "futures 0.3.15",
  "gstuff",
  "http 0.2.1",
- "mm2_ehandle",
+ "mm2_err_handle",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -5173,7 +5155,7 @@ checksum = "355f634b43cdd80724ee7848f95770e7e70eefa6dcf14fea676216573b8fd603"
 dependencies = [
  "bytes 1.1.0",
  "heck",
- "itertools 0.10.3",
+ "itertools",
  "log 0.4.14",
  "multimap",
  "petgraph",
@@ -5190,7 +5172,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "600d2f334aa05acb02a755e217ef1ab6dea4d51b58b7846588b747edec04efba"
 dependencies = [
  "anyhow",
- "itertools 0.10.3",
+ "itertools",
  "proc-macro2 1.0.27",
  "quote 1.0.7",
  "syn 1.0.72",
@@ -5845,7 +5827,7 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.3.15",
- "mm2_ehandle",
+ "mm2_err_handle",
  "mm2_rpc",
  "ser_error",
  "ser_error_derive",
@@ -6891,7 +6873,7 @@ dependencies = [
  "console_log",
  "curve25519-dalek",
  "getrandom 0.1.14",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -6923,7 +6905,7 @@ dependencies = [
  "base64 0.13.0",
  "bincode",
  "enum-iterator",
- "itertools 0.10.3",
+ "itertools",
  "libc",
  "libloading",
  "log 0.4.14",
@@ -6987,7 +6969,7 @@ dependencies = [
  "flate2",
  "fnv",
  "index_list",
- "itertools 0.10.3",
+ "itertools",
  "lazy_static",
  "log 0.4.14",
  "memmap2",
@@ -7045,7 +7027,7 @@ dependencies = [
  "ed25519-dalek-bip32 0.2.0",
  "generic-array 0.14.5",
  "hmac 0.12.1",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -8142,7 +8124,7 @@ dependencies = [
  "futures 0.3.15",
  "hw_common",
  "js-sys",
- "mm2_ehandle",
+ "mm2_err_handle",
  "prost",
  "rand 0.7.3",
  "rpc_task",
@@ -8460,7 +8442,7 @@ dependencies = [
  "derive_more",
  "hex 0.4.2",
  "keys",
- "mm2_ehandle",
+ "mm2_err_handle",
  "primitives",
  "rpc",
  "script",

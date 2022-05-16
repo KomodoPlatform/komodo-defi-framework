@@ -23,7 +23,7 @@ use crypto::privkey::SerializableSecp256k1Keypair;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rand::Rng;

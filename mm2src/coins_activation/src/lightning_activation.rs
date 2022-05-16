@@ -10,7 +10,7 @@ use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
-use mm2_ehandle::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
