@@ -21,7 +21,7 @@ const WITNESS_FLAG: u8 = 1;
 /// Maximum supported list size (inputs, outputs, etc.)
 const MAX_LIST_SIZE: usize = 8192;
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Default, Serializable, Deserializable)]
+#[derive(Clone, Copy, Debug, Default, Deserializable, Eq, Hash, PartialEq, Serializable)]
 pub struct OutPoint {
     pub hash: H256,
     pub index: u32,

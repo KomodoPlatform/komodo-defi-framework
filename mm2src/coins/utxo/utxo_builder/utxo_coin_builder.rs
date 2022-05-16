@@ -2,6 +2,7 @@ use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
 use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
+use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
@@ -158,9 +159,9 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let dust_amount = self.dust_amount();
 
         let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
+        let tx_cache = self.tx_cache();
         let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
@@ -171,7 +172,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             priv_key_policy,
             derivation_method,
             history_sync_state: Mutex::new(initial_history_state),
-            tx_cache_directory,
+            tx_cache,
             block_headers_storage,
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
@@ -221,9 +222,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let dust_amount = self.dust_amount();
 
         let initial_history_state = self.initial_history_state();
-        let tx_cache_directory = Some(self.ctx().dbdir().join("TX_CACHE"));
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
+        let tx_cache = self.tx_cache();
         let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
@@ -235,7 +236,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
             block_headers_storage,
-            tx_cache_directory,
+            tx_cache,
             recently_spent_outpoints,
             tx_fee,
             tx_hash_algo,
@@ -254,6 +255,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .mm_err(UtxoCoinBuildError::from)
     }
 
+    #[inline]
     fn derivation_path(&self) -> UtxoConfResult<Bip44PathToCoin> {
         if self.conf()["derivation_path"].is_null() {
             return MmError::err(UtxoConfError::DerivationPathIsNotSet);
@@ -262,10 +264,13 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
 
+    #[inline]
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
 
+    #[inline]
     fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 
+    #[inline]
     fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
         let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
         let hw_ctx = crypto_ctx
@@ -287,6 +292,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
     fn ticker(&self) -> &str;
 
+    #[inline]
     fn block_headers_storage(&self) -> UtxoCoinBuildResult<Option<BlockHeaderStorage>> {
         let params: Option<_> = json::from_value(self.conf()["block_header_params"].clone())
             .map_to_mm(|e| UtxoConfError::InvalidBlockHeaderParams(e.to_string()))?;
@@ -336,6 +342,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(address_format)
     }
 
+    #[inline]
     fn pub_addr_prefix(&self) -> u8 {
         let pubtype = self.conf()["pubtype"]
             .as_u64()
@@ -343,14 +350,17 @@ pub trait UtxoCoinBuilderCommonOps {
         pubtype as u8
     }
 
+    #[inline]
     fn p2sh_address_prefix(&self) -> u8 {
         self.conf()["p2shtype"]
             .as_u64()
             .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
     }
 
+    #[inline]
     fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
 
+    #[inline]
     fn network(&self) -> UtxoCoinBuildResult<BlockchainNetwork> {
         let conf = self.conf();
         if !conf["network"].is_null() {
@@ -360,6 +370,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(BlockchainNetwork::Mainnet)
     }
 
+    #[inline]
     async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<u8> {
         Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
     }
@@ -383,6 +394,7 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(tx_fee)
     }
 
+    #[inline]
     fn initial_history_state(&self) -> HistorySyncState {
         if self.activation_params().tx_history {
             HistorySyncState::NotStarted
@@ -549,6 +561,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
+    #[inline]
     fn tx_hash_algo(&self) -> TxHashAlgo {
         if self.ticker() == "GRS" {
             TxHashAlgo::SHA256
@@ -557,9 +570,28 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
+    #[inline]
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
 
+    #[inline]
     fn is_hw_coin(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
+
+    #[inline]
+    #[cfg(target_arch = "wasm32")]
+    fn tx_cache(&self) -> UtxoVerboseCacheShared {
+        crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
+    }
+
+    #[inline]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tx_cache(&self) -> UtxoVerboseCacheShared {
+        crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.ticker().to_owned(), self.tx_cache_path())
+            .into_shared()
+    }
+
+    #[inline]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
