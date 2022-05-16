@@ -157,7 +157,6 @@ pub struct SimpleCoinMarketMakerCfg {
     pub min_pair_price: Option<MmNumber>,
 }
 
-
 #[derive(Default)]
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,

@@ -34,7 +34,7 @@ pub trait AsSqlNamedParams {
 }
 
 impl AsSqlNamedParams for OwnedSqlNamedParams {
-     fn as_sql_named_params(&self) -> SqlNamedParams<'_> {
+    fn as_sql_named_params(&self) -> SqlNamedParams<'_> {
         self.iter().map(|(name, param)| (*name, param as &dyn ToSql)).collect()
     }
 }
