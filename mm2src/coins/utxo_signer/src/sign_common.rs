@@ -36,7 +36,7 @@ pub(crate) fn p2pk_spend_with_signature(
     let script_sig = script_sig(signature, fork_id);
 
     TransactionInput {
-        previous_output: unsigned_input.previous_output.clone(),
+        previous_output: unsigned_input.previous_output,
         script_sig: Builder::default().push_bytes(&script_sig).into_bytes(),
         sequence: unsigned_input.sequence,
         script_witness: vec![],
@@ -52,7 +52,7 @@ pub(crate) fn p2pkh_spend_with_signature(
     let script_sig = script_sig_with_pub(public_key, fork_id, signature);
 
     TransactionInput {
-        previous_output: unsigned_input.previous_output.clone(),
+        previous_output: unsigned_input.previous_output,
         script_sig,
         sequence: unsigned_input.sequence,
         script_witness: vec![],
@@ -77,7 +77,7 @@ pub(crate) fn p2sh_spend_with_signature(
     resulting_script.extend_from_slice(&redeem_part);
 
     TransactionInput {
-        previous_output: unsigned_input.previous_output.clone(),
+        previous_output: unsigned_input.previous_output,
         script_sig: resulting_script,
         sequence: unsigned_input.sequence,
         script_witness: vec![],
@@ -93,7 +93,7 @@ pub(crate) fn p2wpkh_spend_with_signature(
     let script_sig = script_sig(signature, fork_id);
 
     TransactionInput {
-        previous_output: unsigned_input.previous_output.clone(),
+        previous_output: unsigned_input.previous_output,
         script_sig: Bytes::from(Vec::new()),
         sequence: unsigned_input.sequence,
         script_witness: vec![script_sig, Bytes::from(public_key.to_vec())],

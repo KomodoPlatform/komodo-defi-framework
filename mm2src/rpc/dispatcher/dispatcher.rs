@@ -7,17 +7,19 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
-use coins::coin_balance::{account_balance, scan_for_new_addresses};
 use coins::hd_wallet::get_new_address;
-use coins::init_create_account::{init_create_new_account, init_create_new_account_status,
-                                 init_create_new_account_user_action};
-use coins::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
+use coins::rpc_command::account_balance::account_balance;
+use coins::rpc_command::init_create_account::{init_create_new_account, init_create_new_account_status,
+                                              init_create_new_account_user_action};
+use coins::rpc_command::init_scan_for_new_addresses::{init_scan_for_new_addresses, init_scan_for_new_addresses_status};
+use coins::rpc_command::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, withdraw};
+use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, sign_message, verify_message,
+            withdraw};
 use coins_activation::{enable_l2, enable_platform_coin_with_tokens, enable_token, init_standalone_coin,
                        init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
@@ -134,6 +136,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "init_qtum" => handle_mmrpc(ctx, request, init_standalone_coin::<QtumCoin>).await,
         "init_qtum_status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<QtumCoin>).await,
         "init_qtum_user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<QtumCoin>).await,
+        "init_scan_for_new_addresses" => handle_mmrpc(ctx, request, init_scan_for_new_addresses).await,
+        "init_scan_for_new_addresses_status" => handle_mmrpc(ctx, request, init_scan_for_new_addresses_status).await,
         "init_trezor" => handle_mmrpc(ctx, request, init_trezor).await,
         "init_trezor_status" => handle_mmrpc(ctx, request, init_trezor_status).await,
         "init_trezor_user_action" => handle_mmrpc(ctx, request, init_trezor_user_action).await,
@@ -148,13 +152,14 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
-        "scan_for_new_addresses" => handle_mmrpc(ctx, request, scan_for_new_addresses).await,
+        "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,
         "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
-        "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
+        "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
+        "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         "withdraw_status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw_user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,

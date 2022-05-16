@@ -6,19 +6,23 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SwapOps, TradePreimageValue,
-            TransactionType, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, WithdrawFut};
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use itertools::Either as EitherIter;
+use keys::hash::H256;
 use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
 use std::sync::MutexGuard;
+
+pub type BchUnspentMap = HashMap<Address, BchUnspents>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BchActivationRequest {
@@ -185,19 +189,41 @@ impl BchCoin {
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
         let mut result = BchUnspents::default();
-        for unspent in utxos {
-            if unspent.outpoint.index == 0 {
-                // zero output is reserved for OP_RETURN of specific protocols
-                // so if we get it we can safely consider this as standard BCH UTXO
-                result.add_standard(unspent);
-                continue;
-            }
+        let mut temporary_undetermined = Vec::new();
 
-            let prev_tx_bytes = self
-                .get_verbose_transaction_from_cache_or_rpc(unspent.outpoint.hash.reversed().into())
-                .compat()
-                .await?
-                .into_inner();
+        let to_verbose: HashSet<H256Json> = utxos
+            .into_iter()
+            .filter_map(|unspent| {
+                if unspent.outpoint.index == 0 {
+                    // Zero output is reserved for OP_RETURN of specific protocols
+                    // so if we get it we can safely consider this as standard BCH UTXO.
+                    // There is no need to request verbose transaction for such UTXO.
+                    result.add_standard(unspent);
+                    None
+                } else {
+                    let hash = unspent.outpoint.hash.reversed().into();
+                    temporary_undetermined.push(unspent);
+                    Some(hash)
+                }
+            })
+            .collect();
+
+        let verbose_txs = self
+            .get_verbose_transactions_from_cache_or_rpc(to_verbose)
+            .compat()
+            .await?;
+
+        for unspent in temporary_undetermined {
+            let prev_tx_hash = unspent.outpoint.hash.reversed().into();
+            let prev_tx_bytes = verbose_txs
+                .get(&prev_tx_hash)
+                .or_mm_err(|| {
+                    UtxoRpcError::Internal(format!(
+                        "'get_verbose_transactions_from_cache_or_rpc' should have returned '{:?}'",
+                        prev_tx_hash
+                    ))
+                })?
+                .to_inner();
             let prev_tx: UtxoTx = match deserialize(prev_tx_bytes.hex.as_slice()) {
                 Ok(b) => b,
                 Err(e) => {
@@ -288,8 +314,8 @@ impl BchCoin {
     pub async fn bch_unspents_for_spend(
         &self,
         address: &Address,
-    ) -> UtxoRpcResult<(BchUnspents, AsyncMutexGuard<'_, RecentlySpentOutPoints>)> {
-        let (all_unspents, recently_spent) = utxo_common::list_unspent_ordered(self, address).await?;
+    ) -> UtxoRpcResult<(BchUnspents, RecentlySpentOutPointsGuard<'_>)> {
+        let (all_unspents, recently_spent) = utxo_common::get_unspent_ordered_list(self, address).await?;
         let result = self.utxos_into_bch_unspents(all_unspents).await?;
 
         Ok((result, recently_spent))
@@ -298,11 +324,7 @@ impl BchCoin {
     pub async fn get_token_utxos_for_spend(
         &self,
         token_id: &H256,
-    ) -> UtxoRpcResult<(
-        Vec<SlpUnspent>,
-        Vec<UnspentInfo>,
-        AsyncMutexGuard<'_, RecentlySpentOutPoints>,
-    )> {
+    ) -> UtxoRpcResult<(Vec<SlpUnspent>, Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
         let my_address = self
             .as_ref()
             .derivation_method
@@ -691,6 +713,33 @@ impl UtxoTxGenerationOps for BchCoin {
     }
 }
 
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl GetUtxoListOps for BchCoin {
+    async fn get_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
+        let (bch_unspents, recently_spent) = self.bch_unspents_for_spend(address).await?;
+        Ok((bch_unspents.standard, recently_spent))
+    }
+
+    async fn get_all_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_all_unspent_ordered_list(self, address).await
+    }
+
+    async fn get_mature_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(MatureUnspentList, RecentlySpentOutPointsGuard<'_>)> {
+        let (unspents, recently_spent) = utxo_common::get_all_unspent_ordered_list(self, address).await?;
+        Ok((MatureUnspentList::new_mature(unspents), recently_spent))
+    }
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -757,36 +806,13 @@ impl UtxoCommonOps for BchCoin {
         .await
     }
 
-    async fn list_all_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_all_unspent_ordered(self, address).await
-    }
-
-    async fn list_mature_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        utxo_common::list_all_unspent_ordered(self, address).await
-    }
-
-    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom> {
+    fn get_verbose_transactions_from_cache_or_rpc(
+        &self,
+        tx_ids: HashSet<H256Json>,
+    ) -> UtxoRpcFut<HashMap<H256Json, VerboseTransactionFrom>> {
         let selfi = self.clone();
-        let fut = async move { utxo_common::get_verbose_transaction_from_cache_or_rpc(&selfi.utxo_arc, txid).await };
+        let fut = async move { utxo_common::get_verbose_transactions_from_cache_or_rpc(&selfi.utxo_arc, tx_ids).await };
         Box::new(fut.boxed().compat())
-    }
-
-    async fn cache_transaction_if_possible(&self, tx: &RpcTransaction) -> Result<(), String> {
-        utxo_common::cache_transaction_if_possible(&self.utxo_arc, tx).await
-    }
-
-    async fn list_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)> {
-        let (bch_unspents, recently_spent) = self.bch_unspents_for_spend(address).await?;
-        Ok((bch_unspents.standard, recently_spent))
     }
 
     async fn preimage_trade_fee_required_to_send_outputs(
@@ -1025,7 +1051,7 @@ impl SwapOps for BchCoin {
         Ok(None)
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { utxo_common::get_htlc_key_pair(self) }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(self) }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
@@ -1036,6 +1062,20 @@ impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
+        utxo_common::sign_message_hash(self.as_ref(), message)
+    }
+
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message)
+    }
+
+    fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        utxo_common::verify_message(self, signature_base64, message, address)
+    }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
@@ -1051,8 +1091,14 @@ impl MarketCoinOps for BchCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
+    #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
+    }
+
+    #[inline(always)]
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
     fn wait_for_confirmations(
@@ -1215,7 +1261,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
 
-    let conf = json!({"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id":"0x40","protocol":{"type":"UTXO"},
+    let conf = json!({"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id":"0x40","protocol":{"type":"UTXO"}, "sign_message_prefix": "Bitcoin Signed Message:\n",
          "address_format":{"format":"cashaddress","network":"bchtest"}});
     let req = json!({
         "method": "electrum",
@@ -1375,5 +1421,29 @@ mod bch_tests {
         assert_eq!(expected_tx_type, slp_tx_details.transaction_type);
 
         assert_eq!(coin.ticker(), slp_tx_details.coin);
+    }
+
+    #[test]
+    fn test_sign_message() {
+        let coin = tbch_coin_for_test();
+        let signature = coin.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let coin = tbch_coin_for_test();
+        let is_valid = coin
+            .verify_message(
+                "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA=",
+                "test",
+                "bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66",
+            )
+            .unwrap();
+        assert!(is_valid);
     }
 }

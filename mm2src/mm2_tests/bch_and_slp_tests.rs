@@ -1,5 +1,6 @@
 use super::*;
-use common::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, UtxoRpcMode};
+use common::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
+                        UtxoRpcMode};
 
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",
@@ -463,4 +464,129 @@ fn test_bch_and_slp_testnet_history() {
         let fee_details: UtxoFeeDetails = json::from_value(tx.tx.fee_details).unwrap();
         assert_eq!(fee_details.coin, Some("tBCH".to_owned()));
     }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_bch() {
+    let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+
+    let coins = json!([
+        {"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id": "0x40","sign_message_prefix": "Bitcoin Signed Message:\n","protocol":{"type":"UTXO"},
+         "address_format":{"format":"cashaddress","network":"bitcoincash"}},
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    let electrum = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "electrum",
+        "coin": "BCH",
+        "servers": t_bch_electrums_legacy_json(),
+        "mm2": 1,
+    })))
+    .unwrap();
+
+    assert_eq!(
+        electrum.0,
+        StatusCode::OK,
+        "RPC «electrum» failed with {} {}",
+        electrum.0,
+        electrum.1
+    );
+    let electrum: Json = json::from_str(&electrum.1).unwrap();
+    log!([electrum]);
+
+    let response = block_on(sign_message(&mm, "BCH"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(
+        response.signature,
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
+    );
+
+    let response = block_on(verify_message(
+        &mm,
+        "BCH",
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
+        "bitcoincash:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyursltctnw",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_slp() {
+    let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
+
+    let coins = json!([
+        {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"sign_message_prefix": "Bitcoin Signed Message:\n","protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}},
+         "address_format":{"format":"cashaddress","network":"bchtest"}},
+        {"coin":"USDF","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":4,"token_id":"bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7","platform":"tBCH","required_confirmations":1}}}
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": seed.to_string(),
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!({ "log path: {}", mm.log_path.display() });
+
+    let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
+    let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, false));
+    log!({ "enable_bch: {:?}", enable_bch });
+
+    let enable_usdf = block_on(enable_slp(&mm, "USDF"));
+    log!({ "enable_usdf: {:?}", enable_usdf });
+
+    let response = block_on(sign_message(&mm, "USDF"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(
+        response.signature,
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8="
+    );
+
+    let response = block_on(verify_message(
+        &mm,
+        "USDF",
+        "HzNH58Xd+orz5jKewdH88/cGOVmsK6tTDEsJSag3pmVWMdjlw7gB6N6cNgRtWaeJIadsqQmhwv8DHWIjqGzOoE8=",
+        "slptest:qqz64df5y9n0sk2t4ut60kd77h2kw3pnyuukuhqtx0",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
 }

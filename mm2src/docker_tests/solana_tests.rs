@@ -1,7 +1,7 @@
 use crate::docker_tests::docker_tests_common::*;
-use common::for_tests::{enable_solana_with_tokens, enable_spl};
+use common::for_tests::{enable_solana_with_tokens, enable_spl, sign_message, verify_message};
 use num_traits::Zero;
-use serde_json::{self as json};
+use serde_json::{self as json, Value as Json};
 
 #[test]
 fn test_solana_and_spl_balance_enable_spl_v2() {
@@ -41,3 +41,66 @@ fn test_solana_and_spl_balance_enable_spl_v2() {
     let (_, balance) = enable_spl.result.balances.into_iter().next().unwrap();
     assert!(balance.spendable > 0.into());
 }
+
+#[test]
+fn test_sign_verify_message_solana() {
+    let mm = solana_supplied_node();
+    let tx_history = false;
+    block_on(enable_solana_with_tokens(
+        &mm,
+        "SOL-DEVNET",
+        &["USDC-SOL-DEVNET"],
+        "https://api.devnet.solana.com",
+        tx_history,
+    ));
+
+    let response = block_on(sign_message(&mm, "SOL-DEVNET"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(
+        response.signature,
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
+    );
+    
+    let response = block_on(verify_message(&mm, "SOL-DEVNET", 
+    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+fn test_sign_verify_message_spl() {
+    let mm = solana_supplied_node();
+    let tx_history = false;
+    block_on(enable_solana_with_tokens(
+        &mm,
+        "SOL-DEVNET",
+        &["USDC-SOL-DEVNET"],
+        "https://api.devnet.solana.com",
+        tx_history,
+    ));
+
+    block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
+    
+    let response = block_on(sign_message(&mm, "ADEX-SOL-DEVNET"));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(
+        response.signature,
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
+    );
+    
+    let response = block_on(verify_message(&mm, "ADEX-SOL-DEVNET", 
+    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+

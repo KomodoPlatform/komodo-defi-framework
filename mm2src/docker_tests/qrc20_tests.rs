@@ -7,7 +7,7 @@ use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TradePreimageValue, TransactionEnum,
-            ValidatePaymentInput};
+            TransactionErr, ValidatePaymentInput};
 use common::log::debug;
 use common::mm_ctx::{MmArc, MmCtxBuilder};
 use common::mm_number::BigDecimal;
@@ -729,7 +729,7 @@ fn test_wait_for_tx_spend() {
 
     // first try to check if the wait_for_tx_spend() returns an error correctly
     let wait_until = (now_ms() / 1000) + 5;
-    let err = maker_coin
+    let tx_err = maker_coin
         .wait_for_tx_spend(
             &payment_tx_hex,
             wait_until,
@@ -738,6 +738,8 @@ fn test_wait_for_tx_spend() {
         )
         .wait()
         .expect_err("Expected 'Waited too long' error");
+
+    let err = tx_err.get_plain_text_format();
     log!("error: "[err]);
     assert!(err.contains("Waited too long"));
 
