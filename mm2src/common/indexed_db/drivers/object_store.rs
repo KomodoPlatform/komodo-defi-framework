@@ -137,6 +137,61 @@ impl IdbObjectStoreImpl {
         Self::items_from_completed_request(&get_request)
     }
 
+    pub async fn count(&self, index_str: &str, index_value: Json) -> DbTransactionResult<usize> {
+        if self.aborted.load(Ordering::Relaxed) {
+            return MmError::err(DbTransactionError::TransactionAborted);
+        }
+
+        let index = index_str.to_owned();
+        let index_value_js =
+            JsValue::from_serde(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
+                index: index.clone(),
+                description: e.to_string(),
+            })?;
+
+        let db_index = match self.object_store.index(index_str) {
+            Ok(index) => index,
+            Err(_) => return MmError::err(DbTransactionError::NoSuchIndex { index }),
+        };
+        let count_request = match db_index.count_with_key(&index_value_js) {
+            Ok(request) => request,
+            Err(e) => {
+                return MmError::err(DbTransactionError::InvalidIndex {
+                    index,
+                    index_value,
+                    description: stringify_js_error(&e),
+                })
+            },
+        };
+
+        if let Err(_error_event) = Self::wait_for_request_complete(&count_request).await {
+            self.aborted.store(true, Ordering::Relaxed);
+            let error = Self::error_from_failed_request(&count_request);
+            return MmError::err(DbTransactionError::ErrorCountingItems(error));
+        }
+
+        Self::count_from_completed_request(&count_request)
+    }
+
+    pub async fn count_all(&self) -> DbTransactionResult<usize> {
+        if self.aborted.load(Ordering::Relaxed) {
+            return MmError::err(DbTransactionError::TransactionAborted);
+        }
+
+        let count_request = match self.object_store.count() {
+            Ok(request) => request,
+            Err(e) => return MmError::err(DbTransactionError::ErrorCountingItems(stringify_js_error(&e))),
+        };
+
+        if let Err(_error_event) = Self::wait_for_request_complete(&count_request).await {
+            self.aborted.store(true, Ordering::Relaxed);
+            let error = Self::error_from_failed_request(&count_request);
+            return MmError::err(DbTransactionError::ErrorCountingItems(error));
+        }
+
+        Self::count_from_completed_request(&count_request)
+    }
+
     pub async fn replace_item(&self, _item_id: ItemId, item: Json) -> DbTransactionResult<ItemId> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
@@ -262,6 +317,21 @@ impl IdbObjectStoreImpl {
 
         if result_js_value.is_null() || result_js_value.is_undefined() {
             return Ok(Vec::new());
+        }
+
+        result_js_value
+            .into_serde()
+            .map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
+    }
+
+    fn count_from_completed_request(request: &IdbRequest) -> DbTransactionResult<usize> {
+        let result_js_value = match request.result() {
+            Ok(res) => res,
+            Err(e) => return MmError::err(DbTransactionError::UnexpectedState(stringify_js_error(&e))),
+        };
+
+        if result_js_value.is_null() || result_js_value.is_undefined() {
+            return Ok(0);
         }
 
         result_js_value

@@ -1,5 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
-use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
+use crate::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MarketCoinOps, MmCoinEnum,
             Transaction, TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;
@@ -43,11 +42,10 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
 
     /// Adds multiple transactions to the selected coin's history
     /// Also consider adding tx_hex to the cache during this operation
-    async fn add_transactions_to_history(
-        &self,
-        for_coin: &str,
-        transactions: impl IntoIterator<Item = TransactionDetails> + Send + 'static,
-    ) -> Result<(), MmError<Self::Error>>;
+    async fn add_transactions_to_history<I>(&self, for_coin: &str, transactions: I) -> Result<(), MmError<Self::Error>>
+    where
+        I: IntoIterator<Item = TransactionDetails> + Send + 'static,
+        I::IntoIter: Send;
 
     /// Removes the transaction by internal_id from the selected coin's history
     async fn remove_tx_from_history(
@@ -82,14 +80,14 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn add_tx_to_cache(
         &self,
         for_coin: &str,
-        tx_hash: &BytesJson,
+        tx_hash: &str,
         tx_hex: &BytesJson,
     ) -> Result<(), MmError<Self::Error>>;
 
     async fn tx_bytes_from_cache(
         &self,
         for_coin: &str,
-        tx_hash: &BytesJson,
+        tx_hash: &str,
     ) -> Result<Option<BytesJson>, MmError<Self::Error>>;
 
     async fn get_history(
@@ -252,8 +250,6 @@ pub enum MyTxHistoryErrorV2 {
     StorageError(String),
     RpcError(String),
     NotSupportedFor(String),
-    #[cfg(target_arch = "wasm32")]
-    NotSupportedInWasm,
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -264,8 +260,6 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
             | MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(target_arch = "wasm32")]
-            MyTxHistoryErrorV2::NotSupportedInWasm => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -283,6 +277,10 @@ impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
         let msg = format!("{:?}", err);
         MyTxHistoryErrorV2::StorageError(msg)
     }
+}
+
+impl From<CreateTxHistoryStorageError> for MyTxHistoryErrorV2 {
+    fn from(e: CreateTxHistoryStorageError) -> Self { MyTxHistoryErrorV2::StorageError(e.to_string()) }
 }
 
 pub enum HistoryCoinType {
@@ -318,19 +316,12 @@ impl GetHistoryCoinType for MmCoinEnum {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2,
 ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
     let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    let tx_history_storage = SqliteTxHistoryStorage(
-        ctx.sqlite_connection
-            .ok_or(MmError::new(MyTxHistoryErrorV2::StorageIsNotInitialized(
-                "sqlite_connection is not initialized".into(),
-            )))?
-            .clone(),
-    );
+    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
     let history_coin_type = match coin.get_history_coin_type() {
         Some(t) => t,
         None => return MmError::err(MyTxHistoryErrorV2::NotSupportedFor(coin.ticker().to_owned())),
@@ -380,12 +371,4 @@ pub async fn my_tx_history_v2_rpc(
         total_pages: calc_total_pages(history.total, request.limit),
         paging_options: request.paging_options,
     })
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn my_tx_history_v2_rpc(
-    _ctx: MmArc,
-    _request: MyTxHistoryRequestV2,
-) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
-    MmError::err(MyTxHistoryErrorV2::NotSupportedInWasm)
 }

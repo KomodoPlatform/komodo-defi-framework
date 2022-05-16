@@ -72,8 +72,7 @@ cfg_native! {
 cfg_wasm32! {
     use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
-    use tx_history_storage::wasm::tx_history_db::TxHistoryDb;
-    use tx_history_storage::wasm::tx_history_storage_v1::{clear_tx_history, load_tx_history, save_tx_history};
+    use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
 
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
@@ -267,6 +266,10 @@ pub enum TxHistoryError {
     ErrorSaving(String),
     ErrorLoading(String),
     ErrorClearing(String),
+    #[display(fmt = "'internal_id' not found: {:?}", internal_id)]
+    FromIdNotFound {
+        internal_id: BytesJson,
+    },
     NotSupported(String),
     InternalError(String),
 }

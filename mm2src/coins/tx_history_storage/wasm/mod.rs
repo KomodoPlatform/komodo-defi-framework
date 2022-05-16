@@ -1,12 +1,19 @@
+use crate::my_tx_history_v2::TxHistoryStorageError;
+use common::indexed_db::{DbTransactionError, InitDbError};
+use common::mm_error::prelude::*;
+
 pub mod tx_history_db;
 pub mod tx_history_storage_v1;
 pub mod tx_history_storage_v2;
 
-use common::indexed_db::{DbTransactionError, InitDbError};
-use common::mm_error::prelude::*;
+pub use tx_history_db::{TxHistoryDb, TxHistoryDbLocked};
+pub use tx_history_storage_v1::{clear_tx_history, load_tx_history, save_tx_history};
+pub use tx_history_storage_v2::IndexedDbTxHistoryStorage;
 
 pub type WasmTxHistoryResult<T> = MmResult<T, WasmTxHistoryError>;
 pub type WasmTxHistoryError = crate::TxHistoryError;
+
+impl TxHistoryStorageError for WasmTxHistoryError {}
 
 impl From<InitDbError> for WasmTxHistoryError {
     fn from(e: InitDbError) -> Self {
@@ -29,7 +36,9 @@ impl From<DbTransactionError> for WasmTxHistoryError {
             DbTransactionError::ErrorSerializingItem(_) => WasmTxHistoryError::ErrorSerializing(e.to_string()),
             DbTransactionError::ErrorDeserializingItem(_) => WasmTxHistoryError::ErrorDeserializing(e.to_string()),
             DbTransactionError::ErrorUploadingItem(_) => WasmTxHistoryError::ErrorSaving(e.to_string()),
-            DbTransactionError::ErrorGettingItems(_) => WasmTxHistoryError::ErrorLoading(e.to_string()),
+            DbTransactionError::ErrorGettingItems(_) | DbTransactionError::ErrorCountingItems(_) => {
+                WasmTxHistoryError::ErrorLoading(e.to_string())
+            },
             DbTransactionError::ErrorDeletingItems(_) => WasmTxHistoryError::ErrorClearing(e.to_string()),
             DbTransactionError::NoSuchTable { .. }
             | DbTransactionError::ErrorCreatingTransaction(_)

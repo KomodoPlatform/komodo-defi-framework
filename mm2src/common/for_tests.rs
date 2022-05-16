@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 use crate::executor::Timer;
-use crate::mm_ctx::MmArc;
+use crate::mm_ctx::{MmArc, MmCtxBuilder};
 use crate::mm_metrics::{MetricType, MetricsJson};
 use crate::{now_float, now_ms, PagingOptionsEnum};
 
@@ -99,6 +99,20 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentRefunded",
     "TakerPaymentRefundFailed",
 ];
+
+#[cfg(target_arch = "wasm32")]
+pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mm_ctx_with_custom_db() -> MmArc {
+    use db_common::sqlite::rusqlite::Connection;
+    use std::sync::Arc;
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let connection = Connection::open_in_memory().unwrap();
+    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    ctx
+}
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {

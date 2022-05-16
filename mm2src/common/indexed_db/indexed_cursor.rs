@@ -54,7 +54,6 @@ use crate::indexed_db::db_driver::cursor::{CollectCursorAction, CollectItemActio
 pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
 use crate::indexed_db::{ItemId, TableSignature};
 use crate::mm_error::prelude::*;
-use crate::serde::de::DeserializeOwned;
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
@@ -210,17 +209,17 @@ pub trait WithFilter: Sized {
 }
 
 #[async_trait]
-pub trait CollectCursor<Table: DeserializeOwned> {
+pub trait CollectCursor<Table: TableSignature> {
     async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>>;
 }
 
 #[async_trait]
-impl<Table: DeserializeOwned + 'static, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
+impl<Table: TableSignature, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
     async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>> { self.collect_impl().await }
 }
 
 #[async_trait]
-pub trait CollectCursorImpl<Table: DeserializeOwned + 'static>: Sized {
+pub trait CollectCursorImpl<Table: TableSignature>: Sized {
     fn into_collect_options(self) -> CursorCollectOptions;
 
     fn event_tx(&self) -> DbCursorEventTx;

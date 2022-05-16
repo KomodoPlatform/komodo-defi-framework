@@ -38,7 +38,6 @@ pub async fn save_tx_history(
     table
         .replace_item_by_unique_index("history_id", &history_id_value, &tx_history_item)
         .await?;
-    transaction.wait_for_complete().await?;
     Ok(())
 }
 
@@ -51,7 +50,6 @@ pub async fn clear_tx_history(db: &TxHistoryDb, ticker: &str, wallet_address: &s
     table
         .delete_item_by_unique_index("history_id", history_id.as_str())
         .await?;
-    transaction.wait_for_complete().await?;
     Ok(())
 }
 
