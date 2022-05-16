@@ -304,12 +304,11 @@ impl<T: FormattedTrace> FormattedTrace for Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::prelude::*;
     use super::*;
+    use crate::prelude::*;
     use futures01::Future;
     use ser_error_derive::SerializeErrorType;
-    use serde_json as json;
-    use serde_json::json;
+    use serde_json::{self as json, json};
 
     enum ErrorKind {
         NotSufficientBalance { actual: u64, required: u64 },

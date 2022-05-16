@@ -168,7 +168,7 @@ where
 #[cfg(test)]
 mod tests {
     use derive_more::Display;
-    use mm2_ehandle::mm_error::MmError;
+    use mm2_err_handle::mm_error::MmError;
     use ser_error_derive::SerializeErrorType;
     use serde::{Serialize, Serializer};
     use serde_json as json;
