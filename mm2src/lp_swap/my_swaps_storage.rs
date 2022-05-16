@@ -205,6 +205,15 @@ mod wasm_impl {
             Ok(())
         }
 
+        async fn update_coins_price(
+            &self,
+            _uuid: Uuid,
+            _my_coin_usd_price: &BigDecimal,
+            _other_coin_usd_price: &BigDecimal,
+        ) -> MySwapsResult<()> {
+            Ok(())
+        }
+
         async fn my_recent_swaps_with_filters(
             &self,
             filter: &MySwapsFilter,
