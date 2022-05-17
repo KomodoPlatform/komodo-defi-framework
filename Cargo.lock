@@ -4127,6 +4127,7 @@ dependencies = [
 name = "mm2"
 version = "0.1.0"
 dependencies = [
+ "aes 0.7.5",
  "async-std",
  "async-trait",
  "bitcrypto",

@@ -95,6 +95,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
+use aes::cipher::generic_array::GenericArray;
+use aes::cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher};
+use aes::{Aes256, Block};
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
@@ -112,6 +115,17 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
                      TakerSwapPreparedParams, TakerTradePreimage};
 pub use trade_preimage::trade_preimage_rpc;
+
+#[test]
+fn try_aes() {
+    let mut h256_json = H256Json::default();
+    let mut aes_block = Block::from_mut_slice(&mut h256_json.0[..16]);
+    let key = GenericArray::from_slice(&[0u8; 32]);
+    let aes = Aes256::new(key);
+    aes.encrypt_block(aes_block);
+    aes.decrypt_block(aes_block);
+    assert_eq!(aes_block, GenericArray::from_slice(&[0u8; 16]));
+}
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
