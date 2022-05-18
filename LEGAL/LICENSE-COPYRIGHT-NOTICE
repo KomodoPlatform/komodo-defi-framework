@@ -23,7 +23,7 @@ User may modify the Software and distribute that modified work to third parties 
 
 (d) User clearly notifies secondary users that such modified work is not the original Software.
 
-(e) Code sections starting with a "license protected" comment and/or "Dex_Fee" code prefix shall not be modified by the Users/third parties and are subject of the copyright limitation covered under the foregoing Agreement.
+(e) Code sections starting with a "license protected" comment and/or "Dex_Fee" code prefix and code-sections / software-logic related to these aforementioned sections shall not be modified by the Users/third parties and are subject of the copyright limitation covered under the foregoing Agreement.
 
 (f) User Agrees that he/she will not modify the following code sections and/or cryptographic keys: 
 https://github.com/KomodoPlatform/atomicDEX-API/blob/2fe5be95e166744667bc1fdd75fa5bb1eb5c5903/mm2src/common/common.rs#L164 
